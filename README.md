@@ -34,8 +34,10 @@ claude-skills/
 │   ├── rails-8.skill     # zip packages for claude.ai / Claude Desktop upload
 │   └── hotwire.skill
 └── scripts/
-    ├── install.sh        # copy skills into a project or ~/.claude/skills
-    └── package.sh        # rebuild dist/*.skill after editing skills/
+    ├── install.sh        # copy skills into a project or ~/.claude/skills (bash)
+    ├── install.ps1       # same, native Windows PowerShell
+    ├── package.sh        # rebuild dist/*.skill after editing skills/ (bash)
+    └── package.ps1       # same, native Windows PowerShell
 ```
 
 ## Install — Claude Code
@@ -50,12 +52,27 @@ Skills are plain folders; installing = putting each skill at
 
 ### Into a project (recommended)
 
+macOS / Linux / WSL / Git Bash:
+
 ```bash
 git clone https://github.com/fmanimashaun/claude-skills.git
 cd claude-skills
 ./scripts/install.sh /path/to/your/project            # both skills
 ./scripts/install.sh /path/to/your/project rails-8    # just one
 ```
+
+Windows (native PowerShell — no bash required):
+
+```powershell
+git clone https://github.com/fmanimashaun/claude-skills.git
+cd claude-skills
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Target C:\path\to\project            # both
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Target C:\path\to\project rails-8    # one
+```
+
+(The `-ExecutionPolicy Bypass -File` form sidesteps the blocked-downloaded-script
+policy; alternatively run `Unblock-File scripts\*.ps1` once and call them
+directly.)
 
 No clone needed — pull the folders straight into the project instead:
 
@@ -73,8 +90,12 @@ git add .claude/skills && git commit -m "Add rails-8 and hotwire Claude skills"
 ### For all your projects (personal)
 
 ```bash
-./scripts/install.sh --global          # -> ~/.claude/skills/
+./scripts/install.sh --global                                           # bash
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Global    # PowerShell
 ```
+
+Both land in `~/.claude/skills/` — the same path on every OS (`~` is your
+user profile on Windows).
 
 ### New Rails project quickstart
 
@@ -134,7 +155,7 @@ cd claude-skills && git pull
 
 On claude.ai, delete the old skill and upload the new `.skill` file. After
 editing anything under `skills/`, rebuild the packages with
-`./scripts/package.sh`.
+`./scripts/package.sh` (or `scripts\package.ps1` on Windows).
 
 ## Try these prompts
 
