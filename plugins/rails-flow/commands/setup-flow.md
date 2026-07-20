@@ -70,10 +70,10 @@ Create `docs/brain/MEMORY.md` (an index: one line per memo — link + 8-15 word 
 explain `/rails-flow:brain` to the user: lessons and decisions get institutionalized as
 memos, not lost in chat history.
 
-## 5. Knowledge-graph integration (only if code-review-graph is present)
+## 5. Knowledge-graph integration (only if graph tools are present)
 
-Detect with `command -v code-review-graph`. If absent, skip this section silently.
-If present, wire it to coexist with the rails-flow hooks:
+Detect with `command -v code-review-graph` and `command -v graphify`. Skip absent
+tools silently. For code-review-graph, wire it to coexist with the rails-flow hooks:
 
 1. **Protect authored files.** Its installer rewrites AGENTS.md/GEMINI.md/.cursorrules.
    Require a clean git state before `code-review-graph install`; afterwards run
@@ -116,6 +116,17 @@ If present, wire it to coexist with the rails-flow hooks:
    `.mcp.example.json` instead) plus tool-generated IDE configs.
 6. **Build once**: `code-review-graph build && code-review-graph embed`, then a FULL
    Claude Code restart (`.mcp.json` is read at startup only).
+7. **graphify (if present)** — the exploration/cross-repo graph, complementary to CRG:
+   - Create `.graphifyignore` (node_modules, vendor, tmp, log, coverage, public/assets,
+     graphify-out/, .code-review-graph/) then build: `graphify update .`
+   - Freshness via ITS OWN git hooks only: `graphify hook install` (post-commit +
+     post-checkout). NEVER add graphify to Claude Stop/PostToolUse hooks — its ~10s
+     update piles up per-turn and saturates CPU/RAM. Add a resource guard (skip when
+     CPU >50% or free memory <2GB) to the installed git hooks.
+   - Add the fallback chain to CLAUDE.md's knowledge-graph pointer:
+     `CRG 0 results → graphify query '<term>' --graph graphify-out/graph.json → grep`
+   - Ruby is first-class (dedicated extractor incl. singleton methods and a member-call
+     resolver). Same AST caveat as CRG for Rails metaprogramming.
 
 ## 6. Default maintenance loop (`loop.md`)
 

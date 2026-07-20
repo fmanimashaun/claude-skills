@@ -250,6 +250,38 @@ Ruby is a first-class parsed language. Expect strong blast-radius analysis on se
 objects, jobs, and explicit call chains; weaker coverage of Rails metaprogramming
 (association-generated methods, dynamic abilities) — grep remains the fallback there.
 
+#### Optional: graphify (second graph — exploration and cross-repo)
+
+[graphify](https://github.com/safishamsi/graphify) complements CRG rather than
+competing with it: CRG answers *"where is X / who calls X / what breaks"* with
+embedding precision; graphify answers *"how does this fit together"* — BFS
+neighborhood exploration, `graphify path A B` hop-chains (~200 tokens), Leiden
+community reports with Obsidian wikilinks, and — uniquely — `graphify merge-graphs`
+across repositories, where bridge nodes in the merged view are your highest-impact
+shared code. Ruby is first-class: a dedicated extractor covers classes, methods,
+singleton methods, and member-call resolution.
+
+```bash
+pipx install graphifyy            # two y's on PyPI; the CLI is `graphify`
+cd your-rails-project
+# create .graphifyignore first (node_modules, vendor, tmp, log, graphify-out/, …)
+graphify update .                 # AST-only build, zero LLM tokens
+graphify hook install             # post-commit + post-checkout freshness
+```
+
+Two hard rules. **Never put graphify in a Claude hook** (Stop/PostToolUse): its
+~10s update piles up per-turn — CRG's sub-second update owns the Claude-hook slot;
+graphify updates only via its git hooks (add a resource guard: skip when CPU >50%
+or free memory <2GB). And teach the fallback chain in CLAUDE.md so a CRG semantic
+miss doesn't fall straight to grep:
+
+```
+CRG 0 results → graphify query '<term>' --graph graphify-out/graph.json → grep
+```
+
+It's v0.9.x (pre-1.0, MIT) — expect some churn; each piece degrades gracefully if
+uninstalled.
+
 ## Repository layout
 
 ```
