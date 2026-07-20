@@ -75,7 +75,15 @@ gh pr create --base <base> --title "feat: <summary>" --body "<Summary / Changes 
   fix on the same branch, push, re-run the gate. Repeat until CLEAN.
 - On CLEAN: if the base is `dev`, merge (`gh pr merge --squash`), then post a summary
   comment citing the gate's findings. If the base is the default branch (no `dev`), stop
-  after CLEAN and hand the merge decision to the user.
+  after CLEAN and hand the merge decision to the user — and offer them a PR babysitter:
+  `/loop "Check PR #<n>: if CI failed, read the log, fix on the branch, push; address
+  new review comments; if merged, say MERGED" --interval 10m --expires 8h`.
+
+- **Close-out rule**: a PR is finished only when every review thread is resolved —
+  each actionable comment fixed on this branch (push, reply with the commit) or folded
+  into a tracked repo issue and linked back. Sweep with `/rails-flow:pr-comments <n>`
+  after the gate and after any human review lands. Do not start the next unit, phase,
+  or task while the current PR has unresolved feedback.
 
 ## Phase 7 — Close the loop
 

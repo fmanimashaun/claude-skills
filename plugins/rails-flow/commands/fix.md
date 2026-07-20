@@ -37,8 +37,19 @@ or treat the described bug as a single-phase fix. Base branch: `dev` if present.
 5. GATE:      review-pr skill if the code-review-graph CLI + graph are present
               (command -v code-review-graph && [ -d .code-review-graph ]), else
               pr-reviewer — repeat until CLEAN
-6. MERGE:     on CLEAN, merge to dev (squash); default-branch bases stop for the user
-7. DOCS:      doc-updater; mark the phase done in the review report
+6. CLOSEOUT:  /rails-flow:pr-comments <n> — every review thread fixed on-branch or
+              folded into a tracked repo issue; re-run the gate if code changed.
+              A PR must close clean before the next phase starts.
+7. MERGE:     on CLEAN, merge to dev (squash); default-branch bases stop for the user
+8. DOCS:      doc-updater; mark the phase done in the review report
 ```
 
 Then report: issues fixed, specs added, gate verdicts, PR link, next phase remaining.
+
+## Unattended operation
+
+The whole backlog can run without a human in the loop:
+`/goal all phases in <report path> are marked done — work them with /rails-flow:fix,
+one phase at a time`. The guardrail hooks, stop gate, and non-skippable merge review
+keep autonomy inside the rails: no destructive git/db operations, no unproven
+behavioral changes, nothing past `dev` without a CLEAN tool verdict.

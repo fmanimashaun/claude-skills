@@ -117,7 +117,35 @@ If present, wire it to coexist with the rails-flow hooks:
 6. **Build once**: `code-review-graph build && code-review-graph embed`, then a FULL
    Claude Code restart (`.mcp.json` is read at startup only).
 
-## 6. Report
+## 6. Default maintenance loop (`loop.md`)
+
+Claude Code's bare `/loop` runs a built-in maintenance prompt unless a `loop.md` at the
+project root replaces it. Scaffold one so bare `/loop` IS this project's health check
+(never overwrite an existing loop.md — propose a merge):
+
+```markdown
+# loop.md — default maintenance pass for bare /loop
+
+Run this pass and report ONLY deltas or problems; if everything is clean, reply
+"all green" in one line. Guardrails and the stop gate apply as always. Never
+deploy; never touch main.
+
+1. Sync check: `git fetch`; report divergence from <base>. If behind and the
+   working tree is clean, `git pull --ff-only`.
+2. Suite health: `bundle exec rspec --fail-fast --no-color`. On red, delegate
+   analysis to the test-runner agent; fix per /rails-flow:fix principles
+   (failing spec first for behavioral bugs).
+3. Lint drift: rubocop on Ruby files changed vs origin/<base>.
+4. Security deltas: `bundle exec bundler-audit check --update` and
+   `bundle exec brakeman -q` if installed — report NEW findings only.
+5. Graph freshness (if code-review-graph is present): `code-review-graph status`;
+   if Last updated lags the last commit, run `code-review-graph update --skip-flows`.
+```
+
+Fill `<base>` with the branch detected in CLAUDE.md setup. Tell the user: bare `/loop`
+now runs this on an interval; pair with `--expires` for bounded sessions.
+
+## 7. Report
 
 List created files, the detected Project Overrides, and any ambiguity you need the user to
 settle (e.g. base branch, form builder mandate yes/no).

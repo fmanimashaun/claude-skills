@@ -38,7 +38,11 @@ tool-gated merge review (code-review-graph's review-pr skill when its CLI + grap
 present, the bundled pr-reviewer agent otherwise) · `/rails-flow:fix` works a bug or a phased review backlog one
 proven issue at a time · `/rails-flow:review` runs seven parallel specialist passes and
 writes a phased, fix-consumable report · `/rails-flow:brain` institutionalizes lessons as
-indexed memory memos.
+indexed memory memos · `/rails-flow:issues` triages open repo issues (bug / feature /
+chore / needs-info) and works them one at a time through the matching pipeline, each
+PR auto-closing its issue · `/rails-flow:pr-comments` sweeps a PR's review feedback —
+every actionable comment is fixed on-branch or folded into a tracked issue, and **no
+next task starts until the current PR closes clean**.
 
 **Agents** (8): rails-developer, migration-writer, code-reviewer, test-runner,
 security-auditor, design-auditor, doc-updater, pr-reviewer — each context-isolated, tool-
@@ -49,7 +53,42 @@ PreToolUse blocks `db:reset`, force-pushes, `git add -A`, `--no-verify` and unap
 deploys · PostToolUse auto-runs rubocop on edited Ruby files · Stop refuses to finish with
 behavioral changes that lack a proving spec, or with red changed specs · SessionStart
 injects branch state and the memory index. After installing, restart Claude Code (or
-`/reload-plugins`) so hooks register.
+`/reload-plugins`) so hooks register. Hook scripts are
+bash — on Windows, run Claude Code inside WSL or Git Bash.
+
+### Autonomous operation — `/goal` and `/loop`
+
+Two native Claude Code primitives turn the flow into an unattended system, and they
+divide cleanly: **`/goal` works turn after turn until a condition is met; `/loop` runs a
+prompt on a recurring interval.** Reaching for `/loop` when you mean `/goal` is the
+common mistake.
+
+The backlog grinder is a goal, not a poll — after `/rails-flow:review` writes its
+phased report:
+
+```
+/goal all phases in docs/reviews/<date>-codebase-review.md are marked done —
+work them with /rails-flow:fix, one phase at a time
+```
+
+Genuinely loop-shaped jobs: a **PR babysitter** when `/feature` stops after CLEAN on a
+default-branch base (`/loop "Check PR #42: if CI failed, fix on the branch and push;
+address review comments; if merged say MERGED" --interval 10m --expires 8h`); a **drift
+watchdog** that pulls `dev` and runs the suite fail-fast every 30–60 minutes to catch
+breakage arriving from outside your session; and a periodic **security sweep**
+(bundler-audit + Brakeman, new findings only). Loops are session-scoped with a 1-minute
+minimum interval and 3-day maximum window — always set `--expires`, and use `/cost` to
+watch spend.
+
+`/rails-flow:setup-flow` also scaffolds a project `loop.md`, which replaces the
+built-in prompt for bare `/loop` — so `/loop` with no arguments runs the project's own
+maintenance pass (suite health, lint drift, security deltas, graph freshness; deltas
+reported only).
+
+Autonomy stays safe **because** of the hooks, not despite them: an unattended 2 a.m.
+iteration cannot `db:reset`, force-push, or deploy; the stop gate refuses turns with
+unproven behavioral changes; and nothing merges past `dev` without a CLEAN verdict
+from the review gate.
 
 ### Adding tool-gated code review (optional, recommended)
 

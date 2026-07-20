@@ -24,6 +24,9 @@ Process:
    (do they assert the behavior or just execute the code?), jobs (idempotent, id args).
 5. **Verdict**: structured report — BLOCKING issues with file:line and required fix,
    then Suggestions. Final line exactly `VERDICT: CLEAN` or `VERDICT: BLOCKED`.
+   Deferral rule: BLOCKING issues are fixed on the branch — never deferred to an
+   issue to earn a CLEAN. Suggestions the author chooses to defer must be folded into
+   tracked repo issues (linked in a PR reply) before the PR closes.
 
 If the code-review-graph CLI is present with a built graph (`command -v code-review-graph
 && [ -d .code-review-graph ]`), note that the orchestrator should ALSO run its `review-pr`
