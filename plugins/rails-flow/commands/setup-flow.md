@@ -91,6 +91,14 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
 
    Rationale: per-edit PostToolUse updates pile up processes; Stop fires once per turn.
    rails-flow's own per-edit hook stays rubocop-only, so the two never contend.
+   Also add a SessionStart hook to the same settings.example.json (same shape as the
+   Stop hook: fire only when `.code-review-graph` exists) whose command prints a
+   `hookSpecificOutput.additionalContext` JSON containing this static cheatsheet
+   (~100 tokens, pre-empts reflexive grepping):
+   `GRAPH FIRST — where is X → semantic_search_nodes_tool · who calls X →
+   query_graph_tool(callers_of) · blast radius → get_impact_radius_tool · review
+   context → get_review_context_tool · CRG 0 results → graphify query '<term>' →
+   grep · skip graph for .md/.yml/configs.`
 3. **Trim MCP schema.** In the project's mcp server config for code-review-graph, set
    `CRG_TOOLS` to the 8-tool working set (semantic_search_nodes_tool, query_graph_tool,
    get_impact_radius_tool, traverse_graph_tool, list_communities_tool, get_community_tool,
@@ -112,6 +120,23 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
        > "$HOME/.cache/crg-update.log" 2>&1 < /dev/null &
    fi
    ```
+   Also close the branch-switch gap with `.git/hooks/post-checkout` (branch changes
+   rewrite the tree with no edit hook firing — the exact staleness the Stop hook
+   cannot see). `chmod +x` after writing:
+
+   ```sh
+   #!/bin/sh
+   [ "$3" = "1" ] || exit 0   # branch switches only, not file checkouts
+   command -v code-review-graph >/dev/null 2>&1 && [ -d .code-review-graph ] || exit 0
+   pgrep -f 'code-review-graph (update|build)' >/dev/null 2>&1 && exit 0
+   N=$(git diff --name-only "$1" "$2" 2>/dev/null | wc -l | tr -d ' ')
+   if [ "${N:-0}" -gt 5 ]; then CMD='code-review-graph build'
+   else CMD='code-review-graph update --skip-flows && code-review-graph embed'; fi
+   nohup timeout 300 sh -c "$CMD" > "$HOME/.cache/crg-checkout.log" 2>&1 < /dev/null &
+   ```
+
+   (graphify's own `graphify hook install` already writes both post-commit and
+   post-checkout — only CRG needs this manual one.)
 5. **Gitignore hygiene.** Add `.code-review-graph/` and `.mcp.json` (commit
    `.mcp.example.json` instead) plus tool-generated IDE configs.
 6. **Build once**: `code-review-graph build && code-review-graph embed`, then a FULL
