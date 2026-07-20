@@ -74,7 +74,44 @@ git diff                               # restore any authored file it clobbered:
 code-review-graph build && code-review-graph embed
 ```
 
-Then fully restart Claude Code (`.mcp.json` is read only at startup) and run
+#### Embeddings (semantic search)
+
+`embed` requires the optional embeddings extra (sentence-transformers → PyTorch,
+~200 MB download); a base install fails with *"local embedding provider needs
+sentence-transformers"*. Install the extra into the **same environment that owns the
+CLI** — how depends on how you installed it:
+
+```bash
+# pipx (isolated venv per tool):
+pipx inject code-review-graph sentence-transformers
+#   survives `pipx upgrade` and `pipx reinstall`; or bake the extra in:
+#   pipx install 'code-review-graph[embeddings]' --force
+
+# plain pip — QUOTE the brackets (zsh expands [] as a glob):
+pip install 'code-review-graph[embeddings]'
+
+# uv:
+uv tool install 'code-review-graph[embeddings]' --force
+```
+
+The first `code-review-graph embed` downloads the model and embeds the entire graph —
+slow once, incremental ever after (the Stop hook re-embeds only deltas). Prefer the
+default **local** provider for private code: the `openai` / `google` / `minimax`
+providers send your code's symbol text to external APIs.
+
+**MCP server check** — the server embeds your *queries* at search time, so it needs the
+library too. `cat .mcp.json`: if `command` points at your pipx/venv binary, the inject
+covers it. If it is `uvx`, the server runs in its own ephemeral environment and will NOT
+see the inject — set `args` to
+`["--with", "code-review-graph[embeddings]", "code-review-graph", "serve"]` or point
+`command` at the pipx binary directly. Interpreter paths are hardcoded at install time;
+re-run `code-review-graph install` if you later change environments.
+
+#### Bringing it live
+
+Fully restart Claude Code (`.mcp.json` is read only at startup), confirm `/doctor` shows
+no plugin errors, then smoke-test: ask Claude *"who calls X"* about a real symbol and
+watch it reach for `semantic_search_nodes_tool` instead of grep. Finally run
 `/rails-flow:setup-flow` — it detects the CLI and wires the coexistence pieces: graph
 updates move from per-edit hooks to a PID-guarded Stop hook (per-edit stays
 rubocop-only, so the two never contend), the MCP schema is trimmed with a `CRG_TOOLS`
