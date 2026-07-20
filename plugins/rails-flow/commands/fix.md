@@ -34,7 +34,9 @@ or treat the described bug as a single-phase fix. Base branch: `dev` if present.
               schema changes to migration-writer
 3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN
 4. PUSH + PR: gh pr create --base <base> --title "fix: <phase — summary>"
-5. GATE:      code-review-graph:review-pr if installed, else pr-reviewer — until CLEAN
+5. GATE:      review-pr skill if the code-review-graph CLI + graph are present
+              (command -v code-review-graph && [ -d .code-review-graph ]), else
+              pr-reviewer — repeat until CLEAN
 6. MERGE:     on CLEAN, merge to dev (squash); default-branch bases stop for the user
 7. DOCS:      doc-updater; mark the phase done in the review report
 ```

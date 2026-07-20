@@ -34,7 +34,8 @@ the `docs/brain/` memory system into a project · `/rails-flow:feature <desc>` r
 loop — plan (delegated exploration) → feature branch off `dev` → spec-first implementation
 (the failing spec that proves the NEW behavior comes before the code) → mandatory gates
 (code review, full green suite, security + design audits when relevant) → PR → non-skippable
-tool-gated merge review · `/rails-flow:fix` works a bug or a phased review backlog one
+tool-gated merge review (code-review-graph's review-pr skill when its CLI + graph are
+present, the bundled pr-reviewer agent otherwise) · `/rails-flow:fix` works a bug or a phased review backlog one
 proven issue at a time · `/rails-flow:review` runs seven parallel specialist passes and
 writes a phased, fix-consumable report · `/rails-flow:brain` institutionalizes lessons as
 indexed memory memos.
@@ -49,6 +50,40 @@ deploys · PostToolUse auto-runs rubocop on edited Ruby files · Stop refuses to
 behavioral changes that lack a proving spec, or with red changed specs · SessionStart
 injects branch state and the memory index. After installing, restart Claude Code (or
 `/reload-plugins`) so hooks register.
+
+### Adding tool-gated code review (optional, recommended)
+
+The merge gate has two tiers. Out of the box, the bundled `pr-reviewer` agent reviews
+every PR and nothing merges without its `VERDICT: CLEAN`. When
+[code-review-graph](https://github.com/tirth8205/code-review-graph) is present, the gate
+upgrades: its `review-pr` skill reviews the PR against a Tree-sitter knowledge graph of
+the codebase — blast-radius analysis of every changed function's callers — with
+`code-review-graph impact` cited as evidence.
+
+code-review-graph is **not** installed from this marketplace. Since v2.x it is a pip CLI
+that configures each project directly:
+
+```bash
+pip install code-review-graph          # or: pipx install code-review-graph
+cd your-rails-project
+git status                             # start CLEAN — the installer rewrites
+                                       # AGENTS.md / GEMINI.md / .cursorrules
+code-review-graph install              # MCP server + review skills + hooks
+git diff                               # restore any authored file it clobbered:
+                                       #   git checkout -- AGENTS.md
+code-review-graph build && code-review-graph embed
+```
+
+Then fully restart Claude Code (`.mcp.json` is read only at startup) and run
+`/rails-flow:setup-flow` — it detects the CLI and wires the coexistence pieces: graph
+updates move from per-edit hooks to a PID-guarded Stop hook (per-edit stays
+rubocop-only, so the two never contend), the MCP schema is trimmed with a `CRG_TOOLS`
+allow-list, a post-commit updater keeps terminal commits from staling the graph, and
+gitignore hygiene is applied.
+
+Ruby is a first-class parsed language. Expect strong blast-radius analysis on service
+objects, jobs, and explicit call chains; weaker coverage of Rails metaprogramming
+(association-generated methods, dynamic abilities) — grep remains the fallback there.
 
 ## Repository layout
 

@@ -25,6 +25,8 @@ Process:
 5. **Verdict**: structured report — BLOCKING issues with file:line and required fix,
    then Suggestions. Final line exactly `VERDICT: CLEAN` or `VERDICT: BLOCKED`.
 
-If the `code-review-graph` plugin is installed, note that the orchestrator should ALSO run
-`/code-review-graph:review-pr <number>` — tool-based blast-radius analysis catches what
-narrative review misses, and that gate is non-skippable where available.
+If the code-review-graph CLI is present with a built graph (`command -v code-review-graph
+&& [ -d .code-review-graph ]`), note that the orchestrator should ALSO run its `review-pr`
+skill and cite `code-review-graph impact` / `get_review_context_tool` output as evidence —
+tool-based blast-radius analysis catches what narrative review misses, and that gate is
+non-skippable where available.

@@ -65,7 +65,11 @@ gh pr create --base <base> --title "feat: <summary>" --body "<Summary / Changes 
 
 ## Phase 6 — Merge gate (non-skippable)
 
-- If the `code-review-graph` plugin is installed: run `/code-review-graph:review-pr <number>`.
+- If the code-review-graph CLI is present with a built graph
+  (`command -v code-review-graph && [ -d .code-review-graph ]`): run its `review-pr`
+  skill with the PR number (installed per-project by `code-review-graph install`;
+  since v2.x it is a plain skill — no plugin namespace). Supplement with
+  `code-review-graph impact` on the changed files for blast-radius evidence.
 - Otherwise: delegate to `pr-reviewer` with the PR number.
 - A self-written review comment is the OUTPUT of a review, not the review. BLOCKED →
   fix on the same branch, push, re-run the gate. Repeat until CLEAN.
