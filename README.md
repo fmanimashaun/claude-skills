@@ -60,63 +60,152 @@ upgrades: its `review-pr` skill reviews the PR against a Tree-sitter knowledge g
 the codebase — blast-radius analysis of every changed function's callers — with
 `code-review-graph impact` cited as evidence.
 
-code-review-graph is **not** installed from this marketplace. Since v2.x it is a pip CLI
-that configures each project directly:
+code-review-graph is **not** installed from this marketplace. Since v2.x it is a pip
+CLI that configures each project directly. The runbook below goes zero → verified-
+functional; every phase ends with a check that proves the layer it set up actually
+works, so a failure surfaces at its own step instead of as mystery breakage later.
+
+#### Phase 0 — Prerequisites (once per machine)
 
 ```bash
-pip install code-review-graph          # or: pipx install code-review-graph
-cd your-rails-project
-git status                             # start CLEAN — the installer rewrites
-                                       # AGENTS.md / GEMINI.md / .cursorrules
-code-review-graph install              # MCP server + review skills + hooks
-git diff                               # restore any authored file it clobbered:
-                                       #   git checkout -- AGENTS.md
-code-review-graph build && code-review-graph embed
+python3 --version          # expect 3.10+
+pipx --version             # or use pip / uv below
+cd /path/to/your-project
+git status                 # REQUIRED: clean working tree before Phase 2
 ```
 
-#### Embeddings (semantic search)
+A dirty tree is a hard stop — the installer rewrites files, and a clean state is your
+only cheap undo.
 
-`embed` requires the optional embeddings extra (sentence-transformers → PyTorch,
-~200 MB download); a base install fails with *"local embedding provider needs
-sentence-transformers"*. Install the extra into the **same environment that owns the
-CLI** — how depends on how you installed it:
+#### Phase 1 — Install the CLI + embeddings (once per machine)
 
 ```bash
-# pipx (isolated venv per tool):
+pipx install code-review-graph
 pipx inject code-review-graph sentence-transformers
-#   survives `pipx upgrade` and `pipx reinstall`; or bake the extra in:
-#   pipx install 'code-review-graph[embeddings]' --force
+```
 
-# plain pip — QUOTE the brackets (zsh expands [] as a glob):
-pip install 'code-review-graph[embeddings]'
+The inject supplies the optional embeddings extra (sentence-transformers → PyTorch,
+~200 MB). Without it, `code-review-graph embed` fails with *"local embedding provider
+needs sentence-transformers"*. pipx keeps each tool in an isolated venv, so the library
+must go **into that venv** — a plain `pip install sentence-transformers` elsewhere will
+not be seen. Injected packages survive `pipx upgrade` and `pipx reinstall`.
 
-# uv:
+Not using pipx:
+
+```bash
+pip install 'code-review-graph[embeddings]'        # QUOTE the brackets — zsh globs []
 uv tool install 'code-review-graph[embeddings]' --force
 ```
 
-The first `code-review-graph embed` downloads the model and embeds the entire graph —
-slow once, incremental ever after (the Stop hook re-embeds only deltas). Prefer the
-default **local** provider for private code: the `openai` / `google` / `minimax`
-providers send your code's symbol text to external APIs.
+Keep the default **local** embedding provider for private code: the `openai` /
+`google` / `minimax` providers send your code's symbol text to external APIs.
 
-**MCP server check** — the server embeds your *queries* at search time, so it needs the
-library too. `cat .mcp.json`: if `command` points at your pipx/venv binary, the inject
-covers it. If it is `uvx`, the server runs in its own ephemeral environment and will NOT
-see the inject — set `args` to
-`["--with", "code-review-graph[embeddings]", "code-review-graph", "serve"]` or point
-`command` at the pipx binary directly. Interpreter paths are hardcoded at install time;
-re-run `code-review-graph install` if you later change environments.
+**Verify:** `which code-review-graph` resolves (pipx: via `~/.local/bin`), and
+`code-review-graph --version` prints a version.
 
-#### Bringing it live
+#### Phase 2 — Project install + damage triage (once per repo)
 
-Fully restart Claude Code (`.mcp.json` is read only at startup), confirm `/doctor` shows
-no plugin errors, then smoke-test: ask Claude *"who calls X"* about a real symbol and
-watch it reach for `semantic_search_nodes_tool` instead of grep. Finally run
-`/rails-flow:setup-flow` — it detects the CLI and wires the coexistence pieces: graph
-updates move from per-edit hooks to a PID-guarded Stop hook (per-edit stays
-rubocop-only, so the two never contend), the MCP schema is trimmed with a `CRG_TOOLS`
-allow-list, a post-commit updater keeps terminal commits from staling the graph, and
-gitignore hygiene is applied.
+```bash
+code-review-graph install
+git status
+```
+
+Expected new/modified files: `.mcp.json`, `.claude/skills/`, hook changes in
+`.claude/settings.json`, a git pre-commit hook, `.gitignore` additions — plus IDE noise
+(`AGENTS.md`, `GEMINI.md`, `.cursorrules`, `.opencode.json`, …).
+
+**Triage immediately:** if the repo has a hand-authored `AGENTS.md` or `CLAUDE.md` and
+the diff shows it rewritten, restore it now (`git checkout -- AGENTS.md`). Gitignore the
+IDE noise you don't use — but never an authored `AGENTS.md`.
+
+#### Phase 3 — Build, embed, and prove the CLI layer
+
+```bash
+code-review-graph build
+```
+
+Expected: `Full build: N files, N nodes, N edges` — nonzero everything.
+
+```bash
+code-review-graph embed    # first run: model download + full-graph pass (slow once)
+code-review-graph status
+```
+
+Expected from `status` — the key check: node/edge counts matching the build, a fresh
+`Last updated` timestamp, and `Languages:` **including `ruby`**. If ruby is missing,
+the graph parsed nothing useful and everything downstream is theater — usually a
+`.code-review-graphignore` that is too broad.
+
+Prove queries answer with real code, no Claude involved:
+
+```bash
+code-review-graph search User                        # any class you know exists
+code-review-graph query --pattern callers_of --target some_real_method
+code-review-graph impact app/models/something.rb
+time code-review-graph update --skip-flows           # expect well under ~2s
+time code-review-graph embed                         # second run: fast, incremental
+```
+
+Each returns structured `file:line` hits. `search` returning nothing for a class you
+know exists means the graph is broken regardless of what `status` says.
+
+#### Phase 4 — MCP wiring check (the pipx blind spot)
+
+```bash
+cat .mcp.json
+```
+
+The MCP server embeds your *queries* at search time, so it needs the library too. If
+`command` points at your pipx/venv binary, the inject covers it. If it is `uvx`, the
+server runs in an ephemeral environment that will NOT see the inject — semantic search
+silently degrades. Fix: set `args` to
+`["--with", "code-review-graph[embeddings]", "code-review-graph", "serve"]`, or point
+`command` at the pipx binary (`which code-review-graph`). Interpreter paths are
+hardcoded at install time — re-run `code-review-graph install` after environment
+changes.
+
+#### Phase 5 — Claude Code bring-up
+
+Fully **quit and reopen** Claude Code — `/reload-plugins` is not enough; `.mcp.json` is
+read only at startup. Then, in the project:
+
+1. `/doctor` → expected: no plugin errors (rails-flow stays clean too)
+2. `/mcp` → expected: `code-review-graph` listed as connected
+3. Type `/review` and pause → expected: `review-pr`, `review-delta`, `review-changes`
+   in the completion list
+
+#### Phase 6 — Functional smoke test inside Claude
+
+Ask about *real* symbols and watch the tool-call line:
+
+- *"Where is `SomeService` defined?"* → expected: `semantic_search_nodes_tool`,
+  answer with `file:line`, **no grep**
+- *"Who calls `some_real_method`?"* → expected: `query_graph_tool` with `callers_of`
+- *"What breaks if I change `app/models/x.rb`?"* → expected:
+  `get_impact_radius_tool` with node/file counts and a risk rating
+
+grep firing where a graph tool should means the wiring failed even though everything
+"installed".
+
+#### Phase 7 — Coexistence wiring + freshness probes
+
+Run `/rails-flow:setup-flow` (CRG-aware since rails-flow 1.0.2): it moves graph updates
+from per-edit hooks to a PID-guarded Stop hook (per-edit stays rubocop-only, so the two
+never contend), empties the installer's PostToolUse hooks, applies the `CRG_TOOLS`
+8-tool allow-list (~70% schema reduction; the 33k-token architecture-overview tool
+becomes uncallable), and adds a post-commit updater so terminal commits don't stale the
+graph.
+
+Then two liveness probes, both read from `code-review-graph status`:
+
+1. Have Claude make any trivial edit and finish its turn → `Last updated` advanced
+   (Stop hook alive)
+2. Make a small commit from the terminal, wait a few seconds → timestamp advanced
+   again (post-commit hook alive)
+
+Final integration test: a tiny `/rails-flow:feature` on a throwaway branch — the merge
+gate should announce it is using the `review-pr` skill rather than falling back to
+`pr-reviewer`.
 
 Ruby is a first-class parsed language. Expect strong blast-radius analysis on service
 objects, jobs, and explicit call chains; weaker coverage of Rails metaprogramming
