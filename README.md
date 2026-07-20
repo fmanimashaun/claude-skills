@@ -23,6 +23,33 @@ They cross-reference each other — install both for Rails work.
 - AI/LLM features use **ruby_llm** (chat, tools, structured output, embeddings, `acts_as_chat`).
 - Deployment is **Kamal 2** on plain servers.
 
+## The agentic flow — `rails-flow`
+
+The skills give Claude the *knowledge*; the **rails-flow** plugin encodes the *process* —
+an orchestrated development flow for any Rails 8 project, following Anthropic's
+orchestrator-workers and evaluator-optimizer patterns.
+
+**Commands** (namespaced): `/rails-flow:setup-flow` scaffolds CLAUDE.md, GUARDRAILS.md and
+the `docs/brain/` memory system into a project · `/rails-flow:feature <desc>` runs the full
+loop — plan (delegated exploration) → feature branch off `dev` → spec-first implementation
+(the failing spec that proves the NEW behavior comes before the code) → mandatory gates
+(code review, full green suite, security + design audits when relevant) → PR → non-skippable
+tool-gated merge review · `/rails-flow:fix` works a bug or a phased review backlog one
+proven issue at a time · `/rails-flow:review` runs seven parallel specialist passes and
+writes a phased, fix-consumable report · `/rails-flow:brain` institutionalizes lessons as
+indexed memory memos.
+
+**Agents** (8): rails-developer, migration-writer, code-reviewer, test-runner,
+security-auditor, design-auditor, doc-updater, pr-reviewer — each context-isolated, tool-
+restricted, and judged against the *project's* CLAUDE.md overrides, not generic taste.
+
+**Hooks** (the mandatory layer — advisory prose can be forgotten, hooks cannot):
+PreToolUse blocks `db:reset`, force-pushes, `git add -A`, `--no-verify` and unapproved
+deploys · PostToolUse auto-runs rubocop on edited Ruby files · Stop refuses to finish with
+behavioral changes that lack a proving spec, or with red changed specs · SessionStart
+injects branch state and the memory index. After installing, restart Claude Code (or
+`/reload-plugins`) so hooks register.
+
 ## Repository layout
 
 ```
@@ -30,6 +57,8 @@ claude-skills/
 ├── skills/
 │   ├── rails-8/          # SKILL.md + references/  (source of truth)
 │   └── hotwire/          # SKILL.md + references/
+├── plugins/
+│   └── rails-flow/       # agentic flow plugin: commands + agents + hooks
 ├── dist/
 │   ├── rails-8.skill     # zip packages for claude.ai / Claude Desktop upload
 │   └── hotwire.skill
@@ -54,7 +83,8 @@ Skills are plain folders; installing = putting each skill at
 
 ```
 /plugin marketplace add fmanimashaun/claude-skills
-/plugin install rails-stack@claude-skills
+/plugin install rails-stack@claude-skills   # the two skills (knowledge)
+/plugin install rails-flow@claude-skills    # the agentic flow (process) — see below
 ```
 
 Run those inside any Claude Code session. The `rails-stack` plugin bundles
