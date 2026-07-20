@@ -50,7 +50,19 @@ Skills are plain folders; installing = putting each skill at
 - **Personal**: `~/.claude/skills/` — available in all your projects, just for
   you.
 
-### Into a project (recommended)
+### One command, via the plugin marketplace
+
+```
+/plugin marketplace add fmanimashaun/claude-skills
+/plugin install rails-stack@claude-skills
+```
+
+Run those inside any Claude Code session. The `rails-stack` plugin bundles
+both skills and follows you across projects; manage or remove it later via
+`/plugin`. Use the methods below instead when you want the skills *committed
+into a specific repo* for your team.
+
+### Into a project (recommended for teams)
 
 macOS / Linux / WSL / Git Bash:
 
