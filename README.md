@@ -160,6 +160,11 @@ IDE noise you don't use — but never an authored `AGENTS.md`.
 #### Phase 3 — Build, embed, and prove the CLI layer
 
 ```bash
+# Exclude noise BEFORE the first build — a missing or too-broad ignore file is
+# the top cause of thin or bloated graphs:
+printf '%s\n' node_modules/ vendor/ tmp/ log/ coverage/ public/assets/ \
+  storage/ graphify-out/ .code-review-graph/ > .code-review-graphignore
+
 code-review-graph build
 ```
 
@@ -241,6 +246,12 @@ Then two liveness probes, both read from `code-review-graph status`:
    (Stop hook alive)
 2. Make a small commit from the terminal, wait a few seconds → timestamp advanced
    again (post-commit hook alive)
+3. Switch branches and back (`git checkout -`) → timestamp advanced once more
+   (post-checkout hook alive — branch switches rewrite the tree without any edit
+   hook firing, so this is the probe that catches silent staleness)
+
+Static double-check: `python3 -m json.tool .claude/settings.local.json | grep -A3
+PostToolUse` shows `[]` — graph updates live in Stop, never per-edit.
 
 Final integration test: a tiny `/rails-flow:feature` on a throwaway branch — the merge
 gate should announce it is using the `review-pr` skill rather than falling back to
@@ -279,8 +290,31 @@ miss doesn't fall straight to grep:
 CRG 0 results → graphify query '<term>' --graph graphify-out/graph.json → grep
 ```
 
+**Verify it end to end** (same prove-each-layer discipline as the CRG runbook):
+
+```bash
+ls graphify-out/                        # expect: cache graph.html graph.json GRAPH_REPORT.md
+head -12 graphify-out/GRAPH_REPORT.md   # corpus verdict + node/edge/community counts
+                                        # + "Built from commit: <sha>" — compare with:
+git rev-parse --short HEAD              # mismatch = stale graph, hooks not firing
+graphify query 'billing' --graph graphify-out/graph.json --budget 800
+graphify path 'SomeController' 'SomeService' --graph graphify-out/graph.json
+graphify explain 'SomeService' --graph graphify-out/graph.json
+grep -c graphify .git/hooks/post-commit .git/hooks/post-checkout   # ≥1 each
+```
+
+A `query` on a class you know exists must return ruby-typed nodes with file paths;
+empty results on a real symbol means the graph is broken regardless of what the
+report says. Open `graphify-out/graph.html` in a browser for the free visual.
+
 It's v0.9.x (pre-1.0, MIT) — expect some churn; each piece degrades gracefully if
 uninstalled.
+
+Deliberately not adopted from the source guide, so you don't wonder: the ~200-line
+smart-grep interceptor hook (the `CRG_TOOLS` allow-list plus the SessionStart
+cheatsheet capture most of its token savings at a fraction of the maintenance
+surface) and the Obsidian vault generator script (personal-layer tooling —
+`graph.html` and `GRAPH_REPORT.md` give the visual and the map for free).
 
 ## Repository layout
 
