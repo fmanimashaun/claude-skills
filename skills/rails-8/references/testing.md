@@ -63,10 +63,15 @@ code):
 require "simplecov"
 SimpleCov.start "rails" do
   enable_coverage :branch
-  add_group "Jobs", "app/jobs"
+  group "Jobs", "app/jobs"    # SimpleCov >= 1.0.2; was `add_group` before the rename
   # minimum_coverage 90   # fail the suite below this — enable once realistic
 end
 ```
+
+SimpleCov 1.0 notes: `add_group` → `group` (renamed in 1.0.2; the old name warns).
+String filters now match at path-segment boundaries — `"lib"` matches `/lib/` but no
+longer `/library/`; use a Regexp for substring matching. Requires Ruby >= 3.2 (already
+inside this skill's 3.4+ floor).
 
 `spec/rails_helper.rb` — the important settings:
 
