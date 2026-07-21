@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.0.8 — 2026-07-21
+- Version-only bump alongside the marketplace 1.1.8 release; no plugin content
+  change since 1.0.7 (keeps the plugin cache-key aligned with the release tag).
+
 ### 1.0.7 — 2026-07-20
 - Version-only bump: invalidates installed 1.0.6 caches that captured the
   pre-amendment `setup-flow` (same-version content amendments don't propagate —
@@ -78,6 +82,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-21 (release v1.1.8)
+- `metadata.version` → 1.1.8, rails-flow → 1.0.8; released as tag `v1.1.8`.
+- `dist/rails-8.skill` normalized back to the canonical `package.*` build: a
+  prior non-canonical rebuild had diverged in bytes only (78,809 vs 78,675),
+  content identical and matching the v1.1.7 asset. Reproducibility restored
+  (checkout + `package` now reproduces the committed artifact).
 
 ### 2026-07-21
 - rails-stack entry now carries an explicit `version` in `marketplace.json`
