@@ -11,6 +11,7 @@
   "plugins": [
     {
       "name": "rails-stack",
+      "version": "1.0.1",
       "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment. Bundles the rails-8 and hotwire skills.",
       "source": "./",
       "strict": false,

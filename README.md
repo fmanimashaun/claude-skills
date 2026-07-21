@@ -318,6 +318,8 @@ surface) and the Obsidian vault generator script (personal-layer tooling —
 
 ## Repository layout
 
+See [CHANGELOG.md](CHANGELOG.md) for the full version history of both plugins.
+
 ```
 claude-skills/
 ├── skills/
