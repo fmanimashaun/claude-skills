@@ -3,6 +3,16 @@
 #  1. Uncommitted app code without an accompanying spec change → block once.
 #  2. Uncommitted spec changes → run just those specs; red suite → block.
 set -uo pipefail
+
+# Portable timeout: prefer `timeout`, fall back to macOS `gtimeout`, else run bare.
+# A MISSING timeout must never be misread as a failing suite (the exit-127 trap).
+_rf_timeout() {
+  local secs="$1"; shift
+  if type -P timeout >/dev/null 2>&1; then timeout "$secs" "$@"
+  elif type -P gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"
+  else "$@"; fi
+}
+
 input="$(cat)"
 
 # Never loop: if we already blocked once, let the stop proceed.
@@ -27,7 +37,7 @@ fi
 
 if [ -n "$spec_changed" ] && command -v bundle >/dev/null 2>&1; then
   files="$(printf '%s\n' "$spec_changed" | tr '\n' ' ')"
-  if ! out="$(timeout 120 bundle exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then
+  if ! out="$(_rf_timeout 120 bundle exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then
     {
       echo "rails-flow stop gate: changed specs are RED — fix before finishing."
       printf '%s\n' "$out"

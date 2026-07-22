@@ -7,6 +7,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.1.2 — 2026-07-22
+- stop-gate macOS portability fix (field-reported): the hook shelled out to `timeout`,
+  absent on stock macOS, so the wrapped rspec run exited 127 and the gate misread it as
+  a RED suite — a false block on green specs. Added a portable `_rf_timeout` helper
+  (prefers `timeout`, falls back to `gtimeout`, else runs bare — a missing timeout must
+  never be misread as failing) using `type -P` so shell-function/alias shadows can't
+  fool it. Same gap noted for the CRG post-checkout hook in setup-flow guidance
+  (install coreutils for `gtimeout`, or it runs without the time cap). Both branches
+  behaviorally verified: green passes, real failures still block. Same class of bug
+  previously patched out of the CRG hook — now consistent across all hooks.
+
 ### 1.1.1 — 2026-07-22
 - PR Documentation Contract: /feature and /fix now generate the full contract body
   (Summary, What was built, How to test + expected results, Out of scope, Risk notes,

@@ -149,6 +149,9 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    nohup timeout 300 sh -c "$CMD" > "$HOME/.cache/crg-checkout.log" 2>&1 < /dev/null &
    ```
 
+      Portability: `timeout` is absent on stock macOS — install coreutils (`brew install
+   coreutils`, giving `gtimeout`) or the hook silently runs without the time cap.
+
    (graphify's own `graphify hook install` already writes both post-commit and
    post-checkout — only CRG needs this manual one.)
 5. **Gitignore hygiene.** Add `.code-review-graph/` and `.mcp.json` (commit
