@@ -3,3 +3,10 @@ Thumbs.db
 *.swp
 
 .claude/settings.local.json
+
+# Guard against drag-drop pollution: plugin files belong under plugins/** and
+# .claude-plugin/**, never at the repo root. These root-anchored ignores catch strays.
+/*.sh
+/hooks.json
+/marketplace.json
+/plugin.json

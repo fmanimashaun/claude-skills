@@ -5,6 +5,18 @@ All notable changes to this repository. Components version independently:
 **rails-stack** (version in its `marketplace.json` entry), and repository-level
 changes (README, packaging, infrastructure). Every version bump gets an entry here.
 
+## Repository hygiene
+
+### 2026-07-22 — remove root-level plugin file duplicates
+- 14 stale plugin files (agents, commands, hook scripts, plus a stale
+  marketplace.json and orphan hooks.json) had been committed to the REPO ROOT by
+  an early "Add files via upload" web drag-drop, duplicating — at frozen old
+  versions — the canonical files under plugins/**/ and .claude-plugin/. Removed all
+  14 (each verified to have a canonical copy first). Hardened .gitignore with
+  root-anchored patterns (/*.sh, /hooks.json, /marketplace.json, /plugin.json) so
+  plugin files can only live under plugins/** and .claude-plugin/**, never the root.
+  No canonical file touched; marketplace remains 1.4.4 with all four plugins.
+
 ## rails-flow (agentic flow plugin)
 
 ### 1.1.2 — 2026-07-22
