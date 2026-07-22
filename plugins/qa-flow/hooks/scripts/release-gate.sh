@@ -22,14 +22,25 @@ if ! type -P python3 >/dev/null 2>&1; then
 fi
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
-# Detect promotion to main/master.
+# Detect promotion to main/master. #1: match the INVOKED command, not any substring of
+# the line. Strip quoted spans (commit messages, -m/--body, echo bodies) so their text is
+# never read as a command, then require the pattern at the START of a command segment
+# (split on ; | && ||). A commit/PR body/echo that merely MENTIONS a merge/push no longer
+# trips the gate. (Residual: an unquoted heredoc body line beginning with `git merge` is
+# still seen — rare, and errs fail-closed, so safe.)
+seg="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | tr ';|&' '\n')"
+push_seg=0; merge_seg=0; ghmerge_seg=0
+printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b.*\b(origin[[:space:]]+)?(HEAD:)?(main|master)\b' && push_seg=1
+printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+merge\b' && merge_seg=1
+printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b' && ghmerge_seg=1
+
 targets_main=0
-printf '%s' "$cmd" | grep -qE 'git\s+push\b.*\b(origin\s+)?(HEAD:)?(main|master)\b' && targets_main=1
-printf '%s' "$cmd" | grep -qE 'git\s+merge\b' && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && targets_main=1
-# gh pr merge: base is the PR's target. #3: handle explicit number AND bare (current branch).
-if printf '%s' "$cmd" | grep -qE 'gh\s+pr\s+merge\b'; then
-  # a bare integer arg that isn't a flag value = PR number; else current branch's PR
-  num="$(printf '%s' "$cmd" | grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
+[ "$push_seg" = 1 ] && targets_main=1
+[ "$merge_seg" = 1 ] && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && targets_main=1
+# gh pr merge: base is the PR's target. Handle explicit number AND bare (current branch).
+if [ "$ghmerge_seg" = 1 ]; then
+  # a bare integer arg (from the cleaned command) = PR number; else current branch's PR
+  num="$(printf '%s' "$seg" | grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
   if [ -n "$num" ]; then
     base="$(gh pr view "$num" --json baseRefName -q .baseRefName 2>/dev/null || true)"
   else
