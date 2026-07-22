@@ -136,6 +136,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.0.5 — 2026-07-22
+- setup-pipeline + setup-cloud: idempotent re-run + repair contract (matching
+  setup-flow). pipeline.yml keys reconciled not overwritten (missing added, wrong
+  values proposed as diffs); .env.example regenerated preserving user annotations,
+  never touching the real .env; generated deploy.yml uses kamal-config markers so
+  re-runs refresh only the generated block. Every scaffolding command in the
+  marketplace now shares one idempotent-and-repairable discipline.
+
 ### 1.0.4 — 2026-07-22
 - Portability pass: pipeline-status skips cleanly when `python3` is absent; portable
   `mktemp` template in install-git-hooks (BSD+GNU). Platform assumptions now behave
@@ -190,6 +198,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   flip, no rebuild.
 
 ## qa-flow (independent QA plugin)
+
+### 1.0.4 — 2026-07-22
+- setup-qa: idempotent re-run + repair contract (matching setup-flow). Generated config
+  refreshed only within `qa-flow:begin/end` markers; seeds additive (find_or_create);
+  defective managed files (baseURL not reading QA_BASE_URL, personas mismatching app
+  roles) diagnosed and fixed as approved diffs; deliberate customizations untouched.
 
 ### 1.0.3 — 2026-07-22
 - release-gate python3-missing guard: word-boundary matching (grep -E with \b)

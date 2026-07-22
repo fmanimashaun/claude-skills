@@ -5,7 +5,24 @@ description: Scaffold the independent QA workspace — Playwright, k6, seed pers
 # /qa-flow:setup-qa
 
 Scaffold `qa/` as a self-contained QA workspace, independent of `spec/`. Never
-overwrite existing files — propose merges.
+overwrite existing files.
+
+## Re-run safety & repair (idempotent by construction)
+
+Safe to re-run on an existing qa/ workspace, as many times as needed:
+- **Generated config** (playwright.config.ts, package.json, k6 skeletons): qa-flow
+  owns these; on re-run, refresh only qa-flow-managed content, delimited by
+  `// qa-flow:begin X` / `// qa-flow:end X` (or the file-type's comment syntax). Content
+  outside the markers (a user's custom Playwright projects, added scripts) is left
+  byte-for-byte untouched.
+- **Seed data** (qa/seed.rb): additive — ensure the required personas exist idempotently
+  (find_or_create), never wipe user-added seeds.
+- **Repair**: if a managed file is DEFECTIVE against ground truth — baseURL not reading
+  QA_BASE_URL, a project referencing a browser not installed, seed personas whose roles
+  don't match the app's actual roles from CLAUDE.md — diagnose it, explain why, and
+  propose the fix as a diff; wait for approval. Never repair a deliberate customization
+  (added browsers, custom fixtures, extra thresholds) into the default.
+- Stage only files setup-qa authored; never `git add -A`; `git status` after.
 
 ## 1. Inspect
 

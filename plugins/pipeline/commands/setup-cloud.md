@@ -8,6 +8,17 @@ Prepare (not execute) cloud deployment. Produces the CONTRACT the developer fill
 before firing `/pipeline:deploy-cloud`: a `.env` briefing sheet the agent reads to
 configure everything autonomously. No deploy here.
 
+## Re-run safety & repair (idempotent by construction)
+
+Safe to re-run. `.env.example` is regenerable documentation — on re-run, refresh it to
+reflect the app's current secret surface (new CRED__ keys discovered from code) while
+PRESERVING any user-added annotations, and never touch the developer's actual `.env`.
+`config/deploy.yml` (when deploy-cloud generates it) uses `# kamal-config:begin/end`
+markers so re-runs refresh only the generated block, leaving hand edits intact; a
+DEFECTIVE deploy.yml (registry/image contradicting pipeline.yml, a secret VALUE that
+leaked into the committed file) is diagnosed and fixed as an approved diff. Never
+overwrite deliberate config. Stage only authored files; never `git add -A`.
+
 ## 1. Generate .env.example
 
 Inspect the app (Gemfile, config, routes, `pipeline.yml`) to discover which app

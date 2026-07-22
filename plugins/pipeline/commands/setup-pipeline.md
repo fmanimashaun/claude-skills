@@ -8,6 +8,16 @@ Wire the lifecycle orchestration into this repo.
 
 ## 1. pipeline.yml
 
+## Re-run safety & repair (idempotent by construction)
+
+Safe to re-run. `pipeline.yml` is a small owned config: on re-run, reconcile keys —
+add missing keys with sane defaults, leave user-set values untouched, and REPAIR only
+demonstrably-wrong keys (an `image` that contradicts the git remote, a `mode` that
+isn't `local`/`cloud`, a `dev_branch` that doesn't exist in the repo) by proposing the
+corrected value as a diff for approval. Never overwrite a user's deliberate value.
+Local git-hook nudges follow install-git-hooks' append-or-backup discipline (they never
+clobber a co-existing post-merge). Stage only authored files; never `git add -A`.
+
 Write (never overwrite) `pipeline.yml`:
 
 ```yaml
