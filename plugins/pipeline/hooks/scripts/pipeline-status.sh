@@ -3,6 +3,7 @@
 # position. Read-only; never spends tokens or invokes anything.
 set -uo pipefail
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+type -P python3 >/dev/null 2>&1 || exit 0   # no python3 → skip (non-blocking status only)
 [ -f pipeline.yml ] || exit 0
 
 if [ -f .git/pipeline-pending ]; then

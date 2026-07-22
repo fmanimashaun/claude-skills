@@ -37,7 +37,7 @@ if [ ! -f "$hook" ]; then
   echo "installed: $hook (new, nudge-only)"
 elif grep -qF "$marker" "$hook"; then
   # idempotent: replace our managed block in place, leave the rest untouched
-  tmp="$(mktemp)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/pl-hook.XXXXXX")"
   awk -v m="$marker" -v e="$end_marker" '
     $0==m {skip=1} skip && $0==e {skip=0; next} !skip {print}
   ' "$hook" > "$tmp"

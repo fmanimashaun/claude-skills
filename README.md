@@ -5,6 +5,26 @@ that teach Claude to build full-stack **Ruby on Rails 8.1** applications the
 way I build them. Drop them into a project and Claude Code (or claude.ai)
 picks them up automatically whenever the task is Rails or Hotwire.
 
+
+## The system — four plugins, one marketplace
+
+This marketplace ships four plugins that layer into a complete Rails 8 development
+lifecycle. Each is independently versioned and installable; together they cover
+knowledge → build → test → ship.
+
+| Plugin | Role | Key commands |
+|--------|------|--------------|
+| **rails-stack** | The knowledge — Rails 8 + Hotwire skills that auto-load when relevant | *(skills, no commands)* |
+| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/setup-flow` `/brain` |
+| **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
+| **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:setup-pipeline` |
+
+Install `rails-stack` + `rails-flow` for build-only; add `qa-flow` for the independent
+quality gate; add `pipeline` for end-to-end lifecycle and containerized deployment.
+The flows interlock but don't hard-depend on each other — rails-flow generates the PR
+Documentation Contract that qa-flow consumes; pipeline orchestrates all three while
+honoring every gate.
+
 ## The skills
 
 | Skill | What it encodes | References |
@@ -342,6 +362,95 @@ cheatsheet capture most of its token savings at a fraction of the maintenance
 surface) and the Obsidian vault generator script (personal-layer tooling —
 `graph.html` and `GRAPH_REPORT.md` give the visual and the map for free).
 
+## Independent QA — `qa-flow`
+
+qa-flow tests the **running application from the outside**, with its own toolchain
+(Playwright, Schemathesis, axe-core, k6, OWASP ZAP) — deliberately independent of the
+developer spec suite. The developer flow proves a feature works; qa-flow guards that a
+change didn't break previously-certified behavior, and certifies the whole system for
+release.
+
+**Two moments, mapped to QA theory** (smoke ⊂ sanity ⊂ regression):
+
+- `/qa-flow:verify` — fires after a feature merges to dev. Smoke gate (is the build
+  testable?) → sanity on the changed areas → **targeted regression by blast radius**
+  (does this change threaten existing behavior?). Not feature re-testing. Defects file
+  as `qa,from-qa` issues worked via `/rails-flow:issues label:qa`; no next feature
+  until green. Regression selection is automatic at the mechanical floor, proposed for
+  semantic neighbors, and **human-gated when the change touches auth, tenancy, money,
+  migrations, or a shared concern**.
+- `/qa-flow:certify` — the comprehensive pre-`main` gate. Full regression across
+  browsers + release-only layers (k6 load/soak, OWASP ZAP DAST) against **staging**.
+  A clean sweep writes `qa/CERTIFICATION` (bound to the exact dev sha) and promotes the
+  cycle's proven features into the growing regression corpus.
+
+**The gate is mechanical**: a PreToolUse hook blocks any dev→main promotion (push,
+merge, `gh pr merge` with base main) unless `qa/CERTIFICATION` exists, reads PASS, and
+matches the current dev sha. `QA_ALLOW_MAIN=1` is audited break-glass.
+
+`/qa-flow:setup-qa` scaffolds the `qa/` workspace (Playwright config, seed personas,
+k6 skeletons), the PR template, and reports the tools to install (`npx playwright
+install`, `pipx install schemathesis`, `k6`, Docker for ZAP).
+
+Eight agents: qa-lead (blast-radius planning from the PR docs + project skills),
+e2e-tester, api-contract-tester, a11y-auditor, perf-tester, security-scanner,
+exploratory-tester, qa-reporter (report + defect filing + certification stamp + corpus
+promotion).
+
+### The PR Documentation Contract
+
+rails-flow's `/feature` and `/fix` generate a structured PR body — Summary, What was
+built, **How to test** (steps + expected results), Expected results checklist, Out of
+scope, Risk notes, Proof — and `pr-reviewer` **blocks** PRs missing it when qa-flow is
+installed. It is QA's primary planning input: qa-lead reads the author's "how to test"
+as claims to verify, then exceeds them. The risk notes drive blast-radius selection.
+
+## Lifecycle & deployment — `pipeline`
+
+pipeline sequences rails-flow and qa-flow across the SDLC without replacing their
+gates, and produces the release artifact. `/pipeline` detects the current stage
+(developing / verify-pending / verify-failed / certify-pending / release-ready /
+released) and drives the next flow, stopping at each gate; `/pipeline:status` reports
+read-only.
+
+**The release artifact is a versioned Docker image** — the same image Kamal pulls to a
+cloud server later, so "local vs cloud" is only *where it's pulled*. `/pipeline:release`
+builds it (Rails 8 ships the Dockerfile), tags with the certified dev sha, pushes to
+**ghcr.io** (free, no Actions minutes), and in local mode **pulls it fresh and
+health-checks `/up`** — proving the artifact boots, not just builds. Gated on
+`qa/CERTIFICATION` matching the dev sha — uncertified code is never imaged.
+
+### Cloud deployment on demand — `/pipeline:deploy-cloud`
+
+`.env` is the **deploy agent's briefing sheet** — not a Rails runtime file (Rails 8
+uses encrypted credentials, not dotenv). You prepare it once; the agent reads every
+value and **routes each to its Rails-native home**, then deploys autonomously with no
+prompting:
+
+- `CRED__*` keys → **Rails encrypted credentials** (written non-interactively via
+  `ActiveSupport::EncryptedConfiguration` with a read-back verify; `CRED__stripe__api_key`
+  → `stripe: { api_key: }`). Committed as ciphertext, image-baked.
+- `KAMAL_REGISTRY_PASSWORD` / `RAILS_MASTER_KEY` / DB password → gitignored
+  `.kamal/secrets`, referenced by **name** in the committed `deploy.yml`.
+- host / domain / registry user / image → `config/deploy.yml` facts.
+
+`/pipeline:setup-cloud` writes an annotated `.env.example` documenting every value
+grouped by destination, plus a README "Cloud deployment" section. A blocking safety
+pass proves (via `git diff`) that no secret value ever entered a committed file.
+Deploys require explicit approval and inherit rails-flow's deploy guard.
+
+**Frugal by design**: `/pipeline:install-hooks` writes local git-hook *nudges* that
+detect lifecycle transitions and remember them — they never invoke Claude headlessly or
+spend tokens. A dormant GitHub Actions adapter ships as an `.example` for when cloud
+minutes are available.
+
+### Platform note
+
+qa-flow and pipeline hooks are **bash + python3**. On Windows, run Claude Code inside
+**WSL or Git Bash** with `python3` available, or the hooks — including the blocking
+release gate — can't execute (and a blocking gate that can't run is the dangerous
+direction: ensure the toolchain is present where enforcement matters).
+
 ## Repository layout
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history of both plugins.
@@ -377,9 +486,15 @@ Skills are plain folders; installing = putting each skill at
 
 ```
 /plugin marketplace add fmanimashaun/claude-skills
-/plugin install rails-stack@claude-skills   # the two skills (knowledge)
-/plugin install rails-flow@claude-skills    # the agentic flow (process) — see below
+/plugin install rails-stack@claude-skills   # knowledge: Rails 8 + Hotwire skills
+/plugin install rails-flow@claude-skills    # build process: orchestrated feature work
+/plugin install qa-flow@claude-skills       # independent QA: verify + certify + release gate
+/plugin install pipeline@claude-skills      # lifecycle + containerized release + cloud deploy
 ```
+
+After installing, restart Claude Code so all hooks register. Per-project setup runs in
+dependency order: `/rails-flow:setup-flow` → `/qa-flow:setup-qa` →
+`/pipeline:setup-pipeline`.
 
 Run those inside any Claude Code session. The `rails-stack` plugin bundles
 both skills and follows you across projects; manage or remove it later via

@@ -2,6 +2,7 @@
 # SessionStart — surface certification status vs current dev so staleness is visible.
 set -uo pipefail
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+type -P python3 >/dev/null 2>&1 || exit 0   # no python3 → skip (non-blocking status only)
 [ -f qa/CERTIFICATION ] || { [ -d qa ] && echo "- qa-flow: no certification yet — /qa-flow:certify before dev->main."; exit 0; }
 csha="$(python3 -c 'import json;print(json.load(open("qa/CERTIFICATION")).get("sha","")[:12])' 2>/dev/null || true)"
 verdict="$(python3 -c 'import json;print(json.load(open("qa/CERTIFICATION")).get("verdict",""))' 2>/dev/null || true)"

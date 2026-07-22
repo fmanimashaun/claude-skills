@@ -3,6 +3,17 @@
 # Independent of rails-flow's guard; both can run. Exit 2 blocks with a reason.
 set -uo pipefail
 input="$(cat)"
+# python3 is required to parse certification + tool input. BLOCKING gate → fail CLOSED
+# if it's missing, but only when the command looks like a main-ward promotion.
+if ! type -P python3 >/dev/null 2>&1; then
+  case "$input" in
+    *push*main*|*push*master*|*"pr merge"*|*"git merge"*)
+      [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: python3 missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+      echo "BLOCKED by qa-flow release gate: python3 not found — cannot verify certification. Install python3 (on Windows, run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2
+      exit 2 ;;
+    *) exit 0 ;;
+  esac
+fi
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
 # Detect promotion to main/master.

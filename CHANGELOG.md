@@ -7,7 +7,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### 2026-07-22 — remove root-level plugin file duplicates
+### 2026-07-22 — README brought to four-plugin fidelity
+- The README documented only rails-stack + rails-flow; qa-flow and pipeline (the
+  entire test + deploy half) were absent, which made fetched/summarized views report
+  "2 plugins" and confused tooling. Rewrote (513→628 lines): added a top-of-file
+  four-plugin architecture overview table, full qa-flow section (verify/certify two
+  moments, mechanical dev→main gate, PR Documentation Contract), full pipeline section
+  (Docker-image-as-release-artifact on ghcr, /pipeline:deploy-cloud .env-routing model,
+  frugal git-hook nudges, platform note), and updated the install block to all four in
+  dependency order. No functional change; metadata 1.4.5.
+
+### 2026-07-22 — remove root-level plugin file duplicates### 2026-07-22 — remove root-level plugin file duplicates
 - 14 stale plugin files (agents, commands, hook scripts, plus a stale
   marketplace.json and orphan hooks.json) had been committed to the REPO ROOT by
   an early "Add files via upload" web drag-drop, duplicating — at frozen old
@@ -112,6 +122,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.0.4 — 2026-07-22
+- Portability pass: pipeline-status skips cleanly when `python3` is absent; portable
+  `mktemp` template in install-git-hooks (BSD+GNU). Platform assumptions now behave
+  consistently across macOS/Linux/WSL.
+
 ### 1.0.3 — 2026-07-22
 - install-git-hooks hardening (peer review): append-or-backup instead of clobbering
   an existing post-merge hook (critical in an ecosystem where CRG and rails-flow also
@@ -161,6 +176,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   flip, no rebuild.
 
 ## qa-flow (independent QA plugin)
+
+### 1.0.2 — 2026-07-22
+- Portability pass (proactive, same class as the stop-gate macOS fix): the BLOCKING
+  release-gate now fails CLOSED if `python3` is absent on a promotion command (a gate
+  that can't evaluate must not permit dev→main) with a clear install/override message,
+  reads stdin once, and uses `type -P`. The non-blocking qa-status hook skips cleanly
+  when python3 is absent. Consistent across macOS/Linux/WSL.
 
 ### 1.0.1 — 2026-07-22
 - release-gate hardening (peer review): fail CLOSED when the certification sha is
