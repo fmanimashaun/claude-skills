@@ -115,6 +115,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-22 — truly reproducible packaging (ZIP_STORED)
+- `package_core.py` now STOREs entries (no DEFLATE): output no longer depends
+  on the zlib implementation — the v1.2.2 caveat (stock zlib vs zlib-ng) is
+  closed by construction, and `create_system` is pinned (its default differs
+  Windows vs Unix). A clean checkout now builds byte-identical `.skill`
+  artifacts on any machine, Python, or OS. Canon bytes change one final time;
+  larger uncompressed assets are the accepted cost of reproducibility.
+
 ### 2026-07-22 (release v1.2.2)
 - Fix `package.ps1` on Windows: the launcher test matched `python.exe` (glob
   `py*`) and passed `-3`, which non-launcher Python executables reject

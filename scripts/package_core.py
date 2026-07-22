@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Deterministic .skill packager — the ONE canonical zip builder.
+"""Canonical .skill packager — truly reproducible.
 
-Removes the metadata sources of nondeterminism: fixed timestamps, sorted
-entries, fixed permissions, deflate level 9. Output is byte-identical across
-runs and machines *that share a zlib/DEFLATE implementation*. Note: the
-compressed bytes still depend on the zlib version (e.g. stock zlib vs zlib-ng
-produce different output), so byte-for-byte agreement is not guaranteed across
-differing zlib builds — the archive contents are always identical. package.sh
-and package.ps1 are thin wrappers around this, and automated rebuilds use it
-too. Never zip skills any other way — ad-hoc zip tools can never byte-agree.
+Entries are STORED (uncompressed): no DEFLATE means no zlib, so output cannot
+vary across zlib implementations (stock zlib vs zlib-ng), Python versions, or
+operating systems. Combined with fixed timestamps, sorted entries, pinned
+permissions and a pinned create_system, a clean checkout builds byte-identical
+artifacts on any machine. package.sh / package.ps1 are thin wrappers around
+this; automated rebuilds use it too. Never zip skills any other way.
 """
 import os, sys, zipfile
 
@@ -34,9 +32,10 @@ def build(name: str) -> str:
         for arc, fp in entries:
             zi = zipfile.ZipInfo(arc, date_time=(2020, 1, 1, 0, 0, 0))
             zi.external_attr = 0o100644 << 16
-            zi.compress_type = zipfile.ZIP_DEFLATED
+            zi.create_system = 3          # pin: defaults differ Windows vs Unix
+            zi.compress_type = zipfile.ZIP_STORED   # no compressor, no zlib variance
             with open(fp, "rb") as fh:
-                z.writestr(zi, fh.read(), compresslevel=9)
+                z.writestr(zi, fh.read())
     return out
 
 if __name__ == "__main__":
