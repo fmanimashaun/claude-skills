@@ -1,0 +1,25 @@
+name: "Feature request"
+description: "Propose new capability for a skill or plugin."
+title: "[feature] "
+labels: ["type:feature"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Target component
+      options: ["rails-8", "hotwire", "rails-flow", "qa-flow", "pipeline", "skill-maintainer", "not sure"]
+    validations:
+      required: true
+  - type: textarea
+    id: capability
+    attributes:
+      label: What capability?
+    validations:
+      required: true
+  - type: textarea
+    id: usecase
+    attributes:
+      label: The use case
+      description: "The real workflow this enables — why it belongs in this component's charter."
+    validations:
+      required: true

@@ -1,0 +1,8 @@
+{
+  "name": "skill-maintainer",
+  "description": "Issue-driven maintenance flow for a Claude skills/plugins marketplace repo. Turns downstream bug reports (incorrect doctrine, skill gaps, plugin/hook bugs, packaging) into source-verified fixes and shipped releases: triage + label, a BLOCKING doctrine-verifier that checks every claim against source-of-truth before edits, component-specific fixers (skills vs plugin agents/commands/hooks), and a release-manager encoding independent component versioning + reproducible packaging + tag/release. Includes /skill-maintainer:setup-intake to scaffold GitHub issue templates + a label taxonomy so reports arrive triage-ready.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Fisayo Animashaun"
+  }
+}

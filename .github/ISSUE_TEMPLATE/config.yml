@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage question / discussion
+    url: https://github.com/fmanimashaun/claude-skills/discussions
+    about: "How-to and setup questions — keep the issue tracker for actionable reports (wrong doctrine, gaps, bugs, features)."

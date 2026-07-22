@@ -6,11 +6,12 @@ way I build them. Drop them into a project and Claude Code (or claude.ai)
 picks them up automatically whenever the task is Rails or Hotwire.
 
 
-## The system — four plugins, one marketplace
+## The system — five plugins, one marketplace
 
-This marketplace ships four plugins that layer into a complete Rails 8 development
-lifecycle. Each is independently versioned and installable; together they cover
-knowledge → build → test → ship.
+This marketplace ships five plugins that layer into a complete Rails 8 development
+lifecycle, plus the loop that keeps the marketplace itself accurate. Each is
+independently versioned and installable; together they cover knowledge → build → test
+→ ship → maintain.
 
 | Plugin | Role | Key commands |
 |--------|------|--------------|
@@ -18,12 +19,15 @@ knowledge → build → test → ship.
 | **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/setup-flow` `/brain` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:setup-pipeline` |
+| **skill-maintainer** | Maintenance — turns downstream issue reports into source-verified fixes and releases | `/skill-maintainer:setup-intake` `/skill-maintainer:triage` `/skill-maintainer:work` `/skill-maintainer:audit` |
 
 Install `rails-stack` + `rails-flow` for build-only; add `qa-flow` for the independent
-quality gate; add `pipeline` for end-to-end lifecycle and containerized deployment.
-The flows interlock but don't hard-depend on each other — rails-flow generates the PR
-Documentation Contract that qa-flow consumes; pipeline orchestrates all three while
-honoring every gate.
+quality gate; add `pipeline` for end-to-end lifecycle and containerized deployment. The
+first four flows interlock but don't hard-depend on each other — rails-flow generates
+the PR Documentation Contract that qa-flow consumes; pipeline orchestrates all three
+while honoring every gate. **skill-maintainer** is for maintainers of a skills
+marketplace (this repo), not app projects: it closes the feedback loop from the people
+using the skills back into the skills.
 
 ## The skills
 
@@ -451,9 +455,36 @@ qa-flow and pipeline hooks are **bash + python3**. On Windows, run Claude Code i
 release gate — can't execute (and a blocking gate that can't run is the dangerous
 direction: ensure the toolchain is present where enforcement matters).
 
+## Maintaining the marketplace — `skill-maintainer`
+
+The other four plugins help you build *apps*; **skill-maintainer** helps you maintain
+*this marketplace*. Many projects install these skills and plugins, and they report
+issues as they hit them — a skill giving outdated guidance, a hook misbehaving on an
+OS, a packaging quirk. This plugin turns that stream into shipped, verified fixes:
+
+- `/skill-maintainer:setup-intake` scaffolds GitHub **issue templates** (incorrect-doctrine
+  — which *requires a citation*, skill-gap, plugin-bug, packaging, feature) and a
+  **label taxonomy** (`comp:* · type:* · prio:*`) so reports arrive triage-ready.
+- `/skill-maintainer:triage` classifies open issues by component × type × priority,
+  labels and dedupes them, and posts a prioritized queue.
+- `/skill-maintainer:work` takes one issue end-to-end: confirm → **verify against
+  source-of-truth** → fix → PR (`Closes #n`) → version bump + CHANGELOG → release.
+- `/skill-maintainer:audit` proactively reviews a component against source-of-truth and
+  the open-issue signal, filing findings as issues.
+
+**The non-negotiable gate:** skills are doctrine other agents follow verbatim, so no
+skill claim is edited until the `doctrine-verifier` agent confirms it against an
+authoritative source (official docs for the version in scope, the `docs/audits/`
+protocol). "It sounds right" is never enough — verification precedes edits, and an
+INCONCLUSIVE verdict leaves doctrine unchanged. Skill fixes route through `skill-doctor`
+(which repackages via `package_core.py`); plugin fixes route through `plugin-doctor`
+(which `bash -n`s and behavior-tests every changed script); `release-manager` bumps only
+the component that changed. Its SessionStart hook (bash + `gh`) surfaces the open-issue
+count; it's read-only and fails open when `gh` is absent.
+
 ## Repository layout
 
-See [CHANGELOG.md](CHANGELOG.md) for the full version history of both plugins.
+See [CHANGELOG.md](CHANGELOG.md) for the full version history of every plugin.
 
 ```
 claude-skills/
@@ -461,7 +492,12 @@ claude-skills/
 │   ├── rails-8/          # SKILL.md + references/  (source of truth)
 │   └── hotwire/          # SKILL.md + references/
 ├── plugins/
-│   └── rails-flow/       # agentic flow plugin: commands + agents + hooks
+│   ├── rails-flow/       # agentic build flow: commands + agents + hooks
+│   ├── qa-flow/          # independent QA flow
+│   ├── pipeline/         # lifecycle + release orchestrator
+│   └── skill-maintainer/ # issue-driven marketplace maintenance flow
+├── .github/
+│   └── ISSUE_TEMPLATE/   # structured report intake + label taxonomy
 ├── dist/
 │   ├── rails-8.skill     # zip packages for claude.ai / Claude Desktop upload
 │   └── hotwire.skill

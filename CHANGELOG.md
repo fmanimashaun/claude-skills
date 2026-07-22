@@ -27,6 +27,30 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   plugin files can only live under plugins/** and .claude-plugin/**, never the root.
   No canonical file touched; marketplace remains 1.4.4 with all four plugins.
 
+## skill-maintainer (marketplace maintenance plugin)
+
+### 1.0.0 — 2026-07-23
+- New fifth plugin: the maintenance side of the loop — downstream projects report
+  issues as they hit them, and this flow ships source-verified fixes. Marketplace
+  1.6.0.
+- 4 commands: `/skill-maintainer:setup-intake` (scaffold GitHub issue templates + a
+  label taxonomy, idempotent), `:triage` (classify open issues by component × type ×
+  priority, label, dedupe, queue), `:work` (one issue end-to-end: confirm → verify →
+  fix → PR `Closes #n` → bump + CHANGELOG → release), `:audit` (proactive
+  source-of-truth review, files findings as issues).
+- 5 agents: `issue-triager` (classify/label only), `doctrine-verifier` (BLOCKING gate —
+  no skill claim is edited without an authoritative citation; verification precedes
+  edits, INCONCLUSIVE leaves doctrine unchanged), `skill-doctor` (edits skill
+  references on a CONFIRMED verdict, then repackages via `package_core.py`),
+  `plugin-doctor` (fixes plugin agents/commands/hooks; `bash -n` + behavior repro +
+  all-paths-intact before hand-off), `release-manager` (independent component
+  versioning, CHANGELOG, reproducible packaging, tagged release).
+- SessionStart status hook surfaces the open-issue signal (P1 / incorrect-doctrine
+  counts); read-only, non-blocking, fails open when `gh` is absent.
+- Repo intake (dogfood): `.github/ISSUE_TEMPLATE/` forms (incorrect-doctrine — requires
+  a citation, skill-gap, plugin-bug, packaging, feature) + `config.yml` (usage
+  questions → Discussions) + `.github/labels.yml` taxonomy.
+
 ## rails-flow (agentic flow plugin)
 
 ### 1.1.3 — 2026-07-22
@@ -303,6 +327,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.0)
+- Fifth plugin `skill-maintainer` added and registered in `marketplace.json`;
+  `metadata.version` → 1.6.0. Issue intake scaffolded into `.github/` (templates +
+  label taxonomy). Skills unchanged — `.skill` assets carry over from v1.5.0.
 
 ### 2026-07-22 — truly reproducible packaging (ZIP_STORED)
 - `package_core.py` now STOREs entries (no DEFLATE): output no longer depends

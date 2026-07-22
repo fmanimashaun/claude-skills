@@ -1,0 +1,39 @@
+name: "Plugin bug (command / agent / hook misbehaves)"
+description: "A rails-flow, qa-flow, or pipeline command, subagent, or hook does the wrong thing."
+title: "[bug] "
+labels: ["type:bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which plugin?
+      options: ["rails-flow", "qa-flow", "pipeline"]
+    validations:
+      required: true
+  - type: input
+    id: surface
+    attributes:
+      label: Command / agent / hook involved
+      placeholder: "/qa-flow:certify — release-gate.sh hook"
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs actual
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: "OS, and whether bash / python3 / gh are installed (hooks are bash+python3; on Windows they need WSL or Git Bash)."
+      placeholder: "macOS 15; bash 3.2, python3 3.12, gh 2.x"
+    validations:
+      required: true

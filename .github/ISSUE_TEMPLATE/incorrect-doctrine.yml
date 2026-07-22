@@ -1,0 +1,43 @@
+name: "Incorrect doctrine (a skill states something wrong)"
+description: "A rails-8 or hotwire skill gives guidance that is false, outdated, or version-mismatched."
+title: "[doctrine] "
+labels: ["type:incorrect-doctrine"]
+body:
+  - type: markdown
+    attributes:
+      value: "Skills are doctrine agents follow verbatim — a wrong claim misleads every downstream agent. A **source/citation** is what lets us verify and fix fast."
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which skill?
+      options: ["rails-8", "hotwire"]
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Where in the skill?
+      description: "Reference file and section, e.g. references/testing.md §4, or the SKILL.md line."
+      placeholder: "references/testing.md — SimpleCov section"
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: What does the skill say, and why is it wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source / citation proving the correction
+      description: "Official docs URL, gem CHANGELOG, framework source — with the version it applies to. This is required to change doctrine."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Skill/marketplace version you hit this on
+      placeholder: "v1.5.0 (rails-stack 1.0.5)"
+    validations:
+      required: true

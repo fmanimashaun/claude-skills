@@ -1,0 +1,33 @@
+name: "Skill gap (missing coverage)"
+description: "A rails-8 or hotwire skill is missing guidance it should have."
+title: "[gap] "
+labels: ["type:skill-gap"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which skill?
+      options: ["rails-8", "hotwire"]
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: What is missing?
+      description: "The topic/pattern the skill should cover but doesn't."
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: The scenario that needed it
+      description: "What you were building when the gap bit you — helps us place it correctly."
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Any source for the correct guidance (optional)
+      description: "Official docs / prior art, if you have it — speeds verification."
+    validations:
+      required: false

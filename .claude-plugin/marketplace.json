@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "plugins": [
     {
@@ -36,6 +36,12 @@
       "name": "pipeline",
       "description": "Lifecycle orchestrator over rails-flow and qa-flow — build -> verify -> certify -> containerized release, honoring every gate. Release artifact is a versioned ghcr.io Docker image (local pull-and-run today, Kamal cloud when ready). /pipeline:deploy-cloud reads a prepared .env and generates the full Kamal 2 config + wires secrets safely (committed deploy.yml references names; gitignored .kamal/secrets holds values), then deploys with approval.",
       "source": "./plugins/pipeline",
+      "strict": false
+    },
+    {
+      "name": "skill-maintainer",
+      "description": "Issue-driven maintenance flow for this marketplace — turns downstream bug reports into source-verified fixes and shipped releases. /skill-maintainer:setup-intake (GitHub issue templates + label taxonomy), :triage (classify by component/type/priority), :work (one issue end-to-end: verify against source-of-truth -> fix -> PR -> bump+CHANGELOG -> release), :audit (proactive review). A BLOCKING doctrine-verifier gates every skill edit on an authoritative citation.",
+      "source": "./plugins/skill-maintainer",
       "strict": false
     }
   ]
