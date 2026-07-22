@@ -17,4 +17,15 @@ if [ -f docs/brain/MEMORY.md ]; then
   echo "- memory index (docs/brain/MEMORY.md):"
   head -12 docs/brain/MEMORY.md | sed 's/^/  /'
 fi
+
+if [ -f .claude/skills/.manifest.tsv ]; then
+  stale=0
+  while IFS="$(printf '\t')" read -r src hash; do
+    [ -n "$src" ] && [ -f "$src" ] || continue
+    cur="$(sha256sum "$src" 2>/dev/null | cut -c1-12)"
+    [ -n "$cur" ] && [ "$cur" != "$hash" ] && stale=$((stale+1))
+  done < .claude/skills/.manifest.tsv
+  [ "$stale" -gt 0 ] && echo "- $stale curated doc(s) drifted from their project skills — run /rails-flow:curate"
+fi
+
 exit 0

@@ -7,6 +7,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.1.0 — 2026-07-21
+- NEW `skill-curator` agent + `/rails-flow:curate`: distills `docs/` (PRDs,
+  branding, architecture, domain rules) into project-local skills with a
+  hash-manifest sync protocol; SessionStart reports source drift; curator may
+  propose project-local agents (human-approved). Docs → capabilities,
+  continuously.
+- Scaffolded CLAUDE.md gains Delegation Rules: coordinator/executor split with
+  an anti-recursion role check (`ROLE: EXECUTOR` never spawns subagents).
+- Agent-teams doctrine: /review documents optional teams mode (persistent
+  teammates from these agent types, peer messaging, TaskCompleted enforcement);
+  default remains one-shot subagents. Verified against official agent-teams docs.
+
 ### 1.0.8 — 2026-07-21
 - Version-only bump alongside the marketplace 1.1.8 release; no plugin content
   change since 1.0.7 (keeps the plugin cache-key aligned with the release tag).
@@ -70,6 +82,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## rails-stack (skills plugin: rails-8 + hotwire)
+
+### 1.0.3 — 2026-07-21
+- rails-8 › jobs-and-realtime: new §7 "Threading & the Rails executor"
+  (executor.wrap doctrine, load interlock, reloadable-constant caching,
+  connection-pool rules) — the single doctrine gap found by the framework audit
+  against rails/rails 8-1-stable. mission_control-jobs expanded from a one-liner
+  to mount-behind-auth + adapter-feature doctrine.
+- Audit record: docs/audits/2026-07-21-framework-gap-audit.md — 31-cluster
+  coverage matrix vs the 75 official guides + turbo/stimulus/native sources;
+  verdict: zero incorrect doctrine, versions exact, P3 backlog logged.
+
+### 1.0.2 — 2026-07-21
+- rails-8 › new `references/sso.md`: roll-your-own multi-tenant SSO doctrine —
+  OIDC-first with per-workspace dynamic setup, identities keyed [provider,
+  issuer, uid], workspace-scoped provisioning with domain gate, enabled-vs-
+  enforced with owner break-glass, JIT role sync (per-tenant mappings, ceiling),
+  tenant dashboard rules (write-only secrets, step-up, provider-tabbed guide),
+  SAML hatch (signing, SP metadata, cert validation + metadata-polling rotation,
+  SLO caveats), audit events, nine-spec RSpec proving set. Distilled from
+  implementation review of five external guides.
 
 ### 1.0.1 — 2026-07-21
 - rails-8 › testing: SimpleCov 1.0 — `add_group` renamed to `group` (1.0.2);

@@ -47,6 +47,20 @@ job shape (ids only, idempotent), key concerns — short code snippets from THIS
 <grep one-liners that mechanically check the overrides, e.g. no raw form_with in views,
 no unguarded .unscoped, no raw palette colors>
 
+## Delegation Rules
+You are the coordinator: design, decide, review, land. Delegate hands-on
+execution to subagents; keep judgment here.
+- Role check first: if your prompt starts with `ROLE: EXECUTOR` — or you were
+  spawned by another agent — you are an executor: do the work order yourself,
+  NEVER spawn subagents; if blocked, report back instead of delegating.
+- Coordinator starts every executor prompt with
+  `ROLE: EXECUTOR — do the work yourself; do not spawn subagents.`
+- Delegate: implementation from a frozen plan, fixes, spec-writing to order,
+  read-heavy exploration (fan out, each returns a distilled summary).
+- Keep: design/architecture/naming, the land decision and all gates,
+  releases/version bumps, tiny edits (<~20 lines — delegation overhead loses).
+- Executor prompts are self-contained; subagents never see this conversation.
+
 ## When Working in This Repo
 <numbered ALWAYS-rules distilled from the above>
 
@@ -176,12 +190,22 @@ deploy; never touch main.
    `bundle exec brakeman -q` if installed — report NEW findings only.
 5. Graph freshness (if code-review-graph is present): `code-review-graph status`;
    if Last updated lags the last commit, run `code-review-graph update --skip-flows`.
+6. Curated-skills drift (if `.claude/skills/.manifest.tsv` exists): compare each
+   source doc's hash against the manifest; report drift as "run
+   /rails-flow:curate" — never regenerate skills inside the maintenance loop.
 ```
 
 Fill `<base>` with the branch detected in CLAUDE.md setup. Tell the user: bare `/loop`
 now runs this on an interval; pair with `--expires` for bounded sessions.
 
-## 7. Report
+## 7. Project skills (docs → skills)
+
+If `docs/` contains PRDs, branding, architecture, or domain documentation, tell the
+user about `/rails-flow:curate`: it distills those into project-local skills in
+`.claude/skills/` (committed, team-shared) and keeps them synced via a manifest as
+docs evolve. Don't run it unprompted during setup — just surface it.
+
+## 8. Report
 
 List created files, the detected Project Overrides, and any ambiguity you need the user to
 settle (e.g. base branch, form builder mandate yes/no).

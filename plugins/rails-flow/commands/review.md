@@ -34,6 +34,16 @@ P3 = quality/conventions):
    operations, missing indexes on FKs and frequent WHEREs, money column types.
 7. **Security** → `security-auditor` over the whole app surface.
 
+## Teams mode (optional, experimental)
+
+On wide codebases, if agent teams are available (Claude Code ≥ 2.1.32, Opus-class
+lead, feature enabled), run the seven passes as persistent teammates spawned from
+these same agent types instead of one-shot subagents: reviewers can cross-message
+findings (`SendMessage`) — security asking models about a scope check, specs pass
+verifying a controller finding — and a `TaskCompleted` hook can refuse to let a pass
+complete with an empty report. Same passes, same output contract; richer
+cross-examination. Default remains one-shot subagents.
+
 ## Synthesis
 
 Merge and de-duplicate findings, order into **phases** (Phase 1 = all P1s, then coherent

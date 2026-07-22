@@ -7,6 +7,7 @@
 4. Continuations (8.1) — resumable long jobs
 5. Concurrency controls and good job design
 6. Action Cable with Solid Cable
+7. Threading & the Rails executor
 
 ---
 
@@ -87,7 +88,20 @@ restart); run `bin/jobs` locally when you need real queue behavior, and use
 the `:test` adapter assertions in tests (see testing reference). Prioritize
 by listing queues in order (`queues: [real_time, background]`) or use
 per-job `queue_with_priority`. For a dashboard, add the
-`mission_control-jobs` gem (mount in routes, behind auth).
+`mission_control-jobs`:
+
+```ruby
+# routes.rb — always behind auth
+authenticate :user, ->(u) { u.admin? } do
+  mount MissionControl::Jobs::Engine, at: "/jobs"
+end
+# or HTTP basic: MissionControl::Jobs.http_basic_auth_user / _password initializers
+```
+
+Features are adapter-dependent (full set on Solid Queue): inspect queues and
+per-status jobs, filter by queue/class, retry or discard failed jobs, pause and
+resume queues, see which worker runs what. It is the answer to "what is the
+queue doing" — never poll SolidQueue tables by hand in app code.
 
 ## 3. Recurring jobs
 
@@ -199,3 +213,32 @@ Authenticate connections in `ApplicationCable::Connection#connect` by
 reading the same signed session cookie the web app sets
 (`identified_by :current_user`; reject unless found). Broadcast from
 `after_commit`/jobs, never mid-transaction.
+
+## 7. Threading & the Rails executor
+
+Rails-managed threads — requests, jobs, Action Cable — already run inside the
+framework Executor. Code that creates its OWN concurrency (`Thread.new`,
+Concurrent promises, rack middleware doing work after the response, gem
+listeners/pollers) must wrap itself, or you get leaked AR connections and
+sporadic dev-mode `NameError`s from autoloading:
+
+```ruby
+Thread.new do
+  Rails.application.executor.wrap do
+    # framework-safe: autoloading, query cache, connection handling all correct
+  end
+end
+```
+
+- Never nest `executor.wrap` inside a request or job — those are already wrapped.
+- Blocking on another thread FROM wrapped code can deadlock the dev autoloader;
+  wrap the wait:
+  `ActiveSupport::Dependencies.interlock.permit_concurrent_loads { thread.join }`.
+- A manual thread that touches the database and can't use the executor must at
+  least use `ActiveRecord::Base.connection_pool.with_connection { ... }`.
+- Never cache references to reloadable constants across requests (class-level
+  memoized models, middleware holding a service object): in development the
+  reloader swaps those classes underneath you. Re-derive them in
+  `Rails.application.config.to_prepare`.
+- These bugs hide in development and surface under production concurrency. If a
+  gem spawns threads, verify it wraps — or wrap the callback you hand it.

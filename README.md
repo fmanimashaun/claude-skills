@@ -42,7 +42,9 @@ indexed memory memos · `/rails-flow:issues` triages open repo issues (bug / fea
 chore / needs-info) and works them one at a time through the matching pipeline, each
 PR auto-closing its issue · `/rails-flow:pr-comments` sweeps a PR's review feedback —
 every actionable comment is fixed on-branch or folded into a tracked issue, and **no
-next task starts until the current PR closes clean**.
+next task starts until the current PR closes clean** · `/rails-flow:curate` distills
+`docs/` (PRDs, branding, architecture) into project-local skills and keeps them
+synced as documentation evolves — the project's agents get smarter as its docs grow.
 
 **Agents** (8): rails-developer, migration-writer, code-reviewer, test-runner,
 security-auditor, design-auditor, doc-updater, pr-reviewer — each context-isolated, tool-
@@ -55,6 +57,30 @@ behavioral changes that lack a proving spec, or with red changed specs · Sessio
 injects branch state and the memory index. After installing, restart Claude Code (or
 `/reload-plugins`) so hooks register. Hook scripts are
 bash — on Windows, run Claude Code inside WSL or Git Bash.
+
+### Continuous project skills — docs → skills
+
+Every repo carries knowledge only humans read: PRDs, brand systems, domain rules.
+`/rails-flow:curate` turns those into project-local skills (`.claude/skills/`,
+committed, team-shared) via the `skill-curator` agent — distilled doctrine, never
+mirrored documents — tracked in a manifest of source hashes. The SessionStart hook
+reports when sources drift from their skills, so curation is continuous: as the
+project's documentation grows, its agents' expertise grows with it. The curator may
+also PROPOSE project-local agents wired to dense skill clusters (a brand-guardian for
+a rich design system); creation always awaits human approval.
+
+### Agent teams mode (experimental)
+
+rails-flow's eight agents double as teammate types: Claude Code's agent teams spawn
+persistent teammates FROM agent definitions, honoring their tools and model. Where
+that beats one-shot subagents: `/review`'s parallel passes with peer messaging, and
+gate loops where a persistent reviewer stays cache-warm across BLOCKED→fix cycles
+instead of re-reading the branch each round. Team hooks add enforcement —
+`TaskCompleted` can mechanically refuse premature completion. Requirements: Claude
+Code ≥ 2.1.32, Opus-class lead, feature flag on; it's experimental and off by
+default, and the default flow remains classic subagents. The scaffolded CLAUDE.md
+now also carries Delegation Rules with an anti-recursion role check (executors never
+spawn executors).
 
 ### Autonomous operation — `/goal` and `/loop`
 
