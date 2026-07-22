@@ -89,6 +89,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.0.3 — 2026-07-22
+- install-git-hooks hardening (peer review): append-or-backup instead of clobbering
+  an existing post-merge hook (critical in an ecosystem where CRG and rails-flow also
+  write git hooks) — managed-block markers make re-runs idempotent, non-managed hooks
+  are backed up then appended to; `dev_branch` fallback no longer defeated by
+  pipefail when pipeline.yml is absent. Platform note added to the plugin README.
+
 ### 1.0.2 — 2026-07-22
 - Cloud deploy reworked to the .env-briefing-sheet + routing model (Rails
   convention). `.env` is the agent's single source of truth (NOT a Rails runtime
@@ -131,6 +138,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   flip, no rebuild.
 
 ## qa-flow (independent QA plugin)
+
+### 1.0.1 — 2026-07-22
+- release-gate hardening (peer review): fail CLOSED when the certification sha is
+  empty/garbled (the sha binding is the gate — PASS alone is insufficient); robust
+  `gh pr merge` promotion detection incl. bare (current-branch) merges and
+  unresolvable base treated as promotion; platform note (bash+python3 → WSL/Git Bash
+  on Windows) added to the plugin README.
 
 ### 1.0.0 — 2026-07-22
 - Independent QA engineering flow, sibling to rails-flow, testing the running app

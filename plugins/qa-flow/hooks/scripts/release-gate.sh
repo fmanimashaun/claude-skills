@@ -5,14 +5,22 @@ set -uo pipefail
 input="$(cat)"
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
-# Is this command promoting to main/master?
+# Detect promotion to main/master.
 targets_main=0
 printf '%s' "$cmd" | grep -qE 'git\s+push\b.*\b(origin\s+)?(HEAD:)?(main|master)\b' && targets_main=1
 printf '%s' "$cmd" | grep -qE 'git\s+merge\b' && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && targets_main=1
+# gh pr merge: base is the PR's target. #3: handle explicit number AND bare (current branch).
 if printf '%s' "$cmd" | grep -qE 'gh\s+pr\s+merge\b'; then
-  num="$(printf '%s' "$cmd" | grep -oE '[0-9]+' | head -1)"
-  base="$(gh pr view "$num" --json baseRefName -q .baseRefName 2>/dev/null || true)"
-  [ "$base" = "main" ] || [ "$base" = "master" ] && targets_main=1
+  # a bare integer arg that isn't a flag value = PR number; else current branch's PR
+  num="$(printf '%s' "$cmd" | grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
+  if [ -n "$num" ]; then
+    base="$(gh pr view "$num" --json baseRefName -q .baseRefName 2>/dev/null || true)"
+  else
+    base="$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || true)"
+  fi
+  case "$base" in main|master) targets_main=1 ;; esac
+  # If we couldn't resolve the base at all on a merge command, fail safe: treat as promotion.
+  [ -z "$base" ] && targets_main=1
 fi
 [ "$targets_main" -eq 1 ] || exit 0
 
@@ -25,13 +33,17 @@ stamp="qa/CERTIFICATION"
 verdict="$(python3 -c 'import json;print(json.load(open("qa/CERTIFICATION")).get("verdict",""))' 2>/dev/null || true)"
 csha="$(python3 -c 'import json;print(json.load(open("qa/CERTIFICATION")).get("sha",""))' 2>/dev/null || true)"
 [ "$verdict" = "PASS" ] || deny "certification verdict is not PASS. Re-certify."
+# #2: the sha binding IS the gate — empty/garbled sha must fail closed, not pass on PASS alone.
+[ -n "$csha" ] || deny "certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."
 
 devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"
-if [ -n "$devsha" ] && [ -n "$csha" ]; then
+if [ -n "$devsha" ]; then
   case "$devsha" in
     "$csha"*) : ;;
     *) deny "certification is for sha ${csha:0:12}, but dev is at ${devsha:0:12}. dev moved — re-certify before promoting." ;;
   esac
+else
+  deny "cannot resolve dev sha to compare against the certification. Fetch dev and retry."
 fi
 echo "qa-flow: certification valid for ${csha:0:12} — promotion permitted." >&2
 exit 0

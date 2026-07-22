@@ -1,6 +1,8 @@
 {
   "name": "qa-flow",
   "description": "Independent QA engineering flow: risk-based test planning, black-box execution with industry-standard tools (Playwright, Schemathesis, axe-core, k6, OWASP ZAP), defect filing, and a hook-enforced dev->main release gate. Tests the running application from the outside — deliberately independent of the developer test suite. Smoke gates, regression validates, certification stamps.",
-  "version": "1.0.0",
-  "author": { "name": "Fisayo Animashaun" }
+  "version": "1.0.1",
+  "author": {
+    "name": "Fisayo Animashaun"
+  }
 }
