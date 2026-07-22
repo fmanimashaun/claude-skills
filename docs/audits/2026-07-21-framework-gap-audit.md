@@ -57,6 +57,19 @@ expanded block in jobs-and-realtime.md §2.
 - Stimulus schema customization (custom data attribute prefixes) — niche.
 - Devcontainer workflow expansion in project-setup.md — one mention today.
 
+## Doctrine-change protocol (standing rule, added 2026-07-22)
+
+Order is law, and it runs BEFORE any skill edit: **(1) verify against
+authoritative sources** — maintainers' docs and writing, official guides,
+framework source; **(2) check house practice** — the mature codebases
+(fmworkflows, auctioneer); **(3) apply engineering reasoning** — and present
+the verdict to the user before touching a file. Factual claims that sources
+refute are rejected no matter who makes them (the `RSpec.describe` case).
+Style-doctrine changes require source + practice alignment (the factories
+case — right conclusion, but steps 2–3 ran before step 1; this rule exists
+because of that inversion). No skill file changes until the verification is
+on the table.
+
 ## Standing conclusion
 
 The skills were authored right. The audit found zero incorrect doctrine, one

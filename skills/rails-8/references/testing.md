@@ -11,7 +11,7 @@ exists and there is no redundant `test/` directory to remove when
 1. The stack and Gemfile
 2. Installation and configuration (`rails_helper.rb`)
 3. Spec types and directory layout
-4. Factories — FactoryBot + Faker
+4. Factories — FactoryBot (sequences first)
 5. Validations and associations — pure RSpec
 6. Model specs
 7. Request specs (the controller-testing standard)
@@ -43,7 +43,7 @@ end
 ```
 
 Roles at a glance: RSpec executes (and its built-in matchers cover model
-specs — no matcher add-ons); FactoryBot + Faker generate data; Capybara +
+specs — no matcher add-ons); FactoryBot generates data (deterministic sequences); Capybara +
 Selenium drive the browser; SimpleCov measures; WebMock forces network
 isolation; VCR makes real-API tests fast and deterministic; rubocop-rspec
 keeps spec style consistent.
@@ -130,16 +130,16 @@ specs, **few** system specs (slowest, flakiest — reserve for money paths).
 Note: *controller specs* (`type: :controller`) are legacy — write request
 specs instead.
 
-## 4. Factories — FactoryBot + Faker
+## 4. Factories — FactoryBot (sequences first)
 
 `spec/factories/users.rb`:
 
 ```ruby
 FactoryBot.define do
   factory :user do
-    email_address { Faker::Internet.unique.email }
-    password      { "s3cure-password" }
-    name          { Faker::Name.name }
+    sequence(:email_address) { |n| "user#{n}@example.com" }
+    password { "s3cure-password" }
+    name     { "Test User" }
 
     trait :admin do
       role { :admin }
@@ -169,9 +169,15 @@ create_list(:post, 3, author: user)
 - Associations declared in factories (`association :author, factory: :user`
   or just `author`) — but prefer passing them explicitly in specs for
   clarity.
-- `Faker::Internet.unique.email` avoids uniqueness collisions;
-  `Faker::UniqueGenerator.clear` runs between examples automatically via
-  factory_bot_rails.
+- **Sequences first, Faker rarely.** Default attributes are deterministic —
+  `sequence` for uniqueness-constrained fields, literals elsewhere. Determinism
+  means failures reproduce identically (not seed-dependent), uniqueness holds by
+  construction, factories stay fast, and failure output reads clearly
+  ("Building 3", not a random name). Faker's slot is narrow: seeds/demo data and
+  deliberately varied presentation fields — always fully namespaced
+  (`Faker::Internet.email`). There is no `FactoryBot::Syntax::Methods`-style
+  mixin for Faker; the `Faker::` prefix is the API, and never belongs in a core
+  factory's default attributes.
 - Lint factories in CI so a broken factory fails fast:
   `bundle exec rake factory_bot:lint` (or a dedicated spec calling
   `FactoryBot.lint traits: true`).

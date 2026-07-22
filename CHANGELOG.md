@@ -83,6 +83,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire)
 
+### 1.0.4 — 2026-07-22
+- rails-8 › testing §4: factories are **sequences-first** — deterministic
+  defaults (reproducible failures, uniqueness by construction, faster, readable
+  output), matching fmworkflows' proven practice (16 factory files, zero Faker).
+  Faker demoted to its narrow slot (seeds/demo, presentation variation), always
+  fully namespaced: no Syntax::Methods-style mixin exists for Faker — the
+  `Faker::` prefix is the API. Source-verified post-hoc against thoughtbot's
+  own guidance (Faker for development fixtures, not testing fixtures) and the
+  practitioner flaky-CI record; doctrine-change protocol added to the audit
+  doc so verification precedes edits from now on.
+
 ### 1.0.3 — 2026-07-21
 - rails-8 › jobs-and-realtime: new §7 "Threading & the Rails executor"
   (executor.wrap doctrine, load interlock, reloadable-constant caching,
@@ -122,9 +133,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   Windows vs Unix). A clean checkout now builds byte-identical `.skill`
   artifacts on any machine, Python, or OS. Canon bytes change one final time;
   larger uncompressed assets are the accepted cost of reproducibility.
-- Verified: fresh build on a zlib-ng machine reproduces the committed bytes
-  exactly. No skill content change. `metadata.version` → 1.2.3; released as
-  tag `v1.2.3`.
 
 ### 2026-07-22 (release v1.2.2)
 - Fix `package.ps1` on Windows: the launcher test matched `python.exe` (glob
