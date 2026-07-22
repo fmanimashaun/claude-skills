@@ -115,6 +115,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-22 — deterministic skill packaging
+- `scripts/package_core.py` is now the single canonical `.skill` builder:
+  fixed timestamps, sorted entries, deflate 9 — byte-identical output on any
+  machine. `package.sh` / `package.ps1` became thin wrappers; automated
+  rebuilds use the same script. Canon bytes change ONCE with this commit;
+  thereafter the committed dist binaries equal any clean rebuild and the
+  per-release normalization step is retired.
+
 ### 2026-07-22 (release v1.2.1)
 - `metadata.version` → 1.2.1, rails-flow → 1.1.0, rails-stack → 1.0.3; released
   as tag `v1.2.1`.
