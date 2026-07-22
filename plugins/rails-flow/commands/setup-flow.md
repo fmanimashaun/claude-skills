@@ -1,11 +1,65 @@
 ---
-description: Scaffold the rails-flow conventions into this project — CLAUDE.md, GUARDRAILS.md, and the docs/brain memory system
+description: Scaffold, update, or repair the rails-flow conventions in this project — CLAUDE.md, GUARDRAILS.md, docs/brain. Idempotent and safe on customized repos; can diagnose and propose fixes for a defective CLAUDE.md (fact contradictions, broken safety rules) as approved diffs, never touching deliberate customizations.
 ---
 
 # /rails-flow:setup-flow
 
-Install the flow's project scaffolding. Never overwrite an existing file — if CLAUDE.md or
-GUARDRAILS.md exists, propose a merged diff and let the user decide.
+Install, update, or repair the flow's project scaffolding. **This command is idempotent
+and safe to re-run on any project, including one with a heavily customized CLAUDE.md — it
+can never destroy hand-authored content.** Safety is structural, not a matter of care:
+
+## Idempotency contract (how re-runs stay safe)
+
+rails-flow owns only the content between its managed markers. Everything outside them —
+your prose, your operating manual, your customizations — is never rewritten.
+
+- rails-flow-authored blocks are delimited:
+  `<!-- rails-flow:begin <section> -->` … `<!-- rails-flow:end <section> -->`.
+- **First run** (no CLAUDE.md): create it, wrapping rails-flow sections in markers.
+- **Re-run, markers present**: replace ONLY content between each marker pair; leave
+  out-of-marker content byte-for-byte untouched (this is how re-runs pick up doctrine
+  updates without disturbing customizations).
+- **Re-run, CLAUDE.md exists but has NO markers** (hand-authored, like Fidara's): never
+  restructure it; detect what the user's prose already covers, and for anything missing
+  propose an additive marked block appended at the end, shown as a diff.
+- Stage only files setup-flow authored; never `git add -A`; run `git status` so the
+  user sees exactly what changed. GUARDRAILS.md, loop.md, docs/brain/* follow the same
+  discipline.
+
+## Audit & repair (existing CLAUDE.md)
+
+Beyond coexisting, setup-flow can REPAIR a defective CLAUDE.md — but repair is always
+**diagnose → propose diff → wait for approval**, never an autonomous rewrite. Nothing
+is applied without the user seeing the exact change and accepting it.
+
+Classify every finding into exactly one bucket; act only on the first two:
+
+1. **Missing** — a required section is absent → propose ADDING it (additive marked
+   block; not a "defect").
+2. **Defective** — present but demonstrably broken against ground truth. Repair scope
+   is deliberately limited to two objective classes:
+   - **Contradicts fact**: the App Identity/stack table disagrees with the Gemfile or
+     config (says Postgres when the adapter is sqlite3; names Devise when the app uses
+     the Rails 8 generator; wrong Ruby/Rails version); a pointer references a path that
+     doesn't exist (`docs/brain/` absent); AGENTS.md routing names an agent the plugin
+     doesn't provide.
+   - **Broken safety rule**: a Delegation Rules block missing the anti-recursion role
+     check (executors that can spawn executors → runaway subagents); a rule that
+     bypasses a documented gate; guidance that contradicts GUARDRAILS.md.
+   For each: state WHAT is wrong, WHY it breaks (cite the Gemfile line / the missing
+   path / the recursion path), and propose the corrected text as a diff. Wait for
+   approval per fix — batch related ones, but never apply silently.
+3. **Divergent but valid** — differs from rails-flow's vanilla defaults but isn't
+   wrong: a documented Project Override (simple_form, a custom `app/services` layout,
+   a bespoke branching model), custom prose, domain-specific rules. **Leave it
+   untouched. Never "repair" a deliberate choice into vanilla.** When unsure whether
+   something is defective or a deliberate override, treat it as an override and ask,
+   rather than proposing a fix.
+
+Explicitly OUT of repair scope: style, wording, ordering, or "missing best-practice"
+sections (those are the additive path, not defects) — and anything inside the user's
+own marked overrides. Repair fixes what is broken, not what is merely unlike the
+default.
 
 ## 1. Inspect the project first
 
@@ -15,7 +69,11 @@ adapter, auth/authz gems, form builder, test stack, deployment), `config/applica
 docs. Note every place the project deviates from the rails-8 skill's vanilla doctrine —
 those become **Project Overrides**.
 
-## 2. Create `CLAUDE.md` with this structure
+## 2. CLAUDE.md — create or update within markers
+
+First run: create CLAUDE.md with this structure, wrapping each rails-flow section in
+`<!-- rails-flow:begin X -->`/`<!-- rails-flow:end X -->`. Re-run: follow the
+idempotency contract and audit/repair pass above. The structure rails-flow contributes:
 
 ```markdown
 # CLAUDE.md — <project>

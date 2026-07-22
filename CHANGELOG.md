@@ -29,6 +29,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.1.3 — 2026-07-22
+- setup-flow: idempotent-safe re-runs + audit/repair, both by construction.
+  IDEMPOTENCY — rails-flow content lives in `<!-- rails-flow:begin/end X -->` markers;
+  re-runs refresh only marked blocks and never touch out-of-marker prose; a marker-less
+  hand-authored CLAUDE.md is never restructured (additive blocks only, with a diff).
+  REPAIR — setup-flow can now diagnose and fix a DEFECTIVE CLAUDE.md, always as
+  diagnose→propose-diff→await-approval (never an autonomous rewrite). Repair scope is
+  deliberately conservative: only (a) contradictions of fact (stack table vs Gemfile,
+  pointers to missing paths, AGENTS.md naming absent agents) and (b) broken safety
+  rules (Delegation Rules missing the anti-recursion check, gate bypasses, GUARDRAILS
+  contradictions). Divergent-but-valid content (documented Project Overrides, custom
+  layouts, domain prose) is left untouched — deliberate choices are never "repaired"
+  into vanilla; missing sections are additions, not defects.
+
 ### 1.1.2 — 2026-07-22
 - stop-gate macOS portability fix (field-reported): the hook shelled out to `timeout`,
   absent on stock macOS, so the wrapped rspec run exited 127 and the gate misread it as
