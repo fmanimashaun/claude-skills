@@ -198,3 +198,14 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
   pinned JS.
 - Keep Rails patched: security releases land on supported series only —
   8.1 gets fixes; stay current.
+
+## Route naming for auth (see controllers-routing §1a)
+
+The generator's `resource :session`/`registration`/`password` are RESTful and correct,
+but the helpers are developer vocabulary. For user-facing apps, expose vanity paths —
+`/login`, `/logout`, `/signup`, `/forgot-password` — over the same REST controllers
+(`get "/login", to: "sessions#new", as: :login`), and wire
+`/.well-known/change-password` → `edit_password_path` for password managers. Full
+doctrine (human paths vs REST records vs JSON API) is in
+`references/controllers-routing.md` §1a. Treat a project's existing scheme as a
+Project Override.

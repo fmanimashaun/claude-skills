@@ -64,6 +64,79 @@ Guidelines:
   resources :comments, shallow: true end` — collection routes nested,
   member routes top-level.
 
+## 1a. URL design — human paths vs REST resources (doctrine)
+
+The default posture: **user-facing pages get human, readable URLs; records and the
+JSON API get REST resource URLs.** A URL is UX — it's a ranking/trust signal, it's
+shared and typed, and password managers + the `/.well-known/change-password` standard
+key off it. `resources` is right for machine-addressable records; it's wrong when it
+leaks developer vocabulary (`/registrations/new`) or a redundant id (`/users/42/account`
+for *my* account) into a human's address bar.
+
+**The rule — match the URL to what the reader is addressing:**
+
+- **One of many interchangeable records** → REST resource URL with the id:
+  `resources :articles` → `/articles/42`. The id is meaningful; the URL identifies
+  *which* record. Also correct for another user's PUBLIC profile (`/users/42`).
+- **A concept, or a singleton scoped to the current user** ("my account", "the
+  dashboard", "the login page", "my cart") → human path, no id. Use Rails' singular
+  `resource` (no id, plural controller) or an explicit vanity route:
+  `resource :account` → `/account` + `account_path`; `/dashboard`, `/checkout`,
+  `/settings`, `/search`. Forcing an id here (`/users/42/account`) is the smell — it's
+  always *you*.
+- **Machine-facing JSON API** → strict REST throughout, regardless of the above:
+  `namespace :api { namespace :v1 { resources :sessions, :users } }`. That audience
+  wants resource-CRUD consistency, not vanity.
+- **Content/marketing** → descriptive slugs, shallow depth, hyphens not underscores,
+  no opaque ids (`/pricing`, `/blog/url-slug-best-practices` — not `/pages/7`). Use
+  `friendly_id` for record slugs (`/articles/rails-8-routing`).
+
+**The reconciliation — RESTful controllers UNDER human URLs.** You don't choose
+between clean controllers and clean URLs; keep the resource controller and alias the
+route:
+
+```ruby
+# Human-facing HTML: vanity URL, REST controller underneath, natural helper
+get    "/login",  to: "sessions#new",       as: :login
+post   "/login",  to: "sessions#create"
+delete "/logout", to: "sessions#destroy",   as: :logout
+get    "/signup", to: "registrations#new",  as: :signup
+post   "/signup", to: "registrations#create"
+resource :account, only: [:show, :edit, :update]   # /account, account_path
+get "/dashboard", to: "dashboards#show", as: :dashboard
+get "/search",    to: "searches#show",   as: :search
+
+# Machine-facing JSON API: strict REST for a different audience
+namespace :api do
+  namespace :v1 do
+    resources :sessions, only: [:create, :destroy]
+    resources :users,    only: [:create, :show, :update]
+    resources :articles
+  end
+end
+```
+
+Now views read `link_to "Log in", login_path`; the controller stays
+`SessionsController#create/destroy` (a session genuinely IS created/destroyed —
+honest REST semantics); the URL is what users, browsers, and password managers expect;
+and the API keeps resource consistency. Add `/.well-known/change-password` →
+`redirect_to edit_password_path` so password managers can deep-link.
+
+**On the Rails 8 auth generator specifically:** it ships `resource :session`,
+`resource :registration`, `resource :password` — RESTful, and internally correct (a
+session is a no-id singleton, so singular `resource` is the RIGHT tool, and it maps to
+a plural `SessionsController` by design — a known but correct Rails quirk). But the
+generated *helpers* (`new_session_path`) are developer vocabulary. For a user-facing
+app, override to vanity paths as above — this is a documented Project Override, not a
+generator bug. Trim generated routes to implemented actions
+(`resource :session, only: [:new, :create, :destroy]`).
+
+**Not a license to abandon REST.** Vanity paths are for singletons-to-me and concepts;
+collections and specific records stay resourceful. The test: if the URL needs an id to
+say which one, it's REST; if there's only ever one relative to the viewer (or it's a
+concept/page), it's human. When a project's routes already encode a deliberate scheme,
+treat it as a Project Override — don't "correct" a chosen convention.
+
 ## 2. Controller anatomy
 
 ```ruby

@@ -144,6 +144,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   re-runs refresh only the generated block. Every scaffolding command in the
   marketplace now shares one idempotent-and-repairable discipline.
 
+### 1.0.5 — 2026-07-22
+- rails-8 › controllers-routing §1a: new URL-design doctrine (journey-wide).
+  Default posture — human, readable URLs for user-facing pages; REST resource URLs for
+  interchangeable records and the JSON API. The rule: match the URL to what the reader
+  addresses (a specific record → REST id path; a concept or singleton-scoped-to-me like
+  /account, /dashboard, /login → human path via singular `resource` or vanity route; a
+  machine → strict REST always). The reconciliation: RESTful controllers UNDER human
+  URLs (`get "/login", to: "sessions#new", as: :login`) so helpers read naturally,
+  controllers stay resource-honest, and password managers / `/.well-known/change-password`
+  work. Auth generator's `resource :session` explained as correct-but-developer-vocabulary;
+  vanity override documented as a Project Override, not a bug. Pointer added from
+  auth-security.md. Source-verified (SEO/URL usability consensus, W3C change-password
+  well-known URL). marketplace 1.5.0.
+
 ### 1.0.4 — 2026-07-22
 - Portability pass: pipeline-status skips cleanly when `python3` is absent; portable
   `mktemp` template in install-git-hooks (BSD+GNU). Platform assumptions now behave
