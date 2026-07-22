@@ -122,6 +122,9 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   Windows vs Unix). A clean checkout now builds byte-identical `.skill`
   artifacts on any machine, Python, or OS. Canon bytes change one final time;
   larger uncompressed assets are the accepted cost of reproducibility.
+- Verified: fresh build on a zlib-ng machine reproduces the committed bytes
+  exactly. No skill content change. `metadata.version` → 1.2.3; released as
+  tag `v1.2.3`.
 
 ### 2026-07-22 (release v1.2.2)
 - Fix `package.ps1` on Windows: the launcher test matched `python.exe` (glob
