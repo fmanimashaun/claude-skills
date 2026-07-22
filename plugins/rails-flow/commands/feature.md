@@ -60,7 +60,7 @@ Run in order; loop fixes back through Phase 3 until every gate passes:
 
 ```bash
 git push -u origin feature/<slug>
-gh pr create --base <base> --title "feat: <summary>" --body "<Summary / Changes / Proof (specs added)>"
+gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentation Contract — see below>"
 ```
 
 ## Phase 6 — Merge gate (non-skippable)

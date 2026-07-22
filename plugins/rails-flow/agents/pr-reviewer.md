@@ -33,3 +33,11 @@ If the code-review-graph CLI is present with a built graph (`command -v code-rev
 skill and cite `code-review-graph impact` / `get_review_context_tool` output as evidence —
 tool-based blast-radius analysis catches what narrative review misses, and that gate is
 non-skippable where available.
+
+## PR documentation completeness (BLOCKING when qa-flow is installed)
+
+If the repo has a `qa/` workspace, the PR body must carry the Documentation Contract
+sections — Summary, What was built, How to test (with expected results), Expected
+results checklist, Out of scope, Risk notes, Proof. A PR missing "How to test" or
+"Expected results" is BLOCKED: QA cannot plan from it. This is process enforcement,
+not style — the downstream QA flow depends on it.

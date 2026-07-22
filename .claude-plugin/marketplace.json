@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.2.4"
+    "version": "1.3.0"
   },
   "plugins": [
     {
@@ -24,6 +24,12 @@
       "name": "rails-flow",
       "description": "Agentic development flow for Rails 8 projects — /feature, /fix, /review, /setup-flow and /brain commands, eight specialist subagents (developer, migration-writer, code-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
       "source": "./plugins/rails-flow",
+      "strict": false
+    },
+    {
+      "name": "qa-flow",
+      "description": "Independent QA engineering flow — risk-based planning, black-box execution (Playwright, Schemathesis, axe-core, k6, OWASP ZAP), defect filing, and a hook-enforced dev->main certification gate. Smoke gates, regression validates, certification stamps. Tests the running app from the outside, independent of the developer suite.",
+      "source": "./plugins/qa-flow",
       "strict": false
     }
   ]

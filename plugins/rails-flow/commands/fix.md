@@ -33,7 +33,7 @@ or treat the described bug as a single-phase fix. Base branch: `dev` if present.
 2. IMPLEMENT: the loop above, one issue per commit; delegate big items to rails-developer,
               schema changes to migration-writer
 3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN
-4. PUSH + PR: gh pr create --base <base> --title "fix: <phase — summary>"
+4. PUSH + PR: gh pr create --base <base> --title "fix: <phase — summary>" --body "<PR Documentation Contract>"
 5. GATE:      review-pr skill if the code-review-graph CLI + graph are present
               (command -v code-review-graph && [ -d .code-review-graph ]), else
               pr-reviewer — repeat until CLEAN

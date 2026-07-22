@@ -7,6 +7,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.1.1 — 2026-07-22
+- PR Documentation Contract: /feature and /fix now generate the full contract body
+  (Summary, What was built, How to test + expected results, Out of scope, Risk notes,
+  Proof); pr-reviewer BLOCKS PRs missing it when qa-flow is installed; it is QA's
+  primary planning input. QA handoff documented in /feature (verify gates feature->dev).
+
 ### 1.1.0 — 2026-07-21
 - NEW `skill-curator` agent + `/rails-flow:curate`: distills `docs/` (PRDs,
   branding, architecture, domain rules) into project-local skills with a
@@ -80,6 +86,28 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   guardrail hooks (bash guard, rubocop-on-edit, spec-proof stop gate, session
   context). Synthesized from the fmworkflows/auctioneer agent systems, elevated
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
+
+## qa-flow (independent QA plugin)
+
+### 1.0.0 — 2026-07-22
+- Independent QA engineering flow, sibling to rails-flow, testing the running app
+  from the outside with its own toolchain — never the developer spec suite.
+- 8 agents: qa-lead (risk/blast-radius planning from PR docs + project skills),
+  e2e-tester (Playwright TS, smoke/regression tags, corpus growth),
+  api-contract-tester (Schemathesis + authz matrix), a11y-auditor
+  (axe-core WCAG 2.2 AA + keyboard), perf-tester (k6 smoke + load/soak),
+  security-scanner (OWASP ZAP DAST, triaged), exploratory-tester (session-based),
+  qa-reporter (report + defect filing + certification stamp + corpus promotion).
+- 3 commands: /qa-flow:verify (post feature->dev: smoke gate -> sanity -> targeted
+  regression by blast radius, risk-gated selection), /qa-flow:certify (pre dev->main:
+  smoke -> full regression -> load/DAST/cross-browser on staging, writes the stamp),
+  /qa-flow:setup-qa (scaffold qa/ workspace + PR template + tool checklist).
+- Hooks: release-gate (PreToolUse — blocks dev->main promotion unless
+  qa/CERTIFICATION PASSes for the exact dev sha; QA_ALLOW_MAIN=1 audited break-glass)
+  and qa-status (SessionStart — certification freshness vs dev).
+- Doctrine (source-verified): smoke gates but never certifies; sanity subset of
+  regression; regression is the release gate; QA guards existing behavior and absorbs
+  proven features into the corpus rather than re-testing the current feature.
 
 ## rails-stack (skills plugin: rails-8 + hotwire)
 
