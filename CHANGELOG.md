@@ -177,6 +177,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.0.3 — 2026-07-22
+- release-gate python3-missing guard: word-boundary matching (grep -E with \b)
+  instead of the `*push*main*` glob, so `git push origin maintenance` no longer
+  false-matches "main". Real promotions (main/master as whole refs, gh pr merge,
+  git merge) still catch; still fails closed in the safe direction. Verified.
+
 ### 1.0.2 — 2026-07-22
 - Portability pass (proactive, same class as the stop-gate macOS fix): the BLOCKING
   release-gate now fails CLOSED if `python3` is absent on a promotion command (a gate

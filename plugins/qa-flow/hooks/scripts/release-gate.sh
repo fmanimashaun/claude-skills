@@ -6,13 +6,19 @@ input="$(cat)"
 # python3 is required to parse certification + tool input. BLOCKING gate → fail CLOSED
 # if it's missing, but only when the command looks like a main-ward promotion.
 if ! type -P python3 >/dev/null 2>&1; then
-  case "$input" in
-    *push*main*|*push*master*|*"pr merge"*|*"git merge"*)
-      [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: python3 missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
-      echo "BLOCKED by qa-flow release gate: python3 not found — cannot verify certification. Install python3 (on Windows, run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2
-      exit 2 ;;
-    *) exit 0 ;;
-  esac
+  # Word-boundary match on main/master as whole refs (not substrings like
+  # "maintenance"), mirroring the promotion detection below. Fail CLOSED only for a
+  # real promotion; stay out of the way otherwise.
+  _looks_promotion=0
+  printf '%s' "$input" | grep -qE 'git[[:space:]]+push\b.*\b(origin[[:space:]]+)?(HEAD:)?(main|master)\b' && _looks_promotion=1
+  printf '%s' "$input" | grep -qE 'git[[:space:]]+merge\b'   && _looks_promotion=1
+  printf '%s' "$input" | grep -qE 'gh[[:space:]]+pr[[:space:]]+merge\b' && _looks_promotion=1
+  if [ "$_looks_promotion" = "1" ]; then
+    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: python3 missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+    echo "BLOCKED by qa-flow release gate: python3 not found — cannot verify certification. Install python3 (on Windows, run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2
+    exit 2
+  fi
+  exit 0
 fi
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
