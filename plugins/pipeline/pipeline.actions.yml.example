@@ -1,0 +1,23 @@
+# DORMANT — copy to .github/workflows/pipeline.yml ONLY when you have Actions minutes
+# to spare. Runs the release build on push to main after certification. Uses ghcr via
+# the built-in GITHUB_TOKEN (no extra secret). Costs Actions minutes when enabled.
+name: pipeline-release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  packages: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to ghcr
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Build and push
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          SHA=$(git rev-parse --short HEAD)
+          docker build -t "$IMAGE:$SHA" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$SHA" && docker push "$IMAGE:latest"

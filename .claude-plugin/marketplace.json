@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.3.0"
+    "version": "1.4.2"
   },
   "plugins": [
     {
@@ -30,6 +30,12 @@
       "name": "qa-flow",
       "description": "Independent QA engineering flow — risk-based planning, black-box execution (Playwright, Schemathesis, axe-core, k6, OWASP ZAP), defect filing, and a hook-enforced dev->main certification gate. Smoke gates, regression validates, certification stamps. Tests the running app from the outside, independent of the developer suite.",
       "source": "./plugins/qa-flow",
+      "strict": false
+    },
+    {
+      "name": "pipeline",
+      "description": "Lifecycle orchestrator over rails-flow and qa-flow — build -> verify -> certify -> containerized release, honoring every gate. Release artifact is a versioned ghcr.io Docker image (local pull-and-run today, Kamal cloud when ready). /pipeline:deploy-cloud reads a prepared .env and generates the full Kamal 2 config + wires secrets safely (committed deploy.yml references names; gitignored .kamal/secrets holds values), then deploys with approval.",
+      "source": "./plugins/pipeline",
       "strict": false
     }
   ]

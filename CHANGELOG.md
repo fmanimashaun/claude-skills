@@ -87,6 +87,49 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   context). Synthesized from the fmworkflows/auctioneer agent systems, elevated
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
+## pipeline (lifecycle orchestrator)
+
+### 1.0.2 — 2026-07-22
+- Cloud deploy reworked to the .env-briefing-sheet + routing model (Rails
+  convention). `.env` is the agent's single source of truth (NOT a Rails runtime
+  file — Rails 8 has no dotenv); the agent ROUTES each value to its home: `CRED__*`
+  keys → Rails encrypted credentials written NON-INTERACTIVELY via
+  ActiveSupport::EncryptedConfiguration with a read-back verify (never
+  credentials:edit, which needs an editor and silently no-ops); deploy secrets →
+  gitignored .kamal/secrets by name; facts → deploy.yml. Annotated `.env.example`
+  template ships in the plugin, grouped by destination bucket, with the
+  `CRED__top__sub` nesting convention. Verified vs Rails credentials + Kamal 2 docs.
+
+### 1.0.1 — 2026-07-22
+- Cloud deployment on demand: `kamal-configurator` agent + `/pipeline:setup-cloud`
+  and `/pipeline:deploy-cloud`. setup-cloud writes `.env.example` (the documented
+  contract of every variable the deploy expects) and a README "Cloud deployment"
+  section; deploy-cloud reads the filled `.env`, generates `config/deploy.yml`
+  (secret NAMES only, committed) and `.kamal/secrets` (values, gitignored +
+  dockerignored, via the `<% Dotenv.load(".env") %>` bridge Kamal 2 requires since
+  it no longer auto-loads .env), safety-checks that no secret value entered a
+  committed file, then `kamal setup`/`deploy` with explicit approval + the deploy
+  guard. Verified against Kamal 2 secrets docs. Same ghcr image as the local flow —
+  cloud is just where it's pulled.
+
+### 1.0.0 — 2026-07-22
+- Fourth plugin: sequences rails-flow and qa-flow across the SDLC without replacing
+  their gates. pipeline-coordinator detects stage (developing / verify-pending /
+  verify-failed / certify-pending / release-ready / released) and drives the next
+  flow; /pipeline advances, /pipeline:status reports read-only.
+- Release artifact = a versioned Docker image on ghcr.io (source-verified: the same
+  image Kamal pulls to a server later — local vs cloud is only where it's pulled).
+  /pipeline:release builds, tags with the certified dev sha + latest, pushes, and in
+  local mode pulls-and-runs to health-check /up (proves the artifact boots, not just
+  builds). Cloud mode = kamal deploy, gated by rails-flow's deploy guard.
+- Gated on qa/CERTIFICATION matching the dev sha — uncertified code is never imaged.
+- Local git-hook nudges (/pipeline:install-hooks): post-merge on dev leaves a marker
+  the SessionStart hook surfaces — detects transitions, NEVER invokes Claude or
+  spends tokens (frugal by design; no GitHub Actions minutes used). Dormant Actions
+  adapter shipped as an .example for when cloud minutes exist.
+- pipeline.yml carries registry/image/mode/branches — local today, cloud by config
+  flip, no rebuild.
+
 ## qa-flow (independent QA plugin)
 
 ### 1.0.0 — 2026-07-22
