@@ -237,6 +237,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.0.5 — 2026-07-23
+- Fix #1: the release-gate hook no longer false-positives on commands that merely
+  MENTION a promotion. Detection now strips quoted spans (commit messages, `-m` /
+  `--body`, `echo` bodies) and requires `git push …main|master` / `git merge` /
+  `gh pr merge` at the START of a command segment (split on `;` `|` `&&` `||`) — so a
+  commit whose message contains "gh pr merge", or an `echo`/PR-body referencing
+  "git merge", is no longer read as an invocation. Genuine promotions (incl. chained
+  `… && git push origin main`) still gate, the `gh pr merge` unresolvable-base case
+  still fails closed, and `QA_ALLOW_MAIN=1` still overrides. Verified with a 10-case
+  matrix. Residual (documented in-script): an unquoted heredoc body line beginning with
+  `git merge` is still seen — rare, and errs fail-closed.
+
 ### 1.0.4 — 2026-07-22
 - setup-qa: idempotent re-run + repair contract (matching setup-flow). Generated config
   refreshed only within `qa-flow:begin/end` markers; seeds additive (find_or_create);
@@ -327,6 +339,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.1)
+- First issue shipped through skill-maintainer: qa-flow 1.0.5 fixes #1 (release-gate
+  substring false-positive). `metadata.version` → 1.6.1. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.0)
 - Fifth plugin `skill-maintainer` added and registered in `marketplace.json`;
