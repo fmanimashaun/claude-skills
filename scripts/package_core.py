@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Deterministic .skill packager — the ONE canonical zip builder.
 
-Byte-identical output on any machine, OS, or Python version: fixed timestamps,
-sorted entries, fixed permissions, deflate level 9. package.sh and package.ps1
-are thin wrappers around this, and automated rebuilds use it too. Never zip
-skills any other way — three zip implementations can never byte-agree.
+Removes the metadata sources of nondeterminism: fixed timestamps, sorted
+entries, fixed permissions, deflate level 9. Output is byte-identical across
+runs and machines *that share a zlib/DEFLATE implementation*. Note: the
+compressed bytes still depend on the zlib version (e.g. stock zlib vs zlib-ng
+produce different output), so byte-for-byte agreement is not guaranteed across
+differing zlib builds — the archive contents are always identical. package.sh
+and package.ps1 are thin wrappers around this, and automated rebuilds use it
+too. Never zip skills any other way — ad-hoc zip tools can never byte-agree.
 """
 import os, sys, zipfile
 

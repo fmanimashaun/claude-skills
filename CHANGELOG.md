@@ -115,6 +115,19 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-22 (release v1.2.2)
+- Fix `package.ps1` on Windows: the launcher test matched `python.exe` (glob
+  `py*`) and passed `-3`, which non-launcher Python executables reject
+  (`Unknown option: -3`). Now only the real `py`/`py.exe` launcher gets `-3`.
+- Correct the determinism claim (see the entry below): `package_core.py` output
+  is byte-stable per zlib/DEFLATE implementation, but compressed bytes differ
+  across zlib versions (stock zlib vs zlib-ng produce different output) — the
+  archive *contents* are always identical. So a clean rebuild reproduces the
+  committed dist only on a matching zlib; the per-release content-normalization
+  is retired, but cross-zlib byte-identity is not guaranteed.
+- No skill content change; `dist/*.skill` shipped as previously committed.
+- `metadata.version` → 1.2.2; released as tag `v1.2.2`.
+
 ### 2026-07-22 — deterministic skill packaging
 - `scripts/package_core.py` is now the single canonical `.skill` builder:
   fixed timestamps, sorted entries, deflate 9 — byte-identical output on any
