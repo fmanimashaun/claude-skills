@@ -115,6 +115,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-22 (release v1.2.1)
+- `metadata.version` → 1.2.1, rails-flow → 1.1.0, rails-stack → 1.0.3; released
+  as tag `v1.2.1`.
+- `dist/rails-8.skill` repackaged (new `references/sso.md`, jobs-and-realtime §7);
+  18 entries. Normalized to the canonical `package.*` build (84,598 vs a
+  non-canonical 84,730 rebuild — content identical). `hotwire.skill` unchanged.
+
 ### 2026-07-21 (release v1.1.8)
 - `metadata.version` → 1.1.8, rails-flow → 1.0.8; released as tag `v1.1.8`.
 - `dist/rails-8.skill` normalized back to the canonical `package.*` build: a
