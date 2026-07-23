@@ -8,6 +8,17 @@ Set up structured issue intake for a skills/plugins marketplace repo. Reports th
 arrive with a component, type, and reproduction are triageable in seconds; free-form
 reports are not. Safe to re-run — like the other flows, it owns only what it authored.
 
+## Precondition — marketplace repo only (hard)
+
+MAINTAINERS-ONLY. Before creating ANY file, template, label, or branch, confirm this is a
+skills/plugins marketplace repo: `.claude-plugin/marketplace.json` must exist at the repo
+root (the same test the SessionStart hook uses). If it is absent, STOP — mutate nothing,
+create no labels — and tell the user: "skill-maintainer is a maintainers-only plugin for a
+claude-skills marketplace repo, not an app project. Nothing was changed. App builders want
+rails-stack / rails-flow / qa-flow / pipeline." This guard exists because setup-intake
+writes `.github/ISSUE_TEMPLATE/*` and creates GitHub labels — a marketplace taxonomy that
+must never land in an app repo by accident.
+
 ## Idempotency contract
 
 - setup-intake owns the files it creates under `.github/ISSUE_TEMPLATE/` and the labels

@@ -8,6 +8,13 @@ argument-hint: "[issue number | label filter]"
 Turn the issue tracker into the maintenance work queue. Classify and label only —
 fixing happens in `/skill-maintainer:work`.
 
+## Precondition — marketplace repo only (hard)
+
+MAINTAINERS-ONLY. Confirm `.claude-plugin/marketplace.json` exists at the repo root before
+doing anything. If absent, STOP and tell the user this plugin is for maintaining a
+claude-skills marketplace repo, not an app project — change nothing. (Same test as the
+SessionStart hook.)
+
 ## Phase 0 — Context
 
 Confirm `gh` is authenticated (`gh auth status`). Read `CHANGELOG.md` (what each

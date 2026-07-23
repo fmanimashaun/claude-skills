@@ -9,6 +9,13 @@ Work a single issue end to end. One at a time, full loop every time, nothing
 half-done — the same discipline as `/rails-flow:issues`, adapted to maintaining
 doctrine and plugins.
 
+## Precondition — marketplace repo only (hard)
+
+MAINTAINERS-ONLY. Confirm `.claude-plugin/marketplace.json` exists at the repo root before
+branching, editing, or committing. If absent, STOP and tell the user this plugin is for
+maintaining a claude-skills marketplace repo, not an app project — change nothing. (Same
+test as the SessionStart hook.)
+
 ## Phase 0 — Pick & context
 
 Confirm `gh auth status`. If `$ARGUMENTS` names an issue, work it; else take the head of
