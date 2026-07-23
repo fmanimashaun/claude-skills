@@ -10,9 +10,13 @@ config / brain / agent-definition changes) so there is no stage to run.
 
 ## Do
 
-1. Resolve the marker path the git hook actually writes to (worktree-safe):
+1. Resolve the marker path the git hook actually writes to (worktree-safe). **Guard the
+   resolution** — if `git rev-parse` fails or is empty (not a git repo), stop; never let the
+   path collapse to a root-level `/pipeline-pending` that the `rm -f` below could delete:
    ```bash
-   marker="$(git rev-parse --git-dir 2>/dev/null)/pipeline-pending"
+   gitdir="$(git rev-parse --git-dir 2>/dev/null)" || { echo "not inside a git repo — no pending nudge."; exit 0; }
+   [ -n "$gitdir" ] || { echo "not inside a git repo — no pending nudge."; exit 0; }
+   marker="$gitdir/pipeline-pending"
    ```
 2. If it exists, show what it said, then remove it — nothing else:
    ```bash
