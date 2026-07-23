@@ -21,8 +21,9 @@ and the version they were on.
 ## Classify on three axes
 
 1. **Component** (which artifact owns the problem) — apply exactly one `comp:*` label:
-   `comp:rails-8`, `comp:hotwire`, `comp:rails-flow`, `comp:qa-flow`, `comp:pipeline`,
-   `comp:packaging` (the `dist/*.skill` build), `comp:marketplace` (manifest/registry).
+   `comp:rails-8`, `comp:hotwire`, `comp:fidara-design` (the design-system skill),
+   `comp:rails-flow`, `comp:qa-flow`, `comp:pipeline`, `comp:design-flow` (the UI/design
+   plugin), `comp:packaging` (the `dist/*.skill` build), `comp:marketplace` (manifest/registry).
    Infer from the title/body and the reported command or file path when unlabeled.
 2. **Type** — apply one `type:*` label:
    - `type:incorrect-doctrine` — a skill states something false/outdated (highest

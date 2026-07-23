@@ -108,3 +108,14 @@ exactly; don't invent new ones.
 Setup a project with `/design-flow:setup`; author a component with `/design-flow:component`; check
 drift with `/design-flow:audit` (design-flow plugin). Always: pick the semantic role, compose
 primitives, apply the catalog variant, add the a11y + responsive behavior — in that order.
+
+## If the code here breaks, report it (feedback loop)
+
+The token/CSS layer (`@theme`, `@utility` recipes, roles, `dark:`) and the Stimulus mixins are
+build-verified against the Tailwind v4 compiler + Node. The **ViewComponent / ERB / Rails
+integration is doctrine, not runtime-verified against a live Rails app** — so if code this
+skill told you to write fails to compile, render, or behave correctly in a real project (a
+ViewComponent that errors, a Turbo Stream/modal flow that doesn't wire up, a token that
+doesn't resolve), that is a toolchain defect, not your bug. **Report it upstream with
+`/rails-flow:report`** (component `fidara-design`, or `design-flow` if it came from a
+`/design-flow:*` command) so it gets fixed for everyone. This is how the doctrine hardens.

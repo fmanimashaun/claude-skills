@@ -1,5 +1,5 @@
 ---
-description: Report toolchain friction (a rails-flow/qa-flow/pipeline/rails-stack bug, wrong guidance, or feature idea) upstream as a structured, deduped, version-pinned issue. Drafts by default; add "MODE: FILE" to actually file.
+description: Report toolchain friction (a rails-flow/qa-flow/pipeline/design-flow/rails-stack bug, wrong guidance, a generated component that won't build, or a feature idea) upstream as a structured, deduped, version-pinned issue. Drafts by default; add "MODE: FILE" to actually file.
 argument-hint: "<observation>  [MODE: FILE]"
 ---
 
