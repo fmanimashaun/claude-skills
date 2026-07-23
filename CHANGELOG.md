@@ -17,7 +17,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   frugal git-hook nudges, platform note), and updated the install block to all four in
   dependency order. No functional change; metadata 1.4.5.
 
-### 2026-07-22 — remove root-level plugin file duplicates### 2026-07-22 — remove root-level plugin file duplicates
+### 2026-07-22 — remove root-level plugin file duplicates
 - 14 stale plugin files (agents, commands, hook scripts, plus a stale
   marketplace.json and orphan hooks.json) had been committed to the REPO ROOT by
   an early "Add files via upload" web drag-drop, duplicating — at frozen old
@@ -217,20 +217,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   never touching the real .env; generated deploy.yml uses kamal-config markers so
   re-runs refresh only the generated block. Every scaffolding command in the
   marketplace now shares one idempotent-and-repairable discipline.
-
-### 1.0.5 — 2026-07-22
-- rails-8 › controllers-routing §1a: new URL-design doctrine (journey-wide).
-  Default posture — human, readable URLs for user-facing pages; REST resource URLs for
-  interchangeable records and the JSON API. The rule: match the URL to what the reader
-  addresses (a specific record → REST id path; a concept or singleton-scoped-to-me like
-  /account, /dashboard, /login → human path via singular `resource` or vanity route; a
-  machine → strict REST always). The reconciliation: RESTful controllers UNDER human
-  URLs (`get "/login", to: "sessions#new", as: :login`) so helpers read naturally,
-  controllers stay resource-honest, and password managers / `/.well-known/change-password`
-  work. Auth generator's `resource :session` explained as correct-but-developer-vocabulary;
-  vanity override documented as a Project Override, not a bug. Pointer added from
-  auth-security.md. Source-verified (SEO/URL usability consensus, W3C change-password
-  well-known URL). marketplace 1.5.0.
 
 ### 1.0.4 — 2026-07-22
 - Portability pass: pipeline-status skips cleanly when `python3` is absent; portable
@@ -556,6 +542,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   - **responsive** — fluid + intrinsic first; per-element prescribed behavior; touch/safe-area.
   - **brand** — the two-brand (one-system, `fm-*` prefix) model, Prism mark, Lucide icons.
 
+### 1.0.5 — 2026-07-22
+- rails-8 › controllers-routing §1a: new URL-design doctrine (journey-wide).
+  Default posture — human, readable URLs for user-facing pages; REST resource URLs for
+  interchangeable records and the JSON API. The rule: match the URL to what the reader
+  addresses (a specific record → REST id path; a concept or singleton-scoped-to-me like
+  /account, /dashboard, /login → human path via singular `resource` or vanity route; a
+  machine → strict REST always). The reconciliation: RESTful controllers UNDER human
+  URLs (`get "/login", to: "sessions#new", as: :login`) so helpers read naturally,
+  controllers stay resource-honest, and password managers / `/.well-known/change-password`
+  work. Auth generator's `resource :session` explained as correct-but-developer-vocabulary;
+  vanity override documented as a Project Override, not a bug. Pointer added from
+  auth-security.md. Source-verified (SEO/URL usability consensus, W3C change-password
+  well-known URL). marketplace 1.5.0.
+
 ### 1.0.4 — 2026-07-22
 - rails-8 › testing §4: factories are **sequences-first** — deterministic
   defaults (reproducible failures, uniqueness by construction, faster, readable
@@ -598,6 +598,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.12.3)
+- **Docs fixes from downstream reports (#41, #42).** #41: a rails-8 URL-design `### 1.0.5`
+  CHANGELOG entry was misfiled under `## pipeline`; moved to `## rails-stack` in its
+  chronological slot, and fixed a self-doubled heading — so downstream changelog readers map
+  entries to the right plugin. #42: README now presents the auto-updating `rails-stack`
+  **plugin as the recommended team install**, with the `degit`/vendoring path re-badged as a
+  fallback for no-plugin environments (stated re-sync trade-off), and clarifies
+  `.claude/skills/` is for project-specific skills — removing the "commit the framework skills"
+  guidance that made a downstream team hand-sync two copies. Docs only; `metadata.version` →
+  1.12.3, no skill/plugin behavior change.
 
 ### 2026-07-23 (release v1.12.2)
 - **PR-review backlog triaged into fixes.** Read all 132 review comments across every PR

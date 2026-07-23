@@ -570,7 +570,7 @@ Skills are plain folders; installing = putting each skill at
 - **Personal**: `~/.claude/skills/` — available in all your projects, just for
   you.
 
-### One command, via the plugin marketplace
+### Recommended for teams: the plugin marketplace
 
 ```
 /plugin marketplace add fmanimashaun/claude-skills
@@ -584,12 +584,25 @@ After installing, restart Claude Code so all hooks register. Per-project setup r
 dependency order: `/rails-flow:setup-flow` → `/qa-flow:setup-qa` →
 `/pipeline:setup-pipeline`.
 
-Run those inside any Claude Code session. The `rails-stack` plugin bundles
-both skills and follows you across projects; manage or remove it later via
-`/plugin`. Use the methods below instead when you want the skills *committed
-into a specific repo* for your team.
+Run those inside any Claude Code session. The `rails-stack` plugin bundles the
+rails-8, hotwire, and fidara-design skills and **auto-updates as new versions ship —
+no per-project copies to hand-sync** — which is why it's the recommended path for
+teams. It's also required anyway for the `rails-flow` / `qa-flow` / `pipeline`
+interplay, so a team already running the toolchain has it installed.
 
-### Into a project (recommended for teams)
+Reserve a project's own `.claude/skills/` for **project-specific** skills — e.g. ones
+distilled with `/rails-flow:curate`, or your own domain skills — **not** full copies
+of the framework skills the plugin already delivers. Committing the framework skills
+*and* running the plugin means two copies of the same doctrine to hand-sync on every
+release; keep the plugin as the single source and skip the vendoring below unless you
+need it.
+
+### Into a project — fallback for no-plugin environments
+
+Use this only when you **can't** run Claude Code plugins — claude.ai/Desktop-only
+teams, or air-gapped CI that needs the skills committed into the repo. **Trade-off:**
+vendored copies don't auto-update; you must re-sync them on every skill release (see
+[Updating](#updating)). Teams that can run the plugin should prefer it.
 
 macOS / Linux / WSL / Git Bash:
 
@@ -687,9 +700,14 @@ run in the code-execution container. See
 
 ## Updating
 
+**Plugin installs auto-update** — new marketplace versions arrive through `/plugin`
+(refresh with `/plugin marketplace update claude-skills`); nothing to re-copy. The steps
+below apply only to the **vendored fallback** (skills committed under `.claude/skills/`),
+which must be re-synced on every release:
+
 ```bash
 cd claude-skills && git pull
-./scripts/install.sh /path/to/your/project   # re-copy into each install target
+./scripts/install.sh /path/to/your/project   # re-copy into each vendored install target
 ```
 
 On claude.ai, delete the old skill and upload the new `.skill` file. After
