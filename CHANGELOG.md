@@ -70,6 +70,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.2.1 — 2026-07-23
+- Reporter now covers the **design system**: `/rails-flow:report` + `claude-skills-reporter`
+  scope includes the `fidara-design` skill and `design-flow` plugin. A generated
+  component/UI that won't compile or render in a real Rails app is explicitly in-scope
+  (`comp:fidara-design` / `comp:design-flow`) — so the least runtime-verified layer has a
+  path back into the issue inflow.
+
 ### 1.2.0 — 2026-07-23
 - Fix #2: NEW `claude-skills-reporter` agent + `/rails-flow:report <observation>` — closes
   the toolchain feedback loop. Turns friction hit while USING the toolchain into a
@@ -404,6 +411,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.2.3 — 2026-07-23
+- `/design-flow:setup` closing report now nudges reporting any component that won't
+  build/render via `/rails-flow:report`. Guidance-only.
+
 ### 1.2.2 — 2026-07-23
 - `/design-flow:component` now routes CRUD screens through the crud-modal-pattern (modal +
   Turbo Stream), not full-page forms. Guidance-only.
@@ -444,6 +455,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.6.1 — 2026-07-23
+- fidara-design SKILL.md: NEW **"if the code here breaks, report it"** section — states the
+  verification boundary (token/CSS + Stimulus layer is compiler/Node-verified; the
+  ViewComponent/Rails integration is doctrine, not runtime-verified against a live app) and
+  routes downstream failures to `/rails-flow:report` (`fidara-design` / `design-flow`). Closes
+  the feedback loop for the design system.
 
 ### 1.6.0 — 2026-07-23
 - fidara-design **modal-driven CRUD as first-class doctrine** (now 13 references): NEW
@@ -563,6 +581,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.12.1)
+- **Design system wired into the feedback loop.** Issue templates (incorrect-doctrine,
+  skill-gap, plugin-bug, feature) now offer `fidara-design` / `design-flow`; new
+  `comp:fidara-design` + `comp:design-flow` labels; the `issue-triager` taxonomy and the
+  shipped reporter (`/rails-flow:report` + `claude-skills-reporter`, rails-flow → 1.2.1) now
+  cover them. fidara-design SKILL.md documents the verification boundary and routes breakage
+  upstream (rails-stack → 1.6.1); `/design-flow:setup` nudges the same (design-flow → 1.2.3).
+  `metadata.version` → 1.12.1. Closes the gap where the least runtime-verified component had
+  no path back into the issue inflow.
 
 ### 2026-07-23 (release v1.12.0)
 - fidara-design: modal-driven in-page CRUD as first-class doctrine (crud-modal-pattern,
