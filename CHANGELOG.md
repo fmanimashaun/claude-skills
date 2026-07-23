@@ -599,6 +599,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-23 (release v1.12.3)
+- **Docs fixes from downstream reports (#41, #42).** #41: a rails-8 URL-design `### 1.0.5`
+  CHANGELOG entry was misfiled under `## pipeline`; moved to `## rails-stack` in its
+  chronological slot, and fixed a self-doubled heading — so downstream changelog readers map
+  entries to the right plugin. #42: README now presents the auto-updating `rails-stack`
+  **plugin as the recommended team install**, with the `degit`/vendoring path re-badged as a
+  fallback for no-plugin environments (stated re-sync trade-off), and clarifies
+  `.claude/skills/` is for project-specific skills — removing the "commit the framework skills"
+  guidance that made a downstream team hand-sync two copies. Docs only; `metadata.version` →
+  1.12.3, no skill/plugin behavior change.
+
 ### 2026-07-23 (release v1.12.2)
 - **PR-review backlog triaged into fixes.** Read all 132 review comments across every PR
   (qodo / codex / accesslint); codex was rate-limited (no findings) and accesslint's were all
