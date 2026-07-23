@@ -6,18 +6,19 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.6.12"
+    "version": "1.7.0"
   },
   "plugins": [
     {
       "name": "rails-stack",
-      "version": "1.0.5",
-      "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment. Bundles the rails-8 and hotwire skills.",
+      "version": "1.1.0",
+      "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment, plus the Fidara design system (tokens, layout primitives, component catalog). Bundles the rails-8, hotwire, and fidara-design skills.",
       "source": "./",
       "strict": false,
       "skills": [
         "./skills/rails-8",
-        "./skills/hotwire"
+        "./skills/hotwire",
+        "./skills/fidara-design"
       ]
     },
     {
@@ -36,6 +37,12 @@
       "name": "pipeline",
       "description": "Lifecycle orchestrator over rails-flow and qa-flow — build -> verify -> certify -> containerized release, honoring every gate. Release artifact is a versioned ghcr.io Docker image (local pull-and-run today, Kamal cloud when ready). /pipeline:deploy-cloud reads a prepared .env and generates the full Kamal 2 config + wires secrets safely (committed deploy.yml references names; gitignored .kamal/secrets holds values), then deploys with approval.",
       "source": "./plugins/pipeline",
+      "strict": false
+    },
+    {
+      "name": "design-flow",
+      "description": "Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 — applies the Fidara design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive @utility recipes + base ViewComponents; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:audit flags drift. Agents: ui-composer, design-auditor, brand-guardian. Pairs with the fidara-design skill (bundled in rails-stack).",
+      "source": "./plugins/design-flow",
       "strict": false
     }
   ]

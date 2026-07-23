@@ -402,7 +402,43 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   regression; regression is the release gate; QA guards existing behavior and absorbs
   proven features into the corpus rather than re-testing the current feature.
 
-## rails-stack (skills plugin: rails-8 + hotwire)
+## design-flow (UI/design plugin)
+
+### 1.0.0 — 2026-07-23
+- NEW fifth plugin — the agentic UI/design flow that APPLIES the `fidara-design` skill so UI
+  is consistent/modern/responsive without a designer or Figma (mirrors how rails-flow applies
+  the rails-8/hotwire skills).
+- 3 commands: `/design-flow:setup [brand]` (scaffold the `@theme` token architecture + layout
+  `@utility` recipes + base ViewComponents + Stimulus mixins into a Rails 8 + Hotwire +
+  Tailwind v4 project, brand-parameterized, idempotent), `/design-flow:component <name>`
+  (author/refactor UI by composing primitives + role tokens with variant/size/state + a11y +
+  responsive), `/design-flow:audit` (flag drift: raw/brand colors, hand-rolled layout,
+  breakpoint misuse, missing a11y, off-catalog variants).
+- 3 agents: `ui-composer` (builds by composing the system), `design-auditor` (consistency
+  gate, design-system-specific — complements rails-flow's general one), `brand-guardian`
+  (token/logo/icon/two-brand enforcement).
+
+## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.1.0 — 2026-07-23
+- NEW **`fidara-design`** skill bundled into rails-stack — the Fidara design system, so UI
+  comes out consistent, modern, and responsive across projects without a designer or Figma.
+  Distilled from the fmanimashaun/fidara real assets (brand tokens, auctioneer component
+  patterns) + a landscape survey (Flowbite, shadcn/Radix/Material/Carbon/Polaris) + Utopia
+  (fluid type/space) + Every Layout (composition/intrinsic layout). SKILL.md + 7 references:
+  - **foundations-tokens** — Tailwind v4 `@theme` with three tiers: brand primitives (`fm-*`)
+    → semantic roles (shadcn-style, `-foreground` pairs, dark mode by re-pointing) → Utopia
+    fluid `clamp()` type/space scale + measure/radius/shadow/motion. Resolves the real
+    slate-scale / two-type-scale / `dark:`-sprawl inconsistencies to one source of truth.
+  - **layout-primitives** — Every Layout (Stack/Cluster/Center/Box/Grid/Sidebar/Switcher/
+    Cover/Frame/Reel/Imposter/Icon/Container) as `@utility` recipes + ViewComponents; compose,
+    don't write per-page CSS; intrinsic responsiveness (breakpoints for structural swaps only).
+  - **components / forms** — ~16-component catalog with a fixed variant×size×state vocabulary,
+    a11y checklists, and prescribed responsive behavior, all on semantic role tokens.
+  - **interaction-stimulus** — four reusable Stimulus mixins (list-nav, focus-trap+restore,
+    dismissable-layer, anchored-position) covering every overlay; state via `data-*`/`aria-*`.
+  - **responsive** — fluid + intrinsic first; per-element prescribed behavior; touch/safe-area.
+  - **brand** — the two-brand (one-system, `fm-*` prefix) model, Prism mark, Lucide icons.
 
 ### 1.0.4 — 2026-07-22
 - rails-8 › testing §4: factories are **sequences-first** — deterministic
@@ -446,6 +482,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.7.0)
+- The Fidara design system lands: NEW `fidara-design` skill (rails-stack → 1.1.0) + NEW
+  `design-flow` plugin (1.0.0) — consistent, modern, responsive UI without a designer/Figma,
+  grounded in the real Fidara assets + Utopia + Every Layout + a modern-library survey.
+  `metadata.version` → 1.7.0. rails-8/hotwire skill content unchanged; a new
+  `dist/fidara-design.skill` ships (release workflow now uploads all `dist/*.skill`).
 
 ### 2026-07-23 (release v1.6.12)
 - qa-flow 1.4.0: `setup-qa` inspects the codebase and proposes a recommended testing stack
