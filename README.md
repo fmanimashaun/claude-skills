@@ -6,24 +6,26 @@ way I build them. Drop them into a project and Claude Code (or claude.ai)
 picks them up automatically whenever the task is Rails or Hotwire.
 
 
-## The system — four plugins, one marketplace
+## The system — five plugins, one marketplace
 
-This marketplace ships four plugins that layer into a complete Rails 8 development
+This marketplace ships five plugins that layer into a complete Rails 8 development
 lifecycle. Each is independently versioned and installable; together they cover
-knowledge → build → test → ship.
+knowledge → build → test → ship → design.
 
 | Plugin | Role | Key commands |
 |--------|------|--------------|
-| **rails-stack** | The knowledge — Rails 8 + Hotwire skills that auto-load when relevant | *(skills, no commands)* |
+| **rails-stack** | The knowledge — Rails 8 + Hotwire + design-system skills that auto-load when relevant | *(skills, no commands)* |
 | **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
+| **design-flow** | UI/design — applies the Fidara design system for consistent, modern, responsive UI | `/design-flow:setup` `/design-flow:component` `/design-flow:audit` |
 
 Install `rails-stack` + `rails-flow` for build-only; add `qa-flow` for the independent
-quality gate; add `pipeline` for end-to-end lifecycle and containerized deployment. The
-four flows interlock but don't hard-depend on each other — rails-flow generates the PR
-Documentation Contract that qa-flow consumes; pipeline orchestrates all three while
-honoring every gate.
+quality gate; `pipeline` for end-to-end lifecycle and containerized deployment; `design-flow`
+for consistent UI. The flows interlock but don't hard-depend on each other — rails-flow
+generates the PR Documentation Contract that qa-flow consumes; pipeline orchestrates the
+build/test/ship gates; design-flow applies the `fidara-design` skill (bundled in rails-stack)
+so UI is consistent without a designer or Figma.
 
 > **Maintainers:** the tooling for maintaining *this* marketplace is **not** a plugin and
 > is **not** installed with the four above. It lives in this repo's [`.claude/`](.claude/)
@@ -37,8 +39,9 @@ honoring every gate.
 |---|---|---|
 | **`rails-8`** | The full Rails 8.1.x doctrine: vanilla-first stack (built-in auth, Solid Queue/Cache/Cable, Propshaft + importmap, Kamal 2), models → controllers → views workflow, **pure RSpec** testing (no Minitest, no matcher add-ons), OpenAPI docs via rswag, AI features via ruby_llm, observability, advanced Active Record, ecosystem gems | 16 reference files |
 | **`hotwire`** | The Hotwire stack from the official handbooks: Turbo 8 (Drive, morphing refreshes, Frames, Streams), Stimulus 3.2 (full controller reference), and **Hotwire Native** (iOS/Android shells, path configuration, bridge components) | 3 reference files |
+| **`fidara-design`** | The Fidara design system: Tailwind v4 `@theme` token architecture (brand primitives → semantic roles → Utopia fluid scale), Every-Layout composition primitives, a ~16-component catalog (variant×size×state), Stimulus interaction patterns, responsive doctrine, and the two-brand model — so UI is consistent across projects without a designer/Figma | 7 reference files |
 
-They cross-reference each other — install both for Rails work.
+They cross-reference each other — install all three for Rails + UI work (all ride in `rails-stack`).
 
 ### House rules baked in
 
@@ -529,13 +532,15 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history of every plugin.
 
 ```
 claude-skills/
-├── skills/
+├── skills/                # bundled into the rails-stack plugin
 │   ├── rails-8/          # SKILL.md + references/  (source of truth)
-│   └── hotwire/          # SKILL.md + references/
-├── plugins/               # DISTRIBUTED — the 4 app plugins in marketplace.json
+│   ├── hotwire/          # SKILL.md + references/
+│   └── fidara-design/    # the Fidara design system: SKILL.md + 7 references
+├── plugins/               # DISTRIBUTED — the app plugins in marketplace.json
 │   ├── rails-flow/       # agentic build flow: commands + agents + hooks
 │   ├── qa-flow/          # independent QA flow
-│   └── pipeline/         # lifecycle + release orchestrator
+│   ├── pipeline/         # lifecycle + release orchestrator
+│   └── design-flow/      # UI/design flow: applies the fidara-design skill
 ├── .claude/               # NOT distributed — maintainer tooling for THIS repo
 │   ├── commands/         # /maintainer-triage · -work · -audit · -setup-intake
 │   ├── agents/           # doctrine-verifier, issue-triager, skill/plugin-doctor, release-manager
