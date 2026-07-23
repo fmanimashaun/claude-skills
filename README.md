@@ -376,7 +376,10 @@ change didn't break previously-certified behavior, and certifies the whole syste
 release.
 
 **Stack-agnostic — the QA engineer picks the tools, qa-flow never forces one.**
-`/qa-flow:setup-qa` writes `qa/qa.config.yml` where you choose per tier —
+`/qa-flow:setup-qa` **inspects the codebase and proposes a recommended stack** (detecting
+existing Cypress/Playwright/Selenium, `*.feature` files, mobile targets, an OpenAPI spec,
+etc. — and never proposing to switch a framework you already use), which you confirm or
+override. It writes `qa/qa.config.yml` where you choose per tier —
 `web_e2e: playwright | cypress-cucumber | selenium-pytest-bdd`, `mobile: appium`,
 `functional_agent: playwright-mcp | autonoma-selfhosted`, reporting, etc. — all **free by
 default**. The stack-agnostic core (case catalogue, risk plan, evidence rules, certification
