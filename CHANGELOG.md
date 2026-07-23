@@ -459,6 +459,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
 
+### 1.6.2 — 2026-07-23
+- **fidara-design: reference recipes now honor the skill's own non-negotiables** (#56 —
+  the recipes ship verbatim via `/design-flow:setup`, so the contradiction propagated
+  downstream). (1) **Radius**: Modal `panel` and the Modal prose use `rounded-lg` instead of
+  arbitrary `rounded-[12px]` — with the `@theme` token `--radius-lg = calc(--radius + 4px) =
+  12px`, `rounded-lg` *is* 12px, so the token and the arbitrary value are equivalent and the
+  vocabulary stays intact. (2) **focus-visible**: Modal close + Alert dismiss icon-buttons now
+  carry `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30` like the
+  Button/Input recipes. (3) **Icons**: added an "Icons (Lucide)" note with the real
+  `helpers.lucide_icon(...)` call site wrapped in `with-icon`, and wired `with-icon` onto the
+  Alert icon + both dismiss buttons; guidance is stroke-width-only in the `lucide-rails`
+  initializer, never hardcoded px (the Button loader-spinner is the documented fixed-size
+  exception). Verified (doctrine-verifier, CONFIRMED): Tailwind v4 `rounded-lg` →
+  `var(--radius-lg)` (tailwindcss.com/docs/border-radius); CSS `svg { inline-size: 1em }`
+  overrides SVG presentational `width`/`height` at zero specificity, no `!important`
+  (MDN SVG Attribute reference). Version boundary: Tailwind v4 (v3 had a fixed radius scale).
+
 ### 1.6.1 — 2026-07-23
 - fidara-design SKILL.md: NEW **"if the code here breaks, report it"** section — states the
   verification boundary (token/CSS + Stimulus layer is compiler/Node-verified; the
@@ -598,6 +615,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.12.4)
+- fidara-design reference recipes reconciled with the skill's own non-negotiables (#56,
+  rails-stack → 1.6.2): radius (`rounded-lg` not `rounded-[12px]`), `focus-visible` rings on
+  Modal-close/Alert-dismiss, and a copyable Lucide `with-icon`/1em call site. Doctrine-verified
+  (Tailwind v4 radius namespace; CSS-over-SVG-attribute cascade). `metadata.version` → 1.12.4.
 
 ### 2026-07-23 (release v1.12.3)
 - **Docs fixes from downstream reports (#41, #42).** #41: a rails-8 URL-design `### 1.0.5`

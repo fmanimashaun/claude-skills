@@ -47,7 +47,10 @@ module Ui
 
     private
     def classes = [BASE, VARIANT.fetch(@variant), SIZE.fetch(@size), @attrs.delete(:class)].compact.join(" ")
-    def spinner = tag.svg(class: "animate-spin size-4", aria: { hidden: true }) # Lucide loader-2 path
+    # Loader spinner = the documented fixed-size exception (a spinner, not a Lucide content
+    # icon): `size-4` + currentColor is intentional, not a `with-icon`/1em case. See
+    # component-implementations.md "Icons (Lucide)".
+    def spinner = tag.svg(class: "animate-spin size-4 text-current", aria: { hidden: true }) # Lucide loader-2 path
   end
 end
 ```

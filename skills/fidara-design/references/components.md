@@ -57,7 +57,8 @@ DEFAULTS = { variant: :primary, size: :md }
 
 ## Modal / Dialog
 - `Ui::Modal` rendered into the layout's `<turbo-frame id="modal">` (open via `data: { turbo_frame: "modal" }`).
-  **Imposter** positioning + `bg-popover text-popover-foreground rounded-[12px] shadow-lg`; backdrop
+  **Imposter** positioning + `bg-popover text-popover-foreground rounded-lg shadow-lg` (card-class
+  surface → the `rounded-lg` token = 12px, not an arbitrary value); backdrop
   `bg-fm-navy/50 backdrop-blur-sm`. **Sizes:** `sm max-w-md · md max-w-lg · lg max-w-2xl · xl max-w-4xl · full`.
   Body `max-h-[70vh] overflow-y-auto`. Slots: `title`, `body`, `actions` (a `cluster`).
 - **Behavior:** the `modal` Stimulus controller = focus-trap + focus-restore + Esc + backdrop-close +
