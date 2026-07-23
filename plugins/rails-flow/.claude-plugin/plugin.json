@@ -1,7 +1,7 @@
 {
   "name": "rails-flow",
   "description": "Agentic development flow for Rails 8 projects: orchestrated /feature, /fix and /review commands, eight specialist subagents, and hard guardrail hooks. Pairs with the rails-8 and hotwire skills.",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "author": {
     "name": "Fisayo Animashaun"
   }

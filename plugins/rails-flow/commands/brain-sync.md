@@ -78,17 +78,11 @@ important — anything in a sibling's status or `CONTRACTS.md` that **affects th
 (a contract they changed, a dependency they shipped/broke). Flag those as action items; if one
 implies a local decision, offer to record it with `/rails-flow:brain`.
 
-## NotebookLM as an optional read/synthesis lens (NOT the bus)
+## The store is git — no external synthesis layer
 
-The hub repo is the source of truth. **NotebookLM is a good lens on top of it, never the store**
-— its write primitive is "add a source document" (append-only corpus for retrieval), not a
-mutable shared state, and its reads are fuzzy synthesis with no git provenance or concurrency
-model. So use it only for **human-facing** cross-project synthesis: briefings, natural-language
-Q&A over both projects, audio overviews for stakeholders who won't read markdown.
-
-Wiring (optional): feed NotebookLM the hub's `projects/*/STATUS.md` + `CONTRACTS.md` + `EVENTS.md`
-as sources and refresh on a cadence (there's no first-class git→NotebookLM sync). Options:
-- **Official** NotebookLM/Gemini *Enterprise* API (Google Cloud, `notebooks.create` + add-sources) — https://docs.cloud.google.com/gemini/enterprise/notebooklm-enterprise/docs/api-notebooks
-- **Community MCP servers** (Claude-Code-compatible) — e.g. https://github.com/jacob-bd/notebooklm-mcp-cli , https://github.com/PleasePrompto/notebooklm-mcp — most use cookie/session auth (fragile, ToS-gray).
-
-Keep the discipline the brain is built on: *plain text in git is the store; embeddings are a lens.*
+The `<org>/brain` hub repo is the **single source of truth** for cross-project state. Keep the
+discipline the brain is built on: *plain text in git is the store* — versioned, provenance via
+commit history, deterministic reads, diffable. Don't route the shared brain through an external
+embeddings/RAG service; if a human wants a natural-language summary across projects, read the hub
+files directly (they're small) rather than standing up a separate synthesis layer that drifts
+from git and loses the audit trail.

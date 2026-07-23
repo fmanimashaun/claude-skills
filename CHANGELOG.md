@@ -70,6 +70,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.3.1 — 2026-07-23
+- **Dropped NotebookLM from the brain flow.** `/rails-flow:brain-sync` no longer documents
+  NotebookLM as an optional synthesis lens; the `<org>/brain` git repo is the **single source of
+  truth** for cross-project state, with no external embeddings/RAG layer. Rationale: keep the
+  audit trail — git gives provenance, deterministic reads, and diffs; a separate synthesis service
+  drifts from git and can't be trusted for coordination. Federation (publish/consume via `gh`,
+  no cloning) is unchanged.
+
 ### 1.3.0 — 2026-07-23
 - **Brain, leveled up — fuller structure + maintenance + cross-repo federation.** The brain
   was `/brain` memos + MEMORY.md; it's now a full repo-side memory system, and two new commands:
@@ -636,6 +644,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.13.1)
+- rails-flow → 1.3.1: removed NotebookLM from the brain flow; the `<org>/brain` git repo is the
+  single source of truth for the cross-project shared brain (no external synthesis layer).
+  `metadata.version` → 1.13.1. No skill content changed.
 
 ### 2026-07-23 (release v1.13.0)
 - rails-flow → 1.3.0: the brain leveled up — fuller repo-side memory (STATUS / PROGRESS-LOG /
