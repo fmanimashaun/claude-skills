@@ -404,6 +404,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.0.1 — 2026-07-23
+- `/design-flow:setup` now points at the fidara-design `reference-implementation` as the
+  canonical source for the base ViewComponents + Stimulus mixins (copy those exact shapes),
+  and notes mobile (Hotwire Native parity) as Phase 2. No behavior change; sharper guidance.
+
 ### 1.0.0 — 2026-07-23
 - NEW fifth plugin — the agentic UI/design flow that APPLIES the `fidara-design` skill so UI
   is consistent/modern/responsive without a designer or Figma (mirrors how rails-flow applies
@@ -419,6 +424,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.2.0 — 2026-07-23
+- fidara-design gains the concrete code it was missing (now 9 references): NEW
+  **reference-implementation** — the canonical ViewComponent pattern (Button/Card, cva-style
+  variant maps + slots) plus the four Stimulus mixins as real code (list-navigation /
+  focus-trap+restore / dismissable-layer / anchored-position) and a base layout composing the
+  primitives; agents replicate these exact shapes instead of freehand. NEW **mobile** — the
+  web↔mobile parity plan (Hotwire Native shell renders the same web UI; safe-areas +
+  min-h-touch + bridge components + path config; native token export to Android/iOS for
+  fully-native screens; phased). Closes the doctrine's "spec but no code" gap, all in-repo.
 
 ### 1.1.0 — 2026-07-23
 - NEW **`fidara-design`** skill bundled into rails-stack — the Fidara design system, so UI
@@ -482,6 +497,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.8.0)
+- fidara-design reference-implementation (concrete ViewComponent + Stimulus-mixin code) +
+  mobile parity plan (rails-stack → 1.2.0); design-flow → 1.0.1 (setup points at the reference
+  impl). Closes the design system's spec-but-no-code gap, all in the marketplace repo (no app
+  refactor). `metadata.version` → 1.8.0. rails-8/hotwire unchanged.
 
 ### 2026-07-23 (release v1.7.0)
 - The Fidara design system lands: NEW `fidara-design` skill (rails-stack → 1.1.0) + NEW

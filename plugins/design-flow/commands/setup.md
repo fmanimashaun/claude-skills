@@ -39,6 +39,11 @@ authored; `git status` after.
 4. **Stimulus mixins + controllers** (interaction-stimulus.md): the four mixins (list-navigation,
    focus-trap+restore, dismissable-layer, anchored-position) and the `modal`/`dropdown`/`tabs`/
    `sidebar`/`theme`/`toast` controllers built on them.
+
+Use **[references/reference-implementation.md](../../skills/fidara-design/references/reference-implementation.md)**
+as the canonical source for steps 3–4: copy the ViewComponent pattern (Button/Card shown) and
+the four Stimulus mixins verbatim, then extend the catalog by mirroring those exact shapes.
+Mobile (Hotwire Native parity) is Phase 2 — see references/mobile.md; this command targets web.
 5. **Fonts**: wire Bricolage Grotesque / Newsreader / Overpass Mono.
 6. **Lucide** icon helper (`with-icon`, `1em`, `currentColor`).
 

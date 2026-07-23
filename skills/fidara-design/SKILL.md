@@ -47,6 +47,13 @@ prefix. See [references/brand.md](references/brand.md).
 5. **Responsive** — [references/responsive.md](references/responsive.md). Fluid-first
    (Utopia) + intrinsic primitives; explicit breakpoints only where layout structure must
    change; touch targets (`min-h-touch` 44px) and safe-areas wired in.
+6. **Mobile** — [references/mobile.md](references/mobile.md). One system across web + mobile:
+   Hotwire Native renders the same web UI in a native shell; safe-areas + `min-h-touch` +
+   bridge components + path config; native token export for fully-native Android/iOS screens.
+
+**Concrete code:** [references/reference-implementation.md](references/reference-implementation.md)
+is the canonical ViewComponent pattern (replicate for the whole catalog) + the four Stimulus
+mixins as real code. Copy these shapes exactly; don't invent new ones.
 
 ## Authoring mechanism (what to reach for)
 
