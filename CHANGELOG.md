@@ -65,7 +65,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
-### 1.1.3 — 2026-07-22
+### 1.2.0 — 2026-07-23
+- Fix #2: NEW `claude-skills-reporter` agent + `/rails-flow:report <observation>` — closes
+  the toolchain feedback loop. Turns friction hit while USING the toolchain into a
+  structured, deduped, version-pinned, evidence-backed issue on the upstream marketplace
+  repo. Scope-guarded (toolchain only — refuses to file the user's app bugs); pins
+  marketplace + plugin version (and running-vs-latest delta); dedups against open/closed
+  issues before filing; **drafts by default**, files only on explicit `MODE: FILE` via
+  `gh issue create --body-file`. `setup-flow` now surfaces the report path; README gains a
+  "feedback loop" section. Pairs with skill-maintainer (the receiving end).
 - setup-flow: idempotent-safe re-runs + audit/repair, both by construction.
   IDEMPOTENCY — rails-flow content lives in `<!-- rails-flow:begin/end X -->` markers;
   re-runs refresh only marked blocks and never touch out-of-marker prose; a marker-less
@@ -362,6 +370,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.5)
+- rails-flow 1.2.0 fixes #2 (claude-skills-reporter agent + `/rails-flow:report`, the
+  feedback-loop sending end). `metadata.version` → 1.6.5. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.4)
 - skill-maintainer 1.0.1 fixes #4 (maintainer-only separation: manifest marker + command
