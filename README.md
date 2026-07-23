@@ -16,7 +16,7 @@ knowledge → build → test → ship.
 |--------|------|--------------|
 | **rails-stack** | The knowledge — Rails 8 + Hotwire skills that auto-load when relevant | *(skills, no commands)* |
 | **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` |
-| **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
+| **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
 
 Install `rails-stack` + `rails-flow` for build-only; add `qa-flow` for the independent
@@ -394,14 +394,28 @@ release.
 merge, `gh pr merge` with base main) unless `qa/CERTIFICATION` exists, reads PASS, and
 matches the current dev sha. `QA_ALLOW_MAIN=1` is audited break-glass.
 
-`/qa-flow:setup-qa` scaffolds the `qa/` workspace (Playwright config, seed personas,
-k6 skeletons), the PR template, and reports the tools to install (`npx playwright
-install`, `pipx install schemathesis`, `k6`, Docker for ZAP).
+**Case authoring + agentic functional testing (free, repo-local, no online tool):**
 
-Eight agents: qa-lead (blast-radius planning from the PR docs + project skills),
-e2e-tester, api-contract-tester, a11y-auditor, perf-tester, security-scanner,
-exploratory-tester, qa-reporter (report + defect filing + certification stamp + corpus
-promotion).
+- `/qa-flow:cases [area|feature|#issue|all]` — automates the tedious part of QA: the
+  `case-author` agent **writes and maintains** the test-case catalogue `qa/test-cases.csv`
+  from the PRD, the app's menu/routes, the qa-lead plan, and past defects — stable `TC-###`
+  IDs, idempotent (add / update / deprecate, never renumber or delete), Excel-openable. No
+  Testmo or online case manager needed (an export can seed it, but the file is the source of
+  truth).
+- `/qa-flow:functional` — the `functional-tester` agent drives the running app through
+  **Playwright MCP** (free, Microsoft) from those case titles: menu-scoped, evidence-based
+  (a screenshot backs every finding), strictly in-scope, no code changes. Writes a Markdown
+  report **+ an Excel-openable CSV summary** and screenshots into `qa/manual-tests/`. This is
+  agentic functional/exploratory coverage — complementary to the automated regression tiers.
+
+`/qa-flow:setup-qa` scaffolds the `qa/` workspace (Playwright config, seed personas,
+k6 skeletons, `qa/test-cases.csv`, `qa/manual-tests/`), the PR template, and reports the
+tools to install (`npx playwright install`, `pipx install schemathesis`, `k6`, Docker for
+ZAP, and the Playwright MCP server).
+
+Agents: qa-lead (blast-radius planning), **case-author** (catalogue authoring/upkeep),
+**functional-tester** (Playwright-MCP functional testing), e2e-tester, api-contract-tester,
+a11y-auditor, perf-tester, security-scanner, exploratory-tester, qa-reporter.
 
 ### The PR Documentation Contract
 
