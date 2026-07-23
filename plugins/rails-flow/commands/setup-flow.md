@@ -270,3 +270,8 @@ docs evolve. Don't run it unprompted during setup — just surface it.
 
 List created files, the detected Project Overrides, and any ambiguity you need the user to
 settle (e.g. base branch, form builder mandate yes/no).
+
+Also surface the upstream feedback path: if you hit friction with the toolchain itself (a
+hook, command, skill, or setup step misbehaving), `/rails-flow:report <what you saw>`
+drafts a structured, deduped, version-pinned issue to the claude-skills repo — toolchain
+only, drafts by default. It's how the flow improves from real use.
