@@ -384,6 +384,11 @@ gate, Markdown/CSV reporting, the git/release flow) is the product; the runner i
 choice. Paid/optional backends (e.g. `case_management: testmo`) are **opt-in via config +
 credentials** — never forced, never a hard dependency.
 
+Set `reporting: allure` (or `both`) and every runner (Playwright / Cypress / Selenium /
+Appium) plus the API/perf/a11y tiers feed one free, unified **Allure** HTML report
+(`qa/reports/allure-report`) with steps, history, and screenshot/trace attachments —
+`markdown-csv` (repo-local Markdown + Excel CSV) remains the zero-dependency default.
+
 **Two moments, mapped to QA theory** (smoke ⊂ sanity ⊂ regression):
 
 - `/qa-flow:verify` — fires after a feature merges to dev. Smoke gate (is the build
