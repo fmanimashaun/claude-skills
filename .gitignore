@@ -10,3 +10,4 @@ Thumbs.db
 /hooks.json
 /marketplace.json
 /plugin.json
+.env
