@@ -22,23 +22,28 @@ if ! type -P python3 >/dev/null 2>&1; then
 fi
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
-# Strip heredoc BODIES so their text is never read as a command (completes the #1
-# residual). A body (<<EOF … EOF, incl. <<-EOF and quoted <<'EOF'/<<"EOF") is unquoted,
-# so quote-stripping alone can't remove it; drop body + terminator lines, keep the
-# command line that opens the heredoc. Here-strings (<<<) are left alone.
+# --- Normalize the command so promotion detection can't be fooled (must fail CLOSED) ---
+# Order matters:
+#  1. Un-quote heredoc delimiters (<<'EOF'/<<"EOF" -> <<EOF) so a REAL quoted-delimiter
+#     heredoc survives the quote-strip below, while a <<EOF that lives only inside a quote
+#     (echo "<<EOF") or a comment (# <<EOF) does NOT survive and can't be read as an opener.
+#  2. Strip quoted spans, THEN comments — quotes first so a '#' inside a string
+#     (e.g. -m "fix #43") is already removed and never mis-cut as a comment (which would
+#     drop a later `git push origin main` on the same line → fail OPEN).
+#  3. Strip heredoc BODIES (unquoted text that quote-stripping can't remove).
+# Here-strings (<<<) are intentionally left alone.
+_unquote_delims() { sed -E "s/<<(-?)[[:space:]]*[\"']([A-Za-z0-9_][A-Za-z0-9_-]*)[\"']/<<\1\2/g"; }
+_strip_quotes()   { sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g"; }
+_strip_comments() { sed -E "s/^[[:space:]]*#.*\$//; s/([[:space:]])#.*\$/\1/"; }
 _strip_heredocs() {
   awk '
-    inh {
-      t=$0; if (dash) sub(/^\t+/,"",t)
-      if (t==delim) inh=0
-      next
-    }
+    inh { t=$0; if (dash) sub(/^\t+/,"",t); if (t==delim) inh=0; next }
     {
-      if (match($0, /<<-?[ \t]*["'\'']?[A-Za-z_][A-Za-z0-9_]*["'\'']?/)) {
+      if (match($0, /<<-?[ \t]*[A-Za-z0-9_][A-Za-z0-9_-]*/)) {
         before=(RSTART>1)?substr($0,RSTART-1,1):""
         if (before != "<") {
           op=substr($0,RSTART,RLENGTH); dash=(op ~ /^<<-/)?1:0
-          d=op; sub(/^<<-?[ \t]*/,"",d); gsub(/["'\'']/,"",d)
+          d=op; sub(/^<<-?[ \t]*/,"",d)
           delim=d; inh=1
         }
       }
@@ -47,11 +52,17 @@ _strip_heredocs() {
   '
 }
 
-# Detect promotion to main/master. #1: match the INVOKED command, not any substring of
-# the line. Drop heredoc bodies, strip quoted spans (commit messages, -m/--body, echo
-# bodies), then require the pattern at the START of a command segment (split on ; | && ||).
-# A commit/PR body/echo/heredoc that merely MENTIONS a merge/push no longer trips the gate.
-seg="$(printf '%s' "$cmd" | _strip_heredocs | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | tr ';|&' '\n')"
+# Detect promotion to main/master. Match the INVOKED command, not any substring: split on
+# ; | && || then require the verb at the START of a segment. Also peel leading
+# env-assignments, sudo/env, and git global options (-C, -c, --git-dir, ...) so prefixed
+# promotions (FOO=1 git push …, sudo git push …, git -C repo push origin main) are caught.
+clean="$(printf '%s' "$cmd" | _unquote_delims | _strip_quotes | _strip_comments | _strip_heredocs)"
+seg="$(printf '%s' "$clean" | tr ';|&' '\n' \
+  | sed -E 's/^[[:space:]]+//' \
+  | sed -E 's/^(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)[[:space:]]+)+//' \
+  | sed -E 's/^(sudo|env)[[:space:]]+//' \
+  | sed -E 's/^(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)[[:space:]]+)+//' \
+  | sed -E 's/^git[[:space:]]+((-C|-c|--git-dir|--work-tree|--namespace|--exec-path)([[:space:]]*=?[[:space:]]*[^[:space:]]+)?[[:space:]]+)+/git /')"
 push_seg=0; merge_seg=0; ghmerge_seg=0
 printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b.*\b(origin[[:space:]]+)?(HEAD:)?(main|master)\b' && push_seg=1
 printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+merge\b' && merge_seg=1
