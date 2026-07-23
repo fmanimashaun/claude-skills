@@ -15,7 +15,7 @@ knowledge → build → test → ship → design.
 | Plugin | Role | Key commands |
 |--------|------|--------------|
 | **rails-stack** | The knowledge — Rails 8 + Hotwire + design-system skills that auto-load when relevant | *(skills, no commands)* |
-| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` |
+| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
 | **design-flow** | UI/design — applies the Fidara design system for consistent, modern, responsive UI | `/design-flow:setup` `/design-flow:component` `/design-flow:audit` |
@@ -67,7 +67,12 @@ tool-gated merge review (code-review-graph's review-pr skill when its CLI + grap
 present, the bundled pr-reviewer agent otherwise) · `/rails-flow:fix` works a bug or a phased review backlog one
 proven issue at a time · `/rails-flow:review` runs seven parallel specialist passes and
 writes a phased, fix-consumable report · `/rails-flow:brain` institutionalizes lessons as
-indexed memory memos · `/rails-flow:issues` triages open repo issues (bug / feature /
+indexed memory memos (STATUS / PROGRESS-LOG / DECISIONS / HYPOTHESES + provenance tags) ·
+`/rails-flow:brain-review` runs a weekly maintenance sweep (staleness, decisions-vs-PRD drift,
+contradictions, stalled hypotheses) · `/rails-flow:brain-sync` publishes to / consumes a
+cross-project **shared brain repo** so agentic flows in separate repos coordinate via `gh`
+without cloning each other (with NotebookLM as an optional read/synthesis lens, not the store) ·
+`/rails-flow:issues` triages open repo issues (bug / feature /
 chore / needs-info) and works them one at a time through the matching pipeline, each
 PR auto-closing its issue · `/rails-flow:pr-comments` sweeps a PR's review feedback —
 every actionable comment is fixed on-branch or folded into a tracked issue, and **no

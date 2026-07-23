@@ -33,3 +33,8 @@ Specific beats general; this is the part future agents believe.>
    must not disagree.
 
 Confirm to the user: memo path, index line, and any doc updates made.
+
+**Provenance:** where a memo cites evidence, tag it `[observed]` / `[decided]` / `[assumed]` /
+`[reported]` (per the `docs/brain/README.md` convention) so its weight is legible later.
+Related: `/rails-flow:brain-review` (weekly maintenance sweep) keeps these honest;
+`/rails-flow:brain-sync` publishes cross-project state to a shared brain repo.

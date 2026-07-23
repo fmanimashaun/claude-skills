@@ -136,11 +136,35 @@ force-push, no `git add -A`, no `--no-verify`, stage specific files, small logic
 approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
 is the human-readable law they implement.*
 
-## 4. Seed the memory system
+## 4. Seed the memory system (`docs/brain/`)
 
-Create `docs/brain/MEMORY.md` (an index: one line per memo — link + 8-15 word summary) and
-explain `/rails-flow:brain` to the user: lessons and decisions get institutionalized as
-memos, not lost in chat history.
+The brain is the repo-side mirror of session memory: open the repo and reconstruct where the
+work is without re-reading every commit. Scaffold these (create only what's missing —
+idempotent; never overwrite a populated file):
+
+- **`README.md`** — the brain doctrine: the files + cadence table below, the provenance tags,
+  the hypothesis lifecycle, and pointers to `/rails-flow:brain` · `:brain-review` · `:brain-sync`.
+- **`STATUS.md`** — "where are we **right now**": current phase/slice, done, next, blockers.
+  Edited in place every session; the single source of truth for current position. Header line
+  `_Updated: <absolute date> · sha <short>_`.
+- **`PROGRESS-LOG.md`** — append-only dated log of completed chunks. Only appended, never edited.
+- **`DECISIONS.md`** — numbered ADR-lite (`D-001…`): the choice, alternatives, rationale, and a
+  **reversal condition** (what would make us revisit it).
+- **`HYPOTHESES.md`** — lifecycle `candidate → proposed → confirmed | refuted`, each with a
+  dated evidence list and, on confirm, a pointer to the `DECISIONS` entry it produced.
+- **`MEMORY.md`** — one-line index of `feedback_*` / `decision_*` memos (link + 8–15 word
+  summary); the SessionStart hook injects its top into every session.
+
+**Provenance** — tag every non-obvious claim in STATUS / PROGRESS / hypothesis-evidence with one:
+`[observed]` (happened or measured), `[decided]` (backed by a DECISIONS entry), `[assumed]`
+(working assumption, not verified), `[reported]` (a human/stakeholder asserted it). **Preserve
+contradictions** — never average two conflicting `[reported]` claims into one; list both. That
+audit trail is the point: the brain surfaces evidence and its provenance; the human still judges.
+
+Then explain the commands: `/rails-flow:brain` (institutionalize a lesson/decision as a memo),
+`/rails-flow:brain-review` (weekly maintenance sweep — staleness, drift, contradictions),
+`/rails-flow:brain-sync` (publish to / consume a cross-project shared brain repo). Memos and
+STATUS are the repo side of memory, not lost in chat history.
 
 ## 5. Knowledge-graph integration (only if graph tools are present)
 

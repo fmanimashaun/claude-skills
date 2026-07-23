@@ -70,6 +70,27 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.3.0 — 2026-07-23
+- **Brain, leveled up — fuller structure + maintenance + cross-repo federation.** The brain
+  was `/brain` memos + MEMORY.md; it's now a full repo-side memory system, and two new commands:
+  - `setup-flow` §4 now scaffolds the **fuller brain**: `STATUS.md` (where we are now, edited in
+    place), append-only `PROGRESS-LOG.md`, ADR-lite `DECISIONS.md` (with reversal conditions),
+    `HYPOTHESES.md` (**lifecycle** candidate→proposed→confirmed|refuted with dated evidence),
+    `MEMORY.md`, and a `README.md` doctrine — plus **provenance tags** (`[observed]`/`[decided]`/
+    `[assumed]`/`[reported]`) on non-obvious claims, with a "preserve contradictions" rule.
+  - NEW **`/rails-flow:brain-review`** — weekly maintenance sweep: flag stale STATUS/evidence,
+    surface decisions-vs-PRD drift and contradictions, check hypotheses against evidence, compress
+    recurring patterns (preserving minority signals). Report + proposed diffs; applies only what's
+    approved. The keystone ritual that keeps the brain from becoming a landfill.
+  - NEW **`/rails-flow:brain-sync`** — a **cross-project shared brain repo** (`<org>/brain`) as the
+    coordination bus: each project publishes its STATUS to `projects/<self>/` and appends to a
+    shared `EVENTS.md`/`CONTRACTS.md`, and reads siblings via `gh` single-file fetches — so agentic
+    flows in separate repos coordinate **without cloning each other**. Git is the store (versioned,
+    provenance, deterministic). **NotebookLM** is documented as an optional read/synthesis lens on
+    top (briefings, Q&A) — never the store, since its write primitive is append-sources not mutable
+    state (official Enterprise API + community MCP options + auth caveats noted).
+  - `session-start` hook now surfaces the top of `STATUS.md` ("where are we now") alongside MEMORY.md.
+
 ### 1.2.1 — 2026-07-23
 - Reporter now covers the **design system**: `/rails-flow:report` + `claude-skills-reporter`
   scope includes the `fidara-design` skill and `design-flow` plugin. A generated
@@ -615,6 +636,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.13.0)
+- rails-flow → 1.3.0: the brain leveled up — fuller repo-side memory (STATUS / PROGRESS-LOG /
+  DECISIONS / HYPOTHESES-with-lifecycle + provenance tags), a weekly maintenance sweep
+  (`/rails-flow:brain-review`), and cross-project federation (`/rails-flow:brain-sync`) via a
+  shared brain git repo over `gh` — agentic flows in separate repos coordinate without cloning
+  each other, with NotebookLM documented as an optional synthesis lens (not the store).
+  `metadata.version` → 1.13.0. No skill content changed.
 
 ### 2026-07-23 (release v1.12.4)
 - fidara-design reference recipes reconciled with the skill's own non-negotiables (#56,
