@@ -65,10 +65,12 @@ resource system so the look matches.
 ## Phased plan
 
 1. **Phase 1 — Web (done).** Tokens, layout primitives, component catalog, responsive doctrine.
-2. **Phase 2 — Hotwire Native parity.** `turbo_native_app?`/`body.mobile-app` wiring; safe-area +
-   `min-h-touch` everywhere on chrome; path configuration; the first bridge components
-   (nav-button, action-sheet menu, native tab bar); table→card-stack on mobile. **Largest win
-   for least effort** — reuses all the web components.
+2. **Phase 2 — Hotwire Native parity (reference code ready).** `native_app?`/`body.mobile-app`
+   wiring; safe-area + `min-h-touch` on chrome; JSON path configuration; the first bridge
+   components (nav-button, action-sheet menu, native tab bar); table→card-stack on mobile.
+   **Largest win for least effort** — reuses all the web components. Concrete web-side code:
+   [mobile-reference-implementation.md](mobile-reference-implementation.md); scaffold it with
+   **`/design-flow:mobile`**. (Native Kotlin/Swift shells live in their own app repos.)
 3. **Phase 3 — Native token export.** A step that emits Android (`colors.xml`/theme) and iOS
    assets from the `@theme` so fully-native screens match by construction.
 
