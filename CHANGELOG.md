@@ -29,6 +29,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## skill-maintainer (marketplace maintenance plugin)
 
+> **Extracted in v1.6.7** to its own marketplace,
+> [`fmanimashaun/claude-skills-maintainers`](https://github.com/fmanimashaun/claude-skills-maintainers).
+> The entries below are its history while it lived in this repo; further changes are
+> tracked there.
+
 ### 1.0.1 — 2026-07-23
 - Fix #4: separate this maintainer-only plugin from the app-builder install surface.
   Manifest descriptions (marketplace entry + plugin.json) now lead with a hard
@@ -382,17 +387,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-23 (release v1.6.7)
+- Full separation for #4: `skill-maintainer` **extracted to a separate marketplace**,
+  [`fmanimashaun/claude-skills-maintainers`](https://github.com/fmanimashaun/claude-skills-maintainers),
+  and removed from this marketplace's manifest (now 4 app plugins). App builders adding
+  `fmanimashaun/claude-skills` no longer see it at all; maintainers add the separate
+  marketplace explicitly. README + repository layout updated. `metadata.version` → 1.6.7.
+  Skills unchanged.
+
 ### 2026-07-23 (release v1.6.6)
-- pipeline 1.1.0 fixes #5 (`/pipeline:ack` + auto-clear-on-resolution for the QA-verify
-  nudge marker). `metadata.version` → 1.6.6. Skills unchanged.
-
-### 2026-07-23 (release v1.6.5)
-- rails-flow 1.2.0 fixes #2 (claude-skills-reporter agent + `/rails-flow:report`, the
-  feedback-loop sending end). `metadata.version` → 1.6.5. Skills unchanged.
-
-### 2026-07-23 (release v1.6.4)
-- skill-maintainer 1.0.1 fixes #4 (maintainer-only separation: manifest marker + command
-  repo-type guards + README consistency). `metadata.version` → 1.6.4. Skills unchanged.
+- Three issues shipped since v1.6.3 (one consolidated dev→main promotion, tagged v1.6.6):
+  - skill-maintainer 1.0.1 — #4 maintainer-only separation (manifest marker + command
+    repo-type guards + README consistency). *(Superseded by the full extraction in v1.6.7.)*
+  - rails-flow 1.2.0 — #2 claude-skills-reporter agent + `/rails-flow:report` (feedback-loop
+    sending end).
+  - pipeline 1.1.0 — #5 `/pipeline:ack` + auto-clear for the QA-verify nudge marker.
+  `metadata.version` → 1.6.6. Skills unchanged. (No v1.6.4/v1.6.5 tags exist — those interim
+  bumps were folded into this single release.)
 
 ### 2026-07-23 (release v1.6.3)
 - Release flow is now automated via GitHub Actions (`.github/workflows/release.yml`):
