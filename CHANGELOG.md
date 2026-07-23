@@ -273,6 +273,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.1.0 — 2026-07-23
+- Automate the tedious QA loop — case authoring/management + agentic functional testing,
+  **free and repo-local** (no Testmo/online case manager; Testmo is paid and stays optional
+  — an export can seed the catalogue but the in-repo file is the source of truth):
+  - NEW `case-author` agent + **`/qa-flow:cases`** — writes and MAINTAINS the test-case
+    catalogue `qa/test-cases.csv` (columns `Test ID,Title,Area,Type,Priority,Status,Source,
+    Notes`) from the PRD, app menu/routes, the qa-lead plan, and `docs/brain` defects.
+    Stable `TC-###` IDs; idempotent add / update / deprecate (never renumber or hard-delete);
+    Excel-openable; reviewable as a `git diff`.
+  - NEW `functional-tester` agent + **`/qa-flow:functional`** — drives the running app via
+    **Playwright MCP** (free) from those case titles: menu-scoped, evidence-based (screenshot
+    per finding), strictly in-scope, no code changes. Writes a Markdown report + an
+    Excel-openable CSV summary + screenshots to `qa/manual-tests/`. Models a proven
+    Claude-Desktop + Playwright-MCP manual-testing flow, systematized into the plugin.
+  - `setup-qa` scaffolds `qa/test-cases.csv` + `qa/manual-tests/` and documents enabling the
+    Playwright MCP server.
+
 ### 1.0.6 — 2026-07-23
 - Close the #1 residual: release-gate now strips heredoc BODIES before detection, so an
   unquoted heredoc body line beginning with `git merge` / `git push origin main` /
@@ -386,6 +403,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.9)
+- qa-flow 1.1.0: free, repo-local case authoring/management (`/qa-flow:cases`) + agentic
+  functional testing via Playwright MCP (`/qa-flow:functional`) — no paid/online tool.
+  `metadata.version` → 1.6.9. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.8)
 - Reverse the v1.6.7 approach: maintainer tooling is now **repo-local `.claude/`**, not a

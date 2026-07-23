@@ -40,6 +40,15 @@ Read CLAUDE.md (stack, auth, roles, tenancy), routes, the OpenAPI spec location,
 - `qa/seed.rb` — idempotent QA personas (one per role: admin/member/etc, plus a
   second-tenant user for isolation tests) loadable into the QA/staging env
 - `qa/plans/`, `qa/reports/` — with `.gitkeep`
+- **Test-case catalogue + agentic functional testing — free, repo-local:**
+  - `qa/test-cases.csv` — the authored/maintained case catalogue (header
+    `Test ID,Title,Area,Type,Priority,Status,Source,Notes`, plus one example row).
+    **`/qa-flow:cases`** (the `case-author` agent) authors and maintains it from the
+    PRD/app-surface/defects — stable IDs, idempotent; no online case manager (a Testmo
+    export can seed it, but the file is the source of truth). Excel-openable.
+  - `qa/manual-tests/` + `qa/manual-tests/screenshots/` (`.gitkeep`) — where
+    **`/qa-flow:functional`** (the `functional-tester` agent, via Playwright MCP) writes its
+    Markdown report + CSV summary + screenshots.
 - `qa/README.md` — how to boot the target, set env vars, run each tier
 
 ## 3. Env & GitHub
@@ -53,9 +62,12 @@ gitignored; commit configs, specs, seed, and the stamp path is NOT gitignored
 ## 4. Tool checklist (report, don't auto-install)
 
 Node + `npx playwright install` (browsers) · `pipx install schemathesis` · `k6`
-(brew/choco/apt) · Docker (for the ZAP image). State which are present vs missing.
+(brew/choco/apt) · Docker (for the ZAP image) · **Playwright MCP** for agentic functional
+testing (`claude mcp add playwright -- npx @playwright/mcp@latest`, then restart — free).
+State which are present vs missing.
 
 ## 5. Report
 
-Files created, personas seeded, tools to install, and the two entry points:
-`/qa-flow:verify` after feature merges, `/qa-flow:certify` before release.
+Files created, personas seeded, tools to install, and the entry points: `/qa-flow:cases`
+to author/maintain the case catalogue, `/qa-flow:functional` for agentic functional testing
+from it, `/qa-flow:verify` after feature merges, `/qa-flow:certify` before release.
