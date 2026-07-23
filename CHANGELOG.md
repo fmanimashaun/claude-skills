@@ -273,6 +273,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.4.0 — 2026-07-23
+- `setup-qa` now **detects the codebase and proposes a recommended stack** instead of asking
+  cold: it reads deps/test tooling (`cypress`/`@playwright/test`/`selenium`+`pytest-bdd`),
+  `*.feature` files, mobile targets (React Native/Flutter/`ios`+`android`), an OpenAPI spec,
+  existing Allure/Testmo config — and pre-fills `qa/qa.config.yml` with a one-line rationale
+  per non-default tier. **Respects existing tooling** (never proposes switching a framework
+  the repo already uses); greenfield falls back to free defaults by app language. Advisory
+  only — the engineer confirms or overrides any line before it's written. Still no forced
+  stack.
+
 ### 1.3.0 — 2026-07-23
 - Wire the free **Allure** unified report end-to-end (`reporting: allure` | `both`; default
   `markdown-csv` unchanged, zero-dependency): `setup-qa` scaffolds the framework's Allure
@@ -436,6 +446,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.12)
+- qa-flow 1.4.0: `setup-qa` inspects the codebase and proposes a recommended testing stack
+  (confirm/override; respects existing tooling) instead of asking cold. `metadata.version`
+  → 1.6.12. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.11)
 - qa-flow 1.3.0: free Allure unified reporting wired across all runners/tiers

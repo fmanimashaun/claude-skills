@@ -1,5 +1,5 @@
 ---
-description: Scaffold the independent QA workspace — Playwright, k6, seed personas, config, and tool checklist — separate from the developer test suite
+description: Set up the independent QA workspace — detects the codebase's testing signals and PROPOSES a stack (qa/qa.config.yml) you confirm/override, then scaffolds only the chosen tools, seed personas, and case catalogue. Stack-agnostic, free by default.
 ---
 
 # /qa-flow:setup-qa
@@ -24,16 +24,36 @@ Safe to re-run on an existing qa/ workspace, as many times as needed:
   (added browsers, custom fixtures, extra thresholds) into the default.
 - Stage only files setup-qa authored; never `git add -A`; `git status` after.
 
-## 1. Inspect
+## 1. Inspect & detect the stack
 
 Read CLAUDE.md (stack, auth, roles, tenancy), routes, the OpenAPI spec location, and
-`docs/` for personas/acceptance criteria.
+`docs/` for personas/acceptance criteria. Then **detect the codebase's testing signals** so
+you can propose a stack (evidence → proposal), rather than asking cold:
 
-## 2. Choose the stack — `qa/qa.config.yml` (qa-flow forces NO stack)
+- **Existing test tooling wins** — never propose switching a framework the repo already uses:
+  - `cypress` in `package.json` (esp. with `@badeball/cypress-cucumber-preprocessor` or any
+    `*.feature`) → `web_e2e: cypress-cucumber`.
+  - `@playwright/test` in deps → `web_e2e: playwright`.
+  - Python project (`requirements.txt`/`pyproject.toml`) with `selenium` and/or
+    `pytest-bdd`/`behave` → `web_e2e: selenium-pytest-bdd`.
+  - any `*.feature` / cucumber anywhere → keep it **BDD/Gherkin**.
+- **Greenfield (no e2e tooling yet)** — propose from the app: JS/TS web → `playwright`
+  (modern, resilient, free); Python-centric → `selenium-pytest-bdd`.
+- **Mobile** — React Native / Flutter / Capacitor, or `ios/`+`android/` / Swift → `mobile: appium`; else `none`.
+- **API** — an OpenAPI/Swagger spec or rswag present → `api: schemathesis`; else `none`.
+- **Reporting** — existing Allure config → `allure`; else `markdown-csv` (free default).
+- **Case mgmt** — existing Testmo config/creds → offer `case_management: testmo`; else `in-repo`.
+- `functional_agent` → `playwright-mcp` (free) unless a self-hosted Autonoma is detected.
 
-Read `qa/qa.config.yml` if it exists; otherwise **ask the engineer** which tools they use
-(offer the free defaults) and write it. This file is the override point every qa-flow agent
-reads. Schema (free defaults shown):
+## 2. Propose the stack, then confirm — `qa/qa.config.yml` (qa-flow forces NO stack)
+
+If `qa/qa.config.yml` already exists, use it. Otherwise **present the recommended config
+from step 1's detection** — one short rationale per non-default line (e.g. "`web_e2e:
+cypress-cucumber` — found cypress + `*.feature` in the repo"; "`mobile: appium` — detected
+`android/` + `ios/`"; "`api: schemathesis` — OpenAPI at `docs/openapi.yml`") — and let the
+engineer **confirm or override any line** before you write it. You *propose*; the engineer
+*decides*. If detection is inconclusive for a tier, propose the free default and say so. This
+file is the override point every qa-flow agent reads. Schema (free defaults shown):
 
 ```yaml
 base_url: env:QA_BASE_URL
