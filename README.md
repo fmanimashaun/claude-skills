@@ -18,7 +18,7 @@ independently versioned and installable; together they cover knowledge → build
 | **rails-stack** | The knowledge — Rails 8 + Hotwire skills that auto-load when relevant | *(skills, no commands)* |
 | **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
-| **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:setup-pipeline` |
+| **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
 | **skill-maintainer** *(maintainers only — not for app projects)* | Maintenance — turns downstream issue reports into source-verified fixes and releases | `/skill-maintainer:setup-intake` `/skill-maintainer:triage` `/skill-maintainer:work` `/skill-maintainer:audit` |
 
 Install `rails-stack` + `rails-flow` for build-only; add `qa-flow` for the independent

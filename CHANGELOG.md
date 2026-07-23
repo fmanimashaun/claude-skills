@@ -180,6 +180,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.1.0 — 2026-07-23
+- Fix #5: the post-merge QA-verify nudge marker now has a dismissal/clear path. New
+  `/pipeline:ack` removes `.git/pipeline-pending` (worktree-safe via `git rev-parse
+  --git-dir`) — nudge-only, no token spend — so a stale nudge can be cleared without
+  another merge or a manual `rm`; verified the SessionStart hook stops re-surfacing it
+  after. The pipeline-coordinator now CLEARS the marker when the verify stage resolves
+  (a `/qa-flow:verify` PASS or an explicit N/A), making "clears when the stage completes"
+  literally true. `pipeline-status.sh` reads the marker via git-dir (matching the writer)
+  and its hint points to `/pipeline:ack` (e.g. docs-only merges with nothing to verify).
+  Docs updated (`setup-pipeline.md`, README).
+
 ### 1.0.5 — 2026-07-22
 - setup-pipeline + setup-cloud: idempotent re-run + repair contract (matching
   setup-flow). pipeline.yml keys reconciled not overwritten (missing added, wrong
@@ -370,6 +381,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.6)
+- pipeline 1.1.0 fixes #5 (`/pipeline:ack` + auto-clear-on-resolution for the QA-verify
+  nudge marker). `metadata.version` → 1.6.6. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.5)
 - rails-flow 1.2.0 fixes #2 (claude-skills-reporter agent + `/rails-flow:report`, the

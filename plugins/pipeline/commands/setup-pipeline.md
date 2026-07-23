@@ -45,8 +45,11 @@ Infer `image` from the git remote. Confirm owner/repo with the user.
 Install `/pipeline:install-hooks`: writes `.git/hooks/post-merge` that, when a
 feature lands on `dev`, prints the nudge "QA verify pending — run /qa-flow:verify or
 /pipeline" and touches `.git/pipeline-pending`. The pipeline SessionStart hook
-surfaces that marker next time Claude Code opens. These NEVER invoke Claude headlessly
-— they remember, you decide when to spend tokens. (GitHub Actions adapter is provided
+surfaces that marker next time Claude Code opens. It clears when the verify stage
+resolves (a `/qa-flow:verify` PASS, or the pipeline-coordinator on an explicit N/A), and
+can be dismissed any time with `/pipeline:ack` — e.g. a docs/tooling-only merge with
+nothing to verify. These NEVER invoke Claude headlessly — they remember, you decide when
+to spend tokens. (GitHub Actions adapter is provided
 dormant in `pipeline.actions.yml.example` for when cloud minutes are available;
 copy to `.github/workflows/` to enable.)
 

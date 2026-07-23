@@ -1,7 +1,7 @@
 {
   "name": "pipeline",
   "description": "Lifecycle orchestrator over rails-flow and qa-flow: drives feature build -> QA verify -> certify -> containerized release across stages, honoring every gate. Deploy stage produces a versioned Docker image (ghcr.io) as the release artifact — pull-and-run verified locally today, Kamal to cloud when ready, same image. Local git-hook nudges detect transitions without spending tokens automatically. Cloud deploy (/pipeline:deploy-cloud) generates Kamal config from a prepared .env, wiring secrets safely (names in committed deploy.yml, values only in gitignored .kamal/secrets).",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "author": {
     "name": "Fisayo Animashaun"
   }
