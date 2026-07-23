@@ -351,6 +351,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-23 (release v1.6.3)
+- Release flow is now automated via GitHub Actions (`.github/workflows/release.yml`):
+  a `dev → main` merge (push to main) reads `metadata.version`, and if that tag doesn't
+  exist, builds the `.skill` assets with the canonical `package_core.py` and publishes
+  the GitHub Release — no manual `gh release`. Version-unchanged pushes are no-ops (tag
+  exists). Includes a dist-drift guard (fails the release if committed `dist/` isn't a
+  clean build) and pulls notes from this CHANGELOG's `(release vX.Y.Z)` block. Skills
+  unchanged; `metadata.version` → 1.6.3.
+
 ### 2026-07-23 (release v1.6.2)
 - Adopted a proper git flow: `dev` integration branch (now default) → `fix/*` and
   `feature/*` branch off dev, PR into dev; `dev → main` PR cuts the release. Aligns the
