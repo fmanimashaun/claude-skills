@@ -23,6 +23,11 @@ across projects **without a designer or Figma**, by applying the **fidara-design
 - `/design-flow:audit [path]` — flag UI drift against the system: raw/brand colors in component
   code, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus
   ring / ARIA, non-`min-h-touch` targets, hand-rolled layout CSS.
+- `/design-flow:mobile [ios|android|both]` — scaffold **Hotwire Native parity** (Phase 2):
+  native-app detection + `body.mobile-app`, JSON path configuration, bridge components
+  (button/menu/tab-bar, progressive-enhancement), safe-area + `min-h-touch` wiring, and
+  table→card-stack. Reuses the web components; the native Kotlin/Swift shells stay in their own
+  repos.
 
 ## Agents
 
