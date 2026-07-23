@@ -11,3 +11,6 @@ Thumbs.db
 /marketplace.json
 /plugin.json
 .env
+
+# Paid third-party book screenshots (Every Layout) — reference only, never redistribute.
+everylayout/
