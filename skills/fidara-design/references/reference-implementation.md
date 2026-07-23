@@ -205,9 +205,15 @@ export default class extends Controller {
       </main>
     <% end %>
   <% end %>
-  <turbo-frame id="modal"></turbo-frame>
+  <turbo-frame id="modal"></turbo-frame>   <%# the shared modal frame — all CRUD renders here %>
+  <div id="toasts" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none"></div>
 </body>
 ```
+
+That empty `<turbo-frame id="modal">` is load-bearing: **CRUD is modal-driven and in-page** —
+create/edit/delete render into it and update the list via Turbo Stream, never a full-page
+form. The full flow (triggers, stream responses, delete confirmation, `modal_controller`) is
+in [crud-modal-pattern.md](crud-modal-pattern.md).
 
 Everything here uses **role tokens + primitives only** — no raw colors, no bespoke layout CSS.
 The **rest of the catalog** is worked out the same way in

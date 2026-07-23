@@ -6,12 +6,12 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.11.0"
+    "version": "1.12.0"
   },
   "plugins": [
     {
       "name": "rails-stack",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment, plus the Fidara design system (tokens, layout primitives, component catalog). Bundles the rails-8, hotwire, and fidara-design skills.",
       "source": "./",
       "strict": false,
