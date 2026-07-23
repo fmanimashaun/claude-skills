@@ -53,7 +53,10 @@ prefix. See [references/brand.md](references/brand.md).
 
 **Concrete code:**
 [references/reference-implementation.md](references/reference-implementation.md) is the
-canonical ViewComponent pattern (replicate for the whole catalog) + the four Stimulus mixins.
+canonical ViewComponent pattern (Button/Card) + the four Stimulus mixins;
+[references/component-implementations.md](references/component-implementations.md) is the
+**full catalog** worked out (Badge, Alert, form controls, Modal, Dropdown, Tabs, Toast,
+Tooltip, Avatar, EmptyState, Sidebar, Switcher).
 [references/mobile-reference-implementation.md](references/mobile-reference-implementation.md)
 is the Phase-2 Hotwire Native web-side code (native detection, path config, bridge components,
 safe-area/touch, table→card-stack).
