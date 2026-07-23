@@ -29,10 +29,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## skill-maintainer (marketplace maintenance plugin)
 
-> **Extracted in v1.6.7** to its own marketplace,
-> [`fmanimashaun/claude-skills-maintainers`](https://github.com/fmanimashaun/claude-skills-maintainers).
-> The entries below are its history while it lived in this repo; further changes are
-> tracked there.
+> **Relocated to repo-local `.claude/` in v1.6.8** (the short-lived separate marketplace
+> from v1.6.7 was reverted and deleted). The entries below are its history as a
+> distributed plugin; it now lives in `.claude/` as this repo's own maintainer tooling —
+> see `CLAUDE.md`.
 
 ### 1.0.1 — 2026-07-23
 - Fix #4: separate this maintainer-only plugin from the app-builder install surface.
@@ -386,6 +386,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.8)
+- Reverse the v1.6.7 approach: maintainer tooling is now **repo-local `.claude/`**, not a
+  separate marketplace. `skill-maintainer`'s commands/agents/hook moved into `.claude/`
+  (commands renamed `/maintainer-triage` · `-work` · `-audit` · `-setup-intake`), plus a
+  detailed `CLAUDE.md` maintainer guide. This is active for anyone who clones the repo and
+  is **never** part of the marketplace install surface — cleaner than a second marketplace,
+  and no install step. The `fmanimashaun/claude-skills-maintainers` repo created in v1.6.7
+  was **deleted**. Marketplace unchanged (still the 4 app plugins). `metadata.version` →
+  1.6.8. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.7)
 - Full separation for #4: `skill-maintainer` **extracted to a separate marketplace**,
