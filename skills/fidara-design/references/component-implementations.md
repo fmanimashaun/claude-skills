@@ -7,6 +7,29 @@ mixins). Every component uses **semantic role tokens** + **layout primitives** o
 shapes; don't invent new ones. Behavioral components reference the mixins/controllers already
 defined.
 
+## Icons (Lucide) — the one call-site shape
+
+Every icon below is **Lucide via the `lucide-rails` gem**, sized and colored by the **`with-icon`**
+utility, never by a per-call pixel size. The call site is always:
+
+```ruby
+# in a component: emit the raw <svg>, no size/color args
+def close_icon = helpers.lucide_icon("x")
+```
+```erb
+<%# wrap it (or its button) in `with-icon` — svg becomes 1em + currentColor %>
+<span class="with-icon"><%= close_icon %></span>
+```
+
+Why no `size:`: `with-icon`'s `& svg { inline-size: 1em; block-size: 1em; fill: currentColor }`
+([layout-primitives.md](layout-primitives.md)) wins over the gem's presentational
+`width`/`height` attributes — SVG presentation attributes carry **zero CSS specificity**, so the
+utility overrides them with no `!important` and no specificity fight. So the `lucide-rails`
+initializer should set **stroke-width only** (`"stroke-width" => "1.5"`); do **not** hardcode
+`width`/`height` px there — the icon sizes to its text via `with-icon`, per the SKILL
+non-negotiable ("Lucide icons, `1em`-sized, `currentColor`"). (Genuinely fixed-size glyphs like
+the Button loader-spinner are the documented exception — `animate-spin size-4`, not a content icon.)
+
 ## Badge — `app/components/ui/badge_component.rb`
 
 ```ruby
@@ -58,6 +81,12 @@ module Ui
        @attrs.delete(:class)].compact.join(" ")
     end
     def role = @intent == :error ? "alert" : "status"
+    ICON = { default: "info", info: "info", success: "circle-check",
+             warning: "triangle-alert", error: "circle-x" }.freeze
+    # Lucide via lucide-rails; size/color come from `with-icon` (1em) + currentColor — never a
+    # px arg. See "Icons (Lucide)" at the top for why we don't pass size:.
+    def icon = helpers.lucide_icon(ICON.fetch(@intent))
+    def close_icon = helpers.lucide_icon("x")
   end
 end
 ```
@@ -66,14 +95,14 @@ end
 <div class="<%= classes %>" role="<%= role %>"
      <%= "data-controller=dismiss" if @dismissible %> <%= tag.attributes(@attrs) %>>
   <div class="cluster" style="--space: var(--space-2xs); --align: start">
-    <span class="alert-icon shrink-0"><%= icon %></span>  <%# Lucide, 1em %>
+    <span class="alert-icon with-icon shrink-0"><%= icon %></span>  <%# with-icon → svg 1em, currentColor %>
     <div class="stack" style="--space: var(--space-3xs)">
       <% if title? %><p class="font-medium"><%= title %></p><% end %>
       <div class="text-muted-foreground text-step-0"><%= content %></div>
     </div>
     <% if @dismissible %>
-      <button type="button" data-action="dismiss#close" class="ml-auto min-h-touch"
-              aria-label="Dismiss"><span class="sr-only">Dismiss</span><%= close_icon %></button>
+      <button type="button" data-action="dismiss#close" aria-label="Dismiss"
+              class="with-icon ml-auto min-h-touch rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Dismiss</span><%= close_icon %></button>
     <% end %>
   </div>
 </div>
@@ -155,7 +184,12 @@ module Ui
     def initialize(size: :md, labelledby: "modal-title")
       @size, @labelledby = size.to_sym, labelledby
     end
-    def panel = ["imposter bg-popover text-popover-foreground rounded-[12px] shadow-lg w-full", SIZE.fetch(@size)].join(" ")
+    # A modal is a card-class surface → `rounded-lg` (= --radius-lg = 12px via the token),
+    # NOT an arbitrary `rounded-[12px]`. Stay in the radius vocabulary (SKILL non-negotiable).
+    def panel = ["imposter bg-popover text-popover-foreground rounded-lg shadow-lg w-full", SIZE.fetch(@size)].join(" ")
+    # Lucide via lucide-rails; NO px size — `with-icon` sizes it to 1em and `currentColor`
+    # inherits (CSS overrides the gem's width/height attrs). See "Icons (Lucide)" at the top.
+    def close_icon = helpers.lucide_icon("x")
   end
 end
 ```
@@ -168,7 +202,8 @@ end
     <div class="box stack" style="--space: var(--space-s)">
       <div class="cluster" style="--justify: space-between">
         <h2 id="<%= @labelledby %>" class="text-step-1 font-semibold"><%= title %></h2>
-        <button type="button" data-action="modal#close" aria-label="Close" class="min-h-touch"><span class="sr-only">Close</span><%= close_icon %></button>
+        <button type="button" data-action="modal#close" aria-label="Close"
+                class="with-icon min-h-touch rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
       </div>
       <div class="max-h-[70vh] overflow-y-auto"><%= content %></div>
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
