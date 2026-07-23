@@ -370,11 +370,19 @@ surface) and the Obsidian vault generator script (personal-layer tooling —
 
 ## Independent QA — `qa-flow`
 
-qa-flow tests the **running application from the outside**, with its own toolchain
-(Playwright, Schemathesis, axe-core, k6, OWASP ZAP) — deliberately independent of the
+qa-flow tests the **running application from the outside** — deliberately independent of the
 developer spec suite. The developer flow proves a feature works; qa-flow guards that a
 change didn't break previously-certified behavior, and certifies the whole system for
 release.
+
+**Stack-agnostic — the QA engineer picks the tools, qa-flow never forces one.**
+`/qa-flow:setup-qa` writes `qa/qa.config.yml` where you choose per tier —
+`web_e2e: playwright | cypress-cucumber | selenium-pytest-bdd`, `mobile: appium`,
+`functional_agent: playwright-mcp | autonoma-selfhosted`, reporting, etc. — all **free by
+default**. The stack-agnostic core (case catalogue, risk plan, evidence rules, certification
+gate, Markdown/CSV reporting, the git/release flow) is the product; the runner is a config
+choice. Paid/optional backends (e.g. `case_management: testmo`) are **opt-in via config +
+credentials** — never forced, never a hard dependency.
 
 **Two moments, mapped to QA theory** (smoke ⊂ sanity ⊂ regression):
 

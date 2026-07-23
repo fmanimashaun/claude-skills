@@ -22,6 +22,13 @@ header.
 steps, expected vs actual, evidence paths/URLs, environment (target URL + sha
 tested). Never bundle unrelated defects.
 
+**PR-native results (free, like a CI check)**: if the run maps to an open PR (the branch
+under test has one — `gh pr view --json number,url`), post the report summary as a PR
+comment so results land in the PR conversation, not just a file:
+`gh pr comment <n> --body-file <summary.md>`. Lead the comment with a marker line
+(`<!-- qa-flow-report -->`) and the verdict + counts; on re-runs, edit the existing marked
+comment rather than stacking new ones. Skip silently if there's no PR or no `gh`.
+
 **Corpus promotion (certify pass only)**: instruct e2e-tester to add the cycle's
 newly-proven feature journeys as `@regression` charters — the suite grows by each
 certified feature.

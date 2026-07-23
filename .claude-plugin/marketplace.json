@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.6.9"
+    "version": "1.6.10"
   },
   "plugins": [
     {
@@ -28,7 +28,7 @@
     },
     {
       "name": "qa-flow",
-      "description": "Independent QA engineering flow — risk-based planning, black-box execution (Playwright, Schemathesis, axe-core, k6, OWASP ZAP), defect filing, and a hook-enforced dev->main certification gate. Smoke gates, regression validates, certification stamps. Tests the running app from the outside, independent of the developer suite.",
+      "description": "Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/qa.config.yml (Playwright, Cypress+Cucumber, Selenium+pytest-bdd, Appium; free by default) — qa-flow is never forced onto one. Free, repo-local case authoring/management (/qa-flow:cases → qa/test-cases.csv; Testmo opt-in) and agentic functional testing via Playwright MCP (/qa-flow:functional): auto-maps flows, self-adapting locators, evidence-based Markdown/CSV reports. Plus risk-based planning, defect filing, PR-native results, and a hook-enforced dev->main certification gate.",
       "source": "./plugins/qa-flow",
       "strict": false
     },
