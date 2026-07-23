@@ -404,6 +404,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.2.1 — 2026-07-23
+- `/design-flow:component` now points at both reference-implementation (Button/Card + mixins)
+  and the full component-implementations catalog as the concrete-code source. No behavior
+  change; sharper guidance.
+
 ### 1.2.0 — 2026-07-23
 - NEW **`/design-flow:tokens [android|ios|both]`** — runs the native token export (Phase 3):
   parse the Rails app's `@theme`, resolve roles, emit Android + iOS token files to `tmp/`.
@@ -435,6 +440,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.5.0 — 2026-07-23
+- fidara-design **full component catalog** as worked code (now 12 references): NEW
+  **component-implementations** completes the reference implementations beyond Button/Card —
+  Badge, Alert, form Field + Input recipe + checkbox/radio/switch, Modal, Dropdown, Tabs,
+  Toast, Tooltip, Avatar, EmptyState, and the Sidebar/Switcher layout components. Every one is
+  a frozen `BASE`/`VARIANT`/`SIZE` map on role tokens + primitives, attribute-driven state,
+  a11y baked in — the exact shape agents replicate. Pagination/CRUD-tables remain the
+  role-tokenized `shared/*` partials.
 
 ### 1.4.0 — 2026-07-23
 - fidara-design **mobile Phase 3** (now 11 references): NEW **native-tokens** — the native
@@ -526,6 +540,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.11.0)
+- fidara-design full component catalog worked as reference code
+  (component-implementations, rails-stack → 1.5.0); design-flow → 1.2.1 (component command
+  cites it). `metadata.version` → 1.11.0. rails-8/hotwire unchanged.
 
 ### 2026-07-23 (release v1.10.0)
 - Mobile Phase 3 (native token export): fidara-design native-tokens (rails-stack → 1.4.0) +
