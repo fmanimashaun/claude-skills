@@ -51,9 +51,12 @@ prefix. See [references/brand.md](references/brand.md).
    Hotwire Native renders the same web UI in a native shell; safe-areas + `min-h-touch` +
    bridge components + path config; native token export for fully-native Android/iOS screens.
 
-**Concrete code:** [references/reference-implementation.md](references/reference-implementation.md)
-is the canonical ViewComponent pattern (replicate for the whole catalog) + the four Stimulus
-mixins as real code. Copy these shapes exactly; don't invent new ones.
+**Concrete code:**
+[references/reference-implementation.md](references/reference-implementation.md) is the
+canonical ViewComponent pattern (replicate for the whole catalog) + the four Stimulus mixins.
+[references/mobile-reference-implementation.md](references/mobile-reference-implementation.md)
+is the Phase-2 Hotwire Native web-side code (native detection, path config, bridge components,
+safe-area/touch, table→card-stack). Copy these shapes exactly; don't invent new ones.
 
 ## Authoring mechanism (what to reach for)
 
