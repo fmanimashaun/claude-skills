@@ -22,13 +22,36 @@ if ! type -P python3 >/dev/null 2>&1; then
 fi
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
+# Strip heredoc BODIES so their text is never read as a command (completes the #1
+# residual). A body (<<EOF … EOF, incl. <<-EOF and quoted <<'EOF'/<<"EOF") is unquoted,
+# so quote-stripping alone can't remove it; drop body + terminator lines, keep the
+# command line that opens the heredoc. Here-strings (<<<) are left alone.
+_strip_heredocs() {
+  awk '
+    inh {
+      t=$0; if (dash) sub(/^\t+/,"",t)
+      if (t==delim) inh=0
+      next
+    }
+    {
+      if (match($0, /<<-?[ \t]*["'\'']?[A-Za-z_][A-Za-z0-9_]*["'\'']?/)) {
+        before=(RSTART>1)?substr($0,RSTART-1,1):""
+        if (before != "<") {
+          op=substr($0,RSTART,RLENGTH); dash=(op ~ /^<<-/)?1:0
+          d=op; sub(/^<<-?[ \t]*/,"",d); gsub(/["'\'']/,"",d)
+          delim=d; inh=1
+        }
+      }
+      print
+    }
+  '
+}
+
 # Detect promotion to main/master. #1: match the INVOKED command, not any substring of
-# the line. Strip quoted spans (commit messages, -m/--body, echo bodies) so their text is
-# never read as a command, then require the pattern at the START of a command segment
-# (split on ; | && ||). A commit/PR body/echo that merely MENTIONS a merge/push no longer
-# trips the gate. (Residual: an unquoted heredoc body line beginning with `git merge` is
-# still seen — rare, and errs fail-closed, so safe.)
-seg="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | tr ';|&' '\n')"
+# the line. Drop heredoc bodies, strip quoted spans (commit messages, -m/--body, echo
+# bodies), then require the pattern at the START of a command segment (split on ; | && ||).
+# A commit/PR body/echo/heredoc that merely MENTIONS a merge/push no longer trips the gate.
+seg="$(printf '%s' "$cmd" | _strip_heredocs | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | tr ';|&' '\n')"
 push_seg=0; merge_seg=0; ghmerge_seg=0
 printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b.*\b(origin[[:space:]]+)?(HEAD:)?(main|master)\b' && push_seg=1
 printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+merge\b' && merge_seg=1

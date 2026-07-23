@@ -237,6 +237,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.0.6 — 2026-07-23
+- Close the #1 residual: release-gate now strips heredoc BODIES before detection, so an
+  unquoted heredoc body line beginning with `git merge` / `git push origin main` /
+  `gh pr merge` no longer trips the gate (`<<EOF`, `<<-EOF` with tab-stripped terminator,
+  and quoted `<<'EOF'`/`<<"EOF"` all handled; here-strings `<<<` left alone). A genuine
+  promotion on a line after a heredoc, and ordinary newline-separated promotions, still
+  gate. Verified on `main` via a worktree (`git merge` blocks on main; a commit message
+  mentioning it does not) plus the full regression matrix. Residual (documented
+  in-script): multiple heredocs opened on a single line (`cmd <<A <<B`) track only the
+  first body — astronomically rare, and errs fail-closed.
+
 ### 1.0.5 — 2026-07-23
 - Fix #1: the release-gate hook no longer false-positives on commands that merely
   MENTION a promotion. Detection now strips quoted spans (commit messages, `-m` /
@@ -339,6 +350,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.2)
+- Adopted a proper git flow: `dev` integration branch (now default) → `fix/*` and
+  `feature/*` branch off dev, PR into dev; `dev → main` PR cuts the release. Aligns the
+  repo with qa-flow/pipeline's own dev→main doctrine.
+- qa-flow 1.0.6 closes the #1 heredoc residual; `.env` gitignored (token safety).
+  `metadata.version` → 1.6.2. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.1)
 - First issue shipped through skill-maintainer: qa-flow 1.0.5 fixes #1 (release-gate
