@@ -42,5 +42,9 @@ gate that needs a human (QA failure, production approval).
 
 Each stage spends tokens. State which stage you're about to run and its rough cost
 shape before running the expensive ones (certify fans out many agents). If a git-hook
-nudge marker (`.git/pipeline-pending`) triggered this, treat it as a suggestion to
-the user, not a mandate to spend.
+nudge marker (`.git/pipeline-pending`, under `git rev-parse --git-dir`) triggered this,
+treat it as a suggestion to the user, not a mandate to spend. When the QA-verify stage it
+represents resolves (a `/qa-flow:verify` PASS, or the user confirms the merge had nothing
+to verify), CLEAR the marker (`rm -f "$(git rev-parse --git-dir)/pipeline-pending"`) so it
+stops re-surfacing — "clears when the stage completes" must be literally true. The user can
+also dismiss it directly with `/pipeline:ack` (nudge-only, no spend).
