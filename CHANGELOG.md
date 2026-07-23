@@ -404,6 +404,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.1.0 — 2026-07-23
+- NEW **`/design-flow:mobile [ios|android|both]`** — scaffolds the Hotwire Native parity layer
+  (Phase 2): native-app detection + body flags, JSON path configuration, bridge components
+  (button/menu/tab-bar, progressive enhancement), safe-area + `min-h-touch` wiring, and
+  table→card-stack. Reuses the web components; never touches the native app repos.
+
 ### 1.0.1 — 2026-07-23
 - `/design-flow:setup` now points at the fidara-design `reference-implementation` as the
   canonical source for the base ViewComponents + Stimulus mixins (copy those exact shapes),
@@ -424,6 +430,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.3.0 — 2026-07-23
+- fidara-design **mobile Phase 2** (now 10 references): NEW **mobile-reference-implementation**
+  — the web-side Hotwire Native parity code: `native_app?` detection + `body.mobile-app` chrome
+  toggles, JSON path configuration (modal vs default, per surface), bridge components
+  (`button` nav-bar action, `menu` action sheet) as progressive enhancement extending
+  `BridgeComponent`, safe-area + `min-h-touch` wiring, and the table→card-stack recipe.
+  `mobile.md` marks Phase 2 code-ready. Native Kotlin/Swift shells stay in their own repos
+  (this is the web contract they consume); Phase 3 (native token export) still to come.
 
 ### 1.2.0 — 2026-07-23
 - fidara-design gains the concrete code it was missing (now 9 references): NEW
@@ -497,6 +512,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.9.0)
+- Mobile Phase 2 (Hotwire Native parity): fidara-design mobile-reference-implementation
+  (rails-stack → 1.3.0) + NEW `/design-flow:mobile` (design-flow → 1.1.0). Web-side code only
+  (native app repos untouched). `metadata.version` → 1.9.0. rails-8/hotwire unchanged.
 
 ### 2026-07-23 (release v1.8.0)
 - fidara-design reference-implementation (concrete ViewComponent + Stimulus-mixin code) +
