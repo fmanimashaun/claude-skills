@@ -273,6 +273,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.3.0 — 2026-07-23
+- Wire the free **Allure** unified report end-to-end (`reporting: allure` | `both`; default
+  `markdown-csv` unchanged, zero-dependency): `setup-qa` scaffolds the framework's Allure
+  adapter for the chosen `web_e2e`/`mobile` runner (allure-playwright / allure-cypress /
+  allure-pytest / Appium adapter), all tiers writing into one `qa/reports/allure-results` →
+  `qa/reports/allure-report` (both gitignored). `e2e-tester` emits results and **attaches
+  evidence** (failure screenshot, Playwright trace, logs), then `allure generate`.
+  `qa-reporter` honors the mode, generates the aggregated HTML, keeps a legible Markdown
+  verdict/counts alongside, and cites the report path in the PR-native comment. Free/OSS
+  (Apache-2.0); no paid or online reporting service.
+
 ### 1.2.0 — 2026-07-23
 - **Stack-agnostic — no forced testing stack.** New `qa/qa.config.yml` is the override
   point the QA engineer sets; every agent honors it. `setup-qa` is now config-first: it
@@ -425,6 +436,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.11)
+- qa-flow 1.3.0: free Allure unified reporting wired across all runners/tiers
+  (`reporting: allure|both`; `markdown-csv` remains the default). `metadata.version` →
+  1.6.11. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.10)
 - qa-flow 1.2.0: stack-agnostic QA (qa/qa.config.yml — Playwright/Cypress-Cucumber/
