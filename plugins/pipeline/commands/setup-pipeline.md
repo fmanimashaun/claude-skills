@@ -42,9 +42,12 @@ Infer `image` from the git remote. Confirm owner/repo with the user.
 
 ## 3. Local git-hook nudges (no token spend)
 
-Install `/pipeline:install-hooks`: writes `.git/hooks/post-merge` that, when a
-feature lands on `dev`, prints the nudge "QA verify pending — run /qa-flow:verify or
-/pipeline" and touches `.git/pipeline-pending`. The pipeline SessionStart hook
+Install `/pipeline:install-hooks`: writes a `post-merge` hook under
+`$(git rev-parse --git-dir)/hooks/` — i.e. `.git/hooks/post-merge` in a normal clone, but the
+resolved git-dir in worktrees/submodules — that, when a feature lands on `dev`, prints the
+nudge "QA verify pending — run /qa-flow:verify or /pipeline" and touches
+`$(git rev-parse --git-dir)/pipeline-pending` (`.git/pipeline-pending` in a normal clone).
+The pipeline SessionStart hook
 surfaces that marker next time Claude Code opens. It clears when the verify stage
 resolves (a `/qa-flow:verify` PASS, or the pipeline-coordinator on an explicit N/A), and
 can be dismissed any time with `/pipeline:ack` — e.g. a docs/tooling-only merge with
