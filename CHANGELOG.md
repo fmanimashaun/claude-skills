@@ -273,6 +273,28 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.2.0 — 2026-07-23
+- **Stack-agnostic — no forced testing stack.** New `qa/qa.config.yml` is the override
+  point the QA engineer sets; every agent honors it. `setup-qa` is now config-first: it
+  asks/reads the config and scaffolds ONLY the chosen tools. Free defaults; any tier
+  overridable.
+  - `web_e2e`: `playwright` | `cypress-cucumber` | `selenium-pytest-bdd` | `none`;
+    `mobile`: `appium`; `functional_agent`: `playwright-mcp` | `autonoma-selfhosted`;
+    `api`/`perf`/`security`/`a11y`; `reporting`: `markdown-csv` | `allure`;
+    `case_management`: `in-repo` (free CSV, default) | `testmo` (paid, opt-in).
+  - `e2e-tester` rewritten stack-agnostic: universal doctrine (self-adapting resilient
+    locators, no sleeps, auth-reuse, tag routing, failure classification, corpus growth) +
+    per-framework specifics; reuses the same Gherkin `.feature` scenarios across web/mobile.
+- **Autonoma-inspired patterns, kept free:** `functional-tester` now **auto-maps** the
+  in-scope flows before testing and drives by the **live accessibility snapshot**
+  (self-adapting, no brittle selectors) via Playwright MCP. `qa-reporter` gains **PR-native
+  result posting** (`gh pr comment`, marker-updated) so results show up in the PR like a CI
+  check.
+- **Opt-in paid backends without lock-in:** `case_management: testmo` makes `case-author`
+  mirror `qa/test-cases.csv` ↔ Testmo via its REST API (`TESTMO_URL`/`TESTMO_TOKEN`, env,
+  gitignored); the in-repo CSV always stays the source of truth. Testmo is not an MCP —
+  REST/CLI; `setup-qa` captures the creds. Default stays free/in-repo.
+
 ### 1.1.0 — 2026-07-23
 - Automate the tedious QA loop — case authoring/management + agentic functional testing,
   **free and repo-local** (no Testmo/online case manager; Testmo is paid and stays optional
@@ -403,6 +425,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.10)
+- qa-flow 1.2.0: stack-agnostic QA (qa/qa.config.yml — Playwright/Cypress-Cucumber/
+  Selenium-pytest-bdd/Appium, free by default; no forced stack) + Autonoma-inspired free
+  patterns (auto-mapped flows, self-adapting locators, PR-native results) + opt-in Testmo
+  case-management via config. `metadata.version` → 1.6.10. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.9)
 - qa-flow 1.1.0: free, repo-local case authoring/management (`/qa-flow:cases`) + agentic

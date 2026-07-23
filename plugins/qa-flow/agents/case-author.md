@@ -11,8 +11,24 @@ tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
 You turn requirements and app surface into a concrete, maintained test-case catalogue so QA
-engineers don't hand-write and hand-maintain cases. The catalogue is a plain file in the
-repo — no online case-management tool, no license.
+engineers don't hand-write and hand-maintain cases. **By default the catalogue is a plain
+file in the repo — free, no online tool, no license.** A team can opt into an external
+manager via config (below); the in-repo file always stays the version-controlled record.
+
+## Backend (config) — free by default, paid opt-in
+
+Read `qa/qa.config.yml` → `case_management`:
+- **`in-repo`** (default, free) — the CSV below is the source of truth. Nothing external.
+- **`testmo`** (opt-in, PAID — the team already licenses it) — after updating the CSV, sync
+  it to Testmo via the REST API using `TESTMO_URL` + `TESTMO_TOKEN` (env, gitignored, never
+  committed): create/update cases (map `Title/Area/Priority/custom_steps/tags`), store the
+  returned Testmo case ID back in the CSV `Notes` (e.g. `testmo:1234`) so the mapping is
+  stable and idempotent. The in-repo CSV remains the record; Testmo is a mirror. If the
+  creds are absent, do NOT block — stay in-repo and tell the user how to enable it. (Testmo
+  is not an MCP; it's REST/CLI — `/qa-flow:setup-qa` captures the creds.)
+
+Never let an external backend become a hard dependency: the free in-repo path must always
+work.
 
 ## The catalogue: `qa/test-cases.csv`
 

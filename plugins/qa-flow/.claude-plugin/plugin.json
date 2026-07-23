@@ -1,7 +1,7 @@
 {
   "name": "qa-flow",
-  "description": "Independent QA engineering flow: risk-based test planning, black-box execution with industry-standard tools (Playwright, Schemathesis, axe-core, k6, OWASP ZAP), defect filing, and a hook-enforced dev->main release gate. Tests the running application from the outside — deliberately independent of the developer test suite. Smoke gates, regression validates, certification stamps.",
-  "version": "1.1.0",
+  "description": "Independent, stack-agnostic QA engineering flow. The QA engineer chooses the stack in qa/qa.config.yml (Playwright, Cypress+Cucumber, Selenium+pytest-bdd, Appium — free by default; never forced). Automates the tedious parts: free repo-local case authoring/management (/qa-flow:cases; Testmo opt-in via config) and agentic functional testing via Playwright MCP (/qa-flow:functional) with auto-mapped flows, self-adapting locators, and evidence-based Markdown/CSV reports. Plus risk-based planning, defect filing, PR-native results, and a hook-enforced dev->main certification gate. Independent of the developer test suite.",
+  "version": "1.2.0",
   "author": {
     "name": "Fisayo Animashaun"
   }
