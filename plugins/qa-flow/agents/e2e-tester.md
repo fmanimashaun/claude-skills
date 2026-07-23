@@ -62,4 +62,13 @@ journey is shared — one behavioural source, multiple drivers.
 ## Report
 
 Per charter: pass/fail, classification, evidence under `qa/reports/<framework>/`. Honor the
-`reporting` config (`markdown-csv` default, or `allure` if selected).
+`reporting` config:
+- **`markdown-csv`** (default) — hand results to `qa-reporter` for the Markdown/CSV report.
+- **`allure`** / **`both`** — run the suite through the framework's Allure adapter so results
+  land in `qa/reports/allure-results`, and **attach evidence as Allure attachments** (a
+  screenshot on failure, Playwright trace, browser/console logs) — that's what makes the
+  report actionable. After the run, generate the HTML:
+  `allure generate qa/reports/allure-results -o qa/reports/allure-report --clean`. `both`
+  keeps the Markdown/CSV summary as well. Never hand-edit `allure-results` — it's tool-owned.
+Keep the tags (`@smoke`/`@regression`/`@feature`) in the results so the report groups by
+suite and feature.

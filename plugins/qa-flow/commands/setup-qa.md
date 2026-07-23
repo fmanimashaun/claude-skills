@@ -85,11 +85,24 @@ Per `web_e2e` (scaffold ONE):
 Per `mobile: appium` — `qa/mobile/` (Appium caps, accessibility-id locators, shared `.feature`s).
 Per `perf/api/security/a11y` — k6 skeleton / Schemathesis config / ZAP notes / axe wiring, only if enabled.
 
+Per `reporting: allure` (or `both`) — wire the free **Allure** reporter for the chosen
+runner so every tier feeds one aggregated HTML report (`allure-results/` → `allure-report/`):
+- **playwright** — add `allure-playwright` to `reporter` in `playwright.config.ts`
+  (`resultsDir: qa/reports/allure-results`).
+- **cypress-cucumber** — add `allure-cypress` (import in `cypress/support`, `allureCypress`
+  in config), results to `qa/reports/allure-results`.
+- **selenium-pytest-bdd** — `allure-pytest`; run with `--alluredir qa/reports/allure-results`.
+- **appium** — the underlying runner's Allure adapter, same results dir.
+- API/perf/a11y tiers write into the **same** `allure-results/` so the report is unified.
+Report dir: `qa/reports/allure-results` (raw, gitignored) → `qa/reports/allure-report` (HTML,
+gitignored). `both` = keep the Markdown/CSV summary too. Default `markdown-csv` skips all this.
+
 ## 5. Env & GitHub
 
 Document required env: `QA_BASE_URL`, `QA_SPEC_URL` (optional), persona token vars.
 Add `.github/PULL_REQUEST_TEMPLATE.md` (the PR Documentation Contract) if absent so
-human PRs carry what qa-lead needs. Ensure `qa/reports/*` and `node_modules` are
+human PRs carry what qa-lead needs. Ensure `qa/reports/*` (including
+`qa/reports/allure-results` and `qa/reports/allure-report`) and `node_modules` are
 gitignored; commit configs, specs, seed, and the stamp path is NOT gitignored
 (the gate reads it from the repo).
 
