@@ -25,10 +25,11 @@ four flows interlock but don't hard-depend on each other — rails-flow generate
 Documentation Contract that qa-flow consumes; pipeline orchestrates all three while
 honoring every gate.
 
-> **Maintainers:** the maintenance tool (`skill-maintainer`) lives in a **separate**
-> marketplace, [`fmanimashaun/claude-skills-maintainers`](https://github.com/fmanimashaun/claude-skills-maintainers),
-> so app builders adding this marketplace never see it. See
-> [Maintaining the marketplace](#maintaining-the-marketplace--skill-maintainer) below.
+> **Maintainers:** the tooling for maintaining *this* marketplace is **not** a plugin and
+> is **not** installed with the four above. It lives in this repo's [`.claude/`](.claude/)
+> folder (commands + agents + a status hook) and is active automatically when you clone the
+> repo — so app builders never see it. See [`CLAUDE.md`](CLAUDE.md) and
+> [Maintaining the marketplace](#maintaining-the-marketplace) below.
 
 ## The skills
 
@@ -456,38 +457,41 @@ qa-flow and pipeline hooks are **bash + python3**. On Windows, run Claude Code i
 release gate — can't execute (and a blocking gate that can't run is the dangerous
 direction: ensure the toolchain is present where enforcement matters).
 
-## Maintaining the marketplace — `skill-maintainer`
+## Maintaining the marketplace
 
-The four plugins above help you build *apps*. The tool that maintains *this marketplace*,
-**skill-maintainer**, is deliberately kept off this install surface — it lives in a
-**separate marketplace** so app builders never see it:
+The four plugins above help you build *apps*. The tooling that maintains *this
+marketplace* is **not a plugin and not distributed** — it lives in this repo's
+[`.claude/`](.claude/) folder, so it's active automatically for anyone who clones the repo
+and completely invisible to app builders who add the marketplace. Nothing to install.
 
-```
-# maintainers only — a separate marketplace:
-/plugin marketplace add fmanimashaun/claude-skills-maintainers
-/plugin install skill-maintainer@claude-skills-maintainers
-```
+Clone the repo, open Claude Code, and you have:
 
-Repo: [`fmanimashaun/claude-skills-maintainers`](https://github.com/fmanimashaun/claude-skills-maintainers).
-It turns the issue stream on *this* repo into shipped, verified fixes:
-`/skill-maintainer:triage` (classify/label/queue), `:work` (confirm → **verify against
-source-of-truth** → fix → PR `Closes #n` → bump + CHANGELOG → release), `:audit`
-(proactive review), `:setup-intake` (scaffold the issue templates + label taxonomy). Its
-**non-negotiable gate**: no skill claim is edited until the `doctrine-verifier` agent
-confirms it against an authoritative source — verification precedes edits, and an
-INCONCLUSIVE verdict leaves doctrine unchanged. Every command refuses to run outside a
-marketplace repo (no `.claude-plugin/marketplace.json` → no-op). Full docs in that repo.
+- **`/maintainer-triage [issue|label]`** — classify open issues by component × type ×
+  priority, label, dedupe, queue.
+- **`/maintainer-work [issue]`** — one issue end-to-end: confirm → **verify against
+  source-of-truth** → fix → PR (`Closes #n`) → bump + CHANGELOG → release.
+- **`/maintainer-audit [component]`** — proactive source-of-truth review; files findings
+  as issues.
+- **`/maintainer-setup-intake`** — scaffold issue templates + label taxonomy.
+
+Backed by five agents in [`.claude/agents/`](.claude/agents/) and a SessionStart
+open-issue status hook. Its **non-negotiable gate**: no skill claim is edited until the
+`doctrine-verifier` agent confirms it against an authoritative source — verification
+precedes edits, and an INCONCLUSIVE verdict leaves doctrine unchanged. **Full maintainer
+guide: [`CLAUDE.md`](CLAUDE.md)** (git flow, automated releases, versioning discipline,
+packaging).
 
 ### The feedback loop — reporting from the field
 
-The *sending* end ships inside rails-flow (here); the *receiving* end is skill-maintainer
-(the separate maintainers marketplace). **`/rails-flow:report <observation>`** delegates to
-the `claude-skills-reporter` agent, which turns friction hit while using the toolchain into
+The *sending* end ships inside rails-flow (installed by users); the *receiving* end is the
+`.claude/` tooling here. **`/rails-flow:report <observation>`** delegates to the
+`claude-skills-reporter` agent, which turns friction hit while using the toolchain into
 a structured, deduped, version-pinned, evidence-backed issue on this repo. It is
 scope-guarded (toolchain only — it refuses to file your app's bugs), **drafts by default**,
 and files only on an explicit `MODE: FILE` (via `gh issue create --body-file`). So real
-daily usage feeds back as triage-ready issues — which a maintainer's `/skill-maintainer:triage`
-and `:work` then turn into releases. (Every issue in this repo's tracker was filed this way.)
+daily usage feeds back as triage-ready issues — which a maintainer's `/maintainer-triage`
+and `/maintainer-work` then turn into releases. (Every issue in this repo's tracker was
+filed this way.)
 
 ## Repository layout
 
@@ -498,12 +502,16 @@ claude-skills/
 ├── skills/
 │   ├── rails-8/          # SKILL.md + references/  (source of truth)
 │   └── hotwire/          # SKILL.md + references/
-├── plugins/
+├── plugins/               # DISTRIBUTED — the 4 app plugins in marketplace.json
 │   ├── rails-flow/       # agentic build flow: commands + agents + hooks
 │   ├── qa-flow/          # independent QA flow
 │   └── pipeline/         # lifecycle + release orchestrator
-│                         # (skill-maintainer lives in the separate
-│                         #  fmanimashaun/claude-skills-maintainers marketplace)
+├── .claude/               # NOT distributed — maintainer tooling for THIS repo
+│   ├── commands/         # /maintainer-triage · -work · -audit · -setup-intake
+│   ├── agents/           # doctrine-verifier, issue-triager, skill/plugin-doctor, release-manager
+│   ├── hooks/            # SessionStart open-issue status
+│   └── settings.json     # registers the hook
+├── CLAUDE.md              # maintainer guide (start here to maintain the repo)
 ├── .github/
 │   ├── workflows/release.yml  # auto-release on dev→main merge
 │   └── ISSUE_TEMPLATE/   # structured report intake + label taxonomy
