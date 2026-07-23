@@ -16,10 +16,10 @@ independently versioned and installable; together they cover knowledge → build
 | Plugin | Role | Key commands |
 |--------|------|--------------|
 | **rails-stack** | The knowledge — Rails 8 + Hotwire skills that auto-load when relevant | *(skills, no commands)* |
-| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/setup-flow` `/brain` |
+| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
-| **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:setup-pipeline` |
-| **skill-maintainer** | Maintenance — turns downstream issue reports into source-verified fixes and releases | `/skill-maintainer:setup-intake` `/skill-maintainer:triage` `/skill-maintainer:work` `/skill-maintainer:audit` |
+| **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
+| **skill-maintainer** *(maintainers only — not for app projects)* | Maintenance — turns downstream issue reports into source-verified fixes and releases | `/skill-maintainer:setup-intake` `/skill-maintainer:triage` `/skill-maintainer:work` `/skill-maintainer:audit` |
 
 Install `rails-stack` + `rails-flow` for build-only; add `qa-flow` for the independent
 quality gate; add `pipeline` for end-to-end lifecycle and containerized deployment. The
@@ -481,6 +481,17 @@ INCONCLUSIVE verdict leaves doctrine unchanged. Skill fixes route through `skill
 (which `bash -n`s and behavior-tests every changed script); `release-manager` bumps only
 the component that changed. Its SessionStart hook (bash + `gh`) surfaces the open-issue
 count; it's read-only and fails open when `gh` is absent.
+
+### The feedback loop — reporting from the field
+
+skill-maintainer is the *receiving* end; the *sending* end ships inside rails-flow.
+**`/rails-flow:report <observation>`** delegates to the `claude-skills-reporter` agent,
+which turns friction hit while using the toolchain into a structured, deduped,
+version-pinned, evidence-backed issue on this repo. It is scope-guarded (toolchain only —
+it refuses to file your app's bugs), **drafts by default**, and files only on an explicit
+`MODE: FILE` (via `gh issue create --body-file`). So real daily usage feeds back as
+triage-ready issues — which `/skill-maintainer:triage` and `:work` then turn into releases.
+(Every issue in this repo's tracker was filed this way.)
 
 ## Repository layout
 

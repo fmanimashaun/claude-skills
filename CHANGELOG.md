@@ -29,6 +29,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## skill-maintainer (marketplace maintenance plugin)
 
+### 1.0.1 — 2026-07-23
+- Fix #4: separate this maintainer-only plugin from the app-builder install surface.
+  Manifest descriptions (marketplace entry + plugin.json) now lead with a hard
+  "⚠ MAINTAINERS ONLY — do NOT install into app projects" marker, so the `/plugin` browse
+  surface itself carries the warning (not just README prose). All four commands
+  (`setup-intake`, `triage`, `work`, `audit`) gained a hard repo-type precondition:
+  they refuse to mutate anything unless `.claude-plugin/marketplace.json` exists at the
+  repo root (reusing the SessionStart hook's test) — so a mis-install can't scaffold
+  marketplace issue-templates/labels into an app repo. README made consistent: the plugin
+  table row is badged maintainers-only and the plugin's own README leads with the caveat
+  instead of a bare install recipe.
+
 ### 1.0.0 — 2026-07-23
 - New fifth plugin: the maintenance side of the loop — downstream projects report
   issues as they hit them, and this flow ships source-verified fixes. Marketplace
@@ -53,7 +65,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
-### 1.1.3 — 2026-07-22
+### 1.2.0 — 2026-07-23
+- Fix #2: NEW `claude-skills-reporter` agent + `/rails-flow:report <observation>` — closes
+  the toolchain feedback loop. Turns friction hit while USING the toolchain into a
+  structured, deduped, version-pinned, evidence-backed issue on the upstream marketplace
+  repo. Scope-guarded (toolchain only — refuses to file the user's app bugs); pins
+  marketplace + plugin version (and running-vs-latest delta); dedups against open/closed
+  issues before filing; **drafts by default**, files only on explicit `MODE: FILE` via
+  `gh issue create --body-file`. `setup-flow` now surfaces the report path; README gains a
+  "feedback loop" section. Pairs with skill-maintainer (the receiving end).
 - setup-flow: idempotent-safe re-runs + audit/repair, both by construction.
   IDEMPOTENCY — rails-flow content lives in `<!-- rails-flow:begin/end X -->` markers;
   re-runs refresh only marked blocks and never touch out-of-marker prose; a marker-less
@@ -159,6 +179,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## pipeline (lifecycle orchestrator)
+
+### 1.1.0 — 2026-07-23
+- Fix #5: the post-merge QA-verify nudge marker now has a dismissal/clear path. New
+  `/pipeline:ack` removes `.git/pipeline-pending` (worktree-safe via `git rev-parse
+  --git-dir`) — nudge-only, no token spend — so a stale nudge can be cleared without
+  another merge or a manual `rm`; verified the SessionStart hook stops re-surfacing it
+  after. The pipeline-coordinator now CLEARS the marker when the verify stage resolves
+  (a `/qa-flow:verify` PASS or an explicit N/A), making "clears when the stage completes"
+  literally true. `pipeline-status.sh` reads the marker via git-dir (matching the writer)
+  and its hint points to `/pipeline:ack` (e.g. docs-only merges with nothing to verify).
+  Docs updated (`setup-pipeline.md`, README).
 
 ### 1.0.5 — 2026-07-22
 - setup-pipeline + setup-cloud: idempotent re-run + repair contract (matching
@@ -350,6 +381,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.6)
+- pipeline 1.1.0 fixes #5 (`/pipeline:ack` + auto-clear-on-resolution for the QA-verify
+  nudge marker). `metadata.version` → 1.6.6. Skills unchanged.
+
+### 2026-07-23 (release v1.6.5)
+- rails-flow 1.2.0 fixes #2 (claude-skills-reporter agent + `/rails-flow:report`, the
+  feedback-loop sending end). `metadata.version` → 1.6.5. Skills unchanged.
+
+### 2026-07-23 (release v1.6.4)
+- skill-maintainer 1.0.1 fixes #4 (maintainer-only separation: manifest marker + command
+  repo-type guards + README consistency). `metadata.version` → 1.6.4. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.3)
 - Release flow is now automated via GitHub Actions (`.github/workflows/release.yml`):
