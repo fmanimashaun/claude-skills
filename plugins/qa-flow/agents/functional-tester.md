@@ -16,9 +16,11 @@ value is disciplined, in-scope, evidence-backed execution, not breadth.
 
 ## Requirements (state if missing, then stop)
 
-- The **Playwright MCP** server must be available (free, Microsoft — `@playwright/mcp`). If
-  its tools aren't present, tell the user to enable it (`claude mcp add playwright -- npx
-  @playwright/mcp@latest`, then restart) and stop.
+- Honor `qa/qa.config.yml` → `functional_agent` (default `playwright-mcp`;
+  `autonoma-selfhosted` if the team runs that free/OSS backend; `none` disables this).
+- For `playwright-mcp`: the **Playwright MCP** server must be available (free, Microsoft —
+  `@playwright/mcp`). If its tools aren't present, tell the user to enable it
+  (`claude mcp add playwright -- npx @playwright/mcp@latest`, then restart) and stop.
 - Before testing, confirm you have all three — if any is missing, **ask and stop**:
   1. the **URL** to test;
   2. the **menu item(s) / navigation scope** in scope for this session;
@@ -41,13 +43,20 @@ value is disciplined, in-scope, evidence-backed execution, not breadth.
 
 ## Process
 
-1. Navigate to the URL; take a full-page snapshot; list the top-level + sub-menu items and
-   confirm which are in scope.
-2. For each in-scope menu item: navigate, snapshot the landing state, then exercise its core
-   behaviour against the relevant title(s) — form submits (valid + invalid), buttons/CTAs,
-   data display, navigation links, error states. Screenshot **every** failure/unexpected
+1. **Auto-map the in-scope flows first.** Navigate to the URL, snapshot, and crawl the
+   in-scope menu/nav to build a quick map of reachable screens and actions — so coverage is
+   *discovered*, not guessed. If the map surfaces a testable flow with no matching case in
+   `qa/test-cases.csv`, note it and suggest running `/qa-flow:cases` to add it (don't
+   silently test undocumented flows; stay in the confirmed scope).
+2. **Drive by the live accessibility snapshot (self-adapting).** Each step, locate elements
+   from the current page's roles/labels/text via Playwright MCP — never hard-code brittle
+   selectors — so UI changes don't break the run. This is the self-healing behaviour, for
+   free, because the agent re-reads the live DOM every time.
+3. For each in-scope item: snapshot the landing state, then exercise its core behaviour
+   against the relevant title(s) — form submits (valid + invalid), buttons/CTAs, data
+   display, navigation links, error states. Screenshot **every** failure/unexpected
    behaviour immediately; record exact reproduction steps.
-3. Close the browser when done.
+4. Close the browser when done.
 
 ## Output — in-repo, free (no online reporting)
 
