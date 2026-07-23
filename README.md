@@ -70,8 +70,8 @@ writes a phased, fix-consumable report · `/rails-flow:brain` institutionalizes 
 indexed memory memos (STATUS / PROGRESS-LOG / DECISIONS / HYPOTHESES + provenance tags) ·
 `/rails-flow:brain-review` runs a weekly maintenance sweep (staleness, decisions-vs-PRD drift,
 contradictions, stalled hypotheses) · `/rails-flow:brain-sync` publishes to / consumes a
-cross-project **shared brain repo** so agentic flows in separate repos coordinate via `gh`
-without cloning each other (with NotebookLM as an optional read/synthesis lens, not the store) ·
+cross-project **shared brain repo** (`<org>/brain`) so agentic flows in separate repos coordinate
+via `gh` without cloning each other — git is the single source of truth ·
 `/rails-flow:issues` triages open repo issues (bug / feature /
 chore / needs-info) and works them one at a time through the matching pipeline, each
 PR auto-closing its issue · `/rails-flow:pr-comments` sweeps a PR's review feedback —
