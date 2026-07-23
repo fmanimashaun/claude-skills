@@ -51,4 +51,6 @@ Mobile (Hotwire Native parity) is Phase 2 — see references/mobile.md; this com
 
 Files created, brand selected, ViewComponent decision, and the entry points:
 `/design-flow:component` to author UI, `/design-flow:audit` to check drift. Remind that a new
-`@theme` needs a Tailwind rebuild.
+`@theme` needs a Tailwind rebuild. Finally: if any generated component fails to compile or
+render in this app, it's a toolchain defect — report it with **`/rails-flow:report`**
+(component `design-flow` / `fidara-design`) so the doctrine gets fixed upstream.

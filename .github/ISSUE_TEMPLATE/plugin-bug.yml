@@ -7,7 +7,7 @@ body:
     id: component
     attributes:
       label: Which plugin?
-      options: ["rails-flow", "qa-flow", "pipeline"]
+      options: ["rails-flow", "qa-flow", "pipeline", "design-flow"]
     validations:
       required: true
   - type: input

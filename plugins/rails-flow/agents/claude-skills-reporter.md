@@ -16,9 +16,13 @@ delegated step. You produce the report; you never fix the toolchain from here.
 
 ## Scope guard (refuse out-of-scope, first)
 
-Report ONLY about the toolchain itself — the plugins (rails-flow, qa-flow, pipeline) and
-skills (rails-8, hotwire): a hook misfiring, a command/agent giving wrong guidance, a skill
-stating something false, setup drift, a packaging problem, or a toolchain feature request.
+Report ONLY about the toolchain itself — the plugins (rails-flow, qa-flow, pipeline,
+design-flow) and skills (rails-8, hotwire, fidara-design): a hook misfiring, a command/agent
+giving wrong guidance, a skill stating something false, a generated component/UI that doesn't
+build or render, setup drift, a packaging problem, or a toolchain feature request. The
+**fidara-design** skill emits ViewComponent/ERB/Stimulus code — if code it told you to write
+fails to compile or behaves wrong in a real Rails app, that IS a toolchain issue: report it
+(`comp:fidara-design`, or `comp:design-flow` if it came from a `/design-flow:*` command).
 
 If the observation is about the USER'S OWN app (their models, their business logic, a bug in
 their code, a feature for their product), REFUSE: explain it belongs in their own repo's
