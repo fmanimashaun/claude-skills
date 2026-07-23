@@ -127,11 +127,22 @@ for the measure; never raw `vw` for type — always `clamp()`. Prefer **logical 
 
 ## Utilities to keep
 
+Define these with `@utility` (the Tailwind **v4** custom-utility API) — **not** raw classes in
+`@layer utilities`. In v4, `@utility` is the only mechanism that registers a class with the
+variant engine, so `sm:pt-safe`, `hover:min-h-touch`, `md:pb-safe` etc. actually generate.
+(Raw classes in `@layer utilities` still emit their base form but get **no** variants in v4,
+because v4 uses native CSS cascade layers instead of hijacking `@layer` the way v3 did.)
+
 ```css
-@layer utilities {
-  .min-h-touch { min-height: 44px; }   /* WIRE THIS on all tap targets — currently unused in code */
-  .pt-safe { padding-top: env(safe-area-inset-top); }   /* + pb/pl/pr-safe, mb-safe */
-}
+/* WIRE min-h-touch on every tap target (was defined-but-unused). */
+@utility min-h-touch { min-height: 44px; }
+
+/* Safe-area insets for fixed chrome (mobile / Hotwire Native). Variant-capable: e.g. sm:pt-safe. */
+@utility pt-safe { padding-top: env(safe-area-inset-top); }
+@utility pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+@utility pl-safe { padding-left: env(safe-area-inset-left); }
+@utility pr-safe { padding-right: env(safe-area-inset-right); }
+@utility mb-safe { margin-bottom: env(safe-area-inset-bottom); }
 ```
 
 ## What this fixes (from the audit)

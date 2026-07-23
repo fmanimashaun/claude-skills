@@ -62,7 +62,11 @@ is the Phase-2 Hotwire Native web-side code (native detection, path config, brid
 safe-area/touch, table→card-stack).
 [references/native-tokens.md](references/native-tokens.md) is the Phase-3 native token export
 (role→Material3/iOS mapping + a reference script emitting Android `colors.xml`/`Theme.Fidara`
-and iOS SwiftUI `Color` from the `@theme`). Copy these shapes exactly; don't invent new ones.
+and iOS SwiftUI `Color` from the `@theme`).
+[references/crud-modal-pattern.md](references/crud-modal-pattern.md) is the **modal-driven,
+in-page CRUD flow** (persistent `turbo-frame` modal + Turbo Stream list updates + confirmation
+modal + `modal_controller`) — the Fidara way to do create/edit/delete. Copy these shapes
+exactly; don't invent new ones.
 
 ## Authoring mechanism (what to reach for)
 
@@ -74,6 +78,10 @@ and iOS SwiftUI `Color` from the `@theme`). Copy these shapes exactly; don't inv
   exposing `variant/size/state` args + slots, emitting role-token classes.
 - **CRUD compositions** (tables, headers, row-actions, empty-states, pagination) → keep the
   proven `app/views/shared/_*.html.erb` partial set, refactored to consume components/tokens.
+  **CRUD itself is modal-driven and in-page** — create/edit/delete open in the shared
+  `<turbo-frame id="modal">`, success updates the list via Turbo Stream; never a full-page
+  new/edit form. See [references/crud-modal-pattern.md](references/crud-modal-pattern.md).
+  **Modal + Card are the backbone.**
 
 ## Non-negotiables (the drift-killers)
 
@@ -83,6 +91,10 @@ and iOS SwiftUI `Color` from the `@theme`). Copy these shapes exactly; don't inv
   surface.
 - **Compose primitives; don't write bespoke layout CSS.** Spacing lives on the parent
   (Stack/Cluster/Grid `gap`), never as child margins.
+- **CRUD is modal-driven and in-page** — create/edit/delete open in the shared `turbo-frame`
+  modal and update the list via Turbo Stream; a full-page new/edit form is a defect.
+- **Custom utilities use Tailwind v4 `@utility`**, never raw classes in `@layer utilities`
+  (which get no variants in v4).
 - **Intrinsic responsiveness first**; a `@media`/`@container` breakpoint must justify itself.
 - **Every interactive element**: visible `focus-visible` ring, keyboard-operable, correct
   ARIA (`aria-expanded/controls/selected`, roles), `sr-only` labels for icon-only controls.
