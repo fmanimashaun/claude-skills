@@ -28,6 +28,10 @@ across projects **without a designer or Figma**, by applying the **fidara-design
   (button/menu/tab-bar, progressive-enhancement), safe-area + `min-h-touch` wiring, and
   table→card-stack. Reuses the web components; the native Kotlin/Swift shells stay in their own
   repos.
+- `/design-flow:tokens [android|ios|both]` — **native token export** (Phase 3): generate
+  Android (`colors.xml` + `Theme.Fidara`) and iOS (SwiftUI `Color`) tokens from the `@theme`
+  so fully-native screens match by construction. Writes to `tmp/` for you to carry into the
+  native repos; never modifies them.
 
 ## Agents
 
