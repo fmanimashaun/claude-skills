@@ -15,6 +15,9 @@ Build (or fix) `$ARGUMENTS` to the **fidara-design** doctrine. Delegate to the
    a screen, build it by **composing** existing components + layout primitives. For the
    concrete code, reference `reference-implementation.md` (Button/Card + Stimulus mixins) and
    `component-implementations.md` (the full worked catalog) — mirror those exact shapes.
+   **If it's a CRUD screen** (list + create/edit/delete), follow `crud-modal-pattern.md`:
+   mutations open in the shared `turbo-frame` modal and update the list via Turbo Stream —
+   never build a full-page new/edit form.
 2. **Pick semantic role tokens** (foundations-tokens.md) — `bg-primary text-primary-foreground`,
    `border-border`, `text-muted-foreground`, `focus-visible:ring-ring/30`. **Never** raw `fm-*`
    or stock `blue-700`/`gray-*` in component code.

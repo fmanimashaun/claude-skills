@@ -81,6 +81,10 @@ DEFAULTS = { variant: :primary, size: :md }
   pill | full-width`; active = `data-[state=active]:border-primary`.
 
 ## Table (CRUD)
+- **CRUD is modal-driven and in-page** — new/edit/delete open in the shared `turbo-frame` modal; success
+  updates the list via Turbo Stream (`prepend`/`replace dom_id`/`remove dom_id`) + a toast; rows are
+  `dom_id`-addressable so streams can target them. No full-page new/edit forms. Full flow:
+  [crud-modal-pattern.md](crud-modal-pattern.md).
 - Keep the proven `shared/_crud_table`, `_crud_header`, `_crud_row_actions` partials, refactored to role
   tokens + components. `<table class="w-full text-step-0 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.

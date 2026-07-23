@@ -404,6 +404,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.2.2 — 2026-07-23
+- `/design-flow:component` now routes CRUD screens through the crud-modal-pattern (modal +
+  Turbo Stream), not full-page forms. Guidance-only.
+
 ### 1.2.1 — 2026-07-23
 - `/design-flow:component` now points at both reference-implementation (Button/Card + mixins)
   and the full component-implementations catalog as the concrete-code source. No behavior
@@ -440,6 +444,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.6.0 — 2026-07-23
+- fidara-design **modal-driven CRUD as first-class doctrine** (now 13 references): NEW
+  **crud-modal-pattern** — in Fidara, create/edit/delete never navigate to a separate
+  new/edit page; they open in the shared `<turbo-frame id="modal">` and update the list via
+  Turbo Stream (`prepend`/`replace dom_id`/`remove dom_id`) + a toast, with a real
+  confirmation modal for deletes and a `modal_controller` (focus-trap + dismissable-layer +
+  restore). Modal + Card are the backbone; full-page CRUD forms are a defect. Wired into
+  SKILL.md non-negotiables, components.md (Table/CRUD), reference-implementation.md (the
+  load-bearing modal frame), and `/design-flow:component`. Matches the reference apps' pattern.
+- **Verified fix — Tailwind v4 `@utility`:** foundations-tokens.md now defines `min-h-touch`
+  and the safe-area utilities (`pt/pb/pl/pr-safe`, `mb-safe`) with `@utility`, not raw classes
+  in `@layer utilities`. In v4 (native CSS cascade layers, `@utility` introduced v4.0), only
+  `@utility` registers a class with the variant engine, so `sm:pt-safe` / `hover:min-h-touch`
+  now generate — raw `@layer utilities` classes emit the base form but get no variants.
+  Confirmed against the Tailwind v4.3.3 CLI compiler + official docs
+  (tailwindcss.com/docs/adding-custom-styles#adding-custom-utilities, functions-and-directives).
+  Whole design-system CSS (role tokens, fluid type, all `@utility` recipes, `dark:` variant)
+  and the four Stimulus mixins were build-verified against the real compiler / Node.
 
 ### 1.5.0 — 2026-07-23
 - fidara-design **full component catalog** as worked code (now 12 references): NEW
@@ -540,6 +563,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.12.0)
+- fidara-design: modal-driven in-page CRUD as first-class doctrine (crud-modal-pattern,
+  rails-stack → 1.6.0, now 13 references) + verified Tailwind v4 `@utility` fix for custom
+  utilities; whole CSS/JS layer build-verified against the real Tailwind v4.3.3 compiler +
+  Node. design-flow → 1.2.2 (component command routes CRUD through the modal pattern).
+  `metadata.version` → 1.12.0. rails-8/hotwire unchanged.
 
 ### 2026-07-23 (release v1.11.0)
 - fidara-design full component catalog worked as reference code
