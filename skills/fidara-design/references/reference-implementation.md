@@ -210,4 +210,7 @@ export default class extends Controller {
 ```
 
 Everything here uses **role tokens + primitives only** — no raw colors, no bespoke layout CSS.
-When you build the rest of the catalog, mirror these shapes exactly.
+The **rest of the catalog** is worked out the same way in
+[component-implementations.md](component-implementations.md) (Badge, Alert, form controls,
+Modal, Dropdown, Tabs, Toast, Tooltip, Avatar, EmptyState, Sidebar, Switcher). Mirror these
+shapes for anything new.
