@@ -13,6 +13,10 @@ echo "- branch: ${branch:-detached} (base: $base) | uncommitted files: $dirty"
 echo "- last commit: $last"
 [ -f CLAUDE.md ] || echo "- NOTE: no CLAUDE.md — run /rails-flow:setup-flow to scaffold project conventions."
 [ -f GUARDRAILS.md ] || echo "- NOTE: no GUARDRAILS.md — run /rails-flow:setup-flow."
+if [ -f docs/brain/STATUS.md ]; then
+  echo "- brain STATUS (docs/brain/STATUS.md, top):"
+  head -8 docs/brain/STATUS.md | sed 's/^/  /'
+fi
 if [ -f docs/brain/MEMORY.md ]; then
   echo "- memory index (docs/brain/MEMORY.md):"
   head -12 docs/brain/MEMORY.md | sed 's/^/  /'
