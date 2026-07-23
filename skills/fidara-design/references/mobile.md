@@ -71,8 +71,11 @@ resource system so the look matches.
    **Largest win for least effort** — reuses all the web components. Concrete web-side code:
    [mobile-reference-implementation.md](mobile-reference-implementation.md); scaffold it with
    **`/design-flow:mobile`**. (Native Kotlin/Swift shells live in their own app repos.)
-3. **Phase 3 — Native token export.** A step that emits Android (`colors.xml`/theme) and iOS
-   assets from the `@theme` so fully-native screens match by construction.
+3. **Phase 3 — Native token export (reference code ready).** Emits Android (`colors.xml` +
+   `Theme.Fidara`) and iOS (SwiftUI `Color`) tokens from the `@theme` so fully-native screens
+   match by construction. Mapping + reference export script:
+   [native-tokens.md](native-tokens.md); run it with **`/design-flow:tokens`**. Output lands in
+   `tmp/` for the maintainer to carry into the native repos — the export never writes into them.
 
-For now, `/design-flow:setup` targets web (Phase 1). Phase 2/3 land as the mobile surface is
-prioritized; this file is the contract they build to.
+`/design-flow:setup` targets web (Phase 1); `/design-flow:mobile` scaffolds Phase 2;
+`/design-flow:tokens` runs Phase 3. This file is the contract all three build to.

@@ -404,6 +404,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.2.0 — 2026-07-23
+- NEW **`/design-flow:tokens [android|ios|both]`** — runs the native token export (Phase 3):
+  parse the Rails app's `@theme`, resolve roles, emit Android + iOS token files to `tmp/`.
+  Writes only to `tmp/` for the maintainer to carry into native repos; never modifies them.
+
 ### 1.1.0 — 2026-07-23
 - NEW **`/design-flow:mobile [ios|android|both]`** — scaffolds the Hotwire Native parity layer
   (Phase 2): native-app detection + body flags, JSON path configuration, bridge components
@@ -430,6 +435,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.4.0 — 2026-07-23
+- fidara-design **mobile Phase 3** (now 11 references): NEW **native-tokens** — the native
+  token-export doctrine: the role → Material 3 (Android) / SwiftUI (iOS) mapping so semantic
+  role names translate 1:1, plus a reference `bin/export_design_tokens` Ruby script that
+  resolves role → primitive → hex from the `@theme` and emits `colors.xml` + `Theme.Fidara`
+  (Android) and a SwiftUI `Color` extension (iOS) into `tmp/`. Fluid `--text-step-*` export as
+  fixed native sizes (documented). `@theme` stays the single source of truth; native files are
+  generated, never hand-diverged. `mobile.md` marks Phase 3 code-ready.
 
 ### 1.3.0 — 2026-07-23
 - fidara-design **mobile Phase 2** (now 10 references): NEW **mobile-reference-implementation**
@@ -512,6 +526,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.10.0)
+- Mobile Phase 3 (native token export): fidara-design native-tokens (rails-stack → 1.4.0) +
+  NEW `/design-flow:tokens` (design-flow → 1.2.0) — generate Android/iOS tokens from the
+  `@theme`. Outputs to `tmp/`; native app repos untouched. `metadata.version` → 1.10.0.
 
 ### 2026-07-23 (release v1.9.0)
 - Mobile Phase 2 (Hotwire Native parity): fidara-design mobile-reference-implementation
