@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.6.3"
+    "version": "1.6.4"
   },
   "plugins": [
     {
@@ -40,7 +40,7 @@
     },
     {
       "name": "skill-maintainer",
-      "description": "Issue-driven maintenance flow for this marketplace — turns downstream bug reports into source-verified fixes and shipped releases. /skill-maintainer:setup-intake (GitHub issue templates + label taxonomy), :triage (classify by component/type/priority), :work (one issue end-to-end: verify against source-of-truth -> fix -> PR -> bump+CHANGELOG -> release), :audit (proactive review). A BLOCKING doctrine-verifier gates every skill edit on an authoritative citation.",
+      "description": "⚠ MAINTAINERS ONLY — do NOT install into app projects; this operates on the claude-skills marketplace repo itself. Issue-driven maintenance flow — turns downstream bug reports into source-verified fixes and shipped releases. /skill-maintainer:setup-intake (GitHub issue templates + label taxonomy), :triage (classify by component/type/priority), :work (one issue end-to-end: verify against source-of-truth -> fix -> PR -> bump+CHANGELOG -> release), :audit (proactive review). A BLOCKING doctrine-verifier gates every skill edit on an authoritative citation.",
       "source": "./plugins/skill-maintainer",
       "strict": false
     }

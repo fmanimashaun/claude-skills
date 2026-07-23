@@ -29,6 +29,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## skill-maintainer (marketplace maintenance plugin)
 
+### 1.0.1 — 2026-07-23
+- Fix #4: separate this maintainer-only plugin from the app-builder install surface.
+  Manifest descriptions (marketplace entry + plugin.json) now lead with a hard
+  "⚠ MAINTAINERS ONLY — do NOT install into app projects" marker, so the `/plugin` browse
+  surface itself carries the warning (not just README prose). All four commands
+  (`setup-intake`, `triage`, `work`, `audit`) gained a hard repo-type precondition:
+  they refuse to mutate anything unless `.claude-plugin/marketplace.json` exists at the
+  repo root (reusing the SessionStart hook's test) — so a mis-install can't scaffold
+  marketplace issue-templates/labels into an app repo. README made consistent: the plugin
+  table row is badged maintainers-only and the plugin's own README leads with the caveat
+  instead of a bare install recipe.
+
 ### 1.0.0 — 2026-07-23
 - New fifth plugin: the maintenance side of the loop — downstream projects report
   issues as they hit them, and this flow ships source-verified fixes. Marketplace
@@ -350,6 +362,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.6.4)
+- skill-maintainer 1.0.1 fixes #4 (maintainer-only separation: manifest marker + command
+  repo-type guards + README consistency). `metadata.version` → 1.6.4. Skills unchanged.
 
 ### 2026-07-23 (release v1.6.3)
 - Release flow is now automated via GitHub Actions (`.github/workflows/release.yml`):

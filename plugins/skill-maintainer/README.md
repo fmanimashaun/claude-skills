@@ -1,6 +1,12 @@
 # skill-maintainer
 
-Part of the claude-skills marketplace. Install:
+> ⚠ **Maintainers only — do NOT install this into an app project.** It operates on the
+> claude-skills *marketplace repo itself* (triages this repo's issues, verifies skill
+> doctrine, cuts releases of these plugins). Its commands refuse to run anywhere without a
+> `.claude-plugin/marketplace.json`. App builders want `rails-stack` / `rails-flow` /
+> `qa-flow` / `pipeline` instead.
+
+For a maintainer working inside a skills-marketplace clone:
 ```
 /plugin marketplace add fmanimashaun/claude-skills
 /plugin install skill-maintainer@claude-skills

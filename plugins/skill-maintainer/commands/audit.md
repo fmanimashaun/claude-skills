@@ -9,6 +9,13 @@ Not issue-driven: go looking for problems before users hit them. Audits produce
 ISSUES (the queue), not direct edits — so every change still flows through the verified
 `/skill-maintainer:work` loop.
 
+## Precondition — marketplace repo only (hard)
+
+MAINTAINERS-ONLY. Confirm `.claude-plugin/marketplace.json` exists at the repo root before
+auditing or filing issues. If absent, STOP and tell the user this plugin is for maintaining
+a claude-skills marketplace repo, not an app project — change nothing. (Same test as the
+SessionStart hook.)
+
 ## Scope
 
 `$ARGUMENTS` names the component to audit; default to the one with the most open issues
