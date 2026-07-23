@@ -1,0 +1,95 @@
+name: Release
+
+# Release flow, automated. A dev -> main PR merge (a push to main) is the release
+# trigger: read metadata.version from marketplace.json, and if that tag doesn't already
+# exist, build the .skill assets and publish the GitHub Release. Pushes to main that
+# don't bump the version are no-ops (tag already exists). No manual `gh release` needed.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Resolve version from marketplace.json
+        id: v
+        run: |
+          version="$(python -c "import json;print(json.load(open('.claude-plugin/marketplace.json'))['metadata']['version'])")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: v$version"
+
+      - name: Skip if the release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.v.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.v.outputs.tag }} already exists — nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build .skill assets (deterministic, canonical builder)
+        if: steps.check.outputs.exists == 'false'
+        run: python scripts/package_core.py
+
+      - name: Verify committed dist is canonical (no drift)
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          if ! git diff --quiet -- dist/; then
+            echo "::error::Committed dist/*.skill differs from a clean package_core.py build."
+            echo "A skill source changed without repackaging. Run 'python scripts/package_core.py' and commit dist/."
+            git --no-pager diff --stat -- dist/
+            exit 1
+          fi
+          echo "dist/ matches a clean build."
+
+      - name: Extract release notes from CHANGELOG
+        if: steps.check.outputs.exists == 'false'
+        id: notes
+        run: |
+          notes="$(mktemp)"
+          # Grab the CHANGELOG block headed "### … (release vX.Y.Z)" up to the next "### ".
+          awk -v needle="(release ${{ steps.v.outputs.tag }})" '
+            index($0, needle) { grab=1; next }
+            grab && /^### / { exit }
+            grab { print }
+          ' CHANGELOG.md > "$notes"
+          if [ ! -s "$notes" ]; then
+            printf 'Marketplace %s. See CHANGELOG.md for details.\n' "${{ steps.v.outputs.tag }}" > "$notes"
+          fi
+          printf '\nInstall: /plugin marketplace add %s\n' "$GITHUB_REPOSITORY" >> "$notes"
+          echo "file=$notes" >> "$GITHUB_OUTPUT"
+          echo "--- notes ---"; cat "$notes"
+
+      - name: Publish release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            dist/rails-8.skill dist/hotwire.skill \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.v.outputs.tag }}" \
+            --notes-file "${{ steps.notes.outputs.file }}"
+          echo "Published ${{ steps.v.outputs.tag }}."
