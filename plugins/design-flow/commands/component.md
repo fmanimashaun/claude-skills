@@ -12,7 +12,9 @@ Build (or fix) `$ARGUMENTS` to the **fidara-design** doctrine. Delegate to the
 
 1. **Locate it in the catalog** (`skills/fidara-design/references/components.md` /
    `forms.md`). If it's a catalog component, use that recipe + variant/size/state axes; if it's
-   a screen, build it by **composing** existing components + layout primitives.
+   a screen, build it by **composing** existing components + layout primitives. For the
+   concrete code, reference `reference-implementation.md` (Button/Card + Stimulus mixins) and
+   `component-implementations.md` (the full worked catalog) — mirror those exact shapes.
 2. **Pick semantic role tokens** (foundations-tokens.md) — `bg-primary text-primary-foreground`,
    `border-border`, `text-muted-foreground`, `focus-visible:ring-ring/30`. **Never** raw `fm-*`
    or stock `blue-700`/`gray-*` in component code.
