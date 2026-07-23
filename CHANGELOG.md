@@ -192,6 +192,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.1.1 — 2026-07-23
+- **/pipeline:ack git-dir guard** (#46): the marker path came from an unguarded
+  `$(git rev-parse --git-dir)`; outside a repo it collapsed to `/pipeline-pending` and the
+  `rm -f` could delete a root-level file. Now bails (exit 0 + message) if git-dir is
+  unresolved/empty. Fixed `setup-pipeline.md` doc drift (hardcoded `.git/…` → the resolved
+  git-dir, worktree-safe, with the `.git/` common case noted).
+
 ### 1.1.0 — 2026-07-23
 - Fix #5: the post-merge QA-verify nudge marker now has a dismissal/clear path. New
   `/pipeline:ack` removes `.git/pipeline-pending` (worktree-safe via `git rev-parse
@@ -279,6 +286,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   flip, no rebuild.
 
 ## qa-flow (independent QA plugin)
+
+### 1.4.1 — 2026-07-23
+- **release-gate.sh: closed fail-open bypasses** in dev→main promotion detection (from the
+  PR-review backlog triage, #45). (1) Heredoc-body stripping ran before quote/comment
+  stripping, so a `<<EOF` inside a quote (`echo "<<EOF"`) or comment (`# <<EOF`) was read as a
+  real opener and swallowed a later `git push origin main` → gate passed. (2) Delimiter regex
+  missed numeric-leading/hyphenated delimiters. (3) Detection missed prefixed promotions
+  (`FOO=1 git push`, `sudo git push`, `git -C repo push`). New pipeline: un-quote delimiters →
+  strip quotes → strip comments → strip heredoc bodies, then peel env/sudo/git-option prefixes.
+  Verified with an 18-case battery. Local advisory gate; `QA_ALLOW_MAIN=1` override unchanged.
 
 ### 1.4.0 — 2026-07-23
 - `setup-qa` now **detects the codebase and proposes a recommended stack** instead of asking
@@ -581,6 +598,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-23 (release v1.12.2)
+- **PR-review backlog triaged into fixes.** Read all 132 review comments across every PR
+  (qodo / codex / accesslint); codex was rate-limited (no findings) and accesslint's were all
+  ERB/placeholder parse artifacts (the worked code is a11y-correct). The credible engineering
+  findings were filed (#43–#46) and fixed:
+  - **CI (`release.yml`)** #43: drift guard used `git diff --quiet -- dist/` (blind to
+    untracked files) — a new skill's uncommitted `dist/*.skill` passed the no-drift guard
+    falsely; now `git status --porcelain -- dist/`. #44: the `release` job now gates on
+    `github.ref == 'refs/heads/main'` so a `workflow_dispatch` from a non-main ref can't
+    publish a release for that ref.
+  - **qa-flow → 1.4.1** #45: closed fail-open bypasses in the release-gate promotion detector.
+  - **pipeline → 1.1.1** #46: guarded `/pipeline:ack` git-dir resolution + fixed doc drift.
+  `metadata.version` → 1.12.2. No skill content changed (skills/dist unchanged).
 
 ### 2026-07-23 (release v1.12.1)
 - **Design system wired into the feedback loop.** Issue templates (incorrect-doctrine,
