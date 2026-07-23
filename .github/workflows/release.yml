@@ -87,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ steps.v.outputs.tag }}" \
-            dist/rails-8.skill dist/hotwire.skill \
+            dist/*.skill \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "${{ steps.v.outputs.tag }}" \
