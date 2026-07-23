@@ -18,6 +18,9 @@ concurrency:
 
 jobs:
   release:
+    # Releases only ever come from main. workflow_dispatch stays available for re-runs,
+    # but a dispatch from any other ref must NOT publish a release for that ref's commit.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,10 +58,14 @@ jobs:
       - name: Verify committed dist is canonical (no drift)
         if: steps.check.outputs.exists == 'false'
         run: |
-          if ! git diff --quiet -- dist/; then
-            echo "::error::Committed dist/*.skill differs from a clean package_core.py build."
-            echo "A skill source changed without repackaging. Run 'python scripts/package_core.py' and commit dist/."
-            git --no-pager diff --stat -- dist/
+          # --porcelain catches tracked modifications AND untracked files, so a brand-new
+          # skill whose dist/*.skill was never committed also trips the guard (git diff
+          # --quiet would miss the untracked artifact and pass falsely).
+          drift="$(git status --porcelain -- dist/)"
+          if [ -n "$drift" ]; then
+            echo "::error::Committed dist/*.skill differs from a clean package_core.py build (or a built artifact is untracked)."
+            echo "A skill source changed without repackaging, or a new skill's dist/ was not committed. Run 'python scripts/package_core.py' and commit dist/."
+            printf '%s\n' "$drift"
             exit 1
           fi
           echo "dist/ matches a clean build."
