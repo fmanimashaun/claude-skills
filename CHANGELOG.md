@@ -443,6 +443,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.2.4 — 2026-07-24
+- `/design-flow:component` now routes **chart / KPI / dashboard** screens through the
+  fidara-design `data-viz` doctrine (chart tokens, form-by-job, one axis, legend + direct labels,
+  re-validate on hue change). Guidance-only.
+
 ### 1.2.3 — 2026-07-23
 - `/design-flow:setup` closing report now nudges reporting any component that won't
   build/render via `/rails-flow:report`. Guidance-only.
@@ -487,6 +492,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.7.0 — 2026-07-24
+- fidara-design **data-visualization layer** (#63, now 14 references): NEW **data-viz** —
+  charts, KPIs, and dashboards as first-class design-system doctrine. Adapts Anthropic's
+  design-system-agnostic `dataviz` method (form → color-by-job → **validate** → marks →
+  interaction → a11y) to fidara: an 8-slot categorical **chart palette derived from the `fm-*`
+  tokens** (brand-anchored: blue=cerulean, orange=fm-orange), plus cerulean sequential and
+  cerulean↔red diverging ramps, emitted as `--color-chart-*` `@theme` tokens (→ `fill-chart-1`,
+  `bg-chart-2`, … re-pointing under `.dark`); a KPI/stat-tile ViewComponent + bar-mark recipe;
+  and the chart non-negotiables (fixed categorical order never cycled, **one axis**, identity
+  never color-alone, text wears text tokens, status colors reserved). Wired into SKILL
+  non-negotiables, foundations-tokens (chart-token pointer), and `/design-flow:component`.
+  - **Validated, not eyeballed** (the method's core rule): the categorical palette was run
+    through `validate_palette.js`. **Light** (surface `#F8F9FB`): all hard gates PASS — worst
+    adjacent CVD ΔE 9.1, normal-vision ΔE 19.6 (4 slots <3:1 → relief rule: direct labels/table).
+    **Dark** (surface `fm-navy #0C1B33`): lightness/chroma/normal-vision (ΔE 19.3)/contrast (all
+    ≥3:1) PASS; green↔magenta adjacency CVD ΔE 6.1 (6–8 band) → legal with the secondary encoding
+    fidara already mandates. Chart `@theme`→utility generation (`bg-/text-/fill-/stroke-/border-chart-*`
+    + dark re-point) verified against the Tailwind v4.3.3 compiler. Basis: WCAG 1.4.11; method
+    source: Anthropic `dataviz` skill (built to be re-validated per brand).
 
 ### 1.6.2 — 2026-07-23
 - **fidara-design: reference recipes now honor the skill's own non-negotiables** (#56 —
@@ -644,6 +669,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-24 (release v1.14.0)
+- fidara-design **data-visualization layer** (#63, rails-stack → 1.7.0, now 14 references):
+  charts/KPIs/dashboards as doctrine — a validated `fm-*`-derived `--color-chart-*` palette
+  (adapting Anthropic's `dataviz` method + validator), KPI/chart recipes, and chart a11y
+  non-negotiables. design-flow → 1.2.4 (component command routes chart screens through it).
+  `metadata.version` → 1.14.0. rails-8/hotwire unchanged.
 
 ### 2026-07-23 (release v1.13.1)
 - rails-flow → 1.3.1: removed NotebookLM from the brain flow; the `<org>/brain` git repo is the
