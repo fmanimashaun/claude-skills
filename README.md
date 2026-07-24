@@ -16,7 +16,7 @@ knowledge → build → test → ship → design.
 |--------|------|--------------|
 | **rails-stack** | The knowledge — Rails 8 + Hotwire + design-system skills that auto-load when relevant | *(skills, no commands)* |
 | **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
-| **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
+| **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:smoke` `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
 | **design-flow** | UI/design — applies the Fidara design system for consistent, modern, responsive UI | `/design-flow:setup` `/design-flow:component` `/design-flow:audit` |
 
@@ -402,6 +402,9 @@ Appium) plus the API/perf/a11y tiers feed one free, unified **Allure** HTML repo
 
 **Two moments, mapped to QA theory** (smoke ⊂ sanity ⊂ regression):
 
+- `/qa-flow:smoke` — the build-verification floor: **launches the app** (stack-aware, from the
+  `app:` config) and confirms it boots and key routes respond, before anything deeper. Fails
+  loudly in seconds if the build won't come up; sets `QA_BASE_URL` for the phases that follow.
 - `/qa-flow:verify` — fires after a feature merges to dev. Smoke gate (is the build
   testable?) → sanity on the changed areas → **targeted regression by blast radius**
   (does this change threaten existing behavior?). Not feature re-testing. Defects file
