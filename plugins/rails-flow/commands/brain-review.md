@@ -43,3 +43,8 @@ compressions) as concrete diffs. Apply only what the user approves; you may auto
 mechanical ones (dead-link removal, `_Updated:_` refresh) if you list exactly what you changed.
 
 Append a one-line entry to `docs/brain/PROGRESS-LOG.md`: `<date> — brain-review sweep: <N flags, key action>`.
+
+**Stamp the cadence marker** so the next sweep is nudged on time: `date +%s > docs/brain/.last-review`.
+The rails-flow SessionStart hook reads this and reminds when the last sweep is older than the
+cadence (default **7 days**; override with `RAILS_FLOW_BRAIN_REVIEW_DAYS`). It's a reminder only —
+nothing auto-runs; to dismiss without a full sweep, just re-stamp the marker.
