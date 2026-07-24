@@ -57,6 +57,12 @@ file is the override point every qa-flow agent reads. Schema (free defaults show
 
 ```yaml
 base_url: env:QA_BASE_URL
+app:                                 # how /qa-flow:smoke boots the app (stack-agnostic; Rails defaults)
+  start:        bin/dev              # boot command (e.g. `bin/rails server -p 3000`)
+  port:         3000
+  health:       /up                  # 200-when-ready route (Rails 8 default health endpoint)
+  routes:       [/, /up]             # key routes the smoke gate hits (5xx = fail)
+  boot_timeout: 60                   # seconds to wait for health before failing
 web_e2e:          playwright        # playwright | cypress-cucumber | selenium-pytest-bdd | none
 mobile:           none              # appium | none
 functional_agent: playwright-mcp    # playwright-mcp | autonoma-selfhosted | none
