@@ -65,8 +65,11 @@ safe-area/touch, table→card-stack).
 and iOS SwiftUI `Color` from the `@theme`).
 [references/crud-modal-pattern.md](references/crud-modal-pattern.md) is the **modal-driven,
 in-page CRUD flow** (persistent `turbo-frame` modal + Turbo Stream list updates + confirmation
-modal + `modal_controller`) — the Fidara way to do create/edit/delete. Copy these shapes
-exactly; don't invent new ones.
+modal + `modal_controller`) — the Fidara way to do create/edit/delete.
+[references/data-viz.md](references/data-viz.md) is the **data-visualization layer** (charts,
+KPIs, dashboards): the validated `--color-chart-*` palette derived from the `fm-*` tokens, the
+form→color→validate procedure, KPI-tile + chart recipes, and the chart a11y rules. Copy these
+shapes exactly; don't invent new ones.
 
 ## Authoring mechanism (what to reach for)
 
@@ -102,6 +105,10 @@ exactly; don't invent new ones.
   `rounded-full`. **Lucide** icons, `1em`-sized, `currentColor`.
 - Motion: 150–200ms `ease-out`, transition `colors/opacity/transform` (never `all`), gated on
   `prefers-reduced-motion`.
+- **Charts** use the **chart role tokens** (`--color-chart-*`, sequential/diverging ramps) and the
+  [data-viz.md](references/data-viz.md) rules — fixed categorical order, never cycled; **one axis**
+  (never dual); identity never color-alone (legend + direct labels); text wears text tokens; status
+  colors reserved. Never ad-hoc chart hex; re-validate the palette if you change a hue.
 
 ## When you build
 
