@@ -22,6 +22,22 @@ if [ -f docs/brain/MEMORY.md ]; then
   head -12 docs/brain/MEMORY.md | sed 's/^/  /'
 fi
 
+# brain-review cadence nudge (local, offline). /rails-flow:brain-review stamps an epoch into
+# docs/brain/.last-review; if the last sweep is older than the cadence (default 7d, override
+# RAILS_FLOW_BRAIN_REVIEW_DAYS), remind. Reminder only — never auto-runs. Fails open.
+if [ -f docs/brain/STATUS.md ]; then
+  _days="${RAILS_FLOW_BRAIN_REVIEW_DAYS:-7}"
+  if [ -f docs/brain/.last-review ]; then
+    _ts="$(tr -dc 0-9 < docs/brain/.last-review 2>/dev/null)"
+    if [ -n "$_ts" ]; then
+      _age=$(( ( $(date +%s) - _ts ) / 86400 ))
+      [ "$_age" -ge "$_days" ] && echo "- brain-review due: last swept ${_age}d ago (cadence ${_days}d) — run /rails-flow:brain-review"
+    fi
+  else
+    echo "- brain-review: no sweep on record — run /rails-flow:brain-review to start the maintenance cadence"
+  fi
+fi
+
 if [ -f .claude/skills/.manifest.tsv ]; then
   stale=0
   while IFS="$(printf '\t')" read -r src hash; do
