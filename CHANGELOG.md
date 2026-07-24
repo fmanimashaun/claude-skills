@@ -302,6 +302,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.5.0 — 2026-07-24
+- **NEW `/qa-flow:smoke`** (#64) — the build-verification floor: **launches the app**
+  (stack-aware, from a new `app:` block in `qa/qa.config.yml` — `start`/`port`/`health`/`routes`/
+  `boot_timeout`, Rails-defaulted `bin/dev` + `/up`), waits for health, hits key routes (5xx =
+  fail), sets `QA_BASE_URL`, and tears the server down (trapped). Closes the gap where
+  `verify` Phase 0 only *assumed* a booted app and Phase 1 ran full `@smoke` E2E against it — now
+  "the build won't boot" is caught in seconds with the real boot log, before any heavier phase.
+  Stack-agnostic (only the `app:` config differs), free (the app's own server + curl). `verify`
+  Phase 0/1 now run `/qa-flow:smoke` first; `setup-qa` scaffolds the `app:` config block.
+
 ### 1.4.1 — 2026-07-23
 - **release-gate.sh: closed fail-open bypasses** in dev→main promotion detection (from the
   PR-review backlog triage, #45). (1) Heredoc-body stripping ran before quote/comment
@@ -669,6 +679,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-24 (release v1.15.0)
+- qa-flow **`/qa-flow:smoke`** (#64, qa-flow → 1.5.0): a stack-aware launch-&-liveness gate that
+  boots the app and confirms key routes respond before deeper QA — closing verify's hand-waved
+  "boot the app" Phase 0. Adds an `app:` config block; `verify`/`setup-qa` wired to it. Free,
+  stack-agnostic. `metadata.version` → 1.15.0. Skills unchanged.
 
 ### 2026-07-24 (release v1.14.0)
 - fidara-design **data-visualization layer** (#63, rails-stack → 1.7.0, now 14 references):

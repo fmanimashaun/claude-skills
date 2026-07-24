@@ -1,7 +1,7 @@
 {
   "name": "qa-flow",
   "description": "Independent, stack-agnostic QA engineering flow. The QA engineer chooses the stack in qa/qa.config.yml (Playwright, Cypress+Cucumber, Selenium+pytest-bdd, Appium — free by default; never forced). Automates the tedious parts: free repo-local case authoring/management (/qa-flow:cases; Testmo opt-in via config) and agentic functional testing via Playwright MCP (/qa-flow:functional) with auto-mapped flows, self-adapting locators, and evidence-based Markdown/CSV reports. Plus risk-based planning, defect filing, PR-native results, and a hook-enforced dev->main certification gate. Independent of the developer test suite.",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "author": {
     "name": "Fisayo Animashaun"
   }
