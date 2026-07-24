@@ -162,7 +162,9 @@ contradictions** — never average two conflicting `[reported]` claims into one;
 audit trail is the point: the brain surfaces evidence and its provenance; the human still judges.
 
 Then explain the commands: `/rails-flow:brain` (institutionalize a lesson/decision as a memo),
-`/rails-flow:brain-review` (weekly maintenance sweep — staleness, drift, contradictions),
+`/rails-flow:brain-review` (maintenance sweep — staleness, drift, contradictions; it stamps
+`docs/brain/.last-review`, and the **SessionStart hook nudges when the sweep is overdue** —
+default 7-day cadence, override `RAILS_FLOW_BRAIN_REVIEW_DAYS`, reminder-only/no auto-run),
 `/rails-flow:brain-sync` (publish to / consume a cross-project shared brain repo). Memos and
 STATUS are the repo side of memory, not lost in chat history.
 

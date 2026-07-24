@@ -70,6 +70,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.4.0 — 2026-07-24
+- **Local brain-review cadence nudge** (#65) — the maintenance sweep now actually fires on time.
+  `/rails-flow:brain-review` stamps an epoch into `docs/brain/.last-review`; the SessionStart
+  hook reads it and nudges *"brain-review due"* when the last sweep is older than the cadence
+  (default **7 days**, override `RAILS_FLOW_BRAIN_REVIEW_DAYS`), or *"no sweep on record"* if it's
+  never run. Reminder-only — never auto-runs; dismiss by re-stamping. Fully **local/offline**, no
+  cloud, hook fails open. (Filed under pipeline as the nudge-pattern owner; implemented in
+  rails-flow, where `brain-review`, `docs/brain`, and the brain-surfacing SessionStart hook live.)
+  `setup-flow` documents the cadence.
+
 ### 1.3.1 — 2026-07-23
 - **Dropped NotebookLM from the brain flow.** `/rails-flow:brain-sync` no longer documents
   NotebookLM as an optional synthesis lens; the `<org>/brain` git repo is the **single source of
@@ -679,6 +689,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-24 (release v1.16.0)
+- rails-flow **local brain-review cadence nudge** (#65, rails-flow → 1.4.0): SessionStart reminds
+  when the maintenance sweep is overdue (7-day default, env-overridable), stamped via
+  `docs/brain/.last-review`. Local/offline, reminder-only — the local-first replacement for the
+  rejected cloud scheduler. `metadata.version` → 1.16.0. Skills unchanged.
 
 ### 2026-07-24 (release v1.15.0)
 - qa-flow **`/qa-flow:smoke`** (#64, qa-flow → 1.5.0): a stack-aware launch-&-liveness gate that
