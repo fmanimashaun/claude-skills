@@ -17,7 +17,9 @@ Build (or fix) `$ARGUMENTS` to the **fidara-design** doctrine. Delegate to the
    `component-implementations.md` (the full worked catalog) — mirror those exact shapes.
    **If it's a CRUD screen** (list + create/edit/delete), follow `crud-modal-pattern.md`:
    mutations open in the shared `turbo-frame` modal and update the list via Turbo Stream —
-   never build a full-page new/edit form.
+   never build a full-page new/edit form. **If it's a chart / KPI / dashboard**, follow
+   `data-viz.md`: pick the form by the data's job, use the `--color-chart-*` tokens (never ad-hoc
+   hex), one axis, legend + direct labels; re-run the palette validator if you change a hue.
 2. **Pick semantic role tokens** (foundations-tokens.md) — `bg-primary text-primary-foreground`,
    `border-border`, `text-muted-foreground`, `focus-visible:ring-ring/30`. **Never** raw `fm-*`
    or stock `blue-700`/`gray-*` in component code.
