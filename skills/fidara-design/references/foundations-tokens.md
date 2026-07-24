@@ -145,6 +145,12 @@ because v4 uses native CSS cascade layers instead of hijacking `@layer` the way 
 @utility mb-safe { margin-bottom: env(safe-area-inset-bottom); }
 ```
 
+## Chart color tokens
+
+Charts get their **own** validated role scale (`--color-chart-1..8` + sequential/diverging ramps),
+derived from these `fm-*` primitives but separate from `primary`/status — defined and validated in
+[data-viz.md](data-viz.md). Never color charts from the brand primitives or `primary` directly.
+
 ## What this fixes (from the audit)
 
 - Components reaching for raw `bg-blue-700` / `fm-cerulean` / `gray-*` → **role tokens**.
