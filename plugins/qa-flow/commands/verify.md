@@ -13,14 +13,17 @@ the running app.
 ## Phase 0 — Environment
 
 Read the PR documentation for `$ARGUMENTS` (`gh pr view`), CLAUDE.md, and
-`qa/` config. Ensure a testable target: boot the app in a QA/test environment and set
-`QA_BASE_URL` (local test server for verify), or use the provided URL. If `qa/` is
-not scaffolded, tell the user to run `/qa-flow:setup-qa` first.
+`qa/` config. Ensure a testable target: run **`/qa-flow:smoke`** to boot the app in a QA/test
+environment and liveness-check it — it sets `QA_BASE_URL` — or point at a provided URL. If the
+app won't boot, STOP here: "dev build not testable" → file the breakage (S1); the deeper phases
+can't run against an app that isn't up. If `qa/` is not scaffolded, tell the user to run
+`/qa-flow:setup-qa` first.
 
 ## Phase 1 — Smoke gate (build verification)
 
-`e2e-tester` runs the `@smoke` set. If it fails, STOP: the build is not verifiable —
-report "smoke failed, dev build not testable" and file the breakage (S1). No point
+With the app proven up (Phase 0's `/qa-flow:smoke` confirmed boot + key routes), `e2e-tester`
+runs the fuller `@smoke` set against `QA_BASE_URL`. If it fails, STOP: the build is not
+verifiable — report "smoke failed, dev build not testable" and file the breakage (S1). No point
 testing further.
 
 ## Phase 2 — Plan (blast radius)
