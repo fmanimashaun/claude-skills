@@ -292,7 +292,28 @@ user about `/rails-flow:curate`: it distills those into project-local skills in
 `.claude/skills/` (committed, team-shared) and keeps them synced via a manifest as
 docs evolve. Don't run it unprompted during setup — just surface it.
 
-## 8. Report
+## 8. GitHub CI economy (`.github/workflows/ci.yml`)
+
+If `.github/workflows/ci.yml` exists (the Rails 8 default), check its `on:` triggers. The scaffold
+default runs the **full matrix on every push and PR** — which re-runs, on every `feature → dev` PR,
+what the local `bin/ci` hooks + qa-flow already proved, and **burns Actions minutes** (on a private
+repo this can exhaust the quota and block merges). Propose scoping the hosted CI to the
+`dev → main` gate only — as an **approved diff, never a silent rewrite**:
+
+```yaml
+on:
+  pull_request: { branches: [main] }   # the dev→main promotion PR (base=main)
+  push:         { branches: [main] }    # the merge push onto main
+  workflow_dispatch: {}                  # on-demand
+```
+
+Rationale: local gates + qa-flow are primary for `feature → dev`; the hosted CI is the independent
+check at `dev → main`/`main`; `workflow_dispatch` stays as an on-demand escape hatch. Idempotent —
+if the triggers already match (or the user declined), leave `ci.yml` untouched and say so. (Doctrine:
+rails-8 `testing.md` § *bin/ci*; if the `pipeline` plugin is installed, this aligns with its
+main-only release/build workflows.)
+
+## 9. Report
 
 List created files, the detected Project Overrides, and any ambiguity you need the user to
 settle (e.g. base branch, form builder mandate yes/no).
