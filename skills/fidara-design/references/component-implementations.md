@@ -30,6 +30,63 @@ initializer should set **stroke-width only** (`"stroke-width" => "1.5"`); do **n
 non-negotiable ("Lucide icons, `1em`-sized, `currentColor`"). (Genuinely fixed-size glyphs like
 the Button loader-spinner are the documented exception — `animate-spin size-4`, not a content icon.)
 
+## Logo / Brand mark — `app/components/ui/logo_component.rb`
+
+The canonical way to render the **Prism mark** + wordmark — so no screen hand-rolls a text
+eyebrow. The three facet hues are **fixed brand colors** (brand.md: *never recolor facets*) — the
+one place raw brand hex is correct, not role tokens. Swap the inline paths for your exact asset
+from `docs/design-system/brand-assets/01-logos/` if the geometry differs.
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class LogoComponent < ViewComponent::Base
+    SIZE = { sm: 20, md: 28, lg: 40 }.freeze          # prism height (px); brand.md min = 20
+    def initialize(variant: :lockup, size: :md, brand: nil)
+      @variant = variant.to_sym                        # :mark (prism only) | :lockup (+ wordmark)
+      @px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)   # enforce the 20px minimum
+      @brand = (brand || "fmworkflows").to_sym         # :fidara | :fmworkflows — endorsement toggle
+    end
+    def label = @brand == :fidara ? "Fidara" : "fmworkflows"
+    def endorsement? = @brand == :fidara               # marketing/parent adds "by Fidara"
+  end
+end
+```
+```erb
+<%# clear-space (brand.md 1.5×) is a placement rule — keep the lockup uncrowded; the gap here
+    sizes to the mark. Wordmark = Bricolage Black on `foreground` (re-points to slate-50 in dark). %>
+<span class="with-icon" style="--space: <%= (@px * 0.45).round %>px" role="img" aria-label="<%= label %>">
+  <svg width="<%= @px %>" height="<%= @px %>" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 2 L21 7 L12 12 L3 7 Z"  fill="#00D4FF"/> <%# top facet   — cyan     %>
+    <path d="M3 7 L12 12 L12 22 L3 17 Z" fill="#0077CC"/> <%# left facet  — cerulean %>
+    <path d="M21 7 L12 12 L12 22 L21 17 Z" fill="#00A3FF"/> <%# right facet — electric %>
+  </svg>
+  <% if @variant == :lockup %>
+    <span class="stack" style="--space: 0">
+      <span class="font-black uppercase tracking-tight leading-none text-foreground"
+            style="font-size: <%= (@px * 0.85).round %>px"><%= label.upcase %></span>
+      <% if endorsement? %><span class="text-step--1 text-muted-foreground">by Fidara</span><% end %>
+    </span>
+  <% end %>
+</span>
+```
+Usage: `<%= render(Ui::LogoComponent.new(variant: :mark, size: :sm)) %>` (compact chrome) ·
+`<%= render(Ui::LogoComponent.new(brand: :fidara)) %>` (marketing lockup + endorsement). Dark mode
+is automatic (`text-foreground`); for busy/photographic backgrounds use the reversed/white variant
+(wrap in a context that sets `--foreground` to white, per brand.md).
+
+**Auth / focused-page recipe** — pair it with the `cover` vertical-centering composition (the named
+rule in [layout-primitives.md](layout-primitives.md)):
+```erb
+<%# a single-focus full-page screen (sign-in, splash): VERTICALLY centered, mark at the top %>
+<div class="cover"><div class="cover-centered center" style="--measure: 24rem">
+  <div class="box bg-card text-card-foreground rounded-lg border border-border stack">
+    <%= render(Ui::LogoComponent.new(variant: :lockup, size: :lg)) %>
+    <%= content %>  <%# the form / message %>
+  </div>
+</div></div>
+```
+
 ## Badge — `app/components/ui/badge_component.rb`
 
 ```ruby
