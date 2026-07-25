@@ -23,6 +23,15 @@ no `tailwind.config.js`, no npm) · Lucide icons. Two brands (**fidara**, **fmwo
 are ONE system — identical values, only the token prefix differs; code uses the **`fm-*`**
 prefix. See [references/brand.md](references/brand.md).
 
+> **Tailwind here is a deliberate choice, not a claim that hand-written CSS is inferior.**
+> Canonical Rails apps — including 37signals' own ([campfire](https://github.com/basecamp/once-campfire),
+> writebook, fizzy) — hand-write vanilla CSS, and do it well. We standardize on Tailwind v4
+> because this system's guarantee is **mechanically enforceable consistency**: `@theme` role
+> tokens, `@utility` primitives, and utility class names are greppable, so `/design-flow:audit`
+> and the `design-auditor` can *verify* conformance and catch drift. That check doesn't exist
+> for bespoke stylesheets. If a project has an established vanilla-CSS system, record it as a
+> Project Override rather than converting it on this skill's authority.
+
 ## The five layers (read in order)
 
 1. **Foundations / tokens** — [references/foundations-tokens.md](references/foundations-tokens.md).

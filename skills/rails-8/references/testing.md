@@ -7,6 +7,19 @@ suite in our apps: projects are scaffolded with `--skip-test`
 exists and there is no redundant `test/` directory to remove when
 `rspec:install` runs.
 
+> **RSpec here is a deliberate choice, not a correction of Minitest.** Minitest is Rails'
+> *default* test framework and what 37signals themselves ship in their own production apps
+> (see [basecamp/fizzy](https://github.com/basecamp/fizzy)'s `Gemfile` — `minitest-reporters`
+> + `capybara`, with `test/` rather than `spec/`). It is a perfectly sound choice. We
+> standardize on RSpec because this toolchain is built around it end-to-end: the rails-flow
+> Stop-gate ("no behavioral change without a proving spec"), the `test-runner` agent, the
+> `bin/ci` step list, and qa-flow's gates all assume RSpec conventions and `spec/` layout.
+> One consistent framework across every project is what makes those gates mechanical.
+>
+> **If a project already uses Minitest, that is not a defect** — do not migrate it on this
+> skill's authority. Record it as a Project Override in the project's CLAUDE.md and adapt the
+> gates to `test/` instead.
+
 ## Contents
 1. The stack and Gemfile
 2. Installation and configuration (`rails_helper.rb`)
