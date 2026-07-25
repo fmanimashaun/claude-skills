@@ -128,9 +128,10 @@ gitignored). `both` = keep the Markdown/CSV summary too. Default `markdown-csv` 
 Document required env: `QA_BASE_URL`, `QA_SPEC_URL` (optional), persona token vars.
 Add `.github/PULL_REQUEST_TEMPLATE.md` (the PR Documentation Contract) if absent so
 human PRs carry what qa-lead needs. Ensure `qa/reports/*` (including
-`qa/reports/allure-results` and `qa/reports/allure-report`) and `node_modules` are
-gitignored; commit configs, specs, seed, and the stamp path is NOT gitignored
-(the gate reads it from the repo).
+`qa/reports/allure-results` and `qa/reports/allure-report`), **`/.playwright-mcp/`** (ephemeral
+Playwright-MCP session state — console logs + page-snapshot `.yml`s the functional-tester must
+never commit), and `node_modules` are gitignored; commit configs, specs, seed, and the stamp
+path is NOT gitignored (the gate reads it from the repo).
 
 ## 6. Tool checklist (report, don't auto-install)
 
