@@ -70,6 +70,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.5.0 — 2026-07-25
+- **setup-flow scaffolds economical GitHub CI** (#76): a new step checks `.github/workflows/ci.yml`
+  and, when it runs the full matrix on every PR/push (the Rails default), proposes scoping the
+  triggers to the `dev → main` gate **as an approved diff — never a silent rewrite** (idempotent;
+  leaves it alone if already economical or the user declines). Local gates + qa-flow stay primary
+  for `feature → dev`; hosted CI is the independent check at `dev → main`; `workflow_dispatch` stays
+  on-demand.
+
 ### 1.4.1 — 2026-07-25
 - **Review/audit agents report ALL findings — no self-triage** (#77). `security-auditor`,
   `code-reviewer`, `design-auditor`, `pr-reviewer`, and the `/rails-flow:review` synthesis had
@@ -242,6 +250,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## pipeline (lifecycle orchestrator)
+
+### 1.1.2 — 2026-07-25
+- **setup-pipeline CI-economy alignment** (#76): notes that pipeline's own release/build workflows
+  are already `main`-only, and points at `/rails-flow:setup-flow` to scope the Rails-default
+  `ci.yml` to the `dev → main` gate too — so the hosted CI runs only where it's the independent
+  check, consistent with the pipeline release gate. Guidance-only.
 
 ### 1.1.1 — 2026-07-23
 - **/pipeline:ack git-dir guard** (#46): the marker path came from an unguarded
@@ -534,6 +548,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
 
+### 1.8.0 — 2026-07-25
+- rails-8 **CI trigger-economy doctrine** (#76): `testing.md`'s "mirror `bin/ci` into
+  `.github/workflows/ci.yml`" line no longer implies *run everything on everything*. It now
+  prescribes scoping the hosted CI to the `dev → main` gate —
+  `on: { pull_request: { branches: [main] }, push: { branches: [main] }, workflow_dispatch: {} }`
+  — because local `bin/ci` hooks + qa-flow already cover `feature → dev`, and full-matrix-on-every-PR
+  burns Actions minutes (on a private repo it can exhaust the quota and block merges, which it did
+  downstream). Doctrine-verified: `pull_request.branches` filters the PR's **base** branch (fires on
+  the PR into `main` + the merge push), `branches`/`branches-ignore` are mutually exclusive — GitHub
+  Actions "Events that trigger workflows."
+
 ### 1.7.0 — 2026-07-24
 - fidara-design **data-visualization layer** (#63, now 14 references): NEW **data-viz** —
   charts, KPIs, and dashboards as first-class design-system doctrine. Adapts Anthropic's
@@ -710,6 +735,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-25 (release v1.17.0)
+- **Economical GitHub CI** (#76): run the full hosted CI only at the `dev → main` gate, not on every
+  `feature → dev` PR — local gates + qa-flow already cover that, and full-matrix-on-every-PR exhausts
+  Actions minutes (it blocked merges downstream). rails-8 `testing.md` doctrine gains the
+  trigger-economy caveat (rails-stack → 1.8.0, doctrine-verified); `/rails-flow:setup-flow` proposes/
+  repairs `ci.yml` triggers as an approved diff (rails-flow → 1.5.0); `setup-pipeline` aligns
+  (pipeline → 1.1.2). `metadata.version` → 1.17.0.
 
 ### 2026-07-25 (release v1.16.2)
 - rails-flow **review agents report ALL findings, defer disposition** (#77, rails-flow → 1.4.1):

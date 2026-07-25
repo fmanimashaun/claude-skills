@@ -56,6 +56,12 @@ to spend tokens. (GitHub Actions adapter is provided
 dormant in `pipeline.actions.yml.example` for when cloud minutes are available;
 copy to `.github/workflows/` to enable.)
 
+**CI economy:** pipeline's own release/build workflows are already `main`-only. The Rails-default
+`.github/workflows/ci.yml`, though, runs the full matrix on *every* PR/push — which duplicates
+the local gates + qa-flow and can exhaust Actions minutes on a private repo. `/rails-flow:setup-flow`
+proposes scoping `ci.yml` to the `dev → main` gate (approved diff); prefer that so the hosted CI
+runs only where it's the independent check, consistent with the pipeline release gate.
+
 ## 4. Report
 
 Files created, prerequisites present vs missing (with fix commands), and the entry
