@@ -498,6 +498,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### 1.3.0 — 2026-07-25
+- **design-auditor + audit gain a fifth checklist category — "Composition/branding"** (#74): the
+  auditor structurally could not flag a full-page focused view using bare `center` instead of the
+  `cover` vertical-centering recipe, nor a marketing/auth surface with **no brand mark** (both
+  happened downstream and a full audit pass reported neither). Now checked in
+  `design-auditor.md` and `/design-flow:audit`, including sub-20px marks, hand-rolled text
+  eyebrows, and recolored/stretched facets.
+- **`/design-flow:setup` scaffolds `Ui::Logo`** (#75) — added to the base-ViewComponent list, with
+  guidance to use `docs/design-system/brand-assets/01-logos/` exact SVG paths when present (else the
+  canonical 3-facet prism, flagged for swap), plus the auth/focused-page pairing.
+
 ### 1.2.4 — 2026-07-24
 - `/design-flow:component` now routes **chart / KPI / dashboard** screens through the
   fidara-design `data-viz` doctrine (chart tokens, form-by-job, one axis, legend + direct labels,
@@ -547,6 +558,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/two-brand enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### 1.9.0 — 2026-07-25
+- fidara-design **`Ui::Logo` + the auth/focused-page recipe** (#75, #74). `brand.md` fully specified
+  the Prism mark (facet hues, wordmark, clear space 1.5×, min 20px / lockup 140px) and
+  `brand-guardian` existed to enforce it — but **nothing rendered it**, so downstream screens
+  hand-rolled a `<p>Fidara</p>` text eyebrow. Now:
+  - **`Ui::Logo`** worked in component-implementations (variants `mark`/`lockup`, sizes
+    `sm 20 / md 28 / lg 40` px with the 20px floor enforced in code, `brand:` toggling the
+    "by Fidara" endorsement, dark-mode automatic). Facet hues stay **fixed brand hex** — the one
+    documented exception to role-tokens-only, because facets must never be recolored.
+  - **Catalog entry** in components.md (required on marketing/auth/full-page single-focus surfaces).
+  - **Named auth recipe**: `layout-primitives.md`'s canonical-compositions table now calls out
+    "Auth / marketing splash / onboarding (single-focus, full-page): `cover > center > stack`" and
+    warns not to file these under "Page" — the ambiguity (#74) that left auth screens
+    top-aligned via bare `center` (which is `margin-inline` only) and mark-less.
 
 ### 1.8.0 — 2026-07-25
 - rails-8 **CI trigger-economy doctrine** (#76): `testing.md`'s "mirror `bin/ci` into
@@ -735,6 +761,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-25 (release v1.18.0)
+- **Brand mark shipped + enforced** (#75, #74): `Ui::Logo` (Prism mark/lockup, 20px floor, brand
+  endorsement toggle) + the named **auth/focused-page** recipe `cover > center > stack`
+  (rails-stack → 1.9.0); design-auditor and `/design-flow:audit` gain a **Composition/branding**
+  checklist category, and `/design-flow:setup` scaffolds the component (design-flow → 1.3.0). Closes
+  the loop where the brand spec and its enforcer both existed but nothing rendered the mark.
+  `metadata.version` → 1.18.0.
 
 ### 2026-07-25 (release v1.17.0)
 - **Economical GitHub CI** (#76): run the full hosted CI only at the `dev → main` gate, not on every
