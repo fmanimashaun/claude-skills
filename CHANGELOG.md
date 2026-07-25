@@ -312,6 +312,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.5.1 — 2026-07-25
+- **functional-tester never touches git** (#78) — it was auto-committing its run evidence
+  (report + screenshots **and ~35 ephemeral `.playwright-mcp/` session dumps**) to the checked-out
+  branch and pushing, landing 50 files on `origin/dev` unreviewed on a "no code changes" prompt.
+  The agent's output contract now forbids all git ops: write **only** under `qa/manual-tests/`,
+  leave it uncommitted in the working tree for the coordinator to commit via the normal flow, and
+  **never** stage `.playwright-mcp/` (ephemeral MCP state) or push to a shared branch. `setup-qa`
+  now gitignores `/.playwright-mcp/` as a backstop.
+
 ### 1.5.0 — 2026-07-24
 - **NEW `/qa-flow:smoke`** (#64) — the build-verification floor: **launches the app**
   (stack-aware, from a new `app:` block in `qa/qa.config.yml` — `start`/`port`/`health`/`routes`/
@@ -689,6 +698,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-25 (release v1.16.1)
+- qa-flow **functional-tester git-hygiene fix** (#78, qa-flow → 1.5.1): the agent no longer
+  auto-commits/pushes its evidence (it polluted `dev` with 50 files incl. ephemeral
+  `.playwright-mcp/`); it now leaves evidence under `qa/manual-tests/` for the coordinator, never
+  touches git, and `setup-qa` gitignores `/.playwright-mcp/`. `metadata.version` → 1.16.1.
 
 ### 2026-07-24 (release v1.16.0)
 - rails-flow **local brain-review cadence nudge** (#65, rails-flow → 1.4.0): SessionStart reminds
