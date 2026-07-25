@@ -32,6 +32,13 @@ Delegate to the **design-auditor** agent. Report findings; don't rewrite in plac
   CSS-chain/`data-testid` selectors bound to markup internals; radius not matching the system
   (btn `rounded-md`, card `rounded-lg`, badge `rounded-full`); non-Lucide icons.
 
+**Composition/branding**
+- Full-page single-focus views (auth, marketing splash, onboarding) using bare `center` (top-aligned)
+  instead of the `cover > center > stack` recipe that centers **vertically**.
+- Marketing/auth surfaces with **no brand mark**, or a hand-rolled text eyebrow (`<p>Fidara</p>`)
+  where `Ui::Logo` belongs; mark below the 20px floor (lockup <140px); recolored/stretched/rotated
+  or shadowed facets; missing clear space (1.5× prism height).
+
 ## Output
 
 A prioritized findings list (severity: breaks-consistency > a11y > polish), each with

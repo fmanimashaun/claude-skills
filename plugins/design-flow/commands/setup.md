@@ -33,9 +33,16 @@ authored; `git status` after.
    `grid-auto`, `frame`, `cover`, `reel`, `with-icon`.
 3. **Base ViewComponents** (`app/components/`): `Layout::Sidebar`, `Layout::Switcher`,
    `Layout::Container`, and `Ui::Button`, `Ui::Card`, `Ui::Badge`, `Ui::Alert`, `Ui::Modal`,
-   `Ui::Avatar`, `Ui::EmptyState` — each with the variant/size/state map + slots from
-   components.md. (If the project doesn't use ViewComponent yet, add the gem, or fall back to
+   `Ui::Avatar`, `Ui::EmptyState`, **`Ui::Logo`** — each with the variant/size/state map + slots
+   from components.md. (If the project doesn't use ViewComponent yet, add the gem, or fall back to
    the helper-DSL variant — ask which.)
+   **`Ui::Logo`** renders the Prism mark/lockup (`variant: :mark|:lockup`, `size: :sm|:md|:lg`
+   ≥20px, `brand:` selecting the "by Fidara" endorsement) so no screen hand-rolls a text eyebrow.
+   Facet hues are fixed brand colors — the documented exception to role-tokens-only. If
+   `docs/design-system/brand-assets/01-logos/` exists, use its exact SVG paths; otherwise scaffold
+   the canonical 3-facet prism from component-implementations.md and tell the user to swap in the
+   official asset. Pair it with the **auth/focused-page** recipe (`cover > center > stack`) for
+   sign-in / splash / onboarding screens.
 4. **Stimulus mixins + controllers** (interaction-stimulus.md): the four mixins (list-navigation,
    focus-trap+restore, dismissable-layer, anchored-position) and the `modal`/`dropdown`/`tabs`/
    `sidebar`/`theme`/`toast` controllers built on them.
