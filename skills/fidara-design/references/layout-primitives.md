@@ -92,7 +92,12 @@ as components with slots + args that emit the custom properties.
 
 ## Canonical compositions (nest primitives; don't invent monoliths)
 
-- **Page:** `center > stack`
+- **Page** (scrolling content): `center > stack`
+- **Auth / marketing splash / onboarding** (single-focus, full-page): `cover > center > stack` —
+  one panel **vertically centered** via `cover` (bare `center` is `margin-inline` only, i.e.
+  top-aligned — wrong here), with a **brand mark** (`Ui::Logo`) at the top of the stack. This is
+  the named rule for full-page single-focus screens; **don't file them under "Page"** (that
+  ambiguity is why auth screens end up top-aligned and mark-less).
 - **Card:** `box > stack` (media on top via `frame`)
 - **Gallery/dashboard:** `grid-auto > (box > stack)`
 - **Hero / empty-state:** `cover > center > stack`

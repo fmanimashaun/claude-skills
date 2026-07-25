@@ -107,6 +107,21 @@ DEFAULTS = { variant: :primary, size: :md }
 - `Ui::Avatar` (extract it — auctioneer inlines): `rounded-full` image or initials chip
   `bg-primary/10 text-primary`, sizes `sm size-8 / md size-10 / lg size-12`, optional status dot, group/stacked.
 
+## Logo / Brand mark
+- `Ui::Logo` — the ONLY way to render the Prism mark; never hand-roll a text eyebrow (a plain
+  `<p>Fidara</p>` in place of the mark is a defect). **Variants:** `mark` (prism only) ·
+  `lockup` (prism + wordmark). **Sizes:** `sm 20px / md 28px / lg 40px` prism height —
+  **20px is the floor** (brand.md min sizes; lockup min 140px wide).
+- Facet hues are **fixed brand colors** (cyan top / cerulean left / electric right) — the one
+  documented place raw brand hex beats role tokens, because facets must never be recolored.
+  Wordmark = Bricolage Black `uppercase tracking-tight` on `text-foreground` (dark-mode automatic).
+- `brand: :fidara` adds the **"by Fidara"** endorsement (marketing/parent surfaces);
+  `:fmworkflows` omits it (product UI). Clear space 1.5× prism height. Never
+  stretch/rotate/recolor/shadow the mark.
+- **Required on** marketing, auth, and other full-page single-focus surfaces — paired with the
+  `cover > center > stack` recipe (see layout-primitives.md). Worked code in
+  [component-implementations.md](component-implementations.md).
+
 ## Pagination
 - Keep the Pagy-based `shared/_pagination`: per-page `<select>`, "Showing X–Y of Z", windowed links + prev/next
   Lucide chevrons, active = `bg-primary/10 text-primary`. Optional `turbo_frame` target. Responsive `flex-col

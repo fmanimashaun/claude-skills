@@ -33,6 +33,11 @@ icon-only; no color-only state; keyboard reachable; `prefers-reduced-motion`.
 **Consistency** — catalog variant/size names; one mechanism per component (no duplicate
 button/badge idioms); radius language (btn `rounded-md`, card `rounded-lg`, badge
 `rounded-full`); Lucide icons; single source of truth for tokens.
+**Composition/branding** — full-page single-focus views (auth, marketing splash, onboarding) use
+the `cover > center > stack` recipe for true **vertical** centering, not bare `center`
+(top-aligned); a **brand mark** (`Ui::Logo`, per brand.md — clear-space 1.5×, min 20px/lockup
+140px) is present on marketing/auth surfaces, **not** a hand-rolled text label; the Prism mark's
+facets are never recolored/stretched/rotated (brand.md don'ts).
 
 ## Report
 
