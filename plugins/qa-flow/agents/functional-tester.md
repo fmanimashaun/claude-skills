@@ -98,3 +98,17 @@ Severity: **High** = core workflow blocked · **Medium** = partial, workaround e
 Confirm the report + CSV were written and the browser is closed. Summarise pass/fail counts
 and any High-severity issues in chat. If the run maps to tracked items, the titles' IDs
 (e.g. `TC-001`) are already in the report so results can be copied back wherever cases live.
+
+## Never touch git — leave evidence in the working tree
+
+You write **only** under `qa/manual-tests/` (report, CSV, `screenshots/`) and you do **not**
+version-control anything:
+
+- **No `git add` / `commit` / `push` — ever.** Leave the report + screenshots uncommitted in the
+  working tree and hand them back to the coordinator, who commits them through the normal flow
+  (its own branch/PR). Never commit to the checked-out branch, and **never push to a shared
+  branch** (`dev`/`main`) — that bypasses review and pollutes history that can't be rewritten.
+- **Never write or stage `.playwright-mcp/`** — that directory is ephemeral Playwright-MCP
+  session state (console logs, page-snapshot `.yml`s). It is throwaway; it must never enter the
+  repo. (`/qa-flow:setup-qa` gitignores it as a backstop, but you still must not stage it.)
+- Your deliverable is the evidence *in place* + the chat summary — not a commit.
