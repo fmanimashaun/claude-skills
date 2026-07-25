@@ -70,6 +70,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.4.1 — 2026-07-25
+- **Review/audit agents report ALL findings — no self-triage** (#77). `security-auditor`,
+  `code-reviewer`, `design-auditor`, `pr-reviewer`, and the `/rails-flow:review` synthesis had
+  output contracts that let a pass *silently drop* a real finding — downstream, `security-auditor`
+  self-dismissed a token-in-URL and a login-CSRF finding as "accepted residual"/"awareness-only"
+  and never surfaced them. Every contract now mandates: **report every finding** (any severity)
+  with `file:line` + repro + fix option(s), **issue-ready**; **do not decide disposition** (no
+  "accept / won't fix / no action / residual—ignore" — a residual is still reported as low-severity);
+  the fix-flow + human decide whether/how to fix. Verdict (CLEAN/BLOCKED) stays, but the full list
+  ships regardless. Synthesis now only *orders* findings, never drops them. Security findings are
+  never reviewer-dismissed.
+
 ### 1.4.0 — 2026-07-24
 - **Local brain-review cadence nudge** (#65) — the maintenance sweep now actually fires on time.
   `/rails-flow:brain-review` stamps an epoch into `docs/brain/.last-review`; the SessionStart
@@ -698,6 +710,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-25 (release v1.16.2)
+- rails-flow **review agents report ALL findings, defer disposition** (#77, rails-flow → 1.4.1):
+  the four review/audit agents + `/rails-flow:review` can no longer self-dismiss a finding
+  (the pattern that silently dropped two real security findings downstream). Every finding is
+  reported, issue-ready; act/defer/accept is the fix-flow's + human's call. `metadata.version` →
+  1.16.2.
 
 ### 2026-07-25 (release v1.16.1)
 - qa-flow **functional-tester git-hygiene fix** (#78, qa-flow → 1.5.1): the agent no longer

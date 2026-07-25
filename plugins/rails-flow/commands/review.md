@@ -46,9 +46,14 @@ cross-examination. Default remains one-shot subagents.
 
 ## Synthesis
 
-Merge and de-duplicate findings, order into **phases** (Phase 1 = all P1s, then coherent
-P2/P3 groupings of ~5-10 items each), and write the report to
-`docs/reviews/<YYYY-MM-DD>-codebase-review.md` with each phase marked `Status: Not started`.
+Each pass reports **every** finding (any severity) with `file:line` + repro + fix option(s) and
+does **not** self-decide disposition — so synthesis only ever **orders** findings, never drops
+them. Merge and de-duplicate (a dedupe collapses the *same* finding seen by two passes; it never
+discards a real one), order into **phases** (Phase 1 = all P1s, then coherent P2/P3 groupings of
+~5-10 items each), and write the report to
+`docs/reviews/<YYYY-MM-DD>-codebase-review.md` with each phase marked `Status: Not started`. Every
+finding — including low-severity/residual ones — appears in the report, issue-ready; the
+disposition (fix now / defer / accept) is the developer flow's and the human's call, never a pass's.
 
 Report the totals (P1/P2/P3 counts), the top 5 most serious findings inline, and point the
 user at `/rails-flow:fix` to start Phase 1.

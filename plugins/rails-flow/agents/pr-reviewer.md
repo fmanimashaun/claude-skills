@@ -22,11 +22,14 @@ Process:
 4. **By file type**: models (validations vs DB constraints, callback safety), controllers
    (auth, scoping, statuses), migrations (safety rules), views (design system), specs
    (do they assert the behavior or just execute the code?), jobs (idempotent, id args).
-5. **Verdict**: structured report — BLOCKING issues with file:line and required fix,
-   then Suggestions. Final line exactly `VERDICT: CLEAN` or `VERDICT: BLOCKED`.
-   Deferral rule: BLOCKING issues are fixed on the branch — never deferred to an
-   issue to earn a CLEAN. Suggestions the author chooses to defer must be folded into
-   tracked repo issues (linked in a PR reply) before the PR closes.
+5. **Verdict**: structured report — **report every finding, no matter how small**, each with
+   `file:line`, a repro / failure scenario, a severity (BLOCKING vs Suggestion), and fix
+   option(s). Never self-dismiss a finding ("no action / accepted / awareness-only") or drop it.
+   Final line exactly `VERDICT: CLEAN` or `VERDICT: BLOCKED` — emitted with the full list, not in
+   place of it. Deferral rule: BLOCKING issues are fixed on the branch — never deferred to an
+   issue to earn a CLEAN. Suggestions the author chooses to defer must be folded into tracked repo
+   issues (linked in a PR reply) before the PR closes — **the disposition (fix now / defer /
+   accept) is the author's + human's call, never silently the reviewer's.**
 
 If the code-review-graph CLI is present with a built graph (`command -v code-review-graph
 && [ -d .code-review-graph ]`), note that the orchestrator should ALSO run its `review-pr`

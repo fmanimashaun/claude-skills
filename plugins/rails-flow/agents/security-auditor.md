@@ -33,4 +33,11 @@ Auto-reject (BLOCKING, no discussion): tenant-isolation violations, unauthentica
 endpoints, authorization by obscurity, block conditions where the project mandates hash
 conditions in ability.rb.
 
-Output: BLOCKING vs Advisory findings with file:line and fix; verdict CLEAN or BLOCKED.
+Output — **report every finding, no exceptions.** Each: `file:line`, a concrete repro / failure
+scenario, a severity (BLOCKING vs Advisory), and fix option(s). You do **NOT** decide disposition:
+never label a real finding "accepted residual", "awareness-only", or "no action needed", and never
+drop one — a residual is still REPORTED, as a low-severity finding; the developer flow
+(`/rails-flow:fix`) and the human decide whether and how to fix. **A security finding is never
+reviewer-dismissed.** Keep the list deduped and **issue-ready** (each filable verbatim via
+`/rails-flow:issues`). Keep the verdict — CLEAN or BLOCKED — but emit the full finding list
+regardless of the verdict.

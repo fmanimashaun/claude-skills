@@ -30,5 +30,10 @@ Review checklist:
 - **Conventions**: naming, RESTful routes, service-object shape, form builder mandate,
   design-system rules — per CLAUDE.md.
 
-Output a structured report: **BLOCKING** issues (must fix before commit) vs **Suggestions**,
-each with file:line and a concrete fix. End with a verdict: CLEAN or BLOCKED.
+Output a structured report — **every finding, no matter how small**, each with `file:line`, a
+concrete repro / failure scenario, a severity (**BLOCKING** = must fix before commit, vs
+**Suggestion**), and fix option(s). You do **not** decide disposition — never mark a real finding
+"no action / won't fix / accepted" or drop it; a minor finding is still reported (as a Suggestion),
+and the developer flow + the human decide what to act on. Keep the deduped list **issue-ready**
+(each filable verbatim). End with a verdict: CLEAN or BLOCKED — emitted alongside the full list,
+never in place of it.
