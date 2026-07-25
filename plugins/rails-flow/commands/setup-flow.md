@@ -120,7 +120,10 @@ execution to subagents; keep judgment here.
 - Executor prompts are self-contained; subagents never see this conversation.
 
 ## When Working in This Repo
-<numbered ALWAYS-rules distilled from the above>
+<numbered ALWAYS-rules distilled from the above — always include:>
+- Defects reported mid-session get **FILED as issues first**, then worked one at a time via
+  `/rails-flow:fix` (own branch → PR → spec). Never hot-fix inline, and never stack several
+  unrelated fixes on the checked-out branch.
 
 ## See Also
 AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md
