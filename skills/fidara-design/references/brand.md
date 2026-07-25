@@ -9,6 +9,22 @@ canonical superset is in `fidara-solutions/fidara-platform`.
 
 ## Parameterization
 
+### Personality knobs (per-brand, fidara defaults shown)
+
+Three axes are **brand-level choices**, not system law. They were decided for fidara after
+measuring two reference corpora that genuinely disagree on them; a different brand may choose
+differently without touching a single component:
+
+| Knob | fidara default | Alternative available |
+|---|---|---|
+| **Section rhythm** | `--space-section` — generous (96→128px) | `--space-section-compact` (64→96px) for dense/utilitarian brands |
+| **Radius language** | controls `rounded-md`, cards `rounded-lg`, pills `rounded-full` | softer all-`rounded-lg` (friendlier, more consumer) — set `--radius` + the control radius together |
+| **Heading ramp** | full mid-range: `step-1`/`step-2` for card/section headings | hero-heavy: jump body → `step-4`/`5` (higher drama, less hierarchy) |
+
+Because components consume **roles and scale steps** (never literal values), changing a knob is a
+token edit in the brand's `@theme` layer. See [foundations-tokens.md](foundations-tokens.md) for
+the values and the reasoning behind each default.
+
 - Components/tokens are brand-neutral (they consume semantic roles, which map to `fm-*`).
 - The **only** brand-specific outputs are the **logo lockup** and the **"by Fidara"
   endorsement**: product UI (fmworkflows) uses the Prism mark + wordmark *without* the

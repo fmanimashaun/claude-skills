@@ -574,6 +574,37 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
 
+### 1.10.0 — 2026-07-25
+- **fidara-design Phase 0 — foundations calibrated against two reference corpora** (#93). The
+  fluid scale existed; *which step goes where* was undefined, which is where drift starts. All
+  values below were measured across 704 + 264 component files and 72 rendered pages, not chosen
+  by taste.
+  - **NEW tokens**: `--width-shell` (80rem/1280px — both corpora converge, `max-w-7xl` ≡
+    `max-w-screen-xl`), `--width-prose` (42rem/672px section ledes), `--space-section`
+    (clamp 96→128px, generous — the fidara default) and `--space-section-compact` (64→96px).
+    Plus `@utility shell / prose-measure / section-y / section-y-compact`. Verified compiling
+    under Tailwind v4.3.3.
+  - **NEW "Applying the scale" table — the chrome-vs-content rule.** Interface chrome is
+    *smaller* than prose: both corpora are `text-sm`-centric by ~**2.7 : 1** (TW 6494 vs 1575;
+    FB 1100 vs 413). So app chrome = `text-step--1`, prose = `text-step-0`, meta = `text-step--2`,
+    with card/section/page/hero mapped to steps 1/2/3/4-5. Using `step-0` for chrome is the most
+    common calibration error and made product UI read oversized.
+  - **Heading ramp** — follow Flowbite's fuller mid-range: reach for `step-1`/`step-2` for card
+    and section headings instead of jumping body → hero (Tailwind UI's thin mid-range).
+  - **NEW control-density table** bound to the shared `sm/md/lg` vocabulary, reconciling padding
+    with height: `md` = `px-3 py-2` / `h-9` (both corpora's default — TW 749, FB 129).
+  - **Validated by measurement, now settled**: the radius language matches ours exactly
+    (controls `rounded-md` 2068, cards `rounded-lg` 966, pills `rounded-full` 1379) and the
+    elevation idiom is a 1px edge + minimal shadow (`ring-1` 690 + `shadow-xs` 498; FB `border`
+    302 + `shadow-xs` 116). Flowbite's softer all-`rounded-lg` was **considered and rejected**.
+  - **NEW hard rule — never bind markup to a numbered step.** Causal, not stylistic: a numbered
+    step encodes a fixed lightness, so every dark adjustment must be inline. Measured cost in the
+    corpora (which do bind that way): **20,825 `dark:` classes across 72 pages** (~289/page).
+    fidara's role layer needs **zero**.
+  - `brand.md` gains a **personality-knobs table** (#104): section rhythm, radius language and
+    heading ramp are **per-brand** choices with fidara defaults — a client brand changes a token,
+    never a component.
+
 ### 1.9.1 — 2026-07-25
 - **RSpec and Tailwind are stated as deliberate choices, not corrections** (#101). Both are
   **kept** — the decision is confirmed — but the doctrine previously implied the canonical
@@ -795,6 +826,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-25 (release v1.20.0)
+- **fidara-design Phase 0 — foundations calibrated** (#93, rails-stack → 1.10.0). New
+  `--width-shell` / `--width-prose` / `--space-section(-compact)` tokens + `@utility` recipes; the
+  chrome-vs-content type rule (app chrome is `step--1`, prose `step-0` — both corpora are
+  `text-sm`-centric ~2.7:1); heading ramp uses the middle steps; control density bound to
+  `sm/md/lg` (`md` = `px-3 py-2`/`h-9`); radius + elevation confirmed by measurement and settled;
+  and a new hard rule — **never bind markup to a numbered palette step** (measured cost: 20,825
+  inline `dark:` classes in the corpora vs zero for our role layer). Rhythm/radius/heading are
+  recorded as **per-brand knobs** in brand.md (#104). `metadata.version` → 1.20.0.
 
 ### 2026-07-25 (release v1.19.1)
 - **RSpec + Tailwind reframed as deliberate choices** (#101, rails-stack → 1.9.1): both kept, but the

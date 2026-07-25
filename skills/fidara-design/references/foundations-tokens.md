@@ -107,7 +107,12 @@ the `clamp()`s; the shape:
   --space-l:   clamp(2rem,   1.86rem + 0.71vw, 2.5rem);         /* … xl/2xl/3xl similarly */
 
   /* structure */
-  --measure: 65ch;                 /* readable line length; cap running text at this */
+  --measure: 65ch;                 /* long-form reading measure; cap running text at this */
+  --width-prose: 42rem;            /* 672px — section lede / intro blocks (2–3 lines, not long-form) */
+  --width-shell: 80rem;            /* 1280px — the page shell; both reference corpora converge here */
+  /* section rhythm — fidara default is GENEROUS (brand-pack knob, see brand.md) */
+  --space-section: clamp(6rem, 5.2rem + 3.4vw, 8rem);          /* 96px → 128px */
+  --space-section-compact: clamp(4rem, 3.6rem + 1.8vw, 6rem);  /* 64px → 96px — dense pages */
   --radius: 0.5rem;                /* base=8px → cards rounded-lg; buttons rounded-md=6px; badges rounded-full */
   --radius-sm: calc(var(--radius) - 2px);  --radius-lg: calc(var(--radius) + 4px);
   /* soft, shallow shadow ramp — structure comes from 1px borders, not heavy shadows */
@@ -125,6 +130,81 @@ Rules: size type/space in **`rem`/`em`** (never `px`) so zoom/root-size propagat
 for the measure; never raw `vw` for type — always `clamp()`. Prefer **logical properties**
 (`padding-inline`, `margin-block`, `inset`) for RTL/vertical-writing safety.
 
+## Applying the scale (calibrated against two reference corpora)
+
+Having a fluid scale is not enough — *which* step goes where is the part that drifts. These
+assignments were calibrated by measuring two independent commercial kits (704 + 264 files).
+
+**Chrome vs content — the single most useful rule.** Both corpora are overwhelmingly
+`text-sm`-centric for interface chrome: 14px chrome beats 16px body by roughly **2.7 : 1** in
+each (Tailwind UI 6494 vs 1575; Flowbite 1100 vs 413). Interface chrome is *smaller* than prose.
+
+| Use | Step | Applies to |
+|---|---|---|
+| Meta / eyebrow / caption / table header | `text-step--2` | uppercase labels, timestamps, helper text |
+| **App chrome** | **`text-step--1`** | nav, buttons, form labels+inputs, table cells, badges, breadcrumbs, menus |
+| **Prose / content** | **`text-step-0`** | body copy, marketing paragraphs, article text, section ledes |
+| Card / sub-section heading | `text-step-1` | card titles, list-group headings |
+| Section heading | `text-step-2` | in-page section titles |
+| Page title | `text-step-3` | the one `h1` of an app screen |
+| Hero | `text-step-4`–`5` | marketing hero only |
+
+Using `text-step-0` for app chrome makes product UI read oversized and loose — the most common
+calibration error, and the reason this table exists.
+
+**Heading ramp — use the middle steps.** Tailwind UI jumps from body straight to hero
+(`text-4xl`/`5xl` heavy, thin mid-range); Flowbite carries a fuller ladder
+(`text-lg`/`xl`/`2xl` well used). Ours follows Flowbite here: reach for **`step-1`/`step-2`** for
+card and section headings rather than jumping to hero sizes. A dense screen may have *no* heading
+above `step-2`.
+
+**Section rhythm.** Vertical space is what reads as "premium". Use `--space-section` for
+marketing/landing sections (fidara default, generous) and `--space-section-compact` for dense
+product pages. Do **not** express rhythm as a breakpoint pair (`py-24 sm:py-32`) — the `clamp()`
+token scales continuously and needs no breakpoint.
+
+**Shell vs measure — two levels, both corpora agree.** Wrap the page in `--width-shell`
+(1280px) and constrain running text to `--width-prose` (672px) or `--measure` (65ch) inside it.
+That single nesting is most of what reads as "designed". `--measure` is the stricter, more
+readable value: prefer it for long-form, `--width-prose` for section ledes.
+
+## Control density
+
+Both corpora converge on the same default control padding (`px-3 py-2` — Tailwind UI 749,
+Flowbite 129), so the size vocabulary is bound to it. Height and padding must agree:
+
+| Size | Padding | Height | Use |
+|---|---|---|---|
+| `sm` | `px-2 py-1` | `h-8` | compact toolbars, table row actions, dense filters |
+| **`md`** (default) | **`px-3 py-2`** | `h-9` | buttons, inputs, selects — the default everywhere |
+| `lg` | `px-4 py-2.5` | `h-10` | primary page actions, marketing CTAs |
+
+`min-h-touch` (44px) still wins on touch targets regardless of size — see the utilities below.
+
+## Validated by measurement (do not "improve" these)
+
+Two doctrine rules were checked against the corpora and **confirmed**, so they are settled:
+
+- **Radius language** — measured distribution matches ours exactly: controls `rounded-md`
+  (Tailwind UI 2068), cards `rounded-lg` (966), pills/avatars `rounded-full` (1379). *(Flowbite
+  prefers a softer all-`rounded-lg` language — 911 vs only 10 `rounded-md`. Considered and
+  rejected for fidara; it is available as a brand-pack knob, see brand.md.)*
+- **Elevation idiom** — a 1px edge plus a minimal shadow, not heavy shadows: Tailwind UI
+  `ring-1` 690 + `shadow-xs` 498; Flowbite `border` 302 + `shadow-xs` 116. Heavy shadows are rare
+  in both. This is exactly "the 1px border separates; elevate only genuine overlays".
+
+## Never bind markup to a numbered step
+
+`bg-fm-cerulean-600`, `text-fm-slate-700` and friends are **forbidden in component code** — roles
+only (`bg-primary`, `text-muted-foreground`).
+
+This is not stylistic. A numbered step encodes a *fixed lightness*, so it cannot adapt to a dark
+surface, and every dark adjustment must then be written inline. Measured consequence in the
+reference corpora, which bind to numbered steps (`text-primary-700` ×439, `bg-primary-700` ×217):
+**20,825 `dark:` utility classes across 72 pages** (~289/page), plus 2050 more in the other kit's
+templates. fidara's role layer needs **zero**: `--primary` is re-pointed once under `.dark` and
+every component follows. One indirection removes ~20k inline variants.
+
 ## Utilities to keep
 
 Define these with `@utility` (the Tailwind **v4** custom-utility API) — **not** raw classes in
@@ -134,6 +214,14 @@ variant engine, so `sm:pt-safe`, `hover:min-h-touch`, `md:pb-safe` etc. actually
 because v4 uses native CSS cascade layers instead of hijacking `@layer` the way v3 did.)
 
 ```css
+/* Page shell + prose measure — the two-level nesting both corpora converge on. */
+@utility shell { max-inline-size: var(--width-shell); margin-inline: auto; }
+@utility prose-measure { max-inline-size: var(--width-prose); }
+
+/* Section rhythm — fluid, no breakpoint pair needed. */
+@utility section-y { padding-block: var(--space-section); }
+@utility section-y-compact { padding-block: var(--space-section-compact); }
+
 /* WIRE min-h-touch on every tap target (was defined-but-unused). */
 @utility min-h-touch { min-height: 44px; }
 
