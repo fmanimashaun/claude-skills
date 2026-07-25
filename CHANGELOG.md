@@ -574,6 +574,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
 
+### 1.9.1 — 2026-07-25
+- **RSpec and Tailwind are stated as deliberate choices, not corrections** (#101). Both are
+  **kept** — the decision is confirmed — but the doctrine previously implied the canonical
+  alternatives were defects, which is wrong: **Minitest is Rails' default test framework** and
+  **hand-written CSS is what 37signals ship** in their own production apps
+  ([basecamp/fizzy](https://github.com/basecamp/fizzy) `Gemfile`: `minitest-reporters` + `capybara`,
+  with `test/` not `spec/`; campfire/writebook/fizzy use vanilla CSS, no Tailwind gem).
+  - `rails-8 › testing.md` now explains **why** we standardize on RSpec (the rails-flow Stop-gate,
+    `test-runner` agent, `bin/ci` list and qa-flow gates all assume RSpec conventions + `spec/`
+    layout — one framework is what makes those gates mechanical), and states that **a project
+    already on Minitest is not a defect** — record a Project Override, don't migrate it on this
+    skill's authority.
+  - `fidara-design › SKILL.md` does the same for Tailwind: the reason is **mechanically enforceable
+    consistency** (greppable `@theme` roles + `@utility` primitives let `/design-flow:audit` verify
+    conformance — impossible for bespoke stylesheets), not that vanilla CSS is inferior.
+  - README: "no Minitest" → "a deliberate standardization over Rails' Minitest default".
+- Also hardened `.gitignore` for licensed design references (`flowbite*/`, `flowbite*.zip` alongside
+  `tailwind-ui/`, `everylayout/`) so kit sources can never be committed to this public repo.
+
 ### 1.9.0 — 2026-07-25
 - fidara-design **`Ui::Logo` + the auth/focused-page recipe** (#75, #74). `brand.md` fully specified
   the Prism mark (facet hues, wordmark, clear space 1.5×, min 20px / lockup 140px) and
@@ -776,6 +795,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-25 (release v1.19.1)
+- **RSpec + Tailwind reframed as deliberate choices** (#101, rails-stack → 1.9.1): both kept, but the
+  doctrine no longer implies Rails' Minitest default or hand-written CSS are defects — each now states
+  *why* we standardize (mechanical gates for RSpec; enforceable consistency for Tailwind) and that an
+  existing Minitest/vanilla-CSS project is a Project Override, not something to migrate. Verified
+  against 37signals' own apps. `.gitignore` hardened for licensed design references.
+  `metadata.version` → 1.19.1.
 
 ### 2026-07-25 (release v1.19.0)
 - **File-then-fix discipline** (#73, rails-flow → 1.6.0): mid-session defects are FILED as issues

@@ -13,5 +13,8 @@ Thumbs.db
 .env
 
 # Paid third-party book screenshots (Every Layout) — reference only, never redistribute.
+# Licensed design references — study locally, NEVER commit (see EPIC #89).
 everylayout/
 tailwind-ui/
+flowbite*/
+flowbite*.zip
