@@ -456,7 +456,20 @@ CI.run do
 end
 ```
 
-  Mirror the same steps in `.github/workflows/ci.yml` for the hosted gate.
+  Mirror the same steps in `.github/workflows/ci.yml` — but **scope the triggers economically**.
+  Run the hosted CI only where it's the *independent* gate, the `dev → main` promotion — **not** on
+  every `feature → dev` PR (the local `bin/ci` hooks + qa-flow already cover that). Full-matrix-on-
+  every-PR duplicates local verification and burns Actions minutes; on a private repo it can
+  **exhaust the monthly quota and block merges**. Use:
+  ```yaml
+  on:
+    pull_request: { branches: [main] }   # PRs whose BASE is main → the dev→main promotion PR
+    push:         { branches: [main] }    # the merge push onto main
+    workflow_dispatch: {}                  # on-demand escape hatch
+  ```
+  `pull_request.branches` filters the PR's **base** branch, so this fires on the PR into `main`
+  and the merge push to `main`, and nothing on `feature → dev`. (`branches` and `branches-ignore`
+  are mutually exclusive per event.) Source: GitHub Actions, "Events that trigger workflows."
 - **Parallel execution** — RSpec has no built-in parallelizer; the standard is
   the `parallel_tests` gem: `rake parallel:create parallel:prepare` then
   `bundle exec parallel_rspec spec/`. SimpleCov needs result merging
