@@ -26,5 +26,8 @@ Checks (driven by project rules — examples):
 - **Accessibility**: labels on inputs, button vs link semantics, contrast in dark mode
   if the project supports it.
 
-Run the project's own verification greps from CLAUDE.md when they exist. Output findings
-as BLOCKING (breaks the design system) vs Suggestions, with file:line.
+Run the project's own verification greps from CLAUDE.md when they exist. Output **every finding,
+no matter how small** — each with `file:line`, a concrete repro / what-it-breaks, a severity
+(**BLOCKING** = breaks the design system, vs **Suggestion**), and fix option(s). You do **not**
+decide disposition — never drop or "accept" a real finding; a minor one is still reported, and the
+developer flow + the human decide what to act on. Keep the list deduped and **issue-ready**.
