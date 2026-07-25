@@ -38,6 +38,21 @@ if [ -f docs/brain/STATUS.md ]; then
   fi
 fi
 
+# Issue→fix discipline advisory (fail-open, informational only). If this branch carries several
+# fix-shaped commits and neither the branch name nor any commit references an issue, it's a decent
+# proxy for ad-hoc hot-fixing outside the file→/rails-flow:fix loop. Never blocks.
+if [ -n "${branch:-}" ] && [ "$branch" != "main" ] && [ "$branch" != "dev" ]; then
+  _range="$(git merge-base "$base" HEAD 2>/dev/null)"
+  if [ -n "$_range" ]; then
+    _fixish="$(git log --format=%s "$_range..HEAD" 2>/dev/null | grep -ciE '^(fix|bug|hotfix)' || true)"
+    _refs="$(git log --format='%s %b' "$_range..HEAD" 2>/dev/null | grep -coE '#[0-9]+' || true)"
+    case "$branch" in *[0-9]*) _refs=$((_refs+1)) ;; esac   # branch names like fix/issue-42-*
+    if [ "${_fixish:-0}" -ge 2 ] && [ "${_refs:-0}" -eq 0 ]; then
+      echo "- advisory: ${_fixish} fix-shaped commits on '$branch' with no issue reference — defects are meant to be FILED then worked one-at-a-time (/rails-flow:fix · /rails-flow:issues), not stacked on one branch."
+    fi
+  fi
+fi
+
 if [ -f .claude/skills/.manifest.tsv ]; then
   stale=0
   while IFS="$(printf '\t')" read -r src hash; do

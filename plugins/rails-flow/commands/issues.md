@@ -13,6 +13,13 @@ pipeline every time, nothing half-done.
 Read `CLAUDE.md` and `GUARDRAILS.md`. Determine the base branch (`dev` if it exists).
 Confirm `gh` is authenticated (`gh auth status`).
 
+## Phase 0 — Capture unfiled defects (if any)
+
+This command works the **tracker**, so anything not in it is invisible. If defects surfaced live in
+this session (the user reporting problems while reviewing the running app) and aren't filed yet,
+**file them first** — one issue each, with repro + expected/actual, batched in a single pass — so
+they enter the queue below instead of becoming ad-hoc hot-fixes. Then triage normally.
+
 ## Phase 1 — Triage
 
 ```bash
