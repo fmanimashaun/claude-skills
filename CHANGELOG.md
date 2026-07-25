@@ -70,6 +70,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.6.0 — 2026-07-25
+- **File-then-fix discipline for mid-session defects** (#73). The flow intended issue-driven fix
+  work but nothing steered it there when defects surfaced *interactively* (user reviewing the running
+  app: "this is broken", "also this") — the result was ad-hoc hot-fixing, several unrelated fixes
+  stacked on one branch, no issues filed. Now:
+  - `fix.md` **Setup**: if the defect surfaced live and isn't filed, **file it before touching code**;
+    if several surfaced, file them all (batched), then work them **one at a time**, own branch → PR →
+    spec. Never hot-fix onto the checked-out branch.
+  - `issues.md` gains **Phase 0 — Capture unfiled defects**, the route from "surfaced in conversation"
+    into the tracker queue (the command only ever saw `gh issue list` before).
+  - `setup-flow`'s CLAUDE.md scaffold always includes the file-first ALWAYS-rule.
+  - **SessionStart advisory** (fail-open, never blocks): ≥2 fix-shaped commits on a branch with no
+    issue reference → prints a nudge back to `/rails-flow:fix` · `/rails-flow:issues`. Verified: fires
+    on unreferenced fix stacks, silent on `fix/issue-NN-*` branches.
+
 ### 1.5.0 — 2026-07-25
 - **setup-flow scaffolds economical GitHub CI** (#76): a new step checks `.github/workflows/ci.yml`
   and, when it runs the full matrix on every PR/push (the Rails default), proposes scoping the
@@ -761,6 +776,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-25 (release v1.19.0)
+- **File-then-fix discipline** (#73, rails-flow → 1.6.0): mid-session defects are FILED as issues
+  first, then worked one-at-a-time (`fix.md` Setup + `issues.md` Phase 0 + the CLAUDE.md scaffold
+  rule), with a fail-open SessionStart advisory when fix-shaped commits stack on a branch with no
+  issue reference. Completes the "defer to the issue-loop, don't improvise" theme (#77, #78).
+  `metadata.version` → 1.19.0. Skills unchanged.
 
 ### 2026-07-25 (release v1.18.0)
 - **Brand mark shipped + enforced** (#75, #74): `Ui::Logo` (Prism mark/lockup, 20px floor, brand

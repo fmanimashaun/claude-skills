@@ -13,6 +13,15 @@ Read `CLAUDE.md`, `GUARDRAILS.md`, and — if `$ARGUMENTS` references a review r
 that report (e.g. `docs/reviews/*.md`). Identify the next phase marked "Not started",
 or treat the described bug as a single-phase fix. Base branch: `dev` if present.
 
+**File first if it isn't filed.** If this defect surfaced live in conversation (the user was
+reviewing the running app) and no repo issue exists for it, **file it before touching code** —
+`gh issue create` with the repro, expected vs actual, and `file:line` if known — then work it from
+that issue. If **several** defects surfaced in one sitting, file them **all** (one issue each,
+batched in a single pass), then work them **one at a time**, each on its own branch → PR, each
+proven by a spec. Never accumulate multiple unrelated fixes on one branch, and never hot-fix
+straight onto an existing feature branch just because it's checked out — that's the ad-hoc path
+this flow exists to prevent. Say which issues you filed before you start fixing.
+
 ## Principles (non-negotiable)
 
 1. **Implement, don't comment.** A TODO is not a fix.
