@@ -79,6 +79,29 @@ So to ship: land the work on `dev` unversioned, then open the promotion PR that 
 **a stray bump on `dev` is a loaded gun** — the next promotion publishes a real release the
 moment it merges, whether or not anyone intended to ship.
 
+### When the runner is unavailable — `scripts/release_local.sh`
+
+"Do not run `gh release` by hand" means *do not improvise one*, not "there is no fallback".
+If a hosted runner will not start, use the script — it is a deliberate mirror of
+`release.yml`: same five steps, same order, same failure conditions.
+
+```bash
+bash scripts/release_local.sh --dry-run   # verify everything, publish nothing
+bash scripts/release_local.sh             # publish (types-the-tag confirmation)
+```
+
+Always `--dry-run` first. It re-asserts the three things a clean CI checkout gives for
+free and a laptop does not: a **clean working tree**, **HEAD on `main`**, and **HEAD ==
+`origin/main`** (so a tag can never point at a commit only your machine has). It keeps the
+drift guard and the CHANGELOG-block extraction, and it attaches **every** `dist/*.skill`
+via glob — never a hand-typed list, which is how a hand-cut release silently drops a newly
+added skill.
+
+Publishing a release uses the Releases API, which is **not** metered by Actions minutes, so
+this path works even when a workflow will not run. Note that Actions is free and unmetered
+for public repos, so before reaching for this, check that the runner is genuinely the
+problem. **If you change `release.yml`, change the script — and vice versa.**
+
 ## Versioning discipline
 
 **Versions are assigned at the promotion, never on a merge into `dev`.** A version number

@@ -912,6 +912,27 @@ _Version assigned at the `dev → main` promotion._
 ## Repository / marketplace
 
 ### Unreleased (no tag yet — version decided at promotion)
+- **Local release fallback** (`scripts/release_local.sh`). Shipping depended on a single
+  hosted runner, and the doctrine's "do NOT run `gh release` by hand" left no sanctioned path
+  when one is unavailable — so the fallback would have been improvised under pressure, which is
+  how a release goes out with unverified notes or a missing asset. The script is a deliberate
+  mirror of `release.yml`: resolve `metadata.version` -> tag, no-op if the release exists,
+  rebuild `dist/` with the canonical builder, **fail on drift**, extract the matching
+  `(release vX.Y.Z)` CHANGELOG block, publish every `dist/*.skill` **by glob**.
+  It re-asserts what a clean CI checkout gives for free and a laptop does not: clean working
+  tree, HEAD on `main`, HEAD == `origin/main` (a tag must never point at a local-only commit).
+  `--dry-run` verifies everything and publishes nothing; a real run requires typing the tag.
+  Publishing uses the Releases API, which is not metered by Actions minutes, so this works when
+  a runner will not start — though Actions is free on public repos, so check that the runner is
+  genuinely the problem first.
+  Verified: guards fire on a dirty tree / wrong branch / unpushed HEAD; no-op path confirmed
+  against the published v1.20.1; drift guard fires both on a changed skill source
+  (`M dist/rails-8.skill`) and on an untracked new asset (`?? dist/brand-new.skill`); notes
+  extraction pulls the real 11-line v1.20.1 block, stops at the next `###`, and falls back with
+  a warning when no block matches. The `gh release create` call itself is exercised only by a
+  real promotion — run `--dry-run` first, every time.
+  Caught while testing: a hand-typed asset list in the old doctrine named two `.skill` files
+  while **three** actually ship, so a hand-cut release would have dropped `fidara-design.skill`.
 - **Living architecture graph** (#141, rails-flow + pipeline). One generated artefact
   set — `docs/architecture/graph.json` + self-contained `index.html` + mermaid `graph.md` — extracted
   by a stdlib-only Python 3 script from routes, `app/**` and `db/schema.rb`, and serving three
