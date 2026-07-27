@@ -71,14 +71,23 @@ A release is the second cadence at which the architecture graph must be true (th
 session end, via rails-flow's `doc-updater`). Before reporting, confirm it is current and
 capture what changed since the last release:
 
+The graph is **opt-in**, and `--check` exits 1 on a missing `graph.json` (that is the
+"never generated" signal, correct for a project that opted in). So the absence test must
+come first — an unguarded `--check` would report every graph-less project as a failed
+release:
+
 ```bash
-python3 .claude/scripts/architecture_graph.py --check          # exit 1 = stale, regenerate
-python3 .claude/scripts/architecture_graph.py --delta origin/main
+GRAPH=.claude/scripts/architecture_graph.py
+if [ -f docs/architecture/graph.json ] && [ -f "$GRAPH" ]; then
+  python3 "$GRAPH" --check || echo "graph STALE — regenerate and commit before tagging"
+  python3 "$GRAPH" --delta origin/main
+else
+  echo "no architecture graph in this project — skipping"
+fi
 ```
 
-(Skip silently when `docs/architecture/graph.json` is absent — the graph is opt-in. If the
-script was not vendored into `.claude/scripts/`, run it from
-`${CLAUDE_PLUGIN_ROOT}/../rails-flow/scripts/architecture_graph.py`.)
+(If the script was not vendored into `.claude/scripts/`, point `GRAPH` at
+`${CLAUDE_PLUGIN_ROOT}/../rails-flow/scripts/architecture_graph.py` instead.)
 
 Paste the `--delta` output into the release notes verbatim. **New nodes, removed nodes and
 flows that changed shape** are the structural story of the release — "flow *Create an

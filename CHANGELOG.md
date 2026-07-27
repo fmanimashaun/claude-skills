@@ -70,7 +70,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
-### 1.7.0 — 2026-07-27
+### Unreleased — architecture graph (#141)
+_Version assigned at the `dev → main` promotion; nothing here has reached a user yet._
 - **Living architecture graph** (#141): `/rails-flow:graph` extracts `{nodes, edges, flows}` from
   `config/routes.rb`, `app/**` and `db/schema.rb` into three artefacts — `docs/architecture/graph.json`
   (machine-readable), `index.html` (human, interactive) and `graph.md` (mermaid, for GitHub file
@@ -119,6 +120,27 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     queries. Fixed while building: `concerns/` mis-namespaced as `Concerns::X` (broke every
     `includes` edge), nested resources missing the parent `:invoice_id` segment, and non-ASCII
     console output mangled on Windows code pages.
+  - **Post-review fixes** (Qodo findings on PR #143, folded in here because 1.7.0 had not yet been
+    promoted to `main`):
+    - **Flow identity is no longer the display name.** `compute_delta()` keyed flows by `name`, and
+      `flow_name()` dropped namespaces — so `Admin::InvoicesController#index` and
+      `InvoicesController#index` both produced "List invoices" and one **silently vanished from
+      every delta** (measured: 7 of 8 flows survived the dict). Flows now carry a unique `id`, the
+      delta keys on a version-stable `trigger + entry` pair, and the display name keeps its
+      namespace ("List invoices (admin)"). The reviewer's suggested fix — keying on `id` — was
+      implemented, tested against a simulated older `graph.json`, and **rejected**: it reported all
+      8 flows as simultaneously added and removed, because a delta compares two schema versions and
+      so the key must be derivable from fields both sides have and neither redefines.
+    - **`/pipeline:release` no longer breaks graph-less projects**: the prose said "skip silently"
+      while the commands ran `--check` unconditionally, which exits 1 on a missing `graph.json`. Now
+      guarded by a file test, with the skip path stated.
+    - **Accessibility**, against this repo's own design doctrine: base type is `1rem` not `15px` (a
+      px base overrides the reader's browser font-size preference), and `min-h-touch` (44px) is
+      applied under `@media (pointer: coarse)` — full finger-sized targets where a finger aims,
+      preserving the density a 40-row graph browser needs on a mouse, which still clears the 24px AA
+      floor (~27px buttons, ~31px rows).
+    - **Enrichment dedupe** no longer rebuilds the base-edge set once per candidate edge
+      (O(base×enriched) → O(base+enriched)), and collapses duplicates within the enriched input.
 
 ### 1.6.0 — 2026-07-25
 - **File-then-fix discipline for mid-session defects** (#73). The flow intended issue-driven fix
@@ -316,13 +338,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
-### 1.1.3 — 2026-07-27
+### Unreleased — release-time graph verification (#141)
+_Version assigned at the `dev → main` promotion._
 - **Release verifies the architecture graph and reports its delta** (#141): `/pipeline:release` now
   runs the graph drift check before reporting and pastes `--delta origin/main` into the release
   notes, so a release carries its structural story (new/removed nodes, flows that changed shape)
   alongside the image digest. Release is the second cadence at which the graph must be true — the
-  first is session end, via rails-flow's `doc-updater`. Skips silently when the app has no
-  `docs/architecture/graph.json` (the graph is opt-in). Guidance-only; no hook or script changed.
+  first is session end, via rails-flow's `doc-updater`. Skips when the app has no
+  `docs/architecture/graph.json` (the graph is opt-in) — the skip is a real file guard, since
+  `--check` exits 1 on a missing graph and an unguarded call would report every graph-less project
+  as a failed release (Qodo finding on PR #143, fixed before promotion). Guidance-only; no hook or
+  script changed.
 
 ### 1.1.2 — 2026-07-25
 - **setup-pipeline CI-economy alignment** (#76): notes that pipeline's own release/build workflows
@@ -885,8 +911,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
-### 2026-07-27 (release v1.21.0)
-- **Living architecture graph** (#141, rails-flow → 1.7.0, pipeline → 1.1.3). One generated artefact
+### Unreleased (no tag yet — version decided at promotion)
+- **Living architecture graph** (#141, rails-flow + pipeline). One generated artefact
   set — `docs/architecture/graph.json` + self-contained `index.html` + mermaid `graph.md` — extracted
   by a stdlib-only Python 3 script from routes, `app/**` and `db/schema.rb`, and serving three
   consumers at once: humans, agents (structural context without reading the codebase), and qa-flow
@@ -898,7 +924,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   shape), regeneration runs at session end and at release, and `--delta` puts the structural change
   into the release notes. The HTML makes **zero external requests** — the maintainer ruling on the
   issue's CDN-vs-self-contained question — verified mechanically and by executing its inlined JS
-  against a DOM stub. Skills unchanged, so `dist/` is untouched. `metadata.version` → 1.21.0.
+  against a DOM stub. Skills unchanged, so `dist/` is untouched. **No version bumped** — per the promotion-time
+  versioning rule, `metadata.version` stays 1.20.1 until a `dev → main` promotion.
+  Ships with the PR #143 review findings already folded into 1.7.0/1.1.3 (flow-identity delta bug,
+  the release-command guard, and two accessibility corrections against our own design doctrine) —
+  no separate version, because nothing between #143 and this promotion ever reached a user.
 
 ### 2026-07-26 (release v1.20.1)
 - **README: architecture section + the three-loops diagram.** Documents the harness model and the

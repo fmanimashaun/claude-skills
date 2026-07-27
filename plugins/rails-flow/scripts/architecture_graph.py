@@ -845,16 +845,25 @@ class GraphBuilder:
     }
 
     def flow_name(self, controller: str, action: str) -> str:
-        base = re.sub(r"Controller$", "", controller).split("::")[-1]
-        subject = underscore(base).replace("_", " ")
+        stripped = re.sub(r"Controller$", "", controller)
+        segments = stripped.split("::")
+        subject = underscore(segments[-1]).replace("_", " ")
         singular = singularize(subject)
         template = self.ACTION_PHRASE.get(action)
         if template:
-            return template.format(plural=pluralize(singular), singular=singular,
+            name = template.format(plural=pluralize(singular), singular=singular,
                                    article=article(singular))
-        # A custom action carries its own verb; forcing it into "<verb> a <noun>"
-        # produces nonsense like "Pricing a marketing".
-        return f"{humanize(action)} ({singular})"
+        else:
+            # A custom action carries its own verb; forcing it into "<verb> a <noun>"
+            # produces nonsense like "Pricing a marketing".
+            name = f"{humanize(action)} ({singular})"
+        # Namespace stays in the DISPLAY name: `Admin::InvoicesController#index` and
+        # `InvoicesController#index` are different flows, and "List invoices" twice in
+        # a release note tells a reviewer nothing about which one moved.
+        if len(segments) > 1:
+            namespace = "/".join(underscore(s).replace("_", " ") for s in segments[:-1])
+            name = f"{name} ({namespace})"
+        return name
 
     def describe_entry(self, controller: str, action: str, body: str) -> str:
         """Describe what the entry step actually does FOR THIS ACTION — every
@@ -989,14 +998,20 @@ class GraphBuilder:
 
             if len(steps) < 2:
                 continue
+            trigger = f"{route['verb']} {route['path']}"
             candidates.append({
+                # `id` is the IDENTITY (stable, unique); `name` is display text only.
+                # Keying a delta by name silently drops a flow whenever two share one
+                # — e.g. Admin::InvoicesController#index vs InvoicesController#index.
+                "id": f"{trigger} -> {controller}#{action}",
                 "name": self.flow_name(controller, action),
-                "trigger": f"{route['verb']} {route['path']}",
+                "trigger": trigger,
                 "entry": controller,
+                "action": action,
                 "steps": steps,
             })
 
-        candidates.sort(key=lambda f: (f["trigger"], f["name"]))
+        candidates.sort(key=lambda f: (f["trigger"], f["id"]))
         if len(candidates) > self.max_flows:
             dropped = len(candidates) - self.max_flows
             self.notes.append(
@@ -1083,17 +1098,21 @@ def enrich(graph: dict, root: str) -> None:
             )
             continue
         known = {node["id"] for node in graph["nodes"]}
+        # Built once: rebuilding it per candidate edge is O(base x enriched).
+        base_keys = {(e["from"], e["to"], e["kind"]) for e in graph["edges"]}
+        seen: set[tuple[str, str, str]] = set()
         matched, unmatched = [], 0
         for edge in raw_edges:
             if not isinstance(edge, dict):
                 continue
             source_id = edge.get("from") or edge.get("source")
             target_id = edge.get("to") or edge.get("target")
-            kind = edge.get("kind") or edge.get("type") or "references"
+            kind = str(edge.get("kind") or edge.get("type") or "references")
             if source_id in known and target_id in known:
                 key = (source_id, target_id, kind)
-                if key not in {(e["from"], e["to"], e["kind"]) for e in graph["edges"]}:
-                    matched.append({"from": source_id, "to": target_id, "kind": str(kind)})
+                if key not in base_keys and key not in seen:
+                    seen.add(key)
+                    matched.append({"from": source_id, "to": target_id, "kind": kind})
             else:
                 unmatched += 1
         graph["enrichment"] = {
@@ -1253,7 +1272,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans);
-  font-size: 15px; line-height: 1.5;
+  /* rem, not px: a px base overrides the reader's browser font-size preference.
+     Every size below is rem for the same reason. */
+  font-size: 1rem; line-height: 1.5;
 }
 a { color: var(--primary); }
 header {
@@ -1315,6 +1336,14 @@ kbd { font-family: var(--mono); font-size: 0.75rem; border: 1px solid var(--bord
 @media (prefers-reduced-motion: no-preference) {
   ul.list button.row, button { transition: background-color 120ms ease, border-color 120ms ease; }
 }
+/* Touch targets: 44px on EVERY interactive control, unconditionally — matching
+   min-h-touch in the design system, which applies it in the class list rather than
+   behind a pointer query (22 of its 23 usages are unconditional, including
+   list-shaped things like menu items and nav links). An earlier revision gated this
+   on `pointer: coarse` to keep the node list dense on a desktop; that was a
+   deviation from house practice dressed up as a judgment call, so it is gone. */
+button, ul.list button.row, input[type="search"] { min-height: 44px; }
+.linkish { min-height: 44px; display: inline-flex; align-items: center; }
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: none; }
@@ -1663,6 +1692,32 @@ def flow_signature(flow: dict) -> str:
     return " → ".join(step["node"] for step in flow["steps"])
 
 
+def flow_key(flow: dict) -> str:
+    """Identity for set/dict operations across TWO graph versions.
+
+    Deliberately derived from `trigger` + `entry` rather than read from `id`: a delta
+    compares an older committed graph against a fresh build, so the key must be
+    computable from fields both sides have and neither redefines. Keying on `id`
+    breaks the moment `id`'s format changes; keying on `name` breaks when display
+    text changes (adding the namespace suffix did exactly that) — either way every
+    flow reads as simultaneously added and removed, which is worse than the
+    duplicate-name bug this replaced. A trigger is one route, and each flow comes
+    from exactly one route, so trigger+entry is both stable and unique.
+    """
+    trigger = flow.get("trigger")
+    entry = flow.get("entry")
+    if trigger and entry:
+        return f"{trigger} -> {entry}"
+    return flow.get("id") or trigger or flow.get("name", "")
+
+
+def flow_label(flow: dict) -> str:
+    """Display text. Carries the trigger so two same-named flows stay distinguishable."""
+    name = flow.get("name") or flow_key(flow)
+    trigger = flow.get("trigger")
+    return f"{name} [{trigger}]" if trigger else name
+
+
 def compute_delta(old: dict | None, new: dict) -> dict:
     if old is None:
         return {"first": True, "nodes_added": [], "nodes_removed": [],
@@ -1670,23 +1725,23 @@ def compute_delta(old: dict | None, new: dict) -> dict:
                 "edge_delta": len(new["edges"])}
     old_nodes = {n["id"]: n for n in old.get("nodes", [])}
     new_nodes = {n["id"]: n for n in new.get("nodes", [])}
-    old_flows = {f["name"]: f for f in old.get("flows", [])}
-    new_flows = {f["name"]: f for f in new.get("flows", [])}
+    old_flows = {flow_key(f): f for f in old.get("flows", [])}
+    new_flows = {flow_key(f): f for f in new.get("flows", [])}
     changed = []
-    for name, flow in sorted(new_flows.items()):
-        if name in old_flows and flow_signature(old_flows[name]) != flow_signature(flow):
+    for key, flow in sorted(new_flows.items()):
+        if key in old_flows and flow_signature(old_flows[key]) != flow_signature(flow):
             changed.append({
-                "name": name,
-                "before": flow_signature(old_flows[name]),
+                "name": flow_label(flow),
+                "before": flow_signature(old_flows[key]),
                 "after": flow_signature(flow),
-                "step_delta": len(flow["steps"]) - len(old_flows[name]["steps"]),
+                "step_delta": len(flow["steps"]) - len(old_flows[key]["steps"]),
             })
     return {
         "first": False,
         "nodes_added": sorted(set(new_nodes) - set(old_nodes)),
         "nodes_removed": sorted(set(old_nodes) - set(new_nodes)),
-        "flows_added": sorted(set(new_flows) - set(old_flows)),
-        "flows_removed": sorted(set(old_flows) - set(new_flows)),
+        "flows_added": sorted(flow_label(new_flows[k]) for k in set(new_flows) - set(old_flows)),
+        "flows_removed": sorted(flow_label(old_flows[k]) for k in set(old_flows) - set(new_flows)),
         "flows_changed": changed,
         "edge_delta": len(new.get("edges", [])) - len(old.get("edges", [])),
     }
