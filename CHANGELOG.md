@@ -70,6 +70,77 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.7.0 — 2026-07-27
+- **Living architecture graph** (#141): `/rails-flow:graph` extracts `{nodes, edges, flows}` from
+  `config/routes.rb`, `app/**` and `db/schema.rb` into three artefacts — `docs/architecture/graph.json`
+  (machine-readable), `index.html` (human, interactive) and `graph.md` (mermaid, for GitHub file
+  views). One extraction, three consumers: humans get a picture, agents get structural context
+  without reading the whole codebase, qa-flow gets reverse dependencies for a **computed** blast
+  radius (#134 becomes a consumer instead of needing its own extractor).
+  - `plugins/rails-flow/scripts/architecture_graph.py` — **stdlib Python 3 only**: no gems, no graph
+    tool, no network, no app boot, so it runs in any clone. Node kinds: controller · model · job ·
+    mailer · service · component · Stimulus controller · route · table · channel (+ `concern`, which
+    the specified `includes` edge needs somewhere to point). Edge kinds: `references` · `persists` ·
+    `enqueues` · `renders` · `broadcasts` · `includes` · `belongs_to`/`has_many`/`has_one`, one
+    uniform direction (subject → object).
+  - **`flows`** are the part a generic code-graph tool does not give you: named, ordered request
+    paths ("Create an invoice": `POST /invoices` → controller → model → job → turbo_stream), built
+    from the action body plus the private helpers and `before_action` callbacks that actually apply
+    to that action (`only:`/`except:` honoured — ignoring them made every action claim work it does
+    not do).
+  - **Drift check** (`--check`) mirrors the proven `dist/` guard by rebuilding and comparing a
+    `content_digest` over `{nodes, edges, flows}`. Digesting the *extracted structure* rather than
+    fingerprinting input files means a prose-only view edit cannot raise a false finding, while a
+    real structural change cannot hide; `generated_at`/`commit` are excluded, so re-running on an
+    unchanged tree is a no-op. Exit 1 = the code moved and the graph did not.
+  - **`--delta <ref>`** prints the release-notes delta — new/removed nodes and **flows that changed
+    shape** ("flow *Create an invoice* gained a step"), which is what a 40-file diff cannot tell a
+    reviewer.
+  - **Self-contained HTML by decision** (maintainer ruling on the issue's open question): inline CSS
+    and vanilla JS, JSON embedded *and* written as a separate file, **zero external requests** — no
+    CDN, no webfont, no remote image, no `fetch`. It opens from a clone, offline, years later.
+    Verified mechanically (12 external-request patterns, all zero) and by executing the inlined JS
+    against a DOM stub: node/flow selection, cross-link navigation, layer filtering, search, and
+    keyboard nav all run clean. Fidara dark-palette values are copied literally with a comment
+    saying so (a standalone file cannot read `@theme` tokens); layer is always stated as text, never
+    colour alone; visible focus rings, `prefers-reduced-motion`, and a `@media print` block.
+  - **Enrichment is quarantined**: `--enrich` folds in `graphify`/`code-review-graph` edges but into
+    a separate `enrichment` block **excluded from the digest** — otherwise CI would report drift for
+    a teammate's missing local tool. The foreign schema is probed, and a mismatch is noted, never
+    guessed at.
+  - **Limits are announced, never silent**: unmodelled route DSL (`mount`/`match`/dynamic), flow and
+    mermaid caps, and id collisions all land in `notes`, surfaced in the console and persistently in
+    the HTML sidebar.
+  - Lifecycle: `doc-updater` regenerates at session end (step 5); `setup-flow` offers generation
+    (§6b), adds a graph-freshness item to the `loop.md` maintenance pass, proposes the CI drift job
+    as an approved diff (§8), and points agents at `graph.json` before grepping.
+  - Verified against a synthetic Rails app covering nested/member/collection/namespaced/singular
+    routes, `%i[]` callback options, concerns, ViewComponent, Stimulus, Turbo, and `Current.`-scoped
+    queries. Fixed while building: `concerns/` mis-namespaced as `Concerns::X` (broke every
+    `includes` edge), nested resources missing the parent `:invoice_id` segment, and non-ASCII
+    console output mangled on Windows code pages.
+  - **Post-review fixes** (Qodo findings on PR #143, folded in here because 1.7.0 had not yet been
+    promoted to `main`):
+    - **Flow identity is no longer the display name.** `compute_delta()` keyed flows by `name`, and
+      `flow_name()` dropped namespaces — so `Admin::InvoicesController#index` and
+      `InvoicesController#index` both produced "List invoices" and one **silently vanished from
+      every delta** (measured: 7 of 8 flows survived the dict). Flows now carry a unique `id`, the
+      delta keys on a version-stable `trigger + entry` pair, and the display name keeps its
+      namespace ("List invoices (admin)"). The reviewer's suggested fix — keying on `id` — was
+      implemented, tested against a simulated older `graph.json`, and **rejected**: it reported all
+      8 flows as simultaneously added and removed, because a delta compares two schema versions and
+      so the key must be derivable from fields both sides have and neither redefines.
+    - **`/pipeline:release` no longer breaks graph-less projects**: the prose said "skip silently"
+      while the commands ran `--check` unconditionally, which exits 1 on a missing `graph.json`. Now
+      guarded by a file test, with the skip path stated.
+    - **Accessibility**, against this repo's own design doctrine: base type is `1rem` not `15px` (a
+      px base overrides the reader's browser font-size preference), and `min-h-touch` (44px) is
+      applied under `@media (pointer: coarse)` — full finger-sized targets where a finger aims,
+      preserving the density a 40-row graph browser needs on a mouse, which still clears the 24px AA
+      floor (~27px buttons, ~31px rows).
+    - **Enrichment dedupe** no longer rebuilds the base-edge set once per candidate edge
+      (O(base×enriched) → O(base+enriched)), and collapses duplicates within the enriched input.
+
 ### 1.6.0 — 2026-07-25
 - **File-then-fix discipline for mid-session defects** (#73). The flow intended issue-driven fix
   work but nothing steered it there when defects surfaced *interactively* (user reviewing the running
@@ -265,6 +336,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## pipeline (lifecycle orchestrator)
+
+### 1.1.3 — 2026-07-27
+- **Release verifies the architecture graph and reports its delta** (#141): `/pipeline:release` now
+  runs the graph drift check before reporting and pastes `--delta origin/main` into the release
+  notes, so a release carries its structural story (new/removed nodes, flows that changed shape)
+  alongside the image digest. Release is the second cadence at which the graph must be true — the
+  first is session end, via rails-flow's `doc-updater`. Skips when the app has no
+  `docs/architecture/graph.json` (the graph is opt-in) — the skip is a real file guard, since
+  `--check` exits 1 on a missing graph and an unguarded call would report every graph-less project
+  as a failed release (Qodo finding on PR #143, fixed before promotion). Guidance-only; no hook or
+  script changed.
 
 ### 1.1.2 — 2026-07-25
 - **setup-pipeline CI-economy alignment** (#76): notes that pipeline's own release/build workflows
@@ -826,6 +908,61 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-27 (release v1.21.0)
+- **Local release fallback** (`scripts/release_local.sh`). Shipping depended on a single
+  hosted runner, and the doctrine's "do NOT run `gh release` by hand" left no sanctioned path
+  when one is unavailable — so the fallback would have been improvised under pressure, which is
+  how a release goes out with unverified notes or a missing asset. The script is a deliberate
+  mirror of `release.yml`: resolve `metadata.version` -> tag, no-op if the release exists,
+  rebuild `dist/` with the canonical builder, **fail on drift**, extract the matching
+  `(release vX.Y.Z)` CHANGELOG block, publish every `dist/*.skill` **by glob**.
+  It re-asserts what a clean CI checkout gives for free and a laptop does not: clean working
+  tree, HEAD on `main`, HEAD == `origin/main` (a tag must never point at a local-only commit).
+  `--dry-run` verifies everything and publishes nothing; a real run requires typing the tag.
+  Publishing uses the Releases API, which is not metered by Actions minutes, so this works when
+  a runner will not start — though Actions is free on public repos, so check that the runner is
+  genuinely the problem first.
+  Verified: guards fire on a dirty tree / wrong branch / unpushed HEAD; no-op path confirmed
+  against the published v1.20.1; drift guard fires both on a changed skill source
+  (`M dist/rails-8.skill`) and on an untracked new asset (`?? dist/brand-new.skill`); notes
+  extraction pulls the real 11-line v1.20.1 block, stops at the next `###`, and falls back with
+  a warning when no block matches. The `gh release create` call itself is exercised only by a
+  real promotion — run `--dry-run` first, every time.
+  Caught while testing: a hand-typed asset list in the old doctrine named two `.skill` files
+  while **three** actually ship, so a hand-cut release would have dropped `fidara-design.skill`.
+- **Release notes could leak a neighbouring section** (`release.yml` **and** the new script).
+  The awk that extracts release notes started grabbing on ANY line containing
+  `(release vX.Y.Z)`, not specifically the `### … (release vX.Y.Z)` heading. Since a CHANGELOG
+  entry can legitimately mention another release in prose, an earlier section's bullets could be
+  published as this release's notes. Demonstrated, not theorised: with a prose cross-reference
+  above the real heading, the old expression emitted two bullets belonging to a *different,
+  unreleased* version. Both copies now anchor on `/^### /`. Verified the real v1.20.1 extraction
+  is byte-identical before and after (11 lines), so the fix is a tightening, not a behaviour
+  change. Found by review on PR #146 — the CHANGELOG already contains 2 non-heading
+  `(release v…)` mentions out of 39, so the hazard was live.
+- Two portability fixes in the script, also from that review: reject a Python 2 `python` (the
+  canonical builder needs 3, and a wrong interpreter yields assets nobody can reproduce), and
+  give `mktemp` a template — a bare `mktemp` aborts on BSD/macOS, which is exactly the machine
+  a local fallback exists to serve.
+- **Living architecture graph** (#141, rails-flow + pipeline). One generated artefact
+  set — `docs/architecture/graph.json` + self-contained `index.html` + mermaid `graph.md` — extracted
+  by a stdlib-only Python 3 script from routes, `app/**` and `db/schema.rb`, and serving three
+  consumers at once: humans, agents (structural context without reading the codebase), and qa-flow
+  (reverse-walk `edges` for a computed blast radius, so #134 becomes a consumer rather than a second
+  extractor). `flows` — named, ordered request paths — are the part generic code-graph tools do not
+  provide.
+  Staleness is handled in the deterministic layer, per the harness doctrine: `--check` rebuilds and
+  compares a `content_digest` over `{nodes, edges, flows}` (the `dist/` guard's rebuild-and-diff
+  shape), regeneration runs at session end and at release, and `--delta` puts the structural change
+  into the release notes. The HTML makes **zero external requests** — the maintainer ruling on the
+  issue's CDN-vs-self-contained question — verified mechanically and by executing its inlined JS
+  against a DOM stub. Skills unchanged, so `dist/` is untouched — `rails-stack` stays 1.10.0.
+  Components bumped at this promotion: **rails-flow 1.6.0 → 1.7.0** (new capability),
+  **pipeline 1.1.2 → 1.1.3** (guidance), **metadata.version 1.20.1 → 1.21.0** (the tag).
+  Ships with the PR #143 review findings already folded into 1.7.0/1.1.3 (flow-identity delta bug,
+  the release-command guard, and two accessibility corrections against our own design doctrine) —
+  no separate version, because nothing between #143 and this promotion ever reached a user.
 
 ### 2026-07-26 (release v1.20.1)
 - **README: architecture section + the three-loops diagram.** Documents the harness model and the

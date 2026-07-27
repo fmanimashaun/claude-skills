@@ -12,6 +12,10 @@ Thumbs.db
 /plugin.json
 .env
 
+# Byte-code from running the shipped Python tooling (scripts/, plugins/**/scripts/)
+__pycache__/
+*.pyc
+
 # Paid third-party book screenshots (Every Layout) — reference only, never redistribute.
 # Licensed design references — study locally, NEVER commit (see EPIC #89).
 everylayout/

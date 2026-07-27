@@ -125,6 +125,13 @@ execution to subagents; keep judgment here.
   `/rails-flow:fix` (own branch → PR → spec). Never hot-fix inline, and never stack several
   unrelated fixes on the checked-out branch.
 
+## Structural map (read before grepping)
+`docs/architecture/graph.json` — `{nodes, edges, flows}` for this app: every controller,
+model, job, mailer, service, component, Stimulus controller, route and table, plus named
+request flows. To locate something or size a change, query the graph instead of reading
+the tree; walk `edges` backwards from a node for its blast radius. Regenerate with
+`/rails-flow:graph`; `index.html` is the human view. Generated — never hand-edit.
+
 ## See Also
 AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md
 ```
@@ -283,10 +290,27 @@ deploy; never touch main.
 6. Curated-skills drift (if `.claude/skills/.manifest.tsv` exists): compare each
    source doc's hash against the manifest; report drift as "run
    /rails-flow:curate" — never regenerate skills inside the maintenance loop.
+7. Architecture-graph freshness (if `docs/architecture/graph.json` exists): run the
+   graph drift check; on exit 1 report the delta and say "run /rails-flow:graph" —
+   regenerating a committed artefact is not the maintenance loop's job.
 ```
 
 Fill `<base>` with the branch detected in CLAUDE.md setup. Tell the user: bare `/loop`
 now runs this on an interval; pair with `--expires` for bounded sessions.
+
+## 6b. Architecture graph (`docs/architecture/`)
+
+Tell the user about `/rails-flow:graph`: it extracts `{nodes, edges, flows}` from
+`config/routes.rb`, `app/**` and `db/schema.rb` into `docs/architecture/graph.json`, a
+self-contained `index.html` (inline CSS/JS, zero external requests — opens from disk
+offline) and a mermaid `graph.md` for GitHub. One artefact, three consumers: humans get a
+picture, agents get structural context without reading the whole codebase, and qa-flow gets
+reverse dependencies for a computed blast radius.
+
+Offer to generate it now (it needs nothing installed beyond `python3`) and, if the project
+has a hosted CI, propose the drift guard in §8. Don't force it — but do say plainly why it
+beats a hand-drawn diagram: this one is regenerated at session end and at release, and CI
+fails when the code moves and the graph does not.
 
 ## 7. Project skills (docs → skills)
 
@@ -315,6 +339,34 @@ check at `dev → main`/`main`; `workflow_dispatch` stays as an on-demand escape
 if the triggers already match (or the user declined), leave `ci.yml` untouched and say so. (Doctrine:
 rails-8 `testing.md` § *bin/ci*; if the `pipeline` plugin is installed, this aligns with its
 main-only release/build workflows.)
+
+While in `ci.yml`, propose the **architecture-graph drift guard** as a separate job (same
+approved-diff rule — never a silent rewrite). It is the mechanical half of
+`/rails-flow:graph`: a guarantee placed in the deterministic layer instead of trusted to an
+agent's memory.
+
+```yaml
+  architecture-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.x" }
+      - name: Architecture graph is current
+        run: python3 .claude/scripts/architecture_graph.py --check
+```
+
+It rebuilds the graph and compares the `content_digest` over `{nodes, edges, flows}` —
+rebuild-and-diff, the same shape as a packaging drift guard, so **code that moved without
+the graph moving fails the promotion**. No Ruby, no gems, no DB, no app boot: it is a
+seconds-long job. Two setup details worth stating to the user:
+
+- The script ships inside the plugin, which CI does not install. Vendor it once to
+  `.claude/scripts/architecture_graph.py` (copy from
+  `${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py`) and re-copy when rails-flow
+  updates — or skip the job if the team would rather not vendor. Say which was chosen.
+- `generated_at`/`commit` are excluded from the digest, so this never fails merely because
+  someone re-ran the generator.
 
 ## 9. Report
 

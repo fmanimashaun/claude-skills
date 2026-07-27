@@ -65,7 +65,38 @@ later: bind DB/internal ports to loopback (Docker bypasses UFW); decide migratio
 strategy in `bin/docker-entrypoint` (`db:prepare` on boot) vs a one-off `kamal app
 exec`.
 
+## Architecture graph — verify, then report the delta
+
+A release is the second cadence at which the architecture graph must be true (the first is
+session end, via rails-flow's `doc-updater`). Before reporting, confirm it is current and
+capture what changed since the last release:
+
+The graph is **opt-in**, and `--check` exits 1 on a missing `graph.json` (that is the
+"never generated" signal, correct for a project that opted in). So the absence test must
+come first — an unguarded `--check` would report every graph-less project as a failed
+release:
+
+```bash
+GRAPH=.claude/scripts/architecture_graph.py
+if [ -f docs/architecture/graph.json ] && [ -f "$GRAPH" ]; then
+  python3 "$GRAPH" --check || echo "graph STALE — regenerate and commit before tagging"
+  python3 "$GRAPH" --delta origin/main
+else
+  echo "no architecture graph in this project — skipping"
+fi
+```
+
+(If the script was not vendored into `.claude/scripts/`, point `GRAPH` at
+`${CLAUDE_PLUGIN_ROOT}/../rails-flow/scripts/architecture_graph.py` instead.)
+
+Paste the `--delta` output into the release notes verbatim. **New nodes, removed nodes and
+flows that changed shape** are the structural story of the release — "flow *Create an
+invoice* gained a step" tells a reviewer something the image digest and a 40-file diff
+cannot. A stale graph is a release defect, not a documentation chore: regenerate and commit
+before tagging.
+
 ## Report
 
-Image ref + digest (the pullable release), boot/deploy verdict, and the registry URL
-a future server would pull from.
+Image ref + digest (the pullable release), boot/deploy verdict, the registry URL
+a future server would pull from, and the architecture-graph delta (or "no structural
+change").
