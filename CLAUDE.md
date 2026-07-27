@@ -25,7 +25,8 @@ Downstream projects using the toolchain file issues here (via rails-flow's
 - **`/maintainer-triage [issue|label]`** — classify open issues by component × type ×
   priority, label, dedupe, and post a ranked queue. (agent: `issue-triager`)
 - **`/maintainer-work [issue]`** — take ONE issue end-to-end: confirm → **verify against
-  source-of-truth** → fix → PR (`Closes #n`) → version bump + CHANGELOG → release.
+  source-of-truth** → fix → PR into `dev` (unversioned, `Refs #n`) → CHANGELOG under
+  `Unreleased`. Shipping is a separate, deliberate act: the `dev → main` promotion PR.
 - **`/maintainer-audit [component]`** — proactively review a skill/plugin against
   source-of-truth + the open-issue signal; file findings as issues (don't fix in place).
 
@@ -46,10 +47,22 @@ boundary in the CHANGELOG entry.
 
 ## Git flow (strict)
 
-- **`dev`** is the default/integration branch. Branch `fix/*` or `feature/*` **off `dev`**.
-- PR **into `dev`** with `Closes #n` (dev is default, so the merge auto-closes the issue).
-- Release = PR **`dev → main`** (a merge commit). **Do not commit to `main` directly.**
+**`main` is the default branch and the install surface.** `/plugin marketplace add
+fmanimashaun/claude-skills` resolves the default branch, so whatever sits there is what
+users run. `dev` is the integration branch — a staging area, never a shipping one.
+
+- Branch `fix/*` or `feature/*` **off `dev`**.
+- PR **into `dev`**. **No version bump. No `Closes #n`.** Nothing on `dev` has reached a
+  user, so nothing on `dev` is a release, and an issue is not "closed" while its fix is
+  unshipped.
+- Release = **one promotion PR `dev → main`** (a merge commit) that carries the version
+  bumps, the CHANGELOG release block, and **every** `Closes #n` for what it ships.
+  **Do not commit to `main` directly.**
 - Never `git add -A` blindly — stage only files you authored; run `git status` first.
+
+Why the split matters: closing keywords fire only on merge into the **default** branch, so
+with `main` default the `Closes #n` lines *must* live on the promotion PR. That is the
+desired behaviour — issues close when the fix ships, not when it lands on a staging branch.
 
 ## Releases are automated — do NOT run `gh release` by hand
 
@@ -61,23 +74,41 @@ boundary in the CHANGELOG entry.
    `(release vX.Y.Z)` block, and publishes the release with the two `.skill` assets;
 3. if the tag already exists (version wasn't bumped), it is a **no-op**.
 
-So to ship: land the fix on `dev`, **bump `metadata.version`**, then merge `dev → main`.
-The workflow does the rest.
+So to ship: land the work on `dev` unversioned, then open the promotion PR that bumps
+`metadata.version` and merge it. The workflow does the rest. A corollary worth internalizing:
+**a stray bump on `dev` is a loaded gun** — the next promotion publishes a real release the
+moment it merges, whether or not anyone intended to ship.
 
 ## Versioning discipline
 
-- Components version **independently**. Bump only what changed:
+**Versions are assigned at the promotion, never on a merge into `dev`.** A version number
+is a claim about what a user can install; on `dev` that claim is false. (This bit us on
+#143: the fix PR bumped three components on `dev`, so `dev` advertised 1.21.0 while `main`
+— and every user — was still on 1.20.1, and a promotion would have auto-published a
+release nobody had decided to cut. #144 reverted it.)
+
+- While work sits on `dev`, its notes go under a **`### Unreleased`** heading in the
+  component's CHANGELOG section. No number is invented up front.
+- In the **promotion PR**, assign the numbers and rename those headings. Components version
+  **independently** — bump only what changed:
   - skill content → the **rails-stack** `version` in `marketplace.json`;
   - a plugin's code → that plugin's `plugins/<name>/.claude-plugin/plugin.json`;
   - always bump the top-level `metadata.version` — it is the release tag label. Patch for
     fixes, minor for new capabilities.
 - **Every bump gets a CHANGELOG entry** under the component's section (newest first).
 - **One `### … (release vX.Y.Z)` block per actual promotion.** The workflow publishes
-  only the block whose heading matches the shipped tag. If a single `dev → main`
-  promotion consolidates several bumps, put ALL their notes under the one release block
-  for the tag that ships — never leave `(release vX.Y.Z)` headings for versions that never
-  get tagged, or their notes vanish from the published release. (This bit us: v1.6.6
-  shipped three fixes but first published one block's worth of notes.)
+  only the block whose heading matches the shipped tag. A promotion usually consolidates
+  several pieces of work, so put ALL their notes under the one release block for the tag
+  that ships — never leave `(release vX.Y.Z)` headings for versions that never get tagged,
+  or their notes vanish from the published release. (This bit us: v1.6.6 shipped three
+  fixes but first published one block's worth of notes.)
+
+### Release cadence
+
+Promote **per coherent slice** — a feature, or a batch of related fixes. Do not hold
+promotions until the whole queue is clear: a 40-issue release is hard to bisect when
+something breaks, and the `dist/*.skill` assets on the latest GitHub release (the claude.ai
+upload path) stay stale the entire time. Small, frequent, readable promotions.
 
 ## Packaging (skills)
 
