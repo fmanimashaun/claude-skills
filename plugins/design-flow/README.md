@@ -16,7 +16,7 @@ across projects **without a designer or Figma**, by applying the **fidara-design
 - `/design-flow:setup [brand]` — scaffold the design system into a Rails 8 + Hotwire + Tailwind v4
   project: the `@theme` token architecture (brand primitives → semantic roles → Utopia fluid
   scale + measure/radius/shadow/motion), the layout-primitive `@utility` recipes, base
-  ViewComponents, and dark-mode wiring. Idempotent. `brand` = `fidara | fmworkflows`.
+  ViewComponents, and dark-mode wiring. Idempotent. `brand` = `<pack>` or `<pack>:<variant>` (e.g. `fidara:fmworkflows`).
 - `/design-flow:component <name>` — author (or refactor) a UI component per the system: compose
   layout primitives + semantic role tokens, apply the `variant × size × state` vocabulary, add
   the a11y checklist and the prescribed responsive behavior.

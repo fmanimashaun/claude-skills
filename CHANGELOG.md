@@ -595,6 +595,34 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### Unreleased — brand packs (#104)
+_Version assigned at the `dev → main` promotion._
+- **`/design-flow:setup` takes a brand pack**, not a two-value brand enum: `<pack>` or
+  `<pack>:<variant>` (e.g. `fidara`, `fidara:fmworkflows`, `acme`). Generating the theme layer is
+  now the ONLY brand-dependent step — everything else is brand-neutral and identical for every
+  pack, which is what "a pack is a theme, not a fork" means in practice. Setup lints the pack
+  first and refuses to scaffold on failure.
+- **New `scripts/brand_pack_lint.py`** — stdlib Python 3, the mechanical guarantee behind the
+  model. A pack that omits a role does not fail at runtime; the role silently falls back to a
+  stock Tailwind colour and the brand breaks in one corner of the app. So it is checked:
+  - every role in the **22-role contract** is defined; surface roles carry their `-foreground`
+    companion and a `.dark` re-point
+  - no `var()` points at a primitive the pack never defines
+  - **a variant carries no values** — the check that makes drift from a parent pack impossible
+  - no `@utility` / `@apply` / component CSS leaked in (that would be a fork, not a theme)
+  - `brand.json` complete, knob values within their enums, `chart_palette_validated: true`
+  - two subtleties encoded from measurement, not assumption: `--background`'s companion is
+    `--foreground` (not `--background-foreground`), and the feedback roles plus `--ring` are
+    deliberately **not** re-pointed on dark — demanding 22 dark values would fail every correct
+    pack, and a check that cries wolf gets ignored
+  - `--roles-from` re-derives the contract from `foundations-tokens.md` and reports drift, so the
+    duplicated role list cannot silently diverge from doctrine (verified in sync: 22 roles,
+    15 dark re-points)
+- **New reference packs**: `brands/fidara/` (the calibrated pack, carrying the `fidara` and
+  `fmworkflows` variants) and `brands/_template/` (a client skeleton — copy, set colours, drop in
+  the logo, validate). The template deliberately fails the lint until its palette is validated.
+- `brand-guardian`, README and the plugin description no longer assert "two brands".
+
 ### 1.3.0 — 2026-07-25
 - **design-auditor + audit gain a fifth checklist category — "Composition/branding"** (#74): the
   auditor structurally could not flag a full-page focused view using bare `center` instead of the
@@ -652,9 +680,46 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   breakpoint misuse, missing a11y, off-catalog variants).
 - 3 agents: `ui-composer` (builds by composing the system), `design-auditor` (consistency
   gate, design-system-specific — complements rails-flow's general one), `brand-guardian`
-  (token/logo/icon/two-brand enforcement).
+  (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### Unreleased — brand packs (#104)
+_Version assigned at the `dev → main` promotion; nothing here has reached a user yet._
+- **The design system becomes multi-brand** (#104). `brand.md` refactored from "two brands, one
+  system" into the **brand-pack** model, so the system can be used for client and freelance work
+  without forking.
+  - **A pack is a theme, not a fork.** The framing is explicit: you use this system the way you
+    use Tailwind, Bootstrap or Flowbite — you do not re-author it. A pack declares **colours, the
+    logo, and the chart-palette validation result**; that is the whole surface. Layout, component
+    API, spacing/type scale, a11y and interactions stay central, so every brand inherits the
+    fixes. "Not in the pack" is the product, not a limitation.
+  - **Two levels: pack, then variant.** A *pack* is a genuinely distinct brand (own palette,
+    fonts, mark). A *variant* lives inside a pack and differs only in lockup/endorsement.
+    **`fmworkflows` is a variant of the `fidara` pack, not a pack of its own** — it is a product
+    *using* fidara's design system. Modelling it as a peer brand would have meant two
+    byte-identical `theme.css` files and a live drift hazard (update the parent palette, the
+    product silently diverges). A variant carries no values, so it cannot drift. The test:
+    *does it re-theme, or only re-label?*
+  - **Primitives are private to a pack; the role layer is the public API.** `fm-*` is fidara's
+    own naming, not system law — a client pack may name primitives anything, because nothing
+    outside a pack may reference one. That is what makes a brand swap a single `@theme` layer and
+    what makes completeness mechanically checkable.
+  - **Overrides are a rare escape hatch**, not what a brand does: `fonts`, the three personality
+    knobs, and `chart_hues` inherit fidara's calibrated defaults when omitted, so a typical
+    client manifest is four lines. Every override is a place the brand stops matching the system.
+  - `chart_palette_validated: true` is required **even when hues are inherited** — changing the
+    palette changes the surface the hues sit on, and hues that clear contrast on fidara's navy can
+    fail on a client's light beige.
+  - **Fixed a latent doctrine bug the two-value enum was hiding**: the "by Fidara" endorsement was
+    attached to the *parent* (`brand: :fidara` → `endorsement? = true`), rendering
+    **"Fidara by Fidara"**. An endorsement ties a *product* to its parent, so it belongs on the
+    product variant. `Ui::Logo` now takes `brand_variant:` and reads the display name and
+    endorsement **string** from the pack manifest — no brand names in component code, so a
+    client's "an Acme company" needs no code change.
+  - Swept every other assertion of the old model: `SKILL.md`, `components.md`,
+    `component-implementations.md`, and design-flow's `setup`, `brand-guardian`, README and
+    plugin description.
 
 ### 1.10.0 — 2026-07-25
 - **fidara-design Phase 0 — foundations calibrated against two reference corpora** (#93). The

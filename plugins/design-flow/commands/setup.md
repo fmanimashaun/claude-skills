@@ -1,6 +1,6 @@
 ---
 description: Scaffold the Fidara design system into a Rails 8 + Hotwire + Tailwind v4 project — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode. Idempotent; brand-parameterized.
-argument-hint: "[brand: fidara | fmworkflows]"
+argument-hint: "[brand pack: <pack> or <pack>:<variant>, e.g. fidara:fmworkflows]"
 ---
 
 # /design-flow:setup — $ARGUMENTS
@@ -11,9 +11,23 @@ Install the **fidara-design** system into this project. Follow the skill doctrin
 ## Preconditions
 
 Rails 8 + Hotwire (importmap) + **Tailwind v4** (`tailwindcss-rails`, CSS-first `@theme`, no
-`tailwind.config.js`/npm). Confirm `app/assets/tailwind/application.css` exists. `$ARGUMENTS`
-picks the brand (`fidara` | `fmworkflows`; default `fmworkflows`) — affects only the lockup +
-"by Fidara" endorsement, not tokens (both use the `fm-*` prefix).
+`tailwind.config.js`/npm). Confirm `app/assets/tailwind/application.css` exists.
+
+`$ARGUMENTS` selects the **brand pack**: `<pack>` or `<pack>:<variant>` (e.g. `fidara`,
+`fidara:fmworkflows`, `acme`). Default `fidara:fmworkflows`. Read the pack from
+`brands/<pack>/` — its `theme.css` supplies the palette and its `brand.json` supplies identity
+and variants. **A pack is a theme, not a fork**: it changes colours and the logo, and inherits
+everything else. Generating the theme layer is therefore the ONLY brand-dependent step here;
+steps 2-6 are brand-neutral and identical for every pack.
+
+**Lint the pack before generating anything** — a pack missing a role would render a stock
+Tailwind colour rather than fail:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brand_pack_lint.py brands/<pack>
+```
+
+Refuse to scaffold on a non-zero exit; report which roles are missing.
 
 ## Idempotency
 
