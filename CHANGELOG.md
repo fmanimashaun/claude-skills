@@ -70,6 +70,56 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.7.0 — 2026-07-27
+- **Living architecture graph** (#141): `/rails-flow:graph` extracts `{nodes, edges, flows}` from
+  `config/routes.rb`, `app/**` and `db/schema.rb` into three artefacts — `docs/architecture/graph.json`
+  (machine-readable), `index.html` (human, interactive) and `graph.md` (mermaid, for GitHub file
+  views). One extraction, three consumers: humans get a picture, agents get structural context
+  without reading the whole codebase, qa-flow gets reverse dependencies for a **computed** blast
+  radius (#134 becomes a consumer instead of needing its own extractor).
+  - `plugins/rails-flow/scripts/architecture_graph.py` — **stdlib Python 3 only**: no gems, no graph
+    tool, no network, no app boot, so it runs in any clone. Node kinds: controller · model · job ·
+    mailer · service · component · Stimulus controller · route · table · channel (+ `concern`, which
+    the specified `includes` edge needs somewhere to point). Edge kinds: `references` · `persists` ·
+    `enqueues` · `renders` · `broadcasts` · `includes` · `belongs_to`/`has_many`/`has_one`, one
+    uniform direction (subject → object).
+  - **`flows`** are the part a generic code-graph tool does not give you: named, ordered request
+    paths ("Create an invoice": `POST /invoices` → controller → model → job → turbo_stream), built
+    from the action body plus the private helpers and `before_action` callbacks that actually apply
+    to that action (`only:`/`except:` honoured — ignoring them made every action claim work it does
+    not do).
+  - **Drift check** (`--check`) mirrors the proven `dist/` guard by rebuilding and comparing a
+    `content_digest` over `{nodes, edges, flows}`. Digesting the *extracted structure* rather than
+    fingerprinting input files means a prose-only view edit cannot raise a false finding, while a
+    real structural change cannot hide; `generated_at`/`commit` are excluded, so re-running on an
+    unchanged tree is a no-op. Exit 1 = the code moved and the graph did not.
+  - **`--delta <ref>`** prints the release-notes delta — new/removed nodes and **flows that changed
+    shape** ("flow *Create an invoice* gained a step"), which is what a 40-file diff cannot tell a
+    reviewer.
+  - **Self-contained HTML by decision** (maintainer ruling on the issue's open question): inline CSS
+    and vanilla JS, JSON embedded *and* written as a separate file, **zero external requests** — no
+    CDN, no webfont, no remote image, no `fetch`. It opens from a clone, offline, years later.
+    Verified mechanically (12 external-request patterns, all zero) and by executing the inlined JS
+    against a DOM stub: node/flow selection, cross-link navigation, layer filtering, search, and
+    keyboard nav all run clean. Fidara dark-palette values are copied literally with a comment
+    saying so (a standalone file cannot read `@theme` tokens); layer is always stated as text, never
+    colour alone; visible focus rings, `prefers-reduced-motion`, and a `@media print` block.
+  - **Enrichment is quarantined**: `--enrich` folds in `graphify`/`code-review-graph` edges but into
+    a separate `enrichment` block **excluded from the digest** — otherwise CI would report drift for
+    a teammate's missing local tool. The foreign schema is probed, and a mismatch is noted, never
+    guessed at.
+  - **Limits are announced, never silent**: unmodelled route DSL (`mount`/`match`/dynamic), flow and
+    mermaid caps, and id collisions all land in `notes`, surfaced in the console and persistently in
+    the HTML sidebar.
+  - Lifecycle: `doc-updater` regenerates at session end (step 5); `setup-flow` offers generation
+    (§6b), adds a graph-freshness item to the `loop.md` maintenance pass, proposes the CI drift job
+    as an approved diff (§8), and points agents at `graph.json` before grepping.
+  - Verified against a synthetic Rails app covering nested/member/collection/namespaced/singular
+    routes, `%i[]` callback options, concerns, ViewComponent, Stimulus, Turbo, and `Current.`-scoped
+    queries. Fixed while building: `concerns/` mis-namespaced as `Concerns::X` (broke every
+    `includes` edge), nested resources missing the parent `:invoice_id` segment, and non-ASCII
+    console output mangled on Windows code pages.
+
 ### 1.6.0 — 2026-07-25
 - **File-then-fix discipline for mid-session defects** (#73). The flow intended issue-driven fix
   work but nothing steered it there when defects surfaced *interactively* (user reviewing the running
@@ -265,6 +315,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## pipeline (lifecycle orchestrator)
+
+### 1.1.3 — 2026-07-27
+- **Release verifies the architecture graph and reports its delta** (#141): `/pipeline:release` now
+  runs the graph drift check before reporting and pastes `--delta origin/main` into the release
+  notes, so a release carries its structural story (new/removed nodes, flows that changed shape)
+  alongside the image digest. Release is the second cadence at which the graph must be true — the
+  first is session end, via rails-flow's `doc-updater`. Skips silently when the app has no
+  `docs/architecture/graph.json` (the graph is opt-in). Guidance-only; no hook or script changed.
 
 ### 1.1.2 — 2026-07-25
 - **setup-pipeline CI-economy alignment** (#76): notes that pipeline's own release/build workflows
@@ -826,6 +884,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-27 (release v1.21.0)
+- **Living architecture graph** (#141, rails-flow → 1.7.0, pipeline → 1.1.3). One generated artefact
+  set — `docs/architecture/graph.json` + self-contained `index.html` + mermaid `graph.md` — extracted
+  by a stdlib-only Python 3 script from routes, `app/**` and `db/schema.rb`, and serving three
+  consumers at once: humans, agents (structural context without reading the codebase), and qa-flow
+  (reverse-walk `edges` for a computed blast radius, so #134 becomes a consumer rather than a second
+  extractor). `flows` — named, ordered request paths — are the part generic code-graph tools do not
+  provide.
+  Staleness is handled in the deterministic layer, per the harness doctrine: `--check` rebuilds and
+  compares a `content_digest` over `{nodes, edges, flows}` (the `dist/` guard's rebuild-and-diff
+  shape), regeneration runs at session end and at release, and `--delta` puts the structural change
+  into the release notes. The HTML makes **zero external requests** — the maintainer ruling on the
+  issue's CDN-vs-self-contained question — verified mechanically and by executing its inlined JS
+  against a DOM stub. Skills unchanged, so `dist/` is untouched. `metadata.version` → 1.21.0.
 
 ### 2026-07-26 (release v1.20.1)
 - **README: architecture section + the three-loops diagram.** Documents the harness model and the
