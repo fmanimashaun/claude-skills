@@ -827,6 +827,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository / marketplace
 
+### 2026-07-26 (release v1.20.1)
+- **README: architecture section + the three-loops diagram.** Documents the harness model and the
+  one rule it follows ("put your guarantees in the deterministic layer"), a **mermaid** diagram of
+  the BUILD / MEMORY / MAINTAIN loops and how they feed each other, and the agent-topology table
+  (sequential / parallel / loop / agent-to-agent) naming where each is already used.
+  Also records, with reasoning, the two pieces of agentic infrastructure we **deliberately do not
+  adopt** -- a graph database for memory, and an external orchestration runtime -- and the
+  alternative that achieves the same "graph engineering" benefits with plain files in git: typed
+  findings records with dedupe signatures and `caused_by`/`blocks` edges (#138), declared issue
+  edges (#133), and a code graph for derived blast radius (#134). Diagram verified by rendering
+  with mermaid-cli. Docs only; `metadata.version` -> 1.20.1.
+
 ### 2026-07-25 (release v1.20.0)
 - **fidara-design Phase 0 — foundations calibrated** (#93, rails-stack → 1.10.0). New
   `--width-shell` / `--width-prose` / `--space-section(-compact)` tokens + `@utility` recipes; the
