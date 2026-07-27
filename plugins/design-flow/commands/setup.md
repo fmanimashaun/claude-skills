@@ -65,8 +65,37 @@ Use **[references/reference-implementation.md](../../skills/fidara-design/refere
 as the canonical source for steps 3–4: copy the ViewComponent pattern (Button/Card shown) and
 the four Stimulus mixins verbatim, then extend the catalog by mirroring those exact shapes.
 Mobile (Hotwire Native parity) is Phase 2 — see references/mobile.md; this command targets web.
-5. **Fonts**: wire Bricolage Grotesque / Newsreader / Overpass Mono.
+5. **Fonts**: from the pack's `fonts` override if present, else the system default stack
+   (Bricolage Grotesque / Newsreader / Overpass Mono). Wire the three *roles*, never literal
+   families in components.
 6. **Lucide** icon helper (`with-icon`, `1em`, `currentColor`).
+7. **Brand config for `Ui::Logo`**: generate `config/initializers/brand.rb` from the pack's
+   `brand.json` so `Rails.configuration.x.brand` exposes `default_variant` and `variants`
+   (each with `name`, `endorsement`, `mark`). `Ui::Logo` reads identity from there — **never
+   hardcode a brand name in a component.**
+
+## Brand-pack verification — and file an issue when it fails
+
+The pack lint proves a pack is *internally* complete. It cannot prove the generated theme
+actually works in a real app, so **this first run is the verification**. Check all four, and on
+any failure file an issue with `/rails-flow:report` (component `design-flow` / `fidara-design`)
+before continuing:
+
+1. **Tailwind builds.** The generated `@theme` + role layer compiles without error.
+2. **Roles resolve.** Spot-check a few rendered surfaces in light *and* dark: `bg-primary`,
+   `bg-card`, `text-muted-foreground`, `border-border`. **If a pack passed the lint but something
+   still renders a stock Tailwind colour, the 22-role contract is incomplete** — that is the
+   highest-value defect to report, because it means the lint is checking the wrong set and every
+   future pack inherits the hole. Include which utility rendered unbranded.
+3. **`Ui::Logo` renders** the pack's mark, and the endorsement matches the selected variant —
+   present for a product variant, absent for a parent (a parent does not endorse itself). Getting
+   "X by X" or a missing endorsement means the manifest wiring is wrong.
+4. **Dark mode re-points.** Toggling theme changes the surfaces; a surface that stays put means a
+   `.dark` re-point is missing from the pack or the lint's `DARK_REQUIRED` set is wrong.
+
+Report the **pack slug, the lint output, the failing step, and the exact build/render error**. A
+pack-related failure is almost always a doctrine or lint defect rather than a project problem —
+which is precisely why it belongs upstream instead of being patched locally.
 
 ## Report
 

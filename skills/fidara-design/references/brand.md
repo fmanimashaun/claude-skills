@@ -178,7 +178,17 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brand_pack_lint.py brands/<slug>
 It verifies that `theme.css` defines **every role** in the contract, that surface roles have
 their `-foreground` companion and a `.dark` re-point, that no `var()` points at an undefined
 primitive, and that `brand.json` is complete with `chart_palette_validated: true`. A pack is
-not finished until this exits 0. Two subtleties the lint encodes, both easy to get wrong by
+not finished until this exits 0.
+
+**What the lint cannot prove — and what to do about it.** It checks a pack against the role
+contract; it cannot check the contract against reality. If a pack lints clean but a surface
+still renders a **stock Tailwind colour** in a real app, the contract itself is missing a role
+the components consume — and every future pack inherits that hole. That is a doctrine defect,
+not a project problem: report it with `/rails-flow:report` (component `design-flow` /
+`fidara-design`), naming the utility that rendered unbranded, so the contract and the lint are
+fixed upstream. The same applies to a missing `.dark` re-point that the lint accepted, or a
+`Ui::Logo` endorsement on the wrong variant. First real run of a new pack **is** the
+verification step — see the checklist in `/design-flow:setup`. Two subtleties the lint encodes, both easy to get wrong by
 hand: `--background`'s companion is `--foreground` (not `--background-foreground`), and the
 feedback roles plus `--ring` are deliberately **not** re-pointed on dark — requiring a dark
 value for all 22 roles would be a wrong check.

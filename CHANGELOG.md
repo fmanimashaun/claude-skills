@@ -622,6 +622,15 @@ _Version assigned at the `dev → main` promotion._
   `fmworkflows` variants) and `brands/_template/` (a client skeleton — copy, set colours, drop in
   the logo, validate). The template deliberately fails the lint until its palette is validated.
 - `brand-guardian`, README and the plugin description no longer assert "two brands".
+- **The first real run of a pack IS the verification step**, and it reports back. The lint proves
+  a pack is internally complete; it cannot prove the *contract* matches reality. So
+  `/design-flow:setup` now ends with a four-point check — Tailwind builds, roles resolve in light
+  and dark, `Ui::Logo` renders the right variant's endorsement, dark mode re-points — and files an
+  issue via `/rails-flow:report` on any failure. The highest-value case is called out explicitly:
+  **a pack that lints clean but still renders a stock Tailwind colour means the 22-role contract is
+  incomplete**, which every future pack would inherit. Also generates
+  `config/initializers/brand.rb` from the manifest, so `Ui::Logo` has identity to read and no
+  component ever hardcodes a brand name.
 
 ### 1.3.0 — 2026-07-25
 - **design-auditor + audit gain a fifth checklist category — "Composition/branding"** (#74): the
@@ -720,6 +729,9 @@ _Version assigned at the `dev → main` promotion; nothing here has reached a us
   - Swept every other assertion of the old model: `SKILL.md`, `components.md`,
     `component-implementations.md`, and design-flow's `setup`, `brand-guardian`, README and
     plugin description.
+  - Records what the lint **cannot** prove: it checks a pack against the role contract, not the
+    contract against reality. A clean pack that still renders a stock colour is a doctrine defect
+    to report upstream, not a project problem to patch locally.
 
 ### 1.10.0 — 2026-07-25
 - **fidara-design Phase 0 — foundations calibrated against two reference corpora** (#93). The
