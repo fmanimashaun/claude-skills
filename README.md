@@ -33,6 +33,103 @@ so UI is consistent without a designer or Figma.
 > repo — so app builders never see it. See [`CLAUDE.md`](CLAUDE.md) and
 > [Maintaining the marketplace](#maintaining-the-marketplace) below.
 
+## Architecture — the harness, and three loops
+
+The plugins aren't a bag of commands; they're a **harness**: the scaffolding around the model
+that decides what context it gets, what it's allowed to do, how its output is verified, and when
+it must stop. Model capability is rarely the limiting factor — the harness is.
+
+Everything below follows from one rule:
+
+> **Put your guarantees in the deterministic layer.**
+> Hooks, scripts and gates execute identically every time. A model does not. Anything that must
+> *always* happen belongs in a hook or an output contract; prose doctrine can only advise.
+
+That's why the Stop-gate, `release-gate.sh` and the CI drift guard hold, while a rule written
+only as guidance eventually gets skipped under pressure.
+
+### The three loops
+
+```mermaid
+flowchart TB
+    subgraph BUILD["🔨 BUILD loop"]
+        direction LR
+        B1["/rails-flow:feature<br/>or :fix"] --> B2["/rails-flow:review<br/>7 parallel passes"]
+        B2 --> B3["/qa-flow:smoke<br/>app boots?"]
+        B3 --> B4["/qa-flow:verify<br/>independent QA"]
+        B4 --> B5["/qa-flow:certify<br/>gates dev→main"]
+        B5 --> B6["/pipeline:release<br/>container + deploy"]
+    end
+
+    subgraph MEMORY["🧠 MEMORY loop"]
+        direction LR
+        M1["docs/brain<br/>STATUS · DECISIONS · MEMORY"] --> M2["/rails-flow:brain<br/>institutionalise a lesson"]
+        M2 --> M3["/rails-flow:brain-review<br/>weekly sweep"]
+        M3 --> M4["/rails-flow:brain-sync<br/>&lt;org&gt;/brain hub"]
+        M4 -.->|siblings read state| M1
+    end
+
+    subgraph MAINTAIN["🔧 MAINTAIN loop"]
+        direction LR
+        T1["/rails-flow:report<br/>from a downstream app"] --> T2["maintainer-triage"]
+        T2 --> T3["maintainer-work<br/>doctrine-verifier gate"]
+        T3 --> T4["dev → main<br/>auto-release"]
+    end
+
+    BUILD -->|lessons, decisions| MEMORY
+    BUILD -->|toolchain friction| MAINTAIN
+    MAINTAIN -->|new doctrine ships| BUILD
+    MEMORY -->|STATUS orients the next session| BUILD
+```
+
+**BUILD** ships features behind gates. **MEMORY** keeps state outside chat history, so a new
+session — or a different machine — resumes without reconstruction. **MAINTAIN** is the loop that
+closes back on the toolchain itself: friction found while building becomes an issue here, and the
+fix ships as new doctrine.
+
+### Agent topologies
+
+All three multi-agent shapes are in use. The rule is *default sequential; justify parallel*.
+
+| Topology | Where | Why |
+|---|---|---|
+| **Sequential** | `/feature` phases · the `doctrine-verifier` gate · `smoke → verify → certify` | Stage N+1 is meaningless if N failed. Cheapest and most debuggable |
+| **Parallel** | `/review`'s seven specialist passes · `/qa-flow:verify` Phase 3 | Genuinely independent lenses. Costs scale with fan-out (each subagent re-reads context), so it must be justified |
+| **Loop** | `/loop` · the verify → fix → re-verify cycle | Exit is a *property* ("no new findings"), not a step count. Requires circuit breakers |
+| **Agent-to-agent** | `/review` Teams mode (`SendMessage`) | Cross-examination. Off by default — independence is a feature; agents that talk can converge on a shared wrong assumption |
+
+### What we deliberately did *not* adopt
+
+Two popular pieces of agentic infrastructure are **intentionally absent**. Both were evaluated
+and rejected for the same underlying reason.
+
+**❌ A graph database as the memory/knowledge layer.**
+Project memory lives in **plain markdown in git** (`docs/brain/`, plus a shared `<org>/brain`
+hub). A graph store would buy richer queries at the cost of the properties this system actually
+depends on: memory you can **diff**, **review in a PR**, **grep**, and read without a running
+service — and which survives the tool that wrote it. Memory that can't be inspected can't be
+trusted, and an agent confidently reciting a stale edge is worse than no memory at all.
+
+**❌ An external orchestration runtime** (DAG engines and similar).
+Claude Code already provides the primitives — subagents, hooks, gates, agent teams. Adding a
+runtime on top would move control flow *out* of the artefacts you can read and into a framework,
+in exchange for capability we already have. The flow is staged and gated; a graph engine wouldn't
+make it more correct, only more indirect.
+
+### What we adopted instead — graph engineering without the graph engine
+
+The useful part of "graph thinking" is **typed nodes and explicit edges**, and that needs no
+special runtime. Three places where we take it, all as ordinary files in git:
+
+| Instead of | We use | What it buys |
+|---|---|---|
+| Prose hand-offs between parallel agents | **Typed findings records** (JSONL: severity, `file:line`, a stable dedupe `signature`, `caused_by` / `blocks`) | Dedupe becomes mechanical; completeness becomes checkable (every input id must appear in the output); fixes order **topologically** so root causes precede symptoms |
+| Prose "this blocks that" inside issue bodies | **Declared issue edges** (`depends-on` / `blocks` / `part-of`) | Triage *computes* the ready-now set and the critical path instead of re-deriving it by hand |
+| Judged regression scope | **Code graph for blast radius** — changed file → reverse dependencies → routes → tests | Test selection is derived and justifiable, with a convention-based fallback when no graph tool is installed |
+
+Same benefits — deterministic merges, computed ordering, derived scope — with state that stays
+greppable, diffable and reviewable. The graph is in the **data**, not in a database.
+
 ## The skills
 
 | Skill | What it encodes | References |
