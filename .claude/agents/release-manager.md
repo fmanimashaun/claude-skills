@@ -75,12 +75,19 @@ Open **one** PR `dev → main` containing the bumps + CHANGELOG conversion (+ re
 the issues close here, on merge into the default branch, because this is the moment the fix
 actually reaches users.
 
-**Never run `gh release`.** Pushing `main` fires `.github/workflows/release.yml`, which reads
-`metadata.version`, tags `vX.Y.Z`, rebuilds `dist/*.skill`, verifies the committed bytes
-match (drift guard), extracts the matching `(release vX.Y.Z)` CHANGELOG block, and publishes
-with both assets. A hand-cut release races that workflow and produces a release whose notes
-and assets nobody verified. If the tag already exists the workflow is a no-op — which is the
-signal that no version got bumped.
+**Never improvise a `gh release` command.** Pushing `main` fires
+`.github/workflows/release.yml`, which reads `metadata.version`, tags `vX.Y.Z`, rebuilds
+`dist/*.skill`, verifies the committed bytes match (drift guard), extracts the matching
+`(release vX.Y.Z)` CHANGELOG block, and publishes with every asset. A hand-typed release
+races that workflow and produces one whose notes and assets nobody verified — and a
+hand-typed asset list silently drops any skill added since someone last edited the command.
+If the tag already exists the workflow is a no-op — the signal that no version got bumped.
+
+**If the runner will not start**, do not fall back to improvising: run
+`bash scripts/release_local.sh --dry-run`, read the plan it prints, then run it without
+`--dry-run`. It mirrors the workflow step for step and additionally asserts a clean tree,
+HEAD on `main`, and HEAD == `origin/main`. Check first whether the runner is really the
+problem — Actions is free and unmetered on public repos.
 
 After the merge, confirm the workflow published: the tag exists, both `.skill` assets show
 `state: uploaded` with sizes matching local `dist/`, and the notes are the block you wrote.

@@ -912,6 +912,41 @@ _Version assigned at the `dev → main` promotion._
 ## Repository / marketplace
 
 ### Unreleased (no tag yet — version decided at promotion)
+- **Local release fallback** (`scripts/release_local.sh`). Shipping depended on a single
+  hosted runner, and the doctrine's "do NOT run `gh release` by hand" left no sanctioned path
+  when one is unavailable — so the fallback would have been improvised under pressure, which is
+  how a release goes out with unverified notes or a missing asset. The script is a deliberate
+  mirror of `release.yml`: resolve `metadata.version` -> tag, no-op if the release exists,
+  rebuild `dist/` with the canonical builder, **fail on drift**, extract the matching
+  `(release vX.Y.Z)` CHANGELOG block, publish every `dist/*.skill` **by glob**.
+  It re-asserts what a clean CI checkout gives for free and a laptop does not: clean working
+  tree, HEAD on `main`, HEAD == `origin/main` (a tag must never point at a local-only commit).
+  `--dry-run` verifies everything and publishes nothing; a real run requires typing the tag.
+  Publishing uses the Releases API, which is not metered by Actions minutes, so this works when
+  a runner will not start — though Actions is free on public repos, so check that the runner is
+  genuinely the problem first.
+  Verified: guards fire on a dirty tree / wrong branch / unpushed HEAD; no-op path confirmed
+  against the published v1.20.1; drift guard fires both on a changed skill source
+  (`M dist/rails-8.skill`) and on an untracked new asset (`?? dist/brand-new.skill`); notes
+  extraction pulls the real 11-line v1.20.1 block, stops at the next `###`, and falls back with
+  a warning when no block matches. The `gh release create` call itself is exercised only by a
+  real promotion — run `--dry-run` first, every time.
+  Caught while testing: a hand-typed asset list in the old doctrine named two `.skill` files
+  while **three** actually ship, so a hand-cut release would have dropped `fidara-design.skill`.
+- **Release notes could leak a neighbouring section** (`release.yml` **and** the new script).
+  The awk that extracts release notes started grabbing on ANY line containing
+  `(release vX.Y.Z)`, not specifically the `### … (release vX.Y.Z)` heading. Since a CHANGELOG
+  entry can legitimately mention another release in prose, an earlier section's bullets could be
+  published as this release's notes. Demonstrated, not theorised: with a prose cross-reference
+  above the real heading, the old expression emitted two bullets belonging to a *different,
+  unreleased* version. Both copies now anchor on `/^### /`. Verified the real v1.20.1 extraction
+  is byte-identical before and after (11 lines), so the fix is a tightening, not a behaviour
+  change. Found by review on PR #146 — the CHANGELOG already contains 2 non-heading
+  `(release v…)` mentions out of 39, so the hazard was live.
+- Two portability fixes in the script, also from that review: reject a Python 2 `python` (the
+  canonical builder needs 3, and a wrong interpreter yields assets nobody can reproduce), and
+  give `mktemp` a template — a bare `mktemp` aborts on BSD/macOS, which is exactly the machine
+  a local fallback exists to serve.
 - **Living architecture graph** (#141, rails-flow + pipeline). One generated artefact
   set — `docs/architecture/graph.json` + self-contained `index.html` + mermaid `graph.md` — extracted
   by a stdlib-only Python 3 script from routes, `app/**` and `db/schema.rb`, and serving three

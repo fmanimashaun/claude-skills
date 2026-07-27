@@ -76,8 +76,12 @@ jobs:
         run: |
           notes="$(mktemp)"
           # Grab the CHANGELOG block headed "### … (release vX.Y.Z)" up to the next "### ".
+          # The needle must match a HEADING, not merely a line mentioning the tag: prose
+          # referencing "(release vX.Y.Z)" would otherwise start the grab early and leak the
+          # preceding section's bullets into this release's notes. Keep the /^### / anchor
+          # here and in scripts/release_local.sh — the two must stay identical.
           awk -v needle="(release ${{ steps.v.outputs.tag }})" '
-            index($0, needle) { grab=1; next }
+            /^### / && index($0, needle) { grab=1; next }
             grab && /^### / { exit }
             grab { print }
           ' CHANGELOG.md > "$notes"
