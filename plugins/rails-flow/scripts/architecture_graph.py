@@ -1336,15 +1336,14 @@ kbd { font-family: var(--mono); font-size: 0.75rem; border: 1px solid var(--bord
 @media (prefers-reduced-motion: no-preference) {
   ul.list button.row, button { transition: background-color 120ms ease, border-color 120ms ease; }
 }
-/* Touch targets: the design system's min-h-touch is 44px. Applied on coarse
-   pointers, where a finger is doing the aiming — a graph browser lists 40+ rows,
-   and forcing 44px on a mouse-driven desktop would wreck the density that makes
-   it readable. Mouse-sized controls here still clear the 24px AA floor
-   (~27px buttons, ~31px rows). */
-@media (pointer: coarse) {
-  button, ul.list button.row, input[type="search"] { min-height: 44px; }
-  .linkish { min-height: 44px; display: inline-flex; align-items: center; }
-}
+/* Touch targets: 44px on EVERY interactive control, unconditionally — matching
+   min-h-touch in the design system, which applies it in the class list rather than
+   behind a pointer query (22 of its 23 usages are unconditional, including
+   list-shaped things like menu items and nav links). An earlier revision gated this
+   on `pointer: coarse` to keep the node list dense on a desktop; that was a
+   deviation from house practice dressed up as a judgment call, so it is gone. */
+button, ul.list button.row, input[type="search"] { min-height: 44px; }
+.linkish { min-height: 44px; display: inline-flex; align-items: center; }
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: none; }
