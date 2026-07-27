@@ -933,6 +933,20 @@ _Version assigned at the `dev → main` promotion._
   real promotion — run `--dry-run` first, every time.
   Caught while testing: a hand-typed asset list in the old doctrine named two `.skill` files
   while **three** actually ship, so a hand-cut release would have dropped `fidara-design.skill`.
+- **Release notes could leak a neighbouring section** (`release.yml` **and** the new script).
+  The awk that extracts release notes started grabbing on ANY line containing
+  `(release vX.Y.Z)`, not specifically the `### … (release vX.Y.Z)` heading. Since a CHANGELOG
+  entry can legitimately mention another release in prose, an earlier section's bullets could be
+  published as this release's notes. Demonstrated, not theorised: with a prose cross-reference
+  above the real heading, the old expression emitted two bullets belonging to a *different,
+  unreleased* version. Both copies now anchor on `/^### /`. Verified the real v1.20.1 extraction
+  is byte-identical before and after (11 lines), so the fix is a tightening, not a behaviour
+  change. Found by review on PR #146 — the CHANGELOG already contains 2 non-heading
+  `(release v…)` mentions out of 39, so the hazard was live.
+- Two portability fixes in the script, also from that review: reject a Python 2 `python` (the
+  canonical builder needs 3, and a wrong interpreter yields assets nobody can reproduce), and
+  give `mktemp` a template — a bare `mktemp` aborts on BSD/macOS, which is exactly the machine
+  a local fallback exists to serve.
 - **Living architecture graph** (#141, rails-flow + pipeline). One generated artefact
   set — `docs/architecture/graph.json` + self-contained `index.html` + mermaid `graph.md` — extracted
   by a stdlib-only Python 3 script from routes, `app/**` and `db/schema.rb`, and serving three

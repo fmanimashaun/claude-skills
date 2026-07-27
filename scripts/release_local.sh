@@ -48,11 +48,16 @@ say()  { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
 fail() { printf '\nrelease_local: %s\n' "$*" >&2; exit 1; }
 
+# `python` is still Python 2 on some systems. package_core.py needs 3, and a silently
+# wrong interpreter would build assets nobody else can reproduce — so probe, don't assume.
 PY=""
 for candidate in python3 python; do
-  if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
+  if command -v "$candidate" >/dev/null 2>&1 \
+     && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)' 2>/dev/null; then
+    PY="$candidate"; break
+  fi
 done
-[ -n "$PY" ] || { printf 'release_local: no python3/python on PATH.\n' >&2; exit 2; }
+[ -n "$PY" ] || { printf 'release_local: no Python 3 on PATH (need python3, or a python that is v3).\n' >&2; exit 2; }
 
 # ---------------------------------------------------------------- preflight
 
@@ -152,12 +157,18 @@ done
 
 step "5. Extract release notes from CHANGELOG"
 
-NOTES="$(mktemp)"
+# BSD/macOS mktemp requires a template — a bare `mktemp` aborts there, breaking exactly
+# the kind of machine this fallback exists to serve.
+NOTES="$(mktemp "${TMPDIR:-/tmp}/release-notes.XXXXXX")"
 trap 'rm -f "$NOTES"' EXIT
 
 # Grab the CHANGELOG block headed "### … (release vX.Y.Z)" up to the next "### ".
+# The needle must match a HEADING, not merely a line mentioning the tag: prose that
+# references "(release vX.Y.Z)" would otherwise start the grab early and leak the
+# preceding section's bullets into this release's notes. Verified failure mode, not
+# a hypothetical — keep the `/^### /` anchor.
 awk -v needle="(release $TAG)" '
-  index($0, needle) { grab=1; next }
+  /^### / && index($0, needle) { grab=1; next }
   grab && /^### / { exit }
   grab { print }
 ' CHANGELOG.md > "$NOTES"
