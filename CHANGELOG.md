@@ -70,8 +70,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased — architecture graph (#141)
-_Version assigned at the `dev → main` promotion; nothing here has reached a user yet._
+### 1.7.0 — 2026-07-27
 - **Living architecture graph** (#141): `/rails-flow:graph` extracts `{nodes, edges, flows}` from
   `config/routes.rb`, `app/**` and `db/schema.rb` into three artefacts — `docs/architecture/graph.json`
   (machine-readable), `index.html` (human, interactive) and `graph.md` (mermaid, for GitHub file
@@ -338,8 +337,7 @@ _Version assigned at the `dev → main` promotion; nothing here has reached a us
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased — release-time graph verification (#141)
-_Version assigned at the `dev → main` promotion._
+### 1.1.3 — 2026-07-27
 - **Release verifies the architecture graph and reports its delta** (#141): `/pipeline:release` now
   runs the graph drift check before reporting and pastes `--delta origin/main` into the release
   notes, so a release carries its structural story (new/removed nodes, flows that changed shape)
@@ -911,7 +909,7 @@ _Version assigned at the `dev → main` promotion._
 
 ## Repository / marketplace
 
-### Unreleased (no tag yet — version decided at promotion)
+### 2026-07-27 (release v1.21.0)
 - **Local release fallback** (`scripts/release_local.sh`). Shipping depended on a single
   hosted runner, and the doctrine's "do NOT run `gh release` by hand" left no sanctioned path
   when one is unavailable — so the fallback would have been improvised under pressure, which is
@@ -959,8 +957,9 @@ _Version assigned at the `dev → main` promotion._
   shape), regeneration runs at session end and at release, and `--delta` puts the structural change
   into the release notes. The HTML makes **zero external requests** — the maintainer ruling on the
   issue's CDN-vs-self-contained question — verified mechanically and by executing its inlined JS
-  against a DOM stub. Skills unchanged, so `dist/` is untouched. **No version bumped** — per the promotion-time
-  versioning rule, `metadata.version` stays 1.20.1 until a `dev → main` promotion.
+  against a DOM stub. Skills unchanged, so `dist/` is untouched — `rails-stack` stays 1.10.0.
+  Components bumped at this promotion: **rails-flow 1.6.0 → 1.7.0** (new capability),
+  **pipeline 1.1.2 → 1.1.3** (guidance), **metadata.version 1.20.1 → 1.21.0** (the tag).
   Ships with the PR #143 review findings already folded into 1.7.0/1.1.3 (flow-identity delta bug,
   the release-command guard, and two accessibility corrections against our own design doctrine) —
   no separate version, because nothing between #143 and this promotion ever reached a user.
