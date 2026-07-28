@@ -21,13 +21,22 @@ everything else. Generating the theme layer is therefore the ONLY brand-dependen
 steps 2-6 are brand-neutral and identical for every pack.
 
 **Lint the pack before generating anything** — a pack missing a role would render a stock
-Tailwind colour rather than fail:
+Tailwind colour rather than fail. Resolve the pack directory before linting, because the two
+live in different places:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brand_pack_lint.py brands/<pack>
+LINT=${CLAUDE_PLUGIN_ROOT}/scripts/brand_pack_lint.py
+# a project's own pack (the client case) sits in the repo; the shipped reference packs
+# (fidara, _template) sit inside the plugin
+if [ -d "brands/<pack>" ]; then PACK="brands/<pack>"
+else PACK="${CLAUDE_PLUGIN_ROOT}/brands/<pack>"; fi
+python3 "$LINT" "$PACK"
 ```
 
-Refuse to scaffold on a non-zero exit; report which roles are missing.
+Refuse to scaffold on a non-zero exit; report which roles are missing. If neither path exists,
+say so and offer to scaffold a new pack by copying `${CLAUDE_PLUGIN_ROOT}/brands/_template` into
+`brands/<pack>` — the template deliberately fails the lint until its palette is validated, which
+is the reminder to run the data-viz validator for this brand.
 
 ## Idempotency
 
@@ -38,7 +47,8 @@ authored; `git status` after.
 
 ## Scaffold (per foundations-tokens.md)
 
-1. **`application.css`** — the full `@theme`: brand primitives (`fm-*` palette + 3 fonts),
+1. **`application.css`** — the full `@theme`: the **pack's** primitives (whatever it names them —
+   `fm-*` is fidara's own choice, not a system prefix) + the 3 font roles,
    semantic roles via `@theme inline` with `:root`/`.dark`, the Utopia fluid `--text-step-*` /
    `--space-*` (`clamp()`) scale, `--measure/--radius/--shadow-*/--ease-out/--duration`,
    `@variant dark`, `@plugin @tailwindcss/forms` + `typography`, and the `min-h-touch`/safe-area
@@ -51,7 +61,8 @@ authored; `git status` after.
    from components.md. (If the project doesn't use ViewComponent yet, add the gem, or fall back to
    the helper-DSL variant — ask which.)
    **`Ui::Logo`** renders the Prism mark/lockup (`variant: :mark|:lockup`, `size: :sm|:md|:lg`
-   ≥20px, `brand:` selecting the "by Fidara" endorsement) so no screen hand-rolls a text eyebrow.
+   ≥20px, `brand_variant:` selecting the pack variant whose `endorsement` string is rendered — no
+   brand name is ever hardcoded) so no screen hand-rolls a text eyebrow.
    Facet hues are fixed brand colors — the documented exception to role-tokens-only. If
    `docs/design-system/brand-assets/01-logos/` exists, use its exact SVG paths; otherwise scaffold
    the canonical 3-facet prism from component-implementations.md and tell the user to swap in the

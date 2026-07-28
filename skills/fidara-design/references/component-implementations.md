@@ -82,7 +82,8 @@ end
 </span>
 ```
 Usage: `<%= render(Ui::LogoComponent.new(variant: :mark, size: :sm)) %>` (compact chrome) ·
-`<%= render(Ui::LogoComponent.new(brand: :fidara)) %>` (marketing lockup + endorsement). Dark mode
+`<%= render(Ui::LogoComponent.new(brand_variant: "fmworkflows")) %>` (product lockup + its
+pack-defined endorsement; omit `brand_variant:` to use the pack's `default_variant`). Dark mode
 is automatic (`text-foreground`); for busy/photographic backgrounds use the reversed/white variant
 (wrap in a context that sets `--foreground` to white, per brand.md).
 

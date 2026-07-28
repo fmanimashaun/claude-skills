@@ -26,7 +26,9 @@ Stdlib only, by design: a pack must be lintable in any clone with nothing instal
 
 Usage:
   python3 brand_pack_lint.py brands/acme            # lint one pack
-  python3 brand_pack_lint.py brands/*               # lint several
+  python3 brand_pack_lint.py brands/*               # lint all real packs
+                                                    #   (`_`-prefixed dirs are templates,
+                                                    #    skipped — see --include-templates)
   python3 brand_pack_lint.py --list-contract        # print the role contract and exit
   python3 brand_pack_lint.py --roles-from <md> …     # re-derive the contract from doctrine
 
@@ -120,9 +122,14 @@ def strip_css_comments(src: str) -> str:
 
 
 def selector_block(src: str, selector: str) -> str:
-    """Body of the LAST matching top-level block (a later block wins in CSS)."""
+    """Body of the LAST matching block (a later block wins in CSS).
+
+    Leading whitespace is tolerated on both the selector and its closing brace: a
+    formatter that indents `:root { … }` must not make the lint report all 22 roles
+    missing. Anchoring to column 1 produced exactly that false failure.
+    """
     bodies = re.findall(
-        r"^" + re.escape(selector) + r"\s*\{(.*?)^\}", src, re.S | re.M
+        r"^[ 	]*" + re.escape(selector) + r"\s*\{(.*?)^[ 	]*\}", src, re.S | re.M
     )
     return bodies[-1] if bodies else ""
 
@@ -134,7 +141,7 @@ def declared_tokens(body: str) -> set[str]:
 def theme_primitives(src: str) -> set[str]:
     """Tokens defined in any @theme block (the pack's private primitives)."""
     found: set[str] = set()
-    for body in re.findall(r"@theme[^{]*\{(.*?)^\}", src, re.S | re.M):
+    for body in re.findall(r"@theme[^{]*\{(.*?)^[ 	]*\}", src, re.S | re.M):
         found |= declared_tokens(body)
     return found
 
@@ -332,17 +339,36 @@ def lint_theme(path: str, report: Report) -> None:
                          "needs to change a component, the component is wrong.")
 
 
-def lint_assets(pack_dir: str, report: Report) -> None:
+def lint_assets(pack_dir: str, report: Report, manifest: dict) -> None:
+    """The logo is HALF of what a pack declares, so a mark that brand.json points at must
+    actually exist. Without this a pack lints clean and then renders no logo at all."""
     assets = os.path.join(pack_dir, "assets")
+    variants = manifest.get("variants") if isinstance(manifest.get("variants"), dict) else {}
+    wanted = sorted({v["mark"] for v in variants.values()
+                     if isinstance(v, dict) and v.get("mark")})
+
     if not os.path.isdir(assets):
-        report.warn("no assets/ directory — the pack carries no logo/mark, so Ui::Logo will "
-                    "fall back to the scaffolded placeholder")
+        if wanted:
+            report.error(f"brand.json references mark(s) {wanted} but there is no assets/ "
+                         "directory — the logo would be missing at render time")
+        else:
+            report.warn("no assets/ directory — the pack carries no logo/mark, so Ui::Logo will "
+                        "fall back to the scaffolded placeholder")
         return
-    svgs = [f for f in sorted(os.listdir(assets)) if f.endswith(".svg")]
-    if not svgs:
+
+    present = [f for f in sorted(os.listdir(assets)) if f.endswith(".svg")]
+    missing = [m for m in wanted if not os.path.exists(os.path.join(assets, m))]
+    if missing:
+        report.error(f"mark file(s) referenced by brand.json but absent from assets/: "
+                     f"{missing} (present: {present or 'none'})")
+    if not present:
         report.warn("assets/ contains no .svg — expected at least a mark")
     else:
-        report.fact(f"{len(svgs)} svg asset(s): {', '.join(svgs)}")
+        report.fact(f"{len(present)} svg asset(s): {', '.join(present)}"
+                    + (f" — marks in use: {', '.join(wanted)}" if wanted else ""))
+    unused = [f for f in present if wanted and f not in wanted]
+    if unused:
+        report.warn(f"asset(s) not referenced by any variant: {unused}")
 
 
 def lint_pack(pack_dir: str) -> Report:
@@ -350,9 +376,9 @@ def lint_pack(pack_dir: str) -> Report:
     if not os.path.isdir(pack_dir):
         report.error("not a directory")
         return report
-    lint_manifest(os.path.join(pack_dir, "brand.json"), report)
+    manifest = lint_manifest(os.path.join(pack_dir, "brand.json"), report)
     lint_theme(os.path.join(pack_dir, "theme.css"), report)
-    lint_assets(pack_dir, report)
+    lint_assets(pack_dir, report, manifest)
     return report
 
 
@@ -415,6 +441,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--roles-from", metavar="FILE",
                         help="re-derive the contract from foundations-tokens.md and report drift")
     parser.add_argument("--quiet", action="store_true", help="only report problems")
+    parser.add_argument("--include-templates", action="store_true",
+                        help="also lint `_`-prefixed template dirs (they fail by design until "
+                             "copied and validated)")
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -443,7 +472,29 @@ def main(argv: list[str]) -> int:
         print("brand_pack_lint: give at least one pack directory.", file=sys.stderr)
         return 2
 
-    reports = [lint_pack(p) for p in args.packs]
+    # `brands/*` is the documented invocation, and the shipped `_template` fails by design
+    # until it is copied and its palette validated. Skipping `_`-prefixed dirs keeps the glob
+    # honest — otherwise the documented command always exits non-zero even when every real
+    # pack is complete, and a check that always fails gets ignored.
+    packs = list(args.packs)
+    skipped = []
+    if not args.include_templates:
+        keep = []
+        for path in packs:
+            if os.path.basename(os.path.normpath(path)).startswith("_"):
+                skipped.append(path)
+            else:
+                keep.append(path)
+        packs = keep
+    if skipped and not args.quiet:
+        for path in skipped:
+            print(f"SKIP  {path} (template; --include-templates to lint it)")
+    if not packs:
+        print("brand_pack_lint: nothing to lint (only template dirs were given).",
+              file=sys.stderr)
+        return 0 if skipped else 2
+
+    reports = [lint_pack(p) for p in packs]
     failed = 0
     for report in reports:
         header = f"{report.pack}"
