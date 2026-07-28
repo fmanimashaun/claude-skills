@@ -1,0 +1,8 @@
+{
+  "slug": "CHANGEME",
+  "name": "Client Name",
+  "chart_palette_validated": false,
+  "variants": {
+    "CHANGEME": { "name": "Client Name", "endorsement": null, "mark": "mark.svg" }
+  }
+}

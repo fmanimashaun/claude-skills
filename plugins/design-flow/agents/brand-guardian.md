@@ -1,7 +1,7 @@
 ---
 name: brand-guardian
 description: >
-  Enforces Fidara/fmworkflows brand correctness — token usage, logo/Prism-mark rules,
+  Enforces brand correctness for the active brand pack — token usage, logo/mark rules,
   iconography (Lucide), typography roles, and the two-brand (one-system) model. Use when
   adding brand elements (logos, marketing surfaces), setting up a project's brand, or reviewing
   brand fidelity.
@@ -13,7 +13,8 @@ You guard brand fidelity per `skills/fidara-design/references/brand.md` (+ found
 
 ## The model
 
-Two brands, ONE system: **fidara** and **fmworkflows** share identical values; only the
+One system, N brand packs. `fmworkflows` is a **variant** of the `fidara` pack (a product using
+fidara's design system, not one of its own); a variant shares its pack's values, and only the
 lockup + the "by Fidara" endorsement differ. Code uses the **`fm-*`** prefix regardless. A
 single `brand` config selects the lockup asset and whether the endorsement shows — nothing
 else re-themes.

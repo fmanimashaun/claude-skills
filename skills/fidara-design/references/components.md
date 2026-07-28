@@ -115,9 +115,11 @@ DEFAULTS = { variant: :primary, size: :md }
 - Facet hues are **fixed brand colors** (cyan top / cerulean left / electric right) — the one
   documented place raw brand hex beats role tokens, because facets must never be recolored.
   Wordmark = Bricolage Black `uppercase tracking-tight` on `text-foreground` (dark-mode automatic).
-- `brand: :fidara` adds the **"by Fidara"** endorsement (marketing/parent surfaces);
-  `:fmworkflows` omits it (product UI). Clear space 1.5× prism height. Never
-  stretch/rotate/recolor/shadow the mark.
+- `brand_variant:` picks the pack variant; the endorsement is a **string the variant carries**,
+  not a brand name in code — so a product variant shows it ("fmworkflows" + "by Fidara") and a
+  parent or standalone brand sets `endorsement: null` and shows none. A parent does not endorse
+  itself. Omit the argument to use the pack's `default_variant`. Clear space 1.5× prism height.
+  Never stretch/rotate/recolor/shadow the mark.
 - **Required on** marketing, auth, and other full-page single-focus surfaces — paired with the
   `cover > center > stack` recipe (see layout-primitives.md). Worked code in
   [component-implementations.md](component-implementations.md).

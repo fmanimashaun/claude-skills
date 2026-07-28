@@ -7,6 +7,22 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-28 — the doctrine gate gets an explicit scope
+- The verification gate said "no skill claim is edited until `doctrine-verifier` confirms it against
+  an authoritative source", without stating what counts as a claim. Our own architecture decisions
+  (the brand-pack model, the role contract, distribution policy) have **no upstream to cite**, so
+  the verifier returns INCONCLUSIVE for want of a source — and "INCONCLUSIVE leaves doctrine
+  unchanged" would then block our own decisions permanently. The exemption was therefore being
+  decided per PR by whoever wrote it, which is precisely what a gate exists to prevent. Review
+  flagged it on #149; the finding was correct.
+- `CLAUDE.md` now scopes it: the gate covers **externally verifiable claims** (framework/gem
+  behaviour at a stated version); for **design/architecture** changes the authority is the
+  maintainer's explicit decision **recorded on the issue** — the durable equivalent of a citation.
+  Four rules stop that becoming a loophole: declare which kind of change you are making *before*
+  editing; split a mixed PR so a framework claim still needs CONFIRMED; reuse established framework
+  syntax rather than inventing it (new API *is* an external claim); and measure anything measurable
+  against the repo's own files with a re-checkable script.
+
 ### 2026-07-22 — README brought to four-plugin fidelity
 - The README documented only rails-stack + rails-flow; qa-flow and pipeline (the
   entire test + deploy half) were absent, which made fetched/summarized views report
@@ -595,6 +611,60 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### Unreleased — brand packs (#104)
+_Version assigned at the `dev → main` promotion._
+- **`/design-flow:setup` takes a brand pack**, not a two-value brand enum: `<pack>` or
+  `<pack>:<variant>` (e.g. `fidara`, `fidara:fmworkflows`, `acme`). Generating the theme layer is
+  now the ONLY brand-dependent step — everything else is brand-neutral and identical for every
+  pack, which is what "a pack is a theme, not a fork" means in practice. Setup lints the pack
+  first and refuses to scaffold on failure.
+- **New `scripts/brand_pack_lint.py`** — stdlib Python 3, the mechanical guarantee behind the
+  model. A pack that omits a role does not fail at runtime; the role silently falls back to a
+  stock Tailwind colour and the brand breaks in one corner of the app. So it is checked:
+  - every role in the **22-role contract** is defined; surface roles carry their `-foreground`
+    companion and a `.dark` re-point
+  - no `var()` points at a primitive the pack never defines
+  - **a variant carries no values** — the check that makes drift from a parent pack impossible
+  - no `@utility` / `@apply` / component CSS leaked in (that would be a fork, not a theme)
+  - `brand.json` complete, knob values within their enums, `chart_palette_validated: true`
+  - two subtleties encoded from measurement, not assumption: `--background`'s companion is
+    `--foreground` (not `--background-foreground`), and the feedback roles plus `--ring` are
+    deliberately **not** re-pointed on dark — demanding 22 dark values would fail every correct
+    pack, and a check that cries wolf gets ignored
+  - `--roles-from` re-derives the contract from `foundations-tokens.md` and reports drift, so the
+    duplicated role list cannot silently diverge from doctrine (verified in sync: 22 roles,
+    15 dark re-points)
+- **New reference packs**: `brands/fidara/` (the calibrated pack, carrying the `fidara` and
+  `fmworkflows` variants) and `brands/_template/` (a client skeleton — copy, set colours, drop in
+  the logo, validate). The template deliberately fails the lint until its palette is validated.
+- `brand-guardian`, README and the plugin description no longer assert "two brands".
+- **The first real run of a pack IS the verification step**, and it reports back. The lint proves
+  a pack is internally complete; it cannot prove the *contract* matches reality. So
+  `/design-flow:setup` now ends with a four-point check — Tailwind builds, roles resolve in light
+  and dark, `Ui::Logo` renders the right variant's endorsement, dark mode re-points — and files an
+  issue via `/rails-flow:report` on any failure. The highest-value case is called out explicitly:
+  **a pack that lints clean but still renders a stock Tailwind colour means the 22-role contract is
+  incomplete**, which every future pack would inherit. Also generates
+  `config/initializers/brand.rb` from the manifest, so `Ui::Logo` has identity to read and no
+  component ever hardcodes a brand name.
+- **Review fixes** (PR #149). Docs described the API two ways: `Ui::Logo`'s usage example and
+  `components.md` still documented the **removed `brand:` parameter**, and `setup.md` still asserted
+  `fm-*` as *the* primitive prefix — contradicting "primitives are private to a pack" three files
+  away. The pack-lint invocation also resolved the script via `${CLAUDE_PLUGIN_ROOT}` while passing
+  a project-relative pack path, so it could never find the shipped reference packs; it now resolves
+  both locations and offers to scaffold from `_template` when neither exists.
+- **Lint hardening from review**, three of which were real holes in a lint written the same day:
+  - **A missing mark file passed.** `brand.json` could point at `prism.svg` while `assets/` held
+    something else, and the pack still linted clean — with the logo being *half* of what a pack
+    declares. Now an error; unreferenced assets warn.
+  - **Indented CSS produced a false failure.** The block regex anchored `:root` and its closing
+    brace to column 1, so a formatter that indented the block made the lint report **all 22 roles
+    missing** — the most alarming possible message for a pack that was fine.
+  - **The documented `brands/*` glob always exited non-zero**, because the shipped `_template`
+    deliberately fails until its palette is validated. `_`-prefixed dirs are now skipped (with a
+    `SKIP` line) unless `--include-templates`. A check that always fails gets ignored — the same
+    lesson as the drift-guard work.
+
 ### 1.3.0 — 2026-07-25
 - **design-auditor + audit gain a fifth checklist category — "Composition/branding"** (#74): the
   auditor structurally could not flag a full-page focused view using bare `center` instead of the
@@ -652,9 +722,54 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   breakpoint misuse, missing a11y, off-catalog variants).
 - 3 agents: `ui-composer` (builds by composing the system), `design-auditor` (consistency
   gate, design-system-specific — complements rails-flow's general one), `brand-guardian`
-  (token/logo/icon/two-brand enforcement).
+  (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+
+### Unreleased — brand packs (#104)
+_Version assigned at the `dev → main` promotion; nothing here has reached a user yet._
+- **The design system becomes multi-brand** (#104). `brand.md` refactored from "two brands, one
+  system" into the **brand-pack** model, so the system can be used for client and freelance work
+  without forking.
+  - **A pack is a theme, not a fork.** The framing is explicit: you use this system the way you
+    use Tailwind, Bootstrap or Flowbite — you do not re-author it. A pack declares **colours, the
+    logo, and the chart-palette validation result**; that is the whole surface. Layout, component
+    API, spacing/type scale, a11y and interactions stay central, so every brand inherits the
+    fixes. "Not in the pack" is the product, not a limitation.
+  - **Two levels: pack, then variant.** A *pack* is a genuinely distinct brand (own palette,
+    fonts, mark). A *variant* lives inside a pack and differs only in lockup/endorsement.
+    **`fmworkflows` is a variant of the `fidara` pack, not a pack of its own** — it is a product
+    *using* fidara's design system. Modelling it as a peer brand would have meant two
+    byte-identical `theme.css` files and a live drift hazard (update the parent palette, the
+    product silently diverges). A variant carries no values, so it cannot drift. The test:
+    *does it re-theme, or only re-label?*
+  - **Primitives are private to a pack; the role layer is the public API.** `fm-*` is fidara's
+    own naming, not system law — a client pack may name primitives anything, because nothing
+    outside a pack may reference one. That is what makes a brand swap a single `@theme` layer and
+    what makes completeness mechanically checkable.
+  - **Overrides are a rare escape hatch**, not what a brand does: `fonts`, the three personality
+    knobs, and `chart_hues` inherit fidara's calibrated defaults when omitted, so a typical
+    client manifest is four lines. Every override is a place the brand stops matching the system.
+  - `chart_palette_validated: true` is required **even when hues are inherited** — changing the
+    palette changes the surface the hues sit on, and hues that clear contrast on fidara's navy can
+    fail on a client's light beige.
+  - **Fixed a latent doctrine bug the two-value enum was hiding**: the "by Fidara" endorsement was
+    attached to the *parent* (`brand: :fidara` → `endorsement? = true`), rendering
+    **"Fidara by Fidara"**. An endorsement ties a *product* to its parent, so it belongs on the
+    product variant. `Ui::Logo` now takes `brand_variant:` and reads the display name and
+    endorsement **string** from the pack manifest — no brand names in component code, so a
+    client's "an Acme company" needs no code change.
+  - Swept every other assertion of the old model: `SKILL.md`, `components.md`,
+    `component-implementations.md`, and design-flow's `setup`, `brand-guardian`, README and
+    plugin description.
+  - Records what the lint **cannot** prove: it checks a pack against the role contract, not the
+    contract against reality. A clean pack that still renders a stock colour is a doctrine defect
+    to report upstream, not a project problem to patch locally.
+  - **Rejected one review finding with reasoning**: `Ui::Logo`'s px units. The mark has a
+    *documented absolute minimum* (prism 20px digital / 6mm print, clear space 1.5×) and its
+    wordmark is sized proportionally to the mark, not to body text — scaling a trademark with the
+    reader's font preference would violate the brand's own minimum-size rule. Materially different
+    from the `body { font-size: 15px }` finding accepted earlier, which overrode text scaling.
 
 ### 1.10.0 — 2026-07-25
 - **fidara-design Phase 0 — foundations calibrated against two reference corpora** (#93). The

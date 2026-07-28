@@ -1,0 +1,54 @@
+/* CLIENT BRAND PACK TEMPLATE — copy to brands/<slug>/ and replace the values.
+   This is the WHOLE job: set the colours, drop in the logo. Everything else — layout,
+   components, spacing, type scale, a11y, interactions — is inherited from the system
+   unchanged. A pack is a theme, not a fork.
+
+   1. put the client's palette in @theme (name the primitives however you like — they are
+      private to this pack; nothing outside may reference them)
+   2. map them onto the role layer below; every role must have a value
+   3. re-point the surface roles under .dark
+   4. run the data-viz palette validator against THIS pack's surface, then set
+      chart_palette_validated: true in brand.json
+   5. verify:  python3 scripts/brand_pack_lint.py brands/<slug>                            */
+
+@theme {
+  /* the client's palette — private primitives */
+  --color-brand-500: #0077CC;   /* primary            */
+  --color-brand-600: #005FA3;   /* primary, pressed   */
+  --color-ink-900:   #10151C;   /* darkest text/surface */
+  --color-ink-50:    #F7F8FA;   /* lightest surface     */
+  --color-ink-100:   #EEF0F4;
+  --color-ink-200:   #DDE1E8;
+  --color-ink-400:   #8B93A1;
+  --color-ink-800:   #1B222C;
+  --color-state-error:   #EF4444;
+  --color-state-success: #22C55E;
+  --color-state-warning: #F59E0B;
+  --color-state-info:    #3B82F6;
+}
+
+:root {
+  --background: var(--color-ink-50);      --foreground: var(--color-ink-900);
+  --card: #FFFFFF;                        --card-foreground: var(--color-ink-900);
+  --popover: #FFFFFF;                     --popover-foreground: var(--color-ink-900);
+  --primary: var(--color-brand-500);      --primary-foreground: #FFFFFF;
+  --secondary: var(--color-ink-100);      --secondary-foreground: var(--color-ink-900);
+  --muted: var(--color-ink-100);          --muted-foreground: var(--color-ink-400);
+  --accent: var(--color-ink-100);         --accent-foreground: var(--color-ink-900);
+  --destructive: var(--color-state-error); --destructive-foreground: #FFFFFF;
+  --success: var(--color-state-success);  --warning: var(--color-state-warning);
+  --info: var(--color-state-info);
+  --border: var(--color-ink-200);         --input: var(--color-ink-200);
+  --ring: var(--color-brand-500);
+}
+
+.dark {
+  --background: var(--color-ink-900);     --foreground: var(--color-ink-50);
+  --card: var(--color-ink-800);           --card-foreground: var(--color-ink-50);
+  --popover: var(--color-ink-800);        --popover-foreground: var(--color-ink-50);
+  --secondary: var(--color-ink-800);      --secondary-foreground: var(--color-ink-50);
+  --muted: var(--color-ink-800);          --muted-foreground: var(--color-ink-400);
+  --accent: var(--color-ink-800);         --accent-foreground: var(--color-ink-50);
+  --border: var(--color-ink-800);         --input: var(--color-ink-800);
+  --primary: var(--color-brand-500);
+}
