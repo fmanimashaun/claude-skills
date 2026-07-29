@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased — an unbounded `gh issue list` made dedupe read a truncated tracker (#211)
+### 2026-07-30 — an unbounded `gh issue list` made dedupe read a truncated tracker (#211)
 
 - **Found because I reported a wrong number to the maintainer.** I said "30 open issues"; there were
   **42**. `gh issue list` defaults to `--limit 30`, and I had dropped the explicit limit and reported
@@ -1072,10 +1072,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.9.0 — 2026-07-30
 
 *(Two issues on one branch per CLAUDE.md's grouping rule — same component, one reporting
-mechanism, and #113 is unusable without #118. A bullet each so the promotion closes them
+mechanism, and #113 was unusable without #118. A bullet each so the promotion could close them
 separately.)*
 
 - **Findings are deduplicated by signature, so counts mean something** (#118). Raw per-instance
@@ -1963,6 +1963,57 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.32.0)
+
+> ### Who this affects
+>
+> **Marketplace install: `qa-flow` 1.9.0 is a real upgrade** — QA findings stop being reported as
+> per-instance counts, and links are audited during the crawl.
+>
+> **`dist/*.skill` upload to claude.ai: nothing changed.** All four archives are byte-identical to
+> v1.29.0 and `rails-stack` holds at 1.16.0, because no `skills/**` file moved. The two
+> distribution paths version independently; this release moves only the marketplace one.
+
+- **qa-flow 1.9.0 — findings are deduplicated by signature, so the counts mean something** (#118).
+  Raw per-instance counts were reported as defect counts, and the inflation was measured on a real
+  interaction crawl: **773** "disclosure trigger without aria-expanded" and **445** "icon-only
+  control without accessible name". Every instance was real — the **distinct** count for the first
+  was about **18**, one navbar defect repeating across 72 pages. A developer told "773 a11y defects"
+  disbelieves the report and stops reading; told "18 defects, one on every page", they fix the
+  navbar. The same arithmetic decided whether `qa-reporter` filed **18 issues or 773**.
+  - Grouping is by `(issue type, component/DOM signature, offending attribute)` — never the raw
+    selector, which varies per page and so defeats grouping by making every occurrence look
+    distinct. Reported as `N instances across M routes`, ranked by severity then reach, with the
+    full instance list kept in JSON so collapsing 773 rows summarises the data rather than
+    destroying it.
+  - **The guarantees are arithmetic, not stylistic.** A repeated signature is rejected — that *is*
+    the dedupe. `Instances` can never be fewer than `Routes`. Example routes cannot outnumber
+    affected routes. And the file must be **ordered** by severity then reach, so "ranked by impact"
+    is true of the artifact instead of asserted about it.
+  - Applies to **every** finding source (a11y, links, runtime, visual, interaction, functional, api,
+    perf, security), checked against a vocabulary: this is not an a11y-only rule, that is only where
+    it was measured.
+- **qa-flow 1.9.0 — links and anchors are audited during the crawl** (#113). Nothing verified that
+  links went anywhere. The audit found the value by accident: a sitemap listed **12 section-index
+  URLs that all 404'd**, and it surfaced only because a human noticed "Page Not Found" in a
+  screenshot folder.
+  - Unique internal targets are requested once (HEAD → GET fallback); **`#fragment` targets are
+    confirmed to exist**, since a link to a renamed heading is dead in the way that matters to a
+    reader *and* returns 200; `target="_blank"` without `rel="noopener"` is an S3.
+  - **External checking is off by default**, cached when enabled, timeouts informational — a gate
+    that fails because someone else's site was down teaches people to ignore it.
+  - **Asset failures are not re-crawled**: v1.31.0's `>= 400` / `requestfailed` capture (#109)
+    already covers images, fonts and script chunks.
+  - Findings dedupe **by target**, which is why these shipped together — one dead link in a shared
+    footer is one finding across seventy routes, not seventy.
+- **Maintainer tooling (not distributed): an unbounded `gh issue list` made dedupe read a truncated
+  tracker** (#211). `gh issue list` defaults to `--limit 30`, so `issue-triager`'s **duplicate
+  detection** could conclude "no duplicate exists" having read 30 of 42 issues and then file the
+  duplicate it exists to prevent; `maintainer-audit`'s clustering read its "systemic gap" signal off
+  a truncated list too. Both bounded, and a new `unbounded-issue-query` lint rule makes it
+  re-checkable — grading invocations rather than mentions, so a historical CHANGELOG reference is not
+  something the linter demands be rewritten.
 
 ### 2026-07-30 (release v1.31.0)
 
