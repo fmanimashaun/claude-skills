@@ -74,20 +74,28 @@ capture what changed since the last release:
 The graph is **opt-in**, and `--check` exits 1 on a missing `graph.json` (that is the
 "never generated" signal, correct for a project that opted in). So the absence test must
 come first — an unguarded `--check` would report every graph-less project as a failed
-release:
+release.
+
+**That decision belongs in the script, not here.** `--if-present` makes a missing graph a
+clean exit-0 skip, so this doc carries no branching at all:
 
 ```bash
-GRAPH=.claude/scripts/architecture_graph.py
-if [ -f docs/architecture/graph.json ] && [ -f "$GRAPH" ]; then
-  python3 "$GRAPH" --check || echo "graph STALE — regenerate and commit before tagging"
-  python3 "$GRAPH" --delta origin/main
-else
-  echo "no architecture graph in this project — skipping"
-fi
+python3 .claude/scripts/architecture_graph.py --check --if-present
+python3 .claude/scripts/architecture_graph.py --delta origin/main
 ```
 
-(If the script was not vendored into `.claude/scripts/`, point `GRAPH` at
-`${CLAUDE_PLUGIN_ROOT}/../rails-flow/scripts/architecture_graph.py` instead.)
+Run them plainly. **Do not wrap either in `|| echo` or `|| true`** — the exit code *is* the
+verdict, and consuming it produces a release that looks verified and is not. If the script is
+not vendored at that path the command fails loudly on its own, which is the correct outcome for
+a project that opted into the graph and cannot check it.
+
+Why it is shaped this way, since the temptation to "make it robust" with a shell guard is what
+caused the defect: v1.21.0 shipped `--check || echo "graph STALE…"`. It printed a warning and
+released anyway (#151). The guard existed because `--check` treated *absent* and *stale* the
+same, so the doc compensated in prose — and prose is the one layer nothing tests. `--if-present`
+moves that judgement into tested Python and leaves the doc with a command instead of a program.
+
+(If the script lives elsewhere, adjust the path — but keep it a plain call.)
 
 Paste the `--delta` output into the release notes verbatim. **New nodes, removed nodes and
 flows that changed shape** are the structural story of the release — "flow *Create an
@@ -98,5 +106,9 @@ before tagging.
 ## Report
 
 Image ref + digest (the pullable release), boot/deploy verdict, the registry URL
-a future server would pull from, and the architecture-graph delta (or "no structural
-change").
+a future server would pull from, and the architecture-graph verdict.
+
+State the graph verdict **explicitly, as one of three words** — `verified`, `skipped` (no graph
+in this project), or `FAILED` — followed by the delta (or "no structural change"). Never report
+a skip in language that could be read as a pass: "graph OK" for a project that has no graph is
+how an unverified release comes to look like a verified one.

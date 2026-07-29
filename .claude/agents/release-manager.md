@@ -41,6 +41,14 @@ them numbers, not to write them from scratch:
 
 1. In each component section, rename `### Unreleased — <topic>` to `### X.Y.Z — <date>` and
    drop the "version assigned at promotion" line.
+   Then **verify none were missed** — a promotion usually has one per component, and a stray
+   `Unreleased` section means its notes never reach the published release (exactly the v1.6.6
+   failure recorded in CLAUDE.md):
+
+```bash
+grep -n "^### Unreleased" CHANGELOG.md    # must print NOTHING before the promotion merges
+```
+
 2. In `Repository / marketplace`, replace the `### Unreleased (no tag yet ...)` heading with
    the single `### <date> (release vX.Y.Z)` block for the tag being shipped.
 

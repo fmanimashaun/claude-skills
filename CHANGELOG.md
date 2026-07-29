@@ -7,6 +7,42 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-29 — the shell inside markdown is now verified (root cause of #151)
+- **The repo mandated `bash -n` for `.sh` files and shipped 194 unverified lines of bash inside
+  markdown** — 51 fenced blocks across 30 command/skill files, the lines an agent copies and runs
+  verbatim in a user's project. Three review findings in one week lived in that gap: the
+  `--check || echo` that made the release gate unable to block (#151), the same file's guard
+  conflating "no data" with "no tool", and design-flow's unresolvable lint path. Each was
+  prose-reviewed and never executed. The #151 fix stated a rule ("a guard decides whether to run
+  a check; it must never soften the verdict") — but a rule is not a guarantee, which is the one
+  thing this repo's doctrine is explicit about.
+- **New `scripts/lint_markdown_shell.py`** (stdlib only): extracts every fenced shell block and
+  runs `bash -n` on it (template placeholders substituted first, since `<pack>` is a redirect to
+  bash), then flags **swallowed verdicts** (`|| echo`/`|| true` on a verification command) and
+  unquoted test operands. **Regression-proven**: run against `release.md` as shipped in v1.21.0 it
+  reports the `--check || echo` at line 82 and exits 1; against the fixed file it exits 0.
+- **`--audit-coverage`**, because the first version of the fence regex **silently skipped 11 blocks
+  in 7 files** by anchoring ` ``` ` to column 1 — blocks nested in numbered lists are indented. A
+  lint that reports clean on input it never read is worse than no lint, so coverage is now
+  cross-checked against an independent looser scan and a gap is a failure. (Same column-1
+  assumption `brand_pack_lint` had; second time it bit.)
+- Wired into `CLAUDE.md`, `/maintainer-work` Phase 3, and `plugin-doctor`, so it runs without
+  being remembered.
+- **Coverage is reconciled on every run, not on request.** `--audit-coverage` was a separate
+  command, so a future tweak to the fence regex could still quietly reduce coverage while the
+  default run reported clean — the same defect one level up. Every run now cross-checks the strict
+  parser against an independent looser scan and **refuses to report clean when they disagree**.
+  Proven with a fence the strict regex cannot parse (inside a blockquote) that contains a real
+  swallowed verdict: the tool exits 1 saying a clean result would be meaningless, where before it
+  printed "no findings".
+- Four bugs were found *in the linter itself* while proving it, all silent-failure shaped: `bash -n
+  <tempfile>` broke under Git Bash (mangled Windows path → every block a false syntax error);
+  `text=True` encoded stdin as cp1252 and crashed on a `✓`; a nonexistent path reported "0 files,
+  no findings" instead of erroring; and `verify` matched inside `pipeline-verify`, flagging an
+  idempotent `docker rm … || true`. Worth recording that three separate escaping mistakes wrote
+  literal control characters (``, TAB) into the source via heredoc patching — invisible in
+  output, and the regex matched nothing. Author code with an editor, not with nested string layers.
+
 ### 2026-07-28 — the doctrine gate gets an explicit scope
 - The verification gate said "no skill claim is edited until `doctrine-verifier` confirms it against
   an authoritative source", without stating what counts as a claim. Our own architecture decisions
@@ -352,6 +388,44 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## pipeline (lifecycle orchestrator)
+
+### Unreleased — release drift check actually blocks (#151)
+_Version assigned at the `dev → main` promotion._
+- **Moved the decision out of the markdown entirely.** The fix above still shipped a 12-line,
+  three-branch shell guard in a doc — and a doc is the one layer nothing tests. The branching only
+  existed because `--check` conflated *absent* (a legitimate opt-out) with *stale* (a defect), so
+  the prose compensated for a missing flag. `architecture_graph.py` now takes **`--if-present`**,
+  which owns that judgement in tested Python, and the doc carries two plain invocations with no
+  branching at all. If the script is not vendored the command fails on its own — which is the
+  correct outcome and deletes the misleading-skip branch rather than fixing it.
+  Verified: absent + `--if-present` → 0 · absent without it → 1 · stale → 1 · fresh → 0 · script
+  missing → non-zero. Old snippet vs new on the same drifted repo: **0 vs 1**.
+  The general rule, now stated in the doc: **bash is for commands, Python is for decisions.** Every
+  finding this week came from a snippet that encoded a decision; none came from a plain
+  `docker build` / `git push`.
+- **The architecture-graph drift check could not block a release** (#151, shipped in v1.21.0). The
+  snippet in `/pipeline:release` ran `python3 "$GRAPH" --check || echo "…"`, and `|| echo` consumes
+  the non-zero exit — including under `set -e`. A stale graph printed a warning and the release
+  proceeded. That is worse than having no check, because the message makes it look like the gate
+  ran. Proven before/after against the same drifted repo: old snippet exit **0**, fixed snippet
+  exit **1**.
+- **The skip branch conflated two different causes.** `[ -f "$GRAPH" ]` was ANDed into the
+  absence test, so a project that *had* `docs/architecture/graph.json` but had not vendored the
+  script reported *"no architecture graph in this project — skipping"* and silently skipped
+  verification. Since the graph is opt-in per project while the script is vendored manually, that
+  combination is likely rather than exotic. Now three branches: no graph → skip (exit 0); graph
+  but no script → **error, exit 1** (a project that opted in and cannot verify must stop, not
+  skip); otherwise run `--check` and let it fail.
+- Root cause worth recording: this was introduced *while fixing* an earlier review finding. The
+  unguarded `--check` broke graph-less projects, so a guard was added — and making the failure
+  non-fatal made it non-functional. **A guard decides whether to run a check; it must never soften
+  the verdict.**
+- `/pipeline:release`'s Report section now requires the graph verdict as one of three explicit
+  words — `verified` / `skipped` / `FAILED` — so a skip can never be read as a pass.
+- Verified `scripts/release_local.sh` and `.github/workflows/release.yml` for the same softening:
+  both already hard-fail (`fail`, `exit 1`), so the defect was confined to this one snippet.
+- Found by review on PR #144 and **missed** on the first read — the comment list was truncated, so
+  four of five findings were addressed and reported as "four findings". Count first, then read.
 
 ### 1.1.3 — 2026-07-27
 - **Release verifies the architecture graph and reports its delta** (#141): `/pipeline:release` now
