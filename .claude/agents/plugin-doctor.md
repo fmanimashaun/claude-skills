@@ -28,6 +28,8 @@ Every changed `*.sh` and `hooks.json`:
 
 ```bash
 bash -n path/to/script.sh                 # syntax must pass
+python3 scripts/lint_markdown_shell.py    # ALSO required when a command/skill .md changed:
+                                          # its fenced shell runs verbatim in user projects
 # hooks.json: valid JSON and correct schema (top-level "hooks", matcher present for tool events)
 python3 -c "import json;json.load(open('plugins/<p>/hooks/hooks.json'))"
 ```

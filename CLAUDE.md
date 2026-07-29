@@ -45,6 +45,38 @@ never enough. A CONFIRMED verdict authorizes the edit; REFUTED closes the issue 
 citation; **INCONCLUSIVE leaves doctrine unchanged.** Record the citation + version
 boundary in the CHANGELOG entry.
 
+### What the gate covers — and what it cannot
+
+The gate exists for **externally verifiable claims**: how Rails, Hotwire, Tailwind, or a gem
+actually behaves at a stated version. Those have an upstream to cite, so citing it is
+mandatory and no judgement substitutes for it.
+
+Some skill content has **no upstream** — our own architecture and design decisions (the brand-pack
+model, which axes are per-brand, the role-token contract, distribution policy). Sending those to
+`doctrine-verifier` returns INCONCLUSIVE for want of a source, and "INCONCLUSIVE leaves doctrine
+unchanged" would then block our own decisions forever. That is not the gate working; it is the
+gate misapplied.
+
+So for a **design/architecture** change to a skill, the authority is **the maintainer's explicit
+decision, recorded on the issue** — the durable equivalent of a citation. The rules that keep this
+from becoming a loophole:
+
+- **State which kind of change you are making, in the PR, before editing.** Silence is not a
+  claim of exemption.
+- **Split a mixed change.** If one PR touches both an architecture decision and a framework
+  claim, the framework claim still needs a CONFIRMED verdict. Do not let the architecture half
+  carry the factual half through.
+- **Reuse established framework syntax rather than inventing it.** Introducing new
+  framework API into a skill *is* an external claim, whatever else the PR is about.
+- **Measure anything measurable.** A factual assertion about our own doctrine (e.g. "22 roles")
+  is verified against the repo's own files and made re-checkable by a script, not asserted.
+- **The maintainer decision must be linked** from the CHANGELOG entry, exactly where a citation
+  would go.
+
+(Recorded after #104: brand packs were designed and twice corrected by the maintainer in-session,
+with the reasoning on the issue. Review flagged the missing verdict, correctly — the gate as
+written had no scope, so the exemption was being decided per PR instead of by doctrine.)
+
 ## Git flow (strict)
 
 **`main` is the default branch and the install surface.** `/plugin marketplace add
@@ -132,6 +164,26 @@ Promote **per coherent slice** — a feature, or a batch of related fixes. Do no
 promotions until the whole queue is clear: a 40-issue release is hard to bisect when
 something breaks, and the `dist/*.skill` assets on the latest GitHub release (the claude.ai
 upload path) stay stale the entire time. Small, frequent, readable promotions.
+
+## Verify the shell we ship inside markdown
+
+`bash -n` on `.sh` files was never the whole surface: commands and skills carry ~200 lines of
+bash in fenced blocks — the lines an agent copies and runs **verbatim in a user's project** —
+and nothing checked them. Three review findings in one week lived there, including a
+`--check || echo` that made a release gate unable to block.
+
+```bash
+python3 scripts/lint_markdown_shell.py                  # syntax + dangerous patterns
+python3 scripts/lint_markdown_shell.py --audit-coverage  # prove no block is silently skipped
+```
+
+Run it after editing any command/skill markdown that contains a shell block. It catches
+syntax errors (templates are placeholder-substituted first), **swallowed verdicts**
+(`|| echo`/`|| true` on a verification command), and unquoted test operands.
+
+`--audit-coverage` exists because the first version of the fence regex silently skipped 11
+blocks in 7 files: a lint that reports clean on input it never read is worse than no lint.
+Treat a coverage gap as a defect in the linter, not a nuisance.
 
 ## Packaging (skills)
 

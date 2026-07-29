@@ -1,0 +1,56 @@
+/* fidara brand pack — theme layer ONLY.
+   A pack is a theme, not a fork: primitives, role mapping, dark re-points. Nothing else.
+   No @utility, no @apply, no component CSS — those are system-level and shared by every pack.
+   Values are the calibrated fidara set; see skills/fidara-design/references/foundations-tokens.md
+   for the reasoning behind each one. Verify with:
+     python3 scripts/brand_pack_lint.py brands/fidara                                        */
+
+@theme {
+  /* Primitives are PRIVATE to this pack. The `fm-` prefix is fidara's own choice, not system
+     law — a client pack may use any naming it likes, because nothing outside a pack may
+     reference a primitive by name. The role layer below is the only public contract. */
+
+  /* dark surfaces */
+  --color-fm-navy:     #0C1B33;  --color-fm-midnight: #152238;  --color-fm-ink: #1A2B45;
+  /* accents (Prism facets / product modules) */
+  --color-fm-cerulean: #0077CC;  --color-fm-electric: #00A3FF;  --color-fm-cyan: #00D4FF;
+  --color-fm-orange:   #FF6B35;  --color-fm-coral:    #FF8C5A;
+  /* feedback */
+  --color-fm-success:  #22C55E;  --color-fm-warning:  #F59E0B;
+  --color-fm-error:    #EF4444;  --color-fm-info:     #00A3FF;
+  /* neutral slate — 11 shades */
+  --color-fm-slate-50:#F8F9FB; --color-fm-slate-100:#F1F3F7; --color-fm-slate-200:#E2E6ED;
+  --color-fm-slate-300:#C8CDD8; --color-fm-slate-400:#8F96A3; --color-fm-slate-500:#5E6775;
+  --color-fm-slate-600:#3D4654; --color-fm-slate-700:#2A3240; --color-fm-slate-800:#1C2531;
+  --color-fm-slate-900:#0F1520; --color-fm-slate-950:#0A0E16;
+}
+
+/* Semantic roles — THE PUBLIC API. Components consume only these. Every surface role has a
+   -foreground companion; always write bg-X together with text-X-foreground. */
+:root {
+  --background: var(--color-fm-slate-50);   --foreground: var(--color-fm-slate-900);
+  --card: #FFFFFF;                          --card-foreground: var(--color-fm-slate-900);
+  --popover: #FFFFFF;                       --popover-foreground: var(--color-fm-slate-900);
+  --primary: var(--color-fm-cerulean);      --primary-foreground: #FFFFFF;
+  --secondary: var(--color-fm-slate-100);   --secondary-foreground: var(--color-fm-slate-900);
+  --muted: var(--color-fm-slate-100);       --muted-foreground: var(--color-fm-slate-500);
+  --accent: var(--color-fm-slate-100);      --accent-foreground: var(--color-fm-slate-900);
+  --destructive: var(--color-fm-error);     --destructive-foreground: #FFFFFF;
+  --success: var(--color-fm-success);       --warning: var(--color-fm-warning);
+  --info: var(--color-fm-info);
+  --border: var(--color-fm-slate-200);      --input: var(--color-fm-slate-200);
+  --ring: var(--color-fm-cerulean);
+}
+
+/* Dark re-points the SURFACE roles only. The feedback roles and --ring legitimately hold one
+   value across both themes — the lint knows this, so it does not demand 22 dark values. */
+.dark {
+  --background: var(--color-fm-navy);       --foreground: var(--color-fm-slate-50);
+  --card: var(--color-fm-ink);              --card-foreground: var(--color-fm-slate-50);
+  --popover: var(--color-fm-midnight);      --popover-foreground: var(--color-fm-slate-50);
+  --secondary: var(--color-fm-slate-800);   --secondary-foreground: var(--color-fm-slate-50);
+  --muted: var(--color-fm-slate-800);       --muted-foreground: var(--color-fm-slate-400);
+  --accent: var(--color-fm-slate-800);      --accent-foreground: var(--color-fm-slate-50);
+  --border: var(--color-fm-slate-800);      --input: var(--color-fm-slate-800);
+  --primary: var(--color-fm-electric);      /* brand lifts to electric on dark */
+}

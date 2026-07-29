@@ -46,6 +46,11 @@ missing, apply `needs-info`, and stop — never fix a guess.
 Doctrine: citation recorded, `dist/*.skill` repackaged and valid. Plugin: `bash -n` +
 behavior reproduction + other paths intact. Nothing proceeds without evidence.
 
+**If you touched markdown containing a shell block** — any command or skill file — also run
+`python3 scripts/lint_markdown_shell.py`. Those blocks are executed verbatim in user projects
+and were unverified until v1.21.x; a `--check || echo` shipped there and made a release gate
+unable to block. `bash -n` on `.sh` files does not cover them.
+
 ## Phase 4 — PR into `dev` (unversioned)
 
 Push the branch and open a PR **into `dev`** whose body carries the fix and the evidence

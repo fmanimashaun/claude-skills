@@ -2,7 +2,7 @@
 name: fidara-design
 description: >
   The Fidara design system — how to build consistent, modern, responsive UI in Rails 8 +
-  Hotwire + Tailwind CSS v4 (Fidara / fmworkflows brands). Load this WHENEVER building or
+  Hotwire + Tailwind CSS v4, brand-parameterised via brand packs. Load this WHENEVER building or
   reviewing UI: components (buttons, cards, forms, nav, modals, tables, badges, alerts),
   page layouts, tokens/theming, dark mode, responsiveness, or brand/logo usage. It defines
   the token architecture (brand primitives → semantic roles → fluid scale), the layout
@@ -19,7 +19,7 @@ It is **prescriptive**: where it gives a token, a recipe, or a variant set, use 
 that. Inconsistency in components degrades the whole product, so drift is a defect.
 
 **Stack:** Rails 8 · Hotwire (Turbo + Stimulus) · **Tailwind CSS v4** (CSS-first `@theme`,
-no `tailwind.config.js`, no npm) · Lucide icons. Two brands (**fidara**, **fmworkflows**)
+no `tailwind.config.js`, no npm) · Lucide icons. Brand packs (**fidara** is the first; `fmworkflows` is a *variant* inside it, not a second pack)
 are ONE system — identical values, only the token prefix differs; code uses the **`fm-*`**
 prefix. See [references/brand.md](references/brand.md).
 

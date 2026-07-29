@@ -42,13 +42,23 @@ from `docs/design-system/brand-assets/01-logos/` if the geometry differs.
 module Ui
   class LogoComponent < ViewComponent::Base
     SIZE = { sm: 20, md: 28, lg: 40 }.freeze          # prism height (px); brand.md min = 20
-    def initialize(variant: :lockup, size: :md, brand: nil)
+    # `variant:` is the LOCKUP form (mark vs lockup); `brand_variant:` picks the brand pack's
+    # variant (product surface vs parent). No brand NAMES appear here — identity comes from the
+    # pack manifest, so a client brand needs no code change.
+    def initialize(variant: :lockup, size: :md, brand_variant: nil)
       @variant = variant.to_sym                        # :mark (prism only) | :lockup (+ wordmark)
       @px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)   # enforce the 20px minimum
-      @brand = (brand || "fmworkflows").to_sym         # :fidara | :fmworkflows — endorsement toggle
+      brand = Rails.configuration.x.brand              # generated from brands/<pack>/brand.json
+      key = (brand_variant || brand.default_variant).to_s
+      v = brand.variants[key] || brand.variants[brand.default_variant.to_s]
+      @label = v.fetch(:name)
+      @endorsement = v[:endorsement]                   # nil for a parent/standalone brand
     end
-    def label = @brand == :fidara ? "Fidara" : "fmworkflows"
-    def endorsement? = @brand == :fidara               # marketing/parent adds "by Fidara"
+    attr_reader :label
+    # The endorsement ties a PRODUCT to its parent ("fmworkflows by Fidara"), so it lives on the
+    # product variant, not the parent. The old boolean had it backwards — it rendered
+    # "Fidara by Fidara" — which a two-value enum made easy to get wrong and hard to notice.
+    def endorsement? = @endorsement.present?
   end
 end
 ```
@@ -65,13 +75,15 @@ end
     <span class="stack" style="--space: 0">
       <span class="font-black uppercase tracking-tight leading-none text-foreground"
             style="font-size: <%= (@px * 0.85).round %>px"><%= label.upcase %></span>
-      <% if endorsement? %><span class="text-step--1 text-muted-foreground">by Fidara</span><% end %>
+      <%# the endorsement STRING comes from the pack variant — never a literal brand name %>
+      <% if endorsement? %><span class="text-step--1 text-muted-foreground"><%= @endorsement %></span><% end %>
     </span>
   <% end %>
 </span>
 ```
 Usage: `<%= render(Ui::LogoComponent.new(variant: :mark, size: :sm)) %>` (compact chrome) ·
-`<%= render(Ui::LogoComponent.new(brand: :fidara)) %>` (marketing lockup + endorsement). Dark mode
+`<%= render(Ui::LogoComponent.new(brand_variant: "fmworkflows")) %>` (product lockup + its
+pack-defined endorsement; omit `brand_variant:` to use the pack's `default_variant`). Dark mode
 is automatic (`text-foreground`); for busy/photographic backgrounds use the reversed/white variant
 (wrap in a context that sets `--foreground` to white, per brand.md).
 
