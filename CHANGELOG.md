@@ -353,6 +353,32 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
+### Unreleased — release drift check actually blocks (#151)
+_Version assigned at the `dev → main` promotion._
+- **The architecture-graph drift check could not block a release** (#151, shipped in v1.21.0). The
+  snippet in `/pipeline:release` ran `python3 "$GRAPH" --check || echo "…"`, and `|| echo` consumes
+  the non-zero exit — including under `set -e`. A stale graph printed a warning and the release
+  proceeded. That is worse than having no check, because the message makes it look like the gate
+  ran. Proven before/after against the same drifted repo: old snippet exit **0**, fixed snippet
+  exit **1**.
+- **The skip branch conflated two different causes.** `[ -f "$GRAPH" ]` was ANDed into the
+  absence test, so a project that *had* `docs/architecture/graph.json` but had not vendored the
+  script reported *"no architecture graph in this project — skipping"* and silently skipped
+  verification. Since the graph is opt-in per project while the script is vendored manually, that
+  combination is likely rather than exotic. Now three branches: no graph → skip (exit 0); graph
+  but no script → **error, exit 1** (a project that opted in and cannot verify must stop, not
+  skip); otherwise run `--check` and let it fail.
+- Root cause worth recording: this was introduced *while fixing* an earlier review finding. The
+  unguarded `--check` broke graph-less projects, so a guard was added — and making the failure
+  non-fatal made it non-functional. **A guard decides whether to run a check; it must never soften
+  the verdict.**
+- `/pipeline:release`'s Report section now requires the graph verdict as one of three explicit
+  words — `verified` / `skipped` / `FAILED` — so a skip can never be read as a pass.
+- Verified `scripts/release_local.sh` and `.github/workflows/release.yml` for the same softening:
+  both already hard-fail (`fail`, `exit 1`), so the defect was confined to this one snippet.
+- Found by review on PR #144 and **missed** on the first read — the comment list was truncated, so
+  four of five findings were addressed and reported as "four findings". Count first, then read.
+
 ### 1.1.3 — 2026-07-27
 - **Release verifies the architecture graph and reports its delta** (#141): `/pipeline:release` now
   runs the graph drift check before reporting and pastes `--delta origin/main` into the release

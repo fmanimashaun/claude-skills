@@ -74,20 +74,39 @@ capture what changed since the last release:
 The graph is **opt-in**, and `--check` exits 1 on a missing `graph.json` (that is the
 "never generated" signal, correct for a project that opted in). So the absence test must
 come first — an unguarded `--check` would report every graph-less project as a failed
-release:
+release.
+
+But the guard decides **whether to run** the check; it must never soften the verdict. Three
+distinct outcomes, three branches:
 
 ```bash
 GRAPH=.claude/scripts/architecture_graph.py
-if [ -f docs/architecture/graph.json ] && [ -f "$GRAPH" ]; then
-  python3 "$GRAPH" --check || echo "graph STALE — regenerate and commit before tagging"
-  python3 "$GRAPH" --delta origin/main
+if [ ! -f docs/architecture/graph.json ]; then
+  echo "no architecture graph in this project — skipping (the graph is opt-in)"
+elif [ ! -f "$GRAPH" ]; then
+  echo "ERROR: docs/architecture/graph.json exists but $GRAPH is not vendored."
+  echo "Copy it from the rails-flow plugin; this project opted into the graph, so the"
+  echo "release cannot verify it and must not proceed unverified."
+  exit 1
 else
-  echo "no architecture graph in this project — skipping"
+  python3 "$GRAPH" --check          # exits 1 on drift — never swallow this
+  python3 "$GRAPH" --delta origin/main
 fi
 ```
 
-(If the script was not vendored into `.claude/scripts/`, point `GRAPH` at
-`${CLAUDE_PLUGIN_ROOT}/../rails-flow/scripts/architecture_graph.py` instead.)
+Two rules this encodes, both learned the hard way:
+
+- **Never `--check || echo`.** That consumes the non-zero exit (including under `set -e`), so
+  a stale graph prints a warning and the release ships anyway. Worse than having no check,
+  because the message makes it look like the gate ran.
+- **Never conflate "no graph" with "no script".** A project that opted into the graph and then
+  cannot verify it must **stop**, not skip. Silent skipping is how a guarantee erodes — and
+  since the graph is opt-in per project while the script is vendored manually, that combination
+  is likely, not exotic.
+
+(If the script lives elsewhere, point `GRAPH` at
+`${CLAUDE_PLUGIN_ROOT}/../rails-flow/scripts/architecture_graph.py` instead — but keep the
+three-branch shape.)
 
 Paste the `--delta` output into the release notes verbatim. **New nodes, removed nodes and
 flows that changed shape** are the structural story of the release — "flow *Create an
@@ -98,5 +117,9 @@ before tagging.
 ## Report
 
 Image ref + digest (the pullable release), boot/deploy verdict, the registry URL
-a future server would pull from, and the architecture-graph delta (or "no structural
-change").
+a future server would pull from, and the architecture-graph verdict.
+
+State the graph verdict **explicitly, as one of three words** — `verified`, `skipped` (no graph
+in this project), or `FAILED` — followed by the delta (or "no structural change"). Never report
+a skip in language that could be read as a pass: "graph OK" for a project that has no graph is
+how an unverified release comes to look like a verified one.
