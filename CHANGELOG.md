@@ -785,6 +785,52 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+*(version assigned at promotion — nothing here has shipped)*
+
+- **A screenshot is not evidence until the page it shows is validated** (#106) — `functional-tester`
+  was told "every finding needs a screenshot" and nothing more, so a capture of a 404, an error
+  page, a redirect target, or a half-rendered skeleton could be filed as evidence for a **Pass**.
+  That is worse than no evidence: it manufactures false confidence, and it is invisible because the
+  report looks complete and green. Found the hard way — a real audit wrote 66 captures from a
+  sitemap and **12 were 404s**; a human caught it by eye, the tooling could not.
+  - Every capture now passes a four-check gate before it counts: **HTTP status** off the navigation
+    response (not inferred), **final URL** recorded against the requested one, an
+    **expected-content assertion** drawn from the case's own expectation, and not-still-loading.
+    Validation failure yields **`Blocked`** — never `Pass`, never `Fail` — with the status and URL
+    recorded, because a blocked case is honest about being untested.
+  - **The expected-content assertion is the load-bearing signal, and the fix deliberately does not
+    text-sniff.** Status alone is insufficient (error pages return HTTP 200); error-text alone is
+    insufficient *and actively harmful* — the naive version of this fix wrongly excluded four
+    **valid** cases, real 404-page *designs* that return 200 and legitimately read "page not
+    found". Because the expectation comes from the case rather than a keyword list, an intentional
+    error-page design is correctly testable. A fixture pins this so the over-correction cannot be
+    reintroduced.
+  - The rule is **enforced, not just written**: the report's CSV summary gains a fixed ten-column
+    contract (`Status,HTTP,Requested URL,Final URL,Assertion,…`) and a shipped checker,
+    `plugins/qa-flow/scripts/validate_evidence.py`, which the agent must run clean before reporting.
+    It rejects any `Pass`/`Fail` row that omits its status/URLs/assertion, any `Pass` on a
+    non-2xx/3xx status or a silent redirect, and any `Blocked` row that records nothing — and it
+    **refuses to bless a report it could not read** (drifted header or zero rows exit 2) rather
+    than reporting clean over input it never parsed.
+  - Bounded honestly in both the script and the agent doctrine: it closes the **omission** hole,
+    which is the one that produced the false PASS. It cannot tell whether a recorded status is
+    *truthful* and it never sees the screenshots, so "not still loading" stays agent-side.
+  - **`a11y-auditor` had the same defect** and is fixed with it: an axe run against a 404 or a
+    login redirect returns real violations attributed to the wrong page, then files them as
+    defects. It now records status + final URL, asserts expected content, and reports **BLOCKED**
+    instead of a clean or violation-bearing result. (Its rule is prose-only for now — there is no
+    structured a11y artifact to check; `#120` is the natural home for that.)
+  - 46 selftest assertions (`validate_evidence.py --selftest`), verified adversarially in both
+    directions: 12 deliberate mutations of the implementation were each caught, including the
+    text-sniffing over-correction and a widened status vocabulary.
+  - Deliberately **not** changed: `exploratory-tester` (its mission is to notice surprises, so an
+    unexpected error page is a finding — the risk there is a false FAIL, not a false PASS),
+    `perf-tester` (already mandates "status + body-shape checks" — the existing house precedent for
+    this two-signal rule), `security-scanner` (reports per-URL), and design-flow's `design-auditor`
+    (audits source, not rendered pages). `#105`/`#107` are unbuilt, so they adopt the rule at
+    authoring time.
+
 ### 1.5.1 — 2026-07-25
 - **functional-tester never touches git** (#78) — it was auto-committing its run evidence
   (report + screenshots **and ~35 ephemeral `.playwright-mcp/` session dumps**) to the checked-out
