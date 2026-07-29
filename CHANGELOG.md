@@ -7,8 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased — doctrine call sites are checked by a linter, not by remembering (#182)
-_Version assigned at promotion._
+### 2026-07-29 — doctrine call sites are checked by a linter, not by remembering (#182)
 - **Seven instances of one class in two days, and zero permanent enforcement.** Skills are doctrine
   other agents follow verbatim, so a call site naming an API that does not exist is generated code
   that raises in a user's project: `--grid-min` for `--min`, `with_rail` for `with_sidebar`,
@@ -1486,6 +1485,27 @@ _Version assigned at promotion._
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.26.1)
+- **Doctrine call sites are now checked by a linter rather than by remembering** (#182, maintainer
+  tooling — **nothing distributed changed, so the `.skill` assets are byte-identical to v1.26.0**).
+  A call site in a skill naming an API that does not exist is generated code that raises in a user's
+  project, and that class surfaced **seven times in two days**: `--grid-min` for `--min`, `with_rail`
+  for `with_sidebar`, two wrong `FieldComponent` signatures, `lucide_icon(..., class:)`, `d.with_item`
+  for `items:`, and `field_classes` for `input_classes`. Five were caught by throwaway scripts written
+  in the moment and discarded; **two shipped and raised**. Ad-hoc catching is not enforcement — the
+  same lesson as #151 and #171 — so it is a third rule in `lint_self_consistency.py`.
+- **Known-answer calibrated:** against `v1.24.0` it reproduces the defect that actually shipped, and
+  is clean on current doctrine having examined 40 skill docs and 16 declared components, so the clean
+  result is not vacuous.
+- **Its own selftest found three faults in it**, which is the argument for building it rather than
+  trusting a careful read: the first version produced **six false positives against one real finding**
+  (`with_lock`, `with_connection`, `with_instructions`, `with_tool` are ActiveRecord and ruby_llm
+  idioms, not slots); the icon check then flagged **the doctrine's own correct example**, because
+  `tag.span(helpers.lucide_icon("x"), class: "with-icon")` passes `class:` to the wrapper; and it
+  required parentheses, so it would not have caught the paren-less form that motivated it. A linter
+  that cries wolf gets disabled, which is exactly the failure it exists to prevent — so every
+  sub-rule now asserts both directions.
 
 ### 2026-07-29 (release v1.26.0)
 - **Closes a dangling reference that was live in v1.24.0** (#95, rails-stack → 1.15.0).
