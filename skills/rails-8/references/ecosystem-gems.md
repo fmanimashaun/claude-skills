@@ -26,7 +26,7 @@ you how each one is idiomatically used).
 
 | Need | Rails default | Reach for a gem when |
 |---|---|---|
-| Forms | `form_with` + partials | Dozens of uniform CRUD forms → **simple_form** |
+| Forms | `form_with` + partials | **Always — this stack mandates simple_form** (see §2; a deliberate divergence from the Rails default) |
 | CSS | Plain CSS + Propshaft | Utility-first design system → **tailwindcss-rails** |
 | Authentication | `bin/rails g authentication` | Social login only → layer **omniauth** on top; never replace the generator |
 | Authorization | Scoping + model predicates (`auth-security.md`) | Role matrix outgrows conditionals → **pundit** / **cancancan** |
@@ -68,9 +68,23 @@ gem "simple_form"
 label + input + errors + hint in one call. With Tailwind there's no official
 preset: teams generate the install then customize
 `config/initializers/simple_form.rb` wrappers with Tailwind classes (do this
-once, commit it, never fight it per-form). Keep `form_with` for one-off,
-heavily custom forms — mixing is fine when each form is internally
-consistent.
+once, commit it, never fight it per-form).
+
+**simple_form is mandatory in this stack — no form, and no form element, is built
+any other way.** That is a deliberate divergence from the Rails default of
+`form_with`, and the reason is consistency: styling, labels, hints and error
+markup live in the initializer, so every field in the codebase looks and behaves
+identically and a change lands in one place. Mixing builders defeats the whole
+point — the moment one form is hand-rolled, its error and label markup drifts from
+the other hundred.
+
+Practical notes that follow from it: HTML attributes go in `html:`
+(`simple_form_for @record, html: { data: { turbo_frame: "_top" } }`), because
+simple_form follows `form_for` conventions and a top-level `data:` is not
+forwarded; and controls come from the simple_form builder (`f.input` for the full
+wrapper, `f.input_field` when you are composing the field anatomy yourself), never
+the plain Rails builder. `rails-flow`'s design-auditor greps for `form_with` in
+views and treats a hit as a violation, so this is enforced, not merely advised.
 
 ## 3. CSS: tailwindcss-rails
 

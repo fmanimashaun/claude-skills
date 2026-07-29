@@ -3,7 +3,7 @@
 ## Contents
 1. Layouts, templates, partials
 2. Helpers
-3. Forms with `form_with`
+3. Forms — the Turbo contract
 4. Assets: Propshaft + importmap
 5. Turbo Drive
 6. Turbo Frames
@@ -57,7 +57,14 @@ when logic grows. Built-ins to prefer over hand-rolling: `link_to`,
 `turbo_frame_tag`, `cache`. Dates/times: render with `<%= l record.created_at %>`
 respecting the app zone.
 
-## 3. Forms with `form_with`
+## 3. Forms — the Turbo contract
+
+> **Build every form with simple_form, not `form_with`.** This stack mandates it (a deliberate
+> divergence from the Rails default — see `ecosystem-gems.md` §2), so the builder below is shown
+> only because the **Turbo mechanics** in this section are builder-agnostic: the status codes, the
+> `_top` targeting and the redirect behaviour are identical either way. In real code the opening
+> line is `simple_form_for @product do |f|`, fields come from `f.input` / `f.input_field`, and the
+> error block is rendered by the configured wrapper rather than hand-written.
 
 ```erb
 <%= form_with model: @product do |form| %>

@@ -1021,32 +1021,39 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased — three doctrine references called APIs that do not exist (#168)
+### Unreleased — simple_form owns every form, and the doctrine now says so consistently (#168)
 _Version assigned at promotion._
-- **`forms.md` called a helper by the wrong name.** It used `field_classes(state)`; `UiHelper`
-  defines **`input_classes(state:, size:)`** — different name *and* keyword arguments. An agent
-  following the field-anatomy example verbatim produced a `NoMethodError`. Fixed, and the correct
-  name is now stated explicitly ("there is no `field_classes`") so the wrong one is not re-derived.
-- **`crud-modal-pattern.md` called `Ui::FieldComponent` with a signature it does not have** —
-  `(form:, name:, label:)` against an initializer of `(label:, hint:, error:, for_id:)` with the
-  control in a `renders_one :control` slot. This is the canonical create/edit example every CRUD
-  screen is built from, so the broken call had the widest possible blast radius. Rewritten to the
-  real API using only established Rails (`f.number_field` with an explicit `id:`), so no new
-  framework syntax is introduced.
-- **The component's contract is now stated where it is defined.** `component-implementations.md`
-  records that the wrapper is *deliberately* not form-builder aware — the caller owns the control, so
-  one wrapper serves a form-builder field, a standalone filter input and a composite alike. That is
-  the reasoning the form-builder signature was invented against, and writing it down at the
-  definition site is what stops it recurring.
-- **`forms.md` now documents when to compose the anatomy inline vs. render the wrapper**, so the two
-  approaches read as a choice rather than a contradiction.
-- **Scope held deliberately.** `crud-modal-pattern.md` still uses `form_with` while `forms.md`
-  mandates simple_form for the markup contract. That is a real design decision with framework-syntax
-  implications (`simple_form_for` needs `html: { data: … }` to carry the Turbo attribute), so it is
-  *not* bundled here — CLAUDE.md is explicit that a framework claim inside an architecture PR still
-  needs its own verdict. Left flagged on #168.
-- All three were found by applying the `code-review` skill's `doctrine-contradiction` class to our
-  own doctrine while authoring #94 — the third distinct instance of that class this week.
+- **Maintainer decision, recorded:** *"simple_form is in charge of all forms to drive consistency
+  across the codebase — no form or form element should exist that does not use simple_form,"* and
+  *"ViewComponents should use the same simple_form."* Three references contradicted that, and two
+  called APIs that do not exist at all.
+- **`forms.md` called a helper that does not exist** — `field_classes(state)` against `UiHelper`'s
+  `input_classes(state:, size:)` (different name *and* keyword arguments). Copied verbatim, the
+  field-anatomy example raised `NoMethodError`.
+- **`crud-modal-pattern.md` used `form_with` and a `Ui::FieldComponent` signature that does not
+  exist** — `(form:, name:, label:)` against an initializer of `(label:, hint:, error:, for_id:)`.
+  This is the canonical create/edit example every CRUD screen is built from, so it had the widest
+  blast radius of the three.
+- **The root cause was deeper than the signatures.** A field-wrapper component that renders its own
+  `<label>`, hint and error markup **is a form element built without simple_form** — precisely what
+  the mandate rules out. So `Ui::FieldComponent` is gone from doctrine rather than corrected: field
+  anatomy is now a **styled simple_form wrapper**, defined once in
+  `config/initializers/simple_form.rb`, which is what `forms.md` already meant by "simple_form for
+  the markup contract, styled to the design system". Authors write `f.input`; the wrapper supplies
+  the `stack`, label classes, control classes, hint/error paragraphs and `aria-describedby`.
+  One definition means a change lands on every field at once, which is the entire point.
+- **The rule reaches inside ViewComponents.** A component that renders fields takes the form builder
+  in and calls `form.input`; it does not re-implement the anatomy. `component-implementations.md`
+  shows that composition shape.
+- **The mandate was previously enforced more strictly than it was documented** — `setup-flow.md`
+  already said "simple_form mandatory — never raw `form_with`" and `design-auditor` greps for
+  `form_with` as a violation, while `rails-8/ecosystem-gems.md` still said "keep `form_with` for
+  one-off forms — mixing is fine". So the shipped auditor blocked users for following our own
+  doctrine, the same shape as the ids-only job contradiction fixed in v1.23.0. rails-8 now states
+  simple_form as mandatory (a deliberate divergence from the Rails default, with the reason given),
+  `views-hotwire.md`'s forms section is reframed as the builder-agnostic **Turbo contract** with the
+  mandate stated up front, `SKILL.md`'s golden path says `simple_form_for`, and the auditor's rule
+  drops its stale "if the project mandates" conditional.
 
 ### 1.13.0 — 2026-07-29
 - **The gap.** fidara-design had a strong component catalog and almost no page-level anatomy — one

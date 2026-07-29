@@ -35,14 +35,9 @@ them into CRUD**.
    <%= turbo_frame_tag "modal" do %>
      <%= render(Ui::ModalComponent.new(size: :md)) do |m| %>
        <% m.with_title { @invoice.new_record? ? "New invoice" : "Edit invoice" } %>
-       <%= form_with model: @invoice, data: { turbo_frame: "_top" } do |f| %>
+       <%= simple_form_for @invoice, html: { data: { turbo_frame: "_top" } } do |f| %>
          <div class="stack" style="--space: var(--space-s)">
-           <%= render(Ui::FieldComponent.new(label: "Amount", for_id: "invoice_amount")) do |field| %>
-             <% field.with_control do %>
-               <%= f.number_field :amount, id: "invoice_amount",
-                                  class: input_classes(state: :default) %>
-             <% end %>
-           <% end %>
+           <%= f.input :amount %>
            <%# ...fields... %>
          </div>
          <% m.with_actions do %>
@@ -53,8 +48,14 @@ them into CRUD**.
      <% end %>
    <% end %>
    ```
-   `form_with` posts via Turbo. `data-turbo-frame="_top"` on the form lets the **create/update
-   response drive a Turbo Stream against the whole page** (list + modal), not just the frame.
+   **Every form and form element goes through simple_form** — that is what keeps field markup,
+   labels, hints and error styling identical across the whole codebase, so it is a hard rule, not a
+   preference. `f.input` renders the entire field from the wrapper configured in
+   `config/initializers/simple_form.rb`; never hand-roll label/input/error markup, and never wrap a
+   control in a bespoke field component. HTML attributes ride in `html:` (simple_form follows
+   `form_for` conventions, so a top-level `data:` is not forwarded).
+   The form still posts via Turbo. `data-turbo-frame="_top"` lets the **create/update response
+   drive a Turbo Stream against the whole page** (list + modal), not just the frame.
 4. **Success responds with a Turbo Stream** that closes the modal and mutates the list — the
    only place the list changes. Nothing re-renders the whole index:
    ```ruby
