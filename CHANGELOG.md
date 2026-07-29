@@ -122,6 +122,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.8.0 — 2026-07-29
+- **`architecture_graph.py --if-present`** — with `--check`, a missing `graph.json` exits 0 instead
+  of reporting DRIFT, because the graph is opt-in per project. Added so a caller never has to
+  branch on the file's existence in shell: that guard belonged in the script, and putting it in a
+  command doc's prose is how #151 shipped a release gate that could not block. Without the flag a
+  missing graph is still DRIFT, which is correct for a project that opted in.
+
 ### 1.7.0 — 2026-07-27
 - **Living architecture graph** (#141): `/rails-flow:graph` extracts `{nodes, edges, flows}` from
   `config/routes.rb`, `app/**` and `db/schema.rb` into three artefacts — `docs/architecture/graph.json`
@@ -389,8 +396,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased — release drift check actually blocks (#151)
-_Version assigned at the `dev → main` promotion._
+### 1.1.4 — 2026-07-29
 - **Moved the decision out of the markdown entirely.** The fix above still shipped a 12-line,
   three-branch shell guard in a doc — and a doc is the one layer nothing tests. The branching only
   existed because `--check` conflated *absent* (a legitimate opt-out) with *stale* (a defect), so
@@ -685,8 +691,7 @@ _Version assigned at the `dev → main` promotion._
 
 ## design-flow (UI/design plugin)
 
-### Unreleased — brand packs (#104)
-_Version assigned at the `dev → main` promotion._
+### 1.4.0 — 2026-07-29
 - **`/design-flow:setup` takes a brand pack**, not a two-value brand enum: `<pack>` or
   `<pack>:<variant>` (e.g. `fidara`, `fidara:fmworkflows`, `acme`). Generating the theme layer is
   now the ONLY brand-dependent step — everything else is brand-neutral and identical for every
@@ -800,8 +805,7 @@ _Version assigned at the `dev → main` promotion._
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
 
-### Unreleased — brand packs (#104)
-_Version assigned at the `dev → main` promotion; nothing here has reached a user yet._
+### 1.11.0 — 2026-07-29
 - **The design system becomes multi-brand** (#104). `brand.md` refactored from "two brands, one
   system" into the **brand-pack** model, so the system can be used for client and freelance work
   without forking.
@@ -1097,6 +1101,38 @@ _Version assigned at the `dev → main` promotion; nothing here has reached a us
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.22.0)
+- **Brand packs — the design system becomes multi-brand** (#104, rails-stack → 1.11.0,
+  design-flow → 1.4.0). A pack is a **theme, not a fork**: it declares colours, the logo, and the
+  chart-palette validation result, and inherits layout, components, spacing, a11y and interactions
+  unchanged — so client work reuses the system instead of forking it. Two levels, pack then
+  variant: `fmworkflows` is a **variant** of the `fidara` pack, not a pack of its own, because a
+  product uses its parent's design system and a variant carries no values it could drift with.
+  Primitives are private to a pack; the role layer is the public API, which is what makes a brand
+  swap one `@theme` layer. Overrides (`fonts`, the three personality knobs, `chart_hues`) are a
+  rare escape hatch, so a typical client manifest is four lines.
+  New `brand_pack_lint.py` enforces the 22-role contract mechanically — a missing role does not
+  error at runtime, it silently renders a stock Tailwind colour. Ships `brands/fidara` and a
+  `brands/_template` client skeleton. Fixed a latent bug the old two-value enum was hiding: the
+  endorsement sat on the *parent*, rendering "Fidara by Fidara"; it now belongs to the product
+  variant as a string, so no brand name appears in component code.
+- **The release drift check actually blocks** (#151, pipeline → 1.1.4, rails-flow → 1.8.0).
+  v1.21.0 shipped `--check || echo`, which consumed the non-zero exit — a stale architecture graph
+  printed a warning and released anyway. Worse than no check, because the message implied the gate
+  ran. The three-branch shell guard that replaced it has since been deleted too: `--if-present`
+  moves that judgement into tested Python and the doc carries two plain invocations.
+  **bash is for commands, Python is for decisions.**
+- **The shell inside markdown is now verified** (maintainer tooling, not distributed). `bash -n`
+  covered `.sh` files while 194 lines of bash shipped inside 51 fenced blocks — the lines an agent
+  runs verbatim in a user's project, and where three of this week's findings lived.
+  `scripts/lint_markdown_shell.py` syntax-checks them and flags swallowed verdicts; it reconciles
+  coverage on every run and **refuses to report clean when its parser cannot see a block**, after
+  the first version silently skipped 11 blocks in 7 files.
+- The doctrine gate gained an explicit scope (externally verifiable claims need a CONFIRMED
+  verdict; our own architecture needs the maintainer's decision recorded on the issue), and
+  promotions now assert no `### Unreleased` heading survives — a stray one means its notes never
+  reach the published release.
 
 ### 2026-07-27 (release v1.21.0)
 - **Local release fallback** (`scripts/release_local.sh`). Shipping depended on a single
