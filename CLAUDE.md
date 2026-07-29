@@ -250,10 +250,28 @@ the pattern** — that class travels in groups.
 ## Packaging (skills)
 
 `scripts/package_core.py` is the ONE canonical `.skill` builder — **ZIP_STORED**
-(uncompressed) + pinned `create_system`, so output is byte-identical on any OS/Python/zlib.
+(uncompressed) + pinned `create_system` + **normalised line endings**, so output is
+byte-identical on any OS/Python/zlib **and regardless of what your working copy holds**.
 Never zip skills any other way. After any `skills/**` edit: `python3 scripts/package_core.py`
 then confirm `git status` shows only the intended `dist/` change. The CI drift guard fails
 a release if committed `dist/` isn't a clean build.
+
+That last check used to be insufficient, and the way it failed is worth remembering. `.gitattributes`
+is `* text=auto eol=lf` with `*.skill binary`, so git normalises sources to LF on commit but stores
+the artifact byte-for-byte. Packaging a **freshly authored file on Windows** (CRLF in the working
+copy) produced an archive carrying CRs its own committed sources did not have — 424 bytes' worth in
+#94 — and `git status` showed only the intended `dist/` change, so **the prescribed check passed
+while producing the exact drift it exists to prevent**. It ran *before* the normalisation that
+created the mismatch, and the drift only surfaced at release time on someone else's clock.
+
+The builder now normalises text members itself (binary detected git's way — a NUL byte in the first
+8000 bytes — never an extension allowlist, which fails open on the first type nobody added). So the
+guarantee no longer depends on remembering anything:
+
+```bash
+python3 scripts/package_core.py --selftest   # 11 assertions: CRLF==LF output, binaries untouched,
+                                             # STORED + pinned create_system + fixed timestamps
+```
 
 ## The feedback loop
 
