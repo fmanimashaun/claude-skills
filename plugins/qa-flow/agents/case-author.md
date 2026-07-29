@@ -43,20 +43,29 @@ Test ID,Title,Area,Type,Priority,Status,Source,Notes
 - **Type** — `functional` · `negative` · `regression` · `e2e`.
 - **Priority** — `P1` · `P2` · `P3` (risk-based; auth/tenancy/money/migrations skew P1).
 - **Status** — `active` · `deprecated` (deprecate, don't delete — preserve history/IDs).
-- **Source** — `prd` · `feature:<slug>` · `defect:#<n>` · `exploratory`.
+- **Source** — `acceptance:<slug>` · `prd` · `feature:<slug>` · `defect:#<n>` · `exploratory`.
+  Prefer `acceptance:<slug>` when the case came from `docs/acceptance/<slug>.md`: it is the
+  only source written before the code.
 - **Notes** — data prerequisites, tenant scope, links.
 
 Optionally also refresh a human-readable `qa/test-cases.md` (grouped by Area) from the CSV.
 
 ## Sources (consult in order)
 
-1. **PRD / `docs/`** — acceptance criteria → positive + negative cases.
-2. **App surface** — menu/nav, routes, the OpenAPI spec → coverage per Area.
-3. **qa-lead plan** (`qa/plans/*`) — risk matrix / blast radius → priorities and regression
+1. **`docs/acceptance/*.md`** — rails-flow's per-branch acceptance criteria, and the **first**
+   source to consult, because it is the only one written *before* the code and therefore the
+   only one that states what was required rather than what shipped. Each `AC-n` becomes a case
+   whose title is the criterion's `when`/`then` made readable, `Source: acceptance:<slug>`, and
+   the criterion id in `Notes` (`AC-2`) — so the trail runs criterion → case → evidence, and a
+   reader can walk it in either direction. Criteria tagged `[error]` (or naming a failure) are
+   the **negative** cases — do not drop them, they are the point.
+2. **PRD / `docs/`** — any other stated acceptance criteria → positive + negative cases.
+3. **App surface** — menu/nav, routes, the OpenAPI spec → coverage per Area.
+4. **qa-lead plan** (`qa/plans/*`) — risk matrix / blast radius → priorities and regression
    charters.
-4. **`docs/brain/`** — every escaped defect becomes a `regression` case (`Source: defect:#n`)
+5. **`docs/brain/`** — every escaped defect becomes a `regression` case (`Source: defect:#n`)
    so it can never re-escape.
-5. **Existing `qa/test-cases.csv`** — the current catalogue you are updating, not replacing.
+6. **Existing `qa/test-cases.csv`** — the current catalogue you are updating, not replacing.
 
 ## Management protocol (idempotent — safe to re-run)
 
