@@ -22,8 +22,11 @@ reason; this is the same move pointed at our own claims.
 
 WHAT IT CHECKS
 --------------
-  dead-settings-key         a key in a JSON settings block that no reader reads
-  unenforced-mandatory-flag a flag documented as mandatory that code leaves optional
+  dead-settings-key           a key in a JSON settings block that no reader reads
+  unenforced-mandatory-flag   a flag documented as mandatory that code leaves optional
+  doctrine-call-site-mismatch a call site in skills/ naming an API those skills do not
+                              declare — a wrong initializer keyword, an undeclared slot,
+                              or an icon passed a size it must not take
 
 Deliberately narrow. Both rules are mechanical with no judgement, so a finding is
 always real. Classes that need judgement (a docstring promising behaviour the code
@@ -233,6 +236,139 @@ def check_unenforced_mandatory_flags(python_sources: dict[Path, str]) -> tuple[l
 
 
 # ---------------------------------------------------------------------------
+# Rule: doctrine-call-site-mismatch
+# ---------------------------------------------------------------------------
+
+# Skills are doctrine other agents follow VERBATIM, so a call site naming an API
+# that does not exist is generated code that raises in a user's project. This class
+# surfaced seven times in two days (#182): five were caught by throwaway scripts
+# written in the moment and discarded, and two shipped. Ad-hoc catching is not
+# enforcement, which is the same lesson as #151 and #171.
+
+_COMPONENT_CLASS = re.compile(
+    r"class\s+(\w+)\s*<\s*ViewComponent::Base(.*?)(?=\nclass |\n```|\Z)", re.S
+)
+_SLOT_DECL = re.compile(r"renders_(?:one|many)\s+:(\w+)")
+_INIT_KW = re.compile(r"def\s+initialize\(([^)]*)\)", re.S)
+_KEYWORD = re.compile(r"(\w+):")
+_RENDER_CALL = re.compile(r"render\(\s*(?:\w+::)?(\w+)\.new\(([^)]*)\)", re.S)
+# A slot use only counts when the receiver is the block variable of a `render(...)`
+# call, because `with_*` is a common Ruby idiom elsewhere: ActiveRecord has
+# `with_lock` / `with_connection`, ruby_llm has `with_instructions` / `with_tool`.
+# Matching every `.with_x` in the corpus produced six false positives against one
+# real finding — and a linter that cries wolf gets disabled, which is the failure
+# this rule exists to prevent.
+_RENDER_BLOCK = re.compile(
+    r"render\(\s*(?:\w+::)?(\w+)\.new\([^)]*\)\s*\)?\s*do\s*\|\s*(\w+)\s*\|"
+)
+# Both call forms, because Ruby allows dropping the parens and ERB usually does —
+# the original version required `(` and so would not have caught the very violation
+# that motivated this rule (`lucide_icon "chevron-right", class: "size-4"`).
+_ICON_CALL = re.compile(r"lucide_icon\s*\(?")
+_ICON_BAD_ARG = re.compile(r"\b(?:size|class)\s*:")
+
+
+def _icon_call_carries_size(line: str) -> bool:
+    """True when a lucide_icon call is itself passed a size:/class: argument.
+
+    Only the call's OWN arguments count. The prescribed shape wraps the icon in a
+    styled span — `tag.span(helpers.lucide_icon("x"), class: "with-icon")` — so a
+    naive scan forward from `lucide_icon` reads the span's `class:` as the icon's and
+    flags the doctrine's own correct example. That happened, hence the paren matching:
+
+      parenthesised  -> read to the matching `)` and inspect only inside it
+      paren-less     -> read to the ERB tag close or end of line
+    """
+    for match in _ICON_CALL.finditer(line):
+        rest = line[match.end():]
+        if match.group(0).rstrip().endswith("("):
+            depth, args = 1, []
+            for char in rest:
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                args.append(char)
+            scope = "".join(args)
+        else:
+            stop = rest.find("%>")
+            scope = rest if stop == -1 else rest[:stop]
+        if _ICON_BAD_ARG.search(scope):
+            return True
+    return False
+
+
+def check_doctrine_call_sites() -> tuple[list[Finding], dict[str, int]]:
+    """Call sites in skills/ must name APIs those same skills declare."""
+    docs = [p for p in walk(".md") if "skills" in rel(p).split("/")]
+    if not docs:
+        return [], {"skill_docs": 0, "declared_components": 0}
+
+    bodies = {p: read(p) for p in docs}
+
+    slots_by_class: dict[str, set[str]] = {}
+    init_kw: dict[str, set[str]] = {}
+    for body in bodies.values():
+        for name, class_body in _COMPONENT_CLASS.findall(body):
+            declared = set(_SLOT_DECL.findall(class_body))
+            if declared:
+                slots_by_class[name] = declared
+            match = _INIT_KW.search(class_body)
+            if match:
+                init_kw[name] = set(_KEYWORD.findall(match.group(1)))
+
+    findings: list[Finding] = []
+    for path, body in bodies.items():
+        where = rel(path)
+        for index, line in enumerate(body.splitlines(), start=1):
+            # Icon call shape. The doctrine's stated reason: `with-icon` sizes the svg
+            # to 1em and SVG presentation attributes carry zero CSS specificity, so a
+            # per-call size is both redundant and against the non-negotiable.
+            if _icon_call_carries_size(line):
+                findings.append(Finding(
+                    "doctrine-call-site-mismatch", where, index,
+                    "lucide_icon must not receive size:/class: — icons size via the "
+                    "`with-icon` utility (component-implementations.md -> Icons)",
+                ))
+        # Slot names, scoped to the receiver of a render block. For each
+        # `render(Cls.new(...)) do |v|`, every `v.with_x` in the rest of the document
+        # must be a slot Cls declares. A class whose slots are undocumented is skipped:
+        # that is a coverage gap (#168), a different finding from a wrong call.
+        for match in _RENDER_BLOCK.finditer(body):
+            cls, var = match.group(1), match.group(2)
+            declared = slots_by_class.get(cls)
+            if declared is None:
+                continue
+            tail = body[match.end():]
+            for used in set(re.findall(rf"\b{re.escape(var)}\.with_(\w+)\b", tail)):
+                if used not in declared:
+                    line_no = body[:match.end()].count("\n") + 1
+                    findings.append(Finding(
+                        "doctrine-call-site-mismatch", where, line_no,
+                        f"`{var}.with_{used}` — {cls} declares slots "
+                        f"{sorted(declared)}",
+                    ))
+
+        # Initializer keywords, per component, only where the initializer is shown.
+        # An undeclared component is a coverage gap (#168), a different finding.
+        for cls, args in _RENDER_CALL.findall(body):
+            declared = init_kw.get(cls)
+            if declared is None:
+                continue
+            unknown = sorted(set(_KEYWORD.findall(args)) - declared)
+            if unknown:
+                findings.append(Finding(
+                    "doctrine-call-site-mismatch", where, 0,
+                    f"{cls}.new called with {unknown} but its initializer accepts "
+                    f"{sorted(declared)}",
+                ))
+
+    return findings, {"skill_docs": len(docs), "declared_components": len(init_kw)}
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -240,12 +376,14 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     python_sources = {path: read(path) for path in walk(".py")}
     dead, dead_examined = check_dead_settings_keys(python_sources)
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
+    call_sites, call_coverage = check_doctrine_call_sites()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
         "documented_flag_claims_examined": flag_examined,
+        **call_coverage,
     }
-    return dead + unenforced, coverage
+    return dead + unenforced + call_sites, coverage
 
 
 def selftest() -> int:
@@ -351,13 +489,70 @@ def selftest() -> int:
         files={"README.md": "Always pass `--no-cache` to that third-party tool.\n"},
     )
 
+    # -- doctrine-call-site-mismatch --------------------------------------
+    R = "doctrine-call-site-mismatch"
+    COMPONENT = (
+        "skills/x/references/impl.md",
+        "```ruby\nmodule Ui\n  class CardComponent < ViewComponent::Base\n"
+        "    renders_one :header\n    renders_one :body\n"
+        "    def initialize(title:, size: :md)\n      @title, @size = title, size\n"
+        "    end\n  end\nend\n```\n",
+    )
+
+    scenario("initializer keyword that does not exist", rule=R, expect_finding=True,
+             files={COMPONENT[0]: COMPONENT[1] +
+                    "```erb\n<%= render(Ui::CardComponent.new(form: f, title: \"x\")) %>\n```\n"})
+    scenario("initializer keywords all declared", rule=R, expect_finding=False,
+             files={COMPONENT[0]: COMPONENT[1] +
+                    "```erb\n<%= render(Ui::CardComponent.new(title: \"x\", size: :lg)) %>\n```\n"})
+    scenario("slot that the component does not declare", rule=R, expect_finding=True,
+             files={COMPONENT[0]: COMPONENT[1] +
+                    "```erb\n<%= render(Ui::CardComponent.new(title: \"x\")) do |c| %>\n"
+                    "  <% c.with_rail do %>nope<% end %>\n<% end %>\n```\n"})
+    scenario("declared slot", rule=R, expect_finding=False,
+             files={COMPONENT[0]: COMPONENT[1] +
+                    "```erb\n<%= render(Ui::CardComponent.new(title: \"x\")) do |c| %>\n"
+                    "  <% c.with_header do %>ok<% end %>\n<% end %>\n```\n"})
+
+    # The six false positives that the first version of this rule produced. `with_*` is
+    # a common Ruby idiom outside ViewComponent, and flagging it made the rule useless.
+    scenario("ActiveRecord and gem `with_*` idioms are not slots", rule=R, expect_finding=False,
+             files={"skills/x/references/models.md":
+                    "```ruby\nrecord.with_lock { record.save! }\n"
+                    "ActiveRecord::Base.with_connection { |c| c.execute(sql) }\n"
+                    "chat.with_instructions(\"be terse\").with_temperature(0.2)\n"
+                    "  .with_tool(Weather).with_schema(Schema)\n```\n"})
+
+    scenario("icon call carrying a size class", rule=R, expect_finding=True,
+             files={"skills/x/references/i.md":
+                    "```erb\n<%= lucide_icon \"chevron-right\", class: \"size-4\" %>\n```\n"})
+    scenario("bare icon call", rule=R, expect_finding=False,
+             files={"skills/x/references/i.md":
+                    "```erb\n<span class=\"with-icon\"><%= lucide_icon(\"x\") %></span>\n```\n"})
+    # The prescribed shape passes `class:` to the WRAPPER, not the icon. Scanning
+    # forward from `lucide_icon` flagged this — i.e. the rule flagged the doctrine's
+    # own correct example, which is why the check matches parens.
+    scenario("class: belongs to the wrapping tag, not the icon", rule=R, expect_finding=False,
+             files={"skills/x/references/i.md":
+                    "```ruby\ndef sep = tag.span(helpers.lucide_icon(\"chevron-right\"), "
+                    "class: \"with-icon\", aria: { hidden: true })\n```\n"})
+    scenario("paren-less icon call with a size class", rule=R, expect_finding=True,
+             files={"skills/x/references/i.md":
+                    "```erb\n<%= lucide_icon \"chevron-right\", class: \"size-4\" %>\n```\n"})
+
+    # A component whose initializer is not documented is a coverage gap (#168), which is
+    # a different finding — this rule must not guess at an undocumented signature.
+    scenario("undocumented component is skipped, not guessed at", rule=R, expect_finding=False,
+             files={"skills/x/references/impl.md":
+                    "```erb\n<%= render(Ui::MysteryComponent.new(whatever: 1)) %>\n```\n"})
+
     print(f"ran {checks} self-consistency assertion(s)")
     if failures:
         print(f"\n{len(failures)} FAILED:")
         for failure in failures:
             print(f"  - {failure}")
         return 1
-    print("both rules behave as specified")
+    print("every rule fires on a violation and stays silent on conforming input")
     return 0
 
 
@@ -393,9 +588,18 @@ def main(argv: list[str]) -> int:
     # Report coverage even when clean. "no findings" over input the linter never
     # read is worse than no linter -- the --audit-coverage lesson from
     # lint_markdown_shell.py, where a regex silently skipped 11 blocks.
-    print(f"scanned {coverage['python_modules']} python module(s); "
-          f"{coverage['json_settings_files_examined']} json settings file(s); "
-          f"{coverage['documented_flag_claims_examined']} documented flag claim(s)")
+    # Every counter is printed, not a hand-picked subset: a clean result over input a
+    # rule never read reads as a pass, so the report must show what each rule saw.
+    labels = {
+        "python_modules": "python module(s)",
+        "json_settings_files_examined": "json settings file(s)",
+        "documented_flag_claims_examined": "documented flag claim(s)",
+        "skill_docs": "skill doc(s)",
+        "declared_components": "declared component(s)",
+    }
+    print("scanned " + "; ".join(
+        f"{value} {labels.get(key, key)}" for key, value in coverage.items()
+    ))
 
     if not findings:
         print("no findings.")
