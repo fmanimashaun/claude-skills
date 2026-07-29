@@ -7,6 +7,39 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased — an unbounded `gh issue list` made dedupe read a truncated tracker (#211)
+
+- **Found because I reported a wrong number to the maintainer.** I said "30 open issues"; there were
+  **42**. `gh issue list` defaults to `--limit 30`, and I had dropped the explicit limit and reported
+  the page as the total — `unverified-negative` from our own `code-review` skill, *"reporting a count
+  from a list you did not read to the end"*, committed while holding that rule in context. The
+  maintainer caught it.
+- **Grepping for the pattern found it shipped in two places**, per the rule that this class travels
+  in groups:
+  - `.claude/agents/issue-triager.md:44` — **duplicate detection**. It could conclude "no duplicate
+    exists" having read 30 of 42 issues, then label and queue the duplicate it exists to prevent.
+    This is the one with teeth.
+  - `.claude/commands/maintainer-audit.md:23` — per-component clustering, where *"clustered reports
+    point at systemic gaps"* was read off a truncated list. Latent today (largest component is 17)
+    but it grows into a real defect silently.
+  - Correctly bounded already, which is why the SessionStart count was right all along while mine was
+    not: `maintainer-status.sh` (`--limit 200`), `maintainer-triage.md` (100),
+    `maintainer-onboard.md` (20), and both rails-flow call sites.
+- **New `unbounded-issue-query` rule in `lint_self_consistency.py`**, because both instances were
+  **inline in prose** rather than in fenced blocks — so `lint_markdown_shell.py` structurally cannot
+  see them, and a rule left in prose gets violated again (I am the existence proof).
+  - **Known-answer calibrated:** run against `dev`'s tree it reproduces *both* shipped defects, and
+    is clean on the fixed tree having examined 7 real invocations.
+  - **It grades invocations, not mentions.** The first version fired on `CHANGELOG.md:674` — *"the
+    command only ever saw `gh issue list` before"* — which is **history**, and a rule demanding that
+    past records be rewritten gets overridden and then catches nothing. Requiring at least one flag
+    fixed it without a per-file exemption to keep honest; both real defects carried one (`--search`,
+    `--label`). Two near-miss fixtures pin both halves: a bare prose mention stays silent, and the
+    same file still fires when it documents a real unbounded invocation, so the narrowing is about
+    invocation shape rather than trusting a filename.
+  - `--paginate` counts as bounded: it fetches every page, so it bounds nothing but truncates
+    nothing — a correct answer to the same question.
+
 ### 2026-07-30 — related issues are worked on one branch (#206)
 
 - **The written rule contradicted the productive practice.** `CLAUDE.md:31` said take "**ONE** issue
