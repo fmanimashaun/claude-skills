@@ -871,6 +871,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## design-flow (UI/design plugin)
 
+### Unreleased — screen-level requests route through page anatomies (#94)
+_Version assigned at promotion._
+- `/design-flow:component` step 1 previously said a screen should be built by "composing existing
+  components + layout primitives" and gave nowhere to compose *from* — no page-level doctrine
+  existed. It now routes any request above component scale (a page, a dashboard, a settings area)
+  through `page-anatomies.md` first: pick a shell, pick an anatomy, then fill each region.
+- Also points at that file's primitive-instead-of-breakpoint substitution table and the
+  chrome-vs-content type assignments, to be applied **before** writing markup rather than caught
+  later by `/design-flow:audit`.
+
 ### 1.4.0 — 2026-07-29
 - **`/design-flow:setup` takes a brand pack**, not a two-value brand enum: `<pack>` or
   `<pack>:<variant>` (e.g. `fidara`, `fidara:fmworkflows`, `acme`). Generating the theme layer is
@@ -984,6 +994,36 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased — page anatomies: the screen level, above components (#94)
+_Version assigned at promotion._
+- **The gap.** fidara-design had a strong component catalog and almost no page-level anatomy — one
+  base layout and the `cover` recipe. An agent asked for "the invoices screen" had nothing to
+  follow above component scale, so it invented page structure, and invented structure is where
+  breakpoint chains, nested cards and inconsistent heading ramps come from.
+- **New `references/page-anatomies.md`** — **3 shell archetypes** (sidebar + mobile drawer via
+  `Layout::SidebarComponent`; stacked top-bar; multi-column rail/main/aside) and **3 page
+  anatomies** (home-dashboard, detail, settings), each stating mobile behaviour, brand-mark
+  placement, safe-area handling and which catalog components fill each region. Framing: **a screen
+  is composed, not designed** — pick a shell, pick an anatomy, fill from the catalog.
+- **Scroll containment is called out explicitly** because it is the failure that makes a shell feel
+  broken: an independent scroll region needs `min-h-0` alongside `overflow-y-auto`, or the flex/grid
+  child cannot shrink and the whole page scrolls, taking the rail with it.
+- **A primitive-instead-of-breakpoint substitution table** — `grid grid-cols-1 md:… lg:…` →
+  `grid-auto` + `--min`; `flex-col md:flex-row` → `Layout::Switcher`; `hidden md:block` for a rail →
+  `Layout::SidebarComponent`; `space-y-*` → `stack`; `max-w-7xl mx-auto px-*` → `shell`. Intrinsic
+  reflow responds to the **container**, so it stays correct inside a drawer or a split view where a
+  viewport breakpoint is simply wrong.
+- **Composed only from primitives that already exist**, per the epic's rule that introducing new
+  framework API into a skill is an external claim. Every `@utility`, component name, role token and
+  type step in the file was verified against the other references mechanically rather than by
+  reading — which caught three of my own errors before commit: `--grid-min` (the real custom
+  property is `--min`), `with_rail` (the slots are `renders_one :sidebar` / `:main`), and a
+  `FieldComponent` call matching neither shipped signature.
+- The settings anatomy deliberately **defers to `forms.md`** instead of asserting a field API,
+  because two references disagree about `FieldComponent` — filed as #168 rather than resolved here.
+- `SKILL.md` links it as section 3 (between Layout and Components); `/design-flow:component` now
+  routes any screen-level request through it before writing markup.
 
 ### 1.12.0 — 2026-07-29
 - **New `skills/code-review`**, bundled into rails-stack and packaged as `dist/code-review.skill`.

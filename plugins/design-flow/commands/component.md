@@ -11,8 +11,15 @@ Build (or fix) `$ARGUMENTS` to the **fidara-design** doctrine. Delegate to the
 ## Order of operations (follow every time)
 
 1. **Locate it in the catalog** (`skills/fidara-design/references/components.md` /
-   `forms.md`). If it's a catalog component, use that recipe + variant/size/state axes; if it's
-   a screen, build it by **composing** existing components + layout primitives. For the
+   `forms.md`). If it's a catalog component, use that recipe + variant/size/state axes.
+   **If it's a screen — a page, a dashboard, a settings area, anything above component
+   scale — start from `page-anatomies.md`, not from a blank template.** Pick a shell
+   (sidebar / stacked / multi-column), pick an anatomy (home-dashboard / detail / settings),
+   then fill each region by **composing** existing components + layout primitives. A screen
+   is composed, not designed; inventing page structure is where breakpoint chains, nested
+   cards and inconsistent heading ramps come from. That file also carries the
+   primitive-instead-of-breakpoint substitution table and the chrome-vs-content type
+   assignments, so apply both before writing markup. For the
    concrete code, reference `reference-implementation.md` (Button/Card + Stimulus mixins) and
    `component-implementations.md` (the full worked catalog) — mirror those exact shapes.
    **If it's a CRUD screen** (list + create/edit/delete), follow `crud-modal-pattern.md`:
