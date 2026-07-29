@@ -1039,6 +1039,63 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+*(Version assigned at promotion. Two issues, worked on one branch per CLAUDE.md's grouping rule —
+same component, same boot/validation path — with a bullet each so the promotion can close them
+separately.)*
+
+- **Console errors and failed requests are captured on every page, and the severity is enforced
+  rather than trusted** (#109). qa-flow never looked at the browser console or the network log, so a
+  route could return 200, render, satisfy its assertion and pass its case while throwing uncaught
+  exceptions or 404-ing its own script bundle. A real audit hit both at once — `Module not found:
+  svgmap/dist/svgMap.min.css` and a repeating `TypeError: localStorage.getItem is not a function`,
+  on a route serving HTTP 200. Page validation (#106) proved you captured the *right* page; nothing
+  asked whether that page then **worked**.
+  - `functional-tester` and `e2e-tester` now attach `pageerror`, `console`, `requestfailed` and
+    `>= 400` response listeners on every visit, writing one row per route to
+    `qa/manual-tests/<date>-<slug>-runtime.csv`.
+  - **A third `validate_evidence.py` profile (`runtime`) recomputes the severity from the row's own
+    counters**, so the mapping cannot be talked down: an uncaught exception or a failed
+    document/script/stylesheet is **S1** however the row grades itself; `console.error` and failed
+    subresources are **S2**; `console.warning` never gates. That required splitting the counters by
+    *consequence* rather than by event name — a single "failed requests" number cannot tell a
+    missing analytics pixel from a missing application bundle.
+  - **Suppression stays visible.** `runtime.ignore` in `qa/qa.config.yml` silences known
+    third-party noise, because an always-red check gets switched off — but suppressed findings are
+    still counted in a required `Ignored` column, even at 0. A suppression that leaves no trace is
+    how a red check turns green with nobody deciding to.
+  - The counters reject `none` / `n/a` / `-`: a capture recording no counts is indistinguishable
+    from one where the listeners never attached. S1 requires an `Evidence` path a human can
+    re-read, and any graded row requires `Notes` carrying the message and resource URL.
+  - The selftest grew 72 → 94 checks. The shared page-identity rules are exercised against the new
+    profile too, so it cannot silently reintroduce #106's hole on the newest artifact, and the
+    existing "every profile must be documented by an agent" check **failed until the doctrine was
+    written** — the gate working on my own change.
+- **App boot is hardened: reuse before launch, per-route timeouts, and classified failures**
+  (#110). Booting the two audited bundles needed several manual interventions `/qa-flow:smoke`
+  would have failed on.
+  - **Reuse before launch.** The port is probed first; if the app already answers it is reused and
+    reported, and **never** torn down (it is not ours to kill, and it may be running different code
+    than the working tree). Two dev servers against one project directory contend over the same
+    build cache and can corrupt it.
+  - **`route_timeout` is now separate from `boot_timeout`**, documented as distinct in the `app:`
+    schema. A Next.js + Turbopack app reported "Ready in 10s" then spent **45–60s compiling each
+    route on first visit**; with one timeout covering both, the crawl clears boot and dies on route
+    2, which reads as a broken app rather than a slow compile. A route timeout is now reported as a
+    route failure, distinct from a boot failure.
+  - **Boot failures are classified** — port in use, missing/incompatible dependency, runtime/engine
+    mismatch, framework security policy, or application error — each with the log tail and a next
+    action. A wall of stack trace is not a diagnosis, and those categories have different owners.
+  - **A known-gotcha table ships with it**, seeded from the audit: Hugo ≥ 0.158 refusing raw
+    `.html` without `HUGO_SECURITY_ALLOWCONTENT`, Node 25 injecting a global `localStorage` that
+    breaks SSR feature-detection, `exports`-map subpaths that are unresolvable though the file is
+    on disk. All three read as application breakage and are not.
+  - **Prebuilt assets are detected, not silently skipped.** Where the documented start command
+    chains a bundler but built output is already present and newer than its sources, the lighter
+    server-only path is used *and the assumption stated* — an audited project already had
+    `static/app.css`, so `hugo server` alone sufficed and a naive runner would have died on webpack.
+
 ### 1.7.0 — 2026-07-29
 
 - **`case-author` consumes rails-flow's acceptance criteria** (#125) — `docs/acceptance/*.md` is now

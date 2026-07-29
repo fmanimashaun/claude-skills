@@ -38,6 +38,21 @@ run `/qa-flow:setup-qa`, or ask which stack to assume — don't default silently
 - **Corpus growth**: after a feature certifies, its key journeys (the PR's "Expected
   results") become NEW `@regression` charters. You guard proven features; you don't author
   to prove new ones (that was the dev flow).
+- **Capture the browser's own complaints, not just your assertions.** A spec can go green on
+  a page that threw an uncaught exception, 404-ed its script bundle, or violated CSP —
+  assertions only see what they were told to look at. Attach console / `pageerror` /
+  `requestfailed` / `>= 400` listeners for every page the suite visits and record one row per
+  route to `qa/manual-tests/<date>-<slug>-runtime.csv`. **The contract — the exact sixteen
+  columns, the S1/S2 mapping, and the `runtime.ignore` suppression rule — lives in
+  `functional-tester.md` under *Runtime capture*; follow it there rather than restating it,
+  because one copy of a machine-checked header is one too many to let drift.** Validate it the
+  same way:
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_evidence.py" \
+    "qa/manual-tests/<date>-<slug>-runtime.csv"
+  ```
+  An **S1** route is a failing build-verification signal, classified as an **app defect** —
+  not a flake, and never retried until quiet.
 
 ## Framework specifics (use the configured one)
 

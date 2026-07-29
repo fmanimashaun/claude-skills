@@ -62,7 +62,10 @@ app:                                 # how /qa-flow:smoke boots the app (stack-a
   port:         3000
   health:       /up                  # 200-when-ready route (Rails 8 default health endpoint)
   routes:       [/, /up]             # key routes the smoke gate hits (5xx = fail)
-  boot_timeout: 60                   # seconds to wait for health before failing
+  boot_timeout: 60                   # seconds for the SERVER to answer /health at all
+  route_timeout: 90                  # seconds for the FIRST hit of each route (see below)
+runtime:                             # browser console/network capture (#109)
+  ignore: []                         # substrings matched on message or resource URL
 web_e2e:          playwright        # playwright | cypress-cucumber | selenium-pytest-bdd | none
 mobile:           none              # appium | none
 functional_agent: playwright-mcp    # playwright-mcp | autonoma-selfhosted | none
@@ -78,6 +81,20 @@ Everything defaults **free**. A team overrides any line — e.g. `web_e2e: cypre
 `mobile: appium`, or `case_management: testmo`. Re-running setup-qa reconciles scaffolding to
 the current config. **Paid/optional backends are opt-in and need credentials, never
 committed.**
+
+Two keys are easy to conflate, so they are deliberately separate (#110):
+
+- **`boot_timeout`** — how long the *server* may take to answer the health path at all.
+- **`route_timeout`** — how long the *first* hit of any single route may take. Dev servers
+  compile per route on demand: a Next.js + Turbopack app reported "Ready in 10s" and then
+  spent 45–60s compiling *each* route on first visit. With one timeout covering both, the
+  crawl passes boot and dies on route 2, which reads as a broken app rather than a slow
+  compile. Generous by default because being wrong here fails a healthy build.
+
+**`runtime.ignore`** suppresses known third-party console/network noise (browser extensions,
+framework devtools banners) so the check does not go red on every run and get switched off.
+Suppressed findings are still **counted** in the runtime CSV's `Ignored` column — a suppression
+that leaves no trace is how a red check turns green with nobody deciding to.
 
 ## 3. Provision the chosen tools
 
