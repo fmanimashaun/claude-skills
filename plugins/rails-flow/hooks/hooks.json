@@ -20,6 +20,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lint-ruby.sh",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/self-consistency.sh",
+            "timeout": 20
           }
         ]
       }

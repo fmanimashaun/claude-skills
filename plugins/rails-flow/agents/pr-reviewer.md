@@ -48,7 +48,17 @@ as one intention, not as two artefacts that can disagree:
 > **Does this code do what its own documentation, config, comments and project rules
 > claim it does?**
 
-**Apply the `code-review` skill** (bundled in rails-stack). It names the recurring classes —
+**Run the mechanical pass first — it is free and never wrong:**
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/self_consistency.py" --all
+```
+
+It covers the four classes needing no judgement (`swallowed-exception`,
+`swallowed-verdict`, `assertion-free-spec`, `dead-env-var`) and prints what it examined, so
+a clean result is not vacuous. Cite its output as evidence; **findings from it are BLOCKING**.
+
+Then reason about the rest. **Apply the `code-review` skill** (bundled in rails-stack). It names the recurring classes —
 `claims-vs-enforcement`, `dead-declaration`, `carve-out-without-negative-test`,
 `coverage-gap`, `doctrine-contradiction`, `unverified-negative`, `gate-that-cannot-fail` —
 and how to detect each. The project's own rules (CLAUDE.md **Project Overrides**, README,

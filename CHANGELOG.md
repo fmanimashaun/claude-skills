@@ -246,8 +246,7 @@ _Version assigned at promotion._
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased — reviewers gain a claims-vs-enforcement dimension, and a shipped doctrine
-contradiction is fixed (#162)
+### Unreleased — claims-vs-enforcement becomes enforceable in the user's repo (#162, #164)
 _Version assigned at promotion._
 - **A doctrine contradiction was live in users' hands, in three files.** `pr-reviewer.md` told the
   merge gate to check jobs for "id args", `rails-developer.md` said "pass IDs, never AR objects",
@@ -275,6 +274,35 @@ _Version assigned at promotion._
   agent and skill. Both keep two habits in the verdict itself: when a claim and the code disagree
   the reviewer decides *which* is wrong (the fix is not automatically the code), and on finding one
   contradiction, grep for the pattern — that class travels in groups.
+
+- **The mechanical half now ships too (#164).** #162 gave users the *doctrine* and kept the
+  deterministic check maintainer-side — backwards, since this repo's whole thesis is that a rule
+  left in prose gets violated again. New `scripts/self_consistency.py` (stdlib; a Rails repo must
+  not need a pip install to review itself) plus a `PostToolUse` hook on `Edit|Write|MultiEdit`
+  beside `lint-ruby.sh`.
+- **Four rules, each mechanising a named `code-review` class:** `swallowed-exception`
+  (`rescue nil`, empty rescue), `swallowed-verdict` (`|| true` on a verification command — the
+  `--check || echo` shape that made a release gate unable to block), `assertion-free-spec` (an
+  example that runs code but asserts nothing, so it passes whatever the code does), and
+  `dead-env-var` (a key in `.env.example` nothing reads).
+- **Two candidate rules were cut, not softened.** `unenforced-documented-step` and
+  `carve-out-without-negative-test` need judgement — matching a `skip_before_action` is easy,
+  proving no spec covers the near-miss is not. A rule that guesses produces false positives, gets
+  disabled, and then catches nothing; both stay with the reviewer and the skill, which is the right
+  layer. The standard applied was: zero false positives on a conforming repo, or cut it.
+- **The hook exits 2 on findings, deliberately.** A check that can only advise is itself a
+  `gate-that-cannot-fail` — one of the classes it enforces — so shipping an advisory-only version
+  would have violated the doctrine it exists to uphold. It fails *open* on a missing `python3`,
+  because a guard decides whether to RUN a check and must never soften the verdict.
+- **Calibrated, and non-vacuously.** 22 selftest assertions prove every rule fires on a violation
+  **and stays silent on conforming code** — including the cases that would otherwise be false
+  positives: `#` inside a Ruby string, a commented-out `rescue nil`, `|| true` on a *cleanup*
+  command, a one-liner `is_expected`, an example delegating to shared examples, a `pending`
+  placeholder, and an env key referenced from a non-Ruby file (Kamal `deploy.yml`). Run against
+  this repo it examines 25 files and 4 env keys and reports nothing — coverage prints on every run,
+  because "no findings" over input never read reads as a pass.
+- `pr-reviewer` now runs the repo-wide pass first and treats its output as BLOCKING evidence, then
+  reasons about the classes no machine catches.
 
 ### 1.8.0 — 2026-07-29
 - **`architecture_graph.py --if-present`** — with `--check`, a missing `graph.json` exits 0 instead
