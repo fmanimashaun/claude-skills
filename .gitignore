@@ -18,7 +18,14 @@ __pycache__/
 
 # Paid third-party book screenshots (Every Layout) — reference only, never redistribute.
 # Licensed design references — study locally, NEVER commit (see EPIC #89).
+# They live in a SEPARATE PRIVATE repo for cross-machine cloning, never in this history:
+# committing ~656 MB of licensed blobs here could only be undone with `git filter-repo` +
+# a force-push, which rewrites every commit SHA and detaches the release tags.
 everylayout/
 tailwind-ui/
 flowbite*/
 flowbite*.zip
+
+# Dependency trees are never committed. (Was missing: the flowbite bundles carry two
+# node_modules trees, which `flowbite*/` happened to cover — this makes it explicit.)
+node_modules/
