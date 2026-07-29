@@ -7,6 +7,52 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased — CLAUDE.md's list of what we ship omitted a whole plugin (#203)
+
+- **Found by following this file's own rule, and it was worse than the report.** #203 was filed for
+  a stale count — `CLAUDE.md:136` said the release publishes "the two `.skill` assets" when there
+  are **four**. I noticed it only because I had copied that figure into user-facing v1.30.0 release
+  notes and then hashed the actual assets. CLAUDE.md says *when you find one instance of a
+  contradiction, grep for the pattern — that class travels in groups*. It did:
+  - `CLAUDE.md:6` — "**four** app-builder plugins", listing `rails-stack`, `rails-flow`, `qa-flow`,
+    `pipeline`. There are **five**; `design-flow` was missing, and appeared **nowhere in CLAUDE.md
+    at all** — zero mentions. The section is the definition of what this repo distributes, so
+    anything orienting from it could not learn the plugin existed.
+  - `CLAUDE.md:6` also described `rails-stack` as "the rails-8 + hotwire skills". It bundles
+    **four**: rails-8, hotwire, fidara-design, code-review.
+  - `CLAUDE.md:16` — "you want the four plugins".
+  - `README.md:600` — "The **four** plugins above", while README's own heading twelve screens
+    earlier says *five plugins, one marketplace*. The repo contradicted itself in one file.
+- **Fixed with wording that cannot go stale where possible.** The release now publishes "**every**
+  `dist/*.skill` asset (a glob, never a hand-typed list — that is how a release silently drops a
+  newly added skill)", which is what `release.yml` and `release_local.sh` actually do. Subset
+  references lost their counts rather than gaining new ones to maintain.
+- **New `undocumented-plugin` rule in `lint_self_consistency.py`**: every plugin declared in
+  `.claude-plugin/marketplace.json` must be named in both `CLAUDE.md` and `README.md`. A plugin
+  absent from those is invisible to one of the two audiences — the maintainer (or agent) orienting
+  from CLAUDE.md, or the user reading README.
+  - **Known-answer calibrated**, per the #182 precedent: run against `dev`'s tree it reproduces the
+    exact defect that shipped — *"plugin 'design-flow' is declared in marketplace.json but never
+    named in CLAUDE.md"* — and is clean on the fixed tree having examined 5 declared plugins, so
+    the green is not vacuous.
+  - **Counts are deliberately NOT checked.** Prose legitimately refers to subsets ("the plugins
+    above help you build apps"), so matching "four plugins" against the real total would fire on
+    correct writing. By this repo's own thesis a linter that cries wolf gets switched off and then
+    catches nothing, so the rule tests name presence, which needs no judgement. A near-miss fixture
+    pins this: a manifest of two plugins with prose saying "the one plugin above" must stay silent.
+  - A tree with no `marketplace.json` yields **no verdict** rather than findings, so the rule cannot
+    fire on input it is unable to judge.
+  - **Its limit is stated rather than overclaimed, because mutation-testing found it.** The rule
+    proves a name appears *somewhere* in the file, not that it appears in the list enumerating what
+    ships — deleting `design-flow` from CLAUDE.md's list left the linter green, since a neighbouring
+    sentence still named it. Locating "the right section" needs judgement about where sections begin
+    and end, which is how a mechanical rule becomes a noisy one, so the narrow guarantee is the
+    honest one: it catches a plugin documented **nowhere**, which is precisely what shipped
+    (design-flow had zero mentions). Verified by removing every mention and watching it block. My
+    first draft of the CLAUDE.md note claimed the linter "asserts every declared plugin is named
+    **here**" — the same claims-vs-enforcement defect, in the line added to fix one; corrected to
+    say the list itself is still the maintainer's responsibility.
+
 ### 2026-07-29 — the corpora ignore rules now match the layout we prescribe (#197)
 
 - **The corpora ignore rules could not match the layout our own setup instructions prescribed

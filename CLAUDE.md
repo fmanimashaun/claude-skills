@@ -3,17 +3,21 @@
 This repo **is** a Claude plugin marketplace. It ships two kinds of things to other
 people, and it carries its own maintenance tooling for you.
 
-- **Distributed (what users install):** four app-builder plugins listed in
-  `.claude-plugin/marketplace.json` — `rails-stack` (the rails-8 + hotwire skills),
-  `rails-flow`, `qa-flow`, `pipeline` — plus the `dist/*.skill` packages for claude.ai
-  upload.
+- **Distributed (what users install):** the app-builder plugins listed in
+  `.claude-plugin/marketplace.json` — `rails-stack` (which bundles the rails-8, hotwire,
+  fidara-design and code-review skills), `rails-flow`, `qa-flow`, `pipeline`, `design-flow`
+  — plus the `dist/*.skill` packages for claude.ai upload. Keep this list in step with the
+  manifest: it omitted `design-flow` for as long as that plugin existed (#203).
+  `lint_self_consistency.py`'s `undocumented-plugin` rule catches a plugin named **nowhere**
+  in this file — which is what happened — but it cannot tell that a mention sits in *this
+  list* rather than in prose elsewhere, so the list itself is still on you.
 - **NOT distributed (maintainer tooling, this file's subject):** the flow under
   **`.claude/`** — commands, agents, and a status hook that live only in this repo. They
   are **not** part of the marketplace, so `/plugin marketplace add fmanimashaun/claude-skills`
   never installs them. Anyone who *clones this repo* gets them automatically; that is the
   point. (This replaced an earlier idea of a separate maintainer marketplace repo.)
 
-If you are here to **build a Rails app**, you want the four plugins, not this file.
+If you are here to **build a Rails app**, you want those plugins, not this file.
 
 ## The maintenance flow (the `.claude/` commands)
 
@@ -133,7 +137,9 @@ counter look tidy is what produced 37 no-op merge commits on `dev` earlier; don'
 1. reads `metadata.version` from `.claude-plugin/marketplace.json` → tag `vX.Y.Z`;
 2. if that tag doesn't exist, builds `dist/*.skill` with `scripts/package_core.py`,
    verifies committed `dist/` matches (drift guard), extracts notes from the CHANGELOG
-   `(release vX.Y.Z)` block, and publishes the release with the two `.skill` assets;
+   `(release vX.Y.Z)` block, and publishes the release with **every** `dist/*.skill`
+   asset (a glob, never a hand-typed list — that is how a release silently drops a newly
+   added skill);
 3. if the tag already exists (version wasn't bumped), it is a **no-op**.
 
 So to ship: land the work on `dev` unversioned, then open the promotion PR that bumps

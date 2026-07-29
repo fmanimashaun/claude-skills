@@ -597,7 +597,7 @@ direction: ensure the toolchain is present where enforcement matters).
 
 ## Maintaining the marketplace
 
-The four plugins above help you build *apps*. The tooling that maintains *this
+The plugins above help you build *apps*. The tooling that maintains *this
 marketplace* is **not a plugin and not distributed** — it lives in this repo's
 [`.claude/`](.claude/) folder, so it's active automatically for anyone who clones the repo
 and completely invisible to app builders who add the marketplace. Nothing to install.
