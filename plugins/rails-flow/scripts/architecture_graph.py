@@ -1829,6 +1829,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--check", action="store_true",
                         help="drift check: regenerate and compare the content digest; "
                              "exit 1 if the committed graph is stale")
+    parser.add_argument("--if-present", action="store_true",
+                        help="with --check: exit 0 when docs/architecture/graph.json does not "
+                             "exist (the graph is opt-in per project). Without this flag a "
+                             "missing graph is DRIFT, which is correct for a project that opted "
+                             "in. Exists so a caller never has to branch on the file's existence "
+                             "in shell — that guard belonged here, and putting it in a doc's "
+                             "prose is how #151 shipped a release gate that could not block.")
     parser.add_argument("--delta", metavar="REF", nargs="?", const="origin/main",
                         help="print the graph delta vs REF (default origin/main) and exit")
     parser.add_argument("--format", choices=("md", "json"), default="md",
@@ -1880,6 +1887,10 @@ def main(argv: list[str]) -> int:
     if args.check:
         committed = load_graph_file(json_path)
         if committed is None:
+            if args.if_present:
+                say("architecture graph: not generated in this project — skipping the check "
+                    "(the graph is opt-in). Run /rails-flow:graph to adopt it.")
+                return 0
             print("architecture graph DRIFT: docs/architecture/graph.json is missing — "
                   "the graph has never been generated for this tree.", file=sys.stderr)
             print("Fix: /rails-flow:graph (or python3 architecture_graph.py) and commit.",

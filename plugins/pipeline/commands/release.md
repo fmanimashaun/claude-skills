@@ -76,37 +76,26 @@ The graph is **opt-in**, and `--check` exits 1 on a missing `graph.json` (that i
 come first — an unguarded `--check` would report every graph-less project as a failed
 release.
 
-But the guard decides **whether to run** the check; it must never soften the verdict. Three
-distinct outcomes, three branches:
+**That decision belongs in the script, not here.** `--if-present` makes a missing graph a
+clean exit-0 skip, so this doc carries no branching at all:
 
 ```bash
-GRAPH=.claude/scripts/architecture_graph.py
-if [ ! -f docs/architecture/graph.json ]; then
-  echo "no architecture graph in this project — skipping (the graph is opt-in)"
-elif [ ! -f "$GRAPH" ]; then
-  echo "ERROR: docs/architecture/graph.json exists but $GRAPH is not vendored."
-  echo "Copy it from the rails-flow plugin; this project opted into the graph, so the"
-  echo "release cannot verify it and must not proceed unverified."
-  exit 1
-else
-  python3 "$GRAPH" --check          # exits 1 on drift — never swallow this
-  python3 "$GRAPH" --delta origin/main
-fi
+python3 .claude/scripts/architecture_graph.py --check --if-present
+python3 .claude/scripts/architecture_graph.py --delta origin/main
 ```
 
-Two rules this encodes, both learned the hard way:
+Run them plainly. **Do not wrap either in `|| echo` or `|| true`** — the exit code *is* the
+verdict, and consuming it produces a release that looks verified and is not. If the script is
+not vendored at that path the command fails loudly on its own, which is the correct outcome for
+a project that opted into the graph and cannot check it.
 
-- **Never `--check || echo`.** That consumes the non-zero exit (including under `set -e`), so
-  a stale graph prints a warning and the release ships anyway. Worse than having no check,
-  because the message makes it look like the gate ran.
-- **Never conflate "no graph" with "no script".** A project that opted into the graph and then
-  cannot verify it must **stop**, not skip. Silent skipping is how a guarantee erodes — and
-  since the graph is opt-in per project while the script is vendored manually, that combination
-  is likely, not exotic.
+Why it is shaped this way, since the temptation to "make it robust" with a shell guard is what
+caused the defect: v1.21.0 shipped `--check || echo "graph STALE…"`. It printed a warning and
+released anyway (#151). The guard existed because `--check` treated *absent* and *stale* the
+same, so the doc compensated in prose — and prose is the one layer nothing tests. `--if-present`
+moves that judgement into tested Python and leaves the doc with a command instead of a program.
 
-(If the script lives elsewhere, point `GRAPH` at
-`${CLAUDE_PLUGIN_ROOT}/../rails-flow/scripts/architecture_graph.py` instead — but keep the
-three-branch shape.)
+(If the script lives elsewhere, adjust the path — but keep it a plain call.)
 
 Paste the `--delta` output into the release notes verbatim. **New nodes, removed nodes and
 flows that changed shape** are the structural story of the release — "flow *Create an

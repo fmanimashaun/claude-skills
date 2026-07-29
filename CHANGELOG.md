@@ -28,6 +28,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   assumption `brand_pack_lint` had; second time it bit.)
 - Wired into `CLAUDE.md`, `/maintainer-work` Phase 3, and `plugin-doctor`, so it runs without
   being remembered.
+- **Coverage is reconciled on every run, not on request.** `--audit-coverage` was a separate
+  command, so a future tweak to the fence regex could still quietly reduce coverage while the
+  default run reported clean — the same defect one level up. Every run now cross-checks the strict
+  parser against an independent looser scan and **refuses to report clean when they disagree**.
+  Proven with a fence the strict regex cannot parse (inside a blockquote) that contains a real
+  swallowed verdict: the tool exits 1 saying a clean result would be meaningless, where before it
+  printed "no findings".
 - Four bugs were found *in the linter itself* while proving it, all silent-failure shaped: `bash -n
   <tempfile>` broke under Git Bash (mangled Windows path → every block a false syntax error);
   `text=True` encoded stdin as cp1252 and crashed on a `✓`; a nonexistent path reported "0 files,
@@ -384,6 +391,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased — release drift check actually blocks (#151)
 _Version assigned at the `dev → main` promotion._
+- **Moved the decision out of the markdown entirely.** The fix above still shipped a 12-line,
+  three-branch shell guard in a doc — and a doc is the one layer nothing tests. The branching only
+  existed because `--check` conflated *absent* (a legitimate opt-out) with *stale* (a defect), so
+  the prose compensated for a missing flag. `architecture_graph.py` now takes **`--if-present`**,
+  which owns that judgement in tested Python, and the doc carries two plain invocations with no
+  branching at all. If the script is not vendored the command fails on its own — which is the
+  correct outcome and deletes the misleading-skip branch rather than fixing it.
+  Verified: absent + `--if-present` → 0 · absent without it → 1 · stale → 1 · fresh → 0 · script
+  missing → non-zero. Old snippet vs new on the same drifted repo: **0 vs 1**.
+  The general rule, now stated in the doc: **bash is for commands, Python is for decisions.** Every
+  finding this week came from a snippet that encoded a decision; none came from a plain
+  `docker build` / `git push`.
 - **The architecture-graph drift check could not block a release** (#151, shipped in v1.21.0). The
   snippet in `/pipeline:release` ran `python3 "$GRAPH" --check || echo "…"`, and `|| echo` consumes
   the non-zero exit — including under `set -e`. A stale graph printed a warning and the release

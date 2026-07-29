@@ -196,13 +196,36 @@ def main(argv: list[str]) -> int:
         print("coverage matches.")
         return 0
 
+    # Reconcile coverage on EVERY run, not only under --audit-coverage. An extractor that
+    # under-matches reports "no findings" for input it never read, which is indistinguishable
+    # from a clean result — the exact failure this tool shipped with (11 blocks skipped by a
+    # column-1 anchor). Checking it only on request means a future regex tweak can regress
+    # coverage silently, so the reconciliation is not optional.
+    loose_total = 0
+    coverage_gaps: list[tuple[str, int, int]] = []
+    loose_scan = re.compile(r"```[ \t]*(?:bash|sh|shell|console|shell-session)\b")
+
     findings: list[Finding] = []
     blocks = lines = 0
     for path in files:
+        src = open(path, encoding="utf-8", errors="replace").read()
+        parsed = len(list(FENCE.finditer(src)))
+        present = len(loose_scan.findall(src))
+        loose_total += present
+        if parsed != present:
+            coverage_gaps.append((path, parsed, present))
         for _, code in iter_blocks(path):
             blocks += 1
             lines += len(code.strip().splitlines())
         findings.extend(lint_file(path))
+
+    if coverage_gaps:
+        print(f"COVERAGE GAP — parsed {blocks} block(s) but {loose_total} appear present.\n"
+              "Blocks below were NOT checked, so a clean result below would be meaningless:")
+        for path, parsed, present in coverage_gaps:
+            print(f"  {path}: parsed {parsed}, present {present}")
+        print("\nFix the fence regex before trusting any report from this tool.")
+        return 1
 
     if not args.quiet:
         print(f"checked {blocks} shell block(s) / {lines} line(s) across {len(files)} markdown file(s)")
