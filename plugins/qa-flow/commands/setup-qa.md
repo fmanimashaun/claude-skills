@@ -66,6 +66,8 @@ app:                                 # how /qa-flow:smoke boots the app (stack-a
   route_timeout: 90                  # seconds for the FIRST hit of each route (see below)
 runtime:                             # browser console/network capture (#109)
   ignore: []                         # substrings matched on message or resource URL
+links:                               # link/anchor audit during the crawl (#113)
+  check_external: false              # external targets are slow and flaky — opt in
 web_e2e:          playwright        # playwright | cypress-cucumber | selenium-pytest-bdd | none
 mobile:           none              # appium | none
 functional_agent: playwright-mcp    # playwright-mcp | autonoma-selfhosted | none
@@ -95,6 +97,11 @@ Two keys are easy to conflate, so they are deliberately separate (#110):
 framework devtools banners) so the check does not go red on every run and get switched off.
 Suppressed findings are still **counted** in the runtime CSV's `Ignored` column — a suppression
 that leaves no trace is how a red check turns green with nobody deciding to.
+
+**`links.check_external`** is `false` deliberately. Internal links and `#fragment` targets are
+always checked — they are fast, deterministic, and ours to fix. External targets are neither: a
+gate that fails because someone else's site was down teaches people to ignore it. Enable it for a
+deliberate link audit, where timeouts are reported as informational rather than failures.
 
 ## 3. Provision the chosen tools
 
