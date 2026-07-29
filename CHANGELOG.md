@@ -7,6 +7,34 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased — related issues are worked on one branch (#206)
+
+- **The written rule contradicted the productive practice.** `CLAUDE.md:31` said take "**ONE** issue
+  end-to-end", and `maintainer-work.md` said it twice more ("One issue at a time", "One at a time").
+  But some issues are one change wearing several numbers: #109 and #110 are both qa-flow, both under
+  EPIC #108, and both edit the same boot/validation path — split, they are two PRs editing the same
+  lines where the second cannot be reviewed without the first. Grouping related issues covers more
+  ground per branch and is the only honest shape for that case.
+- **Maintainer decision** recorded on [#206](https://github.com/fmanimashaun/claude-skills/issues/206),
+  which is where the authority for a process change belongs — an architecture/process decision with no
+  upstream to cite, so the doctrine-verifier gate does not apply (CLAUDE.md, *What the gate covers*).
+  Grouping is now the **default for related work**, not an exception, with "related" carrying real
+  weight: same `comp:*` label, one coherent mechanism (same files or code path), the same change type
+  under the doctrine gate, and still reviewable in one sitting. No fixed cap on issue count — if the
+  fixes never touch each other, grouping only widens a revert's blast radius, so split.
+- **The gate condition is the one that is not a judgement call.** Grouping inherits *Split a mixed
+  change* rather than weakening it: if one issue needs a CONFIRMED `doctrine-verifier` verdict and
+  another does not, they do not share a branch. That is the loophole this rule could otherwise open —
+  an architecture change carrying a framework claim through on its coat-tails.
+- **Traceability is never pooled**, which is what makes grouping safe rather than sloppy: one
+  `Refs #n` per issue in the PR body, **one CHANGELOG bullet per issue** rather than one for the
+  group, and a separate `Closes #n` for each on the promotion, so each closes on its own merit. Pool
+  them and you lose which fix answered which report, and the promotion cannot say what it shipped.
+- Recorded in three places that previously disagreed: `CLAUDE.md`'s maintenance-flow section (with a
+  new *Grouping related issues on one branch* subsection), and `maintainer-work.md`'s frontmatter and
+  body. Its Phase 4 now also spells out the per-issue `Refs`/CHANGELOG requirement, since that is
+  where pooling would actually happen.
+
 ### Unreleased — CLAUDE.md's list of what we ship omitted a whole plugin (#203)
 
 - **Found by following this file's own rule, and it was worse than the report.** #203 was filed for
