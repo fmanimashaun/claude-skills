@@ -215,6 +215,38 @@ syntax errors (templates are placeholder-substituted first), **swallowed verdict
 blocks in 7 files: a lint that reports clean on input it never read is worse than no lint.
 Treat a coverage gap as a defect in the linter, not a nuisance.
 
+## Verify our own claims, not just our shell
+
+A trial reviewer spent a fortnight catching a class of bug our review missed, and it had no
+proprietary advantage: **it checked the diff against rules already written in this repo's
+markdown.** One finding was literally "missing change-type classification" — verbatim from
+this file. Others were our own README and a config file contradicting our own code.
+
+The class is **claims-vs-enforcement**: a guarantee stated in prose that nothing makes true.
+It has bitten three times in three PRs — `--check || echo` making a release gate unable to
+block (#151), a README mandating `--max-total-usd` while the flag stayed optional (#161), a
+docstring promising Ruby-comment handling the code lacked (#161). Writing the rule down does
+not prevent it; that is the whole reason `lint_markdown_shell.py` exists.
+
+```bash
+python3 scripts/lint_self_consistency.py            # dead settings keys, unenforced flags
+python3 scripts/lint_self_consistency.py --selftest  # prove both rules fire AND stay silent
+```
+
+The judgement-free half is that linter. **The rest is the `code-review` skill**
+(`skills/code-review/SKILL.md`) — `carve-out-without-negative-test`, `coverage-gap`,
+`doctrine-contradiction`, `unverified-negative`, `gate-that-cannot-fail`. It lives in
+`skills/` rather than in `docs/` deliberately, for two reasons: rules a reviewer must find
+belong where reviewers already look, and it is **shipped doctrine** — the same rules a
+user's `pr-reviewer` applies, so we are held to what we sell. Read it against your own diff
+before asking anyone else to.
+
+Two of its classes exist because we shipped them: a `doctrine-contradiction` told users'
+merge gate to demand ids-only job arguments while `jobs-and-realtime.md:28` says pass
+records, and `setup-flow` wrote that wrong rule into the user's own CLAUDE.md so the gate
+then enforced it against them. When you find one instance of a contradiction, **grep for
+the pattern** — that class travels in groups.
+
 ## Packaging (skills)
 
 `scripts/package_core.py` is the ONE canonical `.skill` builder — **ZIP_STORED**
