@@ -45,18 +45,24 @@ prefix. See [references/brand.md](references/brand.md).
    Imposter, Icon, Container). Layout responds to space **intrinsically** — flex-wrap /
    `flex-basis` thresholds, grid `auto-fit/minmax`, `clamp()` — so **breakpoints are reserved
    for true structural swaps only** (nav→hamburger). Never write per-page layout CSS.
-3. **Components** — [references/components.md](references/components.md) +
+3. **Page anatomies** — [references/page-anatomies.md](references/page-anatomies.md). The
+   screen level, above components: **3 shell archetypes** (sidebar + mobile drawer, stacked,
+   multi-column) and **3 page anatomies** (home/dashboard, detail, settings), each stating its
+   mobile behavior, scroll containment and which catalog components fill each region. A screen
+   is **composed, not designed** — pick a shell, pick an anatomy, fill from the catalog. Also
+   carries the primitive-instead-of-breakpoint substitution table.
+4. **Components** — [references/components.md](references/components.md) +
    [references/forms.md](references/forms.md). ~16 catalog components, each a composition of
    layout primitives + role tokens, with a fixed **variant × size × state** vocabulary, an
    a11y checklist, and a prescribed responsive behavior.
-4. **Interaction** — [references/interaction-stimulus.md](references/interaction-stimulus.md).
+5. **Interaction** — [references/interaction-stimulus.md](references/interaction-stimulus.md).
    Behavior is Hotwire, not a JS framework: four reusable Stimulus mixins (list-navigation,
    focus-trap+restore, dismissable-layer, anchored-position) cover every overlay; style off
    `data-[state=…]` / `aria-*`.
-5. **Responsive** — [references/responsive.md](references/responsive.md). Fluid-first
+6. **Responsive** — [references/responsive.md](references/responsive.md). Fluid-first
    (Utopia) + intrinsic primitives; explicit breakpoints only where layout structure must
    change; touch targets (`min-h-touch` 44px) and safe-areas wired in.
-6. **Mobile** — [references/mobile.md](references/mobile.md). One system across web + mobile:
+7. **Mobile** — [references/mobile.md](references/mobile.md). One system across web + mobile:
    Hotwire Native renders the same web UI in a native shell; safe-areas + `min-h-touch` +
    bridge components + path config; native token export for fully-native Android/iOS screens.
 
