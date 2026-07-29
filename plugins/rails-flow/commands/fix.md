@@ -28,6 +28,21 @@ this flow exists to prevent. Say which issues you filed before you start fixing.
 2. **One issue at a time**: read → implement → test → verify no regression → commit.
 3. **Bugs are reproduced before they are fixed**: write the failing spec that demonstrates
    the bug FIRST, then make it pass. The spec is the proof and the regression guard.
+   **State the criterion before the spec.** For a fix, the criterion IS the bug report made
+   falsifiable — record it in `docs/acceptance/<phase-or-slug>.md` before touching code:
+
+   ```md
+   ## Wrong-tenant invoice leak
+   - **AC-1** Given a user in tenant A, when they GET /invoices/<id-in-tenant-B>, then the
+     response is 404 and no invoice number appears in the body [error]
+   ```
+
+   A bug fixed against a criterion written afterwards proves only that the code changed. Note
+   a fix's criteria are usually error-path by nature, which the required error path suits.
+   Validate with
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md" --specs spec`;
+   the spec cites the id (`it "AC-1 denies cross-tenant reads"`). The Stop gate enforces both
+   on `fix/*` branches.
 4. **Every behavioral change gets a NEW spec proving the new behavior.** Passing the
    existing suite only proves you didn't break old behavior.
 5. **Never introduce a regression**: if a fix touches scoping or authorization, check every

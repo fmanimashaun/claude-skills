@@ -21,9 +21,78 @@ printf '%s' "$input" | grep -q '"stop_hook_active"[[:space:]]*:[[:space:]]*true'
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 [ -d spec ] || exit 0
 
-changed="$(git status --porcelain 2>/dev/null | awk '{print $2}')"
+# `-uall` is load-bearing: plain --porcelain COLLAPSES a new untracked directory to "?? app/",
+# so `app/models/invoice.rb` in a brand-new folder was invisible here and behavioural code
+# could finish with no spec at all. `cut -c4-` takes the path (cols 1-2 are status, 3 a space)
+# so paths containing spaces survive, and the sed strips the "old -> new" of a rename to the
+# new path, which is the one that needs proving. Found by behaviour-testing #125's gate.
+changed="$(git status --porcelain -uall 2>/dev/null | cut -c4- | sed 's/^.* -> //')"
 app_changed="$(printf '%s\n' "$changed" | grep -E '^(app|lib)/.*\.rb$' || true)"
 spec_changed="$(printf '%s\n' "$changed" | grep -E '^spec/.*_spec\.rb$' || true)"
+
+# ---------------------------------------------------------------------------------------
+# 0. Acceptance criteria must exist BEFORE the code they grade (#125).
+#
+# The checks below prove "the new behaviour has a spec". They fire after code exists, so
+# they cannot tell whether the spec asserts what was REQUIRED or merely what the code
+# happens to do. A goal written after the result is unfalsifiable — the same defect class as
+# a gate that cannot fail, moved from the gate to the goal.
+#
+# Scoped to the flow's own branches on purpose: blocking every branch would break ad-hoc
+# work that never entered the flow, and "criteria before implementation" is a promise the
+# flow made, not a rule about all Ruby edits.
+# ---------------------------------------------------------------------------------------
+# `symbolic-ref` first: it reports the branch even on an unborn HEAD (a fresh repo with no
+# commits), where `rev-parse --abbrev-ref` answers the literal "HEAD" and the case below would
+# silently never match. Fall back for a detached HEAD, where there is no branch to scope to.
+branch="$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+case "$branch" in
+  feature/*|fix/*)
+    # Flatten nested branch names: `feature/team/foo` -> `team-foo`, not `team/foo`, which
+    # would demand a nested docs/acceptance/team/ directory nobody would think to create and
+    # block them with a path they never chose.
+    slug="${branch#*/}"
+    slug="${slug//\//-}"
+    criteria="docs/acceptance/${slug}.md"
+    if [ -n "$app_changed" ] && [ ! -f "$criteria" ]; then
+      {
+        echo "rails-flow stop gate: app code changed with no acceptance criteria."
+        echo "Expected: $criteria"
+        echo ""
+        echo "Write the criteria FIRST — one per unit, each in the shape:"
+        echo "  - **AC-1** Given <state>, when <action>, then <observable>"
+        echo "Every unit needs at least one error-path criterion. A criterion written after the"
+        echo "code cannot grade it: it asserts what the code does, not what was required."
+      } >&2
+      exit 2
+    fi
+    # Validate the criteria and the spec mapping. A guard decides whether to RUN a check; it
+    # must never soften the verdict, so a missing python3 skips (fails open) while a real
+    # finding blocks (fails closed).
+    if [ -f "$criteria" ] && command -v python3 >/dev/null 2>&1; then
+      # `:-` matters: this script runs under `set -u`, so a bare ${CLAUDE_PLUGIN_ROOT} would
+      # abort the whole gate with "unbound variable" whenever it is run outside the hook
+      # runtime. A guard must not crash; the `-f` test below then skips cleanly.
+      checker="${CLAUDE_PLUGIN_ROOT:-}/scripts/check_criteria.py"
+      if [ -f "$checker" ]; then
+        # --specs only once specs exist, so the mapping check does not fire before the first
+        # spec is written (the criteria step legitimately precedes it).
+        if [ -n "$spec_changed" ] || [ -n "$(ls -A spec 2>/dev/null)" ]; then
+          set -- "$criteria" --specs spec
+        else
+          set -- "$criteria"
+        fi
+        if ! cout="$(python3 "$checker" "$@" 2>&1)"; then
+          {
+            echo "rails-flow stop gate: acceptance criteria do not hold."
+            printf '%s\n' "$cout"
+          } >&2
+          exit 2
+        fi
+      fi
+    fi
+    ;;
+esac
 
 if [ -n "$app_changed" ] && [ -z "$spec_changed" ]; then
   {
