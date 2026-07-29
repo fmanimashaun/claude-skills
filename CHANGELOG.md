@@ -45,7 +45,7 @@ _Version assigned at promotion._
   `CLAUDE.md`, when a non-home ancestor holds `.claude/`, or when `~/.claude/skills/` is non-empty
   (skills-dir plugins auto-load into every session). Tools are restricted to
   `Read,Write,Edit,Glob,Grep` — no Bash, no network.
-- **Verified without spending anything on a benchmark.** `selftest.py` — 32 assertions, every rule
+- **Verified without spending anything on a benchmark.** `selftest.py` — 38 assertions, every rule
   proven to fire on a violation *and* stay silent on conforming code (a rule that flags everything
   looks rigorous and makes all arms fail equally). `run.py --dry-run` prints all 15 invocations and
   executes none. The staged `real` arm passes `claude plugin validate` with all three skills
