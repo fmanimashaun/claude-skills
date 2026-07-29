@@ -1,0 +1,82 @@
+{
+  "$comment": [
+    "Case manifest for the doctrine-effect benchmark (issue #156).",
+    "JSON, not YAML, because this repo is stdlib-Python-only and yaml is not in",
+    "the stdlib. `claude plugin eval` reads evals/**/case.yaml or prompt.md +",
+    "graders/*.md; that runner is in early access and unavailable here, so the",
+    "prompts live at the documented prompt.md path for forward compatibility",
+    "while this manifest carries the metadata our runner needs. When early",
+    "access opens, the prompts and gates carry over untouched and run.py goes."
+  ],
+  "arms": {
+    "none": {
+      "label": "no skill",
+      "plugin_dir": null,
+      "why": "Baseline. Without it a number is not evidence of anything."
+    },
+    "weak": {
+      "label": "weak skill",
+      "plugin_dir": "evals/weak-skill",
+      "why": "Control. Separates 'this doctrine helps' from 'any system prompt helps'. A real-skill win over `none` but not over `weak` means we measured the presence of instructions, not the content of ours."
+    },
+    "real": {
+      "label": "rails-stack",
+      "plugin_dir": "__staged__",
+      "why": "Staged at run time from skills/{rails-8,hotwire,fidara-design} plus a plugin.json -- i.e. exactly what `/plugin marketplace add` gives a user, and deliberately NOT this repo's maintainer .claude/, which is not distributed."
+    }
+  },
+  "$comment_defaults": [
+    "No max_turns key: the `claude` CLI exposes no --max-turns flag, so a turn",
+    "ceiling here would be a setting nothing enforced -- declared conditions that",
+    "are quietly false are worse than absent ones. Turn count is MEASURED per run",
+    "(num_turns); spend is bounded by --max-total-usd / --per-run-budget-usd and",
+    "the per-run timeout."
+  ],
+  "defaults": {
+    "runs": 3,
+    "model": "sonnet",
+    "timeout_seconds": 600
+  },
+  "cases": [
+    {
+      "id": "01-scoped-index",
+      "title": "Scoped index action",
+      "prompt": "cases/01-scoped-index/prompt.md",
+      "rules": ["scoped-index"],
+      "tags": ["rails-8", "authorization"],
+      "measures": "Whether the agent treats scoping as authorization (Current.user.invoices) or reaches for the global collection (Invoice.all). Doctrine: auth-security.md:121."
+    },
+    {
+      "id": "02-simple-form",
+      "title": "Form partial honouring project convention",
+      "prompt": "cases/02-simple-form/prompt.md",
+      "rules": ["simple-form-convention"],
+      "tags": ["rails-8", "forms", "convention"],
+      "measures": "Whether the agent notices and follows an established project convention (simple_form is installed and configured) instead of defaulting to stock form_with. Doctrine: forms.md:3, ecosystem-gems.md:29."
+    },
+    {
+      "id": "03-role-tokens",
+      "title": "Component consuming role tokens",
+      "prompt": "cases/03-role-tokens/prompt.md",
+      "rules": ["no-literal-color", "no-inline-dark"],
+      "tags": ["fidara-design", "tokens"],
+      "measures": "Whether the agent binds to the semantic role layer or hardcodes colours and sprinkles inline dark: variants. Doctrine: brand.md:87, foundations-tokens.md:247."
+    },
+    {
+      "id": "04-idempotent-job",
+      "title": "Idempotent background job",
+      "prompt": "cases/04-idempotent-job/prompt.md",
+      "rules": ["job-idempotent"],
+      "tags": ["rails-8", "jobs"],
+      "measures": "Whether the agent guards against re-execution, since retries and continuations both re-run the body. Doctrine: jobs-and-realtime.md:176. NOTE: deliberately does NOT gate ids-only -- doctrine (jobs-and-realtime.md:28) passes records via GlobalID, so the gate #156 originally specified would have failed our own reference example."
+    },
+    {
+      "id": "05-concern-spec",
+      "title": "Model concern with a spec that proves it",
+      "prompt": "cases/05-concern-spec/prompt.md",
+      "rules": ["spec-accompanies-behavior"],
+      "tags": ["rails-8", "testing"],
+      "measures": "Whether behaviour arrives with proof. Doctrine: pure RSpec is a stack non-negotiable; rails-flow's premise is spec-proven change."
+    }
+  ]
+}
