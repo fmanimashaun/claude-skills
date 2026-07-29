@@ -217,6 +217,43 @@ SimpleForm.setup do |config|
 end
 ```
 
+**The contract, which is what actually matters.** simple_form's wrapper DSL has more options than
+any one example shows, and versions differ in detail, so treat the block above as one correct
+spelling rather than the only one. What a fidara wrapper MUST produce, and what a review checks:
+
+1. Order is **label → control → hint → error**, inside a `stack` (spacing from `--space-*`, never
+   child margins).
+2. Every class is a **role token or a documented recipe** — no literal colours, no stock
+   `gray-*`/`blue-*`, no inline `dark:` variants (dark mode is one re-point of the roles).
+3. The control carries `min-h-touch` and a visible `focus-visible` ring.
+4. The error state is driven by simple_form's own `error_class` / `aria-invalid`, so
+   `aria-describedby` wiring comes from the library rather than being hand-maintained.
+5. Label text is **always rendered** unless the field explicitly passes `label: false` **and**
+   supplies an accessible name.
+
+**Prove it on first install** rather than trusting the snippet — one field, one assertion:
+
+```ruby
+# spec/system/form_anatomy_spec.rb — the wrapper is doctrine, so it gets a spec
+require "rails_helper"
+
+RSpec.describe "simple_form wrapper", type: :system do
+  it "renders label -> control -> error with role tokens and a touch target" do
+    visit new_invoice_path
+    within("form") do
+      expect(page).to have_css("label.text-step--1")
+      expect(page).to have_css("input.min-h-touch")
+    end
+    click_button "Save"                                    # trigger validation
+    expect(page).to have_css("p.text-destructive")         # error via the wrapper
+    expect(page).to have_css("input[aria-invalid='true']")  # not hand-maintained
+  end
+end
+```
+
+If that spec fails, the wrapper is wrong — not the doctrine. Getting it green once is cheaper than
+discovering per-field drift across a hundred forms later.
+
 ```erb
 <%# every field, everywhere — including inside a ViewComponent's template %>
 <%= f.input :email, hint: "We'll never share it." %>

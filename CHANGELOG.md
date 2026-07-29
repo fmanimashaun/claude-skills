@@ -272,6 +272,22 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased — the design-auditor's form check flagged every correct form (#168)
+_Version assigned at promotion._
+- **The grep matched what it was meant to allow.** `grep -rn "form_with\|form_for" app/views`
+  also matches **`simple_form_for`**, because that string ends with `form_for` — so the mandate
+  check fired on every *correct* form. A check that flags everything is as useless as one that
+  cannot fire: it gets ignored, then disabled. Fixed with a word boundary
+  (`grep -rnE "(form_with|form_for)"`), verified against a fixture containing one correct
+  `simple_form_for` and one offending `form_with` — only the offender is reported.
+- **Added the check that actually catches violations.** The mandate covers form *elements*, not just
+  the form tag, and hand-rolled anatomy was unchecked: `f.label` with a manual error `<p>`, or a
+  ViewComponent emitting its own `<label>`, is a form element built without simple_form. Now flagged
+  in `app/views` **and** `app/components`.
+- **A stock `config/initializers/simple_form.rb` is BLOCKING.** If the wrapper carries no role-token
+  classes, fields are unstyled by the design system and every view is tempted to patch classes per
+  input — which is precisely the drift the mandate exists to prevent.
+
 ### 1.9.0 — 2026-07-29
 - **A doctrine contradiction was live in users' hands, in three files.** `pr-reviewer.md` told the
   merge gate to check jobs for "id args", `rails-developer.md` said "pass IDs, never AR objects",
@@ -1054,6 +1070,18 @@ _Version assigned at promotion._
   `views-hotwire.md`'s forms section is reframed as the builder-agnostic **Turbo contract** with the
   mandate stated up front, `SKILL.md`'s golden path says `simple_form_for`, and the auditor's rule
   drops its stale "if the project mandates" conditional.
+- **Every remaining exception was closed rather than flagged.** There is no non-simple_form case:
+  a model-less form is `simple_form_for :q, url: …` (simple_form takes a symbol), a hidden label is
+  `label: false` plus an accessible name, and `f.input_field` — which *is* simple_form's control-only
+  renderer, so it satisfies the mandate — is reserved for a control inside a composed cluster where
+  the wrapper's markup would fight the layout. What is forbidden is hand-rolling the anatomy, not
+  using simple_form's own API.
+- **The wrapper config is now stated as a contract with a way to prove it**, instead of a snippet
+  readers must take on trust: order (label → control → hint → error in a `stack`), role tokens only,
+  `min-h-touch` + `focus-visible`, error state driven by simple_form's `error_class`/`aria-invalid`
+  so `aria-describedby` is not hand-maintained, and label always rendered unless explicitly hidden.
+  A short system spec asserts all of it on first install — if it fails, the wrapper is wrong, not the
+  doctrine. Repeated deviation is a second named wrapper, never a repeated per-field override.
 
 ### 1.13.0 — 2026-07-29
 - **The gap.** fidara-design had a strong component catalog and almost no page-level anatomy — one
