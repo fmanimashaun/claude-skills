@@ -3,6 +3,7 @@
 
 Run:  python3 validate_evidence.py qa/manual-tests/<date>-<slug>-summary.csv
       python3 validate_evidence.py qa/reports/a11y-<slug>-pages.csv
+      python3 validate_evidence.py qa/manual-tests/<date>-<slug>-runtime.csv
       python3 validate_evidence.py --selftest
 
 The artifact kind is detected from the header, so callers never pass a --kind flag that
@@ -20,12 +21,19 @@ redirect returns REAL violations attributed to the wrong page, and then files th
 defects. Its rule shipped as prose first; this module is what makes it enforced, so qa-flow
 does not have one validated evidence path and one unvalidated one.
 
+The runtime profile (#109) closes the inverse hole: a page that IS the page under test, and
+returns 200, while throwing uncaught exceptions or 404-ing its own script bundle. Validating
+page identity says nothing about whether the page then worked.
+
 WHAT THIS GUARANTEES
     No row asserting a page was tested/audited can OMIT its HTTP status, requested/final
     URL, or expected-content assertion; none can claim a result on a non-2xx/3xx status or
     on a silent redirect; a Blocked row must still record what it saw; and per-profile
     outcome fields (a screenshot on a Fail, the violation count and keyboard verdict on an
-    audited page) cannot be left blank or filled with placeholder text.
+    audited page, the console/network counters on an observed route) cannot be left blank or
+    filled with placeholder text. For a runtime row the SEVERITY IS RECOMPUTED from those
+    counters, so the mapping is enforced rather than trusted: an uncaught exception or a
+    failed document/script/stylesheet is S1 however the row grades itself.
 
 WHAT IT DOES NOT
     It cannot tell whether a recorded status is TRUTHFUL -- an agent that writes `200` for
@@ -192,7 +200,169 @@ A11Y = Profile(
 )
 
 
-PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y)
+# ---------------------------------------------------------------------------------------
+# Profile: browser runtime capture -- console + network per route (#109)
+#
+# A page can return 200, render, and pass a scripted scenario while throwing uncaught
+# exceptions, 404-ing its own script bundle, or violating CSP on every load. The Flowbite
+# audit demonstrated it twice over: `Module not found: svgmap/dist/svgMap.min.css` and a
+# repeating `TypeError: localStorage.getItem is not a function`, both on a route serving
+# HTTP 200. A status-only check calls that page healthy.
+#
+# The counters are split by SEVERITY CONSEQUENCE rather than by event name, so the severity
+# mapping in the issue is mechanically checkable from the row itself instead of trusted:
+#
+#   Page Errors        uncaught exception              -> S1 (broken even though it rendered)
+#   Failed Critical    document / script / stylesheet  -> S1 (the page is missing its own code)
+#   Console Errors     console.error                   -> S2
+#   Failed Subresource image / font / media / other    -> S2
+#   Console Warnings   console.warn                    -> informational, never gates
+#
+# A single "Failed Requests" column could not support that: losing the resource type loses
+# the difference between a missing analytics pixel and a missing application bundle.
+# ---------------------------------------------------------------------------------------
+S1, S2, NO_SEVERITY = "s1", "s2", "none"
+RUNTIME_SEVERITIES = {S1, S2, NO_SEVERITY}
+
+# Counters that force a severity, mapped to the floor they force.
+GATING_COUNTERS: tuple[tuple[str, str], ...] = (
+    ("Page Errors", S1),
+    ("Failed Critical", S1),
+    ("Console Errors", S2),
+    ("Failed Subresource", S2),
+)
+RUNTIME_COUNTERS = tuple(name for name, _ in GATING_COUNTERS) + ("Console Warnings",)
+
+
+def _count(value: str) -> int | None:
+    """A counter's integer value, or None when it records no number at all."""
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _runtime_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    """An observed route must report what the browser actually said, and grade it correctly."""
+    findings: list[str] = []
+
+    counts: dict[str, int] = {}
+    for column in RUNTIME_COUNTERS:
+        raw = row[column]
+        if not raw:
+            findings.append(
+                f"{where}: observed without a {column} count -- a capture that records no "
+                "counts is indistinguishable from one where the listeners never attached"
+            )
+            continue
+        value = _count(raw)
+        if value is None:
+            # Rejects "none", "n/a", "-", "TBD": placeholder text that reads as a clean result.
+            findings.append(
+                f"{where}: {column} {raw!r} records no number -- use 0 for a clean route"
+            )
+            continue
+        if value < 0:
+            findings.append(f"{where}: {column} {raw!r} is negative")
+            continue
+        counts[column] = value
+
+    # Suppression must be visible. An ignore list that silently drops findings turns a red
+    # check green with no trace, so the count of suppressed items is part of the contract
+    # even when it is 0.
+    ignored = row["Ignored"]
+    if not ignored:
+        findings.append(
+            f"{where}: no Ignored count -- suppression must stay visible, so record 0 when "
+            "the ignore list matched nothing"
+        )
+    elif _count(ignored) is None:
+        findings.append(f"{where}: Ignored {ignored!r} records no number -- use 0 for none")
+
+    severity = row["Severity"].lower()
+    if not severity:
+        findings.append(
+            f"{where}: observed without a Severity ({'/'.join(sorted(RUNTIME_SEVERITIES))})"
+        )
+        return findings
+    if severity not in RUNTIME_SEVERITIES:
+        findings.append(
+            f"{where}: Severity {row['Severity']!r} is not one of "
+            f"{'/'.join(sorted(RUNTIME_SEVERITIES))}"
+        )
+        return findings
+
+    # Only grade what parsed. A missing counter is already reported above; inferring a
+    # severity from it would turn one defect into two and blame the wrong field.
+    required = NO_SEVERITY
+    drivers: list[str] = []
+    for column, floor in GATING_COUNTERS:
+        if counts.get(column, 0) > 0:
+            drivers.append(f"{column}={counts[column]}")
+            if floor == S1:
+                required = S1
+            elif required != S1:
+                required = S2
+
+    if required == NO_SEVERITY and severity != NO_SEVERITY:
+        if len(counts) == len(RUNTIME_COUNTERS):
+            findings.append(
+                f"{where}: Severity {row['Severity']} on a route whose gating counters are all "
+                "0 -- either a counter is wrong or this route is clean (Severity none)"
+            )
+    elif required == S1 and severity != S1:
+        findings.append(
+            f"{where}: {', '.join(drivers)} is S1 (the page is missing its own code, or threw "
+            f"before it finished) but Severity says {row['Severity']}"
+        )
+    elif required == S2 and severity == NO_SEVERITY:
+        findings.append(
+            f"{where}: {', '.join(drivers)} is S2 but Severity says none -- a route with "
+            "runtime errors is not clean"
+        )
+
+    # S1 is the gating verdict, so a human must be able to re-read the raw evidence.
+    if severity == S1 and not row["Evidence"]:
+        findings.append(
+            f"{where}: S1 without an Evidence path -- the console/network log that makes this "
+            "verdict checkable by a human"
+        )
+    if severity != NO_SEVERITY and not row["Notes"]:
+        findings.append(
+            f"{where}: {row['Severity']} without Notes -- record the message and the resource "
+            "URL, or the finding is not actionable"
+        )
+    return findings
+
+
+RUNTIME = Profile(
+    name="runtime",
+    written_by="functional-tester / e2e-tester (browser runtime capture)",
+    columns=(
+        "Route",
+        "State",
+        "Status",
+        "HTTP",
+        "Requested URL",
+        "Final URL",
+        "Assertion",
+        "Console Errors",
+        "Console Warnings",
+        "Page Errors",
+        "Failed Critical",
+        "Failed Subresource",
+        "Severity",
+        "Ignored",
+        "Evidence",
+        "Notes",
+    ),
+    result_statuses=frozenset({"observed"}),
+    ident_columns=("Route", "State"),
+    extra=_runtime_extra,
+)
+
+
+PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME)
 
 # Kept as a module-level alias: the functional contract is the one mirrored in
 # functional-tester.md, and external callers/selftests refer to it by this name.
@@ -364,7 +534,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate that a QA evidence CSV carries validated page identity."
     )
-    parser.add_argument("csv_path", nargs="?", help="path to a functional summary or a11y pages CSV")
+    parser.add_argument(
+        "csv_path", nargs="?",
+        help="path to a functional summary, a11y pages, or runtime capture CSV "
+             "(the kind is detected from the header)",
+    )
     parser.add_argument("--selftest", action="store_true", help="prove the rules fire AND stay silent")
     parser.add_argument(
         "--contracts", action="store_true", help="print the known evidence contracts and exit"

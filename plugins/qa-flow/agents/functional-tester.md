@@ -78,6 +78,77 @@ status, the requested and final URL, and what was missing. A blocked case is hon
 "this was not tested". A false pass is not, and it is invisible in a green report. Do not
 retry-until-green: if a case blocks, report it blocked.
 
+## Runtime capture — what the page did, not just which page it was
+
+Page validation above proves you captured **the right page**. It says nothing about whether
+that page then *worked*. A route can return 200, render correctly, satisfy its assertion and
+pass its case while throwing uncaught exceptions, 404-ing its own script bundle, or violating
+CSP on every load. A real audit hit both at once: `Module not found:
+svgmap/dist/svgMap.min.css` and a repeating `TypeError: localStorage.getItem is not a
+function`, on a route serving HTTP 200. A status-only check calls that page healthy.
+
+So on **every** page you visit, attach these listeners before navigating and keep them for the
+life of the page:
+
+| Playwright event | What it catches |
+|---|---|
+| `page.on('pageerror')` | uncaught exceptions |
+| `page.on('console')` | `error` and `warning` level messages (text + first stack frame) |
+| `page.on('requestfailed')` | requests that never completed (URL, resource type, failure text) |
+| `page.on('response')` where status >= 400 | missing images, fonts, JS chunks, XHR failures |
+
+**Severity is mechanical — you do not get to grade it by feel**, because the checker
+recomputes it from your own counts and will reject a row that talks its own findings down:
+
+| Observed | Severity | Why |
+|---|---|---|
+| uncaught exception (`pageerror`) | **S1** | the page is broken even though it rendered |
+| failed **document / script / stylesheet** (failed or >= 400) | **S1** | the page is missing its own code |
+| `console.error` | **S2** | real defect, page may still function |
+| failed **image / font / media / other** subresource | **S2** | degraded, not broken |
+| `console.warning` | *informational* | listed, **never** gates |
+
+Record `pageerror` and critical-resource failures separately from subresource failures — a
+missing analytics pixel and a missing application bundle are not the same finding, and a single
+"failed requests" number cannot tell them apart.
+
+**Noise control, and why suppression stays visible.** `qa/qa.config.yml` may carry
+`runtime.ignore` — a list of substrings matched against the message or resource URL, for known
+third-party chatter:
+
+```yaml
+runtime:
+  ignore:
+    - "chrome-extension://"       # the tester's own browser extensions
+    - "Download the React DevTools"
+```
+
+An always-red check gets ignored, so the list is legitimate. But ignored items are still
+**counted** in the `Ignored` column, even when the count is 0 — a suppression that leaves no
+trace is how a red check turns green with nobody deciding to.
+
+Write one row per route to `qa/manual-tests/<date>-<slug>-runtime.csv`. The header is **fixed**
+— exactly these sixteen columns, in this order:
+
+```csv
+Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Console Errors,Console Warnings,Page Errors,Failed Critical,Failed Subresource,Severity,Ignored,Evidence,Notes
+```
+
+- `Status` — `Observed` when the listeners ran, `Blocked` when navigation never returned (a
+  `Blocked` row must still say what it saw in `Notes`), `Out of Scope` for a route you did not
+  visit.
+- The five counters are **integers, always** — `0` for a clean route. `none`, `n/a` or `-` are
+  rejected: a capture recording no counts is indistinguishable from one where the listeners
+  never attached.
+- `Severity` — `S1`, `S2` or `none`, per the table above.
+- `Ignored` — how many findings the ignore list suppressed on this route (`0` if none).
+- `Evidence` — path to the saved console/network log. **Required for S1.**
+- `Notes` — the message and the resource URL. Required whenever `Severity` is not `none`,
+  because a graded finding nobody can locate is not actionable.
+
+A route whose worst severity is **S1 fails the pass** — report it as a High-severity issue in
+the Markdown report's *Issues Found* table, with the route and the message.
+
 ## Process
 
 1. **Auto-map the in-scope flows first.** Navigate to the URL, snapshot, and crawl the
@@ -101,7 +172,9 @@ retry-until-green: if a case blocks, report it blocked.
 Write a Markdown report to `qa/manual-tests/<date>-<slug>.md` using this structure, and a
 companion **CSV** `qa/manual-tests/<date>-<slug>-summary.csv` (the results table — opens
 directly in Excel). Screenshots go to `qa/manual-tests/screenshots/`, named
-`fail-<menu>-<desc>.png` / `pass-<menu>-<desc>.png`.
+`fail-<menu>-<desc>.png` / `pass-<menu>-<desc>.png`. The runtime capture above adds a third
+artifact, `qa/manual-tests/<date>-<slug>-runtime.csv`, with saved console/network logs under
+`qa/manual-tests/runtime/`.
 
 The CSV is the machine-checked artifact, so its header is **fixed** — exactly these ten
 columns, in this order:
@@ -156,7 +229,11 @@ do not report results until it exits clean:
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_evidence.py" \
   "qa/manual-tests/<date>-<slug>-summary.csv"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_evidence.py" \
+  "qa/manual-tests/<date>-<slug>-runtime.csv"
 ```
+
+Both must exit clean. The kind is detected from the header, so there is no flag to get wrong.
 
 Exit `0` = clean · `1` = findings (each names the row and the missing field) · `2` = the CSV
 is unusable (wrong header, or zero data rows — it refuses to bless a report it could not
@@ -166,14 +243,18 @@ unvalidated — never report it as clean.
 
 **What the checker does and does not guarantee.** It proves no `Pass`/`Fail` row *omits* its
 status, URLs, or assertion, and that no row claims `Pass` on a non-2xx/3xx status or a silent
-redirect. It cannot tell whether a recorded status is *truthful*, and it never sees your
-screenshots — so checks 1–4 above remain your responsibility. It closes the omission hole,
+redirect. On the runtime CSV it also **recomputes the severity from your counters**, so an
+uncaught exception graded `S2` is rejected — the mapping is enforced, not trusted. It cannot
+tell whether a recorded status or count is *truthful* (an agent that writes `0` for a route it
+never listened to defeats it), and it never sees your screenshots — so checks 1–4 above and
+attaching the listeners at all remain your responsibility. It closes the omission hole,
 which is the one that produced the false PASS; it is not a substitute for looking.
 
 ## Wrap-up
 
-Confirm the report + CSV were written, `validate_evidence.py` exited clean, and the browser is
-closed. Summarise pass/fail/**blocked** counts and any High-severity issues in chat — report
+Confirm the report + both CSVs were written, `validate_evidence.py` exited clean on each, and
+the browser is closed. State the worst runtime severity per route and the total `Ignored` count,
+so suppression is visible in chat and not only in a column. Summarise pass/fail/**blocked** counts and any High-severity issues in chat — report
 blocked cases explicitly rather than folding them into the totals, because a blocked case is
 untested coverage, not a result. If the run maps to tracked items, the titles' IDs
 (e.g. `TC-001`) are already in the report so results can be copied back wherever cases live.

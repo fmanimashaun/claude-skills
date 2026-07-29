@@ -34,6 +34,7 @@ CHECKS = 0
 
 HEADER = ve.FUNCTIONAL.header
 A11Y_HEADER = ve.A11Y.header
+RUNTIME_HEADER = ve.RUNTIME.header
 PROFILE_NAMES = {p.name for p in ve.PROFILES}
 
 
@@ -445,10 +446,145 @@ def run() -> int:
         count=1,
     )
 
+    # ---- runtime capture: console + network per route (#109) ------------------------
+    # The severity is RECOMPUTED from the counters, so these fixtures pin the mapping itself,
+    # not just field presence. A row that grades its own uncaught exception as S2 is the
+    # failure mode -- the whole point is that the grade cannot be talked down.
+    rt = {"header": RUNTIME_HEADER}
+    # Column order: Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Console Errors,
+    #               Console Warnings,Page Errors,Failed Critical,Failed Subresource,
+    #               Severity,Ignored,Evidence,Notes
+    RUNTIME_CLEAN = (
+        "/,anon,Observed,200,https://a/,https://a/,heading 'Dashboard',0,0,0,0,0,none,0,,"
+    )
+
+    expect_clean("runtime: clean route", f"{RUNTIME_CLEAN}\n", **rt)
+    # Warnings are informational by contract: a noisy-but-working page must not gate, or the
+    # check goes red on every third-party library and gets switched off.
+    expect_clean(
+        "runtime: console warnings alone do not gate",
+        "/help,anon,Observed,200,https://a/h,https://a/h,heading 'Help',0,3,0,0,0,none,0,,\n",
+        **rt,
+    )
+    expect_clean(
+        "runtime: uncaught exception graded S1",
+        "/admin,signed-in,Observed,200,https://a/admin,https://a/admin,heading 'Admin',"
+        "1,0,1,0,0,S1,0,qa/manual-tests/runtime/admin.log,"
+        "TypeError: localStorage.getItem is not a function (vendor.js:42)\n",
+        **rt,
+    )
+    expect_clean(
+        "runtime: missing app bundle graded S1",
+        "/dash,anon,Observed,200,https://a/d,https://a/d,heading 'Dash',"
+        "0,0,0,1,0,S1,0,qa/manual-tests/runtime/dash.log,app bundle 404 -- /assets/app.js\n",
+        **rt,
+    )
+    expect_clean(
+        "runtime: failed subresource graded S2",
+        "/gallery,anon,Observed,200,https://a/g,https://a/g,heading 'Gallery',"
+        "0,0,0,0,2,S2,0,qa/manual-tests/runtime/gallery.log,hero images 404 -- /img/a.png\n",
+        **rt,
+    )
+    # Suppression is visible rather than absent: a clean route that suppressed 4 known
+    # third-party warnings still reports the 4.
+    expect_clean(
+        "runtime: ignored items counted on an otherwise clean route",
+        "/,anon,Observed,200,https://a/,https://a/,heading 'Home',0,0,0,0,0,none,4,,\n",
+        **rt,
+    )
+
+    # -- the severity mapping cannot be talked down --
+    expect_findings(
+        "runtime: uncaught exception downgraded to S2",
+        "/a,anon,Observed,200,https://a/a,https://a/a,heading 'A',"
+        "0,0,1,0,0,S2,0,qa/manual-tests/runtime/a.log,threw once\n",
+        contains="is S1", **rt,
+    )
+    expect_findings(
+        "runtime: failed script called clean",
+        "/b,anon,Observed,200,https://a/b,https://a/b,heading 'B',0,0,0,2,0,none,0,,\n",
+        contains="is S1", **rt,
+    )
+    expect_findings(
+        "runtime: console errors called clean",
+        "/c,anon,Observed,200,https://a/c,https://a/c,heading 'C',3,0,0,0,0,none,0,,\n",
+        contains="is S2", **rt,
+    )
+    # The inverse: a severity with nothing behind it. Either a counter was not recorded or the
+    # route is clean -- both are defects in the row, and an unexplained S1 trains people to
+    # ignore S1.
+    expect_findings(
+        "runtime: severity with all gating counters at 0",
+        "/d,anon,Observed,200,https://a/d,https://a/d,heading 'D',0,0,0,0,0,S1,0,x.log,nothing\n",
+        contains="all 0", **rt,
+    )
+
+    # -- a capture that records nothing is not a clean capture --
+    expect_findings(
+        "runtime: missing a counter",
+        "/e,anon,Observed,200,https://a/e,https://a/e,heading 'E',,0,0,0,0,none,0,,\n",
+        contains="without a Console Errors count", **rt,
+    )
+    expect_findings(
+        "runtime: placeholder text instead of a count",
+        "/f,anon,Observed,200,https://a/f,https://a/f,heading 'F',none,0,0,0,0,none,0,,\n",
+        contains="records no number", **rt,
+    )
+    expect_findings(
+        "runtime: negative counter",
+        "/g,anon,Observed,200,https://a/g,https://a/g,heading 'G',-1,0,0,0,0,none,0,,\n",
+        contains="is negative", **rt,
+    )
+    expect_findings(
+        "runtime: no Ignored count -- suppression must stay visible",
+        "/h,anon,Observed,200,https://a/h,https://a/h,heading 'H',0,0,0,0,0,none,,,\n",
+        contains="suppression must stay visible", **rt,
+    )
+    expect_findings(
+        "runtime: S1 without evidence a human can re-read",
+        "/i,anon,Observed,200,https://a/i,https://a/i,heading 'I',0,0,1,0,0,S1,0,,threw\n",
+        contains="S1 without an Evidence path", **rt,
+    )
+    expect_findings(
+        "runtime: graded but no message or resource URL recorded",
+        "/j,anon,Observed,200,https://a/j,https://a/j,heading 'J',2,0,0,0,0,S2,0,j.log,\n",
+        contains="without Notes", **rt,
+    )
+    expect_findings(
+        "runtime: severity outside the vocabulary",
+        "/k,anon,Observed,200,https://a/k,https://a/k,heading 'K',0,0,0,0,0,critical,0,,\n",
+        contains="is not one of", **rt,
+    )
+
+    # -- the SHARED rules must apply to this profile too, not just its own extras --
+    # A new profile that silently skipped the page-identity checks would reintroduce #106's
+    # hole on the newest artifact.
+    expect_findings(
+        "runtime: observed on a 500 is not the page under test",
+        "/l,anon,Observed,500,https://a/l,https://a/l,heading 'L',0,0,0,0,0,none,0,,\n",
+        contains="was not the page under test", **rt,
+    )
+    expect_findings(
+        "runtime: observed without an expected-content assertion",
+        "/m,anon,Observed,200,https://a/m,https://a/m,,0,0,0,0,0,none,0,,\n",
+        contains="expected-content assertion", **rt,
+    )
+    expect_findings(
+        "runtime: silent redirect means another route was observed",
+        "/n,anon,Observed,200,https://a/n,https://a/login,heading 'N',0,0,0,0,0,none,0,,\n",
+        contains="redirected", **rt,
+    )
+    expect_clean(
+        "runtime: Blocked route records what it saw",
+        "/o,anon,Blocked,none,https://a/o,https://a/o,,,,,,,,,,listeners never attached "
+        "-- navigation timed out\n",
+        **rt,
+    )
+
     # ---- profile detection is by header, and must never guess -----------------------
     _tick()
     detected = []
-    for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN)):
+    for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN), (ve.RUNTIME, RUNTIME_CLEAN)):
         got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
         detected.append(got.name)
         if got is not prof:
@@ -505,6 +641,10 @@ def run() -> int:
     for filename, profile in (
         ("functional-tester.md", ve.FUNCTIONAL),
         ("a11y-auditor.md", ve.A11Y),
+        # The runtime capture is written by both browser-driven passes; functional-tester.md is
+        # its canonical contract, and e2e-tester.md points at it rather than restating the
+        # header (one copy to drift out of step is enough).
+        ("functional-tester.md", ve.RUNTIME),
     ):
         _tick()
         doctrine = agents / filename
