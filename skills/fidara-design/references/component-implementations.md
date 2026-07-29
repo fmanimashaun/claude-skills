@@ -511,7 +511,274 @@ end
 
 ---
 
-**Coverage.** With Button + Card (reference-implementation.md) plus the above, the full catalog
+## Structure & elements
+
+The pieces `page-anatomies.md` composes screens from. Small, high-reuse, and deliberately dull —
+a stacked list is a `MediaObject` in a `divide-y` container, a page header is a `Heading` with a
+`ButtonGroup` in its actions slot.
+
+### Heading — `app/components/ui/heading_component.rb`
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class HeadingComponent < ViewComponent::Base
+    renders_one :eyebrow          # breadcrumbs, or a kicker label
+    renders_one :description
+    renders_one :actions
+    renders_one :meta             # status badge + timestamps
+
+    # Scale is the ONLY axis: same anatomy, three sizes. Tag and step move together so a
+    # card heading can never be an <h2> styled small (which breaks document outline).
+    LEVEL = {
+      page:    { tag: :h1, size: "text-step-3" },
+      section: { tag: :h2, size: "text-step-2" },
+      card:    { tag: :h3, size: "text-step-1" },
+    }.freeze
+
+    def initialize(title:, level: :section, id: nil)
+      raise ArgumentError, "unknown level #{level}" unless LEVEL.key?(level.to_sym)
+      @title, @level, @id = title, level.to_sym, id
+    end
+
+    def tag = LEVEL.fetch(@level)[:tag]
+    def size = LEVEL.fetch(@level)[:size]
+    attr_reader :title, :id
+  end
+end
+```
+```erb
+<%# heading_component.html.erb %>
+<div class="stack" style="--space: var(--space-2xs)">
+  <%= eyebrow %>
+  <div class="cluster justify-between items-start">
+    <div class="stack" style="--space: var(--space-3xs)">
+      <%= content_tag tag, title, id: id, class: "#{size} font-semibold text-foreground" %>
+      <% if description? %>
+        <p class="text-step-0 text-muted-foreground prose-measure"><%= description %></p>
+      <% end %>
+    </div>
+    <% if actions? %><div class="cluster"><%= actions %></div><% end %>
+  </div>
+  <% if meta? %>
+    <div class="cluster text-step--2 text-muted-foreground"><%= meta %></div>
+  <% end %>
+</div>
+```
+
+### Breadcrumbs — `app/components/ui/breadcrumbs_component.rb`
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class BreadcrumbsComponent < ViewComponent::Base
+    # [{ label:, href: }, ...] — the LAST entry is the current page and is never a link.
+    def initialize(items:, collapse_after: 3)
+      @items, @collapse_after = items, collapse_after
+    end
+
+    def crumbs = @items
+    def collapsed? = @items.size > @collapse_after
+
+    # first -> [collapsed middle] -> last two. Keeps "where am I" legible on a phone
+    # without horizontal scrolling, which defeats the whole purpose.
+    def head = collapsed? ? @items.first(1) : @items[0..-2]
+    def hidden_middle = collapsed? ? @items[1..-3] : []
+    def tail = collapsed? ? @items.last(2) : [@items.last]
+  end
+end
+```
+```ruby
+# in the component — the separator is markup, and the icon carries NO size class:
+# `with-icon` sizes it to 1em in currentColor (see Icons above).
+def separator = tag.span(helpers.lucide_icon("chevron-right"), class: "with-icon",
+                        aria: { hidden: true })
+def crumb_link_class = "min-h-touch inline-flex items-center hover:text-foreground"
+```
+```erb
+<%# breadcrumbs_component.html.erb — separators are markup + aria-hidden, never ::after %>
+<nav aria-label="Breadcrumb">
+  <ol class="cluster text-step--1 text-muted-foreground" style="--space: var(--space-3xs)">
+    <% head.each do |c| %>
+      <li class="cluster" style="--space: var(--space-3xs)">
+        <%= link_to c[:label], c[:href], class: crumb_link_class %>
+        <%= separator %>
+      </li>
+    <% end %>
+
+    <% if collapsed? %>
+      <%# hidden_middle is already [{ label:, href: }] — the shape Dropdown's `items:` expects %>
+      <li class="cluster" style="--space: var(--space-3xs)">
+        <%= render(Ui::DropdownComponent.new(items: hidden_middle)) do |d| %>
+          <% d.with_trigger do %>
+            <span aria-hidden="true">…</span>
+            <span class="sr-only"><%= t(".show_more", count: hidden_middle.size) %></span>
+          <% end %>
+        <% end %>
+        <%= separator %>
+      </li>
+    <% end %>
+
+    <% tail.each_with_index do |c, i| %>
+      <li class="cluster" style="--space: var(--space-3xs)">
+        <% if i == tail.size - 1 %>
+          <span class="text-foreground font-medium" aria-current="page"><%= c[:label] %></span>
+        <% else %>
+          <%= link_to c[:label], c[:href], class: crumb_link_class %>
+          <%= separator %>
+        <% end %>
+      </li>
+    <% end %>
+  </ol>
+</nav>
+```
+
+### Description list — `app/components/ui/description_list_component.rb`
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class DescriptionListComponent < ViewComponent::Base
+    renders_many :rows, "RowComponent"
+
+    LAYOUT = {
+      stacked: "stack",                                              # dt above dd
+      inline:  "stack divide-y divide-border",                       # label left, value right
+      grid:    "grid-auto",                                          # wide summaries
+    }.freeze
+
+    def initialize(layout: :stacked)
+      raise ArgumentError, "unknown layout #{layout}" unless LAYOUT.key?(layout.to_sym)
+      @layout = layout.to_sym
+    end
+
+    def container_class = LAYOUT.fetch(@layout)
+    def inline? = @layout == :inline
+
+    class RowComponent < ViewComponent::Base
+      # `values` is an Array so one label can carry several <dd>s — no list inside a <dd>.
+      def initialize(label:, values: nil, value: nil, mono: false)
+        @label = label
+        @values = Array(values || value)
+        @mono = mono
+      end
+      attr_reader :label, :values
+
+      # A blank <dd> reads as a rendering bug, so absence is stated.
+      def blank? = @values.compact_blank.empty?
+      def value_class = "text-step-0 text-foreground#{' font-mono' if @mono}"
+    end
+  end
+end
+```
+```erb
+<%# description_list_component.html.erb — no wrapper may sit between <dt> and <dd> %>
+<dl class="<%= container_class %>">
+  <% rows.each do |row| %>
+    <div class="<%= inline? ? 'cluster justify-between py-2' : 'stack' %>"
+         style="--space: var(--space-3xs)">
+      <dt class="text-step--1 text-muted-foreground"><%= row.label %></dt>
+      <% if row.blank? %>
+        <dd class="text-step-0 text-muted-foreground">
+          <span aria-hidden="true">—</span><span class="sr-only"><%= t(".not_set") %></span>
+        </dd>
+      <% else %>
+        <% row.values.each do |v| %>
+          <dd class="<%= row.value_class %>"><%= v %></dd>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
+</dl>
+```
+
+### Button group — `app/components/ui/button_group_component.rb`
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class ButtonGroupComponent < ViewComponent::Base
+    renders_many :buttons
+
+    # Actions and single-select are different ELEMENTS, not a style variant:
+    # a view switcher is a radiogroup, a toolbar is a group of buttons.
+    ROLE = { actions: "group", select: "radiogroup" }.freeze
+
+    def initialize(label:, kind: :actions)
+      raise ArgumentError, "unknown kind #{kind}" unless ROLE.key?(kind.to_sym)
+      @label, @kind = label, kind.to_sym
+    end
+
+    def role = ROLE.fetch(@kind)
+    def controller = @kind == :select ? "list-navigation" : nil
+    attr_reader :label
+  end
+end
+```
+```erb
+<%# button_group_component.html.erb %>
+<%# isolate + focus-visible:z-10 on children so the focus ring is not clipped by the overlap %>
+<div class="cluster isolate" style="--space: 0"
+     role="<%= role %>" aria-label="<%= label %>"
+     <%= "data-controller=#{controller}" if controller %>>
+  <%# each child: Ui::ButtonComponent(variant: :outline) with
+      first:rounded-s-md last:rounded-e-md rounded-none [&:not(:first-child)]:-ms-px
+      focus-visible:z-10 min-h-touch %>
+  <%= buttons.each { |b| concat b.to_s } %>
+</div>
+```
+
+### Media object — `app/components/ui/media_object_component.rb`
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class MediaObjectComponent < ViewComponent::Base
+    renders_one :media          # avatar, icon chip or thumbnail (wrap in `frame`)
+    renders_one :body
+    renders_one :trailing       # timestamp, chevron, actions
+
+    SIZE = { sm: "size-8", md: "size-10", lg: "size-12" }.freeze
+
+    def initialize(size: :md)
+      raise ArgumentError, "unknown size #{size}" unless SIZE.key?(size.to_sym)
+      @size = size.to_sym
+    end
+
+    def media_class = "frame flex-none #{SIZE.fetch(@size)}"
+  end
+end
+```
+```erb
+<%# media_object_component.html.erb — never stacks; the side-by-side relationship IS the pattern %>
+<div class="cluster items-start">
+  <% if media? %><div class="<%= media_class %>"><%= media %></div><% end %>
+  <%# min-w-0 lets long words truncate instead of pushing the media off-screen %>
+  <div class="stack min-w-0 flex-1" style="--space: var(--space-3xs)"><%= body %></div>
+  <% if trailing? %><div class="flex-none"><%= trailing %></div><% end %>
+</div>
+```
+
+### Divider — a recipe, not a component
+
+No component: an `<hr>` is already `role="separator"`.
+
+```erb
+<hr class="border-border">                                  <%# plain rule %>
+<div class="cluster">                                       <%# labelled: rule — label — rule %>
+  <span aria-hidden="true" class="h-px flex-1 bg-border"></span>
+  <span class="text-step--2 text-muted-foreground"><%= t(".or") %></span>
+  <span aria-hidden="true" class="h-px flex-1 bg-border"></span>
+</div>
+<span aria-hidden="true" class="w-px self-stretch bg-border"></span>   <%# vertical, in a cluster %>
+```
+
+In lists and tables put `divide-y divide-border` on the **container** — one declaration instead of
+n elements, and no stray rule after the last row.
+
+**Coverage.** With Button + Card (reference-implementation.md) plus the above — including the
+structure & elements group (Heading, Breadcrumbs, Description list, Button group, Media object,
+and Divider as a recipe) — the full catalog
 from [components.md](components.md) has worked code. Pagination stays the Pagy-based
 `shared/_pagination` partial; CRUD tables stay the `shared/_crud_*` partials — both refactored
 to role tokens (see components.md). Extend any new component by mirroring these exact shapes:

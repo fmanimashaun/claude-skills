@@ -148,6 +148,8 @@ Same four regions every time, so screens stay recognisable:
 
 **heading block → toolbar → content region → aside (optional)**
 
+The heading block is the `Heading` component (`page`/`section`/`card` scale); breadcrumbs, description lists, button groups and media objects are catalog entries too — see `components.md` → Heading blocks, Breadcrumbs, Description list, Button group, Media object.
+
 ## Home / dashboard
 
 Answers "what needs my attention?" — not "here is everything."
@@ -199,8 +201,9 @@ One record. The screen answers "what is this, and what can I do to it?"
 </div>
 ```
 
-- **Composes** — Badge (status), Button (one primary action), Dropdown (overflow),
-  Table, Modal for every edit, Avatar in activity, Breadcrumb.
+- **Composes** — Breadcrumbs, Heading(`page`) with a Button group in its actions slot, Badge
+  (status), Dropdown (overflow), Description list for the record, Media object per activity
+  entry, Table, Modal for every edit.
 - **Mobile** — the header `cluster` wraps naturally; actions drop below the title
   rather than being cramped beside it. Keep the primary action visible without
   scrolling; move the rest into the overflow menu.
