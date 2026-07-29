@@ -785,8 +785,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
-*(version assigned at promotion — nothing here has shipped)*
+### 1.16.0 — 2026-07-29
 
 - **NEW `coverage.md` — what to build, and where to use it** (#124). The component work so far came
   from **sampling**, so "is the library complete?" had no answer, and sampling cannot give one: a
@@ -1602,6 +1601,44 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.28.0)
+- **rails-stack 1.16.0 — component coverage: what to build, and where to use it** (#124). The
+  component work so far came from **sampling**, so "is the library complete?" had no answer — and
+  sampling cannot give one: a component nobody thought of is indistinguishable from one deliberately
+  skipped. Now it is a **diff**.
+- `scripts/build_coverage.py` enumerates the licensed reference corpora mechanically — **93** Tailwind
+  UI leaf components across `application-ui` / `marketing` / `ecommerce`, plus Flowbite's **63**
+  catalogue entries — and reconciles them against our own doctrine into **113 rows** in
+  `skills/fidara-design/references/coverage.md`.
+- **The guarantee is the totality guard, not the file.** Every corpus entry must be claimed by exactly
+  one row or **the build fails and names the stragglers**, so a new upstream directory cannot be
+  silently ignored and coverage cannot rot into a stale list. Double-claims are checked explicitly,
+  because a dict keyed by the reference would merge two rows silently.
+- **The axis is guidance, not availability.** Components are built **just-in-time in the project**
+  when a screen needs one — the kit ships doctrine, not a prebuilt library. So this is neither a build
+  queue nor an availability list, and nothing is withheld: every row is buildable on demand. A row
+  says only how much doctrine already exists — `documented` (40, an entry defines the anatomy),
+  `derivable` (43, the row names the documented parts it composes from), or `needs doctrine #N` (30,
+  an a11y/interaction contract is unwritten, so the row gives the nearest safe approach and the issue
+  tracks writing the real one). `needs doctrine` is a gap in **writing**, not in capability. Every row
+  also carries **where / when to use it**, and the builder refuses to emit a row missing either half.
+- **`documented` is evidenced, not asserted** — each such row cites a literal string that must occur
+  in the reference docs. That caught a real wrong claim while the matrix was being written: `Link` was
+  marked shipped on the strength of a Button `link` **variant**, with no standalone inline-link token
+  anywhere. A wrong `documented` is exactly the dangling reference v1.26.0 had to fix, so it is now
+  mechanically checkable.
+- **Two upstream facts corrected**: Flowbite has **no** `Separator` (theirs is `HR`, under Typography)
+  and **no** cookie-consent component. Read from their docs and pinned by tests, so they cannot be
+  re-added from the issue text.
+- Interaction patterns and layout primitives are enumerated separately, since neither maps
+  one-to-one onto a corpus directory.
+- **Licensing boundary held** (#89): the corpora stay gitignored and unredistributed. The builder
+  reads only directory *names* and emits only names plus our own prose — no markup, class list or
+  asset. Without the corpora it **refuses to run** rather than emitting a hollow file, which is why it
+  is maintainer tooling in `scripts/` and only its output ships.
+- 35 selftest assertions; **13 deliberate mutations of the guards each caught**, including two rounds
+  where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ### 2026-07-29 (release v1.27.0)
 - **qa-flow 1.6.0 — a screenshot is not evidence until the page it shows is validated** (#106,
