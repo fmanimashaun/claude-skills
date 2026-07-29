@@ -7,6 +7,34 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased — the packager stops depending on your working copy (#171)
+_Version assigned at promotion._
+- **The prescribed check was satisfiable while producing the drift it exists to prevent.**
+  `.gitattributes` is `* text=auto eol=lf` with `*.skill binary`, so git normalises sources to LF on
+  commit but stores the artifact byte-for-byte. Packaging a freshly authored file on Windows (CRLF in
+  the working copy) produced an archive carrying CRs its own committed sources did not have — 424
+  bytes' worth in #94 — while `git status` showed only the intended `dist/` change, so CLAUDE.md's
+  instruction passed. It runs *before* the normalisation that creates the mismatch. The drift then
+  surfaced at release time, where `release.yml` correctly refused to publish.
+- **`package_core.py` now normalises text members itself**, so the guarantee is "byte-identical on any
+  machine" rather than "byte-identical from a clean checkout" — it no longer depends on remembering
+  anything, which is the only kind of guarantee this repo trusts.
+- **Binary detection is git's own heuristic** (a NUL byte in the first 8000 bytes), deliberately not an
+  extension allowlist: an allowlist needs maintaining and **fails open**, so the first file type nobody
+  added would silently revert to the original bug. A future `.png` in a brand pack is protected without
+  anyone listing it. Only `CRLF` is converted, matching git's `eol=lf`; a lone `CR` is left alone.
+- **Proven behaviour-preserving, not asserted.** With the change in place all four `.skill` files
+  rebuild **byte-identical** to what was already committed — clean input has LF, so a correct
+  implementation changes nothing there. Then the original bug was reproduced end to end: all 39 sources
+  CRLF-ified (the #94 condition), and every artifact still built byte-identical to the committed
+  version.
+- **`--selftest` makes it mechanical** (11 assertions): CRLF and LF working copies build identical
+  bytes; a NUL-bearing member with `\r\n` inside is stored unmodified (the fixture naive normalisation
+  would corrupt); text members carry no CR; entries stay `ZIP_STORED` with `create_system` pinned and
+  timestamps fixed. Two bugs in that selftest were caught while writing it — an incoherent assertion,
+  and one scanning the whole archive for `\r` when a ZIP's CRC and size fields can legitimately contain
+  `0x0D`, which would have failed spuriously.
+
 ### 2026-07-29 — doctrine effect becomes measurable (#156), and the reviewer moves in-repo (#162)
 - **The asymmetry this closes.** Doctrine *content* has a hard gate: nothing is edited until
   `doctrine-verifier` confirms it against an authoritative source. Doctrine *effect* had none.
