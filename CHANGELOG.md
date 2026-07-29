@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-07-29 — the corpora ignore rules now match the layout we prescribe (#197)
 
 - **The corpora ignore rules could not match the layout our own setup instructions prescribed
   (#197).** `.gitignore` guarded the licensed kits with `everylayout/`, `tailwind-ui/`,
@@ -1746,6 +1746,59 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.30.0)
+
+> ### Nothing you install changed
+>
+> **No skill, plugin, or `dist/*.skill` asset differs from v1.29.0** — all four `.skill` archives
+> (`rails-8`, `hotwire`, `fidara-design`, `code-review`) are byte-identical to the previous release,
+> verified by hashing them against the `v1.29.0` tag, and `rails-stack` stays at 1.16.0. If you use
+> the marketplace, upgrading gains you nothing and costs you nothing.
+>
+> This release exists because **`main` is what a fresh clone gets**, and everything below is
+> maintainer tooling that was only on `dev`. Cloning the repo is how a maintainer machine acquires
+> the flow, so leaving it unpromoted meant a new clone did not have it.
+
+- **A new maintainer machine is set up by a script, not by remembering** (#199). Moving maintenance
+  to a second machine had needed a hand-written ~120-line briefing, complete only because its author
+  had just hit every trap personally. `scripts/maintainer_doctor.py` now diagnoses and repairs the
+  setup — fresh clones landing on `main`, a stale local `main` ref (which made the prescribed
+  `git diff dev main` report 5,231 phantom deletions once), the optional licensed corpora, and
+  `git status --porcelain` collapsing a new untracked directory so a new file reads as nothing.
+  `--fix` touches only the local `main` ref and checking out `dev`: never a history rewrite, never
+  `reset --hard`, never `clean`. `/maintainer-onboard` wraps it with the judgement half.
+  - **Three outcomes, not two.** `ok`, `FAIL` and **`skip`** are reported distinctly, because a
+    check that did not run must never render as one that passed.
+- **`build_coverage.py --selftest` stopped counting skipped checks as passed** (#198, shipped as part
+  of #199). It printed `35 checks passed` on a machine without the licensed corpora while **two of
+  those checks never ran** — the live totality check and the `coverage.md` drift check, both of which
+  need the real kits. So the coverage guards were inert while reading green, which is the
+  `gate-that-cannot-fail` class this repo ships rules about. It now reports
+  `33 passed, 2 SKIPPED`, names both, and still exits 0 so a contributor without the optional
+  corpora is not failed.
+- **The licensed-corpora ignore rules could not match the layout our own docs prescribed** (#197).
+  `.gitignore` used directory-only patterns (`tailwind-ui/`, `everylayout/`, `flowbite*/`), and a
+  trailing slash matches a real *directory* while git stores a symlink as mode `120000`. The setup
+  instructions said to attach the kits "with a clone plus links" — so following the documented setup
+  left all three **untracked and unignored**, listed by `git status` directly beneath the warning
+  about 656 MB of licensed blobs the rule could not actually stop. The corpora now attach as one
+  nested clone in a gitignored `design-corpora/` subfolder: nothing is linked, so there is no
+  mode-`120000` path for a pattern to miss, and the Windows directory-junction workaround leaves the
+  documentation. `maintainer_doctor.py` gained a `corpora ignore rules` check that proves the
+  patterns still cover it — probing paths that *do not exist*, because a trailing-slash pattern does
+  match a real directory, so testing the real path on a machine that has the kits would hide the
+  regression.
+- **The full gate sweep no longer fails a machine for not having an optional download** (#197).
+  `--gates` ran the coverage-drift check unconditionally, so a corpora-less machine got
+  `[ FAIL ] gate: coverage matrix drift` and the verdict *"fix the failures above before doing
+  maintenance work"* — about a licensed 656 MB clone nobody is required to have. A gate that
+  **cannot** run is not a broken machine. It skips now, and still fails on real drift when the kits
+  are present.
+- `lint_self_consistency.py` prunes `design-corpora/`: with the kits inside the tree it was checking
+  our own claims against ~125 third-party vendor markdown files, where a finding would be both false
+  and unactionable (#197). The `.gitignore` comments explaining why the corpora live in a separate
+  private repo were also expanded (#196).
 
 ### 2026-07-29 (release v1.29.0)
 
