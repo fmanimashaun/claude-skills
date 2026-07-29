@@ -22,8 +22,8 @@ Process:
 4. **By file type**: models (validations vs DB constraints, callback safety), controllers
    (auth, scoping, statuses), migrations (safety rules), views (design system), specs
    (do they assert the behavior or just execute the code?), jobs (**idempotent** — retries
-   and continuations both re-run the body; arguments serializable, i.e. records via
-   GlobalID or primitives — do NOT demand ids-only, GlobalID (de)serializes records).
+   and continuations both re-run the body; argument shape per the project's own job
+   doctrine — do **not** demand ids-only unless the project's rules actually require it).
 5. **Verdict**: structured report — **report every finding, no matter how small**, each with
    `file:line`, a repro / failure scenario, a severity (BLOCKING vs Suggestion), and fix
    option(s). Never self-dismiss a finding ("no action / accepted / awareness-only") or drop it.

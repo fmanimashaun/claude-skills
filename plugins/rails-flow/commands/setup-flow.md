@@ -99,7 +99,7 @@ Keep this section honest — an empty list is a valid answer.>
 
 ## Patterns
 <the 3-6 patterns agents must copy: controller shape, service invocation + result object,
-job shape (idempotent `perform`; records serialize via GlobalID), key concerns — short code snippets from THIS codebase>
+job shape (idempotent `perform`; the argument convention THIS codebase actually uses — record or id, do not impose one), key concerns — short code snippets from THIS codebase>
 
 ## Verification Commands
 <grep one-liners that mechanically check the overrides, e.g. no raw form_with in views,

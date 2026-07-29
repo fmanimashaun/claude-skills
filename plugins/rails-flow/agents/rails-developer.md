@@ -25,9 +25,8 @@ Implementation rules:
 - Server responses drive Turbo: failed validation re-renders with `status: :unprocessable_entity`;
   successful mutation redirects with `status: :see_other`.
 - Background jobs: **idempotent `perform`** — retries and continuations both re-run the
-  body. Arguments must be serializable: records ride GlobalID, so passing a record is
-  correct; pair it with `discard_on ActiveJob::DeserializationError` for a record deleted
-  before the run.
+  body. Arguments must be serializable; follow the rails-8 skill's jobs doctrine for what
+  qualifies and match whatever this codebase already does. Do not assume ids-only.
 - Every behavioral change ships with the spec that proves it (spec-first when invoked
   from /rails-flow:feature). Passing the existing suite proves nothing about new behavior.
 - Stage specific files only; small logical commits with imperative messages.

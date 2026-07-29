@@ -84,11 +84,21 @@ class Finding:
 
 
 def walk(suffix: str) -> list[Path]:
+    """Collect files under ROOT, pruning SKIP_DIRS during traversal.
+
+    `rglob` + post-filter looks equivalent and is not: it descends into `.git`,
+    `node_modules`, and `.venv` in full and only discards the results afterwards,
+    so SKIP_DIRS documented a pruning that never happened. `os.walk` with in-place
+    `dirnames` mutation actually prevents the recursion.
+    """
+    import os
+
     out: list[Path] = []
-    for path in ROOT.rglob(f"*{suffix}"):
-        if any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts):
-            continue
-        out.append(path)
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for filename in filenames:
+            if filename.endswith(suffix):
+                out.append(Path(dirpath) / filename)
     return sorted(out)
 
 

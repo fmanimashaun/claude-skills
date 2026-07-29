@@ -258,10 +258,14 @@ _Version assigned at promotion._
   doctrine**, the developer agent would write the wrong thing, and setup-flow would propagate the
   wrong rule into the user's own doctrine file for pr-reviewer to then enforce against them.
   Self-reinforcing, and worse than a plain bug because it blames the user.
-  The doctrine is coherent and unchanged: line 26 pairs `discard_on
-  ActiveJob::DeserializationError` with passing records, which is exactly the correct handling of
-  the "record deleted before the run" objection that motivates the ids-only folk wisdom. This is a
-  consistency fix aligning plugin guidance to existing skill doctrine, not a new framework claim.
+  **No framework claim is introduced or changed here, deliberately.** `skills/rails-8` is
+  untouched, and review flagged that the first draft *restated* the mechanism (GlobalID,
+  `discard_on`) in three shipped plugin files — which would have been authoring an externally
+  verifiable claim, and `CLAUDE.md` requires a CONFIRMED `doctrine-verifier` verdict for that even
+  when the rest of a PR is an architecture decision. So the plugin text now **defers** to the
+  rails-8 jobs doctrine instead of paraphrasing it: the corrected rule is "do not demand ids-only;
+  follow the project's own job doctrine", and the mechanism stays in the one place that already
+  carries it. Same single-source principle this branch applies to the review classes.
   Found by applying the rubric's `doctrine-contradiction` class systematically with one grep rather
   than fixing the single instance review happened to surface.
 - **`code-reviewer` and `pr-reviewer` now ask claims-vs-enforcement explicitly** — the class an
