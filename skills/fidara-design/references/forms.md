@@ -11,10 +11,34 @@ Optional leading/trailing icon or prefix/suffix. Label always present (visually 
 ```erb
 <div class="stack" style="--space: var(--space-2xs)">
   <%= f.label :email, class: "text-step--1 font-medium text-foreground" %>
-  <%= f.input_field :email, class: field_classes(state) %>
+  <%= f.input_field :email, class: input_classes(state: state) %>
   <p class="text-step--1 text-muted-foreground">We'll never share it.</p>  <%# helper %>
 </div>
 ```
+
+The helper is **`input_classes(state:, size:)`** — keyword arguments, defined in
+`UiHelper` (see [component-implementations.md](component-implementations.md) → Input recipe).
+Call it by that name; there is no `field_classes`.
+
+### Building the anatomy by hand vs. `Ui::FieldComponent`
+
+The block above composes the anatomy inline, which is right when a field needs
+custom arrangement. When you want the wrapper itself, `Ui::FieldComponent` renders
+exactly that stack (label → control → hint/error) and owns the `aria-describedby`
+wiring:
+
+```erb
+<%= render(Ui::FieldComponent.new(label: "Amount", for_id: "invoice_amount")) do |field| %>
+  <% field.with_control do %>
+    <%= f.number_field :amount, id: "invoice_amount", class: input_classes(state: :default) %>
+  <% end %>
+<% end %>
+```
+
+Its arguments are **`label:`, `hint:`, `error:`, `for_id:`**, and the control goes
+in the `control` slot — it is **not** form-builder aware and takes no `form:` or
+`name:`. Pass `for_id:` matching the control's `id` so the label and any
+hint/error are associated correctly.
 
 ## Control recipe + states
 

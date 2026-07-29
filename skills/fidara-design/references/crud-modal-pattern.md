@@ -37,7 +37,12 @@ them into CRUD**.
        <% m.with_title { @invoice.new_record? ? "New invoice" : "Edit invoice" } %>
        <%= form_with model: @invoice, data: { turbo_frame: "_top" } do |f| %>
          <div class="stack" style="--space: var(--space-s)">
-           <%= render(Ui::FieldComponent.new(form: f, name: :amount, label: "Amount")) %>
+           <%= render(Ui::FieldComponent.new(label: "Amount", for_id: "invoice_amount")) do |field| %>
+             <% field.with_control do %>
+               <%= f.number_field :amount, id: "invoice_amount",
+                                  class: input_classes(state: :default) %>
+             <% end %>
+           <% end %>
            <%# ...fields... %>
          </div>
          <% m.with_actions do %>

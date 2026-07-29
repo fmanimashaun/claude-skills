@@ -1021,6 +1021,33 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased — three doctrine references called APIs that do not exist (#168)
+_Version assigned at promotion._
+- **`forms.md` called a helper by the wrong name.** It used `field_classes(state)`; `UiHelper`
+  defines **`input_classes(state:, size:)`** — different name *and* keyword arguments. An agent
+  following the field-anatomy example verbatim produced a `NoMethodError`. Fixed, and the correct
+  name is now stated explicitly ("there is no `field_classes`") so the wrong one is not re-derived.
+- **`crud-modal-pattern.md` called `Ui::FieldComponent` with a signature it does not have** —
+  `(form:, name:, label:)` against an initializer of `(label:, hint:, error:, for_id:)` with the
+  control in a `renders_one :control` slot. This is the canonical create/edit example every CRUD
+  screen is built from, so the broken call had the widest possible blast radius. Rewritten to the
+  real API using only established Rails (`f.number_field` with an explicit `id:`), so no new
+  framework syntax is introduced.
+- **The component's contract is now stated where it is defined.** `component-implementations.md`
+  records that the wrapper is *deliberately* not form-builder aware — the caller owns the control, so
+  one wrapper serves a form-builder field, a standalone filter input and a composite alike. That is
+  the reasoning the form-builder signature was invented against, and writing it down at the
+  definition site is what stops it recurring.
+- **`forms.md` now documents when to compose the anatomy inline vs. render the wrapper**, so the two
+  approaches read as a choice rather than a contradiction.
+- **Scope held deliberately.** `crud-modal-pattern.md` still uses `form_with` while `forms.md`
+  mandates simple_form for the markup contract. That is a real design decision with framework-syntax
+  implications (`simple_form_for` needs `html: { data: … }` to carry the Turbo attribute), so it is
+  *not* bundled here — CLAUDE.md is explicit that a framework claim inside an architecture PR still
+  needs its own verdict. Left flagged on #168.
+- All three were found by applying the `code-review` skill's `doctrine-contradiction` class to our
+  own doctrine while authoring #94 — the third distinct instance of that class this week.
+
 ### 1.13.0 — 2026-07-29
 - **The gap.** fidara-design had a strong component catalog and almost no page-level anatomy — one
   base layout and the `cover` recipe. An agent asked for "the invoices screen" had nothing to

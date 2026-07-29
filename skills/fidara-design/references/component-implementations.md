@@ -181,6 +181,11 @@ end
 
 ### Field wrapper — `app/components/ui/field_component.rb`
 
+**Not form-builder aware, deliberately.** It takes `label:`/`hint:`/`error:`/`for_id:` and the
+control goes in the `control` slot — never `form:` or `name:`. The caller owns the control, so the
+same wrapper serves a form-builder field, a standalone filter input and a composite alike. Pass
+`for_id:` matching the control's `id`, which is what makes the label and `aria-describedby` line up.
+
 ```ruby
 # frozen_string_literal: true
 module Ui
