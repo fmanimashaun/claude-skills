@@ -279,6 +279,48 @@ python3 scripts/package_core.py --selftest   # 11 assertions: CRLF==LF output, b
 deduped, version-pinned issues **here** → you `/maintainer-triage` and `/maintainer-work`
 them → `dev → main` auto-releases. Every issue in this tracker arrived this way.
 
+## New machine? Run the doctor first
+
+```bash
+python3 scripts/maintainer_doctor.py          # diagnose, change nothing
+python3 scripts/maintainer_doctor.py --fix    # also apply the SAFE repairs
+python3 scripts/maintainer_doctor.py --gates  # + the full gate sweep
+```
+
+`/maintainer-onboard` wraps it with the judgement half (read the doctrine, report released
+version, unshipped work, candidate next work).
+
+This exists because moving maintenance to a second machine once needed a hand-written 120-line
+briefing, and it was only complete because the author had just hit every trap personally: a
+fresh clone lands on **`main`**; an idle clone's **stale local `main` ref** makes the
+`git diff dev main` check above report phantom deletions (5,231 of them, once); the licensed
+corpora need attaching; and `git status --porcelain` **collapses a new untracked directory**, so
+a new file can look like nothing at all. A checklist in prose would be the same
+claims-vs-enforcement defect this file keeps warning about, so it is a script that can fail.
+
+**Read its output as three states, not two.** `ok` is verified, `FAIL` blocks work, and **`skip`
+means the check did not run — it is not a pass.** That distinction is the whole point: the bug
+that prompted this was `build_coverage.py --selftest` printing "35 checks passed" on a machine
+with no corpora while two checks against the real repo silently did nothing.
+
+`--fix` touches exactly two things — fast-forwarding the local `main` ref and checking
+out/pulling `dev`. It never rewrites history, never `reset --hard`, never `clean`, and it
+restores `dist/` byte-for-byte after the drift rebuild, so a diagnostic never mutates the repo.
+
+**The licensed corpora** (`tailwind-ui/`, `flowbite/`, `everylayout/`) live in a separate
+**private** repo, `fmanimashaun/design-corpora`. Exactly one file reads them —
+`scripts/build_coverage.py` — so a machine without them can do everything except regenerate or
+drift-check the coverage matrix. Attach them with a clone plus links; on **Windows use
+directory junctions**, because Git Bash symlinks need developer mode:
+
+```powershell
+New-Item -ItemType Junction -Path tailwind-ui -Target ..\design-corpora\tailwind-ui
+```
+
+Never un-ignore them to commit them here: ~656 MB of licensed blobs in this history could only
+be removed with `git filter-repo` and a force-push that rewrites every commit SHA and detaches
+every release tag. Deleting the files in a later commit does not remove the blobs.
+
 ## Platform
 
 The `.claude/` hook and the plugins' hooks are **bash + `python3`**, and the flow drives

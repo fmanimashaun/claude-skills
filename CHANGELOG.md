@@ -7,6 +7,40 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-29 — a new maintainer machine is set up by a script, not by remembering (#199)
+
+- Moving maintenance to a second machine needed a hand-written ~120-line briefing, and it was only
+  complete because the author had just hit every trap in one session: a fresh clone lands on
+  **`main`**; an idle clone's **stale local `main` ref** makes the prescribed `git diff dev main`
+  check report phantom deletions (5,231 of them); the licensed corpora need attaching; and
+  `git status --porcelain` **collapses a new untracked directory**, so a new file reads as nothing.
+- A checklist in prose would be the same **claims-vs-enforcement** defect this file keeps warning
+  about, so `scripts/maintainer_doctor.py` is a script that can fail. `/maintainer-onboard` wraps it
+  with the judgement half.
+- **Three outcomes, not two.** `pass`, `fail` and **`skip`** are distinct, because a check that did
+  not run is not a check that passed. That conflation was a live bug: `build_coverage.py --selftest`
+  printed "35 checks passed" on a corpora-less machine while two checks against the real repo
+  silently did nothing — inert guards reading green. Now `33 passed, 2 SKIPPED` with the reason.
+- **It earned its place on its first real run**, flagging that local `main` sat two releases behind
+  `origin/main` — unnoticed, and the same defect that produced the 5,231 phantom deletions earlier
+  the same day.
+- **A diagnostic must not mutate the repo.** `check_dist_clean` has to rebuild to know anything, and
+  `package_core.py` writes into `dist/` with no output-dir flag, so it snapshots and restores
+  byte-for-byte. The first version skipped the restore and was idempotent only *because* the packer
+  is byte-deterministic — true today, incidental rather than guaranteed, and it would have silently
+  destroyed intentional uncommitted `dist/` edits.
+- `--fix` touches exactly two things (fast-forward the local `main` ref; check out/pull `dev`) and
+  never rewrites history, `reset --hard` or `clean`. Every FAIL and SKIP names a remedy — a fault
+  without a fix is a complaint, and the reader is the person who does not yet know what to do.
+- **Windows uses directory junctions** for the corpora, not `ln -s`, which needs developer mode.
+- 29 selftest assertions against real bare-remote-plus-clone git fixtures; **7 deliberate mutations
+  each caught**, including dropping the `dist/` restore and reporting corpora absence as a pass.
+- Two defects the review process caught rather than the code: the doctor's own `check_branch`
+  treated `dev` as a clean pass, so it would have blessed editing directly on the integration
+  branch — which is exactly what the author was doing while writing it; and the first `stale_main`
+  test fixture set local `main` to a commit that *was* `origin/main`, so the check looked broken
+  when the fixture was.
+
 ### 2026-07-29 — doctrine call sites are checked by a linter, not by remembering (#182)
 - **Seven instances of one class in two days, and zero permanent enforcement.** Skills are doctrine
   other agents follow verbatim, so a call site naming an API that does not exist is generated code
