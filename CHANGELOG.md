@@ -7,6 +7,35 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-29 — the shell inside markdown is now verified (root cause of #151)
+- **The repo mandated `bash -n` for `.sh` files and shipped 194 unverified lines of bash inside
+  markdown** — 51 fenced blocks across 30 command/skill files, the lines an agent copies and runs
+  verbatim in a user's project. Three review findings in one week lived in that gap: the
+  `--check || echo` that made the release gate unable to block (#151), the same file's guard
+  conflating "no data" with "no tool", and design-flow's unresolvable lint path. Each was
+  prose-reviewed and never executed. The #151 fix stated a rule ("a guard decides whether to run
+  a check; it must never soften the verdict") — but a rule is not a guarantee, which is the one
+  thing this repo's doctrine is explicit about.
+- **New `scripts/lint_markdown_shell.py`** (stdlib only): extracts every fenced shell block and
+  runs `bash -n` on it (template placeholders substituted first, since `<pack>` is a redirect to
+  bash), then flags **swallowed verdicts** (`|| echo`/`|| true` on a verification command) and
+  unquoted test operands. **Regression-proven**: run against `release.md` as shipped in v1.21.0 it
+  reports the `--check || echo` at line 82 and exits 1; against the fixed file it exits 0.
+- **`--audit-coverage`**, because the first version of the fence regex **silently skipped 11 blocks
+  in 7 files** by anchoring ` ``` ` to column 1 — blocks nested in numbered lists are indented. A
+  lint that reports clean on input it never read is worse than no lint, so coverage is now
+  cross-checked against an independent looser scan and a gap is a failure. (Same column-1
+  assumption `brand_pack_lint` had; second time it bit.)
+- Wired into `CLAUDE.md`, `/maintainer-work` Phase 3, and `plugin-doctor`, so it runs without
+  being remembered.
+- Four bugs were found *in the linter itself* while proving it, all silent-failure shaped: `bash -n
+  <tempfile>` broke under Git Bash (mangled Windows path → every block a false syntax error);
+  `text=True` encoded stdin as cp1252 and crashed on a `✓`; a nonexistent path reported "0 files,
+  no findings" instead of erroring; and `verify` matched inside `pipeline-verify`, flagging an
+  idempotent `docker rm … || true`. Worth recording that three separate escaping mistakes wrote
+  literal control characters (``, TAB) into the source via heredoc patching — invisible in
+  output, and the regex matched nothing. Author code with an editor, not with nested string layers.
+
 ### 2026-07-28 — the doctrine gate gets an explicit scope
 - The verification gate said "no skill claim is edited until `doctrine-verifier` confirms it against
   an authoritative source", without stating what counts as a claim. Our own architecture decisions

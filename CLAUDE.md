@@ -165,6 +165,26 @@ promotions until the whole queue is clear: a 40-issue release is hard to bisect 
 something breaks, and the `dist/*.skill` assets on the latest GitHub release (the claude.ai
 upload path) stay stale the entire time. Small, frequent, readable promotions.
 
+## Verify the shell we ship inside markdown
+
+`bash -n` on `.sh` files was never the whole surface: commands and skills carry ~200 lines of
+bash in fenced blocks — the lines an agent copies and runs **verbatim in a user's project** —
+and nothing checked them. Three review findings in one week lived there, including a
+`--check || echo` that made a release gate unable to block.
+
+```bash
+python3 scripts/lint_markdown_shell.py                  # syntax + dangerous patterns
+python3 scripts/lint_markdown_shell.py --audit-coverage  # prove no block is silently skipped
+```
+
+Run it after editing any command/skill markdown that contains a shell block. It catches
+syntax errors (templates are placeholder-substituted first), **swallowed verdicts**
+(`|| echo`/`|| true` on a verification command), and unquoted test operands.
+
+`--audit-coverage` exists because the first version of the fence regex silently skipped 11
+blocks in 7 files: a lint that reports clean on input it never read is worse than no lint.
+Treat a coverage gap as a defect in the linter, not a nuisance.
+
 ## Packaging (skills)
 
 `scripts/package_core.py` is the ONE canonical `.skill` builder — **ZIP_STORED**
