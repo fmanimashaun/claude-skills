@@ -7,6 +7,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-29 — promotions get a two-step name and a divergence assertion
+- **"Arm" vs "promote", named.** The v1.22.0 promotion used a branch called `release/v1.22.0`
+  merging into **`dev`**, which reads as though `dev` publishes releases. It does not and cannot:
+  the workflow triggers only on `push: branches: [main]` *and* re-checks
+  `github.ref == 'refs/heads/main'` in the job — verified, zero workflow runs have ever originated
+  on `dev`. But the naming made an invisible mechanism look wrong, so step 1 is now
+  `chore/arm-vX.Y.Z` titled "version assignment (does not publish)", and `CLAUDE.md` states the two
+  steps in a table with which one publishes.
+- **A merge unions; it does not override.** Recorded as a correctness rule rather than tidiness:
+  merging `dev → main` never removes content that exists only on `main`, so a direct commit there
+  is permanently invisible to every future `dev`-based change. One such commit exists in this
+  repo's history (`d4b35f6`, `enabledPlugins` in `.claude/settings.json`); it converged only
+  because the same block later reached `dev` — luck, not a property of the merge.
+  `release-manager` now asserts `git log --no-merges origin/dev..origin/main` before promoting.
+- **How to read branch state.** Judge `dev` against `main` with `git diff dev main` (empty after a
+  promotion), never the ahead/behind counter: `main` gains one merge commit per release that `dev`
+  never receives, so `dev` reads as tens of commits "behind" while being content-identical.
+  Merging `main` back into `dev` to tidy the counter is what produced 37 no-op merge commits on
+  `dev` earlier in the week.
+
 ### 2026-07-29 — the shell inside markdown is now verified (root cause of #151)
 - **The repo mandated `bash -n` for `.sh` files and shipped 194 unverified lines of bash inside
   markdown** — 51 fenced blocks across 30 command/skill files, the lines an agent copies and runs

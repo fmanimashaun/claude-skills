@@ -89,12 +89,42 @@ users run. `dev` is the integration branch — a staging area, never a shipping 
   unshipped.
 - Release = **one promotion PR `dev → main`** (a merge commit) that carries the version
   bumps, the CHANGELOG release block, and **every** `Closes #n` for what it ships.
-  **Do not commit to `main` directly.**
+  **Do not commit to `main` directly** — see *why* below; it is stronger than a style rule.
+
+### A promotion is two steps, and only the second publishes
+
+Because the promotion PR's head is `dev`, the bumps have to be on `dev` before it opens. So a
+release is:
+
+| # | Step | Branch / PR | Publishes? |
+|---|---|---|---|
+| 1 | **Arm** — assign versions, convert `Unreleased` headings, write the one release block | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
+| 2 | **Promote** — merge dev into main | `dev` → **`main`** | **Yes** — the push to `main` fires the workflow |
+
+Name step 1 `chore/arm-vX.Y.Z`, **never `release/vX.Y.Z`**, and title it
+"arm vX.Y.Z — version assignment (does not publish)". A branch called `release/*` merging into
+`dev` reads as though `dev` publishes releases, which it never has: the workflow triggers only on
+`push: branches: [main]` *and* re-checks `github.ref == 'refs/heads/main'` in the job. Nothing
+merged into `dev` can publish anything.
 - Never `git add -A` blindly — stage only files you authored; run `git status` first.
 
 Why the split matters: closing keywords fire only on merge into the **default** branch, so
 with `main` default the `Closes #n` lines *must* live on the promotion PR. That is the
 desired behaviour — issues close when the fix ships, not when it lands on a staging branch.
+
+**Why "never commit to `main`" is a correctness rule, not tidiness:** a merge **unions**, it does
+not override. Merging `dev → main` brings dev's changes in; it never removes content that exists
+only on `main`. So a direct commit to `main` lives there permanently and is **invisible to every
+future `dev`-based change** — you would only find it by diffing. (One exists in this repo's
+history: `d4b35f6`, adding `enabledPlugins` to `.claude/settings.json`. It happened to converge
+because the same block later reached `dev`, but convergence was luck, not a property of the
+merge.) The promotion pre-flight now asserts there are none.
+
+Corollary for reading branch state: judge `dev` against `main` with `git diff dev main`, which
+should be **empty** right after a promotion. Do **not** read the ahead/behind counter — `main`
+accumulates one merge commit per release that `dev` never receives, so `dev` shows tens of
+commits "behind" while being content-identical. Merging `main` back into `dev` to make the
+counter look tidy is what produced 37 no-op merge commits on `dev` earlier; don't.
 
 ## Releases are automated — do NOT run `gh release` by hand
 

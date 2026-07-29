@@ -19,6 +19,16 @@ place a version number is allowed to change, and it changes in ONE artefact: the
 - No version was bumped on `dev` (`git diff main dev -- '*.json'` shows no version change).
   If one was, that is the #143 defect: the promotion would publish a tag nobody chose.
   Revert the stray bump first, then promote.
+- **No content exists on `main` that `dev` lacks.** A merge unions rather than overrides, so a
+  direct commit to `main` would stay there invisibly forever:
+
+```bash
+git log --no-merges origin/dev..origin/main    # must print NOTHING
+```
+
+  Every commit on `main` and not on `dev` should be a promotion merge commit. A non-merge commit
+  there means someone committed to `main` directly; port it to `dev` before promoting, or the two
+  branches diverge permanently.
 - You know which slice is shipping and which issues it closes.
 
 Components version **independently** — bump only what changed.
@@ -76,7 +86,17 @@ git status --short            # MUST be clean — a fresh build reproduces the c
 If it isn't clean, the committed `.skill` diverged from a canonical build — commit the
 canonical bytes, never ship a hand-built zip.
 
-## 4. The promotion PR — and then hands off the keyboard
+## 4. Two PRs: arm, then promote
+
+Because the promotion PR's head is `dev`, the bumps must land on `dev` first. Open the
+version-assignment PR as **`chore/arm-vX.Y.Z` → `dev`**, titled
+"arm vX.Y.Z — version assignment (does not publish)".
+
+**Never name it `release/*`.** A `release/*` branch merging into `dev` reads as though `dev`
+publishes releases; it does not, and cannot — the workflow triggers only on a push to `main`.
+The naming confusion is worth avoiding precisely because the mechanism is invisible.
+
+Then the promotion:
 
 Open **one** PR `dev → main` containing the bumps + CHANGELOG conversion (+ repackaged
 `dist/` if skills changed). Its body carries **every `Closes #n` this promotion ships** —
