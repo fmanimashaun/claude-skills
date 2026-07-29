@@ -7,6 +7,58 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased — the doctrine's *effect* becomes measurable (#156)
+_Version assigned at promotion._
+- **The asymmetry this closes.** Doctrine *content* has a hard gate: nothing is edited until
+  `doctrine-verifier` confirms it against an authoritative source. Doctrine *effect* had none.
+  "The rails-8 skill produces better Rails" lived entirely in prose — the one layer this repo
+  otherwise refuses to trust. New `evals/` measures whether loading the skills changes what an
+  agent writes. Secondary benefit, possibly the larger one: **a doctrine edit that makes agent
+  output worse was undetectable**; a regression is now visible.
+- **Runner is `claude -p`, not the Anthropic API.** The obvious build pastes `SKILL.md` into an
+  API `system` field — clean, cheap, and measuring the wrong thing. These skills ship as Claude
+  Code *plugins*, so a pasted system prompt is a proxy for how they load; a result from it would
+  not be evidence about what `/plugin marketplace add` actually gives a user. Consequence worth
+  having: **no Anthropic API dependency**, so the harness stays stdlib-only Python with no
+  `requirements.txt` and nothing for CI to install.
+- **Two gates specified in #156 were wrong, and would have manufactured false regressions.**
+  (a) The issue asked for an "ids only" job gate; `jobs-and-realtime.md:28` says the opposite —
+  `def perform(order)  # pass records, not ids: GlobalID (de)serializes them`. An ids-only rule
+  fails the doctrine's own reference example, so the real-skill arm would have scored *worse* than
+  baseline and "proven" our doctrine harmful. Only idempotence is gated (`:176`). (b) A naive
+  no-hex rule flags our own `Ui::Logo`, which `brand.md:87` names as "the only component permitted
+  to carry literal colors"; the carve-out is encoded. Generalised as a standing rule that
+  `selftest.py` asserts: **a gate must pass against the doctrine's own reference examples — if it
+  fails what `references/*.md` shows as correct, the rule is wrong, not the doctrine.**
+- **A third rule needed fairness, not correction.** `form_with` is correct stock Rails, and
+  `ecosystem-gems.md:29` makes simple_form conditional ("dozens of uniform CRUD forms"). So
+  `scaffold.py` establishes the convention (Gemfile entry + initializer) and the gate **refuses to
+  judge** when it is absent, rather than punishing an agent for writing correct Rails.
+- **Gates vs measurements, kept separate.** Six named rules, each citing the doctrine file:line it
+  enforces, are grep/parse pass/fail. Cost, wall-clock, output tokens, and turn count are recorded
+  and never judged — "less code" is trivially gamed by emitting something broken. A run that
+  errored, hit the API error path, or was blocked by a permission prompt is **INVALID** and
+  excluded from scoring: scoring infrastructure trouble as a doctrine failure invents a regression.
+- **Isolation is asserted, not assumed.** Runs never execute in this repo — our `CLAUDE.md` would
+  load into *every* arm, contaminating all three identically and drifting the result toward "no
+  difference" without looking broken. `scaffold.py` refuses to run when an ancestor holds a
+  `CLAUDE.md`, when a non-home ancestor holds `.claude/`, or when `~/.claude/skills/` is non-empty
+  (skills-dir plugins auto-load into every session). Tools are restricted to
+  `Read,Write,Edit,Glob,Grep` — no Bash, no network.
+- **Verified without spending anything on a benchmark.** `selftest.py` — 32 assertions, every rule
+  proven to fire on a violation *and* stay silent on conforming code (a rule that flags everything
+  looks rigorous and makes all arms fail equally). `run.py --dry-run` prints all 15 invocations and
+  executes none. The staged `real` arm passes `claude plugin validate` with all three skills
+  (14/3/17 references) and no maintainer `.claude/` leaked. **No results are published**, and the
+  README's results table is deliberately empty pending authorisation.
+- **Deliberately disposable runner.** `claude plugin eval` already does this properly
+  (`--ablation with-without`, `--runs`, `--threshold`, `--json`, `--max-cost-usd`, HTML reports)
+  but is in early access and unavailable here. The durable assets are `cases/*/prompt.md`,
+  `gates.py`, and `selftest.py`; when early access opens, point it at `evals/` and delete `run.py`.
+  Metadata is `suite.json`, not `case.yaml`, because `yaml` is not in the stdlib.
+- **Out of the release path.** Nothing wired into CI. It costs money, it is opt-in, and it must
+  never gate a promotion.
+
 ### 2026-07-29 — promotions get a two-step name and a divergence assertion
 - **"Arm" vs "promote", named.** The v1.22.0 promotion used a branch called `release/v1.22.0`
   merging into **`dev`**, which reads as though `dev` publishes releases. It does not and cannot:
