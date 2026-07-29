@@ -272,8 +272,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased — the design-auditor's form check flagged every correct form (#168)
-_Version assigned at promotion._
+### 1.10.0 — 2026-07-29
 - **The grep matched what it was meant to allow.** `grep -rn "form_with\|form_for" app/views`
   also matches **`simple_form_for`**, because that string ends with `form_for` — so the mandate
   check fired on every *correct* form. A check that flags everything is as useless as one that
@@ -1037,8 +1036,7 @@ _Version assigned at promotion._
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased — simple_form owns every form, and the doctrine now says so consistently (#168)
-_Version assigned at promotion._
+### 1.14.0 — 2026-07-29
 - **Maintainer decision, recorded:** *"simple_form is in charge of all forms to drive consistency
   across the codebase — no form or form element should exist that does not use simple_form,"* and
   *"ViewComponents should use the same simple_form."* Three references contradicted that, and two
@@ -1424,6 +1422,50 @@ _Version assigned at promotion._
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.25.0)
+- **simple_form owns every form, and the doctrine finally says so consistently** (#168,
+  rails-stack → 1.14.0, rails-flow → 1.10.0). Maintainer decision: *no form and no form element
+  exists that does not use simple_form — including inside a ViewComponent.* Three references
+  contradicted it and two called APIs that do not exist: `forms.md` invoked `field_classes(state)`
+  against `UiHelper`'s `input_classes(state:, size:)` (wrong name **and** wrong argument style), and
+  `crud-modal-pattern.md` — the canonical create/edit example every CRUD screen is copied from —
+  used `form_with` plus a `Ui::FieldComponent` signature the component does not have.
+- **The root cause was deeper than the signatures, so the component is gone rather than corrected.**
+  A field wrapper that renders its own `<label>`, hint and error markup **is a form element built
+  without simple_form** — the very thing the mandate forbids — and correcting its arguments would
+  have preserved the contradiction. Field anatomy is now a **styled simple_form wrapper defined once**
+  in `config/initializers/simple_form.rb`, which is what `forms.md` always meant by "simple_form for
+  the markup contract, styled to the design system". Authors write `f.input`; one definition means a
+  change lands on every field at once, which is the entire reason for the mandate. A component that
+  renders fields takes the form builder in and calls `form.input` instead of re-implementing anatomy.
+- **No exceptions were left open.** A model-less form is `simple_form_for :q, url: …` (simple_form
+  accepts a symbol); a hidden label is `label: false` plus an accessible name; `f.input_field` is
+  simple_form's own control-only renderer and so satisfies the mandate, reserved for a control inside
+  a composed cluster. The wrapper is documented as a **contract** — label → control → hint → error in
+  a `stack`, role tokens only, `min-h-touch` + `focus-visible`, error state driven by simple_form's
+  `error_class`/`aria-invalid` so `aria-describedby` is not hand-maintained — with a system spec that
+  proves it on first install. If the spec fails the wrapper is wrong, not the doctrine.
+- **The mandate had been enforced more strictly than it was documented.** `setup-flow` already said
+  "simple_form mandatory — never raw `form_with`" and the design-auditor treated `form_with` as a
+  violation, while `rails-8/ecosystem-gems.md` still said "keep `form_with` for one-off forms —
+  mixing is fine". **Our shipped auditor blocked users for following our own doctrine** — the same
+  shape as the ids-only job contradiction fixed in v1.23.0. rails-8 now states simple_form as
+  mandatory (a deliberate divergence from the Rails default, with the reason given),
+  `views-hotwire.md`'s forms section is reframed as the builder-agnostic Turbo contract, and
+  `SKILL.md`'s golden path matches.
+- **And the auditor's check flagged every correct form.** `grep -rn "form_with\|form_for"` also
+  matches **`simple_form_for`**, because that string ends with `form_for` — so the mandate check
+  fired on exactly the code it was meant to allow. A check that flags everything is as useless as one
+  that cannot fire: it gets ignored, then disabled. Fixed with a word boundary and proven against a
+  fixture holding one correct form and one violation. Two checks were added that catch what was
+  actually unchecked — hand-rolled anatomy in `app/views` **and** `app/components`, and a stock
+  simple_form initializer (unstyled fields push every view toward per-input class patching, which is
+  the drift the mandate prevents).
+- Pattern worth recording across this release and the last two: every recent fix has been a **check
+  that looked like it was working** — two that could not fail, one that fired constantly. Each fix
+  now ships with a fixture proving the check distinguishes pass from fail, because a gate never
+  observed doing both is not known to work.
 
 ### 2026-07-29 (release v1.24.0)
 - **Screens got doctrine** (#94, rails-stack → 1.13.0, design-flow → 1.5.0). fidara-design had a
