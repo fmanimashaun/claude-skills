@@ -27,8 +27,57 @@ schema impact. Then produce a short plan:
 - Migrations needed (these go to `migration-writer`)
 - Risks / invariants in play (tenancy scoping, authorization, module gates)
 
-Post the plan to the user, then proceed — the gates below are the control points, not a
-plan-approval pause. If the plan reveals genuine ambiguity about intent, ask first.
+### Acceptance criteria — write them BEFORE any code
+
+Every unit gets criteria, recorded in `docs/acceptance/<branch-slug>.md` — the slug is the
+branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
+→ `docs/acceptance/team-foo.md`). One `##` section per unit:
+
+```md
+## Invoice totals
+- **AC-1** Given an invoice with two line items, when the user opens the invoice page, then
+  the footer shows the summed amount formatted as currency
+- **AC-2** Given an invoice with no line items, when POST /invoices runs, then the response is
+  422 and the modal re-renders with "must have at least one line item" [error]
+```
+
+The shape is fixed: **Given** `<state>`, **when** `<action>`, **then** `<observable>`. Each
+criterion carries a stable id (`AC-1`, `AC-2`, …) — the id is what the proving spec cites, and
+what makes "the spec proves the criteria" checkable rather than a claim.
+
+**Every criterion must name an action and an observable.** If it names neither, it will be
+rubber-stamped:
+
+| Bad | Why | Good |
+|---|---|---|
+| "handles invalid input" | no action, no observable | "Given a blank email, when the user submits the form, then the field shows 'can't be blank' and no user is created" |
+| "login works" | asserts nothing | "Given a wrong password, when the user submits the sign-in form, then the page shows 'wrong email or password' and does NOT redirect to the dashboard" |
+| "errors handled gracefully" | unfalsifiable | "Given an invoice with no line items, when POST /invoices runs, then the response is 422 and the modal re-renders with 'must have at least one line item'" |
+
+**At least one error-path criterion per unit** — tag it `[error]` or state a failure case.
+Happy-path-only criteria are rejected: most real defects live on the error path, and every
+security finding this flow has produced downstream was an error or edge path.
+
+Validate before implementing, and again once specs exist:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md" --specs spec
+```
+
+Exit `0` clean · `1` findings · `2` unusable (no file, or no criteria in it). On findings,
+rewrite the criterion — never soften the check. The Stop gate runs this too, so a branch whose
+criteria do not hold cannot finish.
+
+*Why this precedes code:* a criterion written afterwards asserts what the code happens to do
+rather than what was required, which is unfalsifiable — the same defect class as a gate that
+cannot fail, moved from the gate to the goal. If you cannot evaluate it, you cannot iterate on
+it unattended. The checker proves each criterion is *traceable* to a spec; it cannot prove the
+spec truly asserts the observable, so that judgement stays yours.
+
+Post the plan **and the criteria** to the user, then proceed — the gates below are the control
+points, not a plan-approval pause. If the plan reveals genuine ambiguity about intent, ask
+first: criteria are the place ambiguity surfaces cheapest.
 
 ## Phase 2 — Branch
 
@@ -39,9 +88,12 @@ git checkout -b feature/<kebab-slug>
 
 ## Phase 3 — Spec-first implementation loop (per unit)
 
-1. **Write the failing spec first.** It must prove the NEW behavior — wrong-role rejection
-   for new filters, concern behavior, state transitions — not merely execute the code.
-   Run it; confirm it fails for the right reason.
+1. **Write the failing spec first, and cite the criterion it proves.** Put the id in the
+   example's description — `it "AC-2 rejects an invoice with no line items" do` — so the
+   mapping from criterion to proof is mechanical, not remembered. The spec must prove the NEW
+   behavior (wrong-role rejection for new filters, concern behavior, state transitions), not
+   merely execute the code. Run it; confirm it fails for the right reason.
+   A criterion no spec cites is an unproven criterion, and the Stop gate says so.
 2. Implement — delegate substantial units to `rails-developer`; schema changes to
    `migration-writer` (round-trip proven). Small edits you may do directly.
 3. Run the unit's specs to green, then `git add <specific files>` and commit with an

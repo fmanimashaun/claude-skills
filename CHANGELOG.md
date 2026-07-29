@@ -304,6 +304,49 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-flow (agentic flow plugin)
 
+### 1.11.0 — 2026-07-29
+
+- **Acceptance criteria are defined BEFORE implementation, and the Stop gate enforces it** (#125).
+  The gate already required "no behavioural change without a proving spec" — but it fires *after*
+  code exists, so it cannot tell whether the spec asserts what was **required** or merely what the
+  code happens to do. A goal written after the result is unfalsifiable: the same defect class as a
+  gate that cannot fail, moved from the gate to the goal. This is the other half of qa-flow #106 —
+  that made *evidence* trustworthy, this makes the *expectation* trustworthy.
+  - `/rails-flow:feature` Phase 1 and `/rails-flow:fix` now write `docs/acceptance/<slug>.md`
+    before any code: one `##` section per unit, each criterion in the fixed shape **Given** state,
+    **when** action, **then** observable, carrying a stable id (`AC-1`, `AC-2`, …).
+  - **The id is what makes "the spec proves the criteria" checkable.** The proving spec cites it
+    (`it "AC-2 rejects an invoice with no line items"`), and the shipped
+    `plugins/rails-flow/scripts/check_criteria.py` verifies **every criterion is cited by some
+    spec** — a real 1:1 mapping rather than a claim. It also enforces the shape, rejects
+    rubber-stamp observables (`works`, `handles errors`, `gracefully`, `as expected`), and
+    requires **at least one error-path criterion per unit**, because every security finding this
+    flow has produced downstream was an error or edge path.
+  - **The Stop gate blocks** on `feature/*` and `fix/*` branches when app code changed with no
+    criteria file, or when the criteria do not hold. Scoped to the flow's own branches on purpose:
+    blocking every branch would break ad-hoc work that never entered the flow. Fails **open** on a
+    missing `python3` (a guard decides whether to RUN a check, never softens the verdict) and
+    **closed** on a real finding.
+  - Bounded honestly in both the script and the doctrine: it proves each criterion is *traceable*
+    to a spec, not that the spec truly asserts the observable, and it cannot know the criteria
+    predate the code — that is the gate's ordering, not the parser's.
+  - **qa-flow consumes them** (closing the loop): `case-author` now reads `docs/acceptance/*.md`
+    as its **first** source — the only one written before the code, so the only one stating what
+    was required rather than what shipped. Each `AC-n` becomes a case with `Source:
+    acceptance:<slug>` and the id in `Notes`, so the trail runs criterion → case → evidence.
+    `[error]` criteria become the negative cases.
+  - **Fixes a pre-existing hole in the Stop gate, found by behaviour-testing this one:** plain
+    `git status --porcelain` **collapses a new untracked directory** to `?? app/`, so
+    `app/models/invoice.rb` in a brand-new folder was invisible and behavioural code could finish
+    with no spec at all. Now `-uall`, with path parsing that survives spaces and renames.
+  - Two defects in the new gate caught by self-review before commit: a bare
+    `${CLAUDE_PLUGIN_ROOT}` would abort the whole gate under `set -u` when run outside the hook
+    runtime, and a nested branch (`feature/team/foo`) produced `docs/acceptance/team/foo.md` — a
+    nested path nobody would create. Slugs now flatten `/` to `-`.
+  - 26 selftest assertions; 10 deliberate mutations each caught, including dropping the
+    word-boundary anchor on the rubber-stamp list (which would flag "property" and "workspace" —
+    the false-positive route to the check being switched off).
+
 ### 1.10.0 — 2026-07-29
 - **The grep matched what it was meant to allow.** `grep -rn "form_with\|form_for" app/views`
   also matches **`simple_form_for`**, because that string ends with `form_for` — so the mandate
@@ -830,6 +873,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### 1.7.0 — 2026-07-29
+
+- **`case-author` consumes rails-flow's acceptance criteria** (#125) — `docs/acceptance/*.md` is now
+  its **first** source, ahead of the PRD, because it is the only one written *before* the code and
+  therefore the only one stating what was **required** rather than what shipped. Each `AC-n` becomes
+  a case with `Source: acceptance:<slug>` and the criterion id in `Notes`, so the trail runs
+  criterion → case → evidence. Criteria tagged `[error]` become the **negative** cases. Closes a
+  loop that was previously broken in one direction: `case-author` and `qa-lead` already claimed to
+  read acceptance criteria from `docs/`, but nothing in rails-flow ever wrote them — the consumers
+  existed and the producer did not.
 
 ### 1.6.0 — 2026-07-29
 
@@ -1601,6 +1655,66 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.29.0)
+
+> ### ⚠️ Behaviour change — read this before upgrading mid-branch
+>
+> On a **`feature/*` or `fix/*` branch**, changing code under `app/` or `lib/` now **blocks the
+> Stop gate once** unless `docs/acceptance/<branch-slug>.md` exists and holds. That is the point of
+> #125 — acceptance criteria are defined *before* implementation — but it will surprise you if you
+> upgrade in the middle of a branch.
+>
+> **If you are blocked:** write the file the message names, one `##` section per unit, each
+> criterion as `- **AC-1** Given <state>, when <action>, then <observable>`, with at least one
+> error-path criterion per unit (tag it `[error]`). The block message states this too.
+> Validate any time with:
+>
+> ```bash
+> python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md" --specs spec
+> ```
+>
+> The slug is the branch name after `feature/`, with any remaining `/` flattened to `-`. Other
+> branches (`main`, `dev`, ad-hoc work) are **unaffected** — the requirement is scoped to the flow's
+> own branches on purpose.
+
+- **A silently-broken Stop gate is fixed, and it affected every prior release** (#125, found by
+  behaviour-testing the new gate rather than reading it). Plain `git status --porcelain`
+  **collapses a new untracked directory** to `?? app/`, so `app/models/invoice.rb` in a *brand-new
+  folder* never matched `^(app|lib)/.*\.rb$`. Behavioural code in a new directory could therefore
+  finish a session with **no spec at all** — the exact rule the gate exists to enforce — and it
+  failed **silently**: the gate reported clean, which is indistinguishable from a pass. Now
+  `--porcelain -uall`, with path parsing that survives spaces and takes the *new* path of a rename.
+  If you have been adding models or services in new directories, this gate has not been guarding
+  them.
+- **rails-flow 1.11.0 — acceptance criteria before implementation** (#125). The gate already
+  required "no behavioural change without a proving spec", but it fires *after* code exists, so it
+  cannot tell whether the spec asserts what was **required** or merely what the code happens to do.
+  A goal written after the result is unfalsifiable — the same defect class as a gate that cannot
+  fail, moved from the gate to the goal. This is the other half of qa-flow #106: that made
+  *evidence* trustworthy, this makes the *expectation* trustworthy.
+  - `/rails-flow:feature` Phase 1 and `/rails-flow:fix` write `docs/acceptance/<slug>.md` before any
+    code, each criterion carrying a stable id (`AC-1`, `AC-2`, …).
+  - **The id makes "the spec proves the criteria" checkable.** The proving spec cites it
+    (`it "AC-2 rejects an invoice with no line items"`) and the shipped `check_criteria.py` verifies
+    **every criterion is cited by some spec** — a real 1:1 mapping rather than a claim. It also
+    enforces the Given/When/Then shape, rejects rubber-stamp observables (`works`, `handles errors`,
+    `gracefully`, `as expected`), and requires **at least one error-path criterion per unit**,
+    because every security finding this flow has produced downstream was an error or edge path.
+  - The gate **fails open** on a missing `python3` (a guard decides whether to RUN a check, never
+    softens the verdict) and **closed** on a real finding.
+  - Bounded honestly in script and doctrine alike: it proves a criterion is *traceable* to a spec,
+    not that the spec truly asserts the observable, and it cannot know the criteria predate the code
+    — that is the gate's ordering, not the parser's.
+- **qa-flow 1.7.0** — `case-author` reads `docs/acceptance/*.md` as its **first** source, closing a
+  loop that was broken in one direction: it and `qa-lead` already claimed to read acceptance
+  criteria from `docs/`, but nothing in rails-flow ever wrote them. The consumers existed; the
+  producer did not.
+- 26 selftest assertions for the criteria checker; **10 deliberate mutations each caught**, including
+  removing the word-boundary anchor from the rubber-stamp list — which would flag "property" and
+  "workspace", the false-positive route to any check being switched off. The gate itself was
+  behaviour-tested on real git repositories across six scenarios.
+- Nothing distributed as a skill changed, so the **`.skill` assets are byte-identical to v1.28.0**.
 
 ### 2026-07-29 (release v1.28.0)
 - **rails-stack 1.16.0 — component coverage: what to build, and where to use it** (#124). The
