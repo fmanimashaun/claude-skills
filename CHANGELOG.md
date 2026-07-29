@@ -1072,6 +1072,60 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+*(Two issues on one branch per CLAUDE.md's grouping rule — same component, one reporting
+mechanism, and #113 is unusable without #118. A bullet each so the promotion closes them
+separately.)*
+
+- **Findings are deduplicated by signature, so counts mean something** (#118). Raw per-instance
+  counts were reported as defect counts, and the inflation was measured on a real interaction
+  crawl: **773** "disclosure trigger without aria-expanded" and **445** "icon-only control without
+  accessible name". Every instance was real; the **distinct** count for the first was about **18**
+  — one navbar defect repeating across 72 pages. A developer told "773 a11y defects" disbelieves
+  the report and stops reading; told "18 defects, one on every page", they fix the navbar. The same
+  arithmetic decided whether `qa-reporter` filed 18 issues or 773, and its doctrine previously said
+  only "one issue each".
+  - `qa-reporter` now groups by `(issue type, component/DOM signature, offending attribute)` —
+    explicitly **not** the raw selector, which varies per page and so defeats grouping by making
+    every occurrence look distinct. It reports `N instances across M routes`, ranks by severity
+    then reach, and keeps the full instance list in a JSON artefact so collapsing 773 rows
+    *summarises* the data rather than destroying it.
+  - **A fourth `validate_evidence.py` profile (`findings`) makes the guarantees arithmetic rather
+    than stylistic.** A **repeated signature is rejected** — that *is* the dedupe, not a proxy for
+    it. `Instances` can never be fewer than `Routes` (a defect appears at least once per route it
+    affects, so a smaller number is an occurrence count mistaken for a distinct one). Example
+    routes cannot outnumber affected routes. And the file must be **ordered** by severity then
+    reach, so "ranked by impact" is true of the artifact instead of asserted about it.
+  - That needed two honest extensions to the validator rather than a workaround: `Profile` gained
+    `page_identity=False`, because a rollup row spans many routes and demanding one HTTP status
+    would force the writer to pick an arbitrary route and call it the finding's location; and a
+    `cross` hook, because whether a signature repeats is unknowable from a single row. The
+    refactor was proved behaviour-neutral — the pre-existing 94 checks passed unchanged before any
+    new fixture was added.
+  - Dedupe applies to **every** source (a11y, links, runtime, visual, interaction, functional,
+    api, perf, security), checked against a vocabulary rather than left free-text: #118 is
+    explicit that this is not an a11y-only rule, that is only where it was measured.
+- **Links and anchors are audited during the crawl** (#113). Nothing verified that links went
+  anywhere. The audit found the value by accident: a sitemap listed **12 section-index URLs that
+  all 404'd**, and it surfaced only because a human noticed "Page Not Found" in a screenshot
+  folder.
+  - Unique internal targets are requested **once** (HEAD, falling back to GET), `#fragment`
+    targets are confirmed to exist on the destination page — a link to a renamed heading is dead
+    in the way that matters to a reader *and* returns 200 — and `target="_blank"` without
+    `rel="noopener"` is an S3.
+  - **External checking is off by default** (`links.check_external`), cached when enabled, with
+    timeouts informational rather than failing: a gate that fails because someone else's site was
+    down teaches people to ignore it.
+  - **The asset half was already shipped**, so this pass does not re-crawl for it — #109's `>= 400`
+    and `requestfailed` capture already covers images, fonts and script chunks. #113's own text
+    asked for exactly that reuse.
+  - **Findings dedupe by target**, which is why these two issues shipped together: one dead link in
+    a shared footer is **one** finding across seventy routes, not seventy. The link pass writes no
+    per-route CSV at all — it emits rows into #118's rollup with the resolved target URL as the
+    signature and the **referring** pages as the examples, which is what a developer needs to fix
+    it. A link pass that emitted one row per occurrence is now rejected by the validator.
+
 ### 1.8.0 — 2026-07-30
 
 *(Two issues, worked on one branch per CLAUDE.md's grouping rule — same component, same

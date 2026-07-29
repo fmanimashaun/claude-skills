@@ -89,6 +89,21 @@ class Profile:
     # Extra, profile-specific checks for a row that claims a result. The shared
     # status/URL/assertion rules are applied to every profile before this runs.
     extra: Callable[[dict[str, str], str, str], list[str]] = field(default=lambda r, w, s: [])
+    # Does one row describe ONE page visit? True for every per-page artifact, and the reason
+    # the shared HTTP/requested-URL/final-URL/assertion rules exist -- they prove the row is
+    # about the page it claims to be about.
+    #
+    # False for a ROLLUP, where one row is a distinct defect spanning many routes (#118): there
+    # is no single status or final URL to record, and demanding one would force the writer to
+    # pick an arbitrary route and call it the finding's location. Such a profile is NOT exempt
+    # from scrutiny -- it still gets the overflow check, the status vocabulary, and its own
+    # `extra` rules, which for a rollup are the stronger ones (a duplicate signature is a
+    # finding, and the instance/route arithmetic must hold).
+    page_identity: bool = True
+    # Checks that need EVERY row at once. Deduplication is the example that forced this: whether
+    # a signature repeats is unknowable from a single row, and "no signature repeats" IS the
+    # dedupe guarantee rather than a proxy for it.
+    cross: Callable[[list[dict[str, str]]], list[str]] = field(default=lambda rows: [])
 
     @property
     def valid_statuses(self) -> frozenset[str]:
@@ -362,7 +377,172 @@ RUNTIME = Profile(
 )
 
 
-PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME)
+# ---------------------------------------------------------------------------------------
+# Profile: qa-reporter's deduplicated findings rollup (#118)
+#
+# Repeated shared UI inflates raw counts enormously. Measured on a real crawl: **773**
+# "disclosure trigger without aria-expanded" and **445** "icon-only control without
+# accessible name" -- every instance real, but the DISTINCT defect count was about **18**
+# for the first, one navbar defect repeating across 72 pages.
+#
+# Reported raw those numbers are worse than useless. They bury the small number of real
+# fixes, and a developer told "773 a11y defects" disbelieves the report; told "18 defects,
+# one of which is on every page", they fix the navbar. The same arithmetic decides whether
+# `qa-reporter` files 18 issues or 773.
+#
+# So one row here is ONE DISTINCT DEFECT, and the guarantees are arithmetic rather than
+# stylistic: signatures cannot repeat (that is the dedupe), instances cannot be fewer than
+# the routes they span, and the file must be ordered by severity then reach so the ranking
+# claim is true of the artifact rather than asserted about it.
+# ---------------------------------------------------------------------------------------
+FINDING_SEVERITIES = {"s1", "s2", "s3"}
+# Every finding source must be able to land here -- #118 is explicit that dedupe applies to
+# all of them, not just the a11y pass where the 773 was found.
+FINDING_SOURCES = {"a11y", "links", "runtime", "visual", "interaction", "functional", "api",
+                   "perf", "security"}
+_SEVERITY_RANK = {"s1": 0, "s2": 1, "s3": 2}
+
+
+def _findings_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    """One distinct defect: its reach must be recorded, and the arithmetic must hold."""
+    findings: list[str] = []
+
+    if not row["Signature"]:
+        findings.append(
+            f"{where}: no Signature -- without a stable one, dedupe cannot be checked and "
+            "the same defect lands twice under two raw selectors"
+        )
+
+    source = row["Source"].lower()
+    if not source:
+        findings.append(f"{where}: no Source (which pass found it)")
+    elif source not in FINDING_SOURCES:
+        findings.append(
+            f"{where}: Source {row['Source']!r} is not one of {'/'.join(sorted(FINDING_SOURCES))}"
+        )
+
+    severity = row["Severity"].lower()
+    if not severity:
+        findings.append(f"{where}: no Severity ({'/'.join(sorted(FINDING_SEVERITIES))})")
+    elif severity not in FINDING_SEVERITIES:
+        findings.append(
+            f"{where}: Severity {row['Severity']!r} is not one of "
+            f"{'/'.join(sorted(FINDING_SEVERITIES))}"
+        )
+
+    counts: dict[str, int] = {}
+    for column in ("Instances", "Routes"):
+        raw = row[column]
+        if not raw:
+            findings.append(f"{where}: no {column} count -- reach is what makes this rankable")
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            findings.append(f"{where}: {column} {raw!r} records no number")
+            continue
+        if value < 1:
+            findings.append(
+                f"{where}: {column} is {value} -- a reported defect occurs at least once"
+            )
+            continue
+        counts[column] = value
+
+    if len(counts) == 2 and counts["Instances"] < counts["Routes"]:
+        findings.append(
+            f"{where}: {counts['Instances']} instance(s) across {counts['Routes']} route(s) is "
+            "impossible -- a defect appears at least once per route it affects, so one of these "
+            "is an occurrence count mistaken for a distinct count"
+        )
+
+    examples = [e for e in row["Example Routes"].replace(";", " ").split() if e]
+    if not examples:
+        findings.append(
+            f"{where}: no Example Routes -- a distinct finding nobody can locate is not "
+            "actionable, which is the complaint dedupe is supposed to answer"
+        )
+    elif "Routes" in counts and len(examples) > counts["Routes"]:
+        findings.append(
+            f"{where}: {len(examples)} example route(s) cited but Routes says "
+            f"{counts['Routes']} -- the examples cannot outnumber the affected routes"
+        )
+
+    if not row["Evidence"]:
+        findings.append(
+            f"{where}: no Evidence path -- the full instance list must stay retrievable, or "
+            "collapsing 773 occurrences into one row destroys the data instead of summarising it"
+        )
+    return findings
+
+
+def _findings_cross(rows: list[dict[str, str]]) -> list[str]:
+    """The two guarantees that only exist across the whole file."""
+    findings: list[str] = []
+
+    # 1. Dedupe itself. A repeated signature means the rollup did not roll up.
+    seen: dict[str, int] = {}
+    for offset, row in enumerate(rows):
+        sig = row["Signature"]
+        if not sig:
+            continue
+        if sig in seen:
+            findings.append(
+                f"row {offset + 2}: Signature {sig!r} already appeared on row {seen[sig]} -- "
+                "a findings rollup with a repeated signature has not deduplicated, which is the "
+                "whole point of the artifact"
+            )
+        else:
+            seen[sig] = offset + 2
+
+    # 2. Ordering, so "ranked by severity x reach" is true of the file rather than claimed
+    #    about it. Severity ascending (S1 first), then reach descending.
+    keys: list[tuple[int, int, int]] = []
+    for offset, row in enumerate(rows):
+        if row["Status"].lower() != "confirmed":
+            continue  # Blocked / Out of Scope rows are not ranked findings
+        rank = _SEVERITY_RANK.get(row["Severity"].lower())
+        try:
+            reach = int(row["Routes"])
+        except ValueError:
+            continue
+        if rank is None:
+            continue
+        keys.append((rank, -reach, offset + 2))
+    for (r1, n1, line1), (r2, n2, line2) in zip(keys, keys[1:]):
+        if (r1, n1) > (r2, n2):
+            findings.append(
+                f"row {line2}: ordered after row {line1} but outranks it "
+                f"(severity/reach) -- the report must rank by distinct severity then reach, so "
+                "the highest-impact defect is not buried below a single-page cosmetic one"
+            )
+            break  # one ordering finding is enough to act on; listing every pair is noise
+    return findings
+
+
+FINDINGS = Profile(
+    name="findings",
+    written_by="qa-reporter",
+    columns=(
+        "Signature",
+        "Source",
+        "Status",
+        "Severity",
+        "Title",
+        "Instances",
+        "Routes",
+        "Example Routes",
+        "Evidence",
+        "Notes",
+    ),
+    result_statuses=frozenset({"confirmed"}),
+    ident_columns=("Signature", "Title"),
+    extra=_findings_extra,
+    page_identity=False,
+    cross=_findings_cross,
+)
+
+
+PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME, FINDINGS)
 
 # Kept as a module-level alias: the functional contract is the one mirrored in
 # functional-tester.md, and external callers/selftests refer to it by this name.
@@ -475,15 +655,21 @@ def check_row(row: dict[str, str], line: int, profile: Profile) -> list[str]:
 
     if status == BLOCKED_STATUS:
         # Blocked must still say what it saw.
-        if not row["HTTP"]:
-            findings.append(
-                f"{where}: Blocked without an HTTP status (use the code, or `none` if "
-                "navigation never returned)"
-            )
-        if not row["Final URL"]:
-            findings.append(f"{where}: Blocked without a Final URL")
+        if profile.page_identity:
+            if not row["HTTP"]:
+                findings.append(
+                    f"{where}: Blocked without an HTTP status (use the code, or `none` if "
+                    "navigation never returned)"
+                )
+            if not row["Final URL"]:
+                findings.append(f"{where}: Blocked without a Final URL")
         if not row["Notes"]:
             findings.append(f"{where}: Blocked without Notes saying what was missing")
+        return findings
+
+    # ---- a rollup row: no single page to identify, so its own rules carry it ----------
+    if not profile.page_identity:
+        findings.extend(profile.extra(row, where, status))
         return findings
 
     # ---- a result status: this row asserts the page was actually exercised -------------
@@ -527,6 +713,7 @@ def validate(path: Path) -> list[str]:
     findings: list[str] = []
     for offset, row in enumerate(rows):
         findings.extend(check_row(row, line=offset + 2, profile=profile))  # +2: past the header
+    findings.extend(profile.cross(rows))
     return findings
 
 
