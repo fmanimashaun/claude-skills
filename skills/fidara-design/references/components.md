@@ -40,8 +40,24 @@ DEFAULTS = { variant: :primary, size: :md }
   Recipe: `box` primitive → `bg-card text-card-foreground rounded-lg border border-border` + inner `stack`.
   **No shadow by default** (1px border does the separation); elevate only genuine overlays.
 - **Recipes:** stat/KPI (icon chip `size-10 rounded-md bg-primary/10 text-primary` + `text-step-2 font-bold` value),
-  detail (`<dl>` rows `flex justify-between`, money in `font-mono`), selectable option (radio tile: selected =
+  detail (**render the Description list component at `inline`** — do not re-implement `<dl>` rows here),
+  selectable option (radio tile: selected =
   `border-primary bg-primary/5`), section/panel (`<fieldset>`). Host in `grid-auto` (`--min: 16rem`).
+
+## Heading blocks (page / section / card)
+- **The region `page-anatomies.md` calls a "heading block".** Three scales, same anatomy, so a screen
+  never re-derives it: `page` (the one `<h1>`, `text-step-3`), `section` (`<h2>`, `text-step-2`),
+  `card` (`<h3>`, `text-step-1`). Scale is the *only* difference — same slots, same behaviour.
+- Anatomy: `cluster justify-between items-start` of **[eyebrow? → title → description?]** (a `stack
+  gap-1`) and **actions** (a `cluster`). Optional `meta` row under the title for status badge +
+  timestamps at `text-step--2 text-muted-foreground`. Description is prose, so `text-step-0
+  text-muted-foreground prose-measure` — the one place a heading block carries `step-0`.
+- **a11y:** exactly one `page` block per screen; never skip a level to get a size (a card heading in
+  a section is `<h3>`, not an `<h2>` styled smaller). If a section has no visible title it still needs
+  `aria-labelledby` pointing at an `sr-only` heading.
+- **Responsive:** none needed — `cluster` wraps, so actions drop below the title on a narrow screen.
+  Keep the **primary** action visible and move the rest into an overflow menu rather than letting
+  four buttons wrap into a stack.
 
 ## Badge / Tag / Chip
 - **Variants:** `primary · secondary · success · warning · destructive · outline · muted`. **Sizes:** `sm/md`.
@@ -81,6 +97,20 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Tabs** (`Ui::Tabs`): `role="tablist"/tab/tabpanel`, `aria-selected`, roving tabindex; styles `underline |
   pill | full-width`; active = `data-[state=active]:border-primary`.
 
+## Breadcrumbs
+- `<nav aria-label="Breadcrumb">` → `<ol class="cluster">` of items at `text-step--1
+  text-muted-foreground`; the **current page is the last item, `aria-current="page"`, not a link**,
+  and takes `text-foreground`. Separators are decorative (Lucide `chevron-right`, `aria-hidden="true"`)
+  and live in the markup, never as a CSS `::after` — a screen reader should hear "Invoices, INV-042",
+  not "Invoices chevron INV-042".
+- **Truncation, not scroll:** past ~3 levels show **first → ellipsis → last two**, with the collapsed
+  middle in a `Ui::Dropdown` so it stays reachable. A breadcrumb that scrolls horizontally on a phone
+  has failed at its one job (telling you where you are at a glance).
+- **a11y:** links get `min-h-touch`; the ellipsis trigger is a real `<button>` with an `sr-only`
+  label ("Show 2 more levels").
+- **Not navigation state.** Breadcrumbs show *hierarchy*, so they never reflect history. If the parent
+  is ambiguous the page needs a different shell, not a smarter breadcrumb.
+
 ## Table (CRUD)
 - **CRUD is modal-driven and in-page** — new/edit/delete open in the shared `turbo-frame` modal; success
   updates the list via Turbo Stream (`prepend`/`replace dom_id`/`remove dom_id`) + a toast; rows are
@@ -92,6 +122,58 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Responsive:** wrap in `overflow-x-auto` (horizontal scroll). For dense data on small screens prefer a
   **card-stack** fallback (`hidden md:table` + a `md:hidden` list of `box`/`stack` rows) — pick per table and
   state it; don't leave scroll as the only mobile story.
+
+## Description list
+- **The one mechanism for label/value pairs** — record details, summaries, review steps. `<dl>` with
+  `<dt>` at `text-step--1 text-muted-foreground` and `<dd>` at `text-step-0 text-foreground`; money
+  and identifiers in `font-mono` so columns align.
+- **Layouts:** `stacked` (`<dt>` above `<dd>`, one column — the mobile default and fine everywhere),
+  `inline` (label left, value right: `cluster justify-between` per row, `divide-y divide-border` on
+  the list), `grid` (multi-column via `grid-auto`, `--min: 16rem`, for wide summaries). Choose by
+  content length, not viewport: a long value wraps badly in `inline`, so it belongs in `stacked`.
+- **Empty values are explicit** — render an em dash with `sr-only` "not set", never a blank `<dd>`,
+  which reads as a rendering bug.
+- **a11y:** keep `<dt>`/`<dd>` pairing intact; a row wrapper must not sit between them (invalid and it
+  breaks pairing for assistive tech). Multiple values for one label = repeated `<dd>`, no list inside.
+- Card's **detail** recipe is this component at `inline`, not a second mechanism — compose it, don't
+  re-implement the rows.
+
+## Divider
+- **A recipe, not a component.** Plain rule: `<hr class="border-border">` (an `<hr>` is already
+  `role="separator"`, so add nothing). Inside a `stack` prefer the parent's `gap` and no rule at all —
+  reach for a divider only when a boundary must be *seen*, not merely spaced.
+- **Labelled divider** ("or", "3 more"): `cluster` of rule → label → rule with the rules as
+  `<span aria-hidden="true" class="h-px flex-1 bg-border">` and the label at `text-step--2
+  text-muted-foreground`. The rules are decorative, so the accessible output is just the label.
+- **In lists and tables use `divide-y divide-border` on the container**, never an `<hr>` between rows —
+  one declaration instead of n elements, and no stray separator after the last row.
+- Vertical (in a `cluster`): `<span aria-hidden="true" class="w-px self-stretch bg-border">`.
+
+## Button group
+- A set of related actions sharing edges: `cluster gap-0` of `Ui::ButtonComponent(variant: :outline)`
+  with `isolate` on the wrapper, `-ms-px` on all but the first (so borders collapse to 1px), and the
+  outer corners rounded while inner ones square off.
+- **Two kinds, and they are different elements.** *Actions* → `role="group"` + `aria-label`, each child
+  a real `<button>`. *Single-select* (a view switcher, a date range) → **`role="radiogroup"`** with
+  `aria-checked` per option and roving tabindex from the **list-navigation** mixin; the selected option
+  is `bg-accent text-primary`, matching nav-active so "selected" reads the same everywhere.
+- **a11y:** `min-h-touch` on every child; the focus ring must not be clipped by the overlap — put
+  `focus-visible:z-10` on children so the ring paints above its neighbours.
+- **Responsive:** ~3 items is the ceiling on a phone. Beyond that use a `Ui::Dropdown` (actions) or
+  `Ui::Tabs` (single-select) rather than letting the group wrap — a wrapped button group loses the
+  shared-edge affordance that made it a group.
+
+## Media object
+- Fixed-size media beside flowing content — the building block of stacked lists, feeds, comments and
+  notifications. `cluster items-start` of a `frame` (avatar, icon chip, thumbnail) and a `stack gap-1`
+  body; the media gets `flex-none`, the body `min-w-0` so long words truncate instead of pushing the
+  media off-screen.
+- **Sizes** follow the media: `sm size-8 · md size-10 · lg size-12` (icon chips use the Card stat
+  recipe's `rounded-md bg-primary/10 text-primary`).
+- **a11y:** decorative media takes `alt=""`; meaningful media carries a real `alt`. If the whole object
+  is a link, wrap once and keep the media inside that link rather than nesting two links to the same place.
+- **Responsive:** never stacks — the side-by-side relationship *is* the pattern. If the body needs full
+  width on a phone, it was a Card, not a media object.
 
 ## Toast / Notification
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +

@@ -1036,6 +1036,37 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### 1.15.0 — 2026-07-29
+- **First increment of Phase 2**, honouring that issue's own instruction to ship one group at a time
+  rather than all ~17 components at once.
+- **The slice was chosen by a gap #94 created.** `page-anatomies.md` shipped in v1.24.0 telling agents
+  to "fill the regions from the catalog", then named **heading block**, **Breadcrumb** and
+  **description list** — none of which had catalog entries. An agent following it either invents the
+  markup (the exact failure page anatomies exists to prevent) or stalls. So this increment is "the
+  patterns `page-anatomies.md` already composes", cutting across the issue's Navigation / Lists /
+  Elements grouping deliberately: closing a live dangling reference beats matching the kit's taxonomy,
+  and these six are what the next groups build on.
+- **Six catalog entries + five worked ViewComponents:** Heading blocks (page/section/card — one
+  anatomy, scale the only axis, tag and step moving together so a card heading can never be an `<h2>`
+  styled small), Breadcrumbs, Description list, Button group, Media object, and Divider **as a recipe,
+  not a component** (an `<hr>` is already `role="separator"`; in lists the answer is `divide-y` on the
+  container, not n elements).
+- **No duplicate mechanisms**, per the issue's own criterion: Card's `detail` recipe now *renders* the
+  Description list at `inline` instead of re-implementing `<dl>` rows, and the button group's
+  single-select kind is a `radiogroup` driven by the existing **list-navigation** mixin rather than a
+  new controller. Breadcrumb collapsing reuses `Ui::DropdownComponent`.
+- **Mechanical verification caught two violations in the draft before commit**, which is why it is
+  done by script rather than by reading: the breadcrumb separator called
+  `lucide_icon(..., class: "size-4")` when the icon doctrine is explicit that icons carry **no** size
+  or class (`with-icon` sizes them to 1em in `currentColor` — SVG presentation attributes have zero
+  specificity, which is the whole reason that rule exists); and it used `d.with_item`, when
+  `Ui::DropdownComponent` takes `items:` as an array of `{label:, href:}`. Both would have shipped
+  code that raises or silently ignores doctrine.
+- Verified: every primitive, role token, type step, space step and rendered component resolves against
+  the other references; zero literal colours; zero inline `dark:`; no new `@utility` defined.
+  `page-anatomies.md` now names the components instead of generic patterns, and the file's "full
+  catalog has worked code" claim is updated to stay true.
+
 ### 1.14.0 — 2026-07-29
 - **Maintainer decision, recorded:** *"simple_form is in charge of all forms to drive consistency
   across the codebase — no form or form element should exist that does not use simple_form,"* and
@@ -1422,6 +1453,44 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.26.0)
+- **Closes a dangling reference that was live in v1.24.0** (#95, rails-stack → 1.15.0).
+  `page-anatomies.md` shipped telling agents to "fill the regions from the catalog", then named
+  **heading block**, **Breadcrumb** and **description list** — none of which had catalog entries. An
+  agent following that doctrine either invents the markup, which is the exact failure page anatomies
+  exists to prevent, or stalls. Fixing a live defect in released doctrine is why this promoted on its
+  own rather than waiting for the next Phase 2 group.
+- **First increment of Phase 2**, per that issue's own instruction to ship one group at a time rather
+  than all ~17 components at once. Six catalog entries + five worked ViewComponents: **Heading blocks**
+  (page/section/card — one anatomy where scale is the only axis, tag and step moving together so a card
+  heading can never be an `<h2>` styled small), **Breadcrumbs** (separators as `aria-hidden` markup,
+  never `::after`, so a screen reader hears "Invoices, INV-042" rather than "Invoices chevron
+  INV-042"; truncates first → ellipsis → last two instead of scrolling), **Description list** (blank
+  values render an em dash plus `sr-only` "not set", never an empty `<dd>`, which reads as a rendering
+  bug), **Button group** (actions vs single-select are *different elements* — `role="group"` vs
+  `radiogroup` — not a style variant), **Media object** (never stacks; the side-by-side relationship is
+  the pattern), and **Divider as a recipe rather than a component** (an `<hr>` is already
+  `role="separator"`; in lists the answer is `divide-y` on the container, not *n* elements).
+- **The slice deliberately cuts across the kit's own taxonomy.** It is "the patterns
+  `page-anatomies.md` already composes" rather than Navigation / Lists / Elements, because closing a
+  live dangling reference beats matching the kit's grouping — and these six are what the remaining
+  groups build on: a stacked list is a media object in a `divide-y` container, a page header is a
+  Heading with a Button group in its actions slot.
+- **No duplicate mechanisms**, per the issue's own criterion: Card's `detail` recipe now *renders* the
+  Description list at `inline` instead of re-implementing `<dl>` rows; single-select button groups use
+  the existing **list-navigation** mixin rather than a new controller; breadcrumb collapsing reuses
+  `Ui::DropdownComponent`.
+- **Mechanical verification caught two violations before commit** — the reason it is a script and not a
+  read-through. The breadcrumb separator called `lucide_icon(..., class: "size-4")` when the icon
+  doctrine forbids any size or class (`with-icon` sizes icons to `1em` in `currentColor` *because* SVG
+  presentation attributes carry zero CSS specificity — the entire reason that rule exists), and it used
+  `d.with_item` when `Ui::DropdownComponent` takes `items:` as an array of `{label:, href:}`. Both
+  would have shipped doctrine whose code raises. #94 caught three the same way.
+- Nothing is closed by this release: **#95 has four groups remaining** (Navigation, Lists + data
+  display, Forms, Overlays) and **#89** is the epic. `component-implementations.md`'s closing "the full
+  catalog has worked code" claim was updated to stay true — adding entries without implementations
+  would have quietly falsified it.
 
 ### 2026-07-29 (release v1.25.0)
 - **simple_form owns every form, and the doctrine finally says so consistently** (#168,
