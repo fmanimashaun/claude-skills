@@ -35,10 +35,25 @@ builder in and calls `form.input`, rather than re-implementing label/input/error
 </div>
 ```
 
-Reach for `f.input_field` **only** when a control genuinely has no label of its own (a
-search box whose label is `sr-only`, a filter in a toolbar) — and even then the class comes
-from `input_classes(state:, size:)` in `UiHelper` (keyword arguments; there is no
-`field_classes`).
+### There is no non-simple_form case
+
+Every shape a form can take is covered, so the rule has no exceptions:
+
+| case | how |
+|---|---|
+| Model-backed form | `simple_form_for @invoice do \|f\|` |
+| **No model** (search, filters, a non-AR object) | `simple_form_for :q, url: search_path, method: :get do \|f\|` — simple_form takes a symbol + `url:`, so a model-less form is still a simple_form form |
+| **Label must be hidden** (icon-only search) | `f.input :q, label: false, input_html: { "aria-label": "Search" }` — the accessible name is required, the visible label is not |
+| Control inside a composed cluster (search in a button group, prefix/suffix) | `f.input_field :q` — simple_form's **control-only** renderer, used when the wrapper's own markup would fight the composition |
+
+`f.input_field` is *simple_form*, so it satisfies the mandate. What the mandate forbids is
+**hand-rolling the anatomy** — `f.label` plus a manual `<p>` for the error, or a component that
+emits its own `<label>`. Reach for `input_field` because the surrounding layout demands it, never
+to avoid configuring a wrapper.
+
+When a control genuinely needs a one-off class, it comes from `input_classes(state:, size:)` in
+`UiHelper` (keyword arguments; there is no `field_classes`). A **repeated** deviation is a second
+named wrapper, not a repeated override — see below.
 
 ## Control recipe + states
 
