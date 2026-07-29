@@ -7,6 +7,80 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-30 — related issues are worked on one branch (#206)
+
+- **The written rule contradicted the productive practice.** `CLAUDE.md:31` said take "**ONE** issue
+  end-to-end", and `maintainer-work.md` said it twice more ("One issue at a time", "One at a time").
+  But some issues are one change wearing several numbers: #109 and #110 are both qa-flow, both under
+  EPIC #108, and both edit the same boot/validation path — split, they are two PRs editing the same
+  lines where the second cannot be reviewed without the first. Grouping related issues covers more
+  ground per branch and is the only honest shape for that case.
+- **Maintainer decision** recorded on [#206](https://github.com/fmanimashaun/claude-skills/issues/206),
+  which is where the authority for a process change belongs — an architecture/process decision with no
+  upstream to cite, so the doctrine-verifier gate does not apply (CLAUDE.md, *What the gate covers*).
+  Grouping is now the **default for related work**, not an exception, with "related" carrying real
+  weight: same `comp:*` label, one coherent mechanism (same files or code path), the same change type
+  under the doctrine gate, and still reviewable in one sitting. No fixed cap on issue count — if the
+  fixes never touch each other, grouping only widens a revert's blast radius, so split.
+- **The gate condition is the one that is not a judgement call.** Grouping inherits *Split a mixed
+  change* rather than weakening it: if one issue needs a CONFIRMED `doctrine-verifier` verdict and
+  another does not, they do not share a branch. That is the loophole this rule could otherwise open —
+  an architecture change carrying a framework claim through on its coat-tails.
+- **Traceability is never pooled**, which is what makes grouping safe rather than sloppy: one
+  `Refs #n` per issue in the PR body, **one CHANGELOG bullet per issue** rather than one for the
+  group, and a separate `Closes #n` for each on the promotion, so each closes on its own merit. Pool
+  them and you lose which fix answered which report, and the promotion cannot say what it shipped.
+- Recorded in three places that previously disagreed: `CLAUDE.md`'s maintenance-flow section (with a
+  new *Grouping related issues on one branch* subsection), and `maintainer-work.md`'s frontmatter and
+  body. Its Phase 4 now also spells out the per-issue `Refs`/CHANGELOG requirement, since that is
+  where pooling would actually happen.
+
+### 2026-07-30 — CLAUDE.md's list of what we ship omitted a whole plugin (#203)
+
+- **Found by following this file's own rule, and it was worse than the report.** #203 was filed for
+  a stale count — `CLAUDE.md:136` said the release publishes "the two `.skill` assets" when there
+  are **four**. I noticed it only because I had copied that figure into user-facing v1.30.0 release
+  notes and then hashed the actual assets. CLAUDE.md says *when you find one instance of a
+  contradiction, grep for the pattern — that class travels in groups*. It did:
+  - `CLAUDE.md:6` — "**four** app-builder plugins", listing `rails-stack`, `rails-flow`, `qa-flow`,
+    `pipeline`. There are **five**; `design-flow` was missing, and appeared **nowhere in CLAUDE.md
+    at all** — zero mentions. The section is the definition of what this repo distributes, so
+    anything orienting from it could not learn the plugin existed.
+  - `CLAUDE.md:6` also described `rails-stack` as "the rails-8 + hotwire skills". It bundles
+    **four**: rails-8, hotwire, fidara-design, code-review.
+  - `CLAUDE.md:16` — "you want the four plugins".
+  - `README.md:600` — "The **four** plugins above", while README's own heading twelve screens
+    earlier says *five plugins, one marketplace*. The repo contradicted itself in one file.
+- **Fixed with wording that cannot go stale where possible.** The release now publishes "**every**
+  `dist/*.skill` asset (a glob, never a hand-typed list — that is how a release silently drops a
+  newly added skill)", which is what `release.yml` and `release_local.sh` actually do. Subset
+  references lost their counts rather than gaining new ones to maintain.
+- **New `undocumented-plugin` rule in `lint_self_consistency.py`**: every plugin declared in
+  `.claude-plugin/marketplace.json` must be named in both `CLAUDE.md` and `README.md`. A plugin
+  absent from those is invisible to one of the two audiences — the maintainer (or agent) orienting
+  from CLAUDE.md, or the user reading README.
+  - **Known-answer calibrated**, per the #182 precedent: run against `dev`'s tree it reproduces the
+    exact defect that shipped — *"plugin 'design-flow' is declared in marketplace.json but never
+    named in CLAUDE.md"* — and is clean on the fixed tree having examined 5 declared plugins, so
+    the green is not vacuous.
+  - **Counts are deliberately NOT checked.** Prose legitimately refers to subsets ("the plugins
+    above help you build apps"), so matching "four plugins" against the real total would fire on
+    correct writing. By this repo's own thesis a linter that cries wolf gets switched off and then
+    catches nothing, so the rule tests name presence, which needs no judgement. A near-miss fixture
+    pins this: a manifest of two plugins with prose saying "the one plugin above" must stay silent.
+  - A tree with no `marketplace.json` yields **no verdict** rather than findings, so the rule cannot
+    fire on input it is unable to judge.
+  - **Its limit is stated rather than overclaimed, because mutation-testing found it.** The rule
+    proves a name appears *somewhere* in the file, not that it appears in the list enumerating what
+    ships — deleting `design-flow` from CLAUDE.md's list left the linter green, since a neighbouring
+    sentence still named it. Locating "the right section" needs judgement about where sections begin
+    and end, which is how a mechanical rule becomes a noisy one, so the narrow guarantee is the
+    honest one: it catches a plugin documented **nowhere**, which is precisely what shipped
+    (design-flow had zero mentions). Verified by removing every mention and watching it block. My
+    first draft of the CLAUDE.md note claimed the linter "asserts every declared plugin is named
+    **here**" — the same claims-vs-enforcement defect, in the line added to fix one; corrected to
+    say the list itself is still the maintainer's responsibility.
+
 ### 2026-07-29 — the corpora ignore rules now match the layout we prescribe (#197)
 
 - **The corpora ignore rules could not match the layout our own setup instructions prescribed
@@ -965,6 +1039,62 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.8.0 — 2026-07-30
+
+*(Two issues, worked on one branch per CLAUDE.md's grouping rule — same component, same
+boot/validation path — with a bullet each so the promotion could close them separately.)*
+
+- **Console errors and failed requests are captured on every page, and the severity is enforced
+  rather than trusted** (#109). qa-flow never looked at the browser console or the network log, so a
+  route could return 200, render, satisfy its assertion and pass its case while throwing uncaught
+  exceptions or 404-ing its own script bundle. A real audit hit both at once — `Module not found:
+  svgmap/dist/svgMap.min.css` and a repeating `TypeError: localStorage.getItem is not a function`,
+  on a route serving HTTP 200. Page validation (#106) proved you captured the *right* page; nothing
+  asked whether that page then **worked**.
+  - `functional-tester` and `e2e-tester` now attach `pageerror`, `console`, `requestfailed` and
+    `>= 400` response listeners on every visit, writing one row per route to
+    `qa/manual-tests/<date>-<slug>-runtime.csv`.
+  - **A third `validate_evidence.py` profile (`runtime`) recomputes the severity from the row's own
+    counters**, so the mapping cannot be talked down: an uncaught exception or a failed
+    document/script/stylesheet is **S1** however the row grades itself; `console.error` and failed
+    subresources are **S2**; `console.warning` never gates. That required splitting the counters by
+    *consequence* rather than by event name — a single "failed requests" number cannot tell a
+    missing analytics pixel from a missing application bundle.
+  - **Suppression stays visible.** `runtime.ignore` in `qa/qa.config.yml` silences known
+    third-party noise, because an always-red check gets switched off — but suppressed findings are
+    still counted in a required `Ignored` column, even at 0. A suppression that leaves no trace is
+    how a red check turns green with nobody deciding to.
+  - The counters reject `none` / `n/a` / `-`: a capture recording no counts is indistinguishable
+    from one where the listeners never attached. S1 requires an `Evidence` path a human can
+    re-read, and any graded row requires `Notes` carrying the message and resource URL.
+  - The selftest grew 72 → 94 checks. The shared page-identity rules are exercised against the new
+    profile too, so it cannot silently reintroduce #106's hole on the newest artifact, and the
+    existing "every profile must be documented by an agent" check **failed until the doctrine was
+    written** — the gate working on my own change.
+- **App boot is hardened: reuse before launch, per-route timeouts, and classified failures**
+  (#110). Booting the two audited bundles needed several manual interventions `/qa-flow:smoke`
+  would have failed on.
+  - **Reuse before launch.** The port is probed first; if the app already answers it is reused and
+    reported, and **never** torn down (it is not ours to kill, and it may be running different code
+    than the working tree). Two dev servers against one project directory contend over the same
+    build cache and can corrupt it.
+  - **`route_timeout` is now separate from `boot_timeout`**, documented as distinct in the `app:`
+    schema. A Next.js + Turbopack app reported "Ready in 10s" then spent **45–60s compiling each
+    route on first visit**; with one timeout covering both, the crawl clears boot and dies on route
+    2, which reads as a broken app rather than a slow compile. A route timeout is now reported as a
+    route failure, distinct from a boot failure.
+  - **Boot failures are classified** — port in use, missing/incompatible dependency, runtime/engine
+    mismatch, framework security policy, or application error — each with the log tail and a next
+    action. A wall of stack trace is not a diagnosis, and those categories have different owners.
+  - **A known-gotcha table ships with it**, seeded from the audit: Hugo ≥ 0.158 refusing raw
+    `.html` without `HUGO_SECURITY_ALLOWCONTENT`, Node 25 injecting a global `localStorage` that
+    breaks SSR feature-detection, `exports`-map subpaths that are unresolvable though the file is
+    on disk. All three read as application breakage and are not.
+  - **Prebuilt assets are detected, not silently skipped.** Where the documented start command
+    chains a bundler but built output is already present and newer than its sources, the lighter
+    server-only path is used *and the assumption stated* — an audited project already had
+    `static/app.css`, so `hugo server` alone sufficed and a naive runner would have died on webpack.
+
 ### 1.7.0 — 2026-07-29
 
 - **`case-author` consumes rails-flow's acceptance criteria** (#125) — `docs/acceptance/*.md` is now
@@ -1746,6 +1876,66 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.31.0)
+
+> ### Who this affects
+>
+> **If you install the marketplace: `qa-flow` 1.8.0 is a real upgrade** — two new capabilities in
+> the QA loop, described below.
+>
+> **If you upload the `dist/*.skill` archives to claude.ai: nothing changed.** All four
+> (`rails-8`, `hotwire`, `fidara-design`, `code-review`) are byte-identical to v1.29.0, verified by
+> hashing them against the tag, and `rails-stack` stays at 1.16.0 because no `skills/**` file moved.
+> The two distribution paths are versioned independently and this release only moves one of them.
+
+- **qa-flow 1.8.0 — the browser's own complaints are now evidence** (#109). qa-flow never looked at
+  the console or the network log, so a route could return 200, render, satisfy its assertion and
+  **pass its case** while throwing uncaught exceptions or 404-ing its own script bundle. A real
+  audit hit both at once on a route serving HTTP 200: `Module not found:
+  svgmap/dist/svgMap.min.css`, and a repeating `TypeError: localStorage.getItem is not a function`.
+  #106 made page *identity* trustworthy; nothing asked whether the identified page then **worked**.
+  - Both browser-driven passes now attach `pageerror` / `console` / `requestfailed` / `>= 400`
+    listeners on every visit, writing one row per route to
+    `qa/manual-tests/<date>-<slug>-runtime.csv`.
+  - **The severity is enforced, not documented.** `validate_evidence.py` recomputes it from the
+    row's own counters, so a report cannot talk its findings down: an uncaught exception or a
+    failed document/script/stylesheet is **S1** however the row grades itself; `console.error` and
+    failed subresources are **S2**; `console.warning` never gates. An `S1` with nothing behind it
+    is a finding too, because an unexplained S1 trains people to ignore S1.
+  - **Suppression stays visible.** `runtime.ignore` silences known third-party noise — necessary,
+    since an always-red check gets switched off — but suppressed findings are still counted in a
+    required `Ignored` column, **even at 0**.
+- **qa-flow 1.8.0 — app boot survives real projects** (#110). Booting two audited bundles needed
+  several manual interventions `/qa-flow:smoke` would have failed on.
+  - **A running server is reused, never duplicated.** The port is probed first; a live server is
+    reused, reported, and never torn down — it is not ours to kill, and it may not be running the
+    working tree's code. Two dev servers against one project contend over the same build cache.
+  - **`route_timeout` is separate from `boot_timeout`.** A Turbopack app reported *"Ready in 10s"*
+    then spent **45–60s compiling each route on first hit** — with one timeout covering both, the
+    crawl clears boot and dies on route 2, which reads as a broken app rather than a slow compile.
+  - **Boot failures are classified** (port in use / dependency / runtime mismatch / framework
+    security policy / application error) with the log tail and a next action, plus a
+    **known-gotcha table**: Hugo ≥ 0.158 refusing raw `.html` without `HUGO_SECURITY_ALLOWCONTENT`,
+    Node 25's injected global `localStorage` breaking SSR feature-detection, and `exports`-map
+    subpaths that are unresolvable though the file is on disk. All three read as application
+    breakage and are not.
+  - **Prebuilt assets are detected and the assumption stated**, never silently skipped.
+- **Maintainer tooling (not distributed): the docs describing what we ship had drifted** (#203).
+  `CLAUDE.md` said the release publishes "the two `.skill` assets" when there are four — caught only
+  because that figure was copied into v1.30.0's release notes and then checked against the real
+  files. Following this repo's own rule to grep for the pattern found worse: **`design-flow` was
+  named nowhere in CLAUDE.md**, whose opening section defines what this repo distributes, while that
+  section said "four app-builder plugins" and listed the other four. A new `undocumented-plugin`
+  lint rule now requires every plugin declared in `marketplace.json` to be named in both `CLAUDE.md`
+  and `README.md`; it is known-answer calibrated against the tree that shipped the defect.
+- **Maintainer tooling: related issues are worked on one branch** (#206). "One issue at a time" was
+  written in three places while grouping related work is plainly faster — and for issues that are
+  one change wearing several numbers (#109 and #110 edit the same path) splitting produces two PRs
+  where the second cannot be reviewed without the first. Grouping is now the default for related
+  work, bounded so it stays safe: same component, one coherent mechanism, the same change type under
+  the doctrine gate, still bisectable — and traceability is never pooled, so each issue keeps its own
+  `Refs`, CHANGELOG bullet and `Closes`.
 
 ### 2026-07-29 (release v1.30.0)
 

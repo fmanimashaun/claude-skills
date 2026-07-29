@@ -1,13 +1,22 @@
 ---
-description: Take one reported issue through the maintenance loop — confirm, verify against source-of-truth, fix, PR into dev (unversioned), CHANGELOG under Unreleased. One issue at a time; shipping is a separate promotion.
+description: Take a reported issue through the maintenance loop — confirm, verify against source-of-truth, fix, PR into dev (unversioned), CHANGELOG under Unreleased. Group related issues on one branch to cover more ground; traceability stays per-issue. Shipping is a separate promotion.
 argument-hint: "[issue number]"
 ---
 
 # /maintainer-work — $ARGUMENTS
 
-Work a single issue end to end. One at a time, full loop every time, nothing
-half-done — the same discipline as `/rails-flow:issues`, adapted to maintaining
-doctrine and plugins.
+Work an issue end to end. Full loop every time, nothing half-done — the same discipline
+as `/rails-flow:issues`, adapted to maintaining doctrine and plugins.
+
+**Group related issues on one branch** — it covers more ground per branch, and for issues that
+are one change wearing several numbers it is the only honest shape. Group when they share a
+`comp:*` label and one coherent mechanism (same files or code path), need the same change type
+under the doctrine gate, and stay reviewable in one sitting. There is no fixed cap. See
+CLAUDE.md, *Grouping related issues on one branch* (decision: #206). If the fixes never touch
+each other, grouping buys nothing — split then.
+
+When you do group, traceability is **not** pooled: one `Refs #n` per issue in the PR body, one
+CHANGELOG bullet per issue, and a separate `Closes #n` for each on the promotion.
 
 ## Precondition — marketplace repo only (hard)
 
@@ -72,7 +81,9 @@ Two hard rules, both the opposite of what feels natural:
 - **Reference the issue, do not close it: write `Refs #<n>`, never `Closes #<n>`.** `main`
   is the default branch, so a closing keyword here would either do nothing or — worse, if
   someone flips defaults back — mark an issue done while its fix sits unshipped on `dev`.
-  The promotion PR closes it, when it actually ships.
+  The promotion PR closes it, when it actually ships. **On a grouped branch, one `Refs #n`
+  per issue and one CHANGELOG bullet per issue** — a single bullet covering "both issues"
+  loses which fix answered which report, and the promotion then cannot say what it closed.
 - **Bump NO versions.** Not `metadata.version`, not the plugin's `plugin.json`, not the
   rails-stack entry. A version is a claim about what a user can install, and nothing on
   `dev` is installable. Add the CHANGELOG notes under a **`### Unreleased`** heading in the

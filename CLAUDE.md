@@ -3,17 +3,21 @@
 This repo **is** a Claude plugin marketplace. It ships two kinds of things to other
 people, and it carries its own maintenance tooling for you.
 
-- **Distributed (what users install):** four app-builder plugins listed in
-  `.claude-plugin/marketplace.json` — `rails-stack` (the rails-8 + hotwire skills),
-  `rails-flow`, `qa-flow`, `pipeline` — plus the `dist/*.skill` packages for claude.ai
-  upload.
+- **Distributed (what users install):** the app-builder plugins listed in
+  `.claude-plugin/marketplace.json` — `rails-stack` (which bundles the rails-8, hotwire,
+  fidara-design and code-review skills), `rails-flow`, `qa-flow`, `pipeline`, `design-flow`
+  — plus the `dist/*.skill` packages for claude.ai upload. Keep this list in step with the
+  manifest: it omitted `design-flow` for as long as that plugin existed (#203).
+  `lint_self_consistency.py`'s `undocumented-plugin` rule catches a plugin named **nowhere**
+  in this file — which is what happened — but it cannot tell that a mention sits in *this
+  list* rather than in prose elsewhere, so the list itself is still on you.
 - **NOT distributed (maintainer tooling, this file's subject):** the flow under
   **`.claude/`** — commands, agents, and a status hook that live only in this repo. They
   are **not** part of the marketplace, so `/plugin marketplace add fmanimashaun/claude-skills`
   never installs them. Anyone who *clones this repo* gets them automatically; that is the
   point. (This replaced an earlier idea of a separate maintainer marketplace repo.)
 
-If you are here to **build a Rails app**, you want the four plugins, not this file.
+If you are here to **build a Rails app**, you want those plugins, not this file.
 
 ## The maintenance flow (the `.claude/` commands)
 
@@ -24,9 +28,38 @@ Downstream projects using the toolchain file issues here (via rails-flow's
   (already done for this repo; re-runnable, idempotent).
 - **`/maintainer-triage [issue|label]`** — classify open issues by component × type ×
   priority, label, dedupe, and post a ranked queue. (agent: `issue-triager`)
-- **`/maintainer-work [issue]`** — take ONE issue end-to-end: confirm → **verify against
+- **`/maintainer-work [issue]`** — take an issue end-to-end: confirm → **verify against
   source-of-truth** → fix → PR into `dev` (unversioned, `Refs #n`) → CHANGELOG under
   `Unreleased`. Shipping is a separate, deliberate act: the `dev → main` promotion PR.
+  One issue per branch is the default; **related issues may share one branch** under the
+  conditions below.
+
+### Grouping related issues on one branch — the preferred path
+
+**Group related issues and knock them off together.** It covers more ground per branch, and for
+issues that are really one change wearing several numbers it is also the only *honest* shape:
+#109 and #110 were both qa-flow, both under EPIC #108, and both edited the same boot/validation
+path — split, they are two PRs editing the same lines where the second cannot be reviewed
+without the first. Grouping is the default for related work, not a concession (decision: #206).
+
+"Related" is doing real work in that sentence. Group when all of these hold:
+
+1. **Same component** — one `comp:*` label, so a revert stays surgical.
+2. **One coherent mechanism** — same files or code path. If the fixes never touch each other,
+   grouping buys nothing and only widens the blast radius of a revert.
+3. **Same change type under the gate** — either all need a CONFIRMED `doctrine-verifier`
+   verdict or none do. This inherits *Split a mixed change* above rather than weakening it: an
+   architecture change must never carry a framework claim through on its coat-tails. **This is
+   the one condition that is not a judgement call.**
+4. **Still reviewable and bisectable in one sitting.** No fixed cap — take as many as genuinely
+   share the mechanism. But the release-cadence reasoning applies: when something breaks, the
+   branch is the unit you bisect to.
+
+**Traceability is never pooled** — this is what makes grouping safe rather than sloppy. The
+branch name carries the primary issue; the PR body carries one `Refs #n` per issue; the CHANGELOG
+gets **one bullet per issue**, never one for the group; and the promotion carries a separate
+`Closes #n` for each, so each closes on its own merit. Pool those and you lose which fix answered
+which report, and the promotion can no longer say what it shipped.
 - **`/maintainer-audit [component]`** — proactively review a skill/plugin against
   source-of-truth + the open-issue signal; file findings as issues (don't fix in place).
 
@@ -133,7 +166,9 @@ counter look tidy is what produced 37 no-op merge commits on `dev` earlier; don'
 1. reads `metadata.version` from `.claude-plugin/marketplace.json` → tag `vX.Y.Z`;
 2. if that tag doesn't exist, builds `dist/*.skill` with `scripts/package_core.py`,
    verifies committed `dist/` matches (drift guard), extracts notes from the CHANGELOG
-   `(release vX.Y.Z)` block, and publishes the release with the two `.skill` assets;
+   `(release vX.Y.Z)` block, and publishes the release with **every** `dist/*.skill`
+   asset (a glob, never a hand-typed list — that is how a release silently drops a newly
+   added skill);
 3. if the tag already exists (version wasn't bumped), it is a **no-op**.
 
 So to ship: land the work on `dev` unversioned, then open the promotion PR that bumps
