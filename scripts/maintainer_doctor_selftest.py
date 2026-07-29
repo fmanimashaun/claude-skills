@@ -18,6 +18,7 @@ Costs nothing: no network, stdlib + git only.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,15 @@ import maintainer_doctor as md  # noqa: E402
 
 FAILURES: list[str] = []
 CHECKS = 0
+
+# Captured before any fixture patches `md.REPO`, so the ignore-rule fixtures can seed themselves
+# with the `.gitignore` we ACTUALLY ship. Testing a hand-written stand-in would prove the check
+# works and say nothing about whether our own patterns do.
+REAL_REPO = md.REPO
+
+# The pre-#197 patterns, verbatim: directory-only, so they match neither a symlink (git mode
+# 120000) nor a path that does not exist yet.
+SLASHED_IGNORE = "everylayout/\ntailwind-ui/\nflowbite*/\nflowbite*.zip\n"
 
 
 def _tick() -> None:
@@ -43,8 +53,15 @@ def _git(cwd: Path, *args: str) -> str:
 
 def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = False,
             marketplace: bool = True, corpora: bool = False,
-            direct_to_main: bool = False) -> Path:
-    """A real repo with a real remote, shaped to trigger (or not) one specific check."""
+            direct_to_main: bool = False, gitignore: str | None = "real") -> Path:
+    """A real repo with a real remote, shaped to trigger (or not) one specific check.
+
+    `gitignore`: "real" copies the shipped `.gitignore` (so the ignore-rule check is exercised
+    against the patterns we actually use), "slashed" reproduces the #197 bug, None omits the
+    file, and any other string is written verbatim as the ignore file. It is written BEFORE the
+    initial commit so the fixture's tree stays clean -- an uncommitted `.gitignore` would make
+    every dirty-tree assertion below lie.
+    """
     root = Path(tempfile.mkdtemp(prefix="doctor-fx-"))
     remote, work = root / "remote.git", root / "work"
     _git(root, "init", "--bare", "-b", "main", str(remote))
@@ -55,6 +72,12 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
     if marketplace:
         (work / ".claude-plugin").mkdir(parents=True, exist_ok=True)
         (work / ".claude-plugin" / "marketplace.json").write_text('{"metadata":{"version":"0.0.0"}}')
+    if gitignore == "real":
+        shutil.copyfile(REAL_REPO / ".gitignore", work / ".gitignore")
+    elif gitignore == "slashed":
+        (work / ".gitignore").write_text(SLASHED_IGNORE)
+    elif gitignore is not None:
+        (work / ".gitignore").write_text(gitignore)
     (work / "seed.txt").write_text("seed\n")
     _git(work, "add", "-A")
     _git(work, "commit", "-m", "init")
@@ -92,8 +115,9 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
         _git(work, "update-ref", "refs/heads/main", behind)
 
     if corpora:
+        # One subfolder holding all three, matching the layout `check_corpora` looks for (#197).
         for c in md.CORPORA:
-            (work / c).mkdir(exist_ok=True)
+            (work / md.CORPORA_DIR / c).mkdir(parents=True, exist_ok=True)
 
     if on_branch != "dev":
         _git(work, "checkout", on_branch)
@@ -119,6 +143,7 @@ def diagnose(work: Path, *, fix: bool = False) -> md.Doctor:
         d.check_no_direct_to_main()
         d.check_unshipped()
         d.check_corpora()
+        d.check_corpora_ignored()
         return d
     finally:
         md.REPO = real
@@ -149,6 +174,42 @@ def run() -> int:
     expect("healthy", d, "on `dev`", md.PASS)
     expect("healthy", d, "local `main` matches", md.PASS)
     expect("healthy", d, "corpora present", md.PASS)
+    # Exercised against the `.gitignore` we actually ship, so this PASS is a statement about
+    # our real patterns rather than about a stand-in written to satisfy it.
+    expect("healthy", d, "corpora ignore rules", md.PASS)
+
+    # ---- the #197 regression: directory-only patterns cannot match the prescribed layout --
+    # The pre-#197 `.gitignore` verbatim. This is the negative test the original rule never had:
+    # it was written, believed, and silently matched nothing for the layout in the docs.
+    d = diagnose(fixture(corpora=True, gitignore="slashed"))
+    r = expect("slashed ignore", d, "corpora ignore rules", md.FAIL)
+    _tick()
+    if r and "design-corpora" not in r.detail:
+        FAILURES.append(
+            "the slashed-ignore finding must name the unignored path, or it cannot be acted on; "
+            f"detail={r.detail!r}"
+        )
+    _tick()
+    if r and "slash" not in r.remedy.lower():
+        FAILURES.append(
+            "the remedy must say to drop the trailing slash — naming the defect without the fix "
+            f"is what made #197 survive review. remedy={r.remedy!r}"
+        )
+
+    # ---- no .gitignore at all is a FAIL, not a silent skip ----------------------------
+    # Fail CLOSED: with no ignore file the licensed corpora are one `git add -A` from the
+    # history, which is the outcome the whole rule exists to prevent.
+    expect("no ignore file", diagnose(fixture(corpora=True, gitignore=None)),
+           "corpora ignore rules", md.FAIL)
+
+    # ---- an over-broad pattern that swallows our own generated matrix ------------------
+    # The other direction: a corpora pattern wide enough to hide `coverage.md` would silently
+    # disable the drift guard, so near-misses are asserted, not assumed.
+    d = diagnose(fixture(corpora=True, gitignore="/design-corpora\ncoverage.md\n"))
+    r = expect("over-broad ignore", d, "corpora ignore rules", md.FAIL)
+    _tick()
+    if r and "coverage.md" not in r.detail:
+        FAILURES.append(f"over-broad finding must name the swallowed path; detail={r.detail!r}")
 
     # ---- on main: the branch you must never work from ----------------------------------
     d = diagnose(fixture(on_branch="main", corpora=True))
@@ -217,12 +278,33 @@ def run() -> int:
     # ---- THE INVARIANT: skip is never counted as a pass -----------------------------
     _tick()
     d = diagnose(fixture(corpora=False))
-    passes = sum(1 for r in d.results if r.status == md.PASS)
     skips = sum(1 for r in d.results if r.status == md.SKIP)
     if skips == 0:
         FAILURES.append("expected at least one SKIP on a corpora-less fixture")
-    if any(r.status == md.PASS and "corpora" in r.name for r in d.results):
-        FAILURES.append("a corpora check reported PASS while the corpora were absent")
+
+    # This asserted that NO check whose name contains "corpora" may PASS while the kits are
+    # absent. That was right when the only such check was the presence one, and became too broad
+    # in #197: `corpora ignore rules` reads the ignore PATTERNS, not the kits, so it must keep
+    # reaching a real verdict on a machine that has never cloned them. Banning the substring
+    # would have forced the new check to either lie or rename itself to dodge the rule. Both
+    # halves are pinned separately instead, which is stronger than the blanket ban: the
+    # exemption is not a hole a broken check could hide in.
+    _tick()
+    presence = find(d, "corpora present") or find(d, "corpora missing")
+    if presence is None:
+        FAILURES.append(f"no corpora presence check ran; got {[r.name for r in d.results]}")
+    elif presence.status != md.SKIP:
+        FAILURES.append(
+            f"corpora presence reported {presence.status} while the corpora were absent — "
+            "a check that did not run must never render as one that passed"
+        )
+    _tick()
+    rules = find(d, "corpora ignore rules")
+    if rules is None or rules.status != md.PASS:
+        FAILURES.append(
+            "the ignore-rule check must still reach a verdict with no corpora present — it reads "
+            f"patterns, not kits; got {rules.status if rules else 'no such check'}"
+        )
     _tick()
     if md.PASS == md.SKIP:
         FAILURES.append("PASS and SKIP are the same token — they must be distinguishable")
@@ -290,6 +372,30 @@ def run() -> int:
     missing = [c[1] for _, c in md.GATES if not (Path(__file__).resolve().parents[1] / c[1]).exists()]
     if missing:
         FAILURES.append(f"GATES references scripts that do not exist: {missing}")
+
+    # ---- the corpora-gate exemption is keyed by name, so the names must be real -------
+    # A stringly-keyed carve-out that stops matching is the failure mode: rename the gate and the
+    # exemption quietly lapses. Cheap to pin, so pinned.
+    _tick()
+    gate_names = {name for name, _ in md.GATES}
+    unknown = sorted(md.CORPORA_GATES - gate_names)
+    if unknown:
+        FAILURES.append(
+            f"CORPORA_GATES names no such gate: {unknown} — the corpora-absent SKIP would never "
+            f"apply. Known gates: {sorted(gate_names)}"
+        )
+
+    # ---- and the exemption must be NARROW: only corpora-dependent gates may skip -------
+    # The near-miss that matters. If this set grew to cover a gate that does not read the kits, a
+    # corpora-less machine would skip a check it can perfectly well run — silently reducing the
+    # sweep while still printing a healthy summary.
+    _tick()
+    over_broad = sorted(n for n in md.CORPORA_GATES if "coverage matrix" not in n)
+    if over_broad:
+        FAILURES.append(
+            f"CORPORA_GATES exempts gates that do not read the corpora: {over_broad} — only the "
+            "coverage-matrix drift check needs them; --selftest handles absence itself"
+        )
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

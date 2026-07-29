@@ -59,7 +59,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # against synthetic fixtures: a linter nobody tested is a claim, not a check.
 ROOT = REPO_ROOT
 
-SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", ".venv", "venv"}
+# `design-corpora` is the gitignored nested clone of the licensed design kits (#197). It holds
+# ~125 third-party markdown files, and this linter checks OUR claims against OUR code — a
+# finding in a vendor CHANGELOG would be both false and unactionable, since we cannot edit
+# licensed corpora. Before #197 the kits were symlinked in and os.walk skipped them for free;
+# a real subdirectory has to be pruned deliberately. Pruned by EXACT name, so a
+# `design-corpora-notes/` of ours is still scanned — proved by --selftest.
+SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", ".venv", "venv", "design-corpora"}
 
 # Object names that conventionally mean "settings". A key here is a promise that
 # something honours it. Data-bearing objects are excluded on purpose: `cases[]`
@@ -487,6 +493,27 @@ def selftest() -> int:
         "a flag we do not define is not our claim to enforce",
         rule="unenforced-mandatory-flag", expect_finding=False,
         files={"README.md": "Always pass `--no-cache` to that third-party tool.\n"},
+    )
+
+    # -- SKIP_DIRS: the licensed corpora are not our claims (#197) ---------
+    # The kits are a gitignored nested clone carrying ~125 vendor markdown files. Both
+    # directions are pinned: before #197 they were symlinked in and os.walk skipped them for
+    # free, so nothing here was load-bearing; a real subdirectory needs a deliberate prune.
+    # The prune is by EXACT directory name, and the near-miss proves a same-prefix directory of
+    # OURS is still scanned — so the exemption cannot be widened by naming a folder
+    # `design-corpora-anything`.
+    CORPORA_CLAIM = "Always pass `--budget-usd` when running live.\n"
+    OPTIONAL_FLAG = ('import argparse\np=argparse.ArgumentParser()\n'
+                     'p.add_argument("--budget-usd", type=float, default=None)\n')
+    scenario(
+        "a vendor claim inside design-corpora/ is not ours to enforce",
+        rule="unenforced-mandatory-flag", expect_finding=False,
+        files={"design-corpora/flowbite/README.md": CORPORA_CLAIM, "tool.py": OPTIONAL_FLAG},
+    )
+    scenario(
+        "near miss: design-corpora-notes/ is ours and stays scanned",
+        rule="unenforced-mandatory-flag", expect_finding=True,
+        files={"design-corpora-notes/README.md": CORPORA_CLAIM, "tool.py": OPTIONAL_FLAG},
     )
 
     # -- doctrine-call-site-mismatch --------------------------------------

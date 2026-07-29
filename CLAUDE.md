@@ -307,19 +307,36 @@ with no corpora while two checks against the real repo silently did nothing.
 out/pulling `dev`. It never rewrites history, never `reset --hard`, never `clean`, and it
 restores `dist/` byte-for-byte after the drift rebuild, so a diagnostic never mutates the repo.
 
-**The licensed corpora** (`tailwind-ui/`, `flowbite/`, `everylayout/`) live in a separate
-**private** repo, `fmanimashaun/design-corpora`. Exactly one file reads them —
+**The licensed corpora** (Tailwind UI, Flowbite, Every Layout) live in a separate **private**
+repo, `fmanimashaun/design-corpora`, and are **OPTIONAL**. Exactly one file reads them —
 `scripts/build_coverage.py` — so a machine without them can do everything except regenerate or
-drift-check the coverage matrix. Attach them with a clone plus links; on **Windows use
-directory junctions**, because Git Bash symlinks need developer mode:
+drift-check the coverage matrix, and no gate fails for their absence. Attach them as **one
+nested clone in a gitignored `design-corpora/` subfolder**:
 
-```powershell
-New-Item -ItemType Junction -Path tailwind-ui -Target ..\design-corpora\tailwind-ui
+```bash
+git clone https://github.com/fmanimashaun/design-corpora.git design-corpora
+python3 scripts/build_coverage.py --audit   # expect: 93 Tailwind UI + 63 Flowbite classified
 ```
+
+That is the whole setup — no symlinks, and nothing extra on Windows.
+
+**Why one subfolder and no links (#197).** The earlier layout symlinked `tailwind-ui/`,
+`flowbite/` and `everylayout/` in from a sibling clone, and `.gitignore` matched them with a
+**trailing slash — which matches a real directory only**, while git stores a symlink as mode
+`120000`. So all three corpora sat **untracked in the very guard written to hide them**, printed
+right under the warning below about 656 MB of licensed blobs. The ignore patterns are therefore
+root-anchored and **slash-free**, and `maintainer_doctor.py` proves they still cover this layout
+— against paths that do not exist, because a trailing-slash pattern *does* match a real
+directory, so testing the real path on a machine that has the corpora would hide the regression.
+That check is the reason this is doctrine rather than a habit: the rule was written, believed,
+and matched nothing.
 
 Never un-ignore them to commit them here: ~656 MB of licensed blobs in this history could only
 be removed with `git filter-repo` and a force-push that rewrites every commit SHA and detaches
 every release tag. Deleting the files in a later commit does not remove the blobs.
+
+`flowbite-figma/` is **not** in that repo: its `.fig` is 283 MB, over GitHub's 100 MB per-file
+hard limit. Direct file transfer if you need it; it drops into `design-corpora/` like the rest.
 
 ## Platform
 
