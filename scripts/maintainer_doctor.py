@@ -12,8 +12,10 @@ briefing, and it was only complete because the author had just hit every trap pe
   * a fresh clone lands on `main` -- the one branch this repo says never to work from;
   * an idle clone has a STALE local `main` ref, which silently breaks the `git diff dev main`
     check CLAUDE.md prescribes (it reported 5,231 phantom deletions on a real machine);
-  * the licensed corpora live in a separate private repo and must be linked in, and exactly
-    ONE file reads them;
+  * the licensed corpora live in a separate private repo, cloned into one gitignored
+    subfolder, and exactly ONE file reads them -- and the ignore rules that keep them out of
+    this history are themselves checked, because they once could not match the layout the
+    setup instructions prescribed (#197);
   * the ahead/behind counter is meaningless here, because `main` gains one merge commit per
     release that `dev` never receives.
 
@@ -40,8 +42,11 @@ Stdlib only, no network beyond the `git`/`gh` calls the checks make.
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -56,8 +61,33 @@ PASS, FAIL, SKIP, INFO = "PASS", "FAIL", "SKIP", "INFO"
 
 # Only `scripts/build_coverage.py` reads the corpora. Stated here so the corpora check can say
 # what is actually lost without them, rather than implying the repo is unusable.
+#
+# ONE gitignored subfolder holding a nested clone — not three root-level symlinks (#197).
+# `check_corpora_ignored` keeps this in step with `.gitignore`, and the selftest asserts it
+# stays in step with `build_coverage.TW_ROOT`, which is the only thing that reads the kits.
+CORPORA_DIR = "design-corpora"
 CORPORA = ("tailwind-ui", "flowbite", "everylayout")
 CORPORA_REPO = "https://github.com/fmanimashaun/design-corpora.git"
+
+# Paths whose ignore status is asserted below. The near-misses matter as much as the positives:
+# an over-broad corpora pattern that swallowed `coverage.md` would silently disable the drift
+# guard. `/flowbite*` is wildcarded on purpose (flowbite-figma, the zips), so its near-miss
+# tests the root ANCHOR at depth rather than the name.
+MUST_IGNORE = (
+    CORPORA_DIR,
+    f"{CORPORA_DIR}/tailwind-ui/html/components",
+    "tailwind-ui",          # the pre-#197 root layout, still ignored as insurance
+    "everylayout",
+    "flowbite",
+    "flowbite-figma",
+    "flowbite-pro-marketing-ui.zip",
+)
+MUST_NOT_IGNORE = (
+    "scripts/build_coverage.py",                    # not everything is ignored
+    f"{CORPORA_DIR}-notes/README.md",               # exact name, not a prefix
+    "docs/flowbite-notes.md",                       # `/flowbite*` is root-anchored
+    "skills/fidara-design/references/coverage.md",   # the drift guard needs this committed
+)
 
 GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("markdown shell lint", ("python3", "scripts/lint_markdown_shell.py")),
@@ -72,6 +102,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
 )
+
+# Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
+# FAIL. Only the drift check qualifies: `build_coverage.py --selftest` already reports its two
+# corpora-dependent checks as SKIPPED and still exits 0, so it belongs in the list above.
+# Keyed by gate NAME, and the selftest asserts every name here exists in GATES — otherwise a
+# rename would silently stop the exemption applying.
+CORPORA_GATES = frozenset({"coverage matrix drift"})
 
 
 @dataclass
@@ -301,17 +338,107 @@ class Doctor:
         )
 
     def check_corpora(self) -> None:
-        missing = [c for c in CORPORA if not (REPO / c).exists()]
+        root = REPO / CORPORA_DIR
+        missing = [c for c in CORPORA if not (root / c).exists()]
         if not missing:
-            self.add(PASS, "design corpora present", ", ".join(CORPORA))
+            self.add(PASS, "design corpora present", f"{CORPORA_DIR}/: " + ", ".join(CORPORA))
             return
         self.add(
             SKIP, f"design corpora missing: {', '.join(missing)}",
             "only `scripts/build_coverage.py` reads them, so everything else works — but the "
             "coverage matrix cannot be regenerated or drift-checked",
-            f"git clone {CORPORA_REPO} ../design-corpora && "
-            + " && ".join(f"ln -s ../design-corpora/{c} {c}" for c in missing),
+            # A nested clone, nothing to link. The old remedy was a clone plus three `ln -s`,
+            # which produced paths `.gitignore` could not match at all (#197).
+            f"git clone {CORPORA_REPO} {CORPORA_DIR}",
         )
+
+    def check_corpora_ignored(self) -> None:
+        """The ignore rules must actually cover the layout the setup instructions prescribe.
+
+        #197: the patterns were `tailwind-ui/`, `everylayout/`, `flowbite*/` while CLAUDE.md
+        told maintainers to symlink the kits in. A trailing slash matches a real DIRECTORY, and
+        git stores a symlink as mode 120000 — so none of the three matched, and all three sat
+        UNTRACKED in the guard written to hide them, directly under doctrine warning about
+        656 MB of licensed blobs the rule could not actually stop. That is
+        `claims-vs-enforcement` from skills/code-review/SKILL.md, so it is re-checked by script
+        rather than remembered.
+
+        Asserted in a THROWAWAY repo seeded with our `.gitignore`, against paths that DO NOT
+        EXIST — both deliberate. `git check-ignore` consults the filesystem to decide whether a
+        trailing-slash pattern applies, so on a machine that already has the corpora, testing
+        the real path matches under BOTH the correct pattern and the buggy one and a regression
+        hides. Against a path that is not there, only a slash-free pattern matches — which
+        discriminates on every machine, and subsumes the symlink form, so nothing needs
+        creating (a symlink would need Developer Mode on Windows).
+        """
+        gitignore = REPO / ".gitignore"
+        if not gitignore.is_file():
+            self.add(FAIL, "corpora ignore rules", "no .gitignore at the repo root",
+                     "restore .gitignore — without it the licensed corpora are committable")
+            return
+
+        tmp = Path(tempfile.mkdtemp(prefix="doctor-ignore-"))
+        try:
+            code, out = self.run("git", "init", "-q", str(tmp), cwd=tmp)
+            if code != 0:
+                self.add(SKIP, "corpora ignore rules", f"could not create a probe repo: {out}")
+                return
+            shutil.copyfile(gitignore, tmp / ".gitignore")
+
+            problems: list[str] = []
+            for candidate in MUST_IGNORE:
+                verdict = self._ignored_in(tmp, candidate)
+                if verdict is None:
+                    self.add(SKIP, "corpora ignore rules",
+                             f"git check-ignore unusable for {candidate!r}")
+                    return
+                if not verdict:
+                    problems.append(f"{candidate!r} is NOT ignored")
+            for candidate in MUST_NOT_IGNORE:
+                verdict = self._ignored_in(tmp, candidate)
+                if verdict is None:
+                    self.add(SKIP, "corpora ignore rules",
+                             f"git check-ignore unusable for {candidate!r}")
+                    return
+                if verdict:
+                    problems.append(f"{candidate!r} IS ignored but must not be")
+
+            if problems:
+                self.add(
+                    FAIL, "corpora ignore rules", "; ".join(problems),
+                    "in `.gitignore`, the corpora patterns must be root-anchored and "
+                    "slash-FREE (`/design-corpora`, not `design-corpora/`): a trailing slash "
+                    "matches a real directory only, never a symlink (#197)",
+                )
+            else:
+                self.add(PASS, "corpora ignore rules",
+                         f"{len(MUST_IGNORE)} ignored, {len(MUST_NOT_IGNORE)} near-misses clear")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def _ignored_in(self, probe: Path, candidate: str) -> bool | None:
+        """True if ignored, False if not, None if git could not answer.
+
+        Isolated from global/system git config: a maintainer whose personal `core.excludesFile`
+        happens to list `design-corpora` would otherwise make this pass no matter what our
+        `.gitignore` says — a fail-open inside the check for a fail-open. Exit 0 means ignored
+        and 1 means not; anything else (128 = fatal) returns None rather than reading as "not
+        ignored", so a broken invocation cannot be mistaken for a verdict.
+        """
+        try:
+            p = subprocess.run(
+                ["git", "check-ignore", "--", candidate],
+                cwd=probe, capture_output=True, text=True, timeout=60,
+                env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
+                     "GIT_CONFIG_SYSTEM": os.devnull},
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        if p.returncode == 0:
+            return True
+        if p.returncode == 1:
+            return False
+        return None
 
     def check_dist_clean(self) -> None:
         """Compare committed `dist/` against a clean build — WITHOUT leaving a trace.
@@ -358,12 +485,24 @@ class Doctor:
                     p.unlink()
 
     def check_gates(self) -> None:
+        corpora_absent = any(not (REPO / CORPORA_DIR / c).exists() for c in CORPORA)
         for name, cmd in GATES:
             script = REPO / cmd[1]
             if not script.exists():
                 self.add(
                     SKIP, f"gate: {name}", f"{cmd[1]} does not exist",
                     "this checkout predates the gate — `git pull` on `dev`",
+                )
+                continue
+            # A gate that CANNOT run is not a broken machine. The corpora are optional (only
+            # build_coverage.py reads them), so failing this gate for their absence told a
+            # contributor to "fix the failures before doing maintenance work" about a file they
+            # are not required to have — the mirror image of the SKIP-as-PASS bug this script
+            # exists to prevent, and it made "OPTIONAL" false for anyone running --gates.
+            if name in CORPORA_GATES and corpora_absent:
+                self.add(
+                    SKIP, f"gate: {name}", "licensed corpora absent — nothing to drift-check",
+                    f"git clone {CORPORA_REPO} {CORPORA_DIR}",
                 )
                 continue
             code, out = self.run(*cmd)
@@ -386,6 +525,7 @@ class Doctor:
         self.check_no_direct_to_main()
         self.check_unshipped()
         self.check_corpora()
+        self.check_corpora_ignored()
         self.check_dist_clean()
         if gates:
             self.check_gates()

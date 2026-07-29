@@ -54,7 +54,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-TW_ROOT = REPO / "tailwind-ui" / "html" / "components"
+
+# The licensed corpora live in ONE gitignored subfolder — a nested clone of the private
+# design-corpora repo (setup in CLAUDE.md, "Design corpora"). One ignored path instead of
+# three root-level entries, and no symlinks: a symlink is git mode 120000, which a
+# trailing-slash ignore pattern cannot match (#197), and creating one needs Developer Mode on
+# Windows — a platform this repo's tooling supports (CLAUDE.md, "Platform").
+CORPORA_ROOT = REPO / "design-corpora"
+TW_ROOT = CORPORA_ROOT / "tailwind-ui" / "html" / "components"
 TW_FAMILIES = ("application-ui", "marketing", "ecommerce")
 OUT = REPO / "skills" / "fidara-design" / "references" / "coverage.md"
 

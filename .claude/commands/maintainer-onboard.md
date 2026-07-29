@@ -87,10 +87,11 @@ labels are input to that decision, not a substitute for it.
 
 ## Notes
 
-- The licensed design corpora live in a separate **private** repo and are needed by exactly one
-  file, `scripts/build_coverage.py`. The doctor prints the clone-and-symlink remedy when they
-  are missing. Committing them into this repo is not an option: ~656 MB of licensed blobs in
-  this history could only be removed with `git filter-repo` and a force-push that rewrites
-  every commit SHA and detaches the release tags.
+- The licensed design corpora live in a separate **private** repo, are **optional**, and are read
+  by exactly one file, `scripts/build_coverage.py` — no gate fails for their absence. The doctor
+  prints the one-line clone remedy when they are missing; they attach as a nested clone in a
+  gitignored `design-corpora/` subfolder, with no symlinks (#197). Committing them into this repo
+  is not an option: ~656 MB of licensed blobs in this history could only be removed with
+  `git filter-repo` and a force-push that rewrites every commit SHA and detaches the release tags.
 - If `gh` is unauthenticated, even `git fetch` can fail while the repo is private. The doctor
   checks this explicitly rather than letting it surface as a confusing fetch error.
