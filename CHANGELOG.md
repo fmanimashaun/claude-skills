@@ -7,8 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased — the packager stops depending on your working copy (#171)
-_Version assigned at promotion._
+### 2026-07-29 — the packager stops depending on your working copy (#171)
 - **The prescribed check was satisfiable while producing the drift it exists to prevent.**
   `.gitattributes` is `* text=auto eol=lf` with `*.skill binary`, so git normalises sources to LF on
   commit but stores the artifact byte-for-byte. Packaging a freshly authored file on Windows (CRLF in
@@ -899,8 +898,7 @@ _Version assigned at promotion._
 
 ## design-flow (UI/design plugin)
 
-### Unreleased — screen-level requests route through page anatomies (#94)
-_Version assigned at promotion._
+### 1.5.0 — 2026-07-29
 - `/design-flow:component` step 1 previously said a screen should be built by "composing existing
   components + layout primitives" and gave nowhere to compose *from* — no page-level doctrine
   existed. It now routes any request above component scale (a page, a dashboard, a settings area)
@@ -1023,8 +1021,7 @@ _Version assigned at promotion._
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased — page anatomies: the screen level, above components (#94)
-_Version assigned at promotion._
+### 1.13.0 — 2026-07-29
 - **The gap.** fidara-design had a strong component catalog and almost no page-level anatomy — one
   base layout and the `cover` recipe. An agent asked for "the invoices screen" had nothing to
   follow above component scale, so it invented page structure, and invented structure is where
@@ -1365,6 +1362,45 @@ _Version assigned at promotion._
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.24.0)
+- **Screens got doctrine** (#94, rails-stack → 1.13.0, design-flow → 1.5.0). fidara-design had a
+  strong component catalog and almost **no page-level anatomy** — one base layout and the `cover`
+  recipe — so an agent asked for "the invoices screen" had nothing to follow above component scale
+  and invented page structure. Invented structure is where breakpoint chains, nested cards and
+  inconsistent heading ramps come from. New `references/page-anatomies.md` ships **3 shell
+  archetypes** (sidebar + mobile drawer, stacked top-bar, multi-column rail/main/aside) and **3 page
+  anatomies** (home-dashboard, detail, settings), each stating mobile behaviour, brand-mark
+  placement, safe-area handling, scroll containment, and which catalog components fill each region.
+  The framing is the deliverable: **a screen is composed, not designed** — pick a shell, pick an
+  anatomy, fill from the catalog. `/design-flow:component` now routes any screen-level request
+  through it before writing markup.
+  It also carries a **primitive-instead-of-breakpoint substitution table** (`grid-cols-1 md:… lg:…`
+  → `grid-auto` + `--min`; `flex-col md:flex-row` → `Layout::Switcher`; `space-y-*` → `stack`;
+  `max-w-7xl mx-auto px-*` → `shell`), because intrinsic reflow responds to the **container** and so
+  stays correct inside a drawer or split view where a viewport breakpoint is simply wrong. And it
+  calls out that an independent scroll region needs `min-h-0` beside `overflow-y-auto` — the bug that
+  makes a shell feel broken and is invisible until you try it. Phase 1 of the kit-transformation epic
+  (#89); Phases 2–5 remain open.
+- **The packager stopped depending on your working copy** (#171, maintainer tooling — not
+  distributed). `.gitattributes` is `* text=auto eol=lf` with `*.skill binary`, so git normalises
+  sources to LF on commit but stores the artifact byte-for-byte. Packaging a freshly authored file on
+  Windows produced an archive carrying CRs its own committed sources did not have — 424 bytes' worth —
+  and **the check CLAUDE.md prescribed passed anyway**, because it runs *before* the normalisation
+  that creates the mismatch. The drift then surfaced at release time, where `release.yml` correctly
+  refused to publish. `package_core.py` was never at fault; its guarantee was scoped to "a clean
+  checkout", and nothing made the checkout clean. It now normalises text members itself, detecting
+  binaries git's own way (a NUL byte in the first 8000 bytes) rather than by an extension allowlist —
+  an allowlist needs maintaining and **fails open**, so the first type nobody added would silently
+  restore the bug. Proven behaviour-preserving rather than asserted: all four `.skill` files rebuild
+  byte-identical to the previous release, and the original failure was then reproduced end to end
+  (39 sources CRLF-ified) with every artifact still byte-identical. `--selftest` carries 11
+  assertions, including a NUL-bearing fixture with `\r\n` inside that naive normalisation would
+  corrupt.
+- Third instance this week of the same class — **a guarantee that only holds if you remember
+  something** (`--check || echo`, a README-mandated flag the code left optional, and now the
+  packaging check). Each has been moved into a deterministic layer, which is the class the
+  `code-review` skill shipped in v1.23.0 exists to name.
 
 ### 2026-07-29 (release v1.23.0)
 - **The doctrine's *effect* is now measurable, not just its content** (#156, maintainer tooling —
