@@ -9,12 +9,36 @@ for the markup contract, styled to the design system; inputs consume role tokens
 Optional leading/trailing icon or prefix/suffix. Label always present (visually or `sr-only`).
 
 ```erb
-<div class="stack" style="--space: var(--space-2xs)">
-  <%= f.label :email, class: "text-step--1 font-medium text-foreground" %>
-  <%= f.input_field :email, class: field_classes(state) %>
-  <p class="text-step--1 text-muted-foreground">We'll never share it.</p>  <%# helper %>
+<%= f.input :email, hint: "We'll never share it." %>
+```
+
+That one call renders the whole anatomy, because **the anatomy is defined once** in
+`config/initializers/simple_form.rb` as a styled wrapper — the `stack`, the label
+classes, the control classes and the hint/error paragraphs all live there. See
+[component-implementations.md](component-implementations.md) → Field anatomy for the
+wrapper configuration itself.
+
+**Never hand-roll a field.** No `f.label` + `f.input_field` + a hand-written `<p>`, and
+no bespoke field-wrapper component — a component that renders its own `<label>` and error
+markup *is* a form element built without simple_form, which is what the mandate rules out.
+Hand-rolled anatomy drifts from every other field the moment someone edits it; one wrapper
+definition is what makes a change land everywhere at once.
+
+**This applies inside ViewComponents too.** A component that renders fields takes the form
+builder in and calls `form.input`, rather than re-implementing label/input/error markup:
+
+```erb
+<%# inside a ViewComponent template — composition, not re-implementation %>
+<div class="stack">
+  <%= form.input :line1 %>
+  <%= form.input :city %>
 </div>
 ```
+
+Reach for `f.input_field` **only** when a control genuinely has no label of its own (a
+search box whose label is `sr-only`, a filter in a toolbar) — and even then the class comes
+from `input_classes(state:, size:)` in `UiHelper` (keyword arguments; there is no
+`field_classes`).
 
 ## Control recipe + states
 

@@ -225,8 +225,9 @@ Many small forms, grouped. The risk here is a wall of inputs.
         <h2 id="profile-heading" class="text-step-1"><%= t(".profile") %></h2>
         <%= simple_form_for @user do |f| %>
           <div class="stack">
-            <%# fields per forms.md — that file owns label/hint/error and the
-                field component's API; a page anatomy only owns the arrangement %>
+            <%= f.input :name %>
+            <%# every field is `f.input` — the anatomy comes from the simple_form
+                wrapper (forms.md); a page anatomy owns only the arrangement %>
           </div>
           <div class="cluster justify-end">
             <%= render(Ui::ButtonComponent.new(variant: :primary)) { t(".save") } %>

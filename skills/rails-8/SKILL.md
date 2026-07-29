@@ -101,7 +101,8 @@ to be driven and keeps every step verifiable:
 3. **Controller.** Seven RESTful actions max; more verbs mean a new resource,
    not a custom action. Use `params.expect(product: [:name, :price_cents])`
    for strong parameters (8.x idiom).
-4. **Views.** ERB with partials; `form_with model:`; render collections with
+4. **Views.** ERB with partials; **every form via simple_form** (`simple_form_for` —
+   mandatory, never raw `form_with`); render collections with
    `render @products`. Add Turbo Frames/Streams only where the UX needs
    partial updates.
 5. **Background work / mail / files** as needed (job, mailer, attachment) —
@@ -181,7 +182,7 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/project-setup.md` | `rails new`, app structure, generators, config/environments, credentials, dev workflow (`bin/setup`, `bin/dev`), upgrading |
 | `references/models.md` | Migrations, Active Record models, validations, associations, callbacks, scopes/queries, enums, `normalizes`, tokens, encryption, multi-DB |
 | `references/controllers-routing.md` | Routes, **URL design (human vanity paths for user-facing pages vs REST for records + JSON API; the reconciliation)**, controllers, `params.expect`, filters, rate limiting, sessions/cookies/flash, redirects & status codes, API-only apps |
-| `references/views-hotwire.md` | ERB, layouts, partials, helpers, `form_with`, Turbo Drive/Frames/Streams, morphing, Stimulus, importmap/Propshaft, markdown rendering |
+| `references/views-hotwire.md` | ERB, layouts, partials, helpers, forms (simple_form; Turbo contract), Turbo Drive/Frames/Streams, morphing, Stimulus, importmap/Propshaft, markdown rendering |
 | `references/jobs-and-realtime.md` | Active Job, Solid Queue, recurring jobs, 8.1 continuations, concurrency limits, Action Cable / Solid Cable |
 | `references/mail-storage-richtext.md` | Action Mailer, Action Mailbox, Active Storage (uploads/variants/direct upload), Action Text |
 | `references/auth-security.md` | `bin/rails g authentication`, sessions, password reset, authorization patterns, CSRF/XSS/SQLi, CSP, the security checklist |

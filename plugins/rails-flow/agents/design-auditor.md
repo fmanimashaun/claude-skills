@@ -14,7 +14,8 @@ Source of truth: the project CLAUDE.md design/UI section and `docs/design-system
 If the project defines none, audit against the hotwire skill's ground rules only and say so.
 
 Checks (driven by project rules — examples):
-- **Form builder mandate**: if the project mandates simple_form, `grep -rn "form_with\|form_for" app/views`
+- **Form builder mandate** (unconditional — simple_form is mandatory in this stack):
+  `grep -rn "form_with\|form_for" app/views`
   on the changed files must come back empty (styling belongs in the initializer wrappers,
   not per-input classes).
 - **Brand tokens**: only the project's Tailwind theme tokens; flag raw palette colors that

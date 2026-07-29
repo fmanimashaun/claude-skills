@@ -179,29 +179,74 @@ end
 
 ## Form controls
 
-### Field wrapper — `app/components/ui/field_component.rb`
+### Field anatomy — `config/initializers/simple_form.rb`
+
+**There is no bespoke field-wrapper component, deliberately.** simple_form owns every form and
+every form element in this stack, and that includes fields rendered from inside a ViewComponent —
+a component that hand-rolls `<label>` + input + error markup *is* a form element built without
+simple_form, which is the thing the mandate exists to prevent. Hand-rolled anatomy drifts from the
+other hundred fields the moment anyone touches it, and drift is exactly what one wrapper
+definition eliminates.
+
+So the design system styles simple_form's **wrappers**, once, in the initializer. Author fields with
+`f.input`; the wrapper supplies the `stack`, the label, the control classes and the hint/error
+slots, with `aria-describedby` wiring handled by simple_form:
 
 ```ruby
-# frozen_string_literal: true
+# config/initializers/simple_form.rb — the field anatomy of the whole app, defined once
+SimpleForm.setup do |config|
+  config.wrappers :default, class: "stack", wrapper_html: { style: "--space: var(--space-2xs)" } do |b|
+    b.use :html5
+    b.use :label, class: "text-step--1 font-medium text-foreground"
+    b.use :input, class: "block w-full rounded-md border border-input bg-background " \
+                         "text-step-0 text-foreground px-3 h-9 min-h-touch " \
+                         "placeholder:text-muted-foreground transition-colors " \
+                         "focus-visible:outline-none focus-visible:ring-2 " \
+                         "focus-visible:ring-ring/30 focus-visible:border-ring " \
+                         "disabled:opacity-50 disabled:cursor-not-allowed",
+                  error_class: "border-destructive focus-visible:ring-destructive/30",
+                  valid_class: "border-success"
+    b.use :hint,  wrap_with: { tag: :p, class: "text-step--1 text-muted-foreground" }
+    b.use :error, wrap_with: { tag: :p, class: "text-step--1 text-destructive" }
+  end
+
+  config.default_wrapper = :default
+  config.button_class = ""            # buttons come from Ui::ButtonComponent, not simple_form
+  config.boolean_style = :inline
+  config.label_text = ->(label, _required, _explicit) { label }
+end
+```
+
+```erb
+<%# every field, everywhere — including inside a ViewComponent's template %>
+<%= f.input :email, hint: "We'll never share it." %>
+<%= f.input :status, collection: Invoice.statuses.keys %>
+<%= f.association :category %>
+```
+
+**A ViewComponent that renders fields takes the form builder in and uses it**, rather than
+re-implementing the anatomy:
+
+```ruby
 module Ui
-  class FieldComponent < ViewComponent::Base
-    renders_one :control
-    def initialize(label:, hint: nil, error: nil, for_id: nil)
-      @label, @hint, @error, @for_id = label, hint, error, for_id
-    end
-    def described_by = @error ? "#{@for_id}-error" : (@hint ? "#{@for_id}-hint" : nil)
+  class AddressFieldsComponent < ViewComponent::Base
+    def initialize(form:) = @form = form
+    attr_reader :form
   end
 end
 ```
 ```erb
-<%# field_component.html.erb — stack: label -> control -> hint/error %>
-<div class="stack" style="--space: var(--space-3xs)">
-  <label for="<%= @for_id %>" class="text-step--1 font-medium text-foreground"><%= @label %></label>
-  <%= control %>
-  <% if @error %><p id="<%= @for_id %>-error" class="text-step--1 text-destructive"><%= @error %></p>
-  <% elsif @hint %><p id="<%= @for_id %>-hint" class="text-step--1 text-muted-foreground"><%= @hint %></p><% end %>
+<%# address_fields_component.html.erb — composition, not re-implementation %>
+<div class="stack">
+  <%= form.input :line1 %>
+  <%= form.input :city %>
+  <%= form.input :postcode %>
 </div>
 ```
+
+Sizes (`sm h-8 · md h-9 · lg h-10`, matching Button) come from additional named wrappers
+(`config.wrappers :compact`) selected per form with `f.input :x, wrapper: :compact` — a second
+wrapper definition, never a per-field class override, so the set of field shapes stays enumerable.
 
 ### Input recipe (helper) — `app/helpers/ui_helper.rb`
 
