@@ -28,9 +28,38 @@ Downstream projects using the toolchain file issues here (via rails-flow's
   (already done for this repo; re-runnable, idempotent).
 - **`/maintainer-triage [issue|label]`** — classify open issues by component × type ×
   priority, label, dedupe, and post a ranked queue. (agent: `issue-triager`)
-- **`/maintainer-work [issue]`** — take ONE issue end-to-end: confirm → **verify against
+- **`/maintainer-work [issue]`** — take an issue end-to-end: confirm → **verify against
   source-of-truth** → fix → PR into `dev` (unversioned, `Refs #n`) → CHANGELOG under
   `Unreleased`. Shipping is a separate, deliberate act: the `dev → main` promotion PR.
+  One issue per branch is the default; **related issues may share one branch** under the
+  conditions below.
+
+### Grouping related issues on one branch — the preferred path
+
+**Group related issues and knock them off together.** It covers more ground per branch, and for
+issues that are really one change wearing several numbers it is also the only *honest* shape:
+#109 and #110 were both qa-flow, both under EPIC #108, and both edited the same boot/validation
+path — split, they are two PRs editing the same lines where the second cannot be reviewed
+without the first. Grouping is the default for related work, not a concession (decision: #206).
+
+"Related" is doing real work in that sentence. Group when all of these hold:
+
+1. **Same component** — one `comp:*` label, so a revert stays surgical.
+2. **One coherent mechanism** — same files or code path. If the fixes never touch each other,
+   grouping buys nothing and only widens the blast radius of a revert.
+3. **Same change type under the gate** — either all need a CONFIRMED `doctrine-verifier`
+   verdict or none do. This inherits *Split a mixed change* above rather than weakening it: an
+   architecture change must never carry a framework claim through on its coat-tails. **This is
+   the one condition that is not a judgement call.**
+4. **Still reviewable and bisectable in one sitting.** No fixed cap — take as many as genuinely
+   share the mechanism. But the release-cadence reasoning applies: when something breaks, the
+   branch is the unit you bisect to.
+
+**Traceability is never pooled** — this is what makes grouping safe rather than sloppy. The
+branch name carries the primary issue; the PR body carries one `Refs #n` per issue; the CHANGELOG
+gets **one bullet per issue**, never one for the group; and the promotion carries a separate
+`Closes #n` for each, so each closes on its own merit. Pool those and you lose which fix answered
+which report, and the promotion can no longer say what it shipped.
 - **`/maintainer-audit [component]`** — proactively review a skill/plugin against
   source-of-truth + the open-issue signal; file findings as issues (don't fix in place).
 
