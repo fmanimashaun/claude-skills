@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_coverage as bc  # noqa: E402
 
 FAILURES: list[str] = []
+SKIPPED: list[str] = []
 CHECKS = 0
 
 # A tiny synthetic corpus so the guard tests never depend on the licensed kits being present.
@@ -296,25 +297,31 @@ def run() -> int:
         FAILURES.append("expected '## Button group\\n' in the reference docs")
 
     # ---- the real mapping must be complete against the real corpus, when present ------
+    # These two checks need the licensed corpora, which most machines will not have. They are
+    # counted as SKIPPED rather than passed: a check that did not run is not a check that
+    # passed, and the earlier version of this file reported "35 checks passed" on a
+    # corpora-less machine while both of these silently did nothing — inert guards reading
+    # green. See `scripts/maintainer_doctor.py`, which exists partly because of this.
     _tick()
     try:
         tw = bc.discover_tw()
         bc.verify_totality(tw, bc.discover_fb())
     except bc.BuildError as exc:
         if "corpus not found" in str(exc):
-            print("note: licensed corpora absent — skipped the live totality check", file=sys.stderr)
+            SKIPPED.append("live totality check against the real corpus (corpora absent)")
         else:
             FAILURES.append(f"live mapping is not total:\n{exc}")
 
     # ---- the committed file must match what the builder produces ---------------------
     _tick()
-    if bc.TW_ROOT.is_dir():
-        if not bc.OUT.is_file():
-            FAILURES.append(f"{bc.OUT} does not exist — the generated matrix is not committed")
-        elif bc.OUT.read_text(encoding="utf-8") != bc.build():
-            FAILURES.append(
-                f"{bc.OUT.name} is stale — regenerate with `python3 scripts/build_coverage.py`"
-            )
+    if not bc.TW_ROOT.is_dir():
+        SKIPPED.append("coverage.md staleness check (corpora absent)")
+    elif not bc.OUT.is_file():
+        FAILURES.append(f"{bc.OUT} does not exist — the generated matrix is not committed")
+    elif bc.OUT.read_text(encoding="utf-8") != bc.build():
+        FAILURES.append(
+            f"{bc.OUT.name} is stale — regenerate with `python3 scripts/build_coverage.py`"
+        )
 
     # ---- unreadable docs must fail CLOSED, not silently skip the evidence check -------
     # Without this fixture the `if not blob:` branch is never exercised, and a fail-open
@@ -364,7 +371,14 @@ def run() -> int:
         for failure in FAILURES:
             print(f"  - {failure}", file=sys.stderr)
         return 1
-    print(f"build_coverage selftest: {CHECKS} checks passed")
+    passed = CHECKS - len(SKIPPED)
+    if SKIPPED:
+        print(f"build_coverage selftest: {passed} passed, {len(SKIPPED)} SKIPPED")
+        for s_ in SKIPPED:
+            print(f"  - skipped: {s_}")
+        print("A skipped check did NOT run — it is not a pass. Attach the corpora to close these.")
+    else:
+        print(f"build_coverage selftest: {passed} checks passed")
     return 0
 
 

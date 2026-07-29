@@ -18,7 +18,26 @@ __pycache__/
 
 # Paid third-party book screenshots (Every Layout) — reference only, never redistribute.
 # Licensed design references — study locally, NEVER commit (see EPIC #89).
-everylayout/
-tailwind-ui/
-flowbite*/
-flowbite*.zip
+# They live in a SEPARATE PRIVATE repo, cloned into `design-corpora/` (see CLAUDE.md,
+# "Design corpora"), never in this history: committing ~656 MB of licensed blobs here could
+# only be undone with `git filter-repo` + a force-push, which rewrites every commit SHA and
+# detaches the release tags.
+#
+# NO TRAILING SLASH on any of these, deliberately (#197). A trailing slash matches a real
+# DIRECTORY only, and git stores a symlink as mode 120000 — so `tailwind-ui/` never matched
+# the `ln -s` the setup instructions prescribed, and all three corpora sat UNTRACKED in the
+# very guard written to hide them. Slash-free also matches a path that does not exist yet,
+# which is what lets `maintainer_doctor.py` prove these patterns still work.
+/design-corpora
+
+# The pre-#197 root-level layout. Kept ignored — a machine still holding it must not be one
+# `git add -A` away from committing licensed blobs. `/flowbite*` subsumes the old
+# `flowbite*.zip` and `flowbite-figma/` entries.
+/everylayout
+/tailwind-ui
+/flowbite*
+
+# Dependency trees are never committed. (Was missing: the flowbite bundles carry two
+# node_modules trees, which the old root-level `flowbite*/` happened to cover — this makes it
+# explicit. They now sit under `/design-corpora`, so this stands alone for any other tree.)
+node_modules/
