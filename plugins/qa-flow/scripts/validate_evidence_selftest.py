@@ -32,7 +32,9 @@ import validate_evidence as ve  # noqa: E402
 FAILURES: list[str] = []
 CHECKS = 0
 
-HEADER = ",".join(ve.COLUMNS)
+HEADER = ve.FUNCTIONAL.header
+A11Y_HEADER = ve.A11Y.header
+PROFILE_NAMES = {p.name for p in ve.PROFILES}
 
 
 def _tick() -> None:
@@ -297,7 +299,7 @@ def run() -> int:
     expect_findings(
         "over-long row -- an unescaped comma shifted every field",
         "TC-091,Create, template,Templates,Pass,200,https://a/n,https://a/n,heading 'New',,,extra\n",
-        contains="more than the 10-column contract",
+        contains="more than the 10-column functional contract",
     )
 
     # ---- whitespace and Excel artefacts ---------------------------------------------
@@ -307,6 +309,161 @@ def run() -> int:
     )
     expect_clean("BOM header (Excel writes one) is still readable", f"{GOOD_PASS}\n", bom=True)
     expect_clean("blank lines between rows are skipped, not flagged", f"{GOOD_PASS}\n\n{GOOD_FAIL}\n")
+
+    # ======================================================================================
+    # a11y profile -- the SAME rule, a different artifact. This exists because shipping the
+    # rule as prose for a11y-auditor while machine-checking it for functional-tester left
+    # qa-flow with one validated evidence path and one unvalidated one.
+    # ======================================================================================
+    A11Y_CLEAN = (
+        "/dashboard,signed-in,Audited,200,https://a/dashboard,https://a/dashboard,"
+        "heading 'Dashboard',0,Pass,qa/reports/axe-dashboard.json,"
+    )
+    a11y = {"header": A11Y_HEADER}
+
+    expect_clean("a11y: conforming audited page", f"{A11Y_CLEAN}\n", **a11y)
+    expect_clean(
+        "a11y: violations by impact",
+        "/settings,signed-in,Audited,200,https://a/s,https://a/s,heading 'Settings',"
+        "critical:0 serious:2,Fail,qa/reports/axe-settings.json,Focus order wrong in tab panel\n",
+        **a11y,
+    )
+    expect_clean(
+        "a11y: 'Not run' is an honest keyboard verdict",
+        "/reports,signed-in,Audited,200,https://a/r,https://a/r,heading 'Reports',0,Not run,"
+        "qa/reports/axe-reports.json,Keyboard pass deferred to certify\n",
+        **a11y,
+    )
+    # The over-correction guard again, on the a11y side: an intentional error-page design is
+    # a legitimate audit target.
+    expect_clean(
+        "a11y: intentional 404 design is auditable, not disqualified",
+        "/404,anon,Audited,200,https://a/404,https://a/404,text 'Page not found',0,Pass,"
+        "qa/reports/axe-404.json,Intentional error-page design\n",
+        **a11y,
+    )
+    expect_clean(
+        "a11y: properly recorded Blocked",
+        "/admin,anon,Blocked,302,https://a/admin,https://a/login,,,,,"
+        "Redirected to login; not audited\n",
+        **a11y,
+    )
+    expect_clean("a11y: Out of Scope is exempt", "/billing,anon,Out of Scope,,,,,,,,\n", **a11y)
+
+    # ---- the defect this closes: axe violations from the wrong page -------------------
+    expect_findings(
+        "a11y: audited a 404 -- real violations, wrong page",
+        "/section,anon,Audited,404,https://a/section,https://a/section,heading 'Section',3,Pass,"
+        "qa/reports/axe-section.json,\n",
+        contains="HTTP 404",
+        count=1,
+        **a11y,
+    )
+    expect_findings(
+        "a11y: silent login redirect -- audited the login page, filed against /admin",
+        "/admin,signed-in,Audited,200,https://a/admin,https://a/login,heading 'Sign in',2,Pass,"
+        "qa/reports/axe-admin.json,\n",
+        contains="with no Notes",
+        count=1,
+        **a11y,
+    )
+    expect_findings(
+        "a11y: audited without an expected-content assertion",
+        "/dashboard,signed-in,Audited,200,https://a/d,https://a/d,,0,Pass,qa/reports/axe.json,\n",
+        contains="without an expected-content assertion",
+        count=1,
+        **a11y,
+    )
+
+    # ---- an audit must report an OUTCOME, not just that it was reached ---------------
+    expect_findings(
+        "a11y: audited with no Violations count",
+        "/dashboard,signed-in,Audited,200,https://a/d,https://a/d,heading 'D',,Pass,"
+        "qa/reports/axe.json,\n",
+        contains="without a Violations count",
+        count=1,
+        **a11y,
+    )
+    for placeholder in ("TBD", "n/a", "-", "none", "pending"):
+        expect_findings(
+            f"a11y: Violations placeholder {placeholder!r} is not a result",
+            f"/dashboard,signed-in,Audited,200,https://a/d,https://a/d,heading 'D',{placeholder},"
+            "Pass,qa/reports/axe.json,\n",
+            contains="records no number",
+            count=1,
+            **a11y,
+        )
+    expect_clean(
+        "a11y: an explicit 0 IS a result (a clean page must stay expressible)",
+        A11Y_CLEAN + "\n",
+        **a11y,
+    )
+    expect_findings(
+        "a11y: audited without a Keyboard verdict",
+        "/dashboard,signed-in,Audited,200,https://a/d,https://a/d,heading 'D',0,,"
+        "qa/reports/axe.json,\n",
+        contains="without a Keyboard verdict",
+        count=1,
+        **a11y,
+    )
+    expect_findings(
+        "a11y: invented Keyboard verdict",
+        "/dashboard,signed-in,Audited,200,https://a/d,https://a/d,heading 'D',0,Mostly,"
+        "qa/reports/axe.json,\n",
+        contains="is not one of Pass / Fail / Not run",
+        count=1,
+        **a11y,
+    )
+    expect_findings(
+        "a11y: audited with no Evidence path",
+        "/dashboard,signed-in,Audited,200,https://a/d,https://a/d,heading 'D',0,Pass,,\n",
+        contains="without an Evidence path",
+        count=1,
+        **a11y,
+    )
+    expect_findings(
+        "a11y: Blocked recording nothing",
+        "/admin,anon,Blocked,,,,,,,,\n",
+        contains="without an HTTP status",
+        count=3,
+        **a11y,
+    )
+
+    # ---- the two profiles must not share a status vocabulary ------------------------
+    expect_findings(
+        "a11y: 'Pass' is a functional status, not an a11y one",
+        "/dashboard,signed-in,Pass,200,https://a/d,https://a/d,heading 'D',0,Pass,"
+        "qa/reports/axe.json,\n",
+        contains="is not one of",
+        count=1,
+        **a11y,
+    )
+    expect_findings(
+        "functional: 'Audited' is an a11y status, not a functional one",
+        "TC-110,Create,Templates,Audited,200,https://a/n,https://a/n,heading 'New',,\n",
+        contains="is not one of",
+        count=1,
+    )
+
+    # ---- profile detection is by header, and must never guess -----------------------
+    _tick()
+    detected = []
+    for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN)):
+        got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
+        detected.append(got.name)
+        if got is not prof:
+            FAILURES.append(f"profile detection: {prof.name} header resolved to {got.name}")
+    if len(set(detected)) != len(PROFILE_NAMES):
+        FAILURES.append(f"profile detection: expected distinct profiles, got {detected}")
+
+    # An a11y-shaped header missing one column must not fall through to the functional
+    # profile (or vice versa) -- ambiguity resolves to exit 2, never a guess.
+    expect_unusable(
+        "a11y header missing a column does not fall back to another profile",
+        A11Y_CLEAN,
+        header=",".join(c for c in ve.A11Y.columns if c != "Violations"),
+        contains="missing ['Violations']",
+    )
 
     # ---- unusable input: never report clean on something unread ---------------------
     expect_unusable("wrong header", GOOD_PASS, header="Test ID,Title,Status,Screenshot", contains="missing")
@@ -344,14 +501,33 @@ def run() -> int:
     # Without this, the agent could be told one header while the checker enforced another,
     # and every real report would be rejected as UNUSABLE. This is the claims-vs-enforcement
     # class the repo keeps getting bitten by, applied to my own change.
+    agents = Path(__file__).resolve().parents[1] / "agents"
+    for filename, profile in (
+        ("functional-tester.md", ve.FUNCTIONAL),
+        ("a11y-auditor.md", ve.A11Y),
+    ):
+        _tick()
+        doctrine = agents / filename
+        if not doctrine.is_file():
+            FAILURES.append(f"cannot find {doctrine} to cross-check the {profile.name} contract")
+        elif profile.header not in doctrine.read_text(encoding="utf-8"):
+            FAILURES.append(
+                f"{filename} does not document the exact {profile.name} header this script "
+                "enforces -- the agent would write a CSV the checker rejects. Expected to "
+                f"find: {profile.header}"
+            )
+
+    # Every profile must be reachable from a documented agent, or it is a dead contract.
     _tick()
-    doctrine = Path(__file__).resolve().parents[1] / "agents" / "functional-tester.md"
-    if not doctrine.is_file():
-        FAILURES.append(f"cannot find {doctrine} to cross-check the column contract")
-    elif HEADER not in doctrine.read_text(encoding="utf-8"):
+    documented = {
+        p.name
+        for p in ve.PROFILES
+        for f in agents.glob("*.md")
+        if p.header in f.read_text(encoding="utf-8")
+    }
+    if documented != PROFILE_NAMES:
         FAILURES.append(
-            "functional-tester.md does not document the exact header this script enforces -- "
-            f"the agent would write a CSV the checker rejects. Expected to find: {HEADER}"
+            f"profiles with no agent documenting their header: {sorted(PROFILE_NAMES - documented)}"
         )
 
     if FAILURES:
