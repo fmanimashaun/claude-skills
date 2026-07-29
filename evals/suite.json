@@ -25,10 +25,16 @@
       "why": "Staged at run time from skills/{rails-8,hotwire,fidara-design} plus a plugin.json -- i.e. exactly what `/plugin marketplace add` gives a user, and deliberately NOT this repo's maintainer .claude/, which is not distributed."
     }
   },
+  "$comment_defaults": [
+    "No max_turns key: the `claude` CLI exposes no --max-turns flag, so a turn",
+    "ceiling here would be a setting nothing enforced -- declared conditions that",
+    "are quietly false are worse than absent ones. Turn count is MEASURED per run",
+    "(num_turns); spend is bounded by --max-total-usd / --per-run-budget-usd and",
+    "the per-run timeout."
+  ],
   "defaults": {
     "runs": 3,
     "model": "sonnet",
-    "max_turns": 30,
     "timeout_seconds": 600
   },
   "cases": [

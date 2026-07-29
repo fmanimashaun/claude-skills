@@ -76,9 +76,42 @@ class Rule:
 # File helpers
 # --------------------------------------------------------------------------
 
-# ERB/Ruby comments are not code. A hex value inside `<%# ... %>` or after a
-# `#` in Ruby is discussion, not a literal colour in the rendered output.
+# ERB and Ruby comments are not code. A hex value inside `<%# ... %>`, or after a
+# `#` in a Ruby file, is discussion -- not a literal colour in rendered output.
 _ERB_COMMENT = re.compile(r"<%#.*?%>", re.S)
+
+
+def _blank(match: re.Match[str]) -> str:
+    """Replace a span with spaces, preserving newlines so line numbers hold."""
+    return re.sub(r"[^\n]", " ", match.group(0))
+
+
+def _blank_ruby_comments(line: str) -> str:
+    """Blank a trailing Ruby `#` comment, ignoring `#` inside string literals.
+
+    Deliberately hand-rolled rather than regex: the thing we are looking for in
+    these files IS a `#` token (`#0077CC`), so a naive `line.split("#")[0]` would
+    delete the very violations `no-literal-color` exists to catch. Only a `#`
+    *outside* a string starts a comment, which means tracking quote state.
+
+    Ruby interpolation (`"#{x}"`) needs no special case: the `#` is inside a
+    double-quoted string, so quote state already suppresses it.
+    """
+    in_single = in_double = False
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if char == "\\" and (in_single or in_double):
+            index += 2  # escaped character, whatever it is
+            continue
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == "#" and not in_single and not in_double:
+            return line[:index] + " " * (len(line) - index)
+        index += 1
+    return line
 
 
 def iter_files(workspace: Path, patterns: tuple[str, ...]) -> list[Path]:
@@ -97,14 +130,26 @@ def iter_files(workspace: Path, patterns: tuple[str, ...]) -> list[Path]:
 
 
 def read_lines(path: Path, *, strip_comments: bool = True) -> list[str]:
-    """Read a file as UTF-8 lines, optionally blanking ERB comments.
+    """Read a file as UTF-8 lines with comments blanked out.
 
-    Comments are blanked rather than removed so line numbers stay truthful.
+    Comments are blanked rather than removed so reported line numbers stay
+    truthful.
+
+    Ruby `#` comments are stripped for `.rb` files ONLY, never for `.erb`. In an
+    ERB template a bare `#` is ordinary HTML text -- `<p>Invoice #42</p>`,
+    `href="#"` -- and treating it as a comment would blank the rest of the line
+    and hide real violations after it. False negatives are worse than the
+    (already handled) `<%# ... %>` case: a gate that misses violations reports
+    every arm as passing.
     """
     text = path.read_text(encoding="utf-8", errors="replace")
-    if strip_comments:
-        text = _ERB_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
-    return text.splitlines()
+    if not strip_comments:
+        return text.splitlines()
+    text = _ERB_COMMENT.sub(_blank, text)
+    lines = text.splitlines()
+    if path.suffix == ".rb":
+        lines = [_blank_ruby_comments(line) for line in lines]
+    return lines
 
 
 def rel(path: Path, workspace: Path) -> str:
@@ -291,14 +336,25 @@ def check_no_inline_dark(workspace: Path) -> list[Finding]:
 # itself. Encode the carve-out, or the gate is wrong.
 
 _HEX = re.compile(r"#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b")
-_LOGO_EXEMPT = re.compile(r"(^|/)(_)?logo\b", re.I)
+
+# Doctrine exempts the COMPONENT `Ui::Logo`, not "any file called logo". An
+# exemption matched loosely against the path (`(^|/)(_)?logo\b`) is a one-line
+# bypass: name a partial `logo.html.erb` and hardcode whatever you like. So the
+# carve-out is an explicit allowlist of the component's canonical locations.
+# Adding a path here is a deliberate doctrine decision, not a convenience.
+_LOGO_EXEMPT_PATHS = frozenset({
+    "app/components/ui/logo.rb",
+    "app/components/ui/logo.html.erb",
+    "app/components/ui/logo_component.rb",
+    "app/components/ui/logo_component.html.erb",
+})
 
 
 def check_no_literal_color(workspace: Path) -> list[Finding]:
     findings: list[Finding] = []
     for path in iter_files(workspace, VIEW_GLOBS):
         where = rel(path, workspace)
-        if _LOGO_EXEMPT.search(where):
+        if where.lower() in _LOGO_EXEMPT_PATHS:
             continue  # brand.md:87 -- Ui::Logo may carry literal colors.
         for i, line in enumerate(read_lines(path), start=1):
             for match in _HEX.finditer(line):

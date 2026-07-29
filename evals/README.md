@@ -166,9 +166,12 @@ python3 evals/run.py --case 01-scoped-index --runs 1 --max-total-usd 1.00
 python3 evals/run.py --runs 3 --model sonnet --max-total-usd 25.00
 ```
 
-Always pass `--max-total-usd`. `--per-run-budget-usd` forwards to the CLI's own
-`--max-budget-usd` for a hard per-run ceiling. `--keep-workspaces` preserves each
-run's directory for inspection.
+`--max-total-usd` is **required** for a live run — the runner refuses to start
+without it. It was originally a README instruction and nothing more; a rule
+enforced only in prose is the failure this repo keeps relearning, so the guarantee
+now sits in the deterministic layer. `--per-run-budget-usd` forwards to the CLI's
+own `--max-budget-usd` for a hard per-run ceiling. `--keep-workspaces` preserves
+each run's directory for inspection.
 
 **Cost is uncalibrated.** A trivial baseline call measured $0.017; a real task with
 34 reference files available and up to 30 turns will be substantially more, and
@@ -194,6 +197,15 @@ Stated rather than discovered later:
   ambiguous enough that a competent agent reasonably does something else.
 - **`no-inline-dark` flags the literal text `dark:`** anywhere in a view, including
   inside a URL. Asserted as current behaviour in `selftest.py` rather than hidden.
+- **No turn cap.** The `claude` CLI exposes no `--max-turns`, so turn count is
+  *measured* (`num_turns`) and not bounded. Spend is capped by `--max-total-usd`,
+  `--per-run-budget-usd`, and the per-run timeout instead. `suite.json` therefore
+  declares no `max_turns` — a declared condition nothing enforces is worse than
+  an absent one.
+- **Ruby `#` comments are stripped in `.rb` files only, never `.erb`.** In a
+  template a bare `#` is HTML text (`Invoice #42`, `href="#"`), so blanking to
+  end-of-line there would hide real violations after it. `<%# ... %>` is handled
+  in both. A Ruby comment inside `<% ... %>` in an `.erb` file is not stripped.
 - **Five cases is a sample, not coverage.** Nothing here speaks to the ~30
   reference files the cases do not touch.
 - **One model at a time.** Ponytail runs 3 arms x 3 models x 5 tasks x 10 runs;

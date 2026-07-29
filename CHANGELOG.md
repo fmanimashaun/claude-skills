@@ -58,6 +58,19 @@ _Version assigned at promotion._
   Metadata is `suite.json`, not `case.yaml`, because `yaml` is not in the stdlib.
 - **Out of the release path.** Nothing wired into CI. It costs money, it is opt-in, and it must
   never gate a promotion.
+- **Four bugs found in review, all in the new harness** (#161). Two would have corrupted results in
+  opposite directions: (a) `read_lines()` promised Ruby comment handling but only blanked ERB
+  comments, so a palette note in a `.rb` component (`# cerulean is #0077CC`) was reported as a
+  violation — a false regression. Stripping is now quote-state-aware (the token we hunt for *is*
+  `#`, so splitting on the first one would have deleted every violation) and applied to `.rb` only,
+  never `.erb`, where a bare `#` is HTML text and blanking to end-of-line would hide violations
+  after it. (b) The `Ui::Logo` carve-out matched any path containing `logo`, making it a one-line
+  bypass — name a partial `logo.html.erb` and hardcode anything. Now an explicit allowlist of the
+  component's canonical paths. Plus: `--max-total-usd` is **enforced** rather than merely
+  documented (a live run without it refuses to start), and `max_turns` is removed from `suite.json`
+  because the CLI exposes no `--max-turns` — a declared condition nothing enforces is worse than an
+  absent one, so turn count is measured and spend is bounded by the budget ceilings instead.
+  Selftest grew 32 → 38 assertions.
 
 ### 2026-07-29 — promotions get a two-step name and a divergence assertion
 - **"Arm" vs "promote", named.** The v1.22.0 promotion used a branch called `release/v1.22.0`

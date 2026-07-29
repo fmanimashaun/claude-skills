@@ -239,6 +239,68 @@ expect(
     flagged=False, label="hex inside an ERB comment is not a literal colour",
 )
 
+# A `#` comment in a RUBY component file is discussion too. Caught in review:
+# read_lines() promised Ruby comment handling and only blanked ERB comments, so
+# a palette note in a .rb file was reported as a violation -- a false regression.
+expect(
+    "no-literal-color",
+    {"app/components/ui/card.rb":
+        "class Ui::Card < ViewComponent::Base\n"
+        "  # brand cerulean is #0077CC -- do not inline it, use --primary\n"
+        "  def classes = \"bg-surface text-body\"\n"
+        "end\n"},
+    flagged=False, label="hex inside a Ruby comment is not a literal colour",
+)
+
+# ...but a hex inside a STRING is real. This is why the comment stripper tracks
+# quote state instead of splitting on the first '#' -- the token we hunt for IS
+# a '#', so a naive split would delete every violation it was meant to find.
+expect(
+    "no-literal-color",
+    {"app/components/ui/card.rb":
+        "class Ui::Card < ViewComponent::Base\n"
+        '  def style = "background:#0077CC"\n'
+        "end\n"},
+    flagged=True, label="hex inside a Ruby string is still a violation",
+)
+
+# Ruby comment stripping must NOT apply to .erb: there a bare '#' is HTML text,
+# and blanking to end-of-line would hide the violation that follows it.
+expect(
+    "no-literal-color",
+    {"app/components/ui/card.html.erb":
+        '<p>Invoice #42</p>\n'
+        '<div style="color:#0077CC"></div>\n'},
+    flagged=True, label="'#' as ERB text must not mask a later violation",
+)
+
+# The exemption is for the COMPONENT Ui::Logo, not for any file named logo.
+# Matching the path loosely made this a one-line bypass.
+expect(
+    "no-literal-color",
+    {"app/views/shared/logo.html.erb":
+        '<svg><path fill="#0077CC"/></svg>\n'},
+    flagged=True, label="a stray file named logo/ is NOT exempt",
+)
+
+expect(
+    "no-literal-color",
+    {"app/components/ui/logo_component.html.erb":
+        '<svg><path fill="#0077CC"/></svg>\n'},
+    flagged=False, label="canonical Ui::Logo component path is exempt",
+)
+
+# Same Ruby-comment reasoning for the dark: rule.
+expect(
+    "no-inline-dark",
+    {"app/components/ui/card.rb":
+        "class Ui::Card < ViewComponent::Base\n"
+        "  # never write dark:bg-slate-800 here; roles re-point under .dark\n"
+        "  def classes = \"bg-surface\"\n"
+        "end\n"},
+    flagged=False, label="dark: inside a Ruby comment is not a violation",
+)
+
 # ---------------------------------------------------------------------------
 # job-idempotent
 # ---------------------------------------------------------------------------

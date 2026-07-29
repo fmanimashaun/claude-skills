@@ -274,11 +274,25 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--per-run-budget-usd", type=float, default=None,
                         help="hard per-run ceiling passed to claude --max-budget-usd")
     parser.add_argument("--max-total-usd", type=float, default=None,
-                        help="abort the sweep once accumulated cost exceeds this")
+                        help="REQUIRED for live runs: abort the sweep once "
+                             "accumulated cost exceeds this")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--keep-workspaces", action="store_true",
                         help="preserve each run's workspace for inspection")
     args = parser.parse_args(argv[1:])
+
+    # The README said "always pass --max-total-usd" and the code merely hoped you
+    # would. A rule enforced only in prose is the exact failure this repo keeps
+    # relearning: put the guarantee in the deterministic layer. Forgetting the cap
+    # on a 3-arm sweep is a real, unbounded bill.
+    if not args.dry_run and args.max_total_usd is None:
+        parser.error(
+            "--max-total-usd is required for a live run (this spends real money). "
+            "Use --dry-run to preview the sweep for free, or pass an explicit "
+            "ceiling, e.g. --max-total-usd 5.00"
+        )
+    if args.max_total_usd is not None and args.max_total_usd <= 0:
+        parser.error("--max-total-usd must be greater than 0")
 
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     unknown = [a for a in arms if a not in suite["arms"]]
@@ -414,6 +428,13 @@ def main(argv: list[str]) -> int:
                     "runs_per_case": args.runs,
                     "arms": arms,
                     "tools": TOOLS,
+                    "max_total_usd": args.max_total_usd,
+                    "per_run_budget_usd": args.per_run_budget_usd,
+                    "timeout_seconds": args.timeout,
+                    # The CLI exposes no --max-turns, so turn count is MEASURED
+                    # (see runs[].num_turns) and not capped. Spend is bounded by
+                    # the budget ceilings and the per-run timeout instead.
+                    "turn_cap": None,
                     "claude_version": subprocess.run(
                         [exe, "--version"], capture_output=True, text=True,
                         encoding="utf-8", errors="replace",
