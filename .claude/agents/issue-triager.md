@@ -41,9 +41,15 @@ and the version they were on.
 - **needs-info**: not enough to act (no repro, no version, ambiguous). Post the
   specific missing pieces as a comment, apply `needs-info`, and skip — never invent
   requirements.
-- **Duplicate**: search open + recently closed issues (`gh issue list --search`) for
-  the same component+symptom. If found, comment linking the original and apply
-  `duplicate`; do not queue it.
+- **Duplicate**: search open + recently closed issues for the same component+symptom.
+  **Always bound the page — `gh issue list` defaults to `--limit 30`**, so an unbounded
+  search decides "no duplicate exists" having read 30 of however many there are, and then
+  files the duplicate it was created to prevent (#211):
+  ```bash
+  gh issue list --state all --search "<component> <symptom>" --limit 200 \
+    --json number,title,state,labels
+  ```
+  If found, comment linking the original and apply `duplicate`; do not queue it.
 
 ## Order and report
 

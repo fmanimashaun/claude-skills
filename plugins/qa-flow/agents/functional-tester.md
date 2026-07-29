@@ -149,6 +149,41 @@ Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Console Errors,Console
 A route whose worst severity is **S1 fails the pass** — report it as a High-severity issue in
 the Markdown report's *Issues Found* table, with the route and the message.
 
+## Link and anchor pass — do the links go anywhere?
+
+Nothing verified that links resolve. The audit found the value of this by accident: a sitemap
+listed **12 section-index URLs that all 404'd**, and the only reason it surfaced was a human
+noticing "Page Not Found" in a screenshot folder.
+
+**Assets are already covered** — the `>= 400` and `requestfailed` capture above sees images,
+fonts and script chunks, so do **not** re-crawl for them. This pass is about `a[href]`.
+
+1. **Collect** every `a[href]` across the routes you crawl; resolve relative URLs against the
+   page's own URL.
+2. **Internal targets** — request each **unique** target **once** (HEAD, falling back to GET
+   for servers that reject HEAD). Non-2xx/3xx is a finding.
+3. **Fragments** — for `#id` links, confirm the id exists on the destination page. A link to a
+   heading that was renamed is dead in the way that matters to a reader, and it returns 200.
+4. **External targets** — **off by default** (`links.check_external: false`): they are slow and
+   flaky, and a QA gate that fails because someone else's site was down teaches people to
+   ignore it. When enabled, cache per target and treat **timeouts as informational**, never as
+   failures.
+5. **Skip** `mailto:` and `tel:`. Report `target="_blank"` without `rel="noopener"` as **S3** —
+   a real defect, not worth blocking on.
+
+**Dedupe by target, not by occurrence.** One dead link in a shared footer is **one** finding
+across seventy routes, not seventy findings. So this pass does not write a per-route CSV — it
+emits rows into the deduplicated findings rollup (`Source: links`), whose contract and header
+live in `qa-reporter.md` under *Deduplicate before you count*:
+
+- `Signature` — the resolved target URL (stable across the pages that reference it).
+- `Instances` — how many `a[href]` occurrences point at it; `Routes` — how many routes contain
+  one; `Example Routes` — the **referring** pages, which is what a developer needs to fix it.
+- `Evidence` — the JSON instance list holding every referring page.
+
+The validator enforces the arithmetic, so a link pass that emitted one row per occurrence would
+be rejected for a repeated signature.
+
 ## Process
 
 1. **Auto-map the in-scope flows first.** Navigate to the URL, snapshot, and crawl the

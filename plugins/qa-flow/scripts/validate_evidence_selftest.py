@@ -35,6 +35,7 @@ CHECKS = 0
 HEADER = ve.FUNCTIONAL.header
 A11Y_HEADER = ve.A11Y.header
 RUNTIME_HEADER = ve.RUNTIME.header
+FINDINGS_HEADER = ve.FINDINGS.header
 PROFILE_NAMES = {p.name for p in ve.PROFILES}
 
 
@@ -581,10 +582,115 @@ def run() -> int:
         **rt,
     )
 
+    # ---- findings rollup: dedupe by signature (#118) ---------------------------------
+    # The measured case this exists for: 773 "disclosure trigger without aria-expanded" was
+    # ~18 distinct defects, one navbar bug across 72 pages. Same arithmetic decides whether
+    # qa-reporter files 18 issues or 773.
+    fd = {"header": FINDINGS_HEADER}
+    # Column order: Signature,Source,Status,Severity,Title,Instances,Routes,Example Routes,
+    #               Evidence,Notes
+    NAVBAR = ("navbar/disclosure-no-aria-expanded,a11y,Confirmed,S1,Disclosure trigger without "
+              "aria-expanded,773,72,/ /about /pricing,qa/reports/findings.json,"
+              "one navbar defect across every page")
+    COSMETIC = ("card/icon-no-name,a11y,Confirmed,S2,Icon-only control without accessible name,"
+                "6,3,/ /pricing,qa/reports/findings.json,three templates")
+
+    expect_clean("findings: the real 773 -> 18 case", f"{NAVBAR}\n{COSMETIC}\n", **fd)
+    # page_identity=False: this profile has no HTTP / Final URL / Assertion columns at all, and
+    # a clean rollup proves the shared per-page rules are not demanded of a cross-route finding.
+    expect_clean(
+        "findings: a single distinct defect on one route",
+        "footer/dead-link,links,Confirmed,S3,Footer link 404s,1,1,/,"
+        "qa/reports/findings.json,dead target /old\n",
+        **fd,
+    )
+
+    # -- dedupe itself: the guarantee that only exists across rows --
+    expect_findings(
+        "findings: a repeated signature means it did not roll up",
+        f"{NAVBAR}\n{NAVBAR}\n",
+        contains="already appeared", **fd,
+    )
+    # -- the arithmetic that catches an occurrence count pasted into a distinct column --
+    expect_findings(
+        "findings: fewer instances than routes is impossible",
+        "x/y,a11y,Confirmed,S1,Thing,3,72,/ /a,qa/reports/f.json,note\n",
+        contains="impossible", **fd,
+    )
+    expect_findings(
+        "findings: zero instances is not a defect",
+        "x/y,a11y,Confirmed,S1,Thing,0,1,/,qa/reports/f.json,note\n",
+        contains="occurs at least once", **fd,
+    )
+    expect_findings(
+        "findings: more example routes than affected routes",
+        "x/y,a11y,Confirmed,S1,Thing,9,2,/ /a /b /c,qa/reports/f.json,note\n",
+        contains="cannot outnumber", **fd,
+    )
+    # -- collapsing 773 rows into 1 must not destroy the 773 --
+    expect_findings(
+        "findings: no Evidence means the instance list is gone",
+        "x/y,a11y,Confirmed,S1,Thing,9,2,/ /a,,note\n",
+        contains="instance list must stay retrievable", **fd,
+    )
+    expect_findings(
+        "findings: no example routes to locate it by",
+        "x/y,a11y,Confirmed,S1,Thing,9,2,,qa/reports/f.json,note\n",
+        contains="not actionable", **fd,
+    )
+    expect_findings(
+        "findings: no signature to dedupe on",
+        ",a11y,Confirmed,S1,Thing,9,2,/ /a,qa/reports/f.json,note\n",
+        contains="no Signature", **fd,
+    )
+    expect_findings(
+        "findings: severity outside the vocabulary",
+        "x/y,a11y,Confirmed,critical,Thing,9,2,/ /a,qa/reports/f.json,note\n",
+        contains="is not one of", **fd,
+    )
+    # Dedupe applies to EVERY source, so the source is checked against the full list rather
+    # than left free-text -- #118 is explicit that this is not an a11y-only rule.
+    expect_findings(
+        "findings: unknown source",
+        "x/y,vibes,Confirmed,S1,Thing,9,2,/ /a,qa/reports/f.json,note\n",
+        contains="is not one of", **fd,
+    )
+
+    # -- ordering, so "ranked by severity x reach" is true of the file, not claimed of it --
+    expect_findings(
+        "findings: S2 ordered above S1 buries the important one",
+        f"{COSMETIC}\n{NAVBAR}\n",
+        contains="outranks", **fd,
+    )
+    expect_findings(
+        "findings: within one severity, wider reach must come first",
+        "a/b,a11y,Confirmed,S1,Narrow,3,3,/ /a /b,qa/reports/f.json,n\n"
+        "c/d,a11y,Confirmed,S1,Wide,72,72,/ /a /b,qa/reports/f.json,n\n",
+        contains="outranks", **fd,
+    )
+
+    # -- page_identity=False is NOT a blanket exemption --
+    expect_findings(
+        "findings: an unknown status still fails",
+        "x/y,a11y,Audited,S1,Thing,9,2,/ /a,qa/reports/f.json,note\n",
+        contains="is not one of", **fd,
+    )
+    expect_clean(
+        "findings: a Blocked source still says why",
+        "perf/not-run,perf,Blocked,,,,,,,k6 unavailable on this runner\n",
+        **fd,
+    )
+    expect_findings(
+        "findings: Blocked without Notes records nothing",
+        "perf/not-run,perf,Blocked,,,,,,,\n",
+        contains="Blocked without Notes", **fd,
+    )
+
     # ---- profile detection is by header, and must never guess -----------------------
     _tick()
     detected = []
-    for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN), (ve.RUNTIME, RUNTIME_CLEAN)):
+    for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN),
+                      (ve.RUNTIME, RUNTIME_CLEAN), (ve.FINDINGS, NAVBAR)):
         got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
         detected.append(got.name)
         if got is not prof:
@@ -645,6 +751,7 @@ def run() -> int:
         # its canonical contract, and e2e-tester.md points at it rather than restating the
         # header (one copy to drift out of step is enough).
         ("functional-tester.md", ve.RUNTIME),
+        ("qa-reporter.md", ve.FINDINGS),
     ):
         _tick()
         doctrine = agents / filename

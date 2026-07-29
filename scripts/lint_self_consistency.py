@@ -27,6 +27,8 @@ WHAT IT CHECKS
   undocumented-plugin         a plugin declared in marketplace.json that CLAUDE.md or
                               README.md never names — it ships while the doc describing
                               what ships omits it
+  unbounded-issue-query       a `gh issue/pr list` with no --limit: it defaults to 30, so
+                              the call reports a page as the total
   doctrine-call-site-mismatch a call site in skills/ naming an API those skills do not
                               declare — a wrong initializer keyword, an undeclared slot,
                               or an icon passed a size it must not take
@@ -245,6 +247,53 @@ def check_unenforced_mandatory_flags(python_sources: dict[Path, str]) -> tuple[l
 
 
 # ---------------------------------------------------------------------------
+# Rule: unbounded-issue-query
+# ---------------------------------------------------------------------------
+
+# `gh issue list` and `gh pr list` default to --limit 30. A call without an explicit bound
+# reports a PAGE as if it were the total, which is `unverified-negative` from the shipped
+# code-review skill: a count from a list nobody read to the end.
+#
+# This bit for real (#211). The maintainer was told "30 open issues" when there were 42, and
+# grepping for the pattern found two shipped call sites with the same defect -- one of them
+# `issue-triager`'s DUPLICATE DETECTION, which would decide "no duplicate exists" after
+# reading 30 of 42 and then file the duplicate it exists to prevent.
+#
+# Not delegated to lint_markdown_shell.py on purpose: both real instances were inline in
+# prose, not inside a fenced block, so a fence-based scanner cannot see them.
+_GH_LIST = re.compile(r"gh\s+(?:issue|pr)\s+list\b|gh\s+search\s+(?:issues|prs)\b")
+# `--limit N`, or a REST call paginating explicitly. `--paginate` fetches every page, so it
+# bounds nothing but also truncates nothing -- it is a correct answer to the same question.
+_BOUNDED = re.compile(r"--limit\b|per_page\b|--paginate\b")
+# Only INVOCATIONS are graded, identified by carrying at least one flag. A bare prose mention
+# of the command name is a reference, not something an agent runs -- CHANGELOG.md line 674 says
+# "the command only ever saw `gh issue list` before", which is history and must not be rewritten
+# to satisfy a lint. Both real #211 defects carried a flag (`--search`, `--label`), so this
+# targets exactly what it should without needing a per-file exemption to keep honest.
+_INVOCATION = re.compile(r"--[a-z]")
+
+
+def check_unbounded_issue_queries() -> tuple[list[Finding], int]:
+    """A `gh` list call with no page bound turns a page into a reported total."""
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".md"):
+        for lineno, line in enumerate(read(path).splitlines(), start=1):
+            if not _GH_LIST.search(line) or not _INVOCATION.search(line):
+                continue
+            examined += 1
+            if _BOUNDED.search(line):
+                continue
+            findings.append(Finding(
+                "unbounded-issue-query", rel(path), lineno,
+                "`gh issue/pr list` defaults to --limit 30, so this reads a page and reports "
+                "it as the total -- pass `--limit N` (or `--paginate`). A count from a "
+                "truncated list is the unverified-negative class (#211)",
+            ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
 # Rule: undocumented-plugin
 # ---------------------------------------------------------------------------
 
@@ -447,15 +496,17 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dead, dead_examined = check_dead_settings_keys(python_sources)
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
+    unbounded, queries_examined = check_unbounded_issue_queries()
     call_sites, call_coverage = check_doctrine_call_sites()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
         "documented_flag_claims_examined": flag_examined,
         "declared_plugins": plugins_examined,
+        "gh_list_calls_examined": queries_examined,
         **call_coverage,
     }
-    return dead + unenforced + undocumented + call_sites, coverage
+    return dead + unenforced + undocumented + unbounded + call_sites, coverage
 
 
 def selftest() -> int:
@@ -559,6 +610,44 @@ def selftest() -> int:
         "a flag we do not define is not our claim to enforce",
         rule="unenforced-mandatory-flag", expect_finding=False,
         files={"README.md": "Always pass `--no-cache` to that third-party tool.\n"},
+    )
+
+    # -- unbounded-issue-query (#211) --------------------------------------
+    # `gh issue list` defaults to --limit 30. This shipped twice: issue-triager's DUPLICATE
+    # detection and maintainer-audit's clustering both read a page and treated it as the whole
+    # tracker. The maintainer was told "30 open issues" when there were 42.
+    Q = "unbounded-issue-query"
+    scenario(
+        "an unbounded duplicate search", rule=Q, expect_finding=True,
+        files={"cmd.md": 'Dedupe with `gh issue list --state all --search "x"`.\n'},
+    )
+    scenario(
+        "bounded with --limit", rule=Q, expect_finding=False,
+        files={"cmd.md": 'Dedupe with `gh issue list --state all --search "x" --limit 200`.\n'},
+    )
+    # --paginate bounds nothing but truncates nothing either, so it answers the same question.
+    scenario(
+        "--paginate is a correct answer, not a violation", rule=Q, expect_finding=False,
+        files={"cmd.md": "`gh api --paginate -X GET search/issues -f q='is:open'`\n"},
+    )
+    scenario(
+        "gh pr list is the same defect", rule=Q, expect_finding=True,
+        files={"cmd.md": "`gh pr list --state open --json number`\n"},
+    )
+    # NEAR MISS, and the reason this rule grades invocations rather than mentions: CHANGELOG.md
+    # records "the command only ever saw `gh issue list` before". That is history. A rule that
+    # fired on it would demand rewriting a past record, get overridden, and then catch nothing.
+    scenario(
+        "near miss: a bare prose mention is a reference, not an invocation",
+        rule=Q, expect_finding=False,
+        files={"CHANGELOG.md": "the command only ever saw `gh issue list` before\n"},
+    )
+    # ...but the same file is NOT exempt when it actually documents an unbounded invocation, so
+    # the narrowing is about invocation-shape, not about trusting a filename.
+    scenario(
+        "near miss: history is not a blanket exemption",
+        rule=Q, expect_finding=True,
+        files={"CHANGELOG.md": "Run `gh issue list --label comp:x` to cluster.\n"},
     )
 
     # -- undocumented-plugin (#203) ---------------------------------------
@@ -736,6 +825,7 @@ def main(argv: list[str]) -> int:
         "json_settings_files_examined": "json settings file(s)",
         "documented_flag_claims_examined": "documented flag claim(s)",
         "declared_plugins": "declared plugin(s)",
+        "gh_list_calls_examined": "gh list call(s)",
         "skill_docs": "skill doc(s)",
         "declared_components": "declared component(s)",
     }
