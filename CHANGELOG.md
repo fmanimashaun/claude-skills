@@ -819,17 +819,42 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   - **`a11y-auditor` had the same defect** and is fixed with it: an axe run against a 404 or a
     login redirect returns real violations attributed to the wrong page, then files them as
     defects. It now records status + final URL, asserts expected content, and reports **BLOCKED**
-    instead of a clean or violation-bearing result. (Its rule is prose-only for now — there is no
-    structured a11y artifact to check; `#120` is the natural home for that.)
-  - 46 selftest assertions (`validate_evidence.py --selftest`), verified adversarially in both
-    directions: 12 deliberate mutations of the implementation were each caught, including the
-    text-sniffing over-correction and a widened status vocabulary.
-  - Deliberately **not** changed: `exploratory-tester` (its mission is to notice surprises, so an
-    unexpected error page is a finding — the risk there is a false FAIL, not a false PASS),
-    `perf-tester` (already mandates "status + body-shape checks" — the existing house precedent for
-    this two-signal rule), `security-scanner` (reports per-URL), and design-flow's `design-auditor`
-    (audits source, not rendered pages). `#105`/`#107` are unbuilt, so they adopt the rule at
-    authoring time.
+    instead of a clean or violation-bearing result.
+  - Deliberately **not** gated: `perf-tester` (already mandates "status + body-shape checks" — the
+    existing house precedent for this two-signal rule), `security-scanner` (reports per-URL), and
+    design-flow's `design-auditor` (audits source, not rendered pages). `#105`/`#107` are unbuilt,
+    so they adopt the rule at authoring time.
+
+- **The evidence rule is now enforced on every browser pass, not just one** (#106, slice of #120) —
+  the first cut left qa-flow with one machine-checked evidence path (`functional-tester`) and one
+  prose-only one (`a11y-auditor`). That asymmetry *is* the `claims-vs-enforcement` class: the same
+  rule, enforced in one place and merely asserted in the other, which is how the original defect
+  survived in the first place.
+  - `validate_evidence.py` is now **profile-driven**: one implementation of the shared rule
+    (status / requested-vs-final URL / expected-content assertion / silent-redirect / Blocked must
+    record what it saw) with a per-artifact contract on top. The artifact kind is **detected from
+    the header**, so a caller can never pass a `--kind` that disagrees with the file, and an
+    unrecognised header exits 2 instead of falling back to a guess. `--contracts` prints the known
+    schemas. Adding a browser pass is adding a `Profile`, not copying a rule.
+  - **`a11y-auditor` gains a real artifact**: `qa/reports/a11y-<slug>-pages.csv`, eleven fixed
+    columns, one row per page/state. Statuses are `Audited` / `Blocked` / `Out of Scope` — there is
+    no "Pass", because an audit reports what it found rather than rendering a verdict; a clean page
+    is `Audited` with `Violations` `0`. An audited row must also carry its **violation count**,
+    **keyboard verdict** (`Pass`/`Fail`/`Not run`), and an **evidence path** — so a row cannot say
+    a page was audited while recording no outcome, and placeholder text (`n/a`, `TBD`, `-`) is
+    rejected where a number belongs.
+  - **`exploratory-tester` closes the identity gap without inheriting the gate.** Every defect it
+    files must record the HTTP status and final URL the evidence came from. Deliberately *not*
+    BLOCKED-on-failure: its mission is hunting for surprises, so an unexpected error page is a
+    finding, not spoiled evidence. The narrower reason stands on its own — a defect whose evidence
+    cannot say which URL produced it is unreproducible.
+  - The selftest now cross-checks **both** agent files against the exact headers the script
+    enforces, and asserts every profile is documented by some agent — so a contract cannot drift
+    into mutual rejection, and a profile no agent writes shows up as a dead contract.
+  - **72 selftest assertions**, and **20 deliberate mutations across both cuts, each caught** —
+    including dropping any single a11y outcome requirement, accepting placeholder violation counts,
+    letting the two profiles share a status vocabulary, and making header detection fall back to
+    the first profile instead of failing closed.
 
 ### 1.5.1 — 2026-07-25
 - **functional-tester never touches git** (#78) — it was auto-committing its run evidence
