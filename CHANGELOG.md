@@ -7,8 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased — doctrine effect becomes measurable (#156), and the reviewer moves in-repo (#162)
-_Version assigned at promotion._
+### 2026-07-29 — doctrine effect becomes measurable (#156), and the reviewer moves in-repo (#162)
 - **The asymmetry this closes.** Doctrine *content* has a hard gate: nothing is edited until
   `doctrine-verifier` confirms it against an authoritative source. Doctrine *effect* had none.
   "The rails-8 skill produces better Rails" lived entirely in prose — the one layer this repo
@@ -246,8 +245,7 @@ _Version assigned at promotion._
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased — claims-vs-enforcement becomes enforceable in the user's repo (#162, #164)
-_Version assigned at promotion._
+### 1.9.0 — 2026-07-29
 - **A doctrine contradiction was live in users' hands, in three files.** `pr-reviewer.md` told the
   merge gate to check jobs for "id args", `rails-developer.md` said "pass IDs, never AR objects",
   and `setup-flow.md` wrote "job shape (ids only)" into the generated project CLAUDE.md. But
@@ -987,8 +985,7 @@ _Version assigned at promotion._
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased — bundles a fourth skill: `code-review` (#162)
-_Version assigned at promotion._
+### 1.12.0 — 2026-07-29
 - **New `skills/code-review`**, bundled into rails-stack and packaged as `dist/code-review.skill`.
   Review doctrine for the defect class authors are structurally blind to: code that is correct on
   its own terms but does not do what its own documentation, config, comments or project rules
@@ -1300,6 +1297,66 @@ _Version assigned at promotion._
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.23.0)
+- **The doctrine's *effect* is now measurable, not just its content** (#156, maintainer tooling —
+  not distributed). This repo has always had a hard gate on doctrine *content*: nothing is edited
+  until `doctrine-verifier` confirms it against an authoritative source. It had **no** gate on
+  doctrine *effect* — "the rails-8 skill produces better Rails" lived entirely in prose, the one
+  layer this repo otherwise refuses to trust. New `evals/` measures whether loading the skills
+  changes what an agent writes: three arms (no skill / a deliberately weak control / real
+  rails-stack) × five cases × six deterministic gates that each cite the doctrine `file:line` they
+  enforce. The runner drives `claude -p` rather than the Anthropic API, because these skills ship
+  as **Claude Code plugins** — a pasted system prompt would measure a proxy, and a benchmark that
+  measures a proxy repeats the mistake it exists to correct. Side effect worth having: no API
+  dependency, so the harness stays stdlib-only with nothing for CI to install.
+  Authoring the gates caught **two rules in the issue's own spec that would have manufactured
+  false regressions** — an "ids-only" job gate that fails our own reference example, and a no-hex
+  rule that flags our own `Ui::Logo`. Generalised into a standing rule the selftest asserts: *a
+  gate must pass against the doctrine's own reference examples; if it fails what `references/*.md`
+  shows as correct, the rule is wrong, not the doctrine.* No paid benchmark has been run and the
+  results table is deliberately empty — a harness with proven gates and no numbers is honest.
+- **The reviewer moved in-repo, and stopped being rented** (#162, rails-stack → 1.12.0,
+  rails-flow → 1.9.0). A trial reviewer had been catching a class our own review missed, and it
+  had no proprietary advantage: **it checked the diff against rules already written in this
+  codebase's markdown.** Every existing dimension asks *"is this code correct?"*; the misses all
+  came from a different question — *"does this code do what its own documentation, config, comments
+  and project rules claim?"* Correct-looking code passes the first and fails the second, and the
+  author cannot see it because they read the claim and the code as one intention.
+  New **`code-review` skill** (bundled in rails-stack, now four skills) names the classes:
+  `claims-vs-enforcement`, `dead-declaration`, `carve-out-without-negative-test`, `coverage-gap`,
+  `doctrine-contradiction`, `unverified-negative`, `gate-that-cannot-fail`. It lives in `skills/`
+  rather than `docs/` deliberately — rules a reviewer must find belong where reviewers look, and as
+  shipped doctrine it is the same rule set a user's `pr-reviewer` applies, so we are held to what
+  we sell. `code-reviewer` and `pr-reviewer` delegate to it instead of restating it.
+- **A doctrine contradiction was live in users' hands, in three files** (#162). `pr-reviewer` told
+  the merge gate to demand ids-only job arguments, `rails-developer` said "pass IDs, never AR
+  objects", and `setup-flow` wrote that rule into the user's own generated CLAUDE.md — while
+  `jobs-and-realtime.md:28` says pass records. **The shipped merge gate would have blocked a PR for
+  correctly following our own doctrine**, and setup-flow propagated the wrong rule into the user's
+  rules file for the gate to then enforce against them: self-reinforcing, and worse than a plain
+  bug because it blames the user. Found by applying the new skill's `doctrine-contradiction` class
+  with one grep — that class travels in groups, because the wrong rule gets copied. `skills/rails-8`
+  is unchanged; the plugin text now defers to it rather than paraphrasing the mechanism.
+- **`claims-vs-enforcement` is now enforced, in both repos** (#162 maintainer, #164
+  rails-flow → 1.9.0). It had bitten three times in three PRs — `--check || echo` making a release
+  gate unable to block, a README mandating a flag the code left optional, a docstring promising
+  behaviour the code lacked. Writing the rule down does not prevent it, which is the whole reason
+  `lint_markdown_shell.py` exists. Two linters now: maintainer-side
+  `scripts/lint_self_consistency.py` (`dead-settings-key`, `unenforced-mandatory-flag`), and — the
+  half users were missing — `rails-flow/scripts/self_consistency.py` with a PostToolUse hook,
+  covering `swallowed-exception`, `swallowed-verdict`, `assertion-free-spec` and `dead-env-var`.
+  Both are stdlib-only, print coverage even when clean (because "no findings" over input never read
+  reads as a pass), and ship a selftest proving every rule fires **and stays silent** — a rule that
+  flags everything gets disabled and then catches nothing. The maintainer linter is known-answer
+  calibrated: it independently reproduces two of five prior review findings on the pre-fix commit
+  and goes silent on the fixed one with the same inputs examined. The hook exits non-zero
+  deliberately: a check that can only advise is itself a `gate-that-cannot-fail`.
+  Two candidate rules were **cut rather than softened** — proving no spec covers a carve-out's
+  near-miss needs judgement, and a rule that guesses gets disabled.
+- Promotions are now named in two steps (`chore/arm-vX.Y.Z` → `dev`, then `dev` → `main`), with
+  only the second publishing, and it is recorded that **a merge unions rather than overrides** — so
+  a direct commit to `main` is permanently invisible to every future `dev`-based change (#155).
 
 ### 2026-07-29 (release v1.22.0)
 - **Brand packs — the design system becomes multi-brand** (#104, rails-stack → 1.11.0,
