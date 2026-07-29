@@ -24,6 +24,9 @@ WHAT IT CHECKS
 --------------
   dead-settings-key           a key in a JSON settings block that no reader reads
   unenforced-mandatory-flag   a flag documented as mandatory that code leaves optional
+  undocumented-plugin         a plugin declared in marketplace.json that CLAUDE.md or
+                              README.md never names — it ships while the doc describing
+                              what ships omits it
   doctrine-call-site-mismatch a call site in skills/ naming an API those skills do not
                               declare — a wrong initializer keyword, an undeclared slot,
                               or an icon passed a size it must not take
@@ -242,6 +245,67 @@ def check_unenforced_mandatory_flags(python_sources: dict[Path, str]) -> tuple[l
 
 
 # ---------------------------------------------------------------------------
+# Rule: undocumented-plugin
+# ---------------------------------------------------------------------------
+
+# Docs that must name every distributed plugin. A plugin missing from these is invisible to one
+# of the two audiences: CLAUDE.md is what orients a maintainer (or an agent reading it) about what
+# this repo ships, README.md is what orients a user.
+PLUGIN_DOCS = ("CLAUDE.md", "README.md")
+
+
+def check_undocumented_plugins() -> tuple[list[Finding], int]:
+    """Every plugin declared in `marketplace.json` must be named in the docs that describe them.
+
+    `design-flow` was declared, packaged and shipped while CLAUDE.md's opening section -- the
+    definition of what this repo distributes -- said "four app-builder plugins" and listed the
+    other four. It named design-flow zero times, so anything orienting from that file could not
+    know the plugin existed (#203).
+
+    COUNTS ARE DELIBERATELY NOT CHECKED. Prose legitimately refers to subsets ("the plugins
+    above help you build apps"), so a rule matching "four plugins" against the real total would
+    fire on correct writing, and per this file's own thesis a linter that cries wolf gets
+    switched off and then catches nothing. Name presence needs no judgement: either the declared
+    plugin is mentioned or it is not.
+
+    WHAT THIS DOES NOT CATCH, stated because the boundary is easy to overclaim: it proves the name
+    appears SOMEWHERE in the file, not that it appears in the list that enumerates what ships. A
+    mention in surrounding prose satisfies it. Found by mutation-testing this rule -- deleting
+    `design-flow` from CLAUDE.md's distributed list left the linter green, because a nearby
+    sentence still named it. Locating "the right section" needs judgement about where a section
+    starts and ends, which is how a mechanical rule turns into a noisy one, so the narrow
+    guarantee is the honest one: it catches a plugin documented NOWHERE, which is the defect that
+    actually shipped (design-flow had zero mentions).
+    """
+    manifest = ROOT / ".claude-plugin" / "marketplace.json"
+    if not manifest.is_file():
+        return [], 0
+    try:
+        payload = json.loads(read(manifest))
+    except json.JSONDecodeError:
+        return [], 0
+    names = [p["name"] for p in payload.get("plugins", []) if isinstance(p, dict) and "name" in p]
+    if not names:
+        return [], 0
+
+    findings: list[Finding] = []
+    for doc in PLUGIN_DOCS:
+        path = ROOT / doc
+        if not path.is_file():
+            continue  # a tree without that doc cannot contradict it
+        blob = read(path)
+        for name in names:
+            if name in blob:
+                continue
+            findings.append(Finding(
+                "undocumented-plugin", doc, 0,
+                f"plugin {name!r} is declared in .claude-plugin/marketplace.json but never named "
+                f"in {doc}; it ships to users while the doc that describes what ships omits it",
+            ))
+    return findings, len(names)
+
+
+# ---------------------------------------------------------------------------
 # Rule: doctrine-call-site-mismatch
 # ---------------------------------------------------------------------------
 
@@ -382,14 +446,16 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     python_sources = {path: read(path) for path in walk(".py")}
     dead, dead_examined = check_dead_settings_keys(python_sources)
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
+    undocumented, plugins_examined = check_undocumented_plugins()
     call_sites, call_coverage = check_doctrine_call_sites()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
         "documented_flag_claims_examined": flag_examined,
+        "declared_plugins": plugins_examined,
         **call_coverage,
     }
-    return dead + unenforced + call_sites, coverage
+    return dead + unenforced + undocumented + call_sites, coverage
 
 
 def selftest() -> int:
@@ -493,6 +559,54 @@ def selftest() -> int:
         "a flag we do not define is not our claim to enforce",
         rule="unenforced-mandatory-flag", expect_finding=False,
         files={"README.md": "Always pass `--no-cache` to that third-party tool.\n"},
+    )
+
+    # -- undocumented-plugin (#203) ---------------------------------------
+    # design-flow shipped while CLAUDE.md's "what this repo distributes" section named the other
+    # four and said "four app-builder plugins". Both directions pinned.
+    MANIFEST = '{"plugins":[{"name":"rails-stack"},{"name":"design-flow"}]}\n'
+    scenario(
+        "a declared plugin CLAUDE.md never names", rule="undocumented-plugin", expect_finding=True,
+        files={
+            ".claude-plugin/marketplace.json": MANIFEST,
+            "CLAUDE.md": "We ship rails-stack.\n",
+            "README.md": "We ship rails-stack and design-flow.\n",
+        },
+    )
+    scenario(
+        "a declared plugin README.md never names", rule="undocumented-plugin", expect_finding=True,
+        files={
+            ".claude-plugin/marketplace.json": MANIFEST,
+            "CLAUDE.md": "We ship rails-stack and design-flow.\n",
+            "README.md": "We ship rails-stack.\n",
+        },
+    )
+    scenario(
+        "every declared plugin is named in both docs",
+        rule="undocumented-plugin", expect_finding=False,
+        files={
+            ".claude-plugin/marketplace.json": MANIFEST,
+            "CLAUDE.md": "We ship rails-stack and design-flow.\n",
+            "README.md": "design-flow layers onto rails-stack.\n",
+        },
+    )
+    # Counts are NOT the rule. Prose referring to a subset is correct writing, and flagging it is
+    # how a linter earns being switched off — so this must stay silent despite saying "one plugin"
+    # about a two-plugin marketplace.
+    scenario(
+        "near miss: a subset count in prose is not a finding",
+        rule="undocumented-plugin", expect_finding=False,
+        files={
+            ".claude-plugin/marketplace.json": MANIFEST,
+            "CLAUDE.md": "The one plugin above builds apps; design-flow and rails-stack ship.\n",
+            "README.md": "rails-stack, plus design-flow.\n",
+        },
+    )
+    # No manifest means no verdict — the rule must not fire on trees it cannot judge, or every
+    # other fixture in this file would produce a spurious finding.
+    scenario(
+        "no marketplace.json means no verdict", rule="undocumented-plugin", expect_finding=False,
+        files={"CLAUDE.md": "No plugins declared anywhere.\n"},
     )
 
     # -- SKIP_DIRS: the licensed corpora are not our claims (#197) ---------
@@ -621,6 +735,7 @@ def main(argv: list[str]) -> int:
         "python_modules": "python module(s)",
         "json_settings_files_examined": "json settings file(s)",
         "documented_flag_claims_examined": "documented flag claim(s)",
+        "declared_plugins": "declared plugin(s)",
         "skill_docs": "skill doc(s)",
         "declared_components": "declared component(s)",
     }
