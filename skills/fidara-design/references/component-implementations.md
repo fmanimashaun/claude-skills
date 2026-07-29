@@ -179,29 +179,111 @@ end
 
 ## Form controls
 
-### Field wrapper — `app/components/ui/field_component.rb`
+### Field anatomy — `config/initializers/simple_form.rb`
+
+**There is no bespoke field-wrapper component, deliberately.** simple_form owns every form and
+every form element in this stack, and that includes fields rendered from inside a ViewComponent —
+a component that hand-rolls `<label>` + input + error markup *is* a form element built without
+simple_form, which is the thing the mandate exists to prevent. Hand-rolled anatomy drifts from the
+other hundred fields the moment anyone touches it, and drift is exactly what one wrapper
+definition eliminates.
+
+So the design system styles simple_form's **wrappers**, once, in the initializer. Author fields with
+`f.input`; the wrapper supplies the `stack`, the label, the control classes and the hint/error
+slots, with `aria-describedby` wiring handled by simple_form:
 
 ```ruby
-# frozen_string_literal: true
-module Ui
-  class FieldComponent < ViewComponent::Base
-    renders_one :control
-    def initialize(label:, hint: nil, error: nil, for_id: nil)
-      @label, @hint, @error, @for_id = label, hint, error, for_id
+# config/initializers/simple_form.rb — the field anatomy of the whole app, defined once
+SimpleForm.setup do |config|
+  config.wrappers :default, class: "stack", wrapper_html: { style: "--space: var(--space-2xs)" } do |b|
+    b.use :html5
+    b.use :label, class: "text-step--1 font-medium text-foreground"
+    b.use :input, class: "block w-full rounded-md border border-input bg-background " \
+                         "text-step-0 text-foreground px-3 h-9 min-h-touch " \
+                         "placeholder:text-muted-foreground transition-colors " \
+                         "focus-visible:outline-none focus-visible:ring-2 " \
+                         "focus-visible:ring-ring/30 focus-visible:border-ring " \
+                         "disabled:opacity-50 disabled:cursor-not-allowed",
+                  error_class: "border-destructive focus-visible:ring-destructive/30",
+                  valid_class: "border-success"
+    b.use :hint,  wrap_with: { tag: :p, class: "text-step--1 text-muted-foreground" }
+    b.use :error, wrap_with: { tag: :p, class: "text-step--1 text-destructive" }
+  end
+
+  config.default_wrapper = :default
+  config.button_class = ""            # buttons come from Ui::ButtonComponent, not simple_form
+  config.boolean_style = :inline
+  config.label_text = ->(label, _required, _explicit) { label }
+end
+```
+
+**The contract, which is what actually matters.** simple_form's wrapper DSL has more options than
+any one example shows, and versions differ in detail, so treat the block above as one correct
+spelling rather than the only one. What a fidara wrapper MUST produce, and what a review checks:
+
+1. Order is **label → control → hint → error**, inside a `stack` (spacing from `--space-*`, never
+   child margins).
+2. Every class is a **role token or a documented recipe** — no literal colours, no stock
+   `gray-*`/`blue-*`, no inline `dark:` variants (dark mode is one re-point of the roles).
+3. The control carries `min-h-touch` and a visible `focus-visible` ring.
+4. The error state is driven by simple_form's own `error_class` / `aria-invalid`, so
+   `aria-describedby` wiring comes from the library rather than being hand-maintained.
+5. Label text is **always rendered** unless the field explicitly passes `label: false` **and**
+   supplies an accessible name.
+
+**Prove it on first install** rather than trusting the snippet — one field, one assertion:
+
+```ruby
+# spec/system/form_anatomy_spec.rb — the wrapper is doctrine, so it gets a spec
+require "rails_helper"
+
+RSpec.describe "simple_form wrapper", type: :system do
+  it "renders label -> control -> error with role tokens and a touch target" do
+    visit new_invoice_path
+    within("form") do
+      expect(page).to have_css("label.text-step--1")
+      expect(page).to have_css("input.min-h-touch")
     end
-    def described_by = @error ? "#{@for_id}-error" : (@hint ? "#{@for_id}-hint" : nil)
+    click_button "Save"                                    # trigger validation
+    expect(page).to have_css("p.text-destructive")         # error via the wrapper
+    expect(page).to have_css("input[aria-invalid='true']")  # not hand-maintained
+  end
+end
+```
+
+If that spec fails, the wrapper is wrong — not the doctrine. Getting it green once is cheaper than
+discovering per-field drift across a hundred forms later.
+
+```erb
+<%# every field, everywhere — including inside a ViewComponent's template %>
+<%= f.input :email, hint: "We'll never share it." %>
+<%= f.input :status, collection: Invoice.statuses.keys %>
+<%= f.association :category %>
+```
+
+**A ViewComponent that renders fields takes the form builder in and uses it**, rather than
+re-implementing the anatomy:
+
+```ruby
+module Ui
+  class AddressFieldsComponent < ViewComponent::Base
+    def initialize(form:) = @form = form
+    attr_reader :form
   end
 end
 ```
 ```erb
-<%# field_component.html.erb — stack: label -> control -> hint/error %>
-<div class="stack" style="--space: var(--space-3xs)">
-  <label for="<%= @for_id %>" class="text-step--1 font-medium text-foreground"><%= @label %></label>
-  <%= control %>
-  <% if @error %><p id="<%= @for_id %>-error" class="text-step--1 text-destructive"><%= @error %></p>
-  <% elsif @hint %><p id="<%= @for_id %>-hint" class="text-step--1 text-muted-foreground"><%= @hint %></p><% end %>
+<%# address_fields_component.html.erb — composition, not re-implementation %>
+<div class="stack">
+  <%= form.input :line1 %>
+  <%= form.input :city %>
+  <%= form.input :postcode %>
 </div>
 ```
+
+Sizes (`sm h-8 · md h-9 · lg h-10`, matching Button) come from additional named wrappers
+(`config.wrappers :compact`) selected per form with `f.input :x, wrapper: :compact` — a second
+wrapper definition, never a per-field class override, so the set of field shapes stays enumerable.
 
 ### Input recipe (helper) — `app/helpers/ui_helper.rb`
 

@@ -9,12 +9,51 @@ for the markup contract, styled to the design system; inputs consume role tokens
 Optional leading/trailing icon or prefix/suffix. Label always present (visually or `sr-only`).
 
 ```erb
-<div class="stack" style="--space: var(--space-2xs)">
-  <%= f.label :email, class: "text-step--1 font-medium text-foreground" %>
-  <%= f.input_field :email, class: field_classes(state) %>
-  <p class="text-step--1 text-muted-foreground">We'll never share it.</p>  <%# helper %>
+<%= f.input :email, hint: "We'll never share it." %>
+```
+
+That one call renders the whole anatomy, because **the anatomy is defined once** in
+`config/initializers/simple_form.rb` as a styled wrapper — the `stack`, the label
+classes, the control classes and the hint/error paragraphs all live there. See
+[component-implementations.md](component-implementations.md) → Field anatomy for the
+wrapper configuration itself.
+
+**Never hand-roll a field.** No `f.label` + `f.input_field` + a hand-written `<p>`, and
+no bespoke field-wrapper component — a component that renders its own `<label>` and error
+markup *is* a form element built without simple_form, which is what the mandate rules out.
+Hand-rolled anatomy drifts from every other field the moment someone edits it; one wrapper
+definition is what makes a change land everywhere at once.
+
+**This applies inside ViewComponents too.** A component that renders fields takes the form
+builder in and calls `form.input`, rather than re-implementing label/input/error markup:
+
+```erb
+<%# inside a ViewComponent template — composition, not re-implementation %>
+<div class="stack">
+  <%= form.input :line1 %>
+  <%= form.input :city %>
 </div>
 ```
+
+### There is no non-simple_form case
+
+Every shape a form can take is covered, so the rule has no exceptions:
+
+| case | how |
+|---|---|
+| Model-backed form | `simple_form_for @invoice do \|f\|` |
+| **No model** (search, filters, a non-AR object) | `simple_form_for :q, url: search_path, method: :get do \|f\|` — simple_form takes a symbol + `url:`, so a model-less form is still a simple_form form |
+| **Label must be hidden** (icon-only search) | `f.input :q, label: false, input_html: { "aria-label": "Search" }` — the accessible name is required, the visible label is not |
+| Control inside a composed cluster (search in a button group, prefix/suffix) | `f.input_field :q` — simple_form's **control-only** renderer, used when the wrapper's own markup would fight the composition |
+
+`f.input_field` is *simple_form*, so it satisfies the mandate. What the mandate forbids is
+**hand-rolling the anatomy** — `f.label` plus a manual `<p>` for the error, or a component that
+emits its own `<label>`. Reach for `input_field` because the surrounding layout demands it, never
+to avoid configuring a wrapper.
+
+When a control genuinely needs a one-off class, it comes from `input_classes(state:, size:)` in
+`UiHelper` (keyword arguments; there is no `field_classes`). A **repeated** deviation is a second
+named wrapper, not a repeated override — see below.
 
 ## Control recipe + states
 
