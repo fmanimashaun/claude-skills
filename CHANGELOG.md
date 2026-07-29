@@ -785,8 +785,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
-*(version assigned at promotion — nothing here has shipped)*
+### 1.6.0 — 2026-07-29
 
 - **A screenshot is not evidence until the page it shows is validated** (#106) — `functional-tester`
   was told "every finding needs a screenshot" and nothing more, so a capture of a 404, an error
@@ -1556,6 +1555,47 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.27.0)
+- **qa-flow 1.6.0 — a screenshot is not evidence until the page it shows is validated** (#106,
+  plugin code only — **nothing distributed changed, so the `.skill` assets are byte-identical to
+  v1.26.0/v1.26.1**).
+- `functional-tester` was told "every finding needs a screenshot" and nothing more, so a capture of
+  a 404, an error page, a redirect target, or a half-rendered skeleton could back a **Pass**. That is
+  worse than no evidence: it manufactures false confidence and is invisible, because the report reads
+  complete and green. A real audit wrote 66 captures from a sitemap and **12 were 404s** — a human
+  caught it by eye; the tooling could not. The `Blocked` column existed in the report template with
+  **no rule that ever populated it**, so a validation failure had nowhere to go but Pass or Fail.
+- Every capture now passes four checks before it counts as evidence: **HTTP status** off the
+  navigation response (not inferred), **final URL** against the requested one, an
+  **expected-content assertion** drawn from the case's own expectation, and not-still-loading.
+  Failure yields **`Blocked`** — never Pass, never Fail — with the status and URL recorded.
+- **The assertion is the load-bearing signal, and this deliberately does not text-sniff.** Status
+  alone is insufficient (error pages return HTTP 200); error-text alone is insufficient *and
+  actively harmful* — the naive version of this fix wrongly excluded four **valid** cases, real
+  404-page *designs* that return 200 and legitimately read "page not found". Fixtures pin that, so
+  the over-correction cannot be reintroduced.
+- **Enforced, not merely written**, because a guarantee stated in prose that nothing makes true is
+  the class this repo keeps getting bitten by — and this bug *was* an instance of it. A shipped
+  checker (`plugins/qa-flow/scripts/validate_evidence.py`, stdlib only) validates a fixed CSV
+  contract and must exit clean before results are reported. It rejects a row missing its
+  status/URLs/assertion, a result on a non-2xx/3xx status or a **silent redirect**, and a `Blocked`
+  row that records nothing — and it **exits 2 rather than blessing an artifact it could not read**.
+- **The rule covers every browser pass, not just the reported one.** `a11y-auditor` had the same
+  defect (axe against a 404 returns *real* violations attributed to the wrong page, then files them
+  as defects) and now writes a machine-checked per-page audit log. The checker is profile-driven —
+  one implementation of the rule, per-artifact contracts, kind detected from the header — so adding
+  a pass is adding a `Profile`, not copying a rule. `exploratory-tester` records status + final URL
+  on every filed defect but is deliberately **not** gated: its mission is hunting for surprises, so
+  an unexpected error page is a finding, not spoiled evidence.
+- **Bounded honestly** in both the script and the agent doctrine: it closes the **omission** hole —
+  the one that produced the false PASS. It cannot tell whether a recorded status is *truthful* and
+  it never opens the screenshots or axe JSON, so "not still loading" stays agent-side judgement.
+- **72 selftest assertions, and 20 deliberate mutations of the implementation each caught** —
+  including adding text-sniffing, letting the two artifacts share one status vocabulary, accepting
+  placeholder violation counts, and making header detection fall back to a default instead of
+  failing closed. The selftest also cross-checks both agent files against the exact headers the
+  script enforces, so doctrine and checker cannot drift into mutual rejection.
 
 ### 2026-07-29 (release v1.26.1)
 - **Doctrine call sites are now checked by a linter rather than by remembering** (#182, maintainer
