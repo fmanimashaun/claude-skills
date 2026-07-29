@@ -1,0 +1,5 @@
+{
+  "name": "rails-generic",
+  "version": "0.1.0",
+  "description": "Deliberately generic Rails guidance. This is the benchmark's CONTROL arm, not a product — it exists so a win for rails-stack can be attributed to the content of our doctrine rather than to the mere presence of a loaded skill. Never publish or install this."
+}

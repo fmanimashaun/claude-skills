@@ -7,6 +7,129 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-29 — doctrine effect becomes measurable (#156), and the reviewer moves in-repo (#162)
+- **The asymmetry this closes.** Doctrine *content* has a hard gate: nothing is edited until
+  `doctrine-verifier` confirms it against an authoritative source. Doctrine *effect* had none.
+  "The rails-8 skill produces better Rails" lived entirely in prose — the one layer this repo
+  otherwise refuses to trust. New `evals/` measures whether loading the skills changes what an
+  agent writes. Secondary benefit, possibly the larger one: **a doctrine edit that makes agent
+  output worse was undetectable**; a regression is now visible.
+- **Runner is `claude -p`, not the Anthropic API.** The obvious build pastes `SKILL.md` into an
+  API `system` field — clean, cheap, and measuring the wrong thing. These skills ship as Claude
+  Code *plugins*, so a pasted system prompt is a proxy for how they load; a result from it would
+  not be evidence about what `/plugin marketplace add` actually gives a user. Consequence worth
+  having: **no Anthropic API dependency**, so the harness stays stdlib-only Python with no
+  `requirements.txt` and nothing for CI to install.
+- **Two gates specified in #156 were wrong, and would have manufactured false regressions.**
+  (a) The issue asked for an "ids only" job gate; `jobs-and-realtime.md:28` says the opposite —
+  `def perform(order)  # pass records, not ids: GlobalID (de)serializes them`. An ids-only rule
+  fails the doctrine's own reference example, so the real-skill arm would have scored *worse* than
+  baseline and "proven" our doctrine harmful. Only idempotence is gated (`:176`). (b) A naive
+  no-hex rule flags our own `Ui::Logo`, which `brand.md:87` names as "the only component permitted
+  to carry literal colors"; the carve-out is encoded. Generalised as a standing rule that
+  `selftest.py` asserts: **a gate must pass against the doctrine's own reference examples — if it
+  fails what `references/*.md` shows as correct, the rule is wrong, not the doctrine.**
+- **A third rule needed fairness, not correction.** `form_with` is correct stock Rails, and
+  `ecosystem-gems.md:29` makes simple_form conditional ("dozens of uniform CRUD forms"). So
+  `scaffold.py` establishes the convention (Gemfile entry + initializer) and the gate **refuses to
+  judge** when it is absent, rather than punishing an agent for writing correct Rails.
+- **Gates vs measurements, kept separate.** Six named rules, each citing the doctrine file:line it
+  enforces, are grep/parse pass/fail. Cost, wall-clock, output tokens, and turn count are recorded
+  and never judged — "less code" is trivially gamed by emitting something broken. A run that
+  errored, hit the API error path, or was blocked by a permission prompt is **INVALID** and
+  excluded from scoring: scoring infrastructure trouble as a doctrine failure invents a regression.
+- **Isolation is asserted, not assumed.** Runs never execute in this repo — our `CLAUDE.md` would
+  load into *every* arm, contaminating all three identically and drifting the result toward "no
+  difference" without looking broken. `scaffold.py` refuses to run when an ancestor holds a
+  `CLAUDE.md`, when a non-home ancestor holds `.claude/`, or when `~/.claude/skills/` is non-empty
+  (skills-dir plugins auto-load into every session). Tools are restricted to
+  `Read,Write,Edit,Glob,Grep` — no Bash, no network.
+- **Verified without spending anything on a benchmark.** `selftest.py` — 38 assertions, every rule
+  proven to fire on a violation *and* stay silent on conforming code (a rule that flags everything
+  looks rigorous and makes all arms fail equally). `run.py --dry-run` prints all 15 invocations and
+  executes none. The staged `real` arm passes `claude plugin validate` with all three skills
+  (14/3/17 references) and no maintainer `.claude/` leaked. **No results are published**, and the
+  README's results table is deliberately empty pending authorisation.
+- **Deliberately disposable runner.** `claude plugin eval` already does this properly
+  (`--ablation with-without`, `--runs`, `--threshold`, `--json`, `--max-cost-usd`, HTML reports)
+  but is in early access and unavailable here. The durable assets are `cases/*/prompt.md`,
+  `gates.py`, and `selftest.py`; when early access opens, point it at `evals/` and delete `run.py`.
+  Metadata is `suite.json`, not `case.yaml`, because `yaml` is not in the stdlib.
+- **Out of the release path.** Nothing wired into CI. It costs money, it is opt-in, and it must
+  never gate a promotion.
+- **Four bugs found in review, all in the new harness** (#161). Two would have corrupted results in
+  opposite directions: (a) `read_lines()` promised Ruby comment handling but only blanked ERB
+  comments, so a palette note in a `.rb` component (`# cerulean is #0077CC`) was reported as a
+  violation — a false regression. Stripping is now quote-state-aware (the token we hunt for *is*
+  `#`, so splitting on the first one would have deleted every violation) and applied to `.rb` only,
+  never `.erb`, where a bare `#` is HTML text and blanking to end-of-line would hide violations
+  after it. (b) The `Ui::Logo` carve-out matched any path containing `logo`, making it a one-line
+  bypass — name a partial `logo.html.erb` and hardcode anything. Now an explicit allowlist of the
+  component's canonical paths. Plus: `--max-total-usd` is **enforced** rather than merely
+  documented (a live run without it refuses to start), and `max_turns` is removed from `suite.json`
+  because the CLI exposes no `--max-turns` — a declared condition nothing enforces is worse than an
+  absent one, so turn count is measured and spend is bounded by the budget ceilings instead.
+  Selftest grew 32 → 38 assertions.
+- **The realisation.** A trial reviewer kept finding a class of bug our own review missed,
+  and it had no proprietary advantage: **it checked the diff against rules already written in
+  this codebase's markdown.** Its finding on #161 was literally "missing change-type
+  classification" — verbatim from `CLAUDE.md`; others were our own README and `suite.json`
+  contradicting our own code. The capability was never rented; the rules were always here,
+  nothing was *asking* them of a diff.
+- **The class.** Every existing review dimension asks *"is this code correct?"*. The misses all
+  came from a different question: *"does this code do what its own documentation, config and
+  comments claim?"* Correct-looking code passes the first and fails the second — and the author
+  cannot see it, because they read the claim and the code as one thing.
+- **`claims-vs-enforcement` has now bitten three times in three PRs**: `--check || echo` making a
+  release gate unable to block (#151); a README mandating `--max-total-usd` while the flag stayed
+  optional (#161); a docstring promising Ruby-comment handling the code lacked (#161). Writing the
+  rule down does not prevent it — the thesis of `lint_markdown_shell.py`, now pointed at our claims.
+- **New `scripts/lint_self_consistency.py`** (stdlib, free, no LLM) mechanises the judgement-free
+  subset: `dead-settings-key` (a key in a JSON settings block no reader reads) and
+  `unenforced-mandatory-flag` (a flag documented as mandatory that code leaves optional).
+  **Known-answer calibrated:** run against the pre-fix commit it independently reproduces 2 of the
+  5 trial-reviewer findings; against the post-fix commit it is silent with the same inputs
+  examined. `--selftest` (8 assertions) proves both rules fire *and* stay silent — a rule that
+  flags everything gets disabled after the third false positive and then catches nothing. Its own
+  selftest caught a real limitation during authoring: the guard regex hardcoded `parser.error`, so
+  it missed a guard on any parser not named `parser`.
+- **Coverage is reported even when clean**, because "no findings" over input never read is worse
+  than no linter — the `--audit-coverage` lesson, where a fence regex silently skipped 11 blocks.
+- **The classes no machine catches became a shipped skill, not a `docs/` file.** First draft put
+  them in `docs/review-rubric.md` *and* inline in two agent files — two homes for one doctrine,
+  which is precisely the drift this repo exists to prevent, and `docs/` was referenced by nothing,
+  so the discovery path that made the trial reviewer work (read the codebase's own markdown rules)
+  never reached it. Now `skills/code-review/SKILL.md` is the single source:
+  `carve-out-without-negative-test`, `coverage-gap`, `doctrine-contradiction`,
+  `unverified-negative` (count first, then read), `gate-that-cannot-fail`. Every class is named and
+  traceable to a real finding; a class with no instance behind it is speculation and is excluded.
+- **Placing it in `skills/` is the load-bearing decision.** Rules a reviewer must find belong where
+  reviewers already look, and as shipped doctrine it is the *same* rule set a user's `pr-reviewer`
+  applies — so we are held to what we sell rather than keeping a private checklist.
+- **Wired into `CLAUDE.md` and `/maintainer-work` Phase 3** — apply the class list to your own diff
+  before asking anyone else to.
+
+
+### 2026-07-29 — promotions get a two-step name and a divergence assertion
+- **"Arm" vs "promote", named.** The v1.22.0 promotion used a branch called `release/v1.22.0`
+  merging into **`dev`**, which reads as though `dev` publishes releases. It does not and cannot:
+  the workflow triggers only on `push: branches: [main]` *and* re-checks
+  `github.ref == 'refs/heads/main'` in the job — verified, zero workflow runs have ever originated
+  on `dev`. But the naming made an invisible mechanism look wrong, so step 1 is now
+  `chore/arm-vX.Y.Z` titled "version assignment (does not publish)", and `CLAUDE.md` states the two
+  steps in a table with which one publishes.
+- **A merge unions; it does not override.** Recorded as a correctness rule rather than tidiness:
+  merging `dev → main` never removes content that exists only on `main`, so a direct commit there
+  is permanently invisible to every future `dev`-based change. One such commit exists in this
+  repo's history (`d4b35f6`, `enabledPlugins` in `.claude/settings.json`); it converged only
+  because the same block later reached `dev` — luck, not a property of the merge.
+  `release-manager` now asserts `git log --no-merges origin/dev..origin/main` before promoting.
+- **How to read branch state.** Judge `dev` against `main` with `git diff dev main` (empty after a
+  promotion), never the ahead/behind counter: `main` gains one merge commit per release that `dev`
+  never receives, so `dev` reads as tens of commits "behind" while being content-identical.
+  Merging `main` back into `dev` to tidy the counter is what produced 37 no-op merge commits on
+  `dev` earlier in the week.
+
 ### 2026-07-29 — the shell inside markdown is now verified (root cause of #151)
 - **The repo mandated `bash -n` for `.sh` files and shipped 194 unverified lines of bash inside
   markdown** — 51 fenced blocks across 30 command/skill files, the lines an agent copies and runs
@@ -121,6 +244,63 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.9.0 — 2026-07-29
+- **A doctrine contradiction was live in users' hands, in three files.** `pr-reviewer.md` told the
+  merge gate to check jobs for "id args", `rails-developer.md` said "pass IDs, never AR objects",
+  and `setup-flow.md` wrote "job shape (ids only)" into the generated project CLAUDE.md. But
+  `skills/rails-8/references/jobs-and-realtime.md:28` says the opposite — `def perform(order)
+  # pass records, not ids: GlobalID (de)serializes them` — and :39 lists records (GlobalID) as
+  serializable. **So the shipped merge gate would block a PR for correctly following our own
+  doctrine**, the developer agent would write the wrong thing, and setup-flow would propagate the
+  wrong rule into the user's own doctrine file for pr-reviewer to then enforce against them.
+  Self-reinforcing, and worse than a plain bug because it blames the user.
+  **No framework claim is introduced or changed here, deliberately.** `skills/rails-8` is
+  untouched, and review flagged that the first draft *restated* the mechanism (GlobalID,
+  `discard_on`) in three shipped plugin files — which would have been authoring an externally
+  verifiable claim, and `CLAUDE.md` requires a CONFIRMED `doctrine-verifier` verdict for that even
+  when the rest of a PR is an architecture decision. So the plugin text now **defers** to the
+  rails-8 jobs doctrine instead of paraphrasing it: the corrected rule is "do not demand ids-only;
+  follow the project's own job doctrine", and the mechanism stays in the one place that already
+  carries it. Same single-source principle this branch applies to the review classes.
+  Found by applying the rubric's `doctrine-contradiction` class systematically with one grep rather
+  than fixing the single instance review happened to surface.
+- **`code-reviewer` and `pr-reviewer` now ask claims-vs-enforcement explicitly** — the class an
+  author is systematically blind to, because they read the claim and the code as one intention
+  rather than two artefacts that can disagree. Both **delegate to the new `code-review` skill**
+  rather than restating its classes, so there is one source of the doctrine and no drift between
+  agent and skill. Both keep two habits in the verdict itself: when a claim and the code disagree
+  the reviewer decides *which* is wrong (the fix is not automatically the code), and on finding one
+  contradiction, grep for the pattern — that class travels in groups.
+
+- **The mechanical half now ships too (#164).** #162 gave users the *doctrine* and kept the
+  deterministic check maintainer-side — backwards, since this repo's whole thesis is that a rule
+  left in prose gets violated again. New `scripts/self_consistency.py` (stdlib; a Rails repo must
+  not need a pip install to review itself) plus a `PostToolUse` hook on `Edit|Write|MultiEdit`
+  beside `lint-ruby.sh`.
+- **Four rules, each mechanising a named `code-review` class:** `swallowed-exception`
+  (`rescue nil`, empty rescue), `swallowed-verdict` (`|| true` on a verification command — the
+  `--check || echo` shape that made a release gate unable to block), `assertion-free-spec` (an
+  example that runs code but asserts nothing, so it passes whatever the code does), and
+  `dead-env-var` (a key in `.env.example` nothing reads).
+- **Two candidate rules were cut, not softened.** `unenforced-documented-step` and
+  `carve-out-without-negative-test` need judgement — matching a `skip_before_action` is easy,
+  proving no spec covers the near-miss is not. A rule that guesses produces false positives, gets
+  disabled, and then catches nothing; both stay with the reviewer and the skill, which is the right
+  layer. The standard applied was: zero false positives on a conforming repo, or cut it.
+- **The hook exits 2 on findings, deliberately.** A check that can only advise is itself a
+  `gate-that-cannot-fail` — one of the classes it enforces — so shipping an advisory-only version
+  would have violated the doctrine it exists to uphold. It fails *open* on a missing `python3`,
+  because a guard decides whether to RUN a check and must never soften the verdict.
+- **Calibrated, and non-vacuously.** 22 selftest assertions prove every rule fires on a violation
+  **and stays silent on conforming code** — including the cases that would otherwise be false
+  positives: `#` inside a Ruby string, a commented-out `rescue nil`, `|| true` on a *cleanup*
+  command, a one-liner `is_expected`, an example delegating to shared examples, a `pending`
+  placeholder, and an env key referenced from a non-Ruby file (Kamal `deploy.yml`). Run against
+  this repo it examines 25 files and 4 env keys and reports nothing — coverage prints on every run,
+  because "no findings" over input never read reads as a pass.
+- `pr-reviewer` now runs the repo-wide pass first and treats its output as BLOCKING evidence, then
+  reasons about the classes no machine catches.
 
 ### 1.8.0 — 2026-07-29
 - **`architecture_graph.py --if-present`** — with `--check`, a missing `graph.json` exits 0 instead
@@ -803,7 +983,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   gate, design-system-specific — complements rails-flow's general one), `brand-guardian`
   (token/logo/icon/brand-pack enforcement).
 
-## rails-stack (skills plugin: rails-8 + hotwire + fidara-design)
+## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.12.0 — 2026-07-29
+- **New `skills/code-review`**, bundled into rails-stack and packaged as `dist/code-review.skill`.
+  Review doctrine for the defect class authors are structurally blind to: code that is correct on
+  its own terms but does not do what its own documentation, config, comments or project rules
+  claim. Names seven classes (`claims-vs-enforcement`, `dead-declaration`,
+  `carve-out-without-negative-test`, `coverage-gap`, `doctrine-contradiction`,
+  `unverified-negative`, `gate-that-cannot-fail`) with detection guidance for each, and is explicit
+  that it *complements* correctness review rather than replacing it.
+- **Every class is traceable to a defect this repo actually shipped or nearly shipped** — no
+  speculative rules. It also states the project's own rules (CLAUDE.md Project Overrides, README,
+  `docs/`) are the *input* to the review, since most findings are a rule in the repo disagreeing
+  with code in the repo.
+- Consumed by rails-flow's `code-reviewer` and `pr-reviewer`, which delegate to it instead of
+  restating it. Packaging is unchanged in shape; the other three `.skill` files rebuild
+  byte-identical.
 
 ### 1.11.0 — 2026-07-29
 - **The design system becomes multi-brand** (#104). `brand.md` refactored from "two brands, one
@@ -1101,6 +1297,66 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-29 (release v1.23.0)
+- **The doctrine's *effect* is now measurable, not just its content** (#156, maintainer tooling —
+  not distributed). This repo has always had a hard gate on doctrine *content*: nothing is edited
+  until `doctrine-verifier` confirms it against an authoritative source. It had **no** gate on
+  doctrine *effect* — "the rails-8 skill produces better Rails" lived entirely in prose, the one
+  layer this repo otherwise refuses to trust. New `evals/` measures whether loading the skills
+  changes what an agent writes: three arms (no skill / a deliberately weak control / real
+  rails-stack) × five cases × six deterministic gates that each cite the doctrine `file:line` they
+  enforce. The runner drives `claude -p` rather than the Anthropic API, because these skills ship
+  as **Claude Code plugins** — a pasted system prompt would measure a proxy, and a benchmark that
+  measures a proxy repeats the mistake it exists to correct. Side effect worth having: no API
+  dependency, so the harness stays stdlib-only with nothing for CI to install.
+  Authoring the gates caught **two rules in the issue's own spec that would have manufactured
+  false regressions** — an "ids-only" job gate that fails our own reference example, and a no-hex
+  rule that flags our own `Ui::Logo`. Generalised into a standing rule the selftest asserts: *a
+  gate must pass against the doctrine's own reference examples; if it fails what `references/*.md`
+  shows as correct, the rule is wrong, not the doctrine.* No paid benchmark has been run and the
+  results table is deliberately empty — a harness with proven gates and no numbers is honest.
+- **The reviewer moved in-repo, and stopped being rented** (#162, rails-stack → 1.12.0,
+  rails-flow → 1.9.0). A trial reviewer had been catching a class our own review missed, and it
+  had no proprietary advantage: **it checked the diff against rules already written in this
+  codebase's markdown.** Every existing dimension asks *"is this code correct?"*; the misses all
+  came from a different question — *"does this code do what its own documentation, config, comments
+  and project rules claim?"* Correct-looking code passes the first and fails the second, and the
+  author cannot see it because they read the claim and the code as one intention.
+  New **`code-review` skill** (bundled in rails-stack, now four skills) names the classes:
+  `claims-vs-enforcement`, `dead-declaration`, `carve-out-without-negative-test`, `coverage-gap`,
+  `doctrine-contradiction`, `unverified-negative`, `gate-that-cannot-fail`. It lives in `skills/`
+  rather than `docs/` deliberately — rules a reviewer must find belong where reviewers look, and as
+  shipped doctrine it is the same rule set a user's `pr-reviewer` applies, so we are held to what
+  we sell. `code-reviewer` and `pr-reviewer` delegate to it instead of restating it.
+- **A doctrine contradiction was live in users' hands, in three files** (#162). `pr-reviewer` told
+  the merge gate to demand ids-only job arguments, `rails-developer` said "pass IDs, never AR
+  objects", and `setup-flow` wrote that rule into the user's own generated CLAUDE.md — while
+  `jobs-and-realtime.md:28` says pass records. **The shipped merge gate would have blocked a PR for
+  correctly following our own doctrine**, and setup-flow propagated the wrong rule into the user's
+  rules file for the gate to then enforce against them: self-reinforcing, and worse than a plain
+  bug because it blames the user. Found by applying the new skill's `doctrine-contradiction` class
+  with one grep — that class travels in groups, because the wrong rule gets copied. `skills/rails-8`
+  is unchanged; the plugin text now defers to it rather than paraphrasing the mechanism.
+- **`claims-vs-enforcement` is now enforced, in both repos** (#162 maintainer, #164
+  rails-flow → 1.9.0). It had bitten three times in three PRs — `--check || echo` making a release
+  gate unable to block, a README mandating a flag the code left optional, a docstring promising
+  behaviour the code lacked. Writing the rule down does not prevent it, which is the whole reason
+  `lint_markdown_shell.py` exists. Two linters now: maintainer-side
+  `scripts/lint_self_consistency.py` (`dead-settings-key`, `unenforced-mandatory-flag`), and — the
+  half users were missing — `rails-flow/scripts/self_consistency.py` with a PostToolUse hook,
+  covering `swallowed-exception`, `swallowed-verdict`, `assertion-free-spec` and `dead-env-var`.
+  Both are stdlib-only, print coverage even when clean (because "no findings" over input never read
+  reads as a pass), and ship a selftest proving every rule fires **and stays silent** — a rule that
+  flags everything gets disabled and then catches nothing. The maintainer linter is known-answer
+  calibrated: it independently reproduces two of five prior review findings on the pre-fix commit
+  and goes silent on the fixed one with the same inputs examined. The hook exits non-zero
+  deliberately: a check that can only advise is itself a `gate-that-cannot-fail`.
+  Two candidate rules were **cut rather than softened** — proving no spec covers a carve-out's
+  near-miss needs judgement, and a rule that guesses gets disabled.
+- Promotions are now named in two steps (`chore/arm-vX.Y.Z` → `dev`, then `dev` → `main`), with
+  only the second publishing, and it is recorded that **a merge unions rather than overrides** — so
+  a direct commit to `main` is permanently invisible to every future `dev`-based change (#155).
 
 ### 2026-07-29 (release v1.22.0)
 - **Brand packs — the design system becomes multi-brand** (#104, rails-stack → 1.11.0,

@@ -89,12 +89,42 @@ users run. `dev` is the integration branch — a staging area, never a shipping 
   unshipped.
 - Release = **one promotion PR `dev → main`** (a merge commit) that carries the version
   bumps, the CHANGELOG release block, and **every** `Closes #n` for what it ships.
-  **Do not commit to `main` directly.**
+  **Do not commit to `main` directly** — see *why* below; it is stronger than a style rule.
+
+### A promotion is two steps, and only the second publishes
+
+Because the promotion PR's head is `dev`, the bumps have to be on `dev` before it opens. So a
+release is:
+
+| # | Step | Branch / PR | Publishes? |
+|---|---|---|---|
+| 1 | **Arm** — assign versions, convert `Unreleased` headings, write the one release block | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
+| 2 | **Promote** — merge dev into main | `dev` → **`main`** | **Yes** — the push to `main` fires the workflow |
+
+Name step 1 `chore/arm-vX.Y.Z`, **never `release/vX.Y.Z`**, and title it
+"arm vX.Y.Z — version assignment (does not publish)". A branch called `release/*` merging into
+`dev` reads as though `dev` publishes releases, which it never has: the workflow triggers only on
+`push: branches: [main]` *and* re-checks `github.ref == 'refs/heads/main'` in the job. Nothing
+merged into `dev` can publish anything.
 - Never `git add -A` blindly — stage only files you authored; run `git status` first.
 
 Why the split matters: closing keywords fire only on merge into the **default** branch, so
 with `main` default the `Closes #n` lines *must* live on the promotion PR. That is the
 desired behaviour — issues close when the fix ships, not when it lands on a staging branch.
+
+**Why "never commit to `main`" is a correctness rule, not tidiness:** a merge **unions**, it does
+not override. Merging `dev → main` brings dev's changes in; it never removes content that exists
+only on `main`. So a direct commit to `main` lives there permanently and is **invisible to every
+future `dev`-based change** — you would only find it by diffing. (One exists in this repo's
+history: `d4b35f6`, adding `enabledPlugins` to `.claude/settings.json`. It happened to converge
+because the same block later reached `dev`, but convergence was luck, not a property of the
+merge.) The promotion pre-flight now asserts there are none.
+
+Corollary for reading branch state: judge `dev` against `main` with `git diff dev main`, which
+should be **empty** right after a promotion. Do **not** read the ahead/behind counter — `main`
+accumulates one merge commit per release that `dev` never receives, so `dev` shows tens of
+commits "behind" while being content-identical. Merging `main` back into `dev` to make the
+counter look tidy is what produced 37 no-op merge commits on `dev` earlier; don't.
 
 ## Releases are automated — do NOT run `gh release` by hand
 
@@ -184,6 +214,38 @@ syntax errors (templates are placeholder-substituted first), **swallowed verdict
 `--audit-coverage` exists because the first version of the fence regex silently skipped 11
 blocks in 7 files: a lint that reports clean on input it never read is worse than no lint.
 Treat a coverage gap as a defect in the linter, not a nuisance.
+
+## Verify our own claims, not just our shell
+
+A trial reviewer spent a fortnight catching a class of bug our review missed, and it had no
+proprietary advantage: **it checked the diff against rules already written in this repo's
+markdown.** One finding was literally "missing change-type classification" — verbatim from
+this file. Others were our own README and a config file contradicting our own code.
+
+The class is **claims-vs-enforcement**: a guarantee stated in prose that nothing makes true.
+It has bitten three times in three PRs — `--check || echo` making a release gate unable to
+block (#151), a README mandating `--max-total-usd` while the flag stayed optional (#161), a
+docstring promising Ruby-comment handling the code lacked (#161). Writing the rule down does
+not prevent it; that is the whole reason `lint_markdown_shell.py` exists.
+
+```bash
+python3 scripts/lint_self_consistency.py            # dead settings keys, unenforced flags
+python3 scripts/lint_self_consistency.py --selftest  # prove both rules fire AND stay silent
+```
+
+The judgement-free half is that linter. **The rest is the `code-review` skill**
+(`skills/code-review/SKILL.md`) — `carve-out-without-negative-test`, `coverage-gap`,
+`doctrine-contradiction`, `unverified-negative`, `gate-that-cannot-fail`. It lives in
+`skills/` rather than in `docs/` deliberately, for two reasons: rules a reviewer must find
+belong where reviewers already look, and it is **shipped doctrine** — the same rules a
+user's `pr-reviewer` applies, so we are held to what we sell. Read it against your own diff
+before asking anyone else to.
+
+Two of its classes exist because we shipped them: a `doctrine-contradiction` told users'
+merge gate to demand ids-only job arguments while `jobs-and-realtime.md:28` says pass
+records, and `setup-flow` wrote that wrong rule into the user's own CLAUDE.md so the gate
+then enforced it against them. When you find one instance of a contradiction, **grep for
+the pattern** — that class travels in groups.
 
 ## Packaging (skills)
 
