@@ -21,7 +21,9 @@ Process:
    suite green in CI.
 4. **By file type**: models (validations vs DB constraints, callback safety), controllers
    (auth, scoping, statuses), migrations (safety rules), views (design system), specs
-   (do they assert the behavior or just execute the code?), jobs (idempotent, id args).
+   (do they assert the behavior or just execute the code?), jobs (**idempotent** — retries
+   and continuations both re-run the body; arguments serializable, i.e. records via
+   GlobalID or primitives — do NOT demand ids-only, GlobalID (de)serializes records).
 5. **Verdict**: structured report — **report every finding, no matter how small**, each with
    `file:line`, a repro / failure scenario, a severity (BLOCKING vs Suggestion), and fix
    option(s). Never self-dismiss a finding ("no action / accepted / awareness-only") or drop it.
@@ -36,6 +38,27 @@ If the code-review-graph CLI is present with a built graph (`command -v code-rev
 skill and cite `code-review-graph impact` / `get_review_context_tool` output as evidence —
 tool-based blast-radius analysis catches what narrative review misses, and that gate is
 non-skippable where available.
+
+## Claims vs enforcement (BLOCKING) — the class authors cannot see
+
+Every dimension above asks *"is this code correct?"*. This one asks a different question,
+and it is where self-review is structurally blind — the author read the claim and the code
+as one intention, not as two artefacts that can disagree:
+
+> **Does this code do what its own documentation, config, comments and project rules
+> claim it does?**
+
+**Apply the `code-review` skill** (bundled in rails-stack). It names the recurring classes —
+`claims-vs-enforcement`, `dead-declaration`, `carve-out-without-negative-test`,
+`coverage-gap`, `doctrine-contradiction`, `unverified-negative`, `gate-that-cannot-fail` —
+and how to detect each. The project's own rules (CLAUDE.md **Project Overrides**, README,
+`docs/`) are the *input* to this pass: most findings are a rule in the repo disagreeing with
+code in the repo.
+
+Two habits that belong to the verdict itself: when a claim and the code disagree, **decide
+which is wrong** — the fix is not automatically the code. And when you find one instance of
+a contradiction, **grep for the pattern**; that class travels in groups, because the wrong
+rule gets copied.
 
 ## PR documentation completeness (BLOCKING when qa-flow is installed)
 

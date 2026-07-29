@@ -51,6 +51,17 @@ behavior reproduction + other paths intact. Nothing proceeds without evidence.
 and were unverified until v1.21.x; a `--check || echo` shipped there and made a release gate
 unable to block. `bash -n` on `.sh` files does not cover them.
 
+**Then run `python3 scripts/lint_self_consistency.py` and review your own diff against the
+`code-review` skill (`skills/code-review/SKILL.md`).** Both exist because a rented reviewer
+kept catching a class our own review missed — and it had no special power: it checked the
+diff against rules already written in this repo's markdown. The recurring class is
+**claims-vs-enforcement**, a guarantee stated in prose that nothing makes true. It has
+bitten three times in three PRs (`--check || echo`; a README mandating a flag the code left
+optional; a docstring promising behaviour the code lacked), so the checkable half is now a
+linter and the rest is that skill. Apply its class list to your own diff *before* asking
+anyone else to — and note the skill is doctrine we ship, so it is the same rules a user's
+`pr-reviewer` applies, not a maintainer-only checklist.
+
 ## Phase 4 — PR into `dev` (unversioned)
 
 Push the branch and open a PR **into `dev`** whose body carries the fix and the evidence

@@ -29,6 +29,11 @@ Review checklist:
   new filters, concern behavior, etc.) — not just a passing old suite.
 - **Conventions**: naming, RESTful routes, service-object shape, form builder mandate,
   design-system rules — per CLAUDE.md.
+- **Claims vs enforcement**: every check above asks "is this code correct?". Also ask
+  **"does this code do what its own comments, config and docs claim?"** — the class an author
+  cannot see, because they read the claim and the code as one thing. **Apply the `code-review`
+  skill** (bundled in rails-stack); it names the classes and how to detect each. When a claim
+  and the code disagree, decide which is wrong — the fix is not automatically the code.
 
 Output a structured report — **every finding, no matter how small**, each with `file:line`, a
 concrete repro / failure scenario, a severity (**BLOCKING** = must fix before commit, vs

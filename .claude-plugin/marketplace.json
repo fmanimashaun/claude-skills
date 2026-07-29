@@ -18,7 +18,8 @@
       "skills": [
         "./skills/rails-8",
         "./skills/hotwire",
-        "./skills/fidara-design"
+        "./skills/fidara-design",
+        "./skills/code-review"
       ]
     },
     {
