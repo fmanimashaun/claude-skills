@@ -20,7 +20,12 @@ SessionStart hook.)
 
 `$ARGUMENTS` names the component to audit; default to the one with the most open issues
 or longest since last audited (check `docs/audits/`). Pull the open-issue signal for it
-(`gh issue list --label comp:<x>`) — clustered reports point at systemic gaps.
+— clustered reports point at systemic gaps. **Bound the page**, or the cluster you are
+reading is whatever fitted in the default 30 (#211):
+
+```bash
+gh issue list --state open --label "comp:<x>" --limit 200 --json number,title,labels,body
+```
 
 ## Method
 
