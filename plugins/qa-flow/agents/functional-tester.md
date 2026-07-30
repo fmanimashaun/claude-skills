@@ -184,6 +184,68 @@ live in `qa-reporter.md` under *Deduplicate before you count*:
 The validator enforces the arithmetic, so a link pass that emitted one row per occurrence would
 be rejected for a repeated signature.
 
+## A long run must survive being killed, and its evidence must be reviewable
+
+Two things went wrong in the audit, and both are about the run rather than the app.
+
+**Write results as you go — never only at the end (#111).** The audit's crawler wrote its
+manifest after the final page, so a crash at page 70 of 72 would have lost everything; one
+background run *was* stopped mid-flight and left **zero** usable output after ~30 minutes.
+`/qa-flow:certify` is the pre-`main` gate, so a lost run means re-running the whole
+certification.
+
+- Append **one JSON line per unit as it completes** to `qa/reports/<run>/results.jsonl`. Never
+  hold results in memory until the end.
+- Derive the aggregate from that log — never rebuild it from memory or from the filesystem:
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/evidence_manifest.py" derive \
+    --results qa/reports/<run>/results.jsonl --expect qa/reports/<run>/expected.txt
+  ```
+  Write `expected.txt` (one unit id per line) **before** you start, or the summary cannot tell
+  "the run ended" from "the run covered everything" — which was the defect.
+- **Resume** rather than restart. Units already done are skippable; a `Blocked` unit is *not*
+  done and must be retried, or a transient hang becomes a permanent hole:
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/evidence_manifest.py" completed \
+    --results qa/reports/<run>/results.jsonl
+  ```
+  Pass `--fresh` to force a clean run: it returns an empty skip list, so every unit is re-done.
+  Always ask this command rather than implementing your own resume rule — one decision point
+  cannot drift out of step with itself.
+- **A hung unit is timed out to `Blocked` with a reason and the run continues.** One slow route
+  must not cost the other seventy.
+- **Emit one progress line per completed unit, with a running count — and never pipe the run
+  through `tail` or any buffering filter.** Piping buffered everything until EOF in the audit, so
+  the log showed nothing for the entire run and the only way to see progress was counting files
+  on disk. A supervisor that cannot tell *slow* from *hung* will either wait forever or kill
+  useful work.
+
+**Evidence standards (#120).** 359 PNGs in a flat folder, 12 of them captures of 404 pages
+indistinguishable by eye, and full-page images 8050px tall proving a focus ring:
+
+| Rule | Why |
+|---|---|
+| **Clip by purpose.** `component`, `interaction`, `a11y` evidence **must** be clipped to the region. `layout`, `theme`, `visual-regression` may be full-page. | An 8050px capture proving a button's focus ring is unreadable. Clipping produced small, legible images. |
+| **Name `<route-slug>--<viewport>-<theme>[--<state>].png`** | deterministic and sortable, so the set is self-describing |
+| **Record validity on every capture** | per the page-validation gate above: an image from an unvalidated page is *indistinguishable* from real evidence, so it is marked, never silently mixed in |
+| **Cap `deviceScaleFactor` at 1** | evidence, not retina artwork; it is the difference between MB and hundreds of MB per run |
+
+Then generate the browsable index and check the contract — a flat folder is not reviewable:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/evidence_manifest.py" index    --manifest qa/reports/<run>/manifest.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/evidence_manifest.py" validate --manifest qa/reports/<run>/manifest.json
+```
+
+`validate` rejects a full-page capture for a component purpose, a name that does not encode its
+axes, a capture with no recorded validity, and a `Blocked` unit with no reason. **Retention** keeps
+the last 3 runs plus any run referenced by an open defect, and always prints what it pruned:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/evidence_manifest.py" prune --runs qa/reports --keep 3 \
+  --protect <run-referenced-by-an-open-defect>
+```
+
 ## Process
 
 1. **Auto-map the in-scope flows first.** Navigate to the URL, snapshot, and crawl the
