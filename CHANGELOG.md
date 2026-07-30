@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-07-30 — the fences are syntax-checked, and invisible characters are caught
 
 - **NEW rule `invisible-character`** (#95) — no invisible or confusable whitespace in anything we
   ship. Two no-break spaces reached a shipped behaviour table, and the way they surfaced is the whole
@@ -1164,7 +1164,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.21.0 — 2026-07-30
 
 - **Range input and Calendar/Date/Time picker are documented** (#95). `coverage.md` **9 → 7**. Both are
   native-first, and both contracts live in `forms.md` with the other controls. Verdict on
@@ -2604,6 +2604,72 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.40.0)
+
+> ### The code in our fences is now syntax-checked — and it was hiding four hazards
+>
+> 154 ruby, 85 erb and 22 js blocks (3,160 lines) had never been executed by any gate, only the 79 bash
+> ones had. Four blocks raised `SyntaxError` the moment anyone pasted them. Also: **Range input** and
+> **Calendar/Date/Time picker** documented, `coverage.md` **9 → 7**, both native-first.
+>
+> `fidara-design.skill`, `rails-8.skill` and `hotwire.skill` changed; `code-review.skill` is
+> byte-identical.
+
+- **Four copy-paste hazards fixed in shipped skills, every one of which raises on paste.** A bare
+  `rescue … end` with no `begin` and no enclosing method; two lines where `/` was read as a separator
+  when Ruby reads it as **division** (`Product.select(:id, :name) / .pluck(:name)`); and two Stimulus
+  blocks mixing a `static` class field with bare `this.` statements, which cannot share a scope. The
+  Stimulus examples now show the accessors **inside the method that uses them** — which parses, and
+  documents the point the old shape obscured.
+- **NEW gate: `lint_markdown_code.py`.** `node --check` and `ruby -c` per fenced block, with
+  `--audit-coverage` and a 27-check selftest. Fails **open** on a missing interpreter and reports
+  **skip**, never a pass.
+  - **Its own first run was 26 findings, 22 of them the linter's fault** — and that is the useful part.
+    `<%= form_with … do |f| %>` and `<%==` are **invalid in stdlib ERB** because Rails compiles views
+    with **erubi**; both are normalised away rather than taking a gem dependency that would make the
+    gate pass or fail by machine.
+  - **`js` matched the `js` in ` ```json `**, so every JSON block was being parsed as JavaScript. The
+    coverage control caught it — worth noting the direction: that audit was written to catch an
+    **under**-matching extractor and caught an **over**-matching one.
+  - **ERB does not error on an unterminated `<%`.** It emits the remainder as a **literal string**, so
+    the expression silently never runs and the view renders text where a value belongs. `ruby -c` on the
+    compiled output sees nothing wrong, so this needs an explicit balance check — the compiler will
+    never give you one.
+- **Range input: do not hand-write slider ARIA onto a native range.** ARIA in HTML says *"No `role`
+  other than slider, which is NOT RECOMMENDED"* and that authors **SHOULD NOT** set
+  `aria-valuemax`/`aria-valuemin` on it. For the custom widget, only **`aria-valuenow`** is required
+  (min/max default to 0 and 100), **`Home`/`End` are required keys and `Page Up`/`Page Down` are
+  explicitly optional**. Leave native except for **two thumbs** (a separate APG pattern, and APG says to
+  test on touch AT before production) or **a value a number cannot convey** (`aria-valuetext`, which
+  layers onto the native element). **A vertical slider is not a reason** — that is native via
+  `writing-mode`.
+- **Date/time: native-first rests on a spec guarantee, not optimism.** The `type` attribute's *"missing
+  value default and invalid value default are both the Text state"*, so an unrecognised `date` keyword
+  renders a **text input** — the field keeps working, only the picker is lost. The value is
+  **`yyyy-mm-dd` always**, whatever the display locale. `step` is **days** for date and **seconds** for
+  time, where a step not divisible by 60 is what surfaces a seconds field.
+- **There is NO APG "Date Picker" pattern**, so *"a date picker must be a dialog"* is **refuted**: two
+  *examples* exist, one under **Dialog** and one under **Combobox**, and the Dialog one links the other
+  as a *"Similar example"*. Two valid architectures, neither mandated. Relatedly, `aria-selected` (the
+  chosen date) is cited to APG's examples while `aria-current="date"` (today) is cited to **ARIA 1.2** —
+  APG's examples use no `aria-current` at all, so blending the two would have mis-attributed half the
+  claim.
+- **WCAG scoped rather than sprayed.** **1.3.5** applies to a date field only when it collects data
+  *about the user*; **2.5.8 Target Size (Minimum)** (AA, new in 2.2) has a **User Agent Control**
+  exception covering the native thumb and picker, so it bites only once you hand-build one — and 2.5.8
+  is **not** 2.5.5, which is a different AAA criterion at 44×44.
+- **Two no-break spaces shipped in v1.39.0 made a behaviour-table row unsearchable.** U+00A0 renders
+  exactly like a space, so grepping the phrase returned nothing. Found because an anchored edit failed
+  with *0 matches* against a string copied out of the file. Fixed, and a new mechanical
+  **`invisible-character`** rule now covers 13 such characters across 174 shipped files — with a
+  near-miss fixture pinning the punctuation we *do* use, so the rule cannot go red on its own corpus.
+- **`mutation_check` 23 → 30 across 7 guards**, all caught. Writing them found three more defects of the
+  familiar family: a **vacuous fixture** (`<%%= foo %>` has a `%>` later in the line, so misreading the
+  escape changed nothing), an **unobservable mutation** (`export` is a `SyntaxError` in every wrapper, so
+  that skip is an optimisation, not a guard), and a **selftest that read the real repo tree** while
+  running against a mutated copy in a temp directory — so every mutation was "caught" by a traceback
+  instead of by its fixture. **A crash is not a verdict.**
 
 ### 2026-07-30 (release v1.39.0)
 
