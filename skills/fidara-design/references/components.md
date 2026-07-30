@@ -76,10 +76,58 @@ DEFAULTS = { variant: :primary, size: :md }
   **Imposter** positioning + `bg-popover text-popover-foreground rounded-lg shadow-lg` (card-class
   surface → the `rounded-lg` token = 12px, not an arbitrary value); backdrop
   `bg-fm-navy/50 backdrop-blur-sm`. **Sizes:** `sm max-w-md · md max-w-lg · lg max-w-2xl · xl max-w-4xl · full`.
-  Body `max-h-[70vh] overflow-y-auto`. Slots: `title`, `body`, `actions` (a `cluster`).
+  Body `max-h-[70vh] overflow-y-auto`. **Slots: `title` and `actions` (a `cluster`) — there is NO
+  `body` slot;** the body is the block content, same as Alert. This line advertised one for three
+  releases, and `m.with_body` raises `NoMethodError` — the #168/#182 class, in prose the call-site
+  linter cannot reach.
+- **`placement:`** picks centre or an edge: `:center` (default) · `:left` · `:right` · `:bottom`. An
+  **overlay drawer is this component with `placement: :right`** — one dialog implementation, one focus
+  trap, one `Esc`. A *persistent* sidebar is not a dialog and must not come through here.
 - **Behavior:** the `modal` Stimulus controller = focus-trap + focus-restore + Esc + backdrop-close +
   body-scroll-lock; `role="dialog" aria-modal="true" aria-labelledby`. Delete-confirmation = Modal(`sm`) recipe.
 - **Responsive:** wrapper `p-4 sm:p-0`; `full` → `max-w-full mx-4`.
+
+## Drawer / off-canvas
+- **No APG pattern of its own** (the index lists 30; Drawer and Off-canvas are not among them), so it
+  borrows the Dialog contract — and *which* contract depends on the shape, which is the whole point:
+- **Overlay drawer** = the documented `Ui::Modal` positioned to an edge. Full dialog contract:
+  `role="dialog" aria-modal="true"` + a name, initial focus inside, focus **restored to the trigger**,
+  `Esc` closes, background `inert`. Behavior: the `modal` controller (focus-trap + dismissable).
+- **Persistent / push drawer** — the ordinary app sidebar — is **not a dialog and must not trap focus**.
+  `<nav>` semantics, no `aria-modal`, no initial-focus steal, `sidebar` controller for collapse only.
+  Trapping is what *modality* requires, not a property of being a drawer.
+- **Responsive: render both, do not morph one.** Modal drawer below `lg`, persistent `<nav>` at `lg` and
+  up. Toggling `aria-modal` and a focus trap by media query means the role changes under the user.
+- Panel `bg-popover text-popover-foreground shadow-lg` at `max-w-sm`, full-height, `inset-y-0`;
+  backdrop as Modal's. Slots as Modal: `title`, `body`, `actions`.
+
+## Carousel
+- **An APG pattern** — cite it, and note that most of its machinery is *conditional*. Best default:
+  **do not auto-rotate.**
+- Container `role="region"` **or** `role="group"` (APG sanctions both; pick by the page's information
+  architecture) + **`aria-roledescription="carousel"`** and an accessible name.
+- Slides `role="group"` + `aria-roledescription="slide"` — **except the Tabbed variant**, where a slide is
+  `role="tabpanel"` with **no** `aria-roledescription`.
+- **Three variants:** *Basic* (prev/next only) · *Tabbed* (one tab stop, the Tabs pattern) · *Grouped*
+  (individually-tabbable pickers — APG calls it the least keyboard-friendly, so prefer Tabbed).
+- **Prev/Next always; play/pause, stop-on-hover and stop-on-focus only if it auto-rotates.**
+  Auto-rotation is governed by **WCAG 2.2.2** (not 2.3.3).
+- **Inactive slides leave the accessibility tree via `display:none`/`hidden`/`inert`** — `aria-hidden` is
+  not the technique APG names, and translating a slide off-screen while leaving it in the tree is the
+  failure the pattern warns about.
+- `Tab` is **not scripted** — it follows the page tab sequence. Behavior: the `carousel` controller.
+
+## Image gallery / Lightbox
+- **No APG pattern** — a *composition*, the same shape as the Command palette: the documented **Modal**
+  containing the documented **Carousel**. Both contracts apply unchanged; the thumbnail grid behind it
+  becomes `inert`, and closing returns focus to **the thumbnail that was clicked**.
+- Thumbnails are a `grid-auto` of buttons (not links) with `alt` text; the viewer is Modal `xl`/`full`
+  with prev/next and a counter.
+- **No auto-rotation, so no play/pause** — that follows from the Carousel conditional, not from a
+  lightbox rule.
+- **Two things here are ours, not the spec's:** using a dialog rather than a full-page route (decided,
+  because it keeps the grid's scroll position), and the dialog's name string — use the image's caption or
+  alt text so it names the picture rather than repeating "Image viewer".
 
 ## Dropdown / Menu
 - `Ui::Dropdown` (trigger slot + items). `role="menu"`/`menuitem`; trigger `aria-haspopup="menu" aria-expanded
@@ -120,7 +168,8 @@ DEFAULTS = { variant: :primary, size: :md }
   never prescribes it. Worth doing; do not cite it as required.
 
 ## Command palette
-- **Not an APG pattern** — 33 named patterns, none for a command palette. It is a *composition*, and
+- **Not an APG pattern** — the APG Patterns index lists **30**, none for a command palette (an
+  earlier note here said 33; it was wrong). It is a *composition*, and
   the sanctioned one is a **Modal dialog containing an editable Combobox with a listbox popup**: the
   documented `Modal` for the shell, the documented `Combobox` above for the filter and results.
 - **`aria-activedescendant` is effectively mandatory here**, even though both focus models are
@@ -243,9 +292,57 @@ DEFAULTS = { variant: :primary, size: :md }
 
 ## Toast / Notification
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
-  `border-l-4` intent + `shadow-md`, `role="status" aria-live="polite"` (errors `assertive`), auto-dismiss +
-  close (the `toast`/`dismiss` mixin). **Emit via Turbo Streams** to prepend into the container. One mechanism
+  `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
+- **`role="status"`, and nothing beside it.** The role already implies `aria-live="polite"` *and*
+  `aria-atomic="true"`; writing `aria-live` next to it is redundant, and writing bare `aria-live`
+  *instead* of it silently drops the atomic half — an announcement then carries only the changed
+  node. **Severity picks the role, not a second attribute:** a confirmation is `status`, a
+  time-critical failure is `role="alert"` (implicitly assertive, interrupts). Do not put
+  `aria-live="assertive"` on a `status`. Full rule in
+  [interaction-stimulus.md](interaction-stimulus.md#loading-progress-and-busy-state-95). **Emit via Turbo Streams** to prepend into the container. One mechanism
   (replaces the duplicate `_flash`/`_flash_messages` pair).
+
+## Progress bar
+- **`role="progressbar"` is an ARIA role, not an APG pattern** — there is no pattern page for it, so
+  the role definition is the authority. Prefer native `<progress>` where the styling allows it.
+- **Every value attribute is optional.** `aria-valuemin` defaults to `0`, `aria-valuemax` to `100`,
+  so a 0–100 bar needs only `aria-valuenow`. **Indeterminate = OMIT `aria-valuenow`** — never `0`
+  (that reads as "no progress made") and never `-1`.
+- **The accessible name is required and comes from the author** — `aria-label` or `aria-labelledby`
+  only. The role is *Children Presentational*, so the inner fill `<div>` is not exposed: text inside
+  it is not read. Use `aria-valuetext` for "Step 2 of 5", or a visible sibling label referenced by
+  `aria-labelledby`.
+- **Not focusable, no keyboard.** It reports; it does not accept input.
+- **Never `role="meter"` for progress.** `meter` is a static measurement (disk usage, score) and it
+  *requires* `aria-valuenow`; ARIA says authors SHOULD NOT use it to indicate progress.
+- `h-2 rounded-full bg-muted` track + `bg-primary` fill, `transition-[width]`. Announce
+  intermittently via the surrounding `role="status"`, not on every increment — the cadence is our
+  convention, not a spec figure.
+
+## Skeleton / loading placeholder
+- **No role, no APG pattern, no W3C source at all** — this is convention, and doctrine says so
+  rather than dressing it as spec. Prefer it over a spinner **whenever the content's size is known**:
+  it reserves the space, so nothing shifts when content arrives (CLS).
+- **Hide the shapes, announce once.** `aria-hidden="true"` on every placeholder block plus **one**
+  `role="status"` message ("Loading invoices…"). Announcing forty placeholder rectangles is worse
+  than announcing nothing.
+- `aria-busy="true"` on the region until content arrives — correct to set, but **never the only
+  mechanism**: it is advisory (assistive tech *MAY* wait) and poorly supported. `aria-hidden` does
+  the actual work.
+- `animate-pulse rounded-md bg-muted` at the content's size. Suppress the animation under
+  `prefers-reduced-motion` — worth doing, but the SC is **2.2.2 Pause/Stop/Hide**, conditional on
+  five-plus seconds *and* parallel content, not 2.3.3 (which covers interaction-triggered motion).
+- The natural pairing is a **Turbo frame** with `loading="lazy"`, the skeleton as the frame's
+  placeholder content.
+
+## Spinner / busy indicator
+- **A spinner is not a progress bar.** If the proportion is unknown, `role="progressbar"` promises a
+  value it cannot supply — use `role="status"` with a text message and reserve `progressbar` for when
+  you genuinely know the fraction.
+- Use it only when the content's size is **unknown**; if it is known, use the Skeleton above.
+- A Lucide `loader-circle` with `animate-spin`, `aria-hidden="true"` (the icon is decoration), and
+  the announcement in a sibling `role="status"` — never `aria-label` on the spinning icon.
+- Same `aria-busy` + reduced-motion notes as Skeleton.
 
 ## Tooltip / Popover
 - `role="tooltip"` + `aria-describedby`; shows on **focus and hover** (keyboard parity), Esc dismiss.

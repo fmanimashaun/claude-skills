@@ -330,14 +330,25 @@ same recipe + a trailing chevron.
 module Ui
   class ModalComponent < ViewComponent::Base
     renders_one :title
-    renders_one :actions
+    renders_one :actions   # the BODY is the block content, not a slot — same shape as Alert
     SIZE = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl", full: "max-w-full mx-4" }.freeze
-    def initialize(size: :md, labelledby: "modal-title")
-      @size, @labelledby = size.to_sym, labelledby
+    # A DRAWER IS THIS COMPONENT AT AN EDGE (decision, no upstream): one dialog implementation, one
+    # focus trap, one Esc handler. `placement:` is the whole difference, so a drawer never needs a
+    # second component -- and never needs a caller passing raw positioning classes, which is what an
+    # invented `class:` argument would have meant. NOTE: only the OVERLAY drawer is this component.
+    # A persistent push sidebar is not a dialog at all and must not come through here.
+    PLACEMENT = {
+      center: "imposter",
+      left:   "fixed inset-y-0 left-0 h-full rounded-none",
+      right:  "fixed inset-y-0 right-0 h-full rounded-none",
+      bottom: "fixed inset-x-0 bottom-0 w-full rounded-t-lg rounded-b-none",
+    }.freeze
+    def initialize(size: :md, labelledby: "modal-title", placement: :center)
+      @size, @labelledby, @placement = size.to_sym, labelledby, placement.to_sym
     end
     # A modal is a card-class surface → `rounded-lg` (= --radius-lg = 12px via the token),
     # NOT an arbitrary `rounded-[12px]`. Stay in the radius vocabulary (SKILL non-negotiable).
-    def panel = ["imposter bg-popover text-popover-foreground rounded-lg shadow-lg w-full", SIZE.fetch(@size)].join(" ")
+    def panel = [PLACEMENT.fetch(@placement), "bg-popover text-popover-foreground rounded-lg shadow-lg w-full", SIZE.fetch(@size)].join(" ")
     # Lucide via lucide-rails; NO px size — `with-icon` sizes it to 1em and `currentColor`
     # inherits (CSS overrides the gem's width/height attrs). See "Icons (Lucide)" at the top.
     def close_icon = helpers.lucide_icon("x")
@@ -762,16 +773,197 @@ landmark noise outweighs the structure.
 ## Toast — `app/components/ui/toast_component.rb`
 
 ```erb
-<%# container in the layout; toasts appended via Turbo Stream. toast_controller auto-dismisses %>
-<div id="toasts" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none" style="--space: var(--space-2xs)"></div>
+<%# Container in the layout — PERSISTENT and EMPTY, and it is the ONE place bare aria-live is right. %>
+<%# aria-atomic defaults to false there, which is what you want for insertions: atomic=true would %>
+<%# re-announce every toast already on screen. It matches page-anatomies.md's layout snippet; the two %>
+<%# used to disagree about whether this element carried aria-live at all. %>
+<div id="toasts" aria-live="polite" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none" style="--space: var(--space-2xs)"></div>
 
-<%# a toast (turbo_stream.prepend "toasts") — role/status live region + dismiss %>
+<%# A toast (turbo_stream.prepend "toasts") — the ROLE carries the severity, and nothing beside it: %>
+<%# `status` already implies aria-live="polite", `alert` already implies aria-live="assertive", so %>
+<%# writing aria-live here restates the role at best and contradicts it at worst. %>
 <div class="box bg-card text-card-foreground rounded-lg border border-l-4 border-<%= intent %> shadow-md pointer-events-auto"
-     role="<%= intent == :error ? 'alert' : 'status' %>" aria-live="<%= intent == :error ? 'assertive' : 'polite' %>"
+     role="<%= intent == :error ? 'alert' : 'status' %>"
      data-controller="toast" data-toast-timeout-value="5000">
   <div class="cluster" style="--justify: space-between"><span><%= message %></span>
     <button data-action="toast#close" aria-label="Dismiss" class="min-h-touch"><span class="sr-only">Dismiss</span>×</button></div>
 </div>
+```
+
+## Drawer, Carousel and Lightbox — markup, because the roles are what gets wrong
+
+No new ViewComponent classes: the drawer **is** `Ui::Modal` positioned to an edge, and the lightbox is
+that Modal containing the carousel markup below. What needs writing down is the role wiring.
+
+```erb
+<%# ---- DRAWER, overlay: the documented Modal, edge-positioned. Full dialog contract. ---- %>
+<%= render Ui::ModalComponent.new(size: :sm, placement: :right) do |m| %>
+  <% m.with_title { "Filters" } %>
+  <%= render "products/filter_form" %><%# the body is BLOCK CONTENT — there is no `body` slot %>
+<% end %>
+
+<%# ---- DRAWER, persistent: NOT a dialog. No role="dialog", no aria-modal, no focus trap. ---- %>
+<%# The `sidebar` controller collapses it; it never traps focus, never steals initial focus. %>
+<nav data-controller="sidebar" aria-label="Main" class="hidden lg:block w-64 shrink-0">
+  <%= render Layout::SidebarComponent.new %>
+</nav>
+
+<%# Responsive: render BOTH and let the breakpoint choose. Do not toggle aria-modal by media query — %>
+<%# that changes which contract applies to the same element while the user is inside it. %>
+
+<%# ---- CAROUSEL, Basic variant. region OR group on the container; group + slide on each slide. ---- %>
+<%# No auto-rotation here, so NO play/pause button and no stop-on-hover/focus is required. %>
+<section role="region" aria-roledescription="carousel" aria-label="Featured products"
+         data-controller="carousel" class="relative">
+  <div class="cluster" style="--justify: space-between">
+    <button data-action="carousel#prev" aria-label="Previous slide" class="min-h-touch">
+      <span class="with-icon"><%= lucide_icon("chevron-left") %></span>
+    </button>
+    <button data-action="carousel#next" aria-label="Next slide" class="min-h-touch">
+      <span class="with-icon"><%= lucide_icon("chevron-right") %></span>
+    </button>
+  </div>
+
+  <%# Inactive slides leave the a11y tree via `hidden` — NOT aria-hidden, and never by translating %>
+  <%# them off-screen, which is the failure APG actually warns about. %>
+  <% products.each_with_index do |product, i| %>
+    <div role="group" aria-roledescription="slide"
+         aria-label="<%= i + 1 %> of <%= products.size %>"
+         data-carousel-target="slide" <%= "hidden" unless i.zero? %>>
+      <%= render Ui::CardComponent.new do %><%= product.name %><% end %>
+    </div>
+  <% end %>
+</section>
+
+<%# Tabbed variant differs in ONE way that is easy to miss: a slide becomes role="tabpanel" and %>
+<%# DROPS aria-roledescription entirely. Do not carry "slide" over. %>
+<div role="tabpanel" aria-label="1 of 3" data-carousel-target="slide">…</div>
+
+<%# ---- LIGHTBOX: the Modal containing the carousel. Thumbnails are BUTTONS, not links. ---- %>
+<%# Closing returns focus to the thumbnail that was clicked — the invoking element, not the grid. %>
+<%# The dialog's name is the image's own caption, so it names the picture rather than repeating %>
+<%# "Image viewer" on every open. Using a dialog at all is OUR decision (it keeps scroll position), %>
+<%# not a spec requirement — no APG pattern covers lightboxes. %>
+<div class="grid-auto">
+  <% images.each do |image| %>
+    <button data-action="lightbox#open" data-lightbox-id-param="<%= image.id %>" class="frame">
+      <%= image_tag image.thumb_url, alt: image.caption %>
+    </button>
+  <% end %>
+</div>
+```
+
+## Progress — `app/components/ui/progress_component.rb`
+
+`role="progressbar"` is *Children Presentational*, so nothing inside the bar is exposed — the name has
+to come from the author. That is the whole reason this is a component and not a `div`: it is the one
+place the name/`aria-valuetext` wiring can be got right once.
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class ProgressComponent < ViewComponent::Base
+    SIZE = { sm: "h-1", md: "h-2", lg: "h-3" }.freeze
+
+    # value: nil == INDETERMINATE. `aria-valuenow` is then OMITTED, never 0 or -1 -- 0 reads as
+    # "no progress made", which is a different claim from "unknown".
+    # label: is REQUIRED. The role's name comes From: author only, and the fill div's text is not
+    # exposed, so without it the bar is anonymous. Raise rather than ship a nameless progressbar.
+    def initialize(label:, value: nil, min: 0, max: 100, value_text: nil, size: :md, **attrs)
+      raise ArgumentError, "progressbar needs an author-supplied label" if label.blank?
+      @label, @value, @min, @max = label, value, min, max
+      @value_text, @size, @attrs = value_text, size.to_sym, attrs
+    end
+
+    def call
+      tag.div(**aria, **@attrs, class: track_classes) do
+        tag.div(class: "h-full rounded-full bg-primary transition-[width] duration-300",
+                style: "width: #{fill_percent}%")
+      end
+    end
+
+    private
+
+    def aria
+      base = { role: "progressbar", "aria-label": @label }
+      # min/max default to 0/100 in the spec -- emit them only when they differ, so the markup does
+      # not assert values it is merely restating.
+      base["aria-valuemin"] = @min unless @min.zero?
+      base["aria-valuemax"] = @max unless @max == 100
+      base["aria-valuenow"] = @value if determinate?          # OMITTED when indeterminate
+      base["aria-valuetext"] = @value_text if @value_text     # e.g. "Step 2 of 5"
+      base
+    end
+
+    def determinate? = !@value.nil?
+
+    def track_classes
+      ["w-full overflow-hidden rounded-full bg-muted", SIZE.fetch(@size),
+       ("animate-pulse" unless determinate?), @attrs.delete(:class)].compact.join(" ")
+    end
+
+    def fill_percent
+      return 100 unless determinate?   # indeterminate: a full pulsing track, no value claimed
+      span = (@max - @min).to_f
+      span.zero? ? 0 : (((@value - @min) / span) * 100).clamp(0, 100).round(2)
+    end
+  end
+end
+```
+
+## Skeleton and Spinner — recipes, not components
+
+Neither has state, slots, or behavior, so a ViewComponent would wrap a `div` in ceremony. They are
+recipes, like the Divider. **Which one to reach for is decided by one question: is the content's size
+known?** Known → skeleton (it reserves the space, so nothing shifts). Unknown → spinner.
+
+```erb
+<%# SKELETON -- shapes are aria-hidden; ONE status message for the whole block. %>
+<%# aria-busy is correct but advisory (AT *may* wait) and poorly supported, so aria-hidden on the %>
+<%# shapes is what actually stops forty rectangles being announced. %>
+<div id="invoices" aria-busy="true">
+  <p role="status" class="sr-only">Loading invoices…</p>
+  <div aria-hidden="true" class="stack">
+    <% 5.times do %>
+      <div class="flex items-center gap-4">
+        <div class="size-10 shrink-0 animate-pulse rounded-full bg-muted"></div>
+        <div class="w-full stack" style="--stack-space: 0.5rem">
+          <div class="h-4 w-1/3 animate-pulse rounded-md bg-muted"></div>
+          <div class="h-3 w-2/3 animate-pulse rounded-md bg-muted"></div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<%# The natural home for it: a lazy Turbo frame's placeholder content. %>
+<%= turbo_frame_tag "invoices", src: invoices_path, loading: :lazy do %>
+  <%= render "invoices/skeleton" %>
+<% end %>
+
+<%# SPINNER -- the icon is DECORATION (aria-hidden), the words live in the status region. %>
+<%# Never aria-label the spinning icon: that names the graphic, not the state. %>
+<%# The WRAPPER carries animate-spin and aria-hidden, per the one call-site shape above: %>
+<%# lucide_icon takes no size:/class:, `with-icon` makes the svg 1em/currentColor, and here that %>
+<%# is what you want -- the spinner sizes to the words beside it. Add `size-4` to the wrapper %>
+<%# (never to lucide_icon) only for a standalone spinner with no adjacent text to size against. %>
+<div role="status" class="flex items-center gap-2 text-muted-foreground">
+  <span class="with-icon animate-spin" aria-hidden="true"><%= lucide_icon("loader-circle") %></span>
+  <span>Processing payment…</span>
+</div>
+
+<%# NOT this: role="progressbar" with no aria-valuenow claims a value it cannot supply. If the %>
+<%# proportion IS known, use Ui::ProgressComponent; if it is not, use the status region above. %>
+```
+
+Suppress both animations under reduced motion. Worth doing — but the SC is **2.2.2 Pause/Stop/Hide**
+(conditional: over five seconds *and* parallel content), not 2.3.3, which covers motion from
+*interaction*. Do not cite 2.3.3 for a loading animation.
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse, .animate-spin { animation: none; }
+}
 ```
 
 ## Tooltip — `app/components/ui/tooltip_component.rb`
@@ -853,6 +1045,10 @@ Note the slot-setter names — `renders_many :items` gives the **singular** `wit
   <% h.with_actions { render Ui::ButtonComponent.new(variant: :primary) { "New invoice" } } %>
   <% h.with_meta { "Updated #{l invoice.updated_at, format: :short}" } %>
 <% end %>
+
+<%# Progress — label: is REQUIRED (name From: author). value: nil == indeterminate %>
+<%= render Ui::ProgressComponent.new(label: "Import progress", value: 40, value_text: "Step 2 of 5") %>
+<%= render Ui::ProgressComponent.new(label: "Uploading", size: :sm) %><%# no value: indeterminate %>
 
 <%# Media object — media / body / trailing %>
 <%= render Ui::MediaObjectComponent.new(size: :md) do |m| %>

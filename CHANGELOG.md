@@ -7,6 +7,29 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-30 — the icon rule flagged its own doctrine, and a promoted row kept its workaround
+
+- **`lint_self_consistency.py`: the icon rule flagged prose that stated the icon rule** (#95). A
+  paren-less `lucide_icon` scan read the words after the call as its arguments, so the comment
+  *"lucide_icon takes no `size:`/`class:`"* — written to warn readers off exactly that — became a
+  finding. The rule now requires the text to **look like an argument list** (a literal, or an identifier
+  followed by a comma) before inspecting it. This is the second instance of the class in this file: the
+  same false positive was fixed in `unbounded-issue-query`, where a CHANGELOG mention read as an
+  invocation. **Near-miss fixtures pin both edges** — prose is silent, while a call whose first argument
+  is a variable or a symbol is still flagged, so the carve-out cannot become a hole.
+- **NEW guard — a promoted coverage row must not keep its "until the entry lands" fallback** (#95).
+  `BUILD` holds the nearest safe workaround for a `needs doctrine` row. Once the row is `documented`
+  that text tells readers to build the workaround instead of using the doctrine, and it is **invisible
+  in the rendered table** (documented rows print `—` in that column), so nothing surfaced it. The
+  Combobox entry outlived its own promotion this way, still saying *"use the documented Select until the
+  entry lands"* after the Combobox entry had shipped. Deleted, and the guard keys on **status**, not on
+  the name appearing — pinned by a near-miss fixture where a `needs doctrine` row legitimately carries
+  one.
+- **`mutation_check.py`: 19 → 23 mutations**, covering both new guards and both of their carve-outs.
+  Writing them found a third defect of the same family: the new fixture's `build=` argument was accepted
+  by `expect_error` and then **not passed through** to the guard, so the fixture ran against the real
+  table and could not have failed. The selftest caught it, which is the harness doing its job.
+
 ### 2026-07-30 — the verification discipline becomes enforced rather than remembered (#233)
 
 Fifteen defects surfaced in one session: eleven predated it, four were mine. **Two of my four were
@@ -1091,6 +1114,130 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.20.0 — 2026-07-30
+
+- **Drawer, Carousel and Image gallery/Lightbox are documented** (#95). `coverage.md` **12 → 9**. The
+  batching premise **held this time**: the APG index lists **Dialog (Modal)** and **Carousel**, the
+  lightbox is their composition (the shape already precedented by the Command palette), so all three drew
+  on one body of evidence. Verdict on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95); sources
+  [Dialog (Modal)](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/),
+  [Carousel](https://www.w3.org/WAI/ARIA/apg/patterns/carousel/),
+  [ARIA 1.2](https://www.w3.org/TR/wai-aria-1.2/#aria-modal) (REC, 6 June 2023).
+  - **The drawer is ONE row with TWO contracts, and the old guidance was harmful applied to the wrong
+    one.** `coverage.md` said *"the documented Modal, positioned to an edge — keep its focus trap"* with
+    no qualifier. An **overlay** drawer is a modal dialog and must trap focus; a **persistent push**
+    sidebar is **not a dialog** — it is never overlaid, so it fails APG's own definition — and must NOT
+    trap focus, take `aria-modal`, or steal initial focus. **"A drawer must trap focus" is false as
+    stated:** ARIA 1.2 scopes focus management to *modal* dialogs specifically. Responsive shape: render
+    both and let the breakpoint choose; never toggle `aria-modal` by media query.
+  - **Three carousel claims we would have got wrong.** The container is `role="region"` **or**
+    `role="group"` (APG sanctions both), not `group` only. A **Tabbed** slide is `role="tabpanel"` and
+    **drops `aria-roledescription`** entirely. And there are **three** variants — Basic, Tabbed, Grouped
+    — not two.
+  - **Most carousel machinery is conditional.** Prev/Next always; play/pause, stop-on-hover and
+    stop-on-focus **only if it auto-rotates**. Auto-rotation is **WCAG 2.2.2**, not 2.3.3 — the same
+    distinction the skeleton contract draws. Default: do not auto-rotate.
+  - **"Slides must be `aria-hidden`" is REFUTED.** APG names no `aria-hidden` requirement and its own
+    reference implementation uses `display: none`. What the pattern warns against is a slide *"displayed
+    off-screen"* — still in the tree. So remove it by any mechanism; do not cite `aria-hidden` as the
+    technique.
+  - **Two lightbox claims are ours, and are labelled as ours.** That a lightbox is a dialog rather than a
+    full-page route is a **decision** (it keeps the grid's scroll position) — no pattern covers
+    lightboxes either way. So is the dialog's name string. The Dialog/Carousel keyboard models compose,
+    but that is **inference from reading both normative sections**, not a citable rule, and it says so.
+  - **`Ui::ModalComponent` gains `placement:`** (`:center` · `:left` · `:right` · `:bottom`) so a drawer
+    is the same component at an edge — one dialog implementation, one focus trap, one `Esc`. Architecture
+    decision; it replaces a call site that passed raw positioning classes through an argument the
+    component never accepted.
+
+- **FIX — `aria-modal="true"` promised background inertness the shipped code never delivered** (#95).
+  `interaction-stimulus.md` stated the focus-trap mixin *"mark[s] the background inert"*, and
+  `reference-implementation.md`'s `focus_trap.js` never did: it bound a Tab-cycling handler and locked
+  body scroll, nothing more. Tab-cycling confines *the tab sequence* — a virtual cursor, a rotor, a
+  swipe, or a click all still reached the background. ARIA 1.2 is explicit that this is worse than not
+  claiming modality: *"users of those technologies will experience severe negative ramifications if a
+  dialog is marked modal but does not behave as a modal for other users."* `focus_trap.js` now inerts
+  background siblings.
+  - **`inert` alone — not paired with `aria-hidden`.** `inert` removes the subtree from tab order,
+    hit-testing **and** the accessibility tree in one attribute; adding `aria-hidden` beside it is how a
+    background ends up hidden from AT while still clickable. The doctrine line said `inert`/`aria-hidden`
+    as if interchangeable.
+  - **Nesting-safe, because the dismissable-layer is a stack.** The trap restores only what *it* changed,
+    so an inner overlay closing cannot un-inert what an outer one still needs — and the same fix applies
+    to `body.overflow`, which previously unlocked scroll under a still-open outer modal.
+
+- **FIX — `components.md` advertised a Modal `body` slot that does not exist** (#95). The component
+  declares `renders_one :title` and `renders_one :actions` only; the body is block content, which is what
+  both real call sites in `crud-modal-pattern.md` do. `m.with_body` raises `NoMethodError` — the #168/#182
+  class exactly, surviving in **prose**, where the call-site linter cannot reach it. Found because the
+  linter rejected a call site written *from that prose*.
+
+- **FIX — the controller inventory conflated the two drawer shapes** (#95). It listed `sidebar` as
+  *"drawer + collapse"*, one controller for both — which is how a persistent sidebar acquires an
+  `aria-modal` and a focus trap it must never have. `sidebar` is collapse only; the overlay drawer is
+  `modal`. `carousel` is added as the one new controller these rows need.
+
+- **Loading, progress and busy state are documented — Progress bar, Skeleton, Spinner** (#95).
+  `coverage.md` **15 → 12**. One `role="progressbar"` contract, one skeleton recipe, one spinner recipe,
+  and the rule that decides between the last two: **is the content's size known?** Known → skeleton (it
+  reserves the space, so nothing shifts); unknown → spinner.
+  - **Change type: framework claim under the gate for Progress bar, architecture decision for the other
+    two.** APG has **no pattern for any of the three** — the Patterns index lists 30 and none is Progress
+    bar, Spinner, or Skeleton — so they are not one batch of evidence. Progress bar cites the normative
+    ARIA role
+    ([`progressbar`](https://www.w3.org/TR/wai-aria-1.2/#progressbar)); the other two have **no upstream
+    at all** and say so in the doctrine rather than implying one. Verdict recorded on
+    [#95](https://github.com/fmanimashaun/claude-skills/issues/95).
+  - **Every `progressbar` value attribute is optional** — no "Required States and Properties" row exists
+    for the role. `aria-valuemin` defaults to `0`, `aria-valuemax` to `100`, and **indeterminate means
+    OMITTING `aria-valuenow`**, never `0` (which reads as "no progress made" — a different claim from
+    "unknown"). The name is required and *From: author* only, and the role is **Children Presentational**,
+    so text inside the fill `<div>` is never exposed. `ProgressComponent` raises on a blank label.
+  - **`meter` must not be used for progress**, and the difference is not stylistic: `meter` *requires*
+    `aria-valuenow` where `progressbar` treats it as optional. Both ARIA and APG say authors SHOULD NOT
+    use `meter` to indicate progress.
+  - **Reduced motion for a shimmer is WCAG 2.2.2, not 2.3.3** — 2.3.3 covers motion from *interaction*
+    and a skeleton starts on load. 2.2.2 is also **conditional** (over five seconds *and* parallel
+    content), so a fast skeleton may not trigger it at all. Respect the preference regardless; do not
+    cite the wrong SC for it.
+  - **`aria-busy` is never the only mechanism.** It is advisory — assistive tech *MAY* wait — and poorly
+    supported. `aria-hidden` on the placeholder shapes is what stops forty rectangles being announced.
+
+- **FIX — a shipped `aria-live` that could announce a price without its label** (#95). v1.38.0's Cart
+  anatomy said to wrap the total in `aria-live="polite"`. Bare `aria-live` leaves `aria-atomic` at
+  **false**, and then only the changed node is presented — so a total going £48.00 → £52.00 announces as
+  **"52.00"**. Now `role="status"`, which carries polite **and** atomic implicitly. The Category row
+  shipped in the same release already said `role="status"`, so this was internally inconsistent on
+  arrival. Same fix applied to the basket count.
+  - **The Toast implementation and the layout snippet disagreed with each other**, and the sweep for the
+    class found it: `component-implementations.md`'s toast container had **no** `aria-live` while
+    `page-anatomies.md`'s had one, and the toast element carried `role` *and* a redundant `aria-live`
+    computed from the same condition. The container keeps `aria-live="polite"` (persistent and empty,
+    matching the pattern MDN describes) and the toast keeps only its **role**, which already implies the
+    live value.
+  - **A boundary is recorded rather than filled.** Bare `aria-live` IS correct on the toast *container*,
+    because `aria-atomic="false"` is what insertions want — atomic would re-announce every toast on
+    screen. And no source we could find states whether inserting an element that itself carries
+    `role="status"` announces on its own, so doctrine does not depend on it: the container is always
+    present, and the role expresses severity. Written down so the next reader does not "simplify" it on
+    the strength of an unverified negative.
+  - **The Toast row carried the same shape** — `role="status" aria-live="polite"` (redundant) with
+    "errors `assertive`" (which invites `aria-live="assertive"` on a `status` role). Severity picks the
+    **role**: confirmation → `status`, time-critical failure → `alert`.
+
+- **FIX — a false "(WAI-ARIA APG)" attribution over the whole behaviour table** (#95).
+  `interaction-stimulus.md`'s per-component contract sat under a heading claiming APG for every row,
+  including Toast, which has no pattern. Rows now state their own source — a pattern page, a role
+  definition, or "composed from primitives". Same defect class as citing a keybinding no spec mandates
+  (#142), applied to a heading instead of a row.
+
+- **FIX — "33 named patterns" was wrong; the APG Patterns index lists 30** (#95). Stated twice, in
+  `components.md` and in a `build_coverage.py` comment, both about the Command palette. The conclusion
+  drawn from it was right (no pattern for a command palette) but the figure was not; verified against
+  [the index](https://www.w3.org/WAI/ARIA/apg/patterns/). The v1.19.0 note below repeats the old figure
+  and is left as the historical record.
 
 ### 1.19.0 — 2026-07-30
 
@@ -2349,6 +2496,62 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.39.0)
+
+> ### `fidara-design` documents loading, progress and dialog state — and `aria-modal` finally tells the truth
+>
+> Progress bar, Skeleton, Spinner, Drawer, Carousel, Image gallery/Lightbox. `coverage.md` **15 → 9**
+> `needs doctrine` rows. Two live accessibility defects fixed in doctrine users already have: a modal that
+> claimed `aria-modal="true"` while its focus trap never made the background inert, and a cart total that
+> could announce as bare digits without its label.
+>
+> `fidara-design.skill` changed; the other three archives are byte-identical.
+
+- **`aria-modal="true"` promised background inertness the shipped code never delivered.** The doctrine
+  said the focus-trap mixin *"mark[s] the background inert"*; `focus_trap.js` bound a Tab-cycling handler
+  and locked body scroll, and nothing else. Tab-cycling confines *the tab sequence* — a virtual cursor, a
+  rotor, a swipe, or a click all still reached the background. ARIA 1.2 is blunt that this is worse than
+  not claiming modality: *"users of those technologies will experience severe negative ramifications if a
+  dialog is marked modal but does not behave as a modal for other users."* Now `inert` — alone, never
+  paired with `aria-hidden`, which is how a background ends up hidden from AT but still clickable — and
+  nesting-safe, since the trap restores only what it changed.
+- **A cart total could announce as "52.00" with no label.** Bare `aria-live="polite"` leaves
+  `aria-atomic` at **false**, so only the changed node is presented. `role="status"` carries polite *and*
+  atomic. The Category row shipped in v1.38.0 already said `role="status"`, so v1.38.0 contradicted
+  itself on arrival.
+- **The gate refuted four claims before they shipped, which is the point of having it.**
+  - *"A drawer must trap focus"* — false as stated. Trapping is what **modality** requires. An overlay
+    drawer is a modal dialog; a **persistent push sidebar is not a dialog at all** — never overlaid, so
+    it fails APG's own definition — and must not trap focus or take `aria-modal`. The previous guidance
+    said "positioned to an edge — keep its focus trap" with no qualifier.
+  - *"Carousel slides must be `aria-hidden`"* — refuted. APG names no such requirement and its own
+    reference implementation uses `display: none`; what it warns against is a slide *displayed
+    off-screen* while still in the accessibility tree.
+  - *"A lightbox must be a dialog rather than a full-page route"* — no upstream either way. Ours by
+    decision, and labelled as ours.
+  - *"Indeterminate progress is `aria-valuenow="0"`"* — no: **omit** the attribute. `0` reads as "no
+    progress made", a different claim from "unknown". Every `progressbar` value attribute is optional.
+- **Three corrections to what we would have written from memory.** A carousel container is
+  `role="region"` **or** `group`, not `group` only. A **Tabbed** slide is `role="tabpanel"` and *drops*
+  `aria-roledescription`. There are **three** variants (Basic, Tabbed, Grouped), not two — and play/pause,
+  stop-on-hover and stop-on-focus are required **only if it auto-rotates**.
+- **`meter` must never be used for progress.** Not stylistic: `meter` *requires* `aria-valuenow` where
+  `progressbar` treats it as optional, and both ARIA and APG say authors SHOULD NOT use it for progress.
+- **Reduced motion for a shimmer or a rotation is WCAG 2.2.2, not 2.3.3** — 2.3.3 covers motion from
+  *interaction*, and 2.2.2 is conditional on over five seconds *plus* parallel content. Respect the
+  preference regardless; do not cite the wrong SC for it.
+- **Two false citations of our own removed.** A `(WAI-ARIA APG)` heading claimed the spec for an entire
+  behaviour table including rows with no pattern, and **"33 named patterns" was wrong twice — the index
+  lists 30**. The conclusions drawn from the figure were right; the figure was invented precision.
+- **`components.md` advertised a Modal `body` slot that does not exist**, so `m.with_body` raised
+  `NoMethodError` for three releases — the #168/#182 class surviving in prose, where the call-site linter
+  cannot reach. `Ui::ModalComponent` also gains `placement:`, so an overlay drawer is the same component
+  at an edge: one dialog implementation, one focus trap, one `Esc`.
+- **Tooling:** the self-consistency linter's icon rule flagged **prose stating the icon rule**, fixed with
+  near-miss fixtures pinning both edges; a new guard stops a promoted coverage row keeping its
+  *"until the entry lands"* workaround (it was invisible in the rendered table, and the Combobox entry had
+  outlived its own promotion this way); `mutation_check` **19 → 23**.
 
 ### 2026-07-30 (release v1.38.0)
 

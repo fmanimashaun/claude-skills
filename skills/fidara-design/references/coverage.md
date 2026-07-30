@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 54 |
+| — `documented` | 60 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 15 |
+| — `needs doctrine` (tracked writing gap) | 9 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -51,21 +51,27 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Button | component | ✓ | ✓ | any action; `primary` once per view, `destructive` only behind a confirm | — |
 | Button group | component | ✓ | ✓ | 2–5 related actions, or a single-select filter — `role=group` vs `radiogroup` | actions = role=group; single-select = role=radiogroup — different elements, not variants |
 | Card | component | ✓ | ✓ | a bounded surface in a dashboard grid, or a detail panel; also the stat-tile base | — |
+| Carousel / Slider | component | — | ✓ | prefer not to — if a client insists, a marketing surface only | content behind a timed or manual slide is content most users never see, and the pattern is a persistent a11y liability. This is a doctrine position, not a backlog item — if a client insists, build it in the app against the a11y contract rather than blessing it as a kit primitive |
 | Checkbox | component | ✓ | ✓ | independent booleans; multiples need a fieldset with a legend | — |
 | Combobox / Autocomplete | component | ✓ | — | an authenticated app screen, inside one of the three shells | — |
 | Description list | component | ✓ | — | read-only attribute/value pairs on a detail or settings screen | blank values render an em dash + sr-only 'not set', never an empty <dd> |
+| Drawer / off-canvas | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | ONE ROW, TWO CONTRACTS: the overlay drawer is a modal dialog and traps focus; the persistent push drawer is not a dialog and must not |
 | Dropdown / Menu | component | ✓ | ✓ | overflow actions and scope pickers; not for navigation between pages | — |
 | Empty state | component | ✓ | — | the zero-row branch of every index — required, not optional | — |
 | Form layout | component | ✓ | — | every form — simple_form owns the field anatomy app-wide | simple_form owns every form; the wrapper anatomy is defined once in an initializer |
 | Heading blocks (page / section / card) | component | ✓ | ✓ | the top of every page, section and card — the scale prop picks the level, so never style a heading down | one anatomy; scale is the only axis, so a card heading can never be an h2 styled small |
+| Image gallery / Lightbox | component | — | ✓ | media-heavy surfaces: portfolio, product media, docs | focus trapping, keyboard paging and zoom are a large surface, and no current family has a media-heavy surface |
 | Logo / Brand mark | component | — | — | shell headers, auth screens and marketing surfaces | ours, not from either corpus: clear-space 1.5×, min 20px / lockup 140px (brand.md) |
 | Media object | component | ✓ | — | any avatar/icon + text row: list items, feeds, comments, notifications | never stacks — the side-by-side relationship IS the pattern |
 | Modal / Dialog | component | ✓ | ✓ | a focused create/edit/confirm step; never for content a page can hold | — |
 | Navigation — header / navbar | component | ✓ | ✓ | the app's top bar in the stacked shell | — |
 | Navigation — sidebar / vertical | component | ✓ | ✓ | the app's primary rail in the sidebar/multi-column shells | — |
 | Pagination | component | ✓ | ✓ | any index over ~25 rows; pair with the Table | — |
+| Progress bar | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | the Flowbite audit surfaced LABELLED progress bars specifically |
 | Radio group | component | ✓ | ✓ | one choice from 2–5 visible options, in a fieldset | — |
 | Select | component | ✓ | ✓ | a closed set of ~2–10 options; above that reach for the combobox | — |
+| Skeleton / loading placeholder | component | — | ✓ | a Turbo frame whose content size IS known — preferred over a spinner because it does not shift layout | Turbo frame loading states need this; without it agents invent spinners |
+| Spinner / busy indicator | component | — | ✓ | a region whose content is loading and has no known size | — |
 | Table (CRUD) | component | ✓ | ✓ | the index of a resource — sortable headers, row actions, select-all | — |
 | Tabs | component | ✓ | ✓ | switching views of the SAME resource; never as page navigation | — |
 | Text input | component | ✓ | ✓ | single-line entry; the shipped wrapper supplies label, hint and error | floating label is a variant, not a component |
@@ -161,17 +167,11 @@ replace that approach with a proper entry.
 | Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |
 |---|---|---|---|---|---|---|
 | Calendar / Date picker / Time picker | component | ✓ | ✓ | #95 | `input[type=date|time]` via simple_form, plus Rails date helpers — styled with the shipped field anatomy so it matches everything else | an authenticated app screen, inside one of the three shells |
-| Carousel / Slider | component | — | ✓ | #95 | `grid-auto`, or a horizontal scroller with visible affordances and real focus order | prefer not to — if a client insists, a marketing surface only |
 | Copy to clipboard | component | — | ✓ | #95 | a Button plus a Toast confirmation; the clipboard call is a small controller | next to an API key, invite link or ID |
-| Drawer / off-canvas | component | ✓ | ✓ | #95 | the documented Modal, positioned to an edge — keep its focus trap | an authenticated app screen, inside one of the three shells |
 | File upload / Dropzone | component | — | ✓ | #95 | the documented file field; add drag-and-drop as an enhancement, never as the only path | an authenticated app screen, inside one of the three shells |
-| Image gallery / Lightbox | component | — | ✓ | #95 | `grid-auto` of `frame` thumbnails linking to the full image | media-heavy surfaces: portfolio, product media, docs |
 | Mega menu / Flyout | component | ✓ | ✓ | #90 | the documented Dropdown for now; hover-intent is what #90 must specify | a marketing surface (landing, pricing, about) — not app screens, which use the shell navigation |
-| Progress bar | component | ✓ | ✓ | #95 | `<progress>`, or a div with `role=progressbar` + `aria-valuenow/min/max` and a visible label | an authenticated app screen, inside one of the three shells |
 | Range input | component | — | ✓ | #95 | `<input type=range>` in the documented field wrapper; leave the native track | an authenticated app screen, inside one of the three shells |
 | Reviews + Rating | component | ✓ | ✓ | #91 | Media object rows; the rating needs an accessible name ("4 out of 5"), not stars alone | a commerce surface (catalog, product, cart, checkout) |
-| Skeleton / loading placeholder | component | — | ✓ | #95 | a muted `box` at the content's size, suppressed under `prefers-reduced-motion` | a Turbo frame whose content size IS known — preferred over a spinner because it does not shift layout |
-| Spinner / busy indicator | component | — | ✓ | #95 | a Lucide spinner with `aria-busy` on the region it replaces; honour reduced-motion | a region whose content is loading and has no known size |
 | Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
 | Video player | component | — | ✓ | #95 | native `<video controls>` inside a `frame` for ratio | marketing and docs surfaces; inside a `frame` so layout never shifts |
 | Inline link | primitive | — | ✓ | #95 | the Button `link` variant's classes on an `<a>`, until a token exists | body copy and prose; for actions use the Button `link` variant |
