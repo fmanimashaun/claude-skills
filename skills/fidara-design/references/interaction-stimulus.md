@@ -8,8 +8,14 @@ mixins**, then compose them — don't re-solve accessibility per component.
 ## The four reusable mixins (build once, reuse everywhere)
 
 1. **list-navigation** (roving tabindex) — one focusable item at a time; ↑/↓ (or ←/→) move,
-   Home/End jump, typeahead, Enter/Space activate. Shared by menu, tabs, listbox/combobox,
-   radio-group. Keeps `aria-activedescendant` when focus must stay in an input (combobox).
+   Home/End jump, Enter activates. Shared by menu, tabs, listbox, radio-group, and the
+   **select-only** combobox. Keeps `aria-activedescendant` when focus must stay in an input.
+   - **`Space` and typeahead are NOT editable-combobox behaviours.** Neither appears in APG's
+     normative Keyboard Interaction section for a combobox; both come from the *select-only*
+     variant, where there is no text field for `Space` to type into. In an **editable** combobox
+     `Space` types a space, and typed characters drive *filtering* rather than a
+     typeahead-jump — a different mechanism. Applying the mixin wholesale to an editable
+     combobox produces a control that swallows the space bar.
 2. **focus-trap + restore** — on open, move focus in and cycle first/last on Tab; on close,
    **restore focus to the trigger**; mark the background inert (`inert`/`aria-hidden`) and lock
    body scroll. Used by modal + drawer only (never trap outside a true modal).
@@ -29,13 +35,44 @@ mixins**, then compose them — don't re-solve accessibility per component.
 | Tabs | `role=tablist/tab/tabpanel` `aria-selected aria-controls` | ←→ (Home/End) | list-nav |
 | Tooltip | `role=tooltip` `aria-describedby` | show on focus+hover · Esc | anchored + dismissable |
 | Popover | trigger `aria-expanded aria-controls` | Esc · focus moves in | anchored + dismissable + focus-trap(soft) |
-| Combobox | `role=combobox aria-expanded` + listbox `aria-activedescendant` | ↓ into list · ↑↓ · Enter · Esc | list-nav + anchored |
+| Combobox | input `role=combobox aria-expanded aria-controls` (**both** required); listbox popup `aria-activedescendant` | ↓ into list · ↑↓ in list · Enter · Esc | list-nav + anchored |
 | Disclosure (collapse) | trigger `<button aria-expanded>` + `aria-controls`; panel `hidden` | Enter **and** Space toggle | disclosure |
 | Accordion | as Disclosure, **plus** header button wrapped in a heading with `aria-level` | Enter/Space · Tab/Shift+Tab between headers | disclosure(group:) |
 | Toast | `role=status`/`alert` `aria-live` | focusable dismiss | dismiss |
 
 Non-negotiables: visible `focus-visible` ring meeting contrast; keyboard reaches everything
 the mouse can; restore focus to the trigger on close; announce async changes via a live region.
+
+### Combobox — the two corrections that matter, and a version trap (#229)
+
+**`aria-controls` is required, not decorative.** ARIA 1.2 lists exactly **two** required states for
+the `combobox` role and this is one of them: *"Authors **MUST** set `aria-controls` on a combobox
+element to a value that refers to the combobox popup element."* Our behaviour table shipped with only
+`aria-expanded` while `forms.md` had both — two files contradicting each other on load-bearing wiring.
+
+**Both focus models are sanctioned.** ARIA 1.2 presents moving real DOM focus into the popup as the
+base case and `aria-activedescendant` as an alternative *"in lieu of"* it. We default to
+`aria-activedescendant` for a listbox popup — focus stays in the input so typing keeps filtering — but
+it is not the only conformant way, and for a **dialog** popup it is *disallowed*: APG, *"Unlike other
+combobox popups, dialogs do not support `aria-activedescendant` so DOM focus moves into the dialog."*
+
+**Keyboard: required and optional are mixed, so do not present them as one list.** `↓` from the input
+into the popup, `↑`/`↓` within a listbox popup, `Enter`, and `Esc`-dismisses are **required**. `↑` from
+the input jumping to the last item, `Alt+↓`/`Alt+↑`, `Home`/`End` in a listbox or grid popup, and
+`PageUp`/`PageDown` (grid only) are **optional** — `PageUp`/`PageDown` are not in the listbox-popup
+section at all. `Home`/`End` are required only for a **tree** popup.
+
+**`→`/`←` inside an editable combobox move the text cursor**, they do not navigate options: *"Right
+Arrow: If the combobox is editable, returns focus to the combobox without closing the popup and moves
+the input cursor one character to the right."* Treating all four arrows as list navigation is
+non-conformant for an editable combobox.
+
+**Version trap — three models, not two.** ARIA 1.0 referenced the popup with `aria-owns`; ARIA 1.1
+required a **non-focusable wrapper** owning a textbox plus popup; **ARIA 1.2 (current)** puts
+`role="combobox"` on the input itself with `aria-controls`. ARIA 1.2 says plainly that *"a combobox
+following the ARIA 1.1 combobox specification will no longer conform with the ARIA specification."*
+Our doctrine is on the current model — a wrapper `<div role="combobox">` with `aria-owns` is the
+superseded one, so do not "correct" it back from an older tutorial.
 
 ### Disclosure — the full contract (#142)
 
