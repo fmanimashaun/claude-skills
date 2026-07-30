@@ -70,6 +70,14 @@ session grants zero admin access** structurally, rather than because a `before_a
 check. Keep the tenant concern off `ApplicationController` so the admin and public planes cannot
 inherit it by accident.
 
+**"Its own stack" means its own session, cookie and identity model — not "no shared code may precede
+it."** A single unified sign-in front door in front of both planes is compatible with this, and is what
+we actually run: it authenticates across realms, **holds no session of its own**, and hands off to the
+plane, which starts its **own** host-scoped session. The isolation invariant survives because there are
+still two identity models, two session tables and two cookies — never one session gated by a role flag.
+The pattern, and the reason a cookie cannot simply be shared across the hosts, is in
+[auth-security.md](auth-security.md#cross-plane-sign-in--one-front-door-per-plane-sessions-98).
+
 ### Do not trust the session value blindly
 
 The session is server-controlled, which is most of why this scheme is safe — but the id in it still has
