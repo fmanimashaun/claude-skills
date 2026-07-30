@@ -88,6 +88,27 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Behavior:** `dropdown` controller built on the **list-navigation** + **dismissable-layer** + **anchored-position**
   mixins (roving tabindex, Esc/outside-click, placement). Style open state via `data-[state=open]`.
 
+## Disclosure / Accordion
+- `Ui::Disclosure` (trigger slot + panel slot) and `Ui::Accordion` (renders many `Ui::Disclosure`,
+  `group:` set). Trigger is a real `<button aria-expanded>` + `aria-controls`; the panel carries
+  **`hidden` when collapsed** — `aria-expanded="false"` alone leaves the content in the accessibility
+  tree and in the tab order, so both are required, not either.
+- **Accordion adds a heading wrapper:** the trigger button sits inside `h2`–`h6` (or
+  `role="heading" aria-level`), and that heading contains **only** the button — a badge or overflow
+  menu beside the header goes *outside* it. Panel gets `role="region"` + `aria-labelledby` **only up
+  to ~6 simultaneously-expandable panels**; past that the landmark noise is worse than the structure.
+- **Two modes:** independent collapse, and single-open collapsible (`group:`). We do **not** ship
+  APG's always-one-expanded variant — see `interaction-stimulus.md` for why.
+- Panel `border-t border-border`; trigger `flex w-full items-center justify-between py-4 text-left
+  font-medium`, chevron rotates via `data-[state=open]:rotate-180`. State styled off
+  `aria-expanded` / `data-[state=open]`, never a JS-toggled class.
+- **Behavior:** `disclosure` controller. `Enter` **and** `Space` activate; `Tab`/`Shift+Tab` move
+  between headers. Height transition respects `prefers-reduced-motion`, and the state change never
+  depends on an animation event firing. Full contract, and what is APG-required versus ours, in
+  [interaction-stimulus.md](interaction-stimulus.md#disclosure--the-full-contract-142).
+- **`<details>`/`<summary>`** is the cheaper option for simple, unanimated cases — but it cannot
+  animate open/close at all, so it is not a drop-in swap for the controller.
+
 ## Navigation (header + sidebar + tabs)
 - **App shell** = `Layout::Sidebar` (desktop rail `lg:w-72`, collapsible to `4rem`) + a sticky `header`
   (`h-14 border-b border-border`). Mobile: sidebar becomes an off-canvas **drawer** (`fixed inset-0

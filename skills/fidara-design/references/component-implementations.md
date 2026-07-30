@@ -381,6 +381,159 @@ end
 </div>
 ```
 
+## Disclosure / Accordion — `app/components/ui/disclosure_component.rb`
+
+The most frequent interactive pattern after plain links (732 instances in a 72-page corpus). Read
+[interaction-stimulus.md](interaction-stimulus.md#disclosure--the-full-contract-142) for what is
+APG-**required** here versus what is our own choice — the distinction is load-bearing, and the issue
+that requested this component got it wrong.
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class DisclosureComponent < ViewComponent::Base
+    renders_one :trigger_content
+    renders_one :panel_content
+
+    # `heading:` wraps the trigger button in a heading element. REQUIRED by APG for an accordion;
+    # `nil` for a standalone collapse, which has no heading semantics to declare.
+    #
+    # `region:` adds role=region + aria-labelledby to the panel. Default nil = let the parent decide,
+    # because APG discourages it past ~6 simultaneously-expandable panels (landmark proliferation) —
+    # so this cannot be hardcoded true without being wrong for large accordions.
+    def initialize(id:, open: false, heading: nil, region: nil, group: nil)
+      @id, @open, @heading, @region, @group = id, open, heading, region, group
+    end
+
+    def panel_id = "#{@id}-panel"
+    def trigger_id = "#{@id}-trigger"
+    def state = @open ? "open" : "closed"
+
+    def trigger_classes
+      "flex w-full items-center justify-between gap-s py-4 text-left font-medium min-h-touch " \
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+    end
+
+    # No px size on the icon — `with-icon` sizes it to 1em and currentColor inherits.
+    def chevron = helpers.lucide_icon("chevron-down")
+  end
+end
+```
+```erb
+<%# disclosure_component.html.erb %>
+<%# The heading contains ONLY the button (APG). A badge or overflow menu goes outside it. %>
+<div data-controller="disclosure" <%= "data-disclosure-group-value=#{@group}" if @group %>
+     data-state="<%= state %>">
+  <% if @heading %>
+    <%= content_tag @heading, class: "m-0" do %>
+      <button type="button" id="<%= trigger_id %>" class="<%= trigger_classes %> with-icon"
+              aria-expanded="<%= @open %>" aria-controls="<%= panel_id %>"
+              data-disclosure-target="trigger" data-action="disclosure#toggle">
+        <%= trigger_content %>
+        <span class="transition-transform data-[state=open]:rotate-180" data-state="<%= state %>"><%= chevron %></span>
+      </button>
+    <% end %>
+  <% else %>
+    <button type="button" id="<%= trigger_id %>" class="<%= trigger_classes %> with-icon"
+            aria-expanded="<%= @open %>" aria-controls="<%= panel_id %>"
+            data-disclosure-target="trigger" data-action="disclosure#toggle">
+      <%= trigger_content %>
+      <span class="transition-transform data-[state=open]:rotate-180" data-state="<%= state %>"><%= chevron %></span>
+    </button>
+  <% end %>
+
+  <%# `hidden` AND aria-expanded — see the contract: aria-expanded alone leaves this in the %>
+  <%# accessibility tree and the tab order. %>
+  <div id="<%= panel_id %>" data-disclosure-target="panel" <%= "hidden" unless @open %>
+       <%= "role=region aria-labelledby=#{trigger_id}".html_safe if @region %>
+       class="border-t border-border">
+    <div class="stack py-4" style="--space: var(--space-s)"><%= panel_content %></div>
+  </div>
+</div>
+```
+
+```js
+// app/javascript/controllers/disclosure_controller.js
+import { Controller } from "@hotwired/stimulus"
+
+// Enter and Space both activate — a native <button> gives us that for free, which is why the
+// trigger is a real button rather than a div with a keydown handler.
+export default class extends Controller {
+  static targets = ["trigger", "panel"]
+  static values = { group: String }
+
+  toggle() { this.expanded ? this.close() : this.open() }
+
+  get expanded() { return this.triggerTarget.getAttribute("aria-expanded") === "true" }
+
+  open() {
+    // Single-open COLLAPSIBLE: siblings close, but all may be closed. We do not ship APG's
+    // always-one-expanded variant, so nothing here sets aria-disabled.
+    if (this.hasGroupValue) {
+      this.#siblings().forEach((el) => el !== this.element && el.disclosure?.close())
+    }
+    this.#setState(true)
+  }
+
+  close() { this.#setState(false) }
+
+  // State is set DIRECTLY, never gated on an animation event. If it waited for `animationend`,
+  // prefers-reduced-motion (which suppresses the animation) would mean the event never fires and
+  // the control would silently stop working.
+  #setState(open) {
+    this.triggerTarget.setAttribute("aria-expanded", String(open))
+    this.panelTarget.hidden = !open              // hidden, not just ARIA state
+    this.element.dataset.state = open ? "open" : "closed"
+    this.element.querySelectorAll("[data-state]").forEach((el) => {
+      el.dataset.state = open ? "open" : "closed"
+    })
+  }
+
+  #siblings() {
+    return Array.from(
+      document.querySelectorAll(`[data-controller~="disclosure"][data-disclosure-group-value="${this.groupValue}"]`)
+    )
+  }
+
+  // Deep link: open before the browser tries to scroll, or it scrolls to a hidden element.
+  connect() {
+    this.element.disclosure = this
+    const hash = window.location.hash.slice(1)
+    if (hash && (hash === this.panelTarget.id || this.panelTarget.querySelector(`#${CSS.escape(hash)}`))) {
+      this.open()
+    }
+  }
+}
+```
+
+```css
+/* Height transition, suppressed under reduced motion. The panel is still revealed either way,
+   because `hidden` is toggled in JS rather than at the end of an animation. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-controller~="disclosure"] > [data-disclosure-target="panel"] {
+    interpolate-size: allow-keywords;
+    transition: height var(--duration-fast) var(--ease-out);
+  }
+}
+```
+
+**Accordion** is many of these sharing a `group:` and each given a `heading:`:
+
+```erb
+<div class="divide-y divide-border">
+  <% faqs.each_with_index do |faq, i| %>
+    <%= render Ui::DisclosureComponent.new(id: "faq-#{i}", group: "faq", heading: :h3,
+                                           region: faqs.size <= 6, open: i.zero?) do |d| %>
+      <% d.with_trigger_content { faq.question } %>
+      <% d.with_panel_content { faq.answer } %>
+    <% end %>
+  <% end %>
+</div>
+```
+
+`region:` is computed, not hardcoded — past ~6 simultaneously-expandable panels APG warns the
+landmark noise outweighs the structure.
+
 ## Tabs — `app/components/ui/tabs_component.rb`
 
 ```erb

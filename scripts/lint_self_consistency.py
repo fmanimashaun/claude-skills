@@ -370,7 +370,13 @@ _COMPONENT_CLASS = re.compile(
 _SLOT_DECL = re.compile(r"renders_(?:one|many)\s+:(\w+)")
 _INIT_KW = re.compile(r"def\s+initialize\(([^)]*)\)", re.S)
 _KEYWORD = re.compile(r"(\w+):")
-_RENDER_CALL = re.compile(r"render\(\s*(?:\w+::)?(\w+)\.new\(([^)]*)\)", re.S)
+# `render(` and paren-less `render ` both, because ERB idiomatically omits the outer parens.
+# #182 fixed this same blind spot for the icon rule -- "the rule initially required
+# parentheses, so it would not have caught the violation that motivated it" -- but the fix was
+# never applied to these two render rules. Found by mutating a new call site and watching
+# nothing fire (#142). `\w+\.new\(` immediately after keeps this from matching
+# `render partial:` and friends.
+_RENDER_CALL = re.compile(r"render\(?\s*(?:\w+::)?(\w+)\.new\(([^)]*)\)", re.S)
 # A slot use only counts when the receiver is the block variable of a `render(...)`
 # call, because `with_*` is a common Ruby idiom elsewhere: ActiveRecord has
 # `with_lock` / `with_connection`, ruby_llm has `with_instructions` / `with_tool`.
@@ -378,7 +384,7 @@ _RENDER_CALL = re.compile(r"render\(\s*(?:\w+::)?(\w+)\.new\(([^)]*)\)", re.S)
 # real finding — and a linter that cries wolf gets disabled, which is the failure
 # this rule exists to prevent.
 _RENDER_BLOCK = re.compile(
-    r"render\(\s*(?:\w+::)?(\w+)\.new\([^)]*\)\s*\)?\s*do\s*\|\s*(\w+)\s*\|"
+    r"render\(?\s*(?:\w+::)?(\w+)\.new\([^)]*\)\s*\)?\s*do\s*\|\s*(\w+)\s*\|"
 )
 # Both call forms, because Ruby allows dropping the parens and ERB usually does —
 # the original version required `(` and so would not have caught the very violation
@@ -452,15 +458,24 @@ def check_doctrine_call_sites() -> tuple[list[Finding], dict[str, int]]:
                     "`with-icon` utility (component-implementations.md -> Icons)",
                 ))
         # Slot names, scoped to the receiver of a render block. For each
-        # `render(Cls.new(...)) do |v|`, every `v.with_x` in the rest of the document
-        # must be a slot Cls declares. A class whose slots are undocumented is skipped:
-        # that is a coverage gap (#168), a different finding from a wrong call.
-        for match in _RENDER_BLOCK.finditer(body):
+        # `render(Cls.new(...)) do |v|`, every `v.with_x` until the NEXT render block must be a
+        # slot Cls declares. A class whose slots are undocumented is skipped: that is a
+        # coverage gap (#168), a different finding from a wrong call.
+        #
+        # The window ends at the next render block rather than at end-of-document, because two
+        # blocks in one file routinely bind the SAME variable name -- `do |d|` for a Disclosure
+        # and `do |d|` for a Dropdown. Scanning to end-of-document attributed the second block's
+        # slots to the first class and reported a false positive on correct markup (found in
+        # #142, where a new `do |d|` block landed above an existing one). A rule that flags
+        # correct input is the failure mode this whole file warns about.
+        blocks = list(_RENDER_BLOCK.finditer(body))
+        for position, match in enumerate(blocks):
             cls, var = match.group(1), match.group(2)
             declared = slots_by_class.get(cls)
             if declared is None:
                 continue
-            tail = body[match.end():]
+            stop = blocks[position + 1].start() if position + 1 < len(blocks) else len(body)
+            tail = body[match.end():stop]
             for used in set(re.findall(rf"\b{re.escape(var)}\.with_(\w+)\b", tail)):
                 if used not in declared:
                     line_no = body[:match.end()].count("\n") + 1
@@ -743,6 +758,53 @@ def selftest() -> int:
              files={COMPONENT[0]: COMPONENT[1] +
                     "```erb\n<%= render(Ui::CardComponent.new(title: \"x\")) do |c| %>\n"
                     "  <% c.with_header do %>ok<% end %>\n<% end %>\n```\n"})
+
+    # Paren-less `render Cls.new(...)` — the form ERB idiomatically uses. Both render rules
+    # required the outer paren, so these two escaped entirely until #142's new call site fell
+    # into the gap. #182 records fixing exactly this blind spot for the ICON rule; the fix was
+    # never carried to its two siblings.
+    scenario("paren-less render: undeclared slot is still caught", rule=R, expect_finding=True,
+             files={COMPONENT[0]: COMPONENT[1] +
+                    "```erb\n<%= render Ui::CardComponent.new(title: \"x\") do |c| %>\n"
+                    "  <% c.with_rail do %>nope<% end %>\n<% end %>\n```\n"})
+    scenario("paren-less render: wrong initializer keyword is still caught",
+             rule=R, expect_finding=True,
+             files={COMPONENT[0]: COMPONENT[1] +
+                    "```erb\n<%= render Ui::CardComponent.new(form: f, title: \"x\") %>\n```\n"})
+    scenario("paren-less render: a correct call stays silent", rule=R, expect_finding=False,
+             files={COMPONENT[0]: COMPONENT[1] +
+                    "```erb\n<%= render Ui::CardComponent.new(title: \"x\") do |c| %>\n"
+                    "  <% c.with_header do %>ok<% end %>\n<% end %>\n```\n"})
+
+    # TWO blocks binding the SAME variable. Scanning to end-of-document attributed the second
+    # block's slots to the first class and flagged correct markup — found in #142, where a new
+    # `do |d|` landed above an existing one. The window must end at the next render block.
+    # ONE class per fenced block: the declaration parser registers a single component per fence,
+    # so two classes in one fence silently leaves the second unregistered — which made the first
+    # version of the cross-contamination fixture below VACUOUS (it passed with the fix reverted).
+    # Found by reverting the fix and checking the fixture actually failed.
+    TWO_CLASSES = (
+        "skills/x/references/impl.md",
+        "```ruby\nmodule Ui\n  class OneComponent < ViewComponent::Base\n"
+        "    renders_one :alpha\n    def initialize(a:)\n      @a = a\n    end\n  end\nend\n```\n"
+        "```ruby\nmodule Ui\n  class TwoComponent < ViewComponent::Base\n"
+        "    renders_one :beta\n    def initialize(b:)\n      @b = b\n    end\n  end\nend\n```\n",
+    )
+    scenario("two render blocks reusing one variable name do not bleed into each other",
+             rule=R, expect_finding=False,
+             files={TWO_CLASSES[0]: TWO_CLASSES[1] +
+                    "```erb\n<%= render Ui::OneComponent.new(a: 1) do |d| %>\n"
+                    "  <% d.with_alpha do %>ok<% end %>\n<% end %>\n"
+                    "<%= render Ui::TwoComponent.new(b: 2) do |d| %>\n"
+                    "  <% d.with_beta do %>ok<% end %>\n<% end %>\n```\n"})
+    # ...and narrowing the window must not blind the rule inside its own block.
+    scenario("narrowing the window still catches a bad slot in the FIRST block",
+             rule=R, expect_finding=True,
+             files={TWO_CLASSES[0]: TWO_CLASSES[1] +
+                    "```erb\n<%= render Ui::OneComponent.new(a: 1) do |d| %>\n"
+                    "  <% d.with_nope do %>bad<% end %>\n<% end %>\n"
+                    "<%= render Ui::TwoComponent.new(b: 2) do |d| %>\n"
+                    "  <% d.with_beta do %>ok<% end %>\n<% end %>\n```\n"})
 
     # The six false positives that the first version of this rule produced. `with_*` is
     # a common Ruby idiom outside ViewComponent, and flagging it made the rule useless.
