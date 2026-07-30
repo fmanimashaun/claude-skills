@@ -261,6 +261,13 @@ def check_unenforced_mandatory_flags(python_sources: dict[Path, str]) -> tuple[l
 #
 # Not delegated to lint_markdown_shell.py on purpose: both real instances were inline in
 # prose, not inside a fenced block, so a fence-based scanner cannot see them.
+#
+# SCOPE BOUNDARY, checked rather than assumed (#233). This covers `gh issue/pr list` and
+# `gh search`, where the default is 30 and a miscount is near-certain. It deliberately does NOT
+# cover `gh api` collection iteration (e.g. `gh api .../contents/x --jq '.[].name'`, which
+# brain-sync.md does): the risk profile is different (~1000, not 30), and firing correctly there
+# would mean distinguishing collection-returning endpoints from object-returning ones — judgement,
+# which is how a linter becomes noisy and then gets switched off. Known gap, not an oversight.
 _GH_LIST = re.compile(r"gh\s+(?:issue|pr)\s+list\b|gh\s+search\s+(?:issues|prs)\b")
 # `--limit N`, or a REST call paginating explicitly. `--paginate` fetches every page, so it
 # bounds nothing but also truncates nothing -- it is a correct answer to the same question.

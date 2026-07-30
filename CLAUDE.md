@@ -106,6 +106,27 @@ from becoming a loophole:
 - **The maintainer decision must be linked** from the CHANGELOG entry, exactly where a citation
   would go.
 
+### An issue body is not an authority
+
+The gate above is about **editing doctrine**. This is about what you edit *from*: an issue's stated
+contract is a **hypothesis, not a specification**, however confident it reads. Verify every externally
+verifiable claim in it before implementing — and expect the errors to be plausible rather than obvious.
+
+#142 asserted four accordion keybindings *"per the ARIA APG"*. They are absent from the current
+pattern: they lived in a **2017 APG 1.1 example** and were deleted since. Traceable to a real source,
+wrong today, and implemented as written it would have told every downstream agent that four keys are
+mandated by a spec that does not contain them. The same issue also **omitted** a requirement APG
+states plainly (an accordion header button must be wrapped in a heading), so read for omissions too,
+not just errors.
+
+Where a claim has **no** upstream — APG has no Command palette pattern, no Stepper pattern — say so
+and decide it as ours. An INCONCLUSIVE verdict means a maintainer decision recorded on the issue,
+never a citation invented to fill the gap.
+
+(Recorded after #142, where the verdict's most valuable output was negative. Also #229: the same run
+found two errors in doctrine shipped an hour earlier, because an error in shipped doctrine outranks a
+gap in unwritten doctrine.)
+
 (Recorded after #104: brand packs were designed and twice corrected by the maintainer in-session,
 with the reasoning on the issue. Review flagged the missing verdict, correctly — the gate as
 written had no scope, so the exemption was being decided per PR instead of by doctrine.)
