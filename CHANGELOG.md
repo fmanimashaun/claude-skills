@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-07-30 — the icon rule flagged its own doctrine, and a promoted row kept its workaround
 
 - **`lint_self_consistency.py`: the icon rule flagged prose that stated the icon rule** (#95). A
   paren-less `lucide_icon` scan read the words after the call as its arguments, so the comment
@@ -1115,7 +1115,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.20.0 — 2026-07-30
 
 - **Drawer, Carousel and Image gallery/Lightbox are documented** (#95). `coverage.md` **12 → 9**. The
   batching premise **held this time**: the APG index lists **Dialog (Modal)** and **Carousel**, the
@@ -2496,6 +2496,62 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.39.0)
+
+> ### `fidara-design` documents loading, progress and dialog state — and `aria-modal` finally tells the truth
+>
+> Progress bar, Skeleton, Spinner, Drawer, Carousel, Image gallery/Lightbox. `coverage.md` **15 → 9**
+> `needs doctrine` rows. Two live accessibility defects fixed in doctrine users already have: a modal that
+> claimed `aria-modal="true"` while its focus trap never made the background inert, and a cart total that
+> could announce as bare digits without its label.
+>
+> `fidara-design.skill` changed; the other three archives are byte-identical.
+
+- **`aria-modal="true"` promised background inertness the shipped code never delivered.** The doctrine
+  said the focus-trap mixin *"mark[s] the background inert"*; `focus_trap.js` bound a Tab-cycling handler
+  and locked body scroll, and nothing else. Tab-cycling confines *the tab sequence* — a virtual cursor, a
+  rotor, a swipe, or a click all still reached the background. ARIA 1.2 is blunt that this is worse than
+  not claiming modality: *"users of those technologies will experience severe negative ramifications if a
+  dialog is marked modal but does not behave as a modal for other users."* Now `inert` — alone, never
+  paired with `aria-hidden`, which is how a background ends up hidden from AT but still clickable — and
+  nesting-safe, since the trap restores only what it changed.
+- **A cart total could announce as "52.00" with no label.** Bare `aria-live="polite"` leaves
+  `aria-atomic` at **false**, so only the changed node is presented. `role="status"` carries polite *and*
+  atomic. The Category row shipped in v1.38.0 already said `role="status"`, so v1.38.0 contradicted
+  itself on arrival.
+- **The gate refuted four claims before they shipped, which is the point of having it.**
+  - *"A drawer must trap focus"* — false as stated. Trapping is what **modality** requires. An overlay
+    drawer is a modal dialog; a **persistent push sidebar is not a dialog at all** — never overlaid, so
+    it fails APG's own definition — and must not trap focus or take `aria-modal`. The previous guidance
+    said "positioned to an edge — keep its focus trap" with no qualifier.
+  - *"Carousel slides must be `aria-hidden`"* — refuted. APG names no such requirement and its own
+    reference implementation uses `display: none`; what it warns against is a slide *displayed
+    off-screen* while still in the accessibility tree.
+  - *"A lightbox must be a dialog rather than a full-page route"* — no upstream either way. Ours by
+    decision, and labelled as ours.
+  - *"Indeterminate progress is `aria-valuenow="0"`"* — no: **omit** the attribute. `0` reads as "no
+    progress made", a different claim from "unknown". Every `progressbar` value attribute is optional.
+- **Three corrections to what we would have written from memory.** A carousel container is
+  `role="region"` **or** `group`, not `group` only. A **Tabbed** slide is `role="tabpanel"` and *drops*
+  `aria-roledescription`. There are **three** variants (Basic, Tabbed, Grouped), not two — and play/pause,
+  stop-on-hover and stop-on-focus are required **only if it auto-rotates**.
+- **`meter` must never be used for progress.** Not stylistic: `meter` *requires* `aria-valuenow` where
+  `progressbar` treats it as optional, and both ARIA and APG say authors SHOULD NOT use it for progress.
+- **Reduced motion for a shimmer or a rotation is WCAG 2.2.2, not 2.3.3** — 2.3.3 covers motion from
+  *interaction*, and 2.2.2 is conditional on over five seconds *plus* parallel content. Respect the
+  preference regardless; do not cite the wrong SC for it.
+- **Two false citations of our own removed.** A `(WAI-ARIA APG)` heading claimed the spec for an entire
+  behaviour table including rows with no pattern, and **"33 named patterns" was wrong twice — the index
+  lists 30**. The conclusions drawn from the figure were right; the figure was invented precision.
+- **`components.md` advertised a Modal `body` slot that does not exist**, so `m.with_body` raised
+  `NoMethodError` for three releases — the #168/#182 class surviving in prose, where the call-site linter
+  cannot reach. `Ui::ModalComponent` also gains `placement:`, so an overlay drawer is the same component
+  at an edge: one dialog implementation, one focus trap, one `Esc`.
+- **Tooling:** the self-consistency linter's icon rule flagged **prose stating the icon rule**, fixed with
+  near-miss fixtures pinning both edges; a new guard stops a promoted coverage row keeping its
+  *"until the entry lands"* workaround (it was invisible in the rendered table, and the Combobox entry had
+  outlived its own promotion this way); `mutation_check` **19 → 23**.
 
 ### 2026-07-30 (release v1.38.0)
 
