@@ -172,6 +172,9 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     # heading, which is how a missing entry could pass (see the Button/Button-group note above).
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
+    "Progress bar": "## Progress bar\n",
+    "Skeleton / loading placeholder": "## Skeleton / loading placeholder\n",
+    "Spinner / busy indicator": "## Spinner / busy indicator\n",
     "Badge / Tag / Chip": "## Badge / Tag / Chip",
     "Avatar": "## Avatar\n",
     "Dropdown / Menu": "## Dropdown / Menu",
@@ -309,7 +312,7 @@ ENTRIES: tuple[Entry, ...] = (
       "grid-auto + Card; a composition, so likely a recipe rather than a component"),
     E("Activity feed / Timeline", COMPONENT, "derivable", "—",
       ["application-ui/lists/feeds"], ["Timeline"]),
-    E("Progress bar", COMPONENT, "needs doctrine #95", "—",
+    E("Progress bar", COMPONENT, "documented", "—",
       ["application-ui/navigation/progress-bars"], ["Progress"],
       "the Flowbite audit surfaced LABELLED progress bars specifically"),
     E("Command palette", COMPONENT, "derivable", "new controller (filter + list-navigation)",
@@ -324,9 +327,9 @@ ENTRIES: tuple[Entry, ...] = (
     E("Range input", COMPONENT, "needs doctrine #95", "—", [], ["Range"]),
     E("Status indicator / dot", COMPONENT, "derivable", "—", [], ["Indicators"],
       "surfaced by the audit as nav count badge + status badge inside table rows"),
-    E("Skeleton / loading placeholder", COMPONENT, "needs doctrine #95", "—", [], ["Skeleton"],
+    E("Skeleton / loading placeholder", COMPONENT, "documented", "—", [], ["Skeleton"],
       "Turbo frame loading states need this; without it agents invent spinners"),
-    E("Spinner / busy indicator", COMPONENT, "needs doctrine #95", "—", [], ["Spinner"]),
+    E("Spinner / busy indicator", COMPONENT, "documented", "—", [], ["Spinner"]),
     E("Stepper / wizard", COMPONENT, "needs doctrine #95", "—", [], ["Stepper"],
       "also feeds #91's checkout flow"),
     E("Copy to clipboard", COMPONENT, "needs doctrine #95", "new controller", [], ["Clipboard"]),
@@ -620,22 +623,15 @@ BUILD: dict[str, str] = {
     # needs doctrine — the nearest safe thing to do TODAY
     "Inline link": "the Button `link` variant's classes on an `<a>`, until a token exists",
     "Drawer / off-canvas": "the documented Modal, positioned to an edge — keep its focus trap",
-    "Progress bar": "`<progress>`, or a div with `role=progressbar` + `aria-valuenow/min/max` "
-        "and a visible label",
-    # APG has no command-palette pattern (33 patterns, none for it), so this is a composition
+    # APG has no command-palette pattern (the Patterns index lists 30, none for it), so this is
+    # a composition
     # of two documented parts rather than a gap. Keep aria-activedescendant: the input must
     # hold focus for typing to filter, so moving DOM focus into the results breaks it.
     "Command palette": "the documented Modal containing the documented Combobox with a "
         "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
-    "Combobox / Autocomplete": "the documented Select until the entry lands — do not hand-roll "
-        "the ARIA combobox pattern",
     "File upload / Dropzone": "the documented file field; add drag-and-drop as an enhancement, "
         "never as the only path",
     "Range input": "`<input type=range>` in the documented field wrapper; leave the native track",
-    "Skeleton / loading placeholder": "a muted `box` at the content's size, suppressed under "
-        "`prefers-reduced-motion`",
-    "Spinner / busy indicator": "a Lucide spinner with `aria-busy` on the region it replaces; "
-        "honour reduced-motion",
     "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
     "Copy to clipboard": "a Button plus a Toast confirmation; the clipboard call is a small "
         "controller",
@@ -720,6 +716,20 @@ def verify_shipped_evidence() -> list[str]:
                 f"{entry.name!r} is {entry.status!r} but has a DOCUMENTED_EVIDENCE entry — only "
                 "shipped rows cite doc evidence"
             )
+
+    # A `documented` row must not still carry a BUILD fallback. BUILD is "the nearest safe thing
+    # to do until the entry lands"; once it HAS landed, that text tells readers to go build the
+    # workaround instead of using the doctrine. It is invisible in the rendered table (documented
+    # rows print `—` in that column), so nothing surfaces it — the Combobox entry survived its own
+    # row's promotion this way, still saying "use the documented Select until the entry lands"
+    # after the Combobox entry had shipped (#95).
+    stale = sorted(set(BUILD) & {e.name for e in ENTRIES if e.is_documented})
+    if stale:
+        problems.append(
+            f"`documented` rows still carrying a BUILD fallback: {stale} — that text says 'use the "
+            "workaround until the entry lands' about an entry that HAS landed, and it is invisible "
+            "in the rendered table, so delete it with the promotion"
+        )
 
     orphans = sorted(set(DOCUMENTED_EVIDENCE) - {e.name for e in ENTRIES})
     if orphans:

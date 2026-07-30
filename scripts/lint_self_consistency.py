@@ -463,6 +463,12 @@ _RENDER_BLOCK = re.compile(
 # that motivated this rule (`lucide_icon "chevron-right", class: "size-4"`).
 _ICON_CALL = re.compile(r"lucide_icon\s*\(?")
 _ICON_BAD_ARG = re.compile(r"\b(?:size|class)\s*:")
+# A paren-less call is only an INVOCATION if what follows looks like an argument list: a string
+# or symbol literal, or an identifier followed by a comma. Prose *about* the call reads
+# `lucide_icon takes no size:/class:` — the words after it are not arguments. Without this the
+# rule flags documentation that states the rule, which is how a linter earns a blanket disable
+# (same shape as the CHANGELOG false positive already fixed in `unbounded-issue-query`).
+_PAREN_LESS_ARGS = re.compile(r"^[ \t]*(?:[\"\':]|\w+[ \t]*,)")
 
 
 def _icon_call_carries_size(line: str) -> bool:
@@ -474,7 +480,10 @@ def _icon_call_carries_size(line: str) -> bool:
     flags the doctrine's own correct example. That happened, hence the paren matching:
 
       parenthesised  -> read to the matching `)` and inspect only inside it
-      paren-less     -> read to the ERB tag close or end of line
+      paren-less     -> must LOOK like an argument list, then read to the ERB close or EOL
+
+    The paren-less guard matters as much as the paren matching: `lucide_icon takes no size:/class:`
+    is a sentence, and flagging the file that documents the rule is how the rule gets deleted.
     """
     for match in _ICON_CALL.finditer(line):
         rest = line[match.end():]
@@ -490,6 +499,8 @@ def _icon_call_carries_size(line: str) -> bool:
                 args.append(char)
             scope = "".join(args)
         else:
+            if not _PAREN_LESS_ARGS.match(rest):
+                continue  # prose, not a call — see _PAREN_LESS_ARGS
             stop = rest.find("%>")
             scope = rest if stop == -1 else rest[:stop]
         if _ICON_BAD_ARG.search(scope):
@@ -970,6 +981,21 @@ def selftest() -> int:
     scenario("paren-less icon call with a size class", rule=R, expect_finding=True,
              files={"skills/x/references/i.md":
                     "```erb\n<%= lucide_icon \"chevron-right\", class: \"size-4\" %>\n```\n"})
+    # NEAR MISS: prose stating the rule contains the call name and the banned arg names, but no
+    # arguments. It is the doctrine, not a violation of it. (Found by this rule firing on the very
+    # comment added to warn readers off `size:` — components.md, #95.)
+    scenario("prose naming the banned args is not a call", rule=R, expect_finding=False,
+             files={"skills/x/references/i.md":
+                    "```erb\n<%# lucide_icon takes no size:/class: — `with-icon` sizes it %>\n"
+                    "<span class=\"with-icon\"><%= lucide_icon(\"x\") %></span>\n```\n"})
+    # ...but the carve-out must not swallow a call whose first argument is a VARIABLE, which is a
+    # real invocation and still wrong. This is the pair that stops the guard becoming a hole.
+    scenario("paren-less call on a variable still flagged", rule=R, expect_finding=True,
+             files={"skills/x/references/i.md":
+                    "```erb\n<%= lucide_icon icon_name, class: \"size-4\" %>\n```\n"})
+    scenario("paren-less call with a symbol name still flagged", rule=R, expect_finding=True,
+             files={"skills/x/references/i.md":
+                    "```erb\n<%= lucide_icon :chevron_right, size: 16 %>\n```\n"})
 
     # A component whose initializer is not documented is a coverage gap (#168), which is
     # a different finding — this rule must not guess at an undocumented signature.

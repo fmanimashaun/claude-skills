@@ -131,6 +131,18 @@ GUARDS: tuple[Guard, ...] = (
                 "nothing declares",
             ),
             Mutation(
+                "the prose carve-out on the icon rule is removed (#95)",
+                "                continue  # prose, not a call — see _PAREN_LESS_ARGS",
+                "                pass",
+                "prose naming the banned args is not a call",
+            ),
+            Mutation(
+                "the icon carve-out widens to swallow variable-named calls",
+                r'_PAREN_LESS_ARGS = re.compile(r"^[ \t]*(?:[\"\':]|\w+[ \t]*,)")',
+                r'_PAREN_LESS_ARGS = re.compile(r"^[ \t]*[\"\':]")',
+                "paren-less call on a variable still flagged",
+            ),
+            Mutation(
                 "a declared plugin missing from the docs stops being flagged",
                 "if name in blob:\n                continue",
                 "if True:\n                continue",
@@ -148,6 +160,18 @@ GUARDS: tuple[Guard, ...] = (
                 "def verify_totality(",
                 "def _disabled_verify_totality(",
                 "",   # any failure counts: removing the entry point breaks many fixtures
+            ),
+            Mutation(
+                "a promoted row keeps its stale BUILD fallback unnoticed (#95)",
+                "    stale = sorted(set(BUILD) & {e.name for e in ENTRIES if e.is_documented})",
+                "    stale = []",
+                "still carrying a BUILD fallback",
+            ),
+            Mutation(
+                "the stale-fallback guard keys on the NAME instead of the status",
+                "{e.name for e in ENTRIES if e.is_documented})",
+                "{e.name for e in ENTRIES})",
+                "a needs-doctrine row carrying a BUILD fallback is correct",
             ),
         ),
     ),

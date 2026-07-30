@@ -762,16 +762,134 @@ landmark noise outweighs the structure.
 ## Toast — `app/components/ui/toast_component.rb`
 
 ```erb
-<%# container in the layout; toasts appended via Turbo Stream. toast_controller auto-dismisses %>
-<div id="toasts" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none" style="--space: var(--space-2xs)"></div>
+<%# Container in the layout — PERSISTENT and EMPTY, and it is the ONE place bare aria-live is right. %>
+<%# aria-atomic defaults to false there, which is what you want for insertions: atomic=true would %>
+<%# re-announce every toast already on screen. It matches page-anatomies.md's layout snippet; the two %>
+<%# used to disagree about whether this element carried aria-live at all. %>
+<div id="toasts" aria-live="polite" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none" style="--space: var(--space-2xs)"></div>
 
-<%# a toast (turbo_stream.prepend "toasts") — role/status live region + dismiss %>
+<%# A toast (turbo_stream.prepend "toasts") — the ROLE carries the severity, and nothing beside it: %>
+<%# `status` already implies aria-live="polite", `alert` already implies aria-live="assertive", so %>
+<%# writing aria-live here restates the role at best and contradicts it at worst. %>
 <div class="box bg-card text-card-foreground rounded-lg border border-l-4 border-<%= intent %> shadow-md pointer-events-auto"
-     role="<%= intent == :error ? 'alert' : 'status' %>" aria-live="<%= intent == :error ? 'assertive' : 'polite' %>"
+     role="<%= intent == :error ? 'alert' : 'status' %>"
      data-controller="toast" data-toast-timeout-value="5000">
   <div class="cluster" style="--justify: space-between"><span><%= message %></span>
     <button data-action="toast#close" aria-label="Dismiss" class="min-h-touch"><span class="sr-only">Dismiss</span>×</button></div>
 </div>
+```
+
+## Progress — `app/components/ui/progress_component.rb`
+
+`role="progressbar"` is *Children Presentational*, so nothing inside the bar is exposed — the name has
+to come from the author. That is the whole reason this is a component and not a `div`: it is the one
+place the name/`aria-valuetext` wiring can be got right once.
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class ProgressComponent < ViewComponent::Base
+    SIZE = { sm: "h-1", md: "h-2", lg: "h-3" }.freeze
+
+    # value: nil == INDETERMINATE. `aria-valuenow` is then OMITTED, never 0 or -1 -- 0 reads as
+    # "no progress made", which is a different claim from "unknown".
+    # label: is REQUIRED. The role's name comes From: author only, and the fill div's text is not
+    # exposed, so without it the bar is anonymous. Raise rather than ship a nameless progressbar.
+    def initialize(label:, value: nil, min: 0, max: 100, value_text: nil, size: :md, **attrs)
+      raise ArgumentError, "progressbar needs an author-supplied label" if label.blank?
+      @label, @value, @min, @max = label, value, min, max
+      @value_text, @size, @attrs = value_text, size.to_sym, attrs
+    end
+
+    def call
+      tag.div(**aria, **@attrs, class: track_classes) do
+        tag.div(class: "h-full rounded-full bg-primary transition-[width] duration-300",
+                style: "width: #{fill_percent}%")
+      end
+    end
+
+    private
+
+    def aria
+      base = { role: "progressbar", "aria-label": @label }
+      # min/max default to 0/100 in the spec -- emit them only when they differ, so the markup does
+      # not assert values it is merely restating.
+      base["aria-valuemin"] = @min unless @min.zero?
+      base["aria-valuemax"] = @max unless @max == 100
+      base["aria-valuenow"] = @value if determinate?          # OMITTED when indeterminate
+      base["aria-valuetext"] = @value_text if @value_text     # e.g. "Step 2 of 5"
+      base
+    end
+
+    def determinate? = !@value.nil?
+
+    def track_classes
+      ["w-full overflow-hidden rounded-full bg-muted", SIZE.fetch(@size),
+       ("animate-pulse" unless determinate?), @attrs.delete(:class)].compact.join(" ")
+    end
+
+    def fill_percent
+      return 100 unless determinate?   # indeterminate: a full pulsing track, no value claimed
+      span = (@max - @min).to_f
+      span.zero? ? 0 : (((@value - @min) / span) * 100).clamp(0, 100).round(2)
+    end
+  end
+end
+```
+
+## Skeleton and Spinner — recipes, not components
+
+Neither has state, slots, or behavior, so a ViewComponent would wrap a `div` in ceremony. They are
+recipes, like the Divider. **Which one to reach for is decided by one question: is the content's size
+known?** Known → skeleton (it reserves the space, so nothing shifts). Unknown → spinner.
+
+```erb
+<%# SKELETON -- shapes are aria-hidden; ONE status message for the whole block. %>
+<%# aria-busy is correct but advisory (AT *may* wait) and poorly supported, so aria-hidden on the %>
+<%# shapes is what actually stops forty rectangles being announced. %>
+<div id="invoices" aria-busy="true">
+  <p role="status" class="sr-only">Loading invoices…</p>
+  <div aria-hidden="true" class="stack">
+    <% 5.times do %>
+      <div class="flex items-center gap-4">
+        <div class="size-10 shrink-0 animate-pulse rounded-full bg-muted"></div>
+        <div class="w-full stack" style="--stack-space: 0.5rem">
+          <div class="h-4 w-1/3 animate-pulse rounded-md bg-muted"></div>
+          <div class="h-3 w-2/3 animate-pulse rounded-md bg-muted"></div>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<%# The natural home for it: a lazy Turbo frame's placeholder content. %>
+<%= turbo_frame_tag "invoices", src: invoices_path, loading: :lazy do %>
+  <%= render "invoices/skeleton" %>
+<% end %>
+
+<%# SPINNER -- the icon is DECORATION (aria-hidden), the words live in the status region. %>
+<%# Never aria-label the spinning icon: that names the graphic, not the state. %>
+<%# The WRAPPER carries animate-spin and aria-hidden, per the one call-site shape above: %>
+<%# lucide_icon takes no size:/class:, `with-icon` makes the svg 1em/currentColor, and here that %>
+<%# is what you want -- the spinner sizes to the words beside it. Add `size-4` to the wrapper %>
+<%# (never to lucide_icon) only for a standalone spinner with no adjacent text to size against. %>
+<div role="status" class="flex items-center gap-2 text-muted-foreground">
+  <span class="with-icon animate-spin" aria-hidden="true"><%= lucide_icon("loader-circle") %></span>
+  <span>Processing payment…</span>
+</div>
+
+<%# NOT this: role="progressbar" with no aria-valuenow claims a value it cannot supply. If the %>
+<%# proportion IS known, use Ui::ProgressComponent; if it is not, use the status region above. %>
+```
+
+Suppress both animations under reduced motion. Worth doing — but the SC is **2.2.2 Pause/Stop/Hide**
+(conditional: over five seconds *and* parallel content), not 2.3.3, which covers motion from
+*interaction*. Do not cite 2.3.3 for a loading animation.
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse, .animate-spin { animation: none; }
+}
 ```
 
 ## Tooltip — `app/components/ui/tooltip_component.rb`
@@ -853,6 +971,10 @@ Note the slot-setter names — `renders_many :items` gives the **singular** `wit
   <% h.with_actions { render Ui::ButtonComponent.new(variant: :primary) { "New invoice" } } %>
   <% h.with_meta { "Updated #{l invoice.updated_at, format: :short}" } %>
 <% end %>
+
+<%# Progress — label: is REQUIRED (name From: author). value: nil == indeterminate %>
+<%= render Ui::ProgressComponent.new(label: "Import progress", value: 40, value_text: "Step 2 of 5") %>
+<%= render Ui::ProgressComponent.new(label: "Uploading", size: :sm) %><%# no value: indeterminate %>
 
 <%# Media object — media / body / trailing %>
 <%= render Ui::MediaObjectComponent.new(size: :md) do |m| %>
