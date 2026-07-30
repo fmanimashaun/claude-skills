@@ -71,7 +71,11 @@ focus-visible:ring-ring/30 focus-visible:border-ring disabled:opacity-50 min-h-t
 ## Controls
 
 - **text/email/number/search/textarea** — the recipe above (textarea `min-h-[…]`, no fixed height).
-- **select** — native first, styled to match; custom combobox only when search/async is needed
+- **select** — native first, styled to match; custom combobox only when search/async is needed.
+  This is **our judgement**, not a Combobox-pattern requirement — the pattern never says it. The
+  nearest authority is the *First Rule of ARIA Use* ("if you can use a native HTML element…then
+  do so"), whose document is now a **W3C Discontinued Draft**, so treat it as longstanding WAI
+  philosophy rather than a live citation
   (build on the list-navigation mixin, `role="combobox" aria-expanded aria-controls`,
   `aria-activedescendant`; lazy-load results via a Turbo Frame).
 - **checkbox / radio** — `size-4 rounded text-primary focus-visible:ring-ring/30` (radio `rounded-full`);

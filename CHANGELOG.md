@@ -1045,6 +1045,42 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Shipped combobox doctrine omitted a REQUIRED attribute, and attributed `Space`/typeahead to an
+  editable combobox** (#229). Found by a `doctrine-verifier` run intended for two *unwritten* rows —
+  it turned up errors in doctrine shipped in **v1.35.0** instead, which outrank a gap in unwritten
+  doctrine.
+  - **`aria-controls` was missing from the behaviour table while `forms.md` had it** — two shipped
+    files contradicting each other on load-bearing wiring. ARIA 1.2 lists exactly **two** required
+    states for the `combobox` role and this is one: *"Authors **MUST** set `aria-controls` on a
+    combobox element to a value that refers to the combobox popup element"*
+    ([ARIA 1.2 §combobox](https://www.w3.org/TR/wai-aria-1.2/#combobox), read 2026-07-30). An agent
+    following the table alone emitted a non-conformant combobox. Reconciled toward `forms.md`.
+  - **`Space` and typeahead are not editable-combobox behaviours.** Neither appears in APG's normative
+    Keyboard Interaction section for a combobox; both come from the **select-only** variant, where
+    there is no text field for `Space` to type into. In an editable combobox `Space` types a space and
+    typed characters drive *filtering*, not a typeahead-jump. The list-navigation mixin claimed both
+    for "listbox/combobox" wholesale, which yields a control that swallows the space bar.
+  - **Both focus models are sanctioned, not just ours.** ARIA 1.2 presents moving DOM focus into the
+    popup as the base case with `aria-activedescendant` as an alternative *"in lieu of"* it — and for
+    a **dialog** popup activedescendant is *disallowed*. We still default to activedescendant for a
+    listbox popup; it is no longer stated as the only conformant way.
+  - **Required and optional keyboard bindings are now separated** rather than presented as one list:
+    `↓` into the popup, `↑`/`↓` within it, `Enter` and `Esc` are required; `↑` from the input,
+    `Alt+↓`/`Alt+↑`, and `Home`/`End` (listbox/grid) are optional — `Home`/`End` are required only for
+    a **tree** popup, and `PageUp`/`PageDown` are absent from the listbox section entirely. Also
+    recorded: `→`/`←` move the **text cursor** in an editable combobox, so treating all four arrows as
+    list navigation is non-conformant.
+  - **Version trap recorded — three models, not two.** ARIA 1.0 used `aria-owns`; ARIA 1.1 required a
+    non-focusable wrapper owning a textbox plus popup; **ARIA 1.2** puts the role on the input with
+    `aria-controls`, and states that *"a combobox following the ARIA 1.1 combobox specification will no
+    longer conform"*. Our doctrine is on the current model — the note exists so nobody "corrects" it
+    back from an older tutorial.
+  - **`forms.md`'s "native select first" is now attributed honestly.** It is our judgement, not a
+    Combobox-pattern requirement; the nearest authority is the *First Rule of ARIA Use*, whose document
+    is a **W3C Discontinued Draft**. Guidance kept, citation corrected.
+
 ### 1.17.0 — 2026-07-30
 
 - **Disclosure is now first-class doctrine — and the verifier gate stopped us shipping a fabricated
