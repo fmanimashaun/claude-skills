@@ -167,7 +167,9 @@ trending = Rails.error.handle(fallback: -> { [] }) { TrendingService.fetch }
 # Report and re-raise — caller must still see the failure:
 Rails.error.record(context: { import_id: import.id }) { import.process! }
 
-# Report an already-rescued exception:
+# Report an already-rescued exception — inside a rescue you already have:
+begin
+  order.sync_with_third_party!
 rescue ThirdParty::Error => e
   Rails.error.report(e, severity: :warning, context: { order_id: order.id })
 end

@@ -92,6 +92,9 @@ MUST_NOT_IGNORE = (
 GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("markdown shell lint", ("python3", "scripts/lint_markdown_shell.py")),
     ("markdown shell coverage", ("python3", "scripts/lint_markdown_shell.py", "--audit-coverage")),
+    ("markdown code lint", ("python3", "scripts/lint_markdown_code.py")),
+    ("markdown code coverage", ("python3", "scripts/lint_markdown_code.py", "--audit-coverage")),
+    ("markdown code selftest", ("python3", "scripts/lint_markdown_code.py", "--selftest")),
     ("self-consistency", ("python3", "scripts/lint_self_consistency.py")),
     ("self-consistency selftest", ("python3", "scripts/lint_self_consistency.py", "--selftest")),
     ("coverage matrix drift", ("python3", "scripts/build_coverage.py", "--check")),
