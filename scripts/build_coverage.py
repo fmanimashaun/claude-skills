@@ -173,6 +173,8 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
     "Progress bar": "## Progress bar\n",
+    "Range input": "## Range input (#95)\n",
+    "Calendar / Date picker / Time picker": "## Calendar / Date picker / Time picker (#95)\n",
     "Drawer / off-canvas": "## Drawer / off-canvas\n",
     "Carousel / Slider": "## Carousel\n",
     "Image gallery / Lightbox": "## Image gallery / Lightbox\n",
@@ -329,7 +331,8 @@ ENTRIES: tuple[Entry, ...] = (
       ["File Input"], "surfaced by the Flowbite audit: dashed drag-and-drop zone"),
     E("Search input", COMPONENT, "derivable", "—", [], ["Search Input"]),
     E("Number input", COMPONENT, "derivable", "—", [], ["Number Input"]),
-    E("Range input", COMPONENT, "needs doctrine #95", "—", [], ["Range"]),
+    E("Range input", COMPONENT, "documented", "—", [], ["Range"],
+      "native `input type=range` already IS role=slider; custom only for two thumbs"),
     E("Status indicator / dot", COMPONENT, "derivable", "—", [], ["Indicators"],
       "surfaced by the audit as nav count badge + status badge inside table rows"),
     E("Skeleton / loading placeholder", COMPONENT, "documented", "—", [], ["Skeleton"],
@@ -403,10 +406,10 @@ ENTRIES: tuple[Entry, ...] = (
       ["ecommerce/page-examples/order-history-pages"], []),
 
     # ---- deferred: revisitable, and each names WHAT WOULD FLIP IT -----------------------
-    E("Calendar / Date picker / Time picker", COMPONENT, "needs doctrine #95", "—",
+    E("Calendar / Date picker / Time picker", COMPONENT, "documented", "—",
       ["application-ui/data-display/calendars"], ["Datepicker", "Timepicker"],
-      note="a custom picker is a large, permanent a11y surface (keyboard grid, locale, "
-           "screen-reader announcement) and native inputs already cover single-date entry",
+      note="native first: the `type` fallback to a TEXT input is a spec guarantee, and there is "
+           "NO APG date-picker pattern — two examples, two valid architectures",
       build="`input[type=date|time]` via simple_form, plus Rails date helpers — styled with the "
               "shipped field anatomy so it matches everything else"),
     E("Image gallery / Lightbox", COMPONENT, "documented", "modal + carousel", [], ["Gallery"],
@@ -635,15 +638,12 @@ BUILD: dict[str, str] = {
         "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
     "File upload / Dropzone": "the documented file field; add drag-and-drop as an enhancement, "
         "never as the only path",
-    "Range input": "`<input type=range>` in the documented field wrapper; leave the native track",
     "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
     "Copy to clipboard": "a Button plus a Toast confirmation; the clipboard call is a small "
         "controller",
     "Mega menu / Flyout": "the documented Dropdown for now; hover-intent is what #90 must specify",
     "Reviews + Rating": "Media object rows; the rating needs an accessible name (\"4 out of 5\"), "
         "not stars alone",
-    "Calendar / Date picker / Time picker": "`input[type=date|time]` in the documented field "
-        "wrapper, plus Rails date helpers",
     "Video player": "native `<video controls>` inside a `frame`",
 }
 

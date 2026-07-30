@@ -9,6 +9,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **NEW rule `invisible-character`** (#95) — no invisible or confusable whitespace in anything we
+  ship. Two no-break spaces reached a shipped behaviour table, and the way they surfaced is the whole
+  argument: an anchored edit failed with *0 matches* against a string copied from the file. A reader
+  searching the doctrine for that phrase silently gets nothing.
+  - **Only characters with no legitimate use are listed** — the em dash, en dash, ellipsis, arrows,
+    check marks and box-drawing we use deliberately are not. That boundary is pinned by a near-miss
+    fixture, and writing it taught something: my fixture put a **THIN SPACE** among the
+    "punctuation we use on purpose" and the rule fired. The corpus contains none, so the **fixture** was
+    wrong, not the rule — a thin space breaks grep exactly like a no-break space. Kept in the set.
+  - 174 shipped files scanned; `mutation_check` **28 → 30**.
 - **NEW `scripts/lint_markdown_code.py` — the JS, Ruby and ERB in our fences is now syntax-checked**
   (#248). `lint_markdown_shell.py` covered fenced *bash* only, and the other languages are the larger
   surface: **154 ruby, 85 erb, 22 js** blocks against 79 bash, all of it code an agent pastes into a
@@ -1153,6 +1163,65 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **Range input and Calendar/Date/Time picker are documented** (#95). `coverage.md` **9 → 7**. Both are
+  native-first, and both contracts live in `forms.md` with the other controls. Verdict on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95).
+  - **The batching premise was partly refuted, and the doctrine records the asymmetry.** These were
+    batched as "native control that is hard to style, so people rebuild it" — the same *question*, but
+    **not one evidence source**. `input type=range` has an implicit ARIA role of **`slider`**, so the
+    native element already *is* the custom widget's target. `input type=date|time` has **"No
+    corresponding role"** at all ([ARIA in HTML](https://w3c.github.io/html-aria/#el-input-date)), so
+    "native suffices" has to be argued on different grounds. Two rows, two citation trails.
+  - **Do not hand-write slider ARIA onto a native range.** ARIA in HTML: *"No `role` other than slider,
+    which is NOT RECOMMENDED"*, and *"Authors SHOULD NOT use the `aria-valuemax` or `aria-valuemin`
+    attributes on `input type=range`"*. Discouraged by spec, not merely redundant.
+  - **For the custom slider, only `aria-valuenow` is required** — *"Authors MUST set the aria-valuenow
+    attribute"* — while `aria-valuemin`/`aria-valuemax` are *MAY*, defaulting to **0** and **100**.
+    **`Home`/`End` are required keys; `Page Up`/`Page Down` are labelled "(Optional)"** in the pattern,
+    so their absence is not a defect.
+  - **Two documented reasons to leave native, and one that is not.** *Two thumbs* needs the separate
+    **Slider (Multi-Thumb)** pattern — one `role="slider"` per thumb, each with its own name and value —
+    and APG warns to test on **touch** assistive tech *"before considering incorporation into production
+    systems"*. *A value a number cannot convey* needs `aria-valuetext`, which ARIA 1.2 scopes exactly
+    that way and which layers onto the **native** element. **A vertical slider is not a reason** — that
+    is native via `writing-mode`, and rebuilding to get one is the common mistake.
+  - **Native date/time is safe because of a spec guarantee, not optimism.** For `type`, *"the
+    attribute's missing value default and invalid value default are both the Text state"* — an
+    unrecognised `date` keyword renders a **text input**, so the field keeps working and only the picker
+    is lost. The value is a *valid date string*, **`yyyy-mm-dd` always**, whatever the display locale;
+    `step` is in **days** (default 1). For time, `step` is in **seconds** (default 60), and a step not
+    divisible by 60 is what surfaces a **seconds** field — that is what `step` is for here.
+  - **There is NO APG "Date Picker" pattern**, and *"a date picker must be a dialog"* is **refuted**.
+    The index lists 30 patterns and none is a date picker; what exists are **two examples** — one under
+    **Dialog (Modal)**, one under **Combobox** — and the Dialog example links the Combobox one as a
+    *"Similar example"*. Two valid architectures, neither mandated. Doctrine says "APG's date-picker
+    examples", never "the pattern".
+  - **`aria-selected` and `aria-current` are two claims with two sources.** APG's examples use
+    `aria-selected` **only**, *"set on the cell containing the currently selected date"*, and use no
+    `aria-current` anywhere. `aria-current="date"` is nonetheless spec-real — ARIA 1.2 defines the token
+    as *"a date token used to indicate the current date within a calendar"*. Cited separately rather
+    than blended.
+  - **`role="grid"` is what the worked examples do, not a stated must** — recorded that way. And the old
+    **three-spinbutton** date picker is gone from APG: it survives only as an archived 2019 Working
+    Draft, so it is not doctrine.
+  - **The complaints about native date pickers are ours, not the spec's.** Uneven screen-reader support
+    and whether the popup is keyboard-operable are **not stated by any primary source we could find** —
+    not the HTML spec, not MDN. Recorded as practitioner observation, explicitly not cited.
+  - **WCAG, scoped rather than sprayed.** **1.3.5 Identify Input Purpose (AA)** applies to a date field
+    only when it collects information *about the user* (`autocomplete="bday"`) — not to appointment or
+    filter dates. **2.5.8 Target Size (Minimum) (AA, new in 2.2)** has a **User Agent Control**
+    exception covering the native thumb and native picker, so it bites the moment you hand-build a day
+    cell or a thumb. And **2.5.8 is not 2.5.5** — *Target Size (Enhanced)* is a different AAA criterion
+    at 44×44, from 2.1.
+
+- **FIX — two no-break spaces in the shipped behaviour table** (#95). `interaction-stimulus.md`'s
+  Carousel row contained `role=region`+NBSP+`**or**`+NBSP+`group`, shipped in v1.39.0. It renders
+  identically to a space, so the row was **unsearchable**: a reader grepping the phrase gets nothing.
+  Found because an anchored edit to that row failed with *0 matches* against a string copied out of the
+  file, and diagnosing it needed a byte-level diff. Now guarded — see the tooling entry.
 
 ### 1.20.0 — 2026-07-30
 

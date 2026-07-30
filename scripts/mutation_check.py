@@ -131,6 +131,18 @@ GUARDS: tuple[Guard, ...] = (
                 "nothing declares",
             ),
             Mutation(
+                "invisible characters stop being reported (#95)",
+                "                if index == -1:\n                    continue",
+                "                if True:\n                    continue",
+                "a no-break space in shipped markdown",
+            ),
+            Mutation(
+                "the invisible set shrinks to whitespace only, letting a BOM through",
+                '    "\\ufeff": "BYTE ORDER MARK",',
+                "",
+                "a BOM inside the body of a file",
+            ),
+            Mutation(
                 "the prose carve-out on the icon rule is removed (#95)",
                 "                continue  # prose, not a call — see _PAREN_LESS_ARGS",
                 "                pass",

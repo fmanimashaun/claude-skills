@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 60 |
+| — `documented` | 62 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 9 |
+| — `needs doctrine` (tracked writing gap) | 7 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -50,6 +50,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Breadcrumbs | component | ✓ | ✓ | detail screens more than one level deep, inside the page heading block | separators are aria-hidden markup, never ::after; truncates first → … → last two |
 | Button | component | ✓ | ✓ | any action; `primary` once per view, `destructive` only behind a confirm | — |
 | Button group | component | ✓ | ✓ | 2–5 related actions, or a single-select filter — `role=group` vs `radiogroup` | actions = role=group; single-select = role=radiogroup — different elements, not variants |
+| Calendar / Date picker / Time picker | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | native first: the `type` fallback to a TEXT input is a spec guarantee, and there is NO APG date-picker pattern — two examples, two valid architectures |
 | Card | component | ✓ | ✓ | a bounded surface in a dashboard grid, or a detail panel; also the stat-tile base | — |
 | Carousel / Slider | component | — | ✓ | prefer not to — if a client insists, a marketing surface only | content behind a timed or manual slide is content most users never see, and the pattern is a persistent a11y liability. This is a doctrine position, not a backlog item — if a client insists, build it in the app against the a11y contract rather than blessing it as a kit primitive |
 | Checkbox | component | ✓ | ✓ | independent booleans; multiples need a fieldset with a legend | — |
@@ -69,6 +70,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Pagination | component | ✓ | ✓ | any index over ~25 rows; pair with the Table | — |
 | Progress bar | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | the Flowbite audit surfaced LABELLED progress bars specifically |
 | Radio group | component | ✓ | ✓ | one choice from 2–5 visible options, in a fieldset | — |
+| Range input | component | — | ✓ | an authenticated app screen, inside one of the three shells | native `input type=range` already IS role=slider; custom only for two thumbs |
 | Select | component | ✓ | ✓ | a closed set of ~2–10 options; above that reach for the combobox | — |
 | Skeleton / loading placeholder | component | — | ✓ | a Turbo frame whose content size IS known — preferred over a spinner because it does not shift layout | Turbo frame loading states need this; without it agents invent spinners |
 | Spinner / busy indicator | component | — | ✓ | a region whose content is loading and has no known size | — |
@@ -166,11 +168,9 @@ replace that approach with a proper entry.
 
 | Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |
 |---|---|---|---|---|---|---|
-| Calendar / Date picker / Time picker | component | ✓ | ✓ | #95 | `input[type=date|time]` via simple_form, plus Rails date helpers — styled with the shipped field anatomy so it matches everything else | an authenticated app screen, inside one of the three shells |
 | Copy to clipboard | component | — | ✓ | #95 | a Button plus a Toast confirmation; the clipboard call is a small controller | next to an API key, invite link or ID |
 | File upload / Dropzone | component | — | ✓ | #95 | the documented file field; add drag-and-drop as an enhancement, never as the only path | an authenticated app screen, inside one of the three shells |
 | Mega menu / Flyout | component | ✓ | ✓ | #90 | the documented Dropdown for now; hover-intent is what #90 must specify | a marketing surface (landing, pricing, about) — not app screens, which use the shell navigation |
-| Range input | component | — | ✓ | #95 | `<input type=range>` in the documented field wrapper; leave the native track | an authenticated app screen, inside one of the three shells |
 | Reviews + Rating | component | ✓ | ✓ | #91 | Media object rows; the rating needs an accessible name ("4 out of 5"), not stars alone | a commerce surface (catalog, product, cart, checkout) |
 | Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
 | Video player | component | — | ✓ | #95 | native `<video controls>` inside a `frame` for ratio | marketing and docs surfaces; inside a `frame` so layout never shifts |
