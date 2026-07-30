@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased — a selftest the gate sweep never ran (found by #119)
+### 2026-07-30 — a selftest the gate sweep never ran (found by #119)
 
 - **`maintainer_doctor.py --gates` silently omitted selftests.** Adding `route_coverage.py` showed
   it: the new selftest passed locally while the doctor's sweep never executed it, so `--gates`
@@ -1084,7 +1084,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.10.0 — 2026-07-30
 
 - **Route coverage: qa-flow can finally answer "what has nothing ever tested?"** (#119). It drove
   from a case catalogue and a menu scope, so the most basic coverage question had no answer — and
@@ -2012,6 +2012,50 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.33.0)
+
+> ### Who this affects
+>
+> **Marketplace install: `qa-flow` 1.10.0 is a real upgrade** — QA can now answer which routes
+> nothing has ever tested, and `/qa-flow:verify` selects regression scope over a known set instead
+> of guessing.
+>
+> **`dist/*.skill` upload to claude.ai: nothing changed.** All four archives remain byte-identical
+> to v1.29.0 and `rails-stack` holds at 1.16.0, because no `skills/**` file moved.
+
+- **qa-flow 1.10.0 — route coverage gives blast radius a denominator** (#119). qa-flow drove from a
+  case catalogue and a menu scope, so the most basic coverage question had no answer: *which routes
+  has nothing ever tested?* Selection in `/qa-flow:verify` was therefore judgement over an unknown
+  set — you cannot pick "affected untested routes" without knowing what the routes are.
+  - `route_coverage.py enumerate` builds `qa/reports/routes.json` from `bin/rails routes`, a
+    `sitemap.xml`, or a filesystem-routed directory (`[slug]` → `:slug`, `[...rest]` → `*glob`).
+    `report` attributes coverage, ranks the gap, and appends a per-run trend.
+  - **Coverage is attributed from the already-validated evidence CSVs**, using
+    `validate_evidence.py`'s own profiles to find URL-bearing columns — so a route counts as covered
+    only when a row that *passed validation* says a pass went there. Coverage inherits the
+    page-identity guarantees rather than trusting a second, unchecked record, and a new browser pass
+    gets attribution for free.
+  - **The over-credit direction is where the tests aim**, because a tool reporting 100% while nothing
+    visited `/users/:id/edit` is worse than no tool: it retires the question. `:id` matches exactly
+    **one** segment, so a visit to `/users/42/edit` does not credit `/users/:id`. Five failure modes
+    were mutated and each is caught by its own named assertion — the greedy-match mutant alone trips
+    seven, including a trend line recording 100% coverage.
+  - **Nothing is inferred that would be guessed wrong.** Authentication comes from
+    `coverage.authenticated_prefixes`, never from the path shape; a deduplicated findings rollup
+    contributes **no** coverage (its `Example Routes` are three examples, not a visit log), and that
+    exclusion is asserted — every evidence profile must be either credited or explicitly declared
+    route-less, so a future pass cannot silently understate the gap. Untested **non-GET** routes rank
+    first, then authenticated ones.
+  - Exclusions are declared and the excluded set is **always printed, even when empty**. A gap
+    **exits 0**: it is the deliverable, not a failure.
+- **Maintainer tooling (not distributed): the gate sweep silently omitted selftests** (found while
+  doing #119). The new `route_coverage` selftest passed locally while `maintainer_doctor --gates`
+  never executed it, so the sweep would report a clean machine having skipped a whole gate. The
+  doctor's selftest now asserts **every `*_selftest.py` is reachable from `GATES`** — and on its
+  first run found a second omission nobody had noticed: the doctor was not running **its own**
+  selftest either. Both wired in; the sweep is 13 gates. This is the `coverage-gap` class applied to
+  the thing that runs the checks.
 
 ### 2026-07-30 (release v1.32.0)
 
