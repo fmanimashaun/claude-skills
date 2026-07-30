@@ -101,6 +101,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
+    ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
     # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the

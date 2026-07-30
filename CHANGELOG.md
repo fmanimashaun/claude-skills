@@ -7,6 +7,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-30 — the gate-sweep completeness rule earned itself
+
+- The rule added yesterday — *every `*_selftest.py` must be reachable from `GATES`* — **fired on the
+  next script added**, catching `evidence_manifest_selftest.py` before it could be forgotten. That
+  is the difference between fixing an omission and preventing the class: nobody had to remember.
+  The sweep is now 14 gates.
+
 ### 2026-07-30 — a selftest the gate sweep never ran (found by #119)
 
 - **`maintainer_doctor.py --gates` silently omitted selftests.** Adding `route_coverage.py` showed
@@ -1084,6 +1091,53 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## qa-flow (independent QA plugin)
 
+### 1.11.0 — 2026-07-30
+
+*(Two issues on one branch per CLAUDE.md's grouping rule. The mechanism they share is specific:
+#120's `manifest.json` **is** the aggregate #111 requires be derived from the append-only log.
+Built separately, one writer would append per unit while another rebuilt the summary from memory
+or the filesystem — and they would disagree exactly when a run died, the case both issues exist
+for. A bullet each so the promotion closes them separately.)*
+
+- **A killed browser run now leaves usable output** (#111). The audit's crawler wrote its manifest
+  only after the final page, so a crash at page 70 of 72 lost everything — and one background run
+  **was** stopped mid-flight, leaving **zero** usable output after ~30 minutes. `/qa-flow:certify`
+  is the pre-`main` gate, so a lost run means re-running the whole certification.
+  - One JSON line per unit is appended to `qa/reports/<run>/results.jsonl` as it completes, and
+    `evidence_manifest.py derive` builds the aggregate **from that log and nothing else**.
+  - **A truncated final line is treated as data, not corruption** — it is the signature of the very
+    crash this exists to survive, so it is counted and skipped. A parser that died on it would have
+    reproduced the original defect inside the tool meant to fix it. One malformed line mid-file
+    costs that line only, never the other 71 units.
+  - **"The run ended" and "the run covered everything" are different claims**, and a summary that
+    could not tell them apart was the defect. `unreached` is listed explicitly against an
+    `expected.txt` written before the run starts, and the manifest is written on abort.
+  - **Resume is decided in exactly one place.** `completed` lists what to skip; `--fresh` returns an
+    empty list rather than being handled by the caller, so there is no second resume rule to drift.
+    A `Blocked` unit is **not** completed — otherwise a transient hang becomes a permanent hole.
+  - Progress is emitted per unit with a running count, and the doctrine states plainly: **never pipe
+    the run through `tail`**. Piping buffered everything until EOF in the audit, so the log showed
+    nothing for the entire run and progress could only be seen by counting files on disk. A
+    supervisor that cannot tell *slow* from *hung* either waits forever or kills useful work.
+- **Evidence is reviewable rather than a folder of PNGs** (#120). The audit produced 359 images, 12
+  of them captures of 404 pages indistinguishable by eye, and full-page captures **8050px tall**
+  proving a focus ring.
+  - **Capture scope is decided by purpose and enforced**: `component` / `interaction` / `a11y`
+    evidence must be **clipped**; `layout` / `theme` / `visual-regression` may be full-page. A rule
+    forbidding full-page everywhere would be switched off by the first legitimate
+    visual-regression run, so both directions are fixtures.
+  - Deterministic naming (`<route-slug>--<viewport>-<theme>[--<state>].png`) is checked, so the set
+    is self-describing; a generated `index.html` groups by route with **validity visible**, and is
+    dependency-free with escaped route text so it still opens years later from the filesystem.
+  - **Validity is recorded per capture**, per #106 — an image from an unvalidated page is
+    indistinguishable from real evidence, so it is marked rather than silently mixed in. Valid
+    evidence must name the assertion it supports.
+  - **Retention** keeps the last 3 runs plus any run referenced by an open defect, ordered by run
+    **name** rather than mtime (opening an `index.html` changes mtime and would silently reshuffle
+    what gets deleted), and **always prints what it pruned** — including when nothing was.
+  - Referenced from `functional-tester`, `e2e-tester` and `a11y-auditor`, each pointing at the one
+    canonical copy rather than restating it.
+
 ### 1.10.0 — 2026-07-30
 
 - **Route coverage: qa-flow can finally answer "what has nothing ever tested?"** (#119). It drove
@@ -2012,6 +2066,46 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.34.0)
+
+> ### Who this affects
+>
+> **Marketplace install: `qa-flow` 1.11.0 is a real upgrade** — a long browser run that gets killed
+> now leaves usable results, and its evidence is browsable instead of a folder of PNGs.
+>
+> **`dist/*.skill` upload to claude.ai: nothing changed.** All four archives remain byte-identical
+> to v1.29.0 and `rails-stack` holds at 1.16.0, because no `skills/**` file moved.
+
+- **qa-flow 1.11.0 — a killed run leaves usable output** (#111). The audit's crawler wrote its
+  manifest only after the final page, so a crash at page 70 of 72 lost everything — and one
+  background run **was** stopped mid-flight, leaving **zero** usable output after ~30 minutes.
+  `/qa-flow:certify` is the pre-`main` gate, so a lost run means re-running the whole certification.
+  One JSON line per unit is appended as it completes and the aggregate is derived from that log.
+  - **A truncated final line is data, not corruption** — it is the signature of the very crash this
+    exists to survive, so it is counted and skipped rather than raised. One malformed line mid-file
+    costs that line only, never the other 71 units.
+  - **"The run ended" and "the run covered everything" are different claims**, and a summary that
+    could not tell them apart was the defect: unreached units are listed explicitly against an
+    expectation written before the run, and the manifest is written on abort.
+  - Resume is decided in one place (`--fresh` returns an empty skip list rather than being handled
+    by the caller); a `Blocked` unit is not "done", or a transient hang becomes a permanent hole.
+  - Per-unit progress with a running count, and **never pipe the run through `tail`** — piping
+    buffered everything until EOF, so progress could only be seen by counting files on disk. A
+    supervisor that cannot tell *slow* from *hung* waits forever or kills useful work.
+- **qa-flow 1.11.0 — evidence is reviewable, not 359 loose PNGs** (#120). Twelve of those were
+  captures of 404 pages indistinguishable by eye, and some were **8050px tall** proving a focus ring.
+  - **Capture scope is decided by purpose and enforced**: `component`/`interaction`/`a11y` must be
+    clipped; `layout`/`theme`/`visual-regression` may be full-page — a rule forbidding full-page
+    everywhere would be switched off by the first legitimate visual-regression run.
+  - Deterministic naming, a generated `index.html` grouped by route with **validity visible**
+    (dependency-free, escaped, so it still opens years later from disk), validity recorded on every
+    capture per #106, and retention that keeps the last 3 runs plus any referenced by an open defect
+    — ordered by run **name**, not mtime, and always printing what it pruned.
+- **Maintainer tooling (not distributed): the completeness rule earned itself.** The rule shipped in
+  v1.33.0 — *every `*_selftest.py` must be reachable from `GATES`* — **fired on the next script
+  added**, catching the new selftest before it could be forgotten. That is the difference between
+  fixing an omission and preventing the class: nobody had to remember. The sweep is 14 gates.
 
 ### 2026-07-30 (release v1.33.0)
 
