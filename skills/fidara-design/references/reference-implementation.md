@@ -120,6 +120,10 @@ export function listNavigation(controller, { itemsTarget = "item", orientation =
 const SEL = 'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])'
 export function focusTrap(container) {
   let opener = null
+  // Only what THIS trap changed, so nested overlays compose: the inner trap never clears state the
+  // outer one set. The dismissable-layer is a stack, so nesting is a supported shape, and a naive
+  // `body.style.overflow = ""` on the inner close would unlock scroll under a still-open outer modal.
+  let inerted = [], lockedScroll = false
   const nodes = () => [...container.querySelectorAll(SEL)].filter((el) => el.offsetParent !== null)
   function onKeydown(e) {
     if (e.key !== "Tab") return
@@ -128,14 +132,42 @@ export function focusTrap(container) {
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
   }
+  // `inert` is what makes aria-modal="true" TRUE. Tab-cycling alone confines the tab sequence and
+  // nothing else: a virtual cursor, a rotor, a touch swipe, or a click still reach the background.
+  // ARIA 1.2: authors MUST ensure the interface can be controlled using only descendants of the
+  // modal element, and SHOULD mark all other contents as inert. Setting aria-modal without this is
+  // a promise to assistive tech that the code does not keep.
+  function inertBackground() {
+    inerted = [...document.body.children].filter((el) => !el.contains(container) && !el.inert)
+    inerted.forEach((el) => { el.inert = true })
+  }
   return {
     activate() { opener = document.activeElement; document.addEventListener("keydown", onKeydown)
-      document.body.style.overflow = "hidden"; (nodes()[0] || container).focus() },
+      inertBackground()
+      if (!document.body.style.overflow) { document.body.style.overflow = "hidden"; lockedScroll = true }
+      const target = nodes()[0] || container
+      target.focus() },
     deactivate() { document.removeEventListener("keydown", onKeydown)
-      document.body.style.overflow = ""; opener?.focus() },
+      inerted.forEach((el) => { el.inert = false }); inerted = []
+      if (lockedScroll) { document.body.style.overflow = ""; lockedScroll = false }
+      opener?.focus() },
   }
 }
 ```
+
+**`inert` is the load-bearing line, not the Tab handler.** Tab-cycling confines *the tab sequence* and
+nothing else — a virtual cursor, a screen-reader rotor, a touch swipe, or a plain click all still reach
+the background. That is why `aria-modal="true"` on the Modal is a claim about **this** function: ARIA 1.2
+requires the interface be controllable using only the modal's descendants, and warns that *"users of
+those technologies will experience severe negative ramifications if a dialog is marked modal but does not
+behave as a modal for other users."* This code shipped without it for as long as `aria-modal` did.
+
+`inert` is the platform primitive (Baseline since 2023) and it removes the subtree from the tab order,
+hit-testing, *and* the accessibility tree in one attribute — so `aria-hidden` on the background is not
+additionally needed, and pairing them is how a background ends up hidden from AT but still clickable.
+Both notes matter for **nesting**: the trap records only the elements *it* inerted, so an inner overlay
+closing never un-inerts what an outer one still relies on. Same reason it only restores `body.overflow`
+if it was the one to lock it.
 
 ### `dismissable_layer.js` — Esc + outside-click, stacked (dropdown/popover/tooltip/modal/drawer)
 

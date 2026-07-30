@@ -76,10 +76,58 @@ DEFAULTS = { variant: :primary, size: :md }
   **Imposter** positioning + `bg-popover text-popover-foreground rounded-lg shadow-lg` (card-class
   surface → the `rounded-lg` token = 12px, not an arbitrary value); backdrop
   `bg-fm-navy/50 backdrop-blur-sm`. **Sizes:** `sm max-w-md · md max-w-lg · lg max-w-2xl · xl max-w-4xl · full`.
-  Body `max-h-[70vh] overflow-y-auto`. Slots: `title`, `body`, `actions` (a `cluster`).
+  Body `max-h-[70vh] overflow-y-auto`. **Slots: `title` and `actions` (a `cluster`) — there is NO
+  `body` slot;** the body is the block content, same as Alert. This line advertised one for three
+  releases, and `m.with_body` raises `NoMethodError` — the #168/#182 class, in prose the call-site
+  linter cannot reach.
+- **`placement:`** picks centre or an edge: `:center` (default) · `:left` · `:right` · `:bottom`. An
+  **overlay drawer is this component with `placement: :right`** — one dialog implementation, one focus
+  trap, one `Esc`. A *persistent* sidebar is not a dialog and must not come through here.
 - **Behavior:** the `modal` Stimulus controller = focus-trap + focus-restore + Esc + backdrop-close +
   body-scroll-lock; `role="dialog" aria-modal="true" aria-labelledby`. Delete-confirmation = Modal(`sm`) recipe.
 - **Responsive:** wrapper `p-4 sm:p-0`; `full` → `max-w-full mx-4`.
+
+## Drawer / off-canvas
+- **No APG pattern of its own** (the index lists 30; Drawer and Off-canvas are not among them), so it
+  borrows the Dialog contract — and *which* contract depends on the shape, which is the whole point:
+- **Overlay drawer** = the documented `Ui::Modal` positioned to an edge. Full dialog contract:
+  `role="dialog" aria-modal="true"` + a name, initial focus inside, focus **restored to the trigger**,
+  `Esc` closes, background `inert`. Behavior: the `modal` controller (focus-trap + dismissable).
+- **Persistent / push drawer** — the ordinary app sidebar — is **not a dialog and must not trap focus**.
+  `<nav>` semantics, no `aria-modal`, no initial-focus steal, `sidebar` controller for collapse only.
+  Trapping is what *modality* requires, not a property of being a drawer.
+- **Responsive: render both, do not morph one.** Modal drawer below `lg`, persistent `<nav>` at `lg` and
+  up. Toggling `aria-modal` and a focus trap by media query means the role changes under the user.
+- Panel `bg-popover text-popover-foreground shadow-lg` at `max-w-sm`, full-height, `inset-y-0`;
+  backdrop as Modal's. Slots as Modal: `title`, `body`, `actions`.
+
+## Carousel
+- **An APG pattern** — cite it, and note that most of its machinery is *conditional*. Best default:
+  **do not auto-rotate.**
+- Container `role="region"` **or** `role="group"` (APG sanctions both; pick by the page's information
+  architecture) + **`aria-roledescription="carousel"`** and an accessible name.
+- Slides `role="group"` + `aria-roledescription="slide"` — **except the Tabbed variant**, where a slide is
+  `role="tabpanel"` with **no** `aria-roledescription`.
+- **Three variants:** *Basic* (prev/next only) · *Tabbed* (one tab stop, the Tabs pattern) · *Grouped*
+  (individually-tabbable pickers — APG calls it the least keyboard-friendly, so prefer Tabbed).
+- **Prev/Next always; play/pause, stop-on-hover and stop-on-focus only if it auto-rotates.**
+  Auto-rotation is governed by **WCAG 2.2.2** (not 2.3.3).
+- **Inactive slides leave the accessibility tree via `display:none`/`hidden`/`inert`** — `aria-hidden` is
+  not the technique APG names, and translating a slide off-screen while leaving it in the tree is the
+  failure the pattern warns about.
+- `Tab` is **not scripted** — it follows the page tab sequence. Behavior: the `carousel` controller.
+
+## Image gallery / Lightbox
+- **No APG pattern** — a *composition*, the same shape as the Command palette: the documented **Modal**
+  containing the documented **Carousel**. Both contracts apply unchanged; the thumbnail grid behind it
+  becomes `inert`, and closing returns focus to **the thumbnail that was clicked**.
+- Thumbnails are a `grid-auto` of buttons (not links) with `alt` text; the viewer is Modal `xl`/`full`
+  with prev/next and a counter.
+- **No auto-rotation, so no play/pause** — that follows from the Carousel conditional, not from a
+  lightbox rule.
+- **Two things here are ours, not the spec's:** using a dialog rather than a full-page route (decided,
+  because it keeps the grid's scroll position), and the dialog's name string — use the image's caption or
+  alt text so it names the picture rather than repeating "Image viewer".
 
 ## Dropdown / Menu
 - `Ui::Dropdown` (trigger slot + items). `role="menu"`/`menuitem`; trigger `aria-haspopup="menu" aria-expanded
