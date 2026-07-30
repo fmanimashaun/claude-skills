@@ -114,9 +114,11 @@ Declare important elements; Stimulus maintains typed references:
 ```javascript
 static targets = [ "input", "result" ]
 
-this.inputTarget      // first match (throws if missing)
-this.resultTargets    // all matches (array)
-this.hasInputTarget   // boolean guard
+search() {                // the accessors only exist inside the controller
+  this.inputTarget        // first match (throws if missing)
+  this.resultTargets      // all matches (array)
+  this.hasInputTarget     // boolean guard
+}
 ```
 
 ```html
@@ -170,8 +172,11 @@ Never hardcode class names the HTML should own:
 
 ```javascript
 static classes = [ "loading" ]
-this.element.classList.add(...this.loadingClasses)   // plural handles multiple
-// this.hasLoadingClass to guard
+
+start() {
+  this.element.classList.add(...this.loadingClasses)   // plural handles multiple
+  // this.hasLoadingClass to guard
+}
 ```
 
 ```html

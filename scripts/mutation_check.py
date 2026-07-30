@@ -176,6 +176,43 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        name="lint_markdown_code",
+        subject="scripts/lint_markdown_code.py",
+        selftest="scripts/lint_markdown_code_selftest.py",
+        mutations=(
+            Mutation(
+                "the language boundary is dropped, so ```json parses as JavaScript again (#248)",
+                r'FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")\b[^\n]*\n(.*?)^[ \t]*```",',
+                r'FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")[^\n]*\n(.*?)^[ \t]*```",',
+                "```json is NOT javascript",
+            ),
+            Mutation(
+                "the ERB block-tag normalisation is removed (20 false positives return)",
+                '    code = ERB_BLOCK_TAG.sub(r"<%\\1%>", ERB_RAW_TAG.sub("<%=", code))',
+                "    code = ERB_RAW_TAG.sub(\"<%=\", code)",
+                "erb: <%= … do %> block tag",
+            ),
+            Mutation(
+                "the unterminated-tag check is removed — ERB will not catch it",
+                "    line = _unterminated_erb_tag(code)",
+                "    line = None",
+                "erb: unterminated tag",
+            ),
+            Mutation(
+                "`<%%` stops being treated as an escaped literal",
+                '        if code[i + 2:i + 3] == "%":      # `<%%` — an escaped literal, not a tag',
+                "        if False:",
+                "erb: `<%%` is an escaped literal, not an unterminated tag",
+            ),
+            Mutation(
+                "elision substitution is dropped, so documentation `...` reads as code",
+                "    normalised = substitute(code, lang)",
+                "    normalised = code",
+                "ruby: (...) argument elision",
+            ),
+        ),
+    ),
+    Guard(
         name="validate_evidence",
         subject="plugins/qa-flow/scripts/validate_evidence.py",
         selftest="plugins/qa-flow/scripts/validate_evidence_selftest.py",

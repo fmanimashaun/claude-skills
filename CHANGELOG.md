@@ -7,6 +7,45 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **NEW `scripts/lint_markdown_code.py` — the JS, Ruby and ERB in our fences is now syntax-checked**
+  (#248). `lint_markdown_shell.py` covered fenced *bash* only, and the other languages are the larger
+  surface: **154 ruby, 85 erb, 22 js** blocks against 79 bash, all of it code an agent pastes into a
+  user's project. Wired as three gates (lint, coverage, selftest); sweep **27 → 29**.
+  - **Four real copy-paste hazards in shipped skills, every one of which raises on paste.** A bare
+    `rescue … end` with no `begin` and no enclosing method (`observability.md`); two prose-as-code lines
+    where `/` is division, not a separator — `Product.select(:id, :name) / .pluck(:name)`
+    (`models.md`); and two `stimulus.md` blocks mixing a `static` class field with `this.` statements,
+    which cannot share a scope. The Stimulus blocks now show the accessors **inside the method that
+    uses them**, which parses and documents better.
+  - **The linter's own first run was 26 findings, 22 of them its fault** — and that is the useful part
+    to record. `<%= form_with … do |f| %>` and `<%==` are **invalid in stdlib ERB**: Rails compiles
+    views with **erubi**. Depending on erubi would make the gate pass or fail by machine, so both are
+    normalised away. A linter that fires on the most common idiom in the corpus is one that gets
+    deleted rather than fixed.
+  - **`js` matched the `js` in ` ```json `**, so every JSON block was being parsed as JavaScript. The
+    `--audit-coverage` control caught it — that regex already had the word boundary and the strict one
+    did not. Worth noting the direction: this was an **over**-matching extractor, which is as dishonest
+    as an under-matching one, and the audit was written for the latter.
+  - **ERB does not error on an unterminated `<%`** — it emits the remainder as a **literal string**, so
+    the expression silently never runs and the view renders text where a value belongs. An explicit
+    balance check now catches it; the compiler never will. `<%%` is correctly treated as an escape.
+  - **False positives are the whole risk, so the selftest is mostly silence fixtures** — 27 checks, of
+    which 14 assert the linter stays *quiet* on elisions, fragments and erubi idioms. Blocks are
+    normalised and then tried in a short **named ladder of contexts** (bare, class body, method body,
+    object literal); each run prints which context accepted each block, so a ladder that stops
+    discriminating is visible rather than silent.
+  - **`mutation_check` 23 → 28.** Two of the six mutations I first declared were wrong in instructive
+    ways: one fixture was **vacuous** (`<%%= foo %>` still has a `%>` later in the line, so misreading
+    the escape changed nothing), and one mutation was **unobservable** (`export` is a SyntaxError inside
+    every wrapper, so removing that skip cannot change a verdict — it is an optimisation, not a guard,
+    and the comment now says so). The checker caught both, which is why it exists.
+  - **The selftest had to be made hermetic.** It reconciled the two regexes against the real tree, but
+    it runs against a mutated copy in a temp directory where `skills/` does not exist — so `discover()`
+    raised and every mutation was "caught" by a traceback instead of by its fixture. **A crash is not a
+    verdict.** The real tree is still reconciled, on every run and by the coverage gate.
+
 ### 2026-07-30 — the icon rule flagged its own doctrine, and a promoted row kept its workaround
 
 - **`lint_self_consistency.py`: the icon rule flagged prose that stated the icon rule** (#95). A
