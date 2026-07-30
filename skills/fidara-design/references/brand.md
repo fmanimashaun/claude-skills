@@ -199,18 +199,31 @@ Running the palette validator is **part of creating a pack**, never a one-off in
 fidara. Hues that separate cleanly on fidara's navy surface may collide on another brand's.
 See [data-viz.md](data-viz.md) for the validator and the ΔE / contrast bars it enforces.
 
-## Distribution — install the plugin, never vendor it
+## Distribution — everything you need is already public
 
-- **Do NOT vendor the private plugin into a client repository.** Install it into the
-  developer environment: `/plugin marketplace add <org>/fidara-plugins`, then
-  `/plugin install fidara-ui`.
+**There is no private plugin to install.** This skill is complete on its own, and that is the
+only mode: components are built **just-in-time in the project** from the doctrine here plus
+[coverage.md](coverage.md), which names what to build each one from. Nothing at build time reads
+a licensed design kit.
+
 - The client repo contains only the **generated components** — original authorship,
-  brand-parameterized.
-- **Why:** maintenance stays central (one plugin update benefits every project), and
-  kit-derived reference material never lands in a client's repository. The Tailwind Plus /
-  Flowbite licenses cover *us building for clients*; they do **not** cover handing a client a
-  redistributable kit.
+  brand-parameterized — plus their brand pack.
 - A client deliverable is therefore **their app + their brand pack**. Not the toolchain.
+- **The licensed kits are never distributed at all.** Tailwind Plus / Flowbite licences cover
+  *us building for clients*; they do not cover handing anyone a redistributable kit — and they
+  forbid re-distributing components separately from an End Product, which a plugin payload would
+  be. The kits inform *our doctrine* at authoring time, on a maintainer machine, and never travel
+  further.
+- **If an agent ever seems to need the kit to build a screen, that is a defect in this skill, not
+  a missing download.** It means a `coverage.md` row is marked `derivable` when it is really
+  `needs doctrine` — report it rather than working around it.
+
+An earlier revision of this section told you to install a private `fidara-ui` plugin. That was
+written under an inventory model, where the kit was a library agents referenced while building.
+The just-in-time model replaced it: a kit-present branch would make the same prompt produce
+**different output depending on whether a licensed plugin happened to be installed** — a
+non-determinism nobody without the licence could even test. See the decision record on
+[#190](https://github.com/fmanimashaun/claude-skills/pull/190#issuecomment-5127664883).
 
 ## The Prism mark (the `fidara` pack)
 
