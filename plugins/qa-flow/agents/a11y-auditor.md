@@ -67,3 +67,13 @@ axe JSON — so the four checks above remain yours.
 Report per page: HTTP status + final URL, violations by impact, keyboard verdict — or BLOCKED
 with the status/URL if validation failed. Say plainly how many pages were blocked: a blocked
 page is uncovered surface, not a clean one.
+
+## Evidence durability and standards
+
+An axe pass over 70 routes is a long browser run, so the same contract applies: append one JSON
+line per audited page to `qa/reports/<run>/results.jsonl` as it completes and derive the manifest
+from that log, so a run killed at page 68 still yields usable output. **a11y evidence must be
+clipped** — a full-page capture proving a focus ring or a contrast failure is unreadable — named
+`<route-slug>--<viewport>-<theme>[--<state>].png`, with validity recorded on every capture. The
+full contract is in `functional-tester.md` under *A long run must survive being killed* (#111,
+#120); follow it there rather than restating it.

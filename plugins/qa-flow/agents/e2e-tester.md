@@ -53,6 +53,12 @@ run `/qa-flow:setup-qa`, or ask which stack to assume — don't default silently
   ```
   An **S1** route is a failing build-verification signal, classified as an **app defect** —
   not a flake, and never retried until quiet.
+- **A long suite must survive being killed, and its evidence must be reviewable.** Append one
+  JSON line per unit to `qa/reports/<run>/results.jsonl` as it completes, derive the manifest from
+  that log, resume rather than restart, and emit unbuffered per-unit progress — never piped
+  through `tail`. Clip captures by purpose, name them `<route-slug>--<viewport>-<theme>.png`, and
+  record validity on each. **The contract lives in `functional-tester.md` under *A long run must
+  survive being killed*; follow it there rather than restating it** (#111, #120).
 
 ## Framework specifics (use the configured one)
 
