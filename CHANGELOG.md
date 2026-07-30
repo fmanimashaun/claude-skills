@@ -7,6 +7,53 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-30 — the verification discipline becomes enforced rather than remembered (#233)
+
+Fifteen defects surfaced in one session: eleven predated it, four were mine. **Two of my four were
+caught by the maintainer, not by me**, and both had one cause — I wrote fixtures and did not revert the
+code to check they failed, which is the repo's own rule and one I had cited in the same PR. Stating a
+discipline and skipping it under momentum is not a knowledge gap, so three things now enforce it.
+
+- **`CLAUDE.md`: an issue body is not an authority.** The gate was written about *editing* doctrine;
+  nothing said *do not treat a spec written in an issue as verified*. #142 nearly shipped a fabricated
+  APG citation because its contract read as one — four keybindings attributed to a pattern that does
+  not contain them, traceable to a 2017 draft, deleted since. It also **omitted** a requirement APG
+  states plainly, so the rule says to read for omissions too. And where a claim has no upstream (APG
+  has no Command palette or Stepper pattern), an INCONCLUSIVE verdict means a recorded maintainer
+  decision, never a citation invented to fill the gap.
+- **The sibling-blind-spot sweep found the rules sound, and one boundary worth stating.** #182 fixed a
+  paren-less blind spot for the icon rule and never carried it to two render siblings — six releases
+  unfixed — so every regex-based rule was probed against its idiomatic alternative form. All held.
+  Notably **one probe was wrong rather than the rule**: `_SOFTENED` looked broken until I checked its
+  actual vocabulary, so I nearly filed a false finding against a working guard. The one real gap is now
+  documented rather than accidental: the unbounded-query rule deliberately excludes `gh api` collection
+  iteration, because that risk profile is ~1000 rather than 30 and firing correctly would need
+  judgement about which endpoints return collections — which is how a linter becomes noisy.
+- **NEW `scripts/mutation_check.py` — nothing verified that a selftest can fail.** Six selftests, 14
+  gates, and no check that any of them notices its subject breaking. That is the hole both vacuous
+  fixtures fell through. Each guard now declares hand-chosen mutations with the fixture expected to
+  trip: **16 mutations across 6 guards**, including the exact defects from this session (`:id` matching
+  greedily, duplicate signatures accepted, a truncated line crashing the parse, full-page evidence for a
+  component purpose, the paren-less render regex).
+  - **Deliberately not a general mutation framework.** No AST rewriting, no operator taxonomy — a
+    declared list is auditable, whereas generated survivors nobody triages are indistinguishable from a
+    pass.
+  - **A stale anchor is a hard error, not a pass.** A mutation that does not apply produces a mutant
+    identical to the original, which passes and reads exactly like a caught mutation.
+  - **A coincidental catch does not count.** Each mutation names the fixture that must trip, or a
+    fixture going quiet is masked by its neighbour.
+  - It found **three defects in itself on its first run**: two `expects` written as the finding's
+    message text, which is absent by definition once a mutation makes that finding disappear (the
+    fixture *label* is the right expectation), and one malformed mutation that crashed rather than
+    cleanly disabling its check. A fourth surfaced when `maintainer_doctor`'s mutant died on a missing
+    `.gitignore` — the checker now mirrors repo-relative layout instead of flattening it.
+  - Its own selftest (27 checks) pins that a survivor is reported, a stale or ambiguous anchor raises,
+    a wrong-fixture catch is refused, and every declared anchor still matches exactly once — so the
+    mutation list cannot rot into vacuous passes.
+- Sweep is now **16 gates / 27 checks**, ~43s. **Stated stopping condition: this is the last layer.** A
+  fourth would be guards on guards on guards, and the real backlog is 29 `needs doctrine` rows. This one
+  earns its place only because it would have caught defects that actually shipped.
+
 ### 2026-07-30 — the gate-sweep completeness rule earned itself
 
 - The rule added yesterday — *every `*_selftest.py` must be reachable from `GATES`* — **fired on the
@@ -2186,6 +2233,48 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.36.0)
+
+> ### Who this affects
+>
+> **Nobody who installs the marketplace.** No skill or plugin changed — all four `dist/*.skill`
+> archives are byte-identical to v1.29.0, `rails-stack` holds at 1.17.1, `qa-flow` at 1.11.0. This
+> release is entirely **maintainer tooling** and reaches `main` because `main` is what a fresh clone
+> gets.
+
+- **Nothing verified that a selftest could fail — now something does** (#233). Six selftests, fourteen
+  gates, and no check that any of them notices its subject breaking. Two fixtures written in one session
+  were **vacuous and passed for the wrong reason**: a `hasattr` on a function that never existed
+  (comparing `[] == []`), and a cross-contamination scenario whose two classes shared one fenced block,
+  leaving the second unregistered so the scenario never ran. Both looked right; one survived until the
+  maintainer asked whether the fix was real.
+  - `scripts/mutation_check.py` has each guard declare hand-chosen mutations plus **the fixture expected
+    to trip** — 16 mutations across 6 guards, including the session's real defects (`:id` matching
+    greedily, duplicate signatures accepted, a truncated line crashing the parse, full-page evidence for
+    a component purpose, the paren-less render regex).
+  - **A stale anchor is a hard error, not a pass** — a mutation that cannot apply yields a mutant
+    identical to the original, which passes and reads exactly like a caught mutation. **A coincidental
+    catch does not count** — a fixture going quiet would otherwise be masked by its neighbour.
+  - Deliberately **not** a general mutation framework: a declared list is auditable, whereas generated
+    survivors nobody triages are indistinguishable from a pass.
+  - It found **four defects in itself while being built**, which is the useful part — two expectations
+    written as a finding's message text (absent by definition once the mutation removes that finding),
+    one malformed mutation that crashed rather than cleanly disabling its check, and a flat temp layout
+    that broke a selftest reading repo-relative files.
+- **`CLAUDE.md`: an issue body is not an authority.** The doctrine gate covered *editing* doctrine, never
+  what you edit **from**. #142 nearly shipped a fabricated APG citation because its contract read as a
+  spec. The rule now also requires reading for **omissions**, and states that where no upstream exists
+  an INCONCLUSIVE verdict means a recorded maintainer decision — never a citation invented to fill the
+  gap.
+- **A sweep of every regex-based rule against its idiomatic alternative form found the rules sound.**
+  #182 had fixed a paren-less blind spot in one of three rules without checking the siblings, which took
+  six releases to surface. Worth recording that **one probe was wrong rather than the rule** — I nearly
+  filed a false finding against a working guard. The single genuine gap is now a documented boundary:
+  the unbounded-query rule excludes `gh api` collection iteration on purpose, since that risk profile is
+  ~1000 rather than 30 and firing correctly needs judgement about which endpoints return collections.
+- Sweep is now **16 gates / 27 checks**, ~43s. **Stated stopping condition: this is the last
+  verification layer.** A fourth would be guards on guards on guards.
 
 ### 2026-07-30 (release v1.35.1)
 
