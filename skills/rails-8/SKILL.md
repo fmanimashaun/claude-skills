@@ -179,6 +179,7 @@ the exact APIs, generated-file layouts, and the traps.
 
 | Read | When the task involves |
 |---|---|
+| `references/style.md` | **How code should read** — conditional returns, method + invocation order, bang methods, visibility modifiers, CRUD controllers, controller↔model boundary, `_later`/`_now` job naming. Sourced to 37signals' `STYLE.md` (fizzy), with each adopt/adapt decision and its reason recorded |
 | `references/project-setup.md` | `rails new`, app structure, generators, config/environments, credentials, dev workflow (`bin/setup`, `bin/dev`), upgrading |
 | `references/models.md` | Migrations, Active Record models, validations, associations, callbacks, scopes/queries, enums, `normalizes`, tokens, encryption, multi-DB |
 | `references/controllers-routing.md` | Routes, **URL design (human vanity paths for user-facing pages vs REST for records + JSON API; the reconciliation)**, controllers, `params.expect`, filters, rate limiting, sessions/cookies/flash, redirects & status codes, API-only apps |
