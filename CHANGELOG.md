@@ -1094,6 +1094,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The commerce family is documented — Storefront, Category, Product, Cart, Checkout, Order detail,
+  Order history** (#91). `coverage.md` **22 → 15**, and with it **all twelve page archetypes are done**:
+  every remaining gap is now a *widget* needing an APG verdict, which makes the rest of the backlog one
+  kind of work instead of two.
+- **The a11y failures these archetypes exist to prevent are commerce-specific and expensive:**
+  - **Cart quantity and total changes need a live region.** Edit a quantity and the total changes
+    silently — this is the single most-missed thing in commerce accessibility, and the one with a direct
+    revenue cost.
+  - **A remove control must name what it removes.** An icon-only `×` announces as "button", and there
+    are six of them: `aria-label="Remove Blue T-shirt, medium"`, the item rather than the row number.
+  - **A discount needs two prices and a word** — `<s>` on the original plus `sr-only` "was"/"now".
+    Colour and a strikethrough convey nothing to a screen reader, and red-as-cheap is not universal.
+  - **Variant pickers are radios in a fieldset**, not a styled `div`, and an unavailable variant is
+    disabled *and says why* ("Blue — out of stock").
+  - **Stock and order status are text**, never colour alone; a progress tracker is an `<ol>` whose
+    current step says so in words.
+- **Checkout rules that are implementation faults rather than design choices:**
+  - **Never require an account to buy** — offer guest checkout and create the account afterwards from
+    data you already hold.
+  - **Never lose what was typed.** Re-render every field on validation failure; losing an address is the
+    most common abandonment cause that is entirely ours.
+  - **A double-submitted payment must not double-charge** — disable on submit *and* make the server
+    action idempotent, because the client half alone loses to a slow network and an impatient user.
+  - **One column**, because multi-column forms produce ambiguous tab order and unreadable error
+    association.
+- **Category listing:** filters are a `GET` form that works without JavaScript (state in the URL, so
+  results are shareable and back-button-correct), the result count is announced via `role="status"`, and
+  pagination is the default — infinite scroll breaks the back button, strands keyboard users before the
+  footer, and has no addressable position.
+
 - **Five page archetypes documented — Landing, Pricing, About, Error, Auth** (#90). `coverage.md`
   **27 → 22**. These are page *compositions* with no ARIA pattern upstream, so the authority is the
   maintainer decision rather than a verdict — which is exactly why they were sequenced separately from

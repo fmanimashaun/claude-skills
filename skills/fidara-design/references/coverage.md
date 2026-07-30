@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 47 |
+| — `documented` | 54 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 22 |
+| — `needs doctrine` (tracked writing gap) | 15 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -76,15 +76,22 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Stat tile | composition | ✓ | — | the metric row at the top of a dashboard, one metric per Card | page-anatomies composes these from Card, one metric each — deliberately not a new component |
 | About page archetype | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | — |
 | Auth page archetype (sign-in / sign-up / reset) | page archetype | ✓ | — | a whole app screen | uses the cover > center > stack recipe for true vertical centering, not bare center |
+| Cart page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
+| Category page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
+| Checkout page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Detail anatomy | page archetype | ✓ | — | a single record with attributes and actions | — |
 | Error page archetype (404/500) | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | an intentional error-page DESIGN — it returns 200 and is a legitimate page under test (qa-flow #106) |
 | Home / dashboard anatomy | page archetype | ✓ | — | the landing screen after sign-in | — |
 | Landing page archetype | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | — |
 | Multi-column shell | page archetype | ✓ | — | screens needing a contextual aside beside the main region | — |
+| Order detail page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
+| Order history page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Pricing page archetype | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | — |
+| Product page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Settings anatomy | page archetype | ✓ | — | grouped preference forms | — |
 | Sidebar shell | page archetype | ✓ | — | authenticated app screens with a persistent rail | — |
 | Stacked shell | page archetype | ✓ | — | authenticated screens with few top-level areas, or marketing-adjacent app pages | — |
+| Storefront page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Center / container | primitive | ✓ | — | the outer wrapper of page content, capping it at the measure | — |
 | Divider | primitive | ✓ | ✓ | between unrelated blocks; inside a list use `divide-y` on the container instead | an <hr> is already role=separator; in lists the answer is divide-y on the container |
 | Frame (aspect-ratio media) | primitive | — | ✓ | every image or video, so layout never shifts on load | — |
@@ -167,13 +174,6 @@ replace that approach with a proper entry.
 | Spinner / busy indicator | component | — | ✓ | #95 | a Lucide spinner with `aria-busy` on the region it replaces; honour reduced-motion | a region whose content is loading and has no known size |
 | Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
 | Video player | component | — | ✓ | #95 | native `<video controls>` inside a `frame` for ratio | marketing and docs surfaces; inside a `frame` so layout never shifts |
-| Cart page archetype | page archetype | ✓ | — | #91 | a stacked-shell page: Heading block, then the commerce blocks in `grid-auto` | a whole commerce page; compose the blocks inside it |
-| Category page archetype | page archetype | ✓ | — | #91 | a stacked-shell page: Heading block, then the commerce blocks in `grid-auto` | a whole commerce page; compose the blocks inside it |
-| Checkout page archetype | page archetype | ✓ | — | #91 | a stacked-shell page: Heading block, then the commerce blocks in `grid-auto` | a whole commerce page; compose the blocks inside it |
-| Order detail page archetype | page archetype | ✓ | — | #91 | a stacked-shell page: Heading block, then the commerce blocks in `grid-auto` | a whole commerce page; compose the blocks inside it |
-| Order history page archetype | page archetype | ✓ | — | #91 | a stacked-shell page: Heading block, then the commerce blocks in `grid-auto` | a whole commerce page; compose the blocks inside it |
-| Product page archetype | page archetype | ✓ | — | #91 | a stacked-shell page: Heading block, then the commerce blocks in `grid-auto` | a whole commerce page; compose the blocks inside it |
-| Storefront page archetype | page archetype | ✓ | — | #91 | a stacked-shell page: Heading block, then the commerce blocks in `grid-auto` | a whole commerce page; compose the blocks inside it |
 | Inline link | primitive | — | ✓ | #95 | the Button `link` variant's classes on an `<a>`, until a token exists | body copy and prose; for actions use the Button `link` variant |
 
 ## Interaction patterns
