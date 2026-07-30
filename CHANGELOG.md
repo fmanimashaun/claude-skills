@@ -1166,6 +1166,62 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Cross-plane sign-in doctrine, and four corrections to the security checklist** (#98). A unified
+  sign-in front door authenticating **both** realms, holding **no session of its own**, minting a
+  short-lived single-use **encrypted** grant and handing off to the plane that exchanges it for its own
+  host-scoped session (fidara-ledger D-038/D-039, accepted 24 Jul 2026).
+  - **Why a hand-off and not a shared cookie:** a cookie with no `Domain` is confined to the exact host
+    that set it (RFC 6265), and Rails' `domain: :all` — which *would* share it — is declined on purpose,
+    because a shared cookie lets an XSS on one plane reach another plane's session.
+  - **Encrypt, do not sign, and the reasoning is verified rather than repeated.** `MessageVerifier`'s own
+    docs: *"Signing is not encryption… The payload is merely encoded (Base64 by default) and can be
+    decoded by anyone."* The grant rides in a URL, so signed-only would publish the raw record id to
+    browser history, referrer headers and CDN logs.
+  - **`decrypt_and_verify`'s failure modes are asymmetrical** — it **returns `nil`** on expiry and on a
+    purpose mismatch, and **raises** only on tamper or corrupt format. A `rescue`-only implementation
+    sails past an expired grant with a `nil` and blows up on the next call. Check the return value *and*
+    rescue.
+  - **`config.hosts` is EMPTY in production by default** — the checklist previously framed Host
+    authorization as a development concern only. Where the list is empty the middleware returns
+    immediately and does nothing, so anything deriving a redirect target from `request.host`/`.domain`
+    trusts an attacker-controlled header until it is set. It rejects with **403 before the app runs**,
+    which is what makes it a real defence.
+  - **Rails 8.1 replaced `raise_on_open_redirects` with `action_on_open_redirect`** (`:log`/`:notify`/
+    `:raise`; framework defaults still raise) and added
+    **`config.action_controller.allowed_redirect_hosts`** — preferred over `allow_other_host: true`,
+    which disables the check for the *entire call* while the allowlist keeps every other host blocked.
+    Also recorded: **"another host" is an exact match and subdomains count**, so `app.` → `admin.` is
+    cross-host.
+  - **Two specs in this area pass whether or not the code works**, because the Rails test environment
+    defaults to `:null_store`. `NullStore` ignores `unless_exist` and returns `true` every time, so a
+    **single-use** spec never sees a rejected replay; and `rate_limit` calls `store.increment`, which
+    `NullStore` answers with `nil`, making **`rate_limit` a permanent no-op in test**. Stub
+    `:memory_store` or the test is vacuous. (`rate_limit` arrived in **7.2** and needs a real store.)
+  - **`unless_exist` atomicity is store-specific, not an API guarantee.** On **Solid Cache** the write
+    takes a `SELECT … FOR UPDATE`, which is genuinely atomic for an existing key — but a brand-new key
+    has **no row to lock**, so two concurrent first-claims can both win. Narrow and bounded, and written
+    down rather than implied airtight. Redis `SET NX`/memcached `ADD` have no such window, so the caveat
+    is Solid Cache's, not `Rails.cache`'s.
+  - **`authenticate_by` is Rails 7.1, not 7.0**, and it is required here rather than optional: it *"takes
+    the same amount of time regardless of whether a user with a matching email is found"*, so a `find_by`
+    + `authenticate` pair would be a timing oracle defeating the uniformity the front door works for.
+  - **A residual timing channel the uniform messages do not close**, flagged rather than glossed:
+    `User.authenticate_by || StaffUser.authenticate_by` runs **one** lookup on a tenant hit and **two**
+    when neither matches, so latency still varies by realm. Evaluate both unconditionally if realm
+    disclosure matters.
+  - **Terminology pinned rather than invented:** identifier-first sign-in is **home realm discovery**,
+    and the enumeration requirement is **OWASP WSTG-IDNT-04**, which asks for *"the same error message
+    **and length**"* — so keep the response *shape* constant, not just the wording.
+  - **`allow_unauthenticated_access` is generated code, not a framework method** — the Rails 8
+    authentication generator defines it as `skip_before_action :require_authentication`.
+
+- **FIX — a Phase B claim shipped an hour earlier was incomplete** (#98). `multi-tenancy.md` said *"each
+  plane gets its own authentication stack, not a role check on a shared one."* True for the invariant it
+  protects — two identity models, two session tables, two cookies — but readable as forbidding **any**
+  shared component, which the unified front door above would then contradict. Now scoped: "its own stack"
+  means its own session, cookie and identity model, not "no shared code may precede it", with a forward
+  reference to the pattern. Found by checking the implementation rather than by review.
+
 - **NEW `references/multi-tenancy.md`** (#98, Phase B of EPIC #96). Rails documents **no** row-level
   tenancy doctrine — the guides' only use of "multi-tenant" is horizontal *sharding* — so every choice
   here is recorded as a choice and every framework fact is cited to source.
