@@ -381,6 +381,191 @@ end
 </div>
 ```
 
+## Combobox — `app/components/ui/combobox_component.rb`
+
+APG-verified contract; read
+[interaction-stimulus.md](interaction-stimulus.md#combobox--the-two-corrections-that-matter-and-a-version-trap-229)
+for what is **required** versus ours. Two things this component gets right that are commonly got
+wrong: `aria-selected` tracks the **active** option (selection follows focus), and `aria-controls` is
+**required**, not optional.
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class ComboboxComponent < ViewComponent::Base
+    renders_many :options, "OptionComponent"
+
+    # `autocomplete:` -> aria-autocomplete. `:none` omits the attribute (the default per ARIA).
+    # `select_only:` puts the role on a div instead of an input: there is no text to complete, so
+    # it also forbids aria-autocomplete entirely.
+    AUTOCOMPLETE = { none: nil, list: "list", both: "both" }.freeze
+
+    def initialize(id:, name:, label:, autocomplete: :list, select_only: false,
+                   invalid: false, popup: :listbox)
+      @id, @name, @label = id, name, label
+      @autocomplete, @select_only, @invalid, @popup = autocomplete.to_sym, select_only, invalid, popup.to_sym
+    end
+
+    def popup_id = "#{@id}-popup"
+    def error_id = "#{@id}-error"
+
+    # listbox is the IMPLICIT default for role=combobox, so declaring aria-haspopup for it is noise.
+    # Anything else MUST declare it.
+    def haspopup = @popup == :listbox ? nil : @popup.to_s
+
+    def autocomplete_value = @select_only ? nil : AUTOCOMPLETE.fetch(@autocomplete)
+
+    def described_by = @invalid ? error_id : nil
+
+    def input_classes
+      "w-full rounded-md border border-input bg-background px-3 min-h-touch " \
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 " \
+        "aria-[invalid=true]:border-destructive"
+    end
+
+    def open_icon = helpers.lucide_icon("chevrons-up-down")
+
+    # Each option carries its own id so aria-activedescendant has something to point at, and
+    # aria-selected starts false — it tracks the ACTIVE option, set by the controller as focus moves.
+    class OptionComponent < ViewComponent::Base
+      def initialize(id:, value:)
+        @id, @value = id, value
+      end
+
+      def call
+        tag.li(content, id: @id, role: "option", class: "px-3 py-2 cursor-default " \
+               "data-[active=true]:bg-accent", aria: { selected: false },
+               data: { value: @value, active: false })
+      end
+    end
+  end
+end
+```
+```erb
+<%# combobox_component.html.erb — role=combobox goes on the INPUT, never a wrapper div. %>
+<%# A wrapper with aria-owns is the superseded ARIA 1.1 model and no longer conforms. %>
+<div data-controller="combobox" class="stack" style="--space: var(--space-3xs)">
+  <label for="<%= @id %>" class="text-sm font-medium"><%= @label %></label>
+
+  <div class="relative">
+    <%= tag.input id: @id, name: @name, type: "text", class: input_classes,
+                  role: "combobox", autocomplete: "off",
+                  aria: { expanded: false, controls: popup_id, haspopup: haspopup,
+                          autocomplete: autocomplete_value, invalid: @invalid,
+                          describedby: described_by },
+                  data: { combobox_target: "input", action: "input->combobox#filter " \
+                          "keydown->combobox#key click->combobox#open" } %>
+
+    <%# Optional Open button: tabindex=-1 and OUT of the tab order — the input already reaches
+        the popup, so a focusable second control just adds a stop that does nothing new. %>
+    <button type="button" tabindex="-1" aria-label="Show options"
+            class="with-icon absolute inset-y-0 right-0 px-2"
+            data-action="combobox#toggle"><%= open_icon %></button>
+  </div>
+
+  <%# hidden AND aria-expanded=false: the ARIA state alone leaves options in the a11y tree. %>
+  <ul id="<%= popup_id %>" role="<%= @popup %>" hidden
+      data-combobox-target="popup"
+      class="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border
+             bg-popover text-popover-foreground shadow-md divide-y divide-border">
+    <% options.each do |option| %><%= option %><% end %>
+  </ul>
+
+  <% if @invalid %>
+    <p id="<%= error_id %>" class="text-sm text-destructive"><%= content %></p>
+  <% end %>
+
+  <%# OUR convention, not APG's: the pattern never prescribes a live-region count. %>
+  <p class="sr-only" role="status" data-combobox-target="status"></p>
+</div>
+```
+
+```js
+// app/javascript/controllers/combobox_controller.js
+import { Controller } from "@hotwired/stimulus"
+
+export default class extends Controller {
+  static targets = ["input", "popup", "status"]
+
+  // Required: ArrowDown into the popup, ArrowUp/ArrowDown within it, Enter accepts, Esc dismisses.
+  // Right/Left are deliberately NOT handled — they must move the text cursor. Space is not an
+  // activation key: in an editable combobox it types a space.
+  key(event) {
+    switch (event.key) {
+      case "ArrowDown": event.preventDefault(); this.#move(1); break
+      case "ArrowUp":   event.preventDefault(); this.#move(-1); break
+      case "Enter":     if (this.#active) { event.preventDefault(); this.#accept() } break
+      case "Escape":    this.close(); break
+    }
+  }
+
+  open()  { this.popupTarget.hidden = false; this.inputTarget.setAttribute("aria-expanded", "true") }
+  close() { this.popupTarget.hidden = true;  this.inputTarget.setAttribute("aria-expanded", "false")
+            this.inputTarget.removeAttribute("aria-activedescendant") }
+  toggle() { this.popupTarget.hidden ? this.open() : this.close() }
+
+  filter() {
+    const q = this.inputTarget.value.toLowerCase()
+    const shown = this.#options.filter((o) => {
+      const hit = o.textContent.toLowerCase().includes(q)
+      o.hidden = !hit
+      return hit
+    })
+    this.open()
+    // Our convention, announced politely rather than asserted as an APG requirement.
+    this.statusTarget.textContent = `${shown.length} result${shown.length === 1 ? "" : "s"} available`
+  }
+
+  get #options() { return Array.from(this.popupTarget.querySelectorAll('[role="option"]')) }
+  get #active()  { return this.popupTarget.querySelector('[data-active="true"]') }
+
+  // aria-selected tracks the ACTIVE option, because selection follows focus in a combobox. Focus
+  // itself never leaves the input — that is what aria-activedescendant is for, and it is why typing
+  // keeps filtering.
+  #move(delta) {
+    const visible = this.#options.filter((o) => !o.hidden)
+    if (!visible.length) return
+    this.open()
+    const index = visible.indexOf(this.#active)
+    const next = visible[Math.max(0, Math.min(visible.length - 1, index + delta))] || visible[0]
+    visible.forEach((o) => {
+      const on = o === next
+      o.dataset.active = String(on)
+      o.setAttribute("aria-selected", String(on))
+    })
+    this.inputTarget.setAttribute("aria-activedescendant", next.id)
+    next.scrollIntoView({ block: "nearest" })
+  }
+
+  #accept() {
+    this.inputTarget.value = this.#active.dataset.value ?? this.#active.textContent.trim()
+    this.close()
+    this.inputTarget.focus()
+  }
+}
+```
+
+Call site — the options are a slot, so each carries its own `id` for `aria-activedescendant` to
+point at:
+
+```erb
+<%= render Ui::ComboboxComponent.new(id: "assignee", name: "task[assignee]",
+                                     label: "Assignee", autocomplete: :list) do |c| %>
+  <% users.each do |user| %>
+    <% c.with_option(id: "assignee-opt-#{user.id}", value: user.id) { user.name } %>
+  <% end %>
+<% end %>
+```
+
+**Select-only** (no text entry) is the same controller with the role on a `div`, no
+`aria-autocomplete`, and printable characters jumping to matching options rather than filtering —
+that is the one variant where `Space` legitimately opens and accepts, because there is no text field
+for it to type into.
+
+**Command palette** is this component inside the documented `Modal`: `Ui::Modal` for the shell,
+`Ui::Combobox` for the filter and results. Keep `aria-activedescendant` — moving DOM focus into the
+results would stop typing from filtering.
+
 ## Disclosure / Accordion — `app/components/ui/disclosure_component.rb`
 
 The most frequent interactive pattern after plain links (732 instances in a 72-page corpus). Read

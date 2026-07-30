@@ -1092,6 +1092,40 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Combobox / Autocomplete is `documented`, and Command palette becomes `derivable`** (#95) — two
+  rows retired, **29 → 27**. The APG contract was verified first (verdict on #229/#95); this is the
+  component that contract describes.
+  - The **input** carries `role="combobox" aria-expanded aria-controls` — the role never goes on a
+    wrapping div, which is the superseded ARIA 1.1 model. `aria-selected` tracks the **active** option
+    because selection follows focus in a combobox, not the previously chosen value — the commonly
+    inverted detail. A collapsed popup carries `hidden` as well as the ARIA state.
+  - `role="listbox"` is the implicit popup default and needs no `aria-haspopup`; `grid`/`tree`/`dialog`
+    must declare it and use `gridcell`/`row`/`treeitem` rather than `option`. The optional Open button
+    is `tabindex="-1"` and out of the tab order, since the input already reaches the popup.
+  - **Reach for a combobox on APG's two scenarios** — a closed set too long to scan, or an arbitrary
+    value helped by suggestions — rather than the old option-count heuristic. Neither → native
+    `<select>`.
+  - Announcing "5 results available" via a live region is recorded as **our convention, not APG's**;
+    the pattern never prescribes it.
+  - **Command palette has no APG pattern at all** (33 patterns, none for it), so it is a composition
+    rather than a gap: the documented `Modal` containing the documented `Combobox` with a listbox
+    popup. `aria-activedescendant` is effectively mandatory there — the input must hold focus for
+    typing to filter, so moving DOM focus into the results would break it.
+- **A pre-existing false-positive generator in the call-site linter, found by writing the first call
+  site that exercises it.** `renders_many :options` declares the slot as `options`, but
+  ViewComponent's setter is the **singular** `with_option` — so a *correct* call site was flagged as
+  an undeclared slot. It had never surfaced because no shipped call site used a `renders_many` slot;
+  existing components pass collections as initializer args instead. The rule now accepts the declared
+  name or a naive de-pluralisation, with a near-miss fixture proving an unrelated slot
+  (`with_choice`) still fires, and a declared mutation in `mutation_check.py` so the fix cannot
+  silently regress. Selftest 36 → 39.
+- **And a gap in my own doctrine, found the same way.** The component shipped with no worked call
+  site — so there was nothing for the guard to check *and* nothing for a reader to copy. Adding the
+  call site fixed both, which is why the mutation probe was worth running on a component I had just
+  written.
+
 ### 1.17.1 — 2026-07-30
 
 - **Shipped combobox doctrine omitted a REQUIRED attribute, and attributed `Space`/typeahead to an

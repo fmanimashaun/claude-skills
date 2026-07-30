@@ -484,13 +484,22 @@ def check_doctrine_call_sites() -> tuple[list[Finding], dict[str, int]]:
             stop = blocks[position + 1].start() if position + 1 < len(blocks) else len(body)
             tail = body[match.end():stop]
             for used in set(re.findall(rf"\b{re.escape(var)}\.with_(\w+)\b", tail)):
-                if used not in declared:
-                    line_no = body[:match.end()].count("\n") + 1
-                    findings.append(Finding(
-                        "doctrine-call-site-mismatch", where, line_no,
-                        f"`{var}.with_{used}` — {cls} declares slots "
-                        f"{sorted(declared)}",
-                    ))
+                # `renders_many :options` declares the slot as `options` but ViewComponent's setter
+                # is the SINGULAR `with_option`, so a correct call site must not be flagged. Accept
+                # the declared name or a naive de-pluralisation of it. Deliberately naive rather
+                # than reaching for a real inflector: this is a lint with no ActiveSupport, and
+                # over-accepting one form is far cheaper than flagging correct doctrine. A genuinely
+                # undeclared slot (`with_choice`) still fires, which the fixtures pin.
+                #
+                # Never surfaced before #95 because no shipped call site used a renders_many slot —
+                # existing components pass collections as initializer args instead.
+                if used in declared or f"{used}s" in declared:
+                    continue
+                line_no = body[:match.end()].count("\n") + 1
+                findings.append(Finding(
+                    "doctrine-call-site-mismatch", where, line_no,
+                    f"`{var}.with_{used}` — {cls} declares slots {sorted(declared)}",
+                ))
 
         # Initializer keywords, per component, only where the initializer is shown.
         # An undeclared component is a coverage gap (#168), a different finding.
@@ -782,6 +791,29 @@ def selftest() -> int:
              files={COMPONENT[0]: COMPONENT[1] +
                     "```erb\n<%= render Ui::CardComponent.new(title: \"x\") do |c| %>\n"
                     "  <% c.with_header do %>ok<% end %>\n<% end %>\n```\n"})
+
+    # renders_many declares a PLURAL slot but ViewComponent's setter is SINGULAR, so a correct
+    # `with_option` against `renders_many :options` must stay silent. Found by writing the first
+    # shipped call site that uses a renders_many slot (#95) and watching the linter flag it.
+    MANY = (
+        "skills/x/references/impl.md",
+        "```ruby\nmodule Ui\n  class ListComponent < ViewComponent::Base\n"
+        "    renders_many :options\n    def initialize(id:)\n      @id = id\n    end\n  end\nend\n```\n",
+    )
+    scenario("renders_many: the singular setter is correct, not a mismatch",
+             rule=R, expect_finding=False,
+             files={MANY[0]: MANY[1] +
+                    "```erb\n<%= render Ui::ListComponent.new(id: \"x\") do |c| %>\n"
+                    "  <% c.with_option { \"a\" } %>\n<% end %>\n```\n"})
+    scenario("renders_many: the plural setter is accepted too", rule=R, expect_finding=False,
+             files={MANY[0]: MANY[1] +
+                    "```erb\n<%= render Ui::ListComponent.new(id: \"x\") do |c| %>\n"
+                    "  <% c.with_options { \"a\" } %>\n<% end %>\n```\n"})
+    # NEAR MISS: accepting a de-pluralisation must not accept an unrelated slot.
+    scenario("renders_many: a genuinely undeclared slot still fires", rule=R, expect_finding=True,
+             files={MANY[0]: MANY[1] +
+                    "```erb\n<%= render Ui::ListComponent.new(id: \"x\") do |c| %>\n"
+                    "  <% c.with_choice { \"a\" } %>\n<% end %>\n```\n"})
 
     # TWO blocks binding the SAME variable. Scanning to end-of-document attributed the second
     # block's slots to the first class and flagged correct markup — found in #142, where a new
