@@ -370,8 +370,37 @@ defaults to `config.cache_store = :null_store`:
   never trips — **`rate_limit` is a permanent no-op in test**. `rate_limit` itself arrived in
   **Rails 7.2** and needs a real backing store.
 
-Stub a real store (`:memory_store`) in any example asserting either behaviour, or the test is
-vacuous.
+**They need *different* fixes, and this is the part to get right — one stub does not cover both.**
+
+The single-use marker goes through `Rails.cache` directly, so a per-example stub works:
+
+```ruby
+before { allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new) }
+```
+
+**`rate_limit` cannot be stubbed that way at all.** It counts through
+`config.action_controller.cache_store`, not `Rails.cache` — and the signature is
+`rate_limit(to:, within:, …, store: cache_store)`, so that default is evaluated **when the
+class body loads** and captured in the `before_action` closure. By the time an example runs,
+the store is already bound. `allow(Rails).to receive(:cache)` never reaches it, and the spec
+goes green while the limiter does nothing.
+
+Give the limiter a real store in the test environment instead, and clear it between examples —
+it is one instance per process, so counts otherwise accumulate across examples and the suite
+becomes order-dependent:
+
+```ruby
+# config/environments/test.rb
+config.cache_store = :null_store                          # keep general caching inert
+config.action_controller.cache_store = :memory_store      # but let the limiter actually count
+
+# spec/rails_helper.rb
+config.before { ActionController::Base.cache_store.clear }
+```
+
+Then assert **both** edges — that it trips past the limit and does *not* trip inside it — and
+prove the spec can fail by reverting the store to `:null_store` once. A throttle spec that has
+never failed on purpose is indistinguishable from no spec at all.
 
 ### The exchange side
 
