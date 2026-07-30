@@ -1149,6 +1149,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   **"52.00"**. Now `role="status"`, which carries polite **and** atomic implicitly. The Category row
   shipped in the same release already said `role="status"`, so this was internally inconsistent on
   arrival. Same fix applied to the basket count.
+  - **The Toast implementation and the layout snippet disagreed with each other**, and the sweep for the
+    class found it: `component-implementations.md`'s toast container had **no** `aria-live` while
+    `page-anatomies.md`'s had one, and the toast element carried `role` *and* a redundant `aria-live`
+    computed from the same condition. The container keeps `aria-live="polite"` (persistent and empty,
+    matching the pattern MDN describes) and the toast keeps only its **role**, which already implies the
+    live value.
+  - **A boundary is recorded rather than filled.** Bare `aria-live` IS correct on the toast *container*,
+    because `aria-atomic="false"` is what insertions want — atomic would re-announce every toast on
+    screen. And no source we could find states whether inserting an element that itself carries
+    `role="status"` announces on its own, so doctrine does not depend on it: the container is always
+    present, and the role expresses severity. Written down so the next reader does not "simplify" it on
+    the strength of an unverified negative.
   - **The Toast row carried the same shape** — `role="status" aria-live="polite"` (redundant) with
     "errors `assertive`" (which invites `aria-live="assertive"` on a `status` role). Severity picks the
     **role**: confirmation → `status`, time-critical failure → `alert`.

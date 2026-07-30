@@ -78,6 +78,19 @@ States and Properties" row for the role: `aria-valuemin` defaults to `0`, `aria-
 `aria-atomic` at **false**, and then *"assistive technologies will only present the changed node"* — so
 "Total £52.00" announces as "52.00". Use the role.
 
+**The one exception: a persistent, empty *container* that receives insertions.** The toast container
+(`<div id="toasts" aria-live="polite">`) is correct as bare `aria-live`, because `aria-atomic="false"`
+is exactly what you want there — atomic would re-announce every toast already on screen. The rule above
+is about a region whose **own text changes**; this is a region whose **children are inserted**.
+
+**Where the sources stop, and we do not fill the gap.** MDN describes the pattern as `aria-live` on an
+**empty** element that is then updated — which is why the container is persistent and in the layout. What
+no source we could find states either way is whether inserting an element that *itself* carries
+`role="status"` is announced on its own. So doctrine does not rely on it: the container is always
+present, and the toast's role is there to express **severity**, not to be the live region. Do not
+"simplify" this by deleting the container's `aria-live` on the strength of the toast having a role — that
+would be an unverified negative doing load-bearing work.
+
 **`role="alert"` is for severity, not for loading.** It is implicitly *assertive* and interrupts. A
 confirmation ("Copied", "Item added") is `status`; a time-critical failure ("Payment failed", "Session
 expiring") is `alert`. That is the whole decision rule, and offering both without it — as this file did

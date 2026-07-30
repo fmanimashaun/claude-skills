@@ -762,12 +762,17 @@ landmark noise outweighs the structure.
 ## Toast — `app/components/ui/toast_component.rb`
 
 ```erb
-<%# container in the layout; toasts appended via Turbo Stream. toast_controller auto-dismisses %>
-<div id="toasts" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none" style="--space: var(--space-2xs)"></div>
+<%# Container in the layout — PERSISTENT and EMPTY, and it is the ONE place bare aria-live is right. %>
+<%# aria-atomic defaults to false there, which is what you want for insertions: atomic=true would %>
+<%# re-announce every toast already on screen. It matches page-anatomies.md's layout snippet; the two %>
+<%# used to disagree about whether this element carried aria-live at all. %>
+<div id="toasts" aria-live="polite" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none" style="--space: var(--space-2xs)"></div>
 
-<%# a toast (turbo_stream.prepend "toasts") — role/status live region + dismiss %>
+<%# A toast (turbo_stream.prepend "toasts") — the ROLE carries the severity, and nothing beside it: %>
+<%# `status` already implies aria-live="polite", `alert` already implies aria-live="assertive", so %>
+<%# writing aria-live here restates the role at best and contradicts it at worst. %>
 <div class="box bg-card text-card-foreground rounded-lg border border-l-4 border-<%= intent %> shadow-md pointer-events-auto"
-     role="<%= intent == :error ? 'alert' : 'status' %>" aria-live="<%= intent == :error ? 'assertive' : 'polite' %>"
+     role="<%= intent == :error ? 'alert' : 'status' %>"
      data-controller="toast" data-toast-timeout-value="5000">
   <div class="cluster" style="--justify: space-between"><span><%= message %></span>
     <button data-action="toast#close" aria-label="Dismiss" class="min-h-touch"><span class="sr-only">Dismiss</span>×</button></div>
