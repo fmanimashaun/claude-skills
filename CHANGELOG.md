@@ -1164,6 +1164,50 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **NEW `references/style.md` — how Rails code should read** (#97, Phase A of EPIC #96). The skill
+  prescribed architecture, testing and deployment and said **nothing** about how code reads. Sourced to
+  [37signals' `STYLE.md`](https://github.com/basecamp/fizzy/blob/main/STYLE.md) in
+  [basecamp/fizzy](https://github.com/basecamp/fizzy) — production Rails by the people who make Rails,
+  licensed MIT-equivalent so quoting is permitted, and **attributed**. All twelve upstream claims
+  verified verbatim against the source; every adopt/adapt decision and its reason recorded, because
+  inheriting a convention silently is how a project ends up with two styles and an argument.
+  - **Six conventions adopted:** method ordering (class → public with `initialize` first → private),
+    invocation order (vertical, call-order), bang methods, visibility-modifier indentation (plus the
+    private-only-module variant), and the `_later`/`_now` job-naming pair.
+  - **`_later`/`_now` is the most immediately useful of them** because it settles a question every Rails
+    app re-litigates: **the logic lives on the model**, and the job is a two-line adapter. `_later` names
+    the enqueuing method so a call site reads as non-blocking; **`_now` is scoped to the
+    callback-into-self case**, not a suffix for every synchronous method — generalising it would misread
+    the source.
+  - **One convention ADAPTED, not adopted wholesale.** *Expanded conditionals over guard clauses* is
+    **demonstrably contrary to prevailing Ruby advice**: stock RuboCop enables `Style/GuardClause` **by
+    default**, keyed to the community style guide's *"Prefer a guard clause when you can assert invalid
+    data."* The pattern fizzy calls "bad" is the one the community guide calls good. We adopt the
+    preference **and its two named exceptions**, and add a rule of our own: **do not "fix" an existing
+    guard clause, and never reject a change solely for using one.** A style preference that generates
+    review churn costs more than it earns, and an agent applying this dogmatically produces `if`/`else`
+    where a guard was clearer.
+  - **Two conventions turned out to be doctrine we already had** — *"a new resource, not a custom
+    action"* (`controllers-routing.md` §1) and *"no service-object layer by default"* (`models.md` §7).
+    That is the more interesting result: the vanilla-Rails posture this skill has prescribed all along is
+    what Basecamp actually ships, not our inference. Both now carry the citation, and §7 gains the nuance
+    we lacked — *"when justified, it is fine to use services or form objects, but don't treat those as
+    special artifacts"*, which is what makes the rule workable rather than a prohibition.
+  - **Nothing was rejected**, and the file says so rather than implying a filter was applied.
+  - **A provenance error caught by the gate before it shipped.** I was going to write that
+    `rubocop-rails-omakase` is *37signals'* config. It is not: the README calls it *"the idiosyncratic
+    aesthetic sensibilities of Rails' creator"*, the gemspec author is DHH, and it lives under the
+    **`rails`** org. Related to fizzy's house style, not the same artifact, and not interchangeable in a
+    citation.
+  - **The linter cannot contradict any of this, verified rather than assumed.** `rubocop-rails-omakase`
+    disables whole cop **departments** and re-enables a short list; `Style/GuardClause` is never
+    mentioned, so it is off. And `Layout/IndentationConsistency` is `Enabled: false` **while carrying
+    `EnforcedStyle: indented_internal_methods`** — so the indentation style §5 prescribes is
+    *pre-declared* in the config we already mandate, switched off precisely for the private-only-concern
+    case §5 documents.
+
 ### 1.21.0 — 2026-07-30
 
 - **Range input and Calendar/Date/Time picker are documented** (#95). `coverage.md` **9 → 7**. Both are
