@@ -187,6 +187,7 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/jobs-and-realtime.md` | Active Job, Solid Queue, recurring jobs, 8.1 continuations, concurrency limits, Action Cable / Solid Cable |
 | `references/mail-storage-richtext.md` | Action Mailer, Action Mailbox, Active Storage (uploads/variants/direct upload), Action Text |
 | `references/auth-security.md` | `bin/rails g authentication`, sessions, password reset, authorization patterns, CSRF/XSS/SQLi, CSP, the security checklist |
+| `references/multi-tenancy.md` | **Isolation vs identification** (the two axes) — row-level isolation via association traversal, session-selected tenant (never in the URL), subdomain per *plane*, why not `default_scope`, the GlobalID/job-boundary hole, PostgreSQL RLS and its owner-bypass trap, opaque public ids vs UUID PKs |
 | `references/sso.md` | Enterprise SSO: multi-tenant OIDC (default) + SAML hatch, identities keyed [provider, issuer, uid], JIT roles, enabled-vs-enforced, tenant dashboard, cert rotation, SLO, audit, RSpec proving set |
 | `references/testing.md` | RSpec (pure — no matcher add-ons), FactoryBot/Faker, request/system specs, Capybara, WebMock/VCR, SimpleCov, `bin/ci`, `--skip-test` scaffolding |
 | `references/performance-caching.md` | Solid Cache, fragment/russian-doll caching, HTTP caching/ETags, N+1s, `load_async`, counter caches, YJIT/jemalloc/Puma/Thruster, profiling |
