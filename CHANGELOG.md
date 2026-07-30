@@ -1092,6 +1092,67 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.18.0 — 2026-07-30
+
+- **Every documented component now has a worked call site — 14 of 20 had none** (#238). A class
+  definition shows what a component *accepts*; it never shows how to **call** it, and inferring the
+  invocation is precisely how `FieldComponent.new(form:, name:)` and `field_classes` both **shipped and
+  raised** in a user's project (#168, #182). It also silently disarmed the doctrine-call-site rule: a
+  component with no call site has nothing to check, so it was skipped without a word.
+  - A single *Call sites* section gives the invocation for all of them, rather than scattering
+    snippets — which is also how a reader actually reaches for it. Each is verified mechanically
+    against its own declaration, so a signature change that misses the section now fails the gate
+    instead of misleading somebody.
+  - **`DropdownComponent` was never declared at all** — the section shipped an ERB template and no
+    class, for as long as it has existed. So its `items:` keyword and `trigger` slot had *never* been
+    checkable. Declared now; both are.
+  - Two of the 14 were **nested slot components** (`Option`, `Row`), reachable only through a parent's
+    setter. Demanding a standalone call site for those would demand the impossible, so they are exempt
+    — and a fixture pins the exemption rather than leaving it implicit.
+- **Two new rules, addable only because the work came first** (#238). `component-without-call-site` and
+  `undeclared-component-call-site` both fire **zero** times today. Landing either before the 14 call
+  sites existed would have produced 14 findings on day one — and per this repo's own thesis a linter
+  that starts red gets suppressed, so the class stops being caught at all. Written first, gated second.
+  - The ghost-reference rule exists because I **introduced one while writing the call sites**: a
+    `SparklineComponent` that does not exist. `data-viz.md` declares the slot as *"optional inline
+    sparkline (`<svg>`)"* and ships no such component. The doctrine-call-site rule could not catch it —
+    it skips classes it cannot find, by design (#168) — so my own slip is the evidence the rule was
+    missing. Probing for others then found `DropdownComponent` above.
+  - Five fixtures cover both directions plus the nested exemption; two declared mutations in
+    `mutation_check.py` mean neither rule can go quiet. Selftest 39 → 44, mutations 17 → 19.
+
+- **Combobox / Autocomplete is `documented`, and Command palette becomes `derivable`** (#95) — two
+  rows retired, **29 → 27**. The APG contract was verified first (verdict on #229/#95); this is the
+  component that contract describes.
+  - The **input** carries `role="combobox" aria-expanded aria-controls` — the role never goes on a
+    wrapping div, which is the superseded ARIA 1.1 model. `aria-selected` tracks the **active** option
+    because selection follows focus in a combobox, not the previously chosen value — the commonly
+    inverted detail. A collapsed popup carries `hidden` as well as the ARIA state.
+  - `role="listbox"` is the implicit popup default and needs no `aria-haspopup`; `grid`/`tree`/`dialog`
+    must declare it and use `gridcell`/`row`/`treeitem` rather than `option`. The optional Open button
+    is `tabindex="-1"` and out of the tab order, since the input already reaches the popup.
+  - **Reach for a combobox on APG's two scenarios** — a closed set too long to scan, or an arbitrary
+    value helped by suggestions — rather than the old option-count heuristic. Neither → native
+    `<select>`.
+  - Announcing "5 results available" via a live region is recorded as **our convention, not APG's**;
+    the pattern never prescribes it.
+  - **Command palette has no APG pattern at all** (33 patterns, none for it), so it is a composition
+    rather than a gap: the documented `Modal` containing the documented `Combobox` with a listbox
+    popup. `aria-activedescendant` is effectively mandatory there — the input must hold focus for
+    typing to filter, so moving DOM focus into the results would break it.
+- **A pre-existing false-positive generator in the call-site linter, found by writing the first call
+  site that exercises it.** `renders_many :options` declares the slot as `options`, but
+  ViewComponent's setter is the **singular** `with_option` — so a *correct* call site was flagged as
+  an undeclared slot. It had never surfaced because no shipped call site used a `renders_many` slot;
+  existing components pass collections as initializer args instead. The rule now accepts the declared
+  name or a naive de-pluralisation, with a near-miss fixture proving an unrelated slot
+  (`with_choice`) still fires, and a declared mutation in `mutation_check.py` so the fix cannot
+  silently regress. Selftest 36 → 39.
+- **And a gap in my own doctrine, found the same way.** The component shipped with no worked call
+  site — so there was nothing for the guard to check *and* nothing for a reader to copy. Adding the
+  call site fixed both, which is why the mutation probe was worth running on a component I had just
+  written.
+
 ### 1.17.1 — 2026-07-30
 
 - **Shipped combobox doctrine omitted a REQUIRED attribute, and attributed `Space`/typeahead to an
@@ -2233,6 +2294,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.37.0)
+
+> ### `fidara-design` gains two component contracts and a call-site reference
+>
+> Combobox is documented against a verified APG contract, Command palette is derivable from it plus
+> Modal, and **every documented component now has a worked invocation** — 14 of 20 previously had none.
+> `fidara-design.skill` changed; the other three archives are byte-identical.
+
+- **Combobox / Autocomplete is `documented`; Command palette is `derivable`** (#95) — `coverage.md`
+  **29 → 27**. The contract was APG-verified first: `role="combobox"` on the **input** (the wrapper form
+  is the superseded ARIA 1.1 model), `aria-selected` on the **active** option because selection follows
+  focus, `aria-controls` required, and a collapsed popup carrying `hidden` as well as the ARIA state.
+  Command palette turned out not to be a gap at all — APG has no such pattern, so it composes from the
+  documented Modal plus the documented Combobox, with `aria-activedescendant` effectively mandatory
+  because the input must hold focus for typing to filter.
+- **A worked call site for every component** (#238). 14 of 20 had none, so a reader had to infer the
+  invocation — which is how `FieldComponent.new(form:, name:)` and `field_classes` both shipped and
+  raised in a user's project. It also silently disarmed the call-site linter: a component with no call
+  site has nothing to check. `DropdownComponent` turned out never to have been **declared** at all — an
+  ERB template with no class — so its `items:` keyword and `trigger` slot had never been checkable.
+- **Three linter defects, each found by exercising something rather than reading it.** A `renders_many`
+  slot's setter is **singular** (`with_option` for `renders_many :options`), so correct call sites were
+  being flagged — it had never surfaced because no shipped call site used a `renders_many` slot. And two
+  new rules now hold the line: `component-without-call-site` and `undeclared-component-call-site`, both
+  firing **zero** times, because the call sites were written *before* the rules landed. A rule that
+  starts red gets suppressed, and then the class stops being caught at all.
 
 ### 2026-07-30 (release v1.36.0)
 

@@ -365,6 +365,27 @@ end
 
 ## Dropdown — `app/components/ui/dropdown_component.rb`
 
+The class was missing from this section for as long as it has existed, so its call sites — the
+`items:` keyword and the `trigger` slot — were **unverifiable**: `lint_self_consistency.py` skips a
+component it cannot find a declaration for, by design (#168). Declared now, so both are checked (#238).
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class DropdownComponent < ViewComponent::Base
+    renders_one :trigger
+
+    # `items` is an Array of `{label:, href:}` — a plain collection rather than a slot, because a
+    # menu's items are data, and `role="menuitem"` must be on the anchor itself.
+    def initialize(items:, id: nil)
+      @items = items
+      @id = id || "dropdown-#{SecureRandom.hex(4)}"
+    end
+
+    attr_reader :items, :id
+  end
+end
+```
 ```erb
 <%# uses the dropdown_controller (list-nav + dismissable + anchored) from reference-implementation %>
 <div class="relative inline-block" data-controller="dropdown">
@@ -380,6 +401,191 @@ end
   </div>
 </div>
 ```
+
+## Combobox — `app/components/ui/combobox_component.rb`
+
+APG-verified contract; read
+[interaction-stimulus.md](interaction-stimulus.md#combobox--the-two-corrections-that-matter-and-a-version-trap-229)
+for what is **required** versus ours. Two things this component gets right that are commonly got
+wrong: `aria-selected` tracks the **active** option (selection follows focus), and `aria-controls` is
+**required**, not optional.
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class ComboboxComponent < ViewComponent::Base
+    renders_many :options, "OptionComponent"
+
+    # `autocomplete:` -> aria-autocomplete. `:none` omits the attribute (the default per ARIA).
+    # `select_only:` puts the role on a div instead of an input: there is no text to complete, so
+    # it also forbids aria-autocomplete entirely.
+    AUTOCOMPLETE = { none: nil, list: "list", both: "both" }.freeze
+
+    def initialize(id:, name:, label:, autocomplete: :list, select_only: false,
+                   invalid: false, popup: :listbox)
+      @id, @name, @label = id, name, label
+      @autocomplete, @select_only, @invalid, @popup = autocomplete.to_sym, select_only, invalid, popup.to_sym
+    end
+
+    def popup_id = "#{@id}-popup"
+    def error_id = "#{@id}-error"
+
+    # listbox is the IMPLICIT default for role=combobox, so declaring aria-haspopup for it is noise.
+    # Anything else MUST declare it.
+    def haspopup = @popup == :listbox ? nil : @popup.to_s
+
+    def autocomplete_value = @select_only ? nil : AUTOCOMPLETE.fetch(@autocomplete)
+
+    def described_by = @invalid ? error_id : nil
+
+    def input_classes
+      "w-full rounded-md border border-input bg-background px-3 min-h-touch " \
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 " \
+        "aria-[invalid=true]:border-destructive"
+    end
+
+    def open_icon = helpers.lucide_icon("chevrons-up-down")
+
+    # Each option carries its own id so aria-activedescendant has something to point at, and
+    # aria-selected starts false — it tracks the ACTIVE option, set by the controller as focus moves.
+    class OptionComponent < ViewComponent::Base
+      def initialize(id:, value:)
+        @id, @value = id, value
+      end
+
+      def call
+        tag.li(content, id: @id, role: "option", class: "px-3 py-2 cursor-default " \
+               "data-[active=true]:bg-accent", aria: { selected: false },
+               data: { value: @value, active: false })
+      end
+    end
+  end
+end
+```
+```erb
+<%# combobox_component.html.erb — role=combobox goes on the INPUT, never a wrapper div. %>
+<%# A wrapper with aria-owns is the superseded ARIA 1.1 model and no longer conforms. %>
+<div data-controller="combobox" class="stack" style="--space: var(--space-3xs)">
+  <label for="<%= @id %>" class="text-sm font-medium"><%= @label %></label>
+
+  <div class="relative">
+    <%= tag.input id: @id, name: @name, type: "text", class: input_classes,
+                  role: "combobox", autocomplete: "off",
+                  aria: { expanded: false, controls: popup_id, haspopup: haspopup,
+                          autocomplete: autocomplete_value, invalid: @invalid,
+                          describedby: described_by },
+                  data: { combobox_target: "input", action: "input->combobox#filter " \
+                          "keydown->combobox#key click->combobox#open" } %>
+
+    <%# Optional Open button: tabindex=-1 and OUT of the tab order — the input already reaches
+        the popup, so a focusable second control just adds a stop that does nothing new. %>
+    <button type="button" tabindex="-1" aria-label="Show options"
+            class="with-icon absolute inset-y-0 right-0 px-2"
+            data-action="combobox#toggle"><%= open_icon %></button>
+  </div>
+
+  <%# hidden AND aria-expanded=false: the ARIA state alone leaves options in the a11y tree. %>
+  <ul id="<%= popup_id %>" role="<%= @popup %>" hidden
+      data-combobox-target="popup"
+      class="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border
+             bg-popover text-popover-foreground shadow-md divide-y divide-border">
+    <% options.each do |option| %><%= option %><% end %>
+  </ul>
+
+  <% if @invalid %>
+    <p id="<%= error_id %>" class="text-sm text-destructive"><%= content %></p>
+  <% end %>
+
+  <%# OUR convention, not APG's: the pattern never prescribes a live-region count. %>
+  <p class="sr-only" role="status" data-combobox-target="status"></p>
+</div>
+```
+
+```js
+// app/javascript/controllers/combobox_controller.js
+import { Controller } from "@hotwired/stimulus"
+
+export default class extends Controller {
+  static targets = ["input", "popup", "status"]
+
+  // Required: ArrowDown into the popup, ArrowUp/ArrowDown within it, Enter accepts, Esc dismisses.
+  // Right/Left are deliberately NOT handled — they must move the text cursor. Space is not an
+  // activation key: in an editable combobox it types a space.
+  key(event) {
+    switch (event.key) {
+      case "ArrowDown": event.preventDefault(); this.#move(1); break
+      case "ArrowUp":   event.preventDefault(); this.#move(-1); break
+      case "Enter":     if (this.#active) { event.preventDefault(); this.#accept() } break
+      case "Escape":    this.close(); break
+    }
+  }
+
+  open()  { this.popupTarget.hidden = false; this.inputTarget.setAttribute("aria-expanded", "true") }
+  close() { this.popupTarget.hidden = true;  this.inputTarget.setAttribute("aria-expanded", "false")
+            this.inputTarget.removeAttribute("aria-activedescendant") }
+  toggle() { this.popupTarget.hidden ? this.open() : this.close() }
+
+  filter() {
+    const q = this.inputTarget.value.toLowerCase()
+    const shown = this.#options.filter((o) => {
+      const hit = o.textContent.toLowerCase().includes(q)
+      o.hidden = !hit
+      return hit
+    })
+    this.open()
+    // Our convention, announced politely rather than asserted as an APG requirement.
+    this.statusTarget.textContent = `${shown.length} result${shown.length === 1 ? "" : "s"} available`
+  }
+
+  get #options() { return Array.from(this.popupTarget.querySelectorAll('[role="option"]')) }
+  get #active()  { return this.popupTarget.querySelector('[data-active="true"]') }
+
+  // aria-selected tracks the ACTIVE option, because selection follows focus in a combobox. Focus
+  // itself never leaves the input — that is what aria-activedescendant is for, and it is why typing
+  // keeps filtering.
+  #move(delta) {
+    const visible = this.#options.filter((o) => !o.hidden)
+    if (!visible.length) return
+    this.open()
+    const index = visible.indexOf(this.#active)
+    const next = visible[Math.max(0, Math.min(visible.length - 1, index + delta))] || visible[0]
+    visible.forEach((o) => {
+      const on = o === next
+      o.dataset.active = String(on)
+      o.setAttribute("aria-selected", String(on))
+    })
+    this.inputTarget.setAttribute("aria-activedescendant", next.id)
+    next.scrollIntoView({ block: "nearest" })
+  }
+
+  #accept() {
+    this.inputTarget.value = this.#active.dataset.value ?? this.#active.textContent.trim()
+    this.close()
+    this.inputTarget.focus()
+  }
+}
+```
+
+Call site — the options are a slot, so each carries its own `id` for `aria-activedescendant` to
+point at:
+
+```erb
+<%= render Ui::ComboboxComponent.new(id: "assignee", name: "task[assignee]",
+                                     label: "Assignee", autocomplete: :list) do |c| %>
+  <% users.each do |user| %>
+    <% c.with_option(id: "assignee-opt-#{user.id}", value: user.id) { user.name } %>
+  <% end %>
+<% end %>
+```
+
+**Select-only** (no text entry) is the same controller with the role on a `div`, no
+`aria-autocomplete`, and printable characters jumping to matching options rather than filtering —
+that is the one variant where `Space` legitimately opens and accepts, because there is no text field
+for it to type into.
+
+**Command palette** is this component inside the documented `Modal`: `Ui::Modal` for the shell,
+`Ui::Combobox` for the filter and results. Keep `aria-activedescendant` — moving DOM focus into the
+results would stop typing from filtering.
 
 ## Disclosure / Accordion — `app/components/ui/disclosure_component.rb`
 
@@ -615,6 +821,90 @@ end
     <% if action? %><div class="cluster" style="--justify: center"><%= action %></div><% end %>
   </div>
 </div>
+```
+
+## Call sites — the invocation for every documented component
+
+A class definition shows what a component *accepts*; it does not show how to *call* it, and inferring
+the invocation is exactly how `FieldComponent.new(form:, name:)` and `field_classes` **shipped and
+raised** in a user's project (#168, #182). So every component above has its invocation here, in one
+place a reader can scan.
+
+These are checked mechanically: `lint_self_consistency.py` verifies each call site's initializer
+keywords and slot setters against that component's own declaration, so a signature change that misses
+this section fails the gate rather than misleading someone (#238).
+
+Note the slot-setter names — `renders_many :items` gives the **singular** `with_item`.
+
+```erb
+<%# Badge — variant/size are vocabularies, not free strings %>
+<%= render Ui::BadgeComponent.new(variant: :success, size: :sm, dot: true) do %>Active<% end %>
+
+<%# Alert — one title slot; body is the block content %>
+<%= render Ui::AlertComponent.new(intent: :warning, dismissible: true) do |a| %>
+  <% a.with_title { "Payment method expires soon" } %>
+  Update it before the next billing run.
+<% end %>
+
+<%# Heading block — four optional slots, all `renders_one` %>
+<%= render Ui::HeadingComponent.new(title: "Invoices", level: 1, id: "page-title") do |h| %>
+  <% h.with_eyebrow { "Billing" } %>
+  <% h.with_description { "Every invoice raised against this account." } %>
+  <% h.with_actions { render Ui::ButtonComponent.new(variant: :primary) { "New invoice" } } %>
+  <% h.with_meta { "Updated #{l invoice.updated_at, format: :short}" } %>
+<% end %>
+
+<%# Media object — media / body / trailing %>
+<%= render Ui::MediaObjectComponent.new(size: :md) do |m| %>
+  <% m.with_media { render Ui::AvatarComponent.new(src: user.avatar_url, initials: "FA", size: :md) } %>
+  <% m.with_body { tag.p(user.name, class: "font-medium") } %>
+  <% m.with_trailing { render Ui::BadgeComponent.new(variant: :secondary) { user.role } } %>
+<% end %>
+
+<%# Avatar standalone — `initials` is the fallback when src is nil, never decoration %>
+<%= render Ui::AvatarComponent.new(src: nil, initials: "FA", size: :lg) %>
+
+<%# Card — no initializer args; three optional slots %>
+<%= render Ui::CardComponent.new do |c| %>
+  <% c.with_media { image_tag invoice.preview_url, alt: "" } %>
+  <% c.with_header { "Invoice #{invoice.number}" } %>
+  <% c.with_footer { link_to "Download", invoice_path(invoice) } %>
+  <%= invoice.summary %>
+<% end %>
+
+<%# Description list — `values` is an Array so one label can carry several <dd>s %>
+<%= render Ui::DescriptionListComponent.new(layout: :inline) do |l| %>
+  <% l.with_row(label: "Billing email", value: account.billing_email) %>
+  <% l.with_row(label: "Tax IDs", values: account.tax_ids, mono: true) %>
+<% end %>
+
+<%# Button group — `kind:` picks the ELEMENT (group vs radiogroup), not a style %>
+<%= render Ui::ButtonGroupComponent.new(label: "Invoice view", kind: :select) do |g| %>
+  <% g.with_button { render Ui::ButtonComponent.new(variant: :ghost) { "List" } } %>
+  <% g.with_button { render Ui::ButtonComponent.new(variant: :ghost) { "Board" } } %>
+<% end %>
+
+<%# Breadcrumbs — items are passed in, not slotted %>
+<%= render Ui::BreadcrumbsComponent.new(
+      items: [["Home", root_path], ["Invoices", invoices_path], [invoice.number, nil]],
+      collapse_after: 3) %>
+
+<%# Switcher — a layout primitive: one-dimension flip at a threshold %>
+<%= render Ui::SwitcherComponent.new(threshold: "30rem", space: :s) do |s| %>
+  <% s.with_item { render Ui::CardComponent.new { "Left" } } %>
+  <% s.with_item { render Ui::CardComponent.new { "Right" } } %>
+<% end %>
+
+<%# Address fields — takes the form builder, so it composes inside simple_form %>
+<%= simple_form_for @account do |f| %>
+  <%= render Ui::AddressFieldsComponent.new(form: f) %>
+<% end %>
+
+<%# Stat tile — `spark` takes a bare inline <svg>, not a component: data-viz.md declares the slot
+    as "optional inline sparkline (<svg>)" and ships no Sparkline component. %>
+<%= render Ui::StatComponent.new(label: "MRR", value: "£48,200", delta: 4.2, intent: :success) do |s| %>
+  <% s.with_spark { tag.svg(role: "img", "aria-label": "MRR trend, 12 months") { sparkline_path(mrr_series) } } %>
+<% end %>
 ```
 
 ## Layout components (parameterized primitives)

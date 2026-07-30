@@ -159,6 +159,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     # Trailing newline anchors the exact heading: "## Disclosure" alone would also match a longer
     # heading, which is how a missing entry could pass (see the Button/Button-group note above).
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
+    "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
     "Badge / Tag / Chip": "## Badge / Tag / Chip",
     "Avatar": "## Avatar\n",
     "Dropdown / Menu": "## Dropdown / Menu",
@@ -299,9 +300,9 @@ ENTRIES: tuple[Entry, ...] = (
     E("Progress bar", COMPONENT, "needs doctrine #95", "—",
       ["application-ui/navigation/progress-bars"], ["Progress"],
       "the Flowbite audit surfaced LABELLED progress bars specifically"),
-    E("Command palette", COMPONENT, "needs doctrine #95", "new controller (filter + list-navigation)",
+    E("Command palette", COMPONENT, "derivable", "new controller (filter + list-navigation)",
       ["application-ui/navigation/command-palettes"], []),
-    E("Combobox / Autocomplete", COMPONENT, "needs doctrine #95", "new controller (filter + list-navigation)",
+    E("Combobox / Autocomplete", COMPONENT, "documented", "new controller (filter + list-navigation)",
       ["application-ui/forms/comboboxes"], []),
     E("Action panel", COMPONENT, "derivable", "—", ["application-ui/forms/action-panels"], []),
     E("File upload / Dropzone", COMPONENT, "needs doctrine #95", "new controller (drag + drop)", [],
@@ -609,7 +610,11 @@ BUILD: dict[str, str] = {
     "Drawer / off-canvas": "the documented Modal, positioned to an edge — keep its focus trap",
     "Progress bar": "`<progress>`, or a div with `role=progressbar` + `aria-valuenow/min/max` "
         "and a visible label",
-    "Command palette": "Modal + the list-navigation mixin over a filtered list",
+    # APG has no command-palette pattern (33 patterns, none for it), so this is a composition
+    # of two documented parts rather than a gap. Keep aria-activedescendant: the input must
+    # hold focus for typing to filter, so moving DOM focus into the results breaks it.
+    "Command palette": "the documented Modal containing the documented Combobox with a "
+        "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
     "Combobox / Autocomplete": "the documented Select until the entry lands — do not hand-roll "
         "the ARIA combobox pattern",
     "File upload / Dropzone": "the documented file field; add drag-and-drop as an enhancement, "

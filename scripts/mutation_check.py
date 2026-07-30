@@ -113,6 +113,24 @@ GUARDS: tuple[Guard, ...] = (
                 "unbounded",
             ),
             Mutation(
+                "the renders_many singular setter is flagged as a mismatch again",
+                'if used in declared or f"{used}s" in declared:',
+                "if used in declared:",
+                "singular setter is correct",
+            ),
+            Mutation(
+                "an undemonstrated component stops being flagged",
+                "    for name in sorted(top - called):",
+                "    for name in []:",
+                "with no call site",
+            ),
+            Mutation(
+                "a call site naming a nonexistent component stops being flagged",
+                "    for name in sorted(called - top - nested):",
+                "    for name in []:",
+                "nothing declares",
+            ),
+            Mutation(
                 "a declared plugin missing from the docs stops being flagged",
                 "if name in blob:\n                continue",
                 "if True:\n                continue",

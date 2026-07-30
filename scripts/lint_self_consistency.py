@@ -29,6 +29,10 @@ WHAT IT CHECKS
                               what ships omits it
   unbounded-issue-query       a `gh issue/pr list` with no --limit: it defaults to 30, so
                               the call reports a page as the total
+  component-without-call-site a documented component nothing demonstrates — a reader must
+                              infer the invocation, and the call-site rule skips it silently
+  undeclared-component-call-site  a call site naming a component no skill declares, so its
+                              keywords and slots cannot be checked
   doctrine-call-site-mismatch a call site in skills/ naming an API those skills do not
                               declare — a wrong initializer keyword, an undeclared slot,
                               or an icon passed a size it must not take
@@ -301,6 +305,67 @@ def check_unbounded_issue_queries() -> tuple[list[Finding], int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: component-without-call-site  /  undeclared-component-call-site
+# ---------------------------------------------------------------------------
+# Two halves of one guarantee: every documented component is DEMONSTRATED, and every
+# demonstration names something real.
+#
+# A class definition shows what a component accepts; it does not show how to CALL it, and inferring
+# the invocation is how `FieldComponent.new(form:, name:)` and `field_classes` both SHIPPED and
+# raised in a user's project (#168, #182). It is also how the doctrine-call-site rule goes quiet: a
+# component with no call site has nothing to check, so it is skipped silently.
+#
+# BOTH RULES WERE ADDABLE ONLY AFTER THE WORK. A call-site rule would have produced 14 findings the
+# day it landed (#238) -- and per this file's own thesis a linter that starts red gets suppressed,
+# so the class stops being caught at all. The call sites were written first; the rules hold the line
+# now that the count is zero. Same for ghosts: `SparklineComponent` (invented while writing those
+# call sites) and `DropdownComponent` (undeclared for as long as it existed) both had to be fixed
+# before this could be a gate rather than a backlog.
+_TOP_LEVEL_COMPONENT = re.compile(
+    r"^  class\s+(\w+Component)\s*<\s*ViewComponent::Base", re.M
+)
+# A NESTED class is reached through its parent's slot setter (`l.with_row(...)`), never a bare
+# `render`, so demanding a standalone call site for it would demand something impossible.
+_NESTED_COMPONENT = re.compile(
+    r"^    class\s+(\w+Component)\s*<\s*ViewComponent::Base", re.M
+)
+_COMPONENT_CALL = re.compile(r"render\(?\s*(?:\w+::)?(\w+Component)\.new")
+
+
+def check_component_call_sites() -> tuple[list[Finding], int]:
+    """Every documented component is demonstrated, and every demonstration names a real one."""
+    docs = [p for p in walk(".md") if "skills" in rel(p).split("/")]
+    if not docs:
+        return [], 0
+    body = "\n".join(read(p) for p in docs)
+
+    top = set(_TOP_LEVEL_COMPONENT.findall(body))
+    nested = set(_NESTED_COMPONENT.findall(body))
+    called = set(_COMPONENT_CALL.findall(body))
+    if not top:
+        return [], 0
+
+    findings: list[Finding] = []
+    for name in sorted(top - called):
+        findings.append(Finding(
+            "component-without-call-site", "skills/**", 0,
+            f"{name} is documented but never called -- a reader must infer the invocation, which "
+            "is how a wrong call site ships, and the doctrine-call-site rule silently skips a "
+            "component it has no call site for",
+        ))
+    # A call site naming a component nothing declares is unverifiable by the call-site rule, which
+    # skips unknown classes by design. Nested classes are legitimate targets of a bare render too,
+    # so they count as declared here.
+    for name in sorted(called - top - nested):
+        findings.append(Finding(
+            "undeclared-component-call-site", "skills/**", 0,
+            f"{name} is called but no skill declares it -- its keywords and slots cannot be "
+            "checked, so a wrong signature here is invisible",
+        ))
+    return findings, len(top)
+
+
+# ---------------------------------------------------------------------------
 # Rule: undocumented-plugin
 # ---------------------------------------------------------------------------
 
@@ -484,13 +549,22 @@ def check_doctrine_call_sites() -> tuple[list[Finding], dict[str, int]]:
             stop = blocks[position + 1].start() if position + 1 < len(blocks) else len(body)
             tail = body[match.end():stop]
             for used in set(re.findall(rf"\b{re.escape(var)}\.with_(\w+)\b", tail)):
-                if used not in declared:
-                    line_no = body[:match.end()].count("\n") + 1
-                    findings.append(Finding(
-                        "doctrine-call-site-mismatch", where, line_no,
-                        f"`{var}.with_{used}` — {cls} declares slots "
-                        f"{sorted(declared)}",
-                    ))
+                # `renders_many :options` declares the slot as `options` but ViewComponent's setter
+                # is the SINGULAR `with_option`, so a correct call site must not be flagged. Accept
+                # the declared name or a naive de-pluralisation of it. Deliberately naive rather
+                # than reaching for a real inflector: this is a lint with no ActiveSupport, and
+                # over-accepting one form is far cheaper than flagging correct doctrine. A genuinely
+                # undeclared slot (`with_choice`) still fires, which the fixtures pin.
+                #
+                # Never surfaced before #95 because no shipped call site used a renders_many slot —
+                # existing components pass collections as initializer args instead.
+                if used in declared or f"{used}s" in declared:
+                    continue
+                line_no = body[:match.end()].count("\n") + 1
+                findings.append(Finding(
+                    "doctrine-call-site-mismatch", where, line_no,
+                    f"`{var}.with_{used}` — {cls} declares slots {sorted(declared)}",
+                ))
 
         # Initializer keywords, per component, only where the initializer is shown.
         # An undeclared component is a coverage gap (#168), a different finding.
@@ -519,6 +593,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
     unbounded, queries_examined = check_unbounded_issue_queries()
+    components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
     coverage = {
         "python_modules": len(python_sources),
@@ -526,9 +601,10 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_flag_claims_examined": flag_examined,
         "declared_plugins": plugins_examined,
         "gh_list_calls_examined": queries_examined,
+        "documented_components": components_examined,
         **call_coverage,
     }
-    return dead + unenforced + undocumented + unbounded + call_sites, coverage
+    return dead + unenforced + undocumented + unbounded + components + call_sites, coverage
 
 
 def selftest() -> int:
@@ -672,6 +748,39 @@ def selftest() -> int:
         files={"CHANGELOG.md": "Run `gh issue list --label comp:x` to cluster.\n"},
     )
 
+    # -- component-without-call-site / undeclared-component-call-site (#238) ----
+    # Both directions, plus the nested-class exemption: a class reached only through a parent's slot
+    # setter cannot have a standalone call site, so demanding one would demand the impossible.
+    DECL = ("skills/x/references/impl.md",
+            "```ruby\nmodule Ui\n  class ThingComponent < ViewComponent::Base\n"
+            "    def initialize(a:)\n      @a = a\n    end\n  end\nend\n```\n")
+    scenario("a documented component with no call site", rule="component-without-call-site",
+             expect_finding=True, files={DECL[0]: DECL[1]})
+    scenario("a documented component that IS demonstrated", rule="component-without-call-site",
+             expect_finding=False,
+             files={DECL[0]: DECL[1] + "```erb\n<%= render Ui::ThingComponent.new(a: 1) %>\n```\n"})
+    # A nested class is slot-only, so its absence from the call list is correct, not a finding.
+    scenario("a nested slot component needs no call site of its own",
+             rule="component-without-call-site", expect_finding=False,
+             files={DECL[0]: "```ruby\nmodule Ui\n  class OuterComponent < ViewComponent::Base\n"
+                             "    renders_many :rows\n"
+                             "    class RowComponent < ViewComponent::Base\n"
+                             "      def initialize(label:)\n        @label = label\n      end\n"
+                             "    end\n  end\nend\n```\n"
+                             "```erb\n<%= render Ui::OuterComponent.new do |o| %>\n"
+                             "  <% o.with_row(label: \"x\") %>\n<% end %>\n```\n"})
+    scenario("a call site naming a component nothing declares",
+             rule="undeclared-component-call-site", expect_finding=True,
+             files={DECL[0]: DECL[1] + "```erb\n<%= render Ui::GhostComponent.new(a: 1) %>\n```\n"})
+    scenario("a call site naming a NESTED component is not a ghost",
+             rule="undeclared-component-call-site", expect_finding=False,
+             files={DECL[0]: "```ruby\nmodule Ui\n  class OuterComponent < ViewComponent::Base\n"
+                             "    class InnerComponent < ViewComponent::Base\n"
+                             "      def initialize(x:)\n        @x = x\n      end\n"
+                             "    end\n  end\nend\n```\n"
+                             "```erb\n<%= render Ui::OuterComponent.new %>\n"
+                             "<%= render Ui::InnerComponent.new(x: 1) %>\n```\n"})
+
     # -- undocumented-plugin (#203) ---------------------------------------
     # design-flow shipped while CLAUDE.md's "what this repo distributes" section named the other
     # four and said "four app-builder plugins". Both directions pinned.
@@ -782,6 +891,29 @@ def selftest() -> int:
              files={COMPONENT[0]: COMPONENT[1] +
                     "```erb\n<%= render Ui::CardComponent.new(title: \"x\") do |c| %>\n"
                     "  <% c.with_header do %>ok<% end %>\n<% end %>\n```\n"})
+
+    # renders_many declares a PLURAL slot but ViewComponent's setter is SINGULAR, so a correct
+    # `with_option` against `renders_many :options` must stay silent. Found by writing the first
+    # shipped call site that uses a renders_many slot (#95) and watching the linter flag it.
+    MANY = (
+        "skills/x/references/impl.md",
+        "```ruby\nmodule Ui\n  class ListComponent < ViewComponent::Base\n"
+        "    renders_many :options\n    def initialize(id:)\n      @id = id\n    end\n  end\nend\n```\n",
+    )
+    scenario("renders_many: the singular setter is correct, not a mismatch",
+             rule=R, expect_finding=False,
+             files={MANY[0]: MANY[1] +
+                    "```erb\n<%= render Ui::ListComponent.new(id: \"x\") do |c| %>\n"
+                    "  <% c.with_option { \"a\" } %>\n<% end %>\n```\n"})
+    scenario("renders_many: the plural setter is accepted too", rule=R, expect_finding=False,
+             files={MANY[0]: MANY[1] +
+                    "```erb\n<%= render Ui::ListComponent.new(id: \"x\") do |c| %>\n"
+                    "  <% c.with_options { \"a\" } %>\n<% end %>\n```\n"})
+    # NEAR MISS: accepting a de-pluralisation must not accept an unrelated slot.
+    scenario("renders_many: a genuinely undeclared slot still fires", rule=R, expect_finding=True,
+             files={MANY[0]: MANY[1] +
+                    "```erb\n<%= render Ui::ListComponent.new(id: \"x\") do |c| %>\n"
+                    "  <% c.with_choice { \"a\" } %>\n<% end %>\n```\n"})
 
     # TWO blocks binding the SAME variable. Scanning to end-of-document attributed the second
     # block's slots to the first class and flagged correct markup — found in #142, where a new
@@ -895,6 +1027,7 @@ def main(argv: list[str]) -> int:
         "documented_flag_claims_examined": "documented flag claim(s)",
         "declared_plugins": "declared plugin(s)",
         "gh_list_calls_examined": "gh list call(s)",
+        "documented_components": "documented component(s)",
         "skill_docs": "skill doc(s)",
         "declared_components": "declared component(s)",
     }
