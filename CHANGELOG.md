@@ -1092,6 +1092,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Five page archetypes documented — Landing, Pricing, About, Error, Auth** (#90). `coverage.md`
+  **27 → 22**. These are page *compositions* with no ARIA pattern upstream, so the authority is the
+  maintainer decision rather than a verdict — which is exactly why they were sequenced separately from
+  the widget rows instead of queued behind 15 verifications.
+  - **Shell assignment is doctrine, not taste.** Landing/Pricing/About/Error use the **stacked** shell —
+    marketing pages are the only place it is the default rather than a choice. **Auth uses no shell at
+    all**: showing app navigation to someone not signed in advertises destinations they cannot reach.
+  - **Correctness points that are easy to get wrong and expensive to miss:**
+    - A 404 design served with **HTTP 200 is a soft 404** — search engines index it and monitoring never
+      sees the failure. Mirror image of `qa-flow`'s evidence rule, where a 200 error page is
+      indistinguishable from a working one to everything except a human.
+    - A **500 page must not depend on the app** — no database call, no current-user lookup, no asset the
+      failed boot may not have compiled. A 500 page that itself raises produces a blank browser default.
+    - **`autocomplete` tokens are a security property**, not polish: without
+      `username`/`current-password`/`new-password`, password managers cannot fill or save, and people
+      fall back to weaker passwords they can type.
+    - Auth must **never say which credential was wrong**, and a password reset must **always report
+      success** — both are account-enumeration oracles otherwise.
+    - Pricing's recommended plan needs a **non-colour signal** (the badge carries the meaning), and
+      comparison `✓`/`—` cells need `sr-only` words — a bare glyph is announced as nothing.
+  - One `h1` per page, and every section gets an `h2` even where the design shows none — `sr-only`
+    rather than a skipped level, or the page has no outline for anyone navigating by headings.
+
 ### 1.18.0 — 2026-07-30
 
 - **Every documented component now has a worked call site — 14 of 20 had none** (#238). A class
