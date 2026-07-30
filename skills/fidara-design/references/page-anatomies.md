@@ -283,3 +283,381 @@ legitimate as a substitute for a primitive that expresses the same intent.
    breakpoint chain from the table above; `min-h-0` on every scroll region; empty state
    for anything data-driven; `min-h-touch` on every control; safe-area padding on fixed
    chrome.
+
+## Landing
+
+The one screen that must survive a stranger's first eight seconds. It answers *"why should I care,
+and what do I do next?"* — nothing else.
+
+**Shell: stacked.** No sidebar; there is no app to navigate yet. Marketing pages are the only place
+the stacked shell is the *default* rather than a choice.
+
+**One primary action, repeated — never several competing ones.** The same CTA appears in the hero, once
+mid-page, and in the closing band. Two different primary CTAs on a landing page is a decision the
+visitor has to make instead of the one you want.
+
+```erb
+<div class="stack" style="--space: var(--space-xl)">
+  <section class="stack text-center" style="--space: var(--space-s)">
+    <h1 class="text-step-5 max-w-[45ch] mx-auto"><%# the claim, not the product name %></h1>
+    <p class="text-step-1 text-muted-foreground max-w-[60ch] mx-auto"><%# who it is for, concretely %></p>
+    <div class="cluster justify-center"><%# primary CTA + one quiet secondary %></div>
+    <%# proof immediately under the fold line: logos, a number, or one real quote — not all three %>
+  </section>
+
+  <section class="grid-auto" style="--min: 18rem" aria-label="Capabilities">
+    <%# 3–6 capability cards. Each: verb-led heading, one sentence, no icon-only labels %>
+  </section>
+
+  <section class="stack" aria-label="How it works">
+    <%# 3 numbered steps. An <ol>, because the order is the meaning %>
+  </section>
+
+  <section class="stack text-center" aria-label="Get started">
+    <%# the SAME primary CTA as the hero %>
+  </section>
+</div>
+```
+
+**Heading discipline:** exactly one `h1` (the claim). Every section gets an `h2`, even where the design
+shows no visible heading — use `sr-only` rather than skipping the level, or the page has no outline for
+anyone navigating by headings.
+
+## Pricing
+
+Answers *"which plan, and what will it cost me?"* — in that order. The comparison is the page; the
+prose is scaffolding.
+
+```erb
+<div class="stack" style="--space: var(--space-l)">
+  <header class="stack text-center" style="--space: var(--space-2xs)">
+    <h1 class="text-step-4">Pricing</h1>
+    <%# billing-period toggle: a Ui::ButtonGroup with kind: :select — it is a radiogroup, not styling %>
+  </header>
+
+  <div class="grid-auto items-start" style="--min: 17rem">
+    <%# one Ui::Card per plan. The recommended plan carries a Ui::Badge, NOT colour alone %>
+  </div>
+
+  <table class="w-full text-step--1">
+    <caption class="sr-only">Plan comparison</caption>
+    <thead><tr><th scope="col">Feature</th><%# th scope=col per plan %></tr></thead>
+    <tbody><%# th scope=row per feature; ✓/— cells carry an sr-only word, never a bare glyph %></tbody>
+  </table>
+
+  <section aria-label="Pricing questions"><%# the 3 objections sales actually hears, as a disclosure %></section>
+</div>
+```
+
+**The recommended plan needs a non-colour signal.** A ring or tint alone fails for anyone who cannot
+see it; the badge is what carries the meaning. Same rule as every status in this system.
+
+**Comparison cells must say what they mean.** A `✓` with no accessible name is announced as nothing.
+Pair the glyph with `sr-only` text ("Included" / "Not included") — the identical reasoning to icon-only
+controls needing a name.
+
+## About
+
+Answers *"who is behind this, and can I trust them?"* Mostly prose, which is exactly why it goes wrong:
+there is no data to structure, so it drifts into a wall.
+
+```erb
+<div class="stack" style="--space: var(--space-l)">
+  <header class="stack" style="--space: var(--space-2xs)">
+    <h1 class="text-step-4"><%# what we do, in one line — not "About us" %></h1>
+    <p class="text-step-1 text-muted-foreground max-w-[65ch]"><%# the why %></p>
+  </header>
+
+  <section class="stack" aria-label="Story">
+    <%# prose: max-w-[70ch]. Longer measures are unreadable regardless of type size %>
+  </section>
+
+  <section class="grid-auto" style="--min: 14rem" aria-label="Team">
+    <%# Ui::MediaObject per person: avatar + name + role. Avatar never carries the name alone %>
+  </section>
+</div>
+```
+
+**Constrain the measure, not the font size.** A 70-character line is the readability limit; making type
+smaller to fit more per line makes it worse, not denser.
+
+## Error (404 / 500)
+
+Answers *"where am I, and how do I get out?"* Two sentences and a way forward — nothing else earns its
+place on a page someone reached by accident.
+
+**The status code must match the page.** A 404 design served with HTTP 200 is a *soft 404*: search
+engines index it, and monitoring never sees the failure. This is the mirror of the evidence rule in
+`qa-flow` — an error page that returns 200 is indistinguishable from a working one to everything except
+a human reading it.
+
+```erb
+<%# rendered by the framework's error handler; no app chrome, because the app may be what failed %>
+<div class="center stack text-center" style="--space: var(--space-s)">
+  <p class="text-step--1 text-muted-foreground"><%# the code, as text: "404" %></p>
+  <h1 class="text-step-3"><%# what happened, in plain words %></h1>
+  <p class="text-muted-foreground max-w-[50ch]"><%# what to do about it %></p>
+  <div class="cluster justify-center"><%# back to safety: home, or the thing they probably wanted %></div>
+</div>
+```
+
+**A 500 page must not depend on the app.** No database call, no current-user lookup, no asset the failed
+boot might not have compiled — a 500 page that itself raises produces a blank browser default. Keep it
+static and self-contained.
+
+**Never blame the visitor.** "The page you requested no longer exists" beats "you have entered an
+invalid URL", and it is usually truer — the link was probably ours.
+
+## Auth (sign-in / sign-up / reset)
+
+Answers *"who are you?"* One focused form and nothing to click away to.
+
+**No shell at all** — this is the one archetype that uses neither the sidebar nor the stacked shell.
+Showing app navigation to someone who is not signed in advertises destinations they cannot reach.
+
+```erb
+<div class="center" style="--measure: 24rem">
+  <div class="box stack" style="--space: var(--space-s)">
+    <%# brand mark links home — the only exit, and it must exist %>
+    <h1 class="text-step-2"><%# "Sign in" — the action, not "Welcome back" %></h1>
+
+    <%# Ui::Alert intent: :error for the failure summary, ABOVE the form. One message, %>
+    <%# never per-field noise after a wrong password: it leaks which half was wrong %>
+
+    <%= simple_form_for(...) do |f| %>
+      <%# email: autocomplete="username", inputmode="email" %>
+      <%# password: autocomplete="current-password" (new-password on sign-up) %>
+      <%# submit: full width, and disabled-with-label while in flight, never a bare spinner %>
+    <% end %>
+
+    <div class="cluster justify-between text-step--1">
+      <%# the one alternate route: forgot password, or sign-up ↔ sign-in %>
+    </div>
+  </div>
+</div>
+```
+
+**`autocomplete` tokens are not optional polish.** Without `username` / `current-password` /
+`new-password`, password managers cannot fill or save, and users fall back to weaker passwords they can
+type. This is a security property of the markup.
+
+**Say nothing about which credential was wrong.** "Email or password is incorrect" is the whole
+message — anything more precise is an account-enumeration oracle.
+
+**A password reset always reports success.** "If that address has an account, we have sent a link" is
+the only safe response; confirming an address exists is the same leak by a slower route.
+
+## Storefront
+
+The shop's front door. Answers *"what do you sell, and where do I start?"* — a curated entry, never a
+dump of the catalogue.
+
+**Shell: stacked.** Same reasoning as Landing: there is no app rail to show a browsing visitor.
+
+```erb
+<div class="stack" style="--space: var(--space-xl)">
+  <section aria-label="Featured"><%# one hero promotion — a second competes with the first %></section>
+
+  <section class="stack" aria-label="Shop by category">
+    <h2 class="text-step-2">Categories</h2>
+    <div class="grid-auto" style="--min: 12rem"><%# category tiles: image + NAME, never image alone %></div>
+  </section>
+
+  <section class="stack" aria-label="New arrivals">
+    <%# a reel of product cards, each a full link to the product — not a card with a nested button %>
+  </section>
+</div>
+```
+
+**A category tile's image is never the label.** `alt=""` on the image and the name as real text, or the
+tile announces as an unlabelled link.
+
+## Category
+
+A filtered, sorted list. Answers *"which of these?"*
+
+```erb
+<div class="grid-auto items-start" style="--min: 14rem">
+  <form method="get" class="stack" aria-label="Filter products">
+    <%# filters are a FORM with a submit — see below. Checkbox groups in a fieldset+legend %>
+  </form>
+
+  <div class="stack">
+    <div class="cluster justify-between items-baseline">
+      <h1 class="text-step-3"><%# category name %></h1>
+      <%# sort: a real <select> with a label — the value is a closed set, so no combobox %>
+    </div>
+    <p role="status" class="text-step--1 text-muted-foreground"><%# "24 products" — announced on change %></p>
+    <div class="grid-auto" style="--min: 15rem"><%# product cards %></div>
+    <nav aria-label="Pagination"><%# see below %></nav>
+  </div>
+</div>
+```
+
+**Filters must be a form that works without JavaScript.** Enhance with Turbo, but the `GET` submit is
+the baseline: filter state then lives in the URL, which makes results shareable, back-button-correct,
+and reachable by anyone whose JS failed to load.
+
+**Announce the result count.** After a filter changes, a sighted user sees the grid redraw; nobody else
+does. A `role="status"` line carrying "24 products" is the whole fix.
+
+**Paginate by default; do not infinite-scroll.** Infinite scroll breaks the back button, strands
+keyboard users before the footer, and has no addressable position. If you must, provide a "load more"
+button — a real control, not a scroll listener.
+
+## Product
+
+One item. Answers *"is this the right thing, and can I buy it?"*
+
+```erb
+<div class="stack">
+  <nav aria-label="Breadcrumb" class="text-step--1">…</nav>
+
+  <div class="grid-auto items-start" style="--min: 20rem">
+    <div class="stack" aria-label="Product images">
+      <%# each image needs alt describing THE PRODUCT, not "product image 2" %>
+      <%# thumbnails are buttons in a group, with the active one announced as selected %>
+    </div>
+
+    <div class="stack" style="--space: var(--space-s)">
+      <h1 class="text-step-3"><%# product name %></h1>
+      <%# price: see the discount rule below %>
+      <%# stock state as TEXT — "In stock", "2 left", "Out of stock" — never colour alone %>
+
+      <%= simple_form_for(...) do |f| %>
+        <%# variants: a fieldset + legend per axis, radios inside. NOT a styled div, and %>
+        <%# NOT a select unless the axis genuinely has no visual dimension %>
+        <%# unavailable variants are disabled AND say why: "Blue — out of stock" %>
+        <%# quantity: a number input with a label, not bare +/- buttons %>
+        <%# submit: "Add to basket" %>
+      <% end %>
+
+      <%# delivery + returns as a disclosure group — the two questions that block a purchase %>
+    </div>
+  </div>
+</div>
+```
+
+**A discount needs two prices and a word.** Show the original and the current, and mark the original
+with `<s>` plus `sr-only` "was" / "now". Colour and a strikethrough alone convey nothing to a screen
+reader, and red-as-cheap is not universal.
+
+**Adding to the basket must be announced.** The button click changes state elsewhere on the page
+(a basket count in the header); that change needs a live region, or only sighted users learn it worked.
+
+## Cart
+
+A mutable list. Answers *"what am I about to buy, and can I still change it?"*
+
+```erb
+<div class="grid-auto items-start" style="--min: 18rem">
+  <div class="stack">
+    <h1 class="text-step-3">Basket</h1>
+    <ul class="stack divide-y divide-border">
+      <%# per line: Ui::MediaObject — image, name (a link back), variant, unit price %>
+      <%# quantity: labelled number input, "Update" reachable without JS %>
+      <%# remove: an accessible name that NAMES THE ITEM — see below %>
+    </ul>
+  </div>
+
+  <aside class="box stack" aria-label="Order summary">
+    <%# subtotal, delivery, tax, total. Ui::DescriptionList with layout: :inline %>
+    <%# the total is inside a live region — see below %>
+    <%# checkout CTA %>
+  </aside>
+</div>
+```
+
+**A remove control must name what it removes.** An icon-only `×` announces as "button" and there are
+six of them. `aria-label="Remove Blue T-shirt, medium"` — the item, not the row number.
+
+**Quantity and total changes go in a live region.** Change a quantity and the total changes silently;
+wrap the summary total in `aria-live="polite"` so the consequence of the edit is announced. This is the
+single most-missed thing in commerce a11y, and the one with a direct revenue cost.
+
+**An empty basket is a page, not a blank.** Say it is empty and give one route back to browsing.
+
+## Checkout
+
+A form under pressure. Answers *"how do I pay?"* — and nothing else, because every other element on
+this page is a chance to abandon.
+
+```erb
+<div class="center stack" style="--measure: 34rem">
+  <%# brand mark only. No nav, no promotions, no newsletter — the shell is deliberately stripped %>
+  <h1 class="text-step-2">Checkout</h1>
+
+  <%# error summary: Ui::Alert intent: :error, ABOVE the form, focus moved to it on failure, %>
+  <%# each message a link to the field it concerns %>
+
+  <%= simple_form_for(...) do |f| %>
+    <%# contact: email, autocomplete="email" %>
+    <%= render Ui::AddressFieldsComponent.new(form: f) %>
+    <%# delivery choice: fieldset + legend, radios, price and ETA in the label text %>
+    <%# payment: the provider's iframe/element — never a hand-rolled card field %>
+    <%# submit: full width, disabled-with-label in flight, and idempotent on double-submit %>
+  <% end %>
+</div>
+```
+
+**Never require an account to buy.** Offer guest checkout first and account creation *after* the order
+is placed, from data you already have.
+
+**Never lose what was typed.** On validation failure re-render with every field repopulated. Losing an
+address is the most common abandonment cause that is entirely the implementation's fault.
+
+**One column.** Multi-column forms produce ambiguous tab order and unreadable error association; the
+summary belongs above or below, not beside.
+
+**A double-submitted payment must not double-charge.** Disable on submit *and* make the server action
+idempotent — the client-side half alone loses to a slow network and an impatient user.
+
+## Order detail
+
+One order. Answers *"what did I buy, and where is it?"* The `Detail` anatomy with a status timeline.
+
+```erb
+<div class="stack">
+  <nav aria-label="Breadcrumb" class="text-step--1">…</nav>
+  <header class="cluster justify-between items-start">
+    <div class="stack gap-1">
+      <h1 class="text-step-3"><%# "Order #1234" %></h1>
+      <%# placed date + status as TEXT with a Ui::Badge, never colour alone %>
+    </div>
+    <div class="cluster"><%# invoice download, reorder, support %></div>
+  </header>
+
+  <ol class="stack" aria-label="Order progress">
+    <%# an ordered list because the sequence IS the meaning; the current step is marked in text %>
+  </ol>
+
+  <div class="grid-auto items-start" style="--min: 22rem">
+    <div class="stack"><%# line items, read-only — quantities are no longer editable %></div>
+    <aside class="stack" aria-label="Summary"><%# totals, address, payment method last 4 %></aside>
+  </div>
+</div>
+```
+
+**A progress tracker is an ordered list, and the current step must be readable.** Position conveyed by
+colour or a filled dot alone is invisible; the current step says so in text ("Shipped — current").
+
+**Never show a full payment number.** Last four digits and a brand, from the provider's token — the
+number should not be in your database to display.
+
+## Order history
+
+A list of records. Answers *"what have I bought?"*
+
+```erb
+<div class="stack">
+  <h1 class="text-step-3">Orders</h1>
+  <%# a Ui::Table on wide screens; on narrow, a stack of Ui::Card — the same data, not a scroll %>
+  <%# each row: order number (a link), date, item count, total, status badge + text %>
+  <nav aria-label="Pagination">…</nav>
+</div>
+```
+
+**A wide table becomes cards, not a horizontal scroll.** A commerce account page is read on a phone
+more often than not, and a horizontally scrolling table hides the total — the one column that matters.
+
+**An empty state names the action.** "No orders yet" plus a route to the storefront.

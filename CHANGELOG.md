@@ -1092,6 +1092,61 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.19.0 — 2026-07-30
+
+- **The commerce family is documented — Storefront, Category, Product, Cart, Checkout, Order detail,
+  Order history** (#91). `coverage.md` **22 → 15**, and with it **all twelve page archetypes are done**:
+  every remaining gap is now a *widget* needing an APG verdict, which makes the rest of the backlog one
+  kind of work instead of two.
+- **The a11y failures these archetypes exist to prevent are commerce-specific and expensive:**
+  - **Cart quantity and total changes need a live region.** Edit a quantity and the total changes
+    silently — this is the single most-missed thing in commerce accessibility, and the one with a direct
+    revenue cost.
+  - **A remove control must name what it removes.** An icon-only `×` announces as "button", and there
+    are six of them: `aria-label="Remove Blue T-shirt, medium"`, the item rather than the row number.
+  - **A discount needs two prices and a word** — `<s>` on the original plus `sr-only` "was"/"now".
+    Colour and a strikethrough convey nothing to a screen reader, and red-as-cheap is not universal.
+  - **Variant pickers are radios in a fieldset**, not a styled `div`, and an unavailable variant is
+    disabled *and says why* ("Blue — out of stock").
+  - **Stock and order status are text**, never colour alone; a progress tracker is an `<ol>` whose
+    current step says so in words.
+- **Checkout rules that are implementation faults rather than design choices:**
+  - **Never require an account to buy** — offer guest checkout and create the account afterwards from
+    data you already hold.
+  - **Never lose what was typed.** Re-render every field on validation failure; losing an address is the
+    most common abandonment cause that is entirely ours.
+  - **A double-submitted payment must not double-charge** — disable on submit *and* make the server
+    action idempotent, because the client half alone loses to a slow network and an impatient user.
+  - **One column**, because multi-column forms produce ambiguous tab order and unreadable error
+    association.
+- **Category listing:** filters are a `GET` form that works without JavaScript (state in the URL, so
+  results are shareable and back-button-correct), the result count is announced via `role="status"`, and
+  pagination is the default — infinite scroll breaks the back button, strands keyboard users before the
+  footer, and has no addressable position.
+
+- **Five page archetypes documented — Landing, Pricing, About, Error, Auth** (#90). `coverage.md`
+  **27 → 22**. These are page *compositions* with no ARIA pattern upstream, so the authority is the
+  maintainer decision rather than a verdict — which is exactly why they were sequenced separately from
+  the widget rows instead of queued behind 15 verifications.
+  - **Shell assignment is doctrine, not taste.** Landing/Pricing/About/Error use the **stacked** shell —
+    marketing pages are the only place it is the default rather than a choice. **Auth uses no shell at
+    all**: showing app navigation to someone not signed in advertises destinations they cannot reach.
+  - **Correctness points that are easy to get wrong and expensive to miss:**
+    - A 404 design served with **HTTP 200 is a soft 404** — search engines index it and monitoring never
+      sees the failure. Mirror image of `qa-flow`'s evidence rule, where a 200 error page is
+      indistinguishable from a working one to everything except a human.
+    - A **500 page must not depend on the app** — no database call, no current-user lookup, no asset the
+      failed boot may not have compiled. A 500 page that itself raises produces a blank browser default.
+    - **`autocomplete` tokens are a security property**, not polish: without
+      `username`/`current-password`/`new-password`, password managers cannot fill or save, and people
+      fall back to weaker passwords they can type.
+    - Auth must **never say which credential was wrong**, and a password reset must **always report
+      success** — both are account-enumeration oracles otherwise.
+    - Pricing's recommended plan needs a **non-colour signal** (the badge carries the meaning), and
+      comparison `✓`/`—` cells need `sr-only` words — a bare glyph is announced as nothing.
+  - One `h1` per page, and every section gets an `h2` even where the design shows none — `sr-only`
+    rather than a skipped level, or the page has no outline for anyone navigating by headings.
+
 ### 1.18.0 — 2026-07-30
 
 - **Every documented component now has a worked call site — 14 of 20 had none** (#238). A class
@@ -2294,6 +2349,44 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.38.0)
+
+> ### `fidara-design` documents all twelve page archetypes
+>
+> Landing, Pricing, About, Error, Auth — plus the whole commerce family: Storefront, Category, Product,
+> Cart, Checkout, Order detail, Order history. `coverage.md` **27 → 15** `needs doctrine` rows, and every
+> remaining gap is now a *widget* rather than a page.
+>
+> `fidara-design.skill` changed; the other three archives are byte-identical.
+
+- **Twelve page archetypes documented** (#90, #91). These are compositions with no ARIA pattern
+  upstream, so the authority is the maintainer decision rather than a verifier verdict — which is why
+  they shipped as their own slices instead of queueing behind fifteen widget verifications.
+- **Shell assignment is doctrine, not taste.** Marketing pages are the only place the *stacked* shell is
+  the default; **Auth uses no shell at all**, because showing app navigation to someone who is not
+  signed in advertises destinations they cannot reach.
+- **The failures these prevent are specific, and several are security or revenue rather than polish:**
+  - A **404 design served with HTTP 200 is a soft 404** — indexed by search engines, invisible to
+    monitoring. A **500 page must not depend on the app**: no database call, no current-user lookup, no
+    asset the failed boot may not have compiled.
+  - **`autocomplete` tokens are a security property.** Without
+    `username`/`current-password`/`new-password`, password managers cannot fill or save, and people fall
+    back to weaker passwords they can type. Auth must never reveal *which* credential was wrong, and a
+    reset must always report success — both are account-enumeration oracles.
+  - **Cart quantity edits change the total silently.** A live region on the total is the whole fix, and
+    this is the most-missed item in commerce accessibility. A **remove control must name its item** — an
+    icon-only `×` announces as "button", and there are six of them.
+  - **A discount needs two prices and a word** (`<s>` plus `sr-only` "was"/"now"): colour and a
+    strikethrough convey nothing to a screen reader, and red-as-cheap is not universal. Stock, variant
+    availability and order status are all **text**, never colour alone.
+  - **Checkout:** never require an account to buy, never lose what was typed on a validation failure,
+    and make a double-submitted payment **server-side idempotent** — a disabled button alone loses to a
+    slow network.
+  - **Category filters are a `GET` form that works without JavaScript**, so state lives in the URL and
+    results are shareable and back-button-correct; the result count is announced via `role="status"`;
+    and pagination is the default, because infinite scroll breaks the back button and has no addressable
+    position.
 
 ### 2026-07-30 (release v1.37.0)
 
