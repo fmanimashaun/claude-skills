@@ -365,6 +365,27 @@ end
 
 ## Dropdown — `app/components/ui/dropdown_component.rb`
 
+The class was missing from this section for as long as it has existed, so its call sites — the
+`items:` keyword and the `trigger` slot — were **unverifiable**: `lint_self_consistency.py` skips a
+component it cannot find a declaration for, by design (#168). Declared now, so both are checked (#238).
+
+```ruby
+# frozen_string_literal: true
+module Ui
+  class DropdownComponent < ViewComponent::Base
+    renders_one :trigger
+
+    # `items` is an Array of `{label:, href:}` — a plain collection rather than a slot, because a
+    # menu's items are data, and `role="menuitem"` must be on the anchor itself.
+    def initialize(items:, id: nil)
+      @items = items
+      @id = id || "dropdown-#{SecureRandom.hex(4)}"
+    end
+
+    attr_reader :items, :id
+  end
+end
+```
 ```erb
 <%# uses the dropdown_controller (list-nav + dismissable + anchored) from reference-implementation %>
 <div class="relative inline-block" data-controller="dropdown">
@@ -800,6 +821,90 @@ end
     <% if action? %><div class="cluster" style="--justify: center"><%= action %></div><% end %>
   </div>
 </div>
+```
+
+## Call sites — the invocation for every documented component
+
+A class definition shows what a component *accepts*; it does not show how to *call* it, and inferring
+the invocation is exactly how `FieldComponent.new(form:, name:)` and `field_classes` **shipped and
+raised** in a user's project (#168, #182). So every component above has its invocation here, in one
+place a reader can scan.
+
+These are checked mechanically: `lint_self_consistency.py` verifies each call site's initializer
+keywords and slot setters against that component's own declaration, so a signature change that misses
+this section fails the gate rather than misleading someone (#238).
+
+Note the slot-setter names — `renders_many :items` gives the **singular** `with_item`.
+
+```erb
+<%# Badge — variant/size are vocabularies, not free strings %>
+<%= render Ui::BadgeComponent.new(variant: :success, size: :sm, dot: true) do %>Active<% end %>
+
+<%# Alert — one title slot; body is the block content %>
+<%= render Ui::AlertComponent.new(intent: :warning, dismissible: true) do |a| %>
+  <% a.with_title { "Payment method expires soon" } %>
+  Update it before the next billing run.
+<% end %>
+
+<%# Heading block — four optional slots, all `renders_one` %>
+<%= render Ui::HeadingComponent.new(title: "Invoices", level: 1, id: "page-title") do |h| %>
+  <% h.with_eyebrow { "Billing" } %>
+  <% h.with_description { "Every invoice raised against this account." } %>
+  <% h.with_actions { render Ui::ButtonComponent.new(variant: :primary) { "New invoice" } } %>
+  <% h.with_meta { "Updated #{l invoice.updated_at, format: :short}" } %>
+<% end %>
+
+<%# Media object — media / body / trailing %>
+<%= render Ui::MediaObjectComponent.new(size: :md) do |m| %>
+  <% m.with_media { render Ui::AvatarComponent.new(src: user.avatar_url, initials: "FA", size: :md) } %>
+  <% m.with_body { tag.p(user.name, class: "font-medium") } %>
+  <% m.with_trailing { render Ui::BadgeComponent.new(variant: :secondary) { user.role } } %>
+<% end %>
+
+<%# Avatar standalone — `initials` is the fallback when src is nil, never decoration %>
+<%= render Ui::AvatarComponent.new(src: nil, initials: "FA", size: :lg) %>
+
+<%# Card — no initializer args; three optional slots %>
+<%= render Ui::CardComponent.new do |c| %>
+  <% c.with_media { image_tag invoice.preview_url, alt: "" } %>
+  <% c.with_header { "Invoice #{invoice.number}" } %>
+  <% c.with_footer { link_to "Download", invoice_path(invoice) } %>
+  <%= invoice.summary %>
+<% end %>
+
+<%# Description list — `values` is an Array so one label can carry several <dd>s %>
+<%= render Ui::DescriptionListComponent.new(layout: :inline) do |l| %>
+  <% l.with_row(label: "Billing email", value: account.billing_email) %>
+  <% l.with_row(label: "Tax IDs", values: account.tax_ids, mono: true) %>
+<% end %>
+
+<%# Button group — `kind:` picks the ELEMENT (group vs radiogroup), not a style %>
+<%= render Ui::ButtonGroupComponent.new(label: "Invoice view", kind: :select) do |g| %>
+  <% g.with_button { render Ui::ButtonComponent.new(variant: :ghost) { "List" } } %>
+  <% g.with_button { render Ui::ButtonComponent.new(variant: :ghost) { "Board" } } %>
+<% end %>
+
+<%# Breadcrumbs — items are passed in, not slotted %>
+<%= render Ui::BreadcrumbsComponent.new(
+      items: [["Home", root_path], ["Invoices", invoices_path], [invoice.number, nil]],
+      collapse_after: 3) %>
+
+<%# Switcher — a layout primitive: one-dimension flip at a threshold %>
+<%= render Ui::SwitcherComponent.new(threshold: "30rem", space: :s) do |s| %>
+  <% s.with_item { render Ui::CardComponent.new { "Left" } } %>
+  <% s.with_item { render Ui::CardComponent.new { "Right" } } %>
+<% end %>
+
+<%# Address fields — takes the form builder, so it composes inside simple_form %>
+<%= simple_form_for @account do |f| %>
+  <%= render Ui::AddressFieldsComponent.new(form: f) %>
+<% end %>
+
+<%# Stat tile — `spark` takes a bare inline <svg>, not a component: data-viz.md declares the slot
+    as "optional inline sparkline (<svg>)" and ships no Sparkline component. %>
+<%= render Ui::StatComponent.new(label: "MRR", value: "£48,200", delta: 4.2, intent: :success) do |s| %>
+  <% s.with_spark { tag.svg(role: "img", "aria-label": "MRR trend, 12 months") { sparkline_path(mrr_series) } } %>
+<% end %>
 ```
 
 ## Layout components (parameterized primitives)

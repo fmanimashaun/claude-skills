@@ -1094,6 +1094,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Every documented component now has a worked call site — 14 of 20 had none** (#238). A class
+  definition shows what a component *accepts*; it never shows how to **call** it, and inferring the
+  invocation is precisely how `FieldComponent.new(form:, name:)` and `field_classes` both **shipped and
+  raised** in a user's project (#168, #182). It also silently disarmed the doctrine-call-site rule: a
+  component with no call site has nothing to check, so it was skipped without a word.
+  - A single *Call sites* section gives the invocation for all of them, rather than scattering
+    snippets — which is also how a reader actually reaches for it. Each is verified mechanically
+    against its own declaration, so a signature change that misses the section now fails the gate
+    instead of misleading somebody.
+  - **`DropdownComponent` was never declared at all** — the section shipped an ERB template and no
+    class, for as long as it has existed. So its `items:` keyword and `trigger` slot had *never* been
+    checkable. Declared now; both are.
+  - Two of the 14 were **nested slot components** (`Option`, `Row`), reachable only through a parent's
+    setter. Demanding a standalone call site for those would demand the impossible, so they are exempt
+    — and a fixture pins the exemption rather than leaving it implicit.
+- **Two new rules, addable only because the work came first** (#238). `component-without-call-site` and
+  `undeclared-component-call-site` both fire **zero** times today. Landing either before the 14 call
+  sites existed would have produced 14 findings on day one — and per this repo's own thesis a linter
+  that starts red gets suppressed, so the class stops being caught at all. Written first, gated second.
+  - The ghost-reference rule exists because I **introduced one while writing the call sites**: a
+    `SparklineComponent` that does not exist. `data-viz.md` declares the slot as *"optional inline
+    sparkline (`<svg>`)"* and ships no such component. The doctrine-call-site rule could not catch it —
+    it skips classes it cannot find, by design (#168) — so my own slip is the evidence the rule was
+    missing. Probing for others then found `DropdownComponent` above.
+  - Five fixtures cover both directions plus the nested exemption; two declared mutations in
+    `mutation_check.py` mean neither rule can go quiet. Selftest 39 → 44, mutations 17 → 19.
+
 - **Combobox / Autocomplete is `documented`, and Command palette becomes `derivable`** (#95) — two
   rows retired, **29 → 27**. The APG contract was verified first (verdict on #229/#95); this is the
   component that contract describes.
