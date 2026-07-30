@@ -1045,7 +1045,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.17.0 — 2026-07-30
 
 - **Disclosure is now first-class doctrine — and the verifier gate stopped us shipping a fabricated
   spec citation** (#142). Disclosure is the **second most common interactive pattern after plain
@@ -2150,6 +2150,48 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.35.0)
+
+> ### Who this affects
+>
+> **`fidara-design` gains a full disclosure contract** — the second most common interactive pattern
+> after plain links (732 instances in a 72-page corpus) previously had one word of doctrine.
+>
+> **`fidara-design.skill` changed again**; `rails-8`, `hotwire` and `code-review` are byte-identical.
+> Re-upload only `fidara-design` if you use the claude.ai path.
+
+- **rails-stack 1.17.0 — disclosure is first-class doctrine, and the verifier gate stopped a
+  fabricated spec citation** (#142). Disclosure outnumbers dropdowns 73:1 and tabs 81:1 in the audit
+  corpus, yet our behaviour table gave it one word — `(toggle)` — while rarer patterns had full
+  treatments. It now has the complete contract: `aria-expanded` + `hidden` as **two separate
+  obligations**, the APG-required heading wrapper for accordion headers, the ~6-panel `role="region"`
+  threshold, and two of APG's three behaviours (independent collapse and single-open **collapsible** —
+  not always-one-expanded, which we decline deliberately).
+  - **The gate's most valuable output was negative.** The issue specified
+    `ArrowUp`/`ArrowDown`/`Home`/`End` accordion navigation *"per the ARIA APG"*. Those four keys are
+    **absent from the current APG Accordion pattern** — they lived in a 2017 APG 1.1 *example* and
+    were deleted since. Plausible, traceable to a real source, wrong today. Shipped as written it
+    would have told every downstream agent that four keybindings are mandated by a spec that does not
+    contain them.
+  - Three further corrections: `<details>`/`<summary>` is not APG-endorsed and **cannot animate at
+    all**; `aria-controls` is APG-optional but ARIA-1.2-SHOULD for our sibling markup; and the
+    reduced-motion rule cannot cite WCAG 2.3.3 — reframed as implementation correctness, since gating
+    the state change on `animationend` breaks the control when the animation is suppressed.
+  - `coverage.md`: **30 → 29** `needs doctrine` rows, `documented` 40 → 41. Citations and version
+    boundaries are in the rails-stack entry above; the verdict is on
+    [#142](https://github.com/fmanimashaun/claude-skills/issues/142#issuecomment-5127982320).
+- **Maintainer tooling: the call-site linter was blind to the form ERB actually uses.** Both render
+  rules required `render(` **with** a paren, so `render Cls.new(...) do |v|` escaped slot *and*
+  initializer-keyword checking entirely — #182 fixed that same blind spot for the **icon** rule and
+  the fix was never carried to its two siblings. Found by mutating a new call site and watching
+  nothing fire.
+  - Fixing it exposed a **false-positive generator**: slot uses were scanned to end-of-document, so
+    two blocks binding the same variable cross-contaminated and flagged **correct** markup.
+  - And one of the new fixtures was itself **vacuous** — two classes in one fenced block left the
+    second unregistered, so the scenario passed for the wrong reason. Caught by reverting the fix and
+    checking a fixture actually failed, which is the rule this repo already had and I had skipped.
+    Selftest 31 → 36.
 
 ### 2026-07-30 (release v1.34.1)
 
