@@ -100,7 +100,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
+    ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
+    # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
+    # which exercises fixtures and never re-enters `--gates`. Its absence was found by the
+    # completeness rule in maintainer_doctor_selftest.py on that rule's first run.
+    ("maintainer doctor", ("python3", "scripts/maintainer_doctor.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a

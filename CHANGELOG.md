@@ -7,6 +7,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased — a selftest the gate sweep never ran (found by #119)
+
+- **`maintainer_doctor.py --gates` silently omitted selftests.** Adding `route_coverage.py` showed
+  it: the new selftest passed locally while the doctor's sweep never executed it, so `--gates`
+  would report a clean machine having skipped a whole gate. The doctor's selftest now asserts that
+  **every `*_selftest.py` in the repo is reachable from `GATES`** — and on its first run it found a
+  second omission nobody had noticed: the doctor was not running **its own** selftest either. Both
+  are wired in; the sweep is 13 gates.
+- This is the `coverage-gap` class from `skills/code-review/SKILL.md` — a check exercised against
+  only part of what it covers — applied to the thing that runs the checks. Cheap to pin, and it
+  cannot silently regress the next time a script is added.
+
 ### 2026-07-30 — an unbounded `gh issue list` made dedupe read a truncated tracker (#211)
 
 - **Found because I reported a wrong number to the maintainer.** I said "30 open issues"; there were
@@ -1071,6 +1083,43 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **Route coverage: qa-flow can finally answer "what has nothing ever tested?"** (#119). It drove
+  from a case catalogue and a menu scope, so the most basic coverage question had no answer — and
+  blast-radius selection in `/qa-flow:verify` was therefore *judgement over an unknown denominator*.
+  You cannot select "affected untested routes" without knowing what the routes are.
+  - `scripts/route_coverage.py enumerate` builds `qa/reports/routes.json` from a stack-native
+    source: `bin/rails routes`, a `sitemap.xml`, or a filesystem-routed directory (`[slug]` →
+    `:slug`, `[...rest]` → `*glob`).
+  - **Coverage is attributed from the already-validated evidence CSVs**, using
+    `validate_evidence.py`'s own profiles to know which columns carry a URL. So a route counts as
+    covered only when a row that *passed validation* says a pass went there — coverage inherits the
+    page-identity guarantees rather than trusting a second, unchecked record, and a new browser pass
+    gets attribution for free.
+  - **The over-credit direction is the one that matters, so it is where the tests aim.** A tool
+    reporting 100% while nothing visited `/users/:id/edit` is worse than no tool, because it retires
+    the question. `:id` therefore matches exactly **one** segment: a visit to `/users/42/edit` does
+    **not** credit `/users/:id`, a different action. Mutating that to a greedy match trips seven
+    assertions, including a trend line recording 100% coverage — the precise lie.
+  - **A deduplicated findings rollup contributes no coverage at all.** Its `Example Routes` are up to
+    three *examples* of a defect (#118), and counting them would credit routes nobody opened. That
+    exclusion is deliberate and asserted: every evidence profile must be either credited or
+    explicitly declared route-less, so a future pass cannot be silently forgotten and understate the
+    gap. `Out of Scope` rows are not visits either.
+  - **Nothing about authentication is inferred.** Whether a route needs auth is not guessable from
+    its path, and a heuristic would be wrong on exactly the routes that matter, so it comes from
+    `coverage.authenticated_prefixes`. Untested **non-GET** routes rank first, then authenticated
+    ones: an untested route that changes state is the worst kind to leave uncovered.
+  - **Exclusions are declared and the excluded set is always printed, even when empty** — the same
+    visible-suppression rule as `runtime.ignore` and `Ignored`. A suppression that leaves no trace
+    turns a coverage number into a lie.
+  - A gap **exits 0**: it is the deliverable, not a failure. `--fail-on-untested` exists for a team
+    that has reached full coverage and wants to hold it. Coverage per run is appended to
+    `qa/reports/route-coverage-trend.jsonl`.
+  - `/qa-flow:verify` Phase 2 now refreshes the inventory and reads the gap before selecting
+    regression scope, so the selection is over a known set.
 
 ### 1.9.0 — 2026-07-30
 

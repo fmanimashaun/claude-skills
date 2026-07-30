@@ -373,6 +373,34 @@ def run() -> int:
     if missing:
         FAILURES.append(f"GATES references scripts that do not exist: {missing}")
 
+    # ---- no selftest may be invisible to the sweep ----------------------------------
+    # A gate the doctor never runs is a gate that does not exist for anyone relying on
+    # `--gates`. This bit on #119: the new route_coverage selftest passed locally while the
+    # doctor's own sweep silently omitted it. Discovering that by hand once is enough.
+    _tick()
+    repo = Path(__file__).resolve().parents[1]
+    listed = {c[1] for _, c in md.GATES}
+    on_disk = {
+        p.relative_to(repo).as_posix()
+        for p in repo.glob("scripts/*.py")
+        if p.name.endswith("_selftest.py")
+    } | {
+        p.relative_to(repo).as_posix()
+        for p in repo.glob("plugins/*/scripts/*.py")
+        if p.name.endswith("_selftest.py")
+    }
+    # A `*_selftest.py` is normally driven through its sibling's `--selftest` flag, so the gate
+    # list names the sibling. Map each selftest to the module it tests before comparing.
+    missing = sorted(
+        s for s in on_disk
+        if s.replace("_selftest.py", ".py") not in listed and s not in listed
+    )
+    if missing:
+        FAILURES.append(
+            f"selftests no GATES entry runs: {missing} -- `--gates` would report a clean sweep "
+            "having never executed them"
+        )
+
     # ---- the corpora-gate exemption is keyed by name, so the names must be real -------
     # A stringly-keyed carve-out that stops matching is the failure mode: rename the gate and the
     # exemption quietly lapses. Cheap to pin, so pinned.
