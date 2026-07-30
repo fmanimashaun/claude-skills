@@ -68,6 +68,9 @@ runtime:                             # browser console/network capture (#109)
   ignore: []                         # substrings matched on message or resource URL
 links:                               # link/anchor audit during the crawl (#113)
   check_external: false              # external targets are slow and flaky — opt in
+coverage:                            # route coverage denominator (#119)
+  exclude: []                        # substrings: health endpoints, dev-only, ActiveStorage
+  authenticated_prefixes: []         # e.g. /admin — declared, never guessed from the path
 web_e2e:          playwright        # playwright | cypress-cucumber | selenium-pytest-bdd | none
 mobile:           none              # appium | none
 functional_agent: playwright-mcp    # playwright-mcp | autonoma-selfhosted | none
@@ -97,6 +100,12 @@ Two keys are easy to conflate, so they are deliberately separate (#110):
 framework devtools banners) so the check does not go red on every run and get switched off.
 Suppressed findings are still **counted** in the runtime CSV's `Ignored` column — a suppression
 that leaves no trace is how a red check turns green with nobody deciding to.
+
+**`coverage.*`** feeds the route-coverage denominator. Both keys are **declared, never inferred**:
+whether a route needs authentication is not guessable from its path, and a heuristic would be wrong
+on exactly the routes that matter most. `exclude` drops health endpoints, dev-only routes and
+framework-mounted paths — and the excluded set is **always printed**, even when empty, because a
+suppression that leaves no trace turns a coverage number into a lie.
 
 **`links.check_external`** is `false` deliberately. Internal links and `#fragment` targets are
 always checked — they are fast, deterministic, and ours to fix. External targets are neither: a
