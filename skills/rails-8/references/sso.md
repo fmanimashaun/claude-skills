@@ -1,5 +1,13 @@
 # Enterprise SSO — multi-tenant OIDC and SAML
 
+> **Scope note on tenancy.** This reference resolves a workspace from the **subdomain**, which is one
+> *identification* scheme and a defensible one for enterprise SSO — IdP redirect URIs are commonly
+> workspace-scoped that way. It is **not** our general tenancy doctrine: we resolve the tenant from the
+> **session**, never from the URL or host (see [multi-tenancy.md](multi-tenancy.md), decision D-009).
+> What generalises from this file is the **isolation** half, which is already correct here —
+> `workspace.users.find_by(...)`, association traversal from the resolved tenant, never a
+> `default_scope`. Keep that regardless of how the tenant is identified.
+
 The Rails 8 authentication generator owns sessions (`Session`, `Current.user`,
 `start_new_session_for`). SSO changes how identity is *proven*, never how sessions
 work: OmniAuth is the handshake layer in front of the generator, and everything

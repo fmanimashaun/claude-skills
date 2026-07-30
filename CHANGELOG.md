@@ -1166,6 +1166,78 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **NEW `references/multi-tenancy.md`** (#98, Phase B of EPIC #96). Rails documents **no** row-level
+  tenancy doctrine — the guides' only use of "multi-tenant" is horizontal *sharding* — so every choice
+  here is recorded as a choice and every framework fact is cited to source.
+  - **The file's first job is separating two axes people collapse into one:** *isolation* (separate
+    database / schema / **row-level**) and *identification* (subdomain / URL path / **session** /
+    header). Choosing "subdomain" says nothing about how queries are scoped, and that confusion is why
+    this file exists.
+  - **Maintainer decision recorded: session-selected tenant, never in the URL** (fidara-ledger D-009,
+    accepted 19 Jul 2026). Three reasons in the order they mattered: it is the category norm (Xero,
+    QuickBooks, Wave, Zoho, FreshBooks all use an org switcher); the alternative's main benefit did not
+    apply, because external users hit **one-off tokenized links** rather than a standing per-tenant
+    space; and it is **the most reversible** — path or subdomain tenancy can be layered on later without
+    a data-model change, while backing out of either is the expensive direction.
+  - **Subdomains separate *planes*, not tenants** (D-012): root for marketing, `app.` for the product,
+    `admin.` for the operator console — routed with `constraints subdomain:` + `scope module:` (not
+    `namespace`) so the host picks the controller and URLs stay identical. **Each plane gets its own auth
+    stack**, so a tenant session grants zero admin access *structurally* rather than because a
+    `before_action` remembered.
+  - **The session value is still re-authorised every request.** `Current.user.organizations.find_by(id:
+    session[:organization_id])` is the authorisation — written as `Organization.find_by(id: …)` the same
+    line is a tenant-switching hole, and that distinction is the load-bearing detail.
+  - **Five verified reasons not to use `default_scope`**, each confirmed against Rails 8.1 source or by
+    running it: a wrong-tenant `find_by` returns **`nil` rather than raising**, so the block reads as
+    "not found"; it leaks into `new`/`create` (and sets a null FK when `Current` is nil — the database
+    `NOT NULL` constraint is the real safety net); `unscoped` bypasses it; it is evaluated **when a
+    `Relation` is constructed, not when the query runs**, so a memoized or cross-boundary relation keeps
+    a stale tenant; and `joins` with `default_scope` has open Rails bugs spanning 4.2→7.2. Both
+    fidara-ledger and 37signals' fizzy contain **zero** `default_scope`.
+  - **The job boundary is the section to read twice, and it is worse than an ordering problem.** `Current`
+    never survives enqueue → perform (ActiveJob wraps every execution in the reloader, which calls
+    `clear_all`), and Rails ships no built-in carrier. But **GlobalID's default locator is an
+    `UnscopedLocator`** — it strips *all* scopes by design, and has since 2016 — so `default_scope`
+    provides **zero** protection for a record arriving as a job argument. Not "depends on timing":
+    structurally none. And `deserialize_arguments_if_needed` runs **before** `run_callbacks :perform`, so
+    a tenant restored in `around_perform` is restored too late. Restore it in the job's
+    **`deserialize(job_data)`**, and re-check tenancy explicitly inside `perform`.
+  - **PostgreSQL RLS has one trap that makes it inert**, and it is the fact most likely to be written
+    down wrong: *"table owners normally bypass row security as well."* A Rails app usually **owns** the
+    tables its migrations created, so the default outcome is policies defined, RLS enabled, and RLS doing
+    **nothing**, silently. `FORCE ROW LEVEL SECURITY` is the lever that matters; checking for
+    `BYPASSRLS` proves nothing. Plus: `SET LOCAL` is transaction-scoped and a bare `SET` **leaks to the
+    next tenant on a pooled connection**, and `SET LOCAL` outside a transaction is a silent no-op.
+  - **Identifiers, since the org is not in the URL.** Ours keeps the PK and mints an opaque prefixed
+    `public_id`, with the **unique index as the guarantee** plus a bounded collision retry that matches
+    the violation **by index name** (not by sniffing the message) and **only retries a self-minted
+    value**, so a caller-supplied duplicate still surfaces the real error. For UUID PKs, four facts
+    first: `id: :uuid` is **PostgreSQL-only** in Rails; `gen_random_uuid()` is UUID**v4** (random, so
+    index bloat); **no Rails version generates UUIDv7** — that is `SecureRandom.uuid_v7` on **Ruby ≥
+    3.3** or PostgreSQL ≥ 18's `uuidv7()`; and 16 bytes vs 8 repeats on every FK. "base36, 25 chars" is
+    fizzy's own scheme, not a standard.
+  - **Gem landscape corrected:** `acts_as_tenant` is row-level, maintained, and openly `default_scope`-
+    based — so it centralises the hazards rather than avoiding them, and it has an **open issue about
+    Solid Queue specifically**, our default adapter, where the tenant is missing from the stored job
+    payload. `apartment`/`ros-apartment` are **schema/database-per-tenant — a different axis**, not
+    row-level alternatives.
+  - **Enforcement, stated honestly:** no standard tool proves every tenant query is scoped. The building
+    block (`sql.active_record` notifications) is real; the subscriber is a hand-roll. Until then the
+    enforcement is a `NOT NULL` tenant FK, association traversal that makes an unscoped query *look*
+    wrong in review, and the per-job re-check above.
+
+- **FIX — `extending-rails.md` taught subdomain-based *tenant* resolution** (#98), which contradicted the
+  decision above. Its Rack-middleware example resolved a tenant from `request.subdomain`, so anyone
+  skimming for "how do I do tenants" found tacit endorsement of a model the doctrine rules out. The Rack
+  mechanics are identical for any cross-cutting concern, so the example now tags the request and resolves
+  the **plane**, and the "when to write middleware" list no longer leads with tenant resolution.
+
+- **FIX — `sso.md` needed its tenancy claim scoped, not rewritten** (#98). It resolves a workspace from
+  the subdomain, which is defensible for enterprise SSO (IdP redirect URIs are commonly workspace-scoped)
+  but is not our general model. A scope note now says so and points at the new reference — and notes that
+  its **isolation** half is already correct: `workspace.users.find_by(…)`, association traversal, no
+  `default_scope`. That is what generalises.
+
 - **NEW `references/style.md` — how Rails code should read** (#97, Phase A of EPIC #96). The skill
   prescribed architecture, testing and deployment and said **nothing** about how code reads. Sourced to
   [37signals' `STYLE.md`](https://github.com/basecamp/fizzy/blob/main/STYLE.md) in
