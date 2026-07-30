@@ -107,6 +107,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the
     # completeness rule in maintainer_doctor_selftest.py on that rule's first run.
     ("maintainer doctor", ("python3", "scripts/maintainer_doctor.py", "--selftest")),
+    # The meta-gate: proves each selftest above actually FAILS when its subject breaks. Runs last
+    # because it is the slowest (it re-runs every selftest once per declared mutation).
+    ("mutation check", ("python3", "scripts/mutation_check.py", "--selftest")),
+    ("mutation coverage", ("python3", "scripts/mutation_check.py")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
