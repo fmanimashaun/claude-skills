@@ -7,6 +7,55 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-30 — the fences are syntax-checked, and invisible characters are caught
+
+- **NEW rule `invisible-character`** (#95) — no invisible or confusable whitespace in anything we
+  ship. Two no-break spaces reached a shipped behaviour table, and the way they surfaced is the whole
+  argument: an anchored edit failed with *0 matches* against a string copied from the file. A reader
+  searching the doctrine for that phrase silently gets nothing.
+  - **Only characters with no legitimate use are listed** — the em dash, en dash, ellipsis, arrows,
+    check marks and box-drawing we use deliberately are not. That boundary is pinned by a near-miss
+    fixture, and writing it taught something: my fixture put a **THIN SPACE** among the
+    "punctuation we use on purpose" and the rule fired. The corpus contains none, so the **fixture** was
+    wrong, not the rule — a thin space breaks grep exactly like a no-break space. Kept in the set.
+  - 174 shipped files scanned; `mutation_check` **28 → 30**.
+- **NEW `scripts/lint_markdown_code.py` — the JS, Ruby and ERB in our fences is now syntax-checked**
+  (#248). `lint_markdown_shell.py` covered fenced *bash* only, and the other languages are the larger
+  surface: **154 ruby, 85 erb, 22 js** blocks against 79 bash, all of it code an agent pastes into a
+  user's project. Wired as three gates (lint, coverage, selftest); sweep **27 → 29**.
+  - **Four real copy-paste hazards in shipped skills, every one of which raises on paste.** A bare
+    `rescue … end` with no `begin` and no enclosing method (`observability.md`); two prose-as-code lines
+    where `/` is division, not a separator — `Product.select(:id, :name) / .pluck(:name)`
+    (`models.md`); and two `stimulus.md` blocks mixing a `static` class field with `this.` statements,
+    which cannot share a scope. The Stimulus blocks now show the accessors **inside the method that
+    uses them**, which parses and documents better.
+  - **The linter's own first run was 26 findings, 22 of them its fault** — and that is the useful part
+    to record. `<%= form_with … do |f| %>` and `<%==` are **invalid in stdlib ERB**: Rails compiles
+    views with **erubi**. Depending on erubi would make the gate pass or fail by machine, so both are
+    normalised away. A linter that fires on the most common idiom in the corpus is one that gets
+    deleted rather than fixed.
+  - **`js` matched the `js` in ` ```json `**, so every JSON block was being parsed as JavaScript. The
+    `--audit-coverage` control caught it — that regex already had the word boundary and the strict one
+    did not. Worth noting the direction: this was an **over**-matching extractor, which is as dishonest
+    as an under-matching one, and the audit was written for the latter.
+  - **ERB does not error on an unterminated `<%`** — it emits the remainder as a **literal string**, so
+    the expression silently never runs and the view renders text where a value belongs. An explicit
+    balance check now catches it; the compiler never will. `<%%` is correctly treated as an escape.
+  - **False positives are the whole risk, so the selftest is mostly silence fixtures** — 27 checks, of
+    which 14 assert the linter stays *quiet* on elisions, fragments and erubi idioms. Blocks are
+    normalised and then tried in a short **named ladder of contexts** (bare, class body, method body,
+    object literal); each run prints which context accepted each block, so a ladder that stops
+    discriminating is visible rather than silent.
+  - **`mutation_check` 23 → 28.** Two of the six mutations I first declared were wrong in instructive
+    ways: one fixture was **vacuous** (`<%%= foo %>` still has a `%>` later in the line, so misreading
+    the escape changed nothing), and one mutation was **unobservable** (`export` is a SyntaxError inside
+    every wrapper, so removing that skip cannot change a verdict — it is an optimisation, not a guard,
+    and the comment now says so). The checker caught both, which is why it exists.
+  - **The selftest had to be made hermetic.** It reconciled the two regexes against the real tree, but
+    it runs against a mutated copy in a temp directory where `skills/` does not exist — so `discover()`
+    raised and every mutation was "caught" by a traceback instead of by its fixture. **A crash is not a
+    verdict.** The real tree is still reconciled, on every run and by the coverage gate.
+
 ### 2026-07-30 — the icon rule flagged its own doctrine, and a promoted row kept its workaround
 
 - **`lint_self_consistency.py`: the icon rule flagged prose that stated the icon rule** (#95). A
@@ -1114,6 +1163,65 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.21.0 — 2026-07-30
+
+- **Range input and Calendar/Date/Time picker are documented** (#95). `coverage.md` **9 → 7**. Both are
+  native-first, and both contracts live in `forms.md` with the other controls. Verdict on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95).
+  - **The batching premise was partly refuted, and the doctrine records the asymmetry.** These were
+    batched as "native control that is hard to style, so people rebuild it" — the same *question*, but
+    **not one evidence source**. `input type=range` has an implicit ARIA role of **`slider`**, so the
+    native element already *is* the custom widget's target. `input type=date|time` has **"No
+    corresponding role"** at all ([ARIA in HTML](https://w3c.github.io/html-aria/#el-input-date)), so
+    "native suffices" has to be argued on different grounds. Two rows, two citation trails.
+  - **Do not hand-write slider ARIA onto a native range.** ARIA in HTML: *"No `role` other than slider,
+    which is NOT RECOMMENDED"*, and *"Authors SHOULD NOT use the `aria-valuemax` or `aria-valuemin`
+    attributes on `input type=range`"*. Discouraged by spec, not merely redundant.
+  - **For the custom slider, only `aria-valuenow` is required** — *"Authors MUST set the aria-valuenow
+    attribute"* — while `aria-valuemin`/`aria-valuemax` are *MAY*, defaulting to **0** and **100**.
+    **`Home`/`End` are required keys; `Page Up`/`Page Down` are labelled "(Optional)"** in the pattern,
+    so their absence is not a defect.
+  - **Two documented reasons to leave native, and one that is not.** *Two thumbs* needs the separate
+    **Slider (Multi-Thumb)** pattern — one `role="slider"` per thumb, each with its own name and value —
+    and APG warns to test on **touch** assistive tech *"before considering incorporation into production
+    systems"*. *A value a number cannot convey* needs `aria-valuetext`, which ARIA 1.2 scopes exactly
+    that way and which layers onto the **native** element. **A vertical slider is not a reason** — that
+    is native via `writing-mode`, and rebuilding to get one is the common mistake.
+  - **Native date/time is safe because of a spec guarantee, not optimism.** For `type`, *"the
+    attribute's missing value default and invalid value default are both the Text state"* — an
+    unrecognised `date` keyword renders a **text input**, so the field keeps working and only the picker
+    is lost. The value is a *valid date string*, **`yyyy-mm-dd` always**, whatever the display locale;
+    `step` is in **days** (default 1). For time, `step` is in **seconds** (default 60), and a step not
+    divisible by 60 is what surfaces a **seconds** field — that is what `step` is for here.
+  - **There is NO APG "Date Picker" pattern**, and *"a date picker must be a dialog"* is **refuted**.
+    The index lists 30 patterns and none is a date picker; what exists are **two examples** — one under
+    **Dialog (Modal)**, one under **Combobox** — and the Dialog example links the Combobox one as a
+    *"Similar example"*. Two valid architectures, neither mandated. Doctrine says "APG's date-picker
+    examples", never "the pattern".
+  - **`aria-selected` and `aria-current` are two claims with two sources.** APG's examples use
+    `aria-selected` **only**, *"set on the cell containing the currently selected date"*, and use no
+    `aria-current` anywhere. `aria-current="date"` is nonetheless spec-real — ARIA 1.2 defines the token
+    as *"a date token used to indicate the current date within a calendar"*. Cited separately rather
+    than blended.
+  - **`role="grid"` is what the worked examples do, not a stated must** — recorded that way. And the old
+    **three-spinbutton** date picker is gone from APG: it survives only as an archived 2019 Working
+    Draft, so it is not doctrine.
+  - **The complaints about native date pickers are ours, not the spec's.** Uneven screen-reader support
+    and whether the popup is keyboard-operable are **not stated by any primary source we could find** —
+    not the HTML spec, not MDN. Recorded as practitioner observation, explicitly not cited.
+  - **WCAG, scoped rather than sprayed.** **1.3.5 Identify Input Purpose (AA)** applies to a date field
+    only when it collects information *about the user* (`autocomplete="bday"`) — not to appointment or
+    filter dates. **2.5.8 Target Size (Minimum) (AA, new in 2.2)** has a **User Agent Control**
+    exception covering the native thumb and native picker, so it bites the moment you hand-build a day
+    cell or a thumb. And **2.5.8 is not 2.5.5** — *Target Size (Enhanced)* is a different AAA criterion
+    at 44×44, from 2.1.
+
+- **FIX — two no-break spaces in the shipped behaviour table** (#95). `interaction-stimulus.md`'s
+  Carousel row contained `role=region`+NBSP+`**or**`+NBSP+`group`, shipped in v1.39.0. It renders
+  identically to a space, so the row was **unsearchable**: a reader grepping the phrase gets nothing.
+  Found because an anchored edit to that row failed with *0 matches* against a string copied out of the
+  file, and diagnosing it needed a byte-level diff. Now guarded — see the tooling entry.
 
 ### 1.20.0 — 2026-07-30
 
@@ -2496,6 +2604,72 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.40.0)
+
+> ### The code in our fences is now syntax-checked — and it was hiding four hazards
+>
+> 154 ruby, 85 erb and 22 js blocks (3,160 lines) had never been executed by any gate, only the 79 bash
+> ones had. Four blocks raised `SyntaxError` the moment anyone pasted them. Also: **Range input** and
+> **Calendar/Date/Time picker** documented, `coverage.md` **9 → 7**, both native-first.
+>
+> `fidara-design.skill`, `rails-8.skill` and `hotwire.skill` changed; `code-review.skill` is
+> byte-identical.
+
+- **Four copy-paste hazards fixed in shipped skills, every one of which raises on paste.** A bare
+  `rescue … end` with no `begin` and no enclosing method; two lines where `/` was read as a separator
+  when Ruby reads it as **division** (`Product.select(:id, :name) / .pluck(:name)`); and two Stimulus
+  blocks mixing a `static` class field with bare `this.` statements, which cannot share a scope. The
+  Stimulus examples now show the accessors **inside the method that uses them** — which parses, and
+  documents the point the old shape obscured.
+- **NEW gate: `lint_markdown_code.py`.** `node --check` and `ruby -c` per fenced block, with
+  `--audit-coverage` and a 27-check selftest. Fails **open** on a missing interpreter and reports
+  **skip**, never a pass.
+  - **Its own first run was 26 findings, 22 of them the linter's fault** — and that is the useful part.
+    `<%= form_with … do |f| %>` and `<%==` are **invalid in stdlib ERB** because Rails compiles views
+    with **erubi**; both are normalised away rather than taking a gem dependency that would make the
+    gate pass or fail by machine.
+  - **`js` matched the `js` in ` ```json `**, so every JSON block was being parsed as JavaScript. The
+    coverage control caught it — worth noting the direction: that audit was written to catch an
+    **under**-matching extractor and caught an **over**-matching one.
+  - **ERB does not error on an unterminated `<%`.** It emits the remainder as a **literal string**, so
+    the expression silently never runs and the view renders text where a value belongs. `ruby -c` on the
+    compiled output sees nothing wrong, so this needs an explicit balance check — the compiler will
+    never give you one.
+- **Range input: do not hand-write slider ARIA onto a native range.** ARIA in HTML says *"No `role`
+  other than slider, which is NOT RECOMMENDED"* and that authors **SHOULD NOT** set
+  `aria-valuemax`/`aria-valuemin` on it. For the custom widget, only **`aria-valuenow`** is required
+  (min/max default to 0 and 100), **`Home`/`End` are required keys and `Page Up`/`Page Down` are
+  explicitly optional**. Leave native except for **two thumbs** (a separate APG pattern, and APG says to
+  test on touch AT before production) or **a value a number cannot convey** (`aria-valuetext`, which
+  layers onto the native element). **A vertical slider is not a reason** — that is native via
+  `writing-mode`.
+- **Date/time: native-first rests on a spec guarantee, not optimism.** The `type` attribute's *"missing
+  value default and invalid value default are both the Text state"*, so an unrecognised `date` keyword
+  renders a **text input** — the field keeps working, only the picker is lost. The value is
+  **`yyyy-mm-dd` always**, whatever the display locale. `step` is **days** for date and **seconds** for
+  time, where a step not divisible by 60 is what surfaces a seconds field.
+- **There is NO APG "Date Picker" pattern**, so *"a date picker must be a dialog"* is **refuted**: two
+  *examples* exist, one under **Dialog** and one under **Combobox**, and the Dialog one links the other
+  as a *"Similar example"*. Two valid architectures, neither mandated. Relatedly, `aria-selected` (the
+  chosen date) is cited to APG's examples while `aria-current="date"` (today) is cited to **ARIA 1.2** —
+  APG's examples use no `aria-current` at all, so blending the two would have mis-attributed half the
+  claim.
+- **WCAG scoped rather than sprayed.** **1.3.5** applies to a date field only when it collects data
+  *about the user*; **2.5.8 Target Size (Minimum)** (AA, new in 2.2) has a **User Agent Control**
+  exception covering the native thumb and picker, so it bites only once you hand-build one — and 2.5.8
+  is **not** 2.5.5, which is a different AAA criterion at 44×44.
+- **Two no-break spaces shipped in v1.39.0 made a behaviour-table row unsearchable.** U+00A0 renders
+  exactly like a space, so grepping the phrase returned nothing. Found because an anchored edit failed
+  with *0 matches* against a string copied out of the file. Fixed, and a new mechanical
+  **`invisible-character`** rule now covers 13 such characters across 174 shipped files — with a
+  near-miss fixture pinning the punctuation we *do* use, so the rule cannot go red on its own corpus.
+- **`mutation_check` 23 → 30 across 7 guards**, all caught. Writing them found three more defects of the
+  familiar family: a **vacuous fixture** (`<%%= foo %>` has a `%>` later in the line, so misreading the
+  escape changed nothing), an **unobservable mutation** (`export` is a `SyntaxError` in every wrapper, so
+  that skip is an optimisation, not a guard), and a **selftest that read the real repo tree** while
+  running against a mutated copy in a temp directory — so every mutation was "caught" by a traceback
+  instead of by its fixture. **A crash is not a verdict.**
 
 ### 2026-07-30 (release v1.39.0)
 

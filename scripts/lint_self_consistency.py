@@ -595,6 +595,56 @@ def check_doctrine_call_sites() -> tuple[list[Finding], dict[str, int]]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: invisible-character
+# ---------------------------------------------------------------------------
+# A no-break space renders identically to a space and makes the text UNGREPPABLE. Two of them reached
+# a shipped behaviour table in v1.39.0 (`role=region`\xa0**or**\xa0`group`), and the way they surfaced
+# is the argument for the rule: an anchored edit to that row failed with "0 matches" against a string
+# copied from the file, and finding out why took a byte-level diff. A reader searching the doctrine for
+# that phrase gets nothing, silently.
+#
+# Mechanical with no judgement, per this file's bar. Only characters with NO legitimate use in our
+# corpus are listed: the em dash, ellipsis, arrows and box-drawing we use deliberately are not here.
+# A NARROW NO-BREAK SPACE inside a code fence is still a defect — it is invisible there too.
+_INVISIBLE = {
+    "\u00a0": "NO-BREAK SPACE",
+    "\u2007": "FIGURE SPACE",
+    "\u2009": "THIN SPACE",
+    "\u200a": "HAIR SPACE",
+    "\u202f": "NARROW NO-BREAK SPACE",
+    "\u2060": "WORD JOINER",
+    "\u200b": "ZERO WIDTH SPACE",
+    "\u200c": "ZERO WIDTH NON-JOINER",
+    "\u200d": "ZERO WIDTH JOINER",
+    "\ufeff": "BYTE ORDER MARK",
+    "\u00ad": "SOFT HYPHEN",
+    "\u2028": "LINE SEPARATOR",
+    "\u2029": "PARAGRAPH SEPARATOR",
+}
+
+
+def check_invisible_characters() -> tuple[list[Finding], int]:
+    """No invisible or confusable whitespace in anything we ship."""
+    findings: list[Finding] = []
+    examined = 0
+    for suffix in (".md", ".py", ".sh", ".json"):
+        for path in walk(suffix):
+            examined += 1
+            body = read(path)
+            for char, name in _INVISIBLE.items():
+                index = body.find(char)
+                if index == -1:
+                    continue
+                findings.append(Finding(
+                    "invisible-character", rel(path), body[:index].count("\n") + 1,
+                    f"contains {name} (U+{ord(char):04X}) -- it renders like ordinary whitespace, so "
+                    "the text becomes unsearchable and anchored edits fail against a string copied "
+                    f"from the file ({body.count(char)} occurrence(s) in this file)",
+                ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -606,6 +656,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     unbounded, queries_examined = check_unbounded_issue_queries()
     components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
+    invisible, invisible_examined = check_invisible_characters()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -613,9 +664,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "declared_plugins": plugins_examined,
         "gh_list_calls_examined": queries_examined,
         "documented_components": components_examined,
+        "shipped_files_scanned_for_invisibles": invisible_examined,
         **call_coverage,
     }
-    return dead + unenforced + undocumented + unbounded + components + call_sites, coverage
+    return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible,
+            coverage)
 
 
 def selftest() -> int:
@@ -964,6 +1017,24 @@ def selftest() -> int:
                     "ActiveRecord::Base.with_connection { |c| c.execute(sql) }\n"
                     "chat.with_instructions(\"be terse\").with_temperature(0.2)\n"
                     "  .with_tool(Weather).with_schema(Schema)\n```\n"})
+
+    # ---- invisible-character -----------------------------------------------------
+    IC = "invisible-character"
+    scenario("a no-break space in shipped markdown", rule=IC, expect_finding=True,
+             files={"skills/x/references/t.md": "| Carousel | `role=region`\u00a0**or**\u00a0`group` |\n"})
+    scenario("a zero-width space in a python module", rule=IC, expect_finding=True,
+             files={"scripts/x.py": "VALUE = 1  # trailing\u200b comment\n"})
+    scenario("a BOM inside the body of a file", rule=IC, expect_finding=True,
+             files={"skills/x/references/t.md": "# Title\n\ufeffbody\n"})
+    # NEAR MISS: the characters we use ON PURPOSE must never fire, or the rule gets switched off on
+    # its first run over real doctrine — em dash, en dash, ellipsis, arrows, check marks, box drawing.
+    scenario("the punctuation our doctrine actually uses is fine", rule=IC, expect_finding=False,
+             files={"skills/x/references/t.md":
+                    # A THIN SPACE was in this fixture as "punctuation we use on purpose" and the
+                    # rule fired. Checked: the corpus contains none, so the FIXTURE was wrong, not
+                    # the rule -- a thin space breaks grep exactly like a no-break space does.
+                    "A rule — really a guarantee – reads 15\u201320 …\n"
+                    "no: \u2192 yes \u2713 \u2717 \u251c\u2500 tree\n"})
 
     scenario("icon call carrying a size class", rule=R, expect_finding=True,
              files={"skills/x/references/i.md":

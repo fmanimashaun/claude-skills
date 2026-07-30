@@ -225,8 +225,9 @@ Product.where(status: :active, category: cats)         # IN for arrays/ranges
 Product.where.not(supplier: nil).where(created_at: 1.week.ago..)
 Product.where("lower(name) LIKE ?", "#{q.downcase}%")   # ALWAYS placeholders
 Product.order(created_at: :desc).limit(20).offset(40)
-Product.select(:id, :name)  /  .pluck(:name)  /  .pick(:name)
-Product.distinct.count / .sum(:price) / .group(:status).count
+Product.select(:id, :name)            # a relation of partial records
+Product.pluck(:name)                  # bare values, no models  (.pick = pluck + limit(1))
+Product.distinct.count                # also: .sum(:price), .group(:status).count
 Product.exists?(slug: "x")            # cheapest presence check
 Product.find_each(batch_size: 500) { }  # batches; in_batches for relation chunks
 Product.active.or(Product.where(featured: true))

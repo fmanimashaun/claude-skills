@@ -271,6 +271,45 @@ syntax errors (templates are placeholder-substituted first), **swallowed verdict
 blocks in 7 files: a lint that reports clean on input it never read is worse than no lint.
 Treat a coverage gap as a defect in the linter, not a nuisance.
 
+### The same argument applies to JS, Ruby and ERB — and they are the bigger surface
+
+`bash -n` on fenced blocks was the start, not the whole job. The other languages carry **more** code
+than the shell does — 154 ruby, 85 erb, 22 js blocks against 79 bash — and it is the same code an
+agent pastes into a user's project.
+
+```bash
+python3 scripts/lint_markdown_code.py                   # node --check / ruby -c per block
+python3 scripts/lint_markdown_code.py --audit-coverage  # prove no block is silently skipped
+python3 scripts/lint_markdown_code.py --selftest        # 27 fixtures, mostly SILENCE fixtures
+```
+
+**Its whole risk is false positives, so read that half first.** Reference docs are full of deliberate
+elision (`def perform(account) ... end`) and of fragments that are correct but not standalone (a method
+with no class). So a block is **normalised** — elisions substituted, exactly as the shell linter
+substitutes `<pack>` — then tried in a short, **named ladder of contexts** (bare, class body, method
+body, object literal), passing if any accepts it. Widening that ladder to silence a failure is how the
+tool stops finding anything; the run prints which context accepted each block so the ladder can be
+watched.
+
+Three things it taught that are worth not relearning:
+
+- **Two Rails idioms are invalid in stdlib ERB.** `<%= form_with … do |f| %>` compiles to
+  `(expr do).to_s` and `<%==` to `((= expr))` — both syntax errors — because Rails compiles views with
+  **erubi**, not `ERB`. Erubi is a gem, so depending on it would make the gate pass or fail by machine.
+  Both are normalised away instead. This was **21 of the first run's 26 findings**: a linter's own false
+  positives on the most common idiom in the corpus.
+- **`js` matches the `js` in ` ```json `.** Without a `\b` after the language, every JSON block in the
+  repo was handed to `node --check`. The `--audit-coverage` control caught it because that regex already
+  had the boundary and the strict one did not — an **over**-matching extractor is as dishonest as an
+  under-matching one.
+- **ERB does not error on an unterminated `<%`.** It emits the rest of the template as a **literal
+  string**, so the expression silently never runs and the view renders text where a value belongs. That
+  needs an explicit balance check; the compiler will not give you one.
+
+It found four real copy-paste hazards in shipped skills, all of which raise on paste: a bare
+`rescue … end` with no `begin`, two prose-as-code lines (`Product.select(…) / .pluck(…)` — `/` is
+division), and two blocks mixing a class field with statements.
+
 ## Verify our own claims, not just our shell
 
 A trial reviewer spent a fortnight catching a class of bug our review missed, and it had no

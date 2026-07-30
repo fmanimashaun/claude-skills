@@ -131,6 +131,18 @@ GUARDS: tuple[Guard, ...] = (
                 "nothing declares",
             ),
             Mutation(
+                "invisible characters stop being reported (#95)",
+                "                if index == -1:\n                    continue",
+                "                if True:\n                    continue",
+                "a no-break space in shipped markdown",
+            ),
+            Mutation(
+                "the invisible set shrinks to whitespace only, letting a BOM through",
+                '    "\\ufeff": "BYTE ORDER MARK",',
+                "",
+                "a BOM inside the body of a file",
+            ),
+            Mutation(
                 "the prose carve-out on the icon rule is removed (#95)",
                 "                continue  # prose, not a call — see _PAREN_LESS_ARGS",
                 "                pass",
@@ -172,6 +184,43 @@ GUARDS: tuple[Guard, ...] = (
                 "{e.name for e in ENTRIES if e.is_documented})",
                 "{e.name for e in ENTRIES})",
                 "a needs-doctrine row carrying a BUILD fallback is correct",
+            ),
+        ),
+    ),
+    Guard(
+        name="lint_markdown_code",
+        subject="scripts/lint_markdown_code.py",
+        selftest="scripts/lint_markdown_code_selftest.py",
+        mutations=(
+            Mutation(
+                "the language boundary is dropped, so ```json parses as JavaScript again (#248)",
+                r'FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")\b[^\n]*\n(.*?)^[ \t]*```",',
+                r'FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")[^\n]*\n(.*?)^[ \t]*```",',
+                "```json is NOT javascript",
+            ),
+            Mutation(
+                "the ERB block-tag normalisation is removed (20 false positives return)",
+                '    code = ERB_BLOCK_TAG.sub(r"<%\\1%>", ERB_RAW_TAG.sub("<%=", code))',
+                "    code = ERB_RAW_TAG.sub(\"<%=\", code)",
+                "erb: <%= … do %> block tag",
+            ),
+            Mutation(
+                "the unterminated-tag check is removed — ERB will not catch it",
+                "    line = _unterminated_erb_tag(code)",
+                "    line = None",
+                "erb: unterminated tag",
+            ),
+            Mutation(
+                "`<%%` stops being treated as an escaped literal",
+                '        if code[i + 2:i + 3] == "%":      # `<%%` — an escaped literal, not a tag',
+                "        if False:",
+                "erb: `<%%` is an escaped literal, not an unterminated tag",
+            ),
+            Mutation(
+                "elision substitution is dropped, so documentation `...` reads as code",
+                "    normalised = substitute(code, lang)",
+                "    normalised = code",
+                "ruby: (...) argument elision",
             ),
         ),
     ),
