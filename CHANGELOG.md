@@ -1045,7 +1045,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.16.1 — 2026-07-30
 
 - **`fidara-design` told users to install a private plugin that should not exist** (#123). Its
   *Distribution* section instructed `/plugin marketplace add <org>/fidara-plugins` then
@@ -2090,6 +2090,39 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.34.1)
+
+> ### Read this if you use `fidara-design`
+>
+> **The previous release told you to install a private plugin that does not exist.** `brand.md`'s
+> *Distribution* section instructed `/plugin marketplace add <org>/fidara-plugins` then
+> `/plugin install fidara-ui`. Ignore it — there is nothing to install, and there never needed to be.
+> The skill is complete on its own, and that is the only mode.
+>
+> **Unlike the last four releases, the `.skill` assets DID change:** `fidara-design.skill` is
+> rebuilt. `rails-8`, `hotwire` and `code-review` remain byte-identical, so re-upload only
+> `fidara-design` if you use the claude.ai path.
+
+- **`fidara-design` no longer points at a plugin that should not exist** (#123). The instruction was
+  written under an *inventory* model — the licensed kit as a library agents reference while building.
+  #124/#190 replaced that with **guidance, not availability**: components are generated in the
+  project just-in-time from doctrine plus `coverage.md`, and **83 of 113 rows need no kit reference at
+  all**. So the section contradicted the skill's own coverage matrix: one part said the kit is not
+  needed at build time while another told you to install it.
+  - Rewritten to state the skill is complete on its own and that this is the **only** mode. A
+    kit-present branch would make the same prompt produce **different output depending on whether a
+    licensed plugin happened to be installed** — a non-determinism nobody without the licence could
+    even test.
+  - Records why the kits are never distributed: their licences forbid re-distributing components
+    *separately from an End Product*, which is exactly what a plugin payload is. They inform our
+    doctrine at authoring time on a maintainer machine and never travel further.
+  - Adds the corollary that makes the model self-correcting: **if an agent seems to need the kit to
+    build a screen, that is a defect in this skill** — a `coverage.md` row marked `derivable` that is
+    really `needs doctrine` — not a missing download.
+  - Full reasoning, including what was proposed and rejected, is the decision record on
+    [#190](https://github.com/fmanimashaun/claude-skills/pull/190#issuecomment-5127664883). #123 is
+    closed and #89 annotated, so the superseded decision is not left live in the epic.
 
 ### 2026-07-30 (release v1.34.0)
 
