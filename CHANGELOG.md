@@ -1166,6 +1166,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **FIX — the `rate_limit` test-store advice shipped an hour earlier was wrong** (#98). It said to
+  "stub a real store (`:memory_store`) in any example asserting either behaviour". That works for the
+  single-use marker, which goes through `Rails.cache` directly — and **cannot work for `rate_limit`**,
+  which counts through `config.action_controller.cache_store` and, because the signature is
+  `store: cache_store`, evaluates that default **when the class body loads** and captures it in the
+  `before_action` closure. By the time an example runs the store is already bound, so
+  `allow(Rails).to receive(:cache)` never reaches it and the spec goes green while the limiter does
+  nothing. The doctrine now gives the two cases **different** fixes: a per-example stub for the marker,
+  and a real store configured in the test environment plus a per-example `clear` for the limiter (one
+  instance per process, so counts otherwise accumulate and the suite turns order-dependent).
+  - **Found by applying the doctrine to a real app rather than by re-reading it.** The first attempt
+    used the stub the doctrine prescribed, the throttle spec failed, and the mechanism came out of
+    diagnosing why — which is the same lesson as every other defect this session: executing found it,
+    reading would not have.
+
 - **Cross-plane sign-in doctrine, and four corrections to the security checklist** (#98). A unified
   sign-in front door authenticating **both** realms, holding **no session of its own**, minting a
   short-lived single-use **encrypted** grant and handing off to the plane that exchanges it for its own
