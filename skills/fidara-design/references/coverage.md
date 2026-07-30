@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 40 |
+| — `documented` | 41 |
 | — `derivable` from documented parts | 43 |
-| — `needs doctrine` (tracked writing gap) | 30 |
+| — `needs doctrine` (tracked writing gap) | 29 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -43,6 +43,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 
 | Component | Kind | In TW | In FB | Where / when to use it | Watch out for |
 |---|---|---|---|---|---|
+| Accordion / Disclosure | component | — | ✓ | an authenticated app screen, inside one of the three shells | 732 instances in the audit corpus — the second most common interactive pattern after links. APG-verified contract (#142): what is required, and what is ours, is stated separately |
 | Alert / Banner | component | ✓ | ✓ | in-page state (Alert) vs page-wide announcement (Banner) | — |
 | Avatar | component | ✓ | ✓ | wherever a person is named; pair with the name, never alone as identification | — |
 | Badge / Tag / Chip | component | ✓ | ✓ | status and category labels inside table rows, list items and headings | — |
@@ -145,7 +146,6 @@ replace that approach with a proper entry.
 
 | Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |
 |---|---|---|---|---|---|---|
-| Accordion / Disclosure | component | — | ✓ | #142 | `<details>`/`<summary>` until #142 lands — native, keyboard-correct, no JS | an authenticated app screen, inside one of the three shells |
 | Calendar / Date picker / Time picker | component | ✓ | ✓ | #95 | `input[type=date|time]` via simple_form, plus Rails date helpers — styled with the shipped field anatomy so it matches everything else | an authenticated app screen, inside one of the three shells |
 | Carousel / Slider | component | — | ✓ | #95 | `grid-auto`, or a horizontal scroller with visible affordances and real focus order | prefer not to — if a client insists, a marketing surface only |
 | Combobox / Autocomplete | component | ✓ | — | #95 | the documented Select until the entry lands — do not hand-roll the ARIA combobox pattern | an authenticated app screen, inside one of the three shells |

@@ -156,6 +156,9 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     # catalogue components (components.md)
     "Button": "## Button\n",
     "Button group": "## Button group\n",
+    # Trailing newline anchors the exact heading: "## Disclosure" alone would also match a longer
+    # heading, which is how a missing entry could pass (see the Button/Button-group note above).
+    "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Badge / Tag / Chip": "## Badge / Tag / Chip",
     "Avatar": "## Avatar\n",
     "Dropdown / Menu": "## Dropdown / Menu",
@@ -316,10 +319,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Copy to clipboard", COMPONENT, "needs doctrine #95", "new controller", [], ["Clipboard"]),
     E("Keyboard key (KBD)", PRIMITIVE, "derivable", "—", [], ["KBD"],
       "trivial, but the command palette needs it"),
-    E("Accordion / Disclosure", COMPONENT, "needs doctrine #142", "disclosure (collapse + accordion)",
+    E("Accordion / Disclosure", COMPONENT, "documented", "disclosure (collapse + accordion)",
       [], ["Accordion"],
-      "#142 is the dedicated issue: the audit found 732 data-collapse-toggle instances and we "
-      "had no disclosure controller at all"),
+      "732 instances in the audit corpus — the second most common interactive pattern after links. "
+      "APG-verified contract (#142): what is required, and what is ours, is stated separately"),
 
     # ---- planned: #90 marketing sections + page compositions ---------------------------
     E("Hero section", COMPOSITION, "derivable", "—", ["marketing/sections/heroes"], ["Jumbotron"]),
@@ -619,8 +622,6 @@ BUILD: dict[str, str] = {
     "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
     "Copy to clipboard": "a Button plus a Toast confirmation; the clipboard call is a small "
         "controller",
-    "Accordion / Disclosure": "`<details>`/`<summary>` until #142 lands — native, "
-        "keyboard-correct, no JS",
     "Mega menu / Flyout": "the documented Dropdown for now; hover-intent is what #90 must specify",
     "Reviews + Rating": "Media object rows; the rating needs an accessible name (\"4 out of 5\"), "
         "not stars alone",
