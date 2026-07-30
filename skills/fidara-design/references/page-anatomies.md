@@ -283,3 +283,166 @@ legitimate as a substitute for a primitive that expresses the same intent.
    breakpoint chain from the table above; `min-h-0` on every scroll region; empty state
    for anything data-driven; `min-h-touch` on every control; safe-area padding on fixed
    chrome.
+
+## Landing
+
+The one screen that must survive a stranger's first eight seconds. It answers *"why should I care,
+and what do I do next?"* — nothing else.
+
+**Shell: stacked.** No sidebar; there is no app to navigate yet. Marketing pages are the only place
+the stacked shell is the *default* rather than a choice.
+
+**One primary action, repeated — never several competing ones.** The same CTA appears in the hero, once
+mid-page, and in the closing band. Two different primary CTAs on a landing page is a decision the
+visitor has to make instead of the one you want.
+
+```erb
+<div class="stack" style="--space: var(--space-xl)">
+  <section class="stack text-center" style="--space: var(--space-s)">
+    <h1 class="text-step-5 max-w-[45ch] mx-auto"><%# the claim, not the product name %></h1>
+    <p class="text-step-1 text-muted-foreground max-w-[60ch] mx-auto"><%# who it is for, concretely %></p>
+    <div class="cluster justify-center"><%# primary CTA + one quiet secondary %></div>
+    <%# proof immediately under the fold line: logos, a number, or one real quote — not all three %>
+  </section>
+
+  <section class="grid-auto" style="--min: 18rem" aria-label="Capabilities">
+    <%# 3–6 capability cards. Each: verb-led heading, one sentence, no icon-only labels %>
+  </section>
+
+  <section class="stack" aria-label="How it works">
+    <%# 3 numbered steps. An <ol>, because the order is the meaning %>
+  </section>
+
+  <section class="stack text-center" aria-label="Get started">
+    <%# the SAME primary CTA as the hero %>
+  </section>
+</div>
+```
+
+**Heading discipline:** exactly one `h1` (the claim). Every section gets an `h2`, even where the design
+shows no visible heading — use `sr-only` rather than skipping the level, or the page has no outline for
+anyone navigating by headings.
+
+## Pricing
+
+Answers *"which plan, and what will it cost me?"* — in that order. The comparison is the page; the
+prose is scaffolding.
+
+```erb
+<div class="stack" style="--space: var(--space-l)">
+  <header class="stack text-center" style="--space: var(--space-2xs)">
+    <h1 class="text-step-4">Pricing</h1>
+    <%# billing-period toggle: a Ui::ButtonGroup with kind: :select — it is a radiogroup, not styling %>
+  </header>
+
+  <div class="grid-auto items-start" style="--min: 17rem">
+    <%# one Ui::Card per plan. The recommended plan carries a Ui::Badge, NOT colour alone %>
+  </div>
+
+  <table class="w-full text-step--1">
+    <caption class="sr-only">Plan comparison</caption>
+    <thead><tr><th scope="col">Feature</th><%# th scope=col per plan %></tr></thead>
+    <tbody><%# th scope=row per feature; ✓/— cells carry an sr-only word, never a bare glyph %></tbody>
+  </table>
+
+  <section aria-label="Pricing questions"><%# the 3 objections sales actually hears, as a disclosure %></section>
+</div>
+```
+
+**The recommended plan needs a non-colour signal.** A ring or tint alone fails for anyone who cannot
+see it; the badge is what carries the meaning. Same rule as every status in this system.
+
+**Comparison cells must say what they mean.** A `✓` with no accessible name is announced as nothing.
+Pair the glyph with `sr-only` text ("Included" / "Not included") — the identical reasoning to icon-only
+controls needing a name.
+
+## About
+
+Answers *"who is behind this, and can I trust them?"* Mostly prose, which is exactly why it goes wrong:
+there is no data to structure, so it drifts into a wall.
+
+```erb
+<div class="stack" style="--space: var(--space-l)">
+  <header class="stack" style="--space: var(--space-2xs)">
+    <h1 class="text-step-4"><%# what we do, in one line — not "About us" %></h1>
+    <p class="text-step-1 text-muted-foreground max-w-[65ch]"><%# the why %></p>
+  </header>
+
+  <section class="stack" aria-label="Story">
+    <%# prose: max-w-[70ch]. Longer measures are unreadable regardless of type size %>
+  </section>
+
+  <section class="grid-auto" style="--min: 14rem" aria-label="Team">
+    <%# Ui::MediaObject per person: avatar + name + role. Avatar never carries the name alone %>
+  </section>
+</div>
+```
+
+**Constrain the measure, not the font size.** A 70-character line is the readability limit; making type
+smaller to fit more per line makes it worse, not denser.
+
+## Error (404 / 500)
+
+Answers *"where am I, and how do I get out?"* Two sentences and a way forward — nothing else earns its
+place on a page someone reached by accident.
+
+**The status code must match the page.** A 404 design served with HTTP 200 is a *soft 404*: search
+engines index it, and monitoring never sees the failure. This is the mirror of the evidence rule in
+`qa-flow` — an error page that returns 200 is indistinguishable from a working one to everything except
+a human reading it.
+
+```erb
+<%# rendered by the framework's error handler; no app chrome, because the app may be what failed %>
+<div class="center stack text-center" style="--space: var(--space-s)">
+  <p class="text-step--1 text-muted-foreground"><%# the code, as text: "404" %></p>
+  <h1 class="text-step-3"><%# what happened, in plain words %></h1>
+  <p class="text-muted-foreground max-w-[50ch]"><%# what to do about it %></p>
+  <div class="cluster justify-center"><%# back to safety: home, or the thing they probably wanted %></div>
+</div>
+```
+
+**A 500 page must not depend on the app.** No database call, no current-user lookup, no asset the failed
+boot might not have compiled — a 500 page that itself raises produces a blank browser default. Keep it
+static and self-contained.
+
+**Never blame the visitor.** "The page you requested no longer exists" beats "you have entered an
+invalid URL", and it is usually truer — the link was probably ours.
+
+## Auth (sign-in / sign-up / reset)
+
+Answers *"who are you?"* One focused form and nothing to click away to.
+
+**No shell at all** — this is the one archetype that uses neither the sidebar nor the stacked shell.
+Showing app navigation to someone who is not signed in advertises destinations they cannot reach.
+
+```erb
+<div class="center" style="--measure: 24rem">
+  <div class="box stack" style="--space: var(--space-s)">
+    <%# brand mark links home — the only exit, and it must exist %>
+    <h1 class="text-step-2"><%# "Sign in" — the action, not "Welcome back" %></h1>
+
+    <%# Ui::Alert intent: :error for the failure summary, ABOVE the form. One message, %>
+    <%# never per-field noise after a wrong password: it leaks which half was wrong %>
+
+    <%= simple_form_for(...) do |f| %>
+      <%# email: autocomplete="username", inputmode="email" %>
+      <%# password: autocomplete="current-password" (new-password on sign-up) %>
+      <%# submit: full width, and disabled-with-label while in flight, never a bare spinner %>
+    <% end %>
+
+    <div class="cluster justify-between text-step--1">
+      <%# the one alternate route: forgot password, or sign-up ↔ sign-in %>
+    </div>
+  </div>
+</div>
+```
+
+**`autocomplete` tokens are not optional polish.** Without `username` / `current-password` /
+`new-password`, password managers cannot fill or save, and users fall back to weaker passwords they can
+type. This is a security property of the markup.
+
+**Say nothing about which credential was wrong.** "Email or password is incorrect" is the whole
+message — anything more precise is an account-enumeration oracle.
+
+**A password reset always reports success.** "If that address has an account, we have sent a link" is
+the only safe response; confirming an address exists is the same leak by a slower route.
