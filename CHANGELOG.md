@@ -1117,6 +1117,68 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Drawer, Carousel and Image gallery/Lightbox are documented** (#95). `coverage.md` **12 → 9**. The
+  batching premise **held this time**: the APG index lists **Dialog (Modal)** and **Carousel**, the
+  lightbox is their composition (the shape already precedented by the Command palette), so all three drew
+  on one body of evidence. Verdict on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95); sources
+  [Dialog (Modal)](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/),
+  [Carousel](https://www.w3.org/WAI/ARIA/apg/patterns/carousel/),
+  [ARIA 1.2](https://www.w3.org/TR/wai-aria-1.2/#aria-modal) (REC, 6 June 2023).
+  - **The drawer is ONE row with TWO contracts, and the old guidance was harmful applied to the wrong
+    one.** `coverage.md` said *"the documented Modal, positioned to an edge — keep its focus trap"* with
+    no qualifier. An **overlay** drawer is a modal dialog and must trap focus; a **persistent push**
+    sidebar is **not a dialog** — it is never overlaid, so it fails APG's own definition — and must NOT
+    trap focus, take `aria-modal`, or steal initial focus. **"A drawer must trap focus" is false as
+    stated:** ARIA 1.2 scopes focus management to *modal* dialogs specifically. Responsive shape: render
+    both and let the breakpoint choose; never toggle `aria-modal` by media query.
+  - **Three carousel claims we would have got wrong.** The container is `role="region"` **or**
+    `role="group"` (APG sanctions both), not `group` only. A **Tabbed** slide is `role="tabpanel"` and
+    **drops `aria-roledescription`** entirely. And there are **three** variants — Basic, Tabbed, Grouped
+    — not two.
+  - **Most carousel machinery is conditional.** Prev/Next always; play/pause, stop-on-hover and
+    stop-on-focus **only if it auto-rotates**. Auto-rotation is **WCAG 2.2.2**, not 2.3.3 — the same
+    distinction the skeleton contract draws. Default: do not auto-rotate.
+  - **"Slides must be `aria-hidden`" is REFUTED.** APG names no `aria-hidden` requirement and its own
+    reference implementation uses `display: none`. What the pattern warns against is a slide *"displayed
+    off-screen"* — still in the tree. So remove it by any mechanism; do not cite `aria-hidden` as the
+    technique.
+  - **Two lightbox claims are ours, and are labelled as ours.** That a lightbox is a dialog rather than a
+    full-page route is a **decision** (it keeps the grid's scroll position) — no pattern covers
+    lightboxes either way. So is the dialog's name string. The Dialog/Carousel keyboard models compose,
+    but that is **inference from reading both normative sections**, not a citable rule, and it says so.
+  - **`Ui::ModalComponent` gains `placement:`** (`:center` · `:left` · `:right` · `:bottom`) so a drawer
+    is the same component at an edge — one dialog implementation, one focus trap, one `Esc`. Architecture
+    decision; it replaces a call site that passed raw positioning classes through an argument the
+    component never accepted.
+
+- **FIX — `aria-modal="true"` promised background inertness the shipped code never delivered** (#95).
+  `interaction-stimulus.md` stated the focus-trap mixin *"mark[s] the background inert"*, and
+  `reference-implementation.md`'s `focus_trap.js` never did: it bound a Tab-cycling handler and locked
+  body scroll, nothing more. Tab-cycling confines *the tab sequence* — a virtual cursor, a rotor, a
+  swipe, or a click all still reached the background. ARIA 1.2 is explicit that this is worse than not
+  claiming modality: *"users of those technologies will experience severe negative ramifications if a
+  dialog is marked modal but does not behave as a modal for other users."* `focus_trap.js` now inerts
+  background siblings.
+  - **`inert` alone — not paired with `aria-hidden`.** `inert` removes the subtree from tab order,
+    hit-testing **and** the accessibility tree in one attribute; adding `aria-hidden` beside it is how a
+    background ends up hidden from AT while still clickable. The doctrine line said `inert`/`aria-hidden`
+    as if interchangeable.
+  - **Nesting-safe, because the dismissable-layer is a stack.** The trap restores only what *it* changed,
+    so an inner overlay closing cannot un-inert what an outer one still needs — and the same fix applies
+    to `body.overflow`, which previously unlocked scroll under a still-open outer modal.
+
+- **FIX — `components.md` advertised a Modal `body` slot that does not exist** (#95). The component
+  declares `renders_one :title` and `renders_one :actions` only; the body is block content, which is what
+  both real call sites in `crud-modal-pattern.md` do. `m.with_body` raises `NoMethodError` — the #168/#182
+  class exactly, surviving in **prose**, where the call-site linter cannot reach it. Found because the
+  linter rejected a call site written *from that prose*.
+
+- **FIX — the controller inventory conflated the two drawer shapes** (#95). It listed `sidebar` as
+  *"drawer + collapse"*, one controller for both — which is how a persistent sidebar acquires an
+  `aria-modal` and a focus trap it must never have. `sidebar` is collapse only; the overlay drawer is
+  `modal`. `carousel` is added as the one new controller these rows need.
+
 - **Loading, progress and busy state are documented — Progress bar, Skeleton, Spinner** (#95).
   `coverage.md` **15 → 12**. One `role="progressbar"` contract, one skeleton recipe, one spinner recipe,
   and the rule that decides between the last two: **is the content's size known?** Known → skeleton (it

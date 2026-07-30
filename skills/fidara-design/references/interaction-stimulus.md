@@ -17,8 +17,20 @@ mixins**, then compose them — don't re-solve accessibility per component.
      typeahead-jump — a different mechanism. Applying the mixin wholesale to an editable
      combobox produces a control that swallows the space bar.
 2. **focus-trap + restore** — on open, move focus in and cycle first/last on Tab; on close,
-   **restore focus to the trigger**; mark the background inert (`inert`/`aria-hidden`) and lock
-   body scroll. Used by modal + drawer only (never trap outside a true modal).
+   **restore focus to the trigger**; mark the background **`inert`** and lock body scroll. Used by
+   modal + drawer only (never trap outside a true modal).
+   - **`inert` is the load-bearing part, not the Tab handler**, and it shipped missing from
+     `focus_trap.js` for as long as `aria-modal="true"` shipped on the Modal. Tab-cycling confines
+     *the tab sequence*; a virtual cursor, a rotor, a swipe, or a click still reach the background.
+     ARIA 1.2 requires the interface be controllable using only the modal's descendants and warns
+     that *"users of those technologies will experience severe negative ramifications if a dialog is
+     marked modal but does not behave as a modal for other users."*
+   - **`inert` alone — do not add `aria-hidden` beside it.** `inert` removes the subtree from the tab
+     order, hit-testing **and** the accessibility tree in one attribute; adding `aria-hidden` is how a
+     background ends up hidden from AT while still clickable.
+   - **Restore only what you set.** The dismissable-layer is a stack, so overlays nest: an inner
+     overlay closing must not un-inert what the outer one still needs, nor unlock body scroll under
+     it.
 3. **dismissable-layer** — Esc + outside-click close, maintained as a **stack** so nested
    overlays close top-first. Used by dropdown, popover, tooltip, drawer, modal.
 4. **anchored-position** — place a floating element relative to a trigger with collision
@@ -37,7 +49,10 @@ mandated (#142).
 |---|---|---|---|
 | Dropdown/Menu | trigger `aria-haspopup aria-expanded aria-controls`; `role=menu/menuitem` | Enter/Space/↓ open · ↑↓ · Home/End · type-ahead · Esc | list-nav + dismissable + anchored |
 | Dialog/Modal | `role=dialog aria-modal aria-labelledby` | Esc close · Tab trapped | focus-trap + dismissable |
-| Drawer | as Dialog | Esc · Tab trapped | focus-trap + dismissable |
+| Drawer (overlay) | as Dialog — no APG pattern of its own | Esc · Tab trapped | focus-trap + dismissable |
+| Drawer (persistent / push) | **not a dialog** — see the contract below | none | none |
+| Carousel | `role=region` **or** `group` + `aria-roledescription=carousel` | prev/next buttons | carousel |
+| Lightbox / gallery viewer | Dialog **containing** a Carousel | Esc · Tab trapped · prev/next | focus-trap + dismissable + carousel |
 | Tabs | `role=tablist/tab/tabpanel` `aria-selected aria-controls` | ←→ (Home/End) | list-nav |
 | Tooltip | `role=tooltip` `aria-describedby` | show on focus+hover · Esc | anchored + dismissable |
 | Popover | trigger `aria-expanded aria-controls` | Esc · focus moves in | anchored + dismissable + focus-trap(soft) |
@@ -50,6 +65,86 @@ mandated (#142).
 
 Non-negotiables: visible `focus-visible` ring meeting contrast; keyboard reaches everything
 the mouse can; restore focus to the trigger on close; announce async changes via a live region.
+
+### Drawer, Carousel and Lightbox — one dialog, one rotator, one composition of both (#95)
+
+**APG has a pattern for the middle one only.** The index lists 30; **Carousel** and **Dialog (Modal)**
+are both on it, **Drawer**, **Off-canvas**, **Lightbox** and **Gallery** are not. So the drawer borrows
+the Dialog contract, the lightbox is the composition already precedented by the Command palette
+(*documented Modal containing a documented X*), and neither may be cited as a pattern of its own.
+
+#### The drawer's real fault line: modal or persistent — and it is not one contract
+
+`coverage.md` used to say "the documented Modal, positioned to an edge — keep its focus trap" with no
+qualifier, and applied to the wrong shape that is actively harmful.
+
+- **Overlay drawer** (slides in over content, backdrop, dismissible) → **is** a modal dialog. Full
+  Dialog contract: `role="dialog"`, `aria-modal="true"`, an accessible name via `aria-labelledby` or
+  `aria-label`, **initial focus inside** (generally the first focusable element), **focus returns to the
+  invoking element** on close, and **`Esc` closes** — APG lists Escape unconditionally.
+- **Persistent / push drawer** (the ordinary Rails app sidebar: always visible at `lg`, pushes content,
+  never dismisses) → **not a dialog at all, and it must NOT trap focus.** It is never overlaid and the
+  background is never inert, so it fails APG's own definition of a dialog (*"a window overlaid on either
+  the primary window or another dialog window"*). Give it `<nav>`/`role="navigation"` and no dialog
+  semantics.
+- **"A drawer must trap focus" is false as stated.** Trapping is what **modality** requires, not a
+  property of being a drawer: ARIA 1.2 scopes *"authors SHOULD manage focus of modal dialogs"* to modal
+  dialogs, with no equivalent for non-modal ones. Trap the overlay; never trap the persistent panel.
+- **`aria-modal="true"` is conditional on behaviour, not decoration.** APG: mark a dialog modal only
+  when code prevents all users interacting with outside content **and** styling obscures it. That is
+  what the `inert` line in the focus-trap mixin above exists to make true.
+- **The responsive case is two components, not one that changes role.** A panel that is a modal overlay
+  at `sm` and permanent chrome at `lg` changes *which contract applies* at the breakpoint. Render the
+  persistent `<nav>` at `lg` and the modal drawer below it; do not toggle `aria-modal` and a focus trap
+  by media query.
+
+#### Carousel — three variants, and most of the machinery is conditional
+
+- **Container: `role="region"` OR `role="group"`** — APG sanctions both and says the choice *"depends on
+  the information architecture of the page"*. Either way it carries
+  **`aria-roledescription="carousel"`**. Writing "`role=group` is required" overclaims.
+- **Slides: `role="group"` + `aria-roledescription="slide"`** — except in the **Tabbed** variant, where
+  each slide takes **`role="tabpanel"` and NO `aria-roledescription`**: *"Each slide container has role
+  tabpanel in lieu of group, and it does not have the aria-roledescription property."*
+- **Three variants, not two.** **Basic** (prev/next, no picker) · **Tabbed** (adds a single tab stop
+  implementing the Tabs pattern) · **Grouped** (adds individually-tabbable picker buttons — APG calls it
+  *"the least friendly for keyboard users"*, so prefer Tabbed when you want a picker).
+- **Prev/Next buttons are needed always. Everything else is conditional on auto-rotation.** *Only* if it
+  auto-rotates does it need a **play/pause button**, **stop on keyboard focus entering**, and **stop on
+  mouse hover**. A manually-advanced carousel needs none of the three — requiring them anyway is
+  inventing work.
+- **`Tab` is not scripted.** APG: *"Tab and Shift+Tab: Move focus through the interactive elements of the
+  carousel as specified by the page tab sequence — scripting for Tab is not necessary."* Arrow keys
+  belong to the Tabs pattern in the Tabbed variant, not to the slides.
+- **Inactive slides must leave the accessibility tree — but `aria-hidden` is not the named technique.**
+  APG's Roles/States/Properties names no `aria-hidden` requirement; its reference implementation uses
+  **`display: none`**. What the pattern actually warns against is a slide *"incorrectly hidden, e.g.,
+  displayed off-screen"* — moved out of the viewport while still in the tree. So: remove it with
+  `display:none`, `hidden`, or `inert`. Do not claim the spec mandates `aria-hidden`, and never
+  "hide" a slide by translating it off-screen.
+- **Auto-rotation is governed by WCAG 2.2.2 Pause, Stop, Hide (A)** — moving content that starts
+  automatically, lasts over five seconds, and is presented in parallel with other content; technique
+  **G186**, failure **F16**. **Not 2.3.3**, which is scoped to *"motion animation triggered by
+  interaction"* (the same distinction the skeleton contract draws). Best default: **do not auto-rotate.**
+
+#### Lightbox / image gallery — the composition, and where we decided rather than cited
+
+A **Dialog (Modal)** containing a **Carousel**. Both contracts above apply unchanged, and the thumbnail
+grid behind it becomes genuinely `inert`. Closing returns focus **to the thumbnail that was clicked**,
+not to the grid — the Dialog rule is the *invoking element*.
+
+- **The two patterns do not conflict, but that is inference, not a citation.** Carousel defers `Tab` to
+  the page tab sequence and Dialog only changes where that sequence *wraps*, so reading both normative
+  sections together they compose. No document states this about the combination, because no Lightbox
+  pattern exists to state it — so it is recorded as reasoning, not quoted as a rule.
+- **"A lightbox must be a dialog rather than a full-page navigation" has no upstream either way.** We use
+  a dialog **by decision**, because it preserves the grid's scroll position and the user's place in it.
+  Do not attribute that to a spec.
+- **No auto-rotation, therefore no play/pause control** — which follows from the Carousel conditional
+  above rather than from a lightbox rule.
+- **The dialog's name string is ours too.** The pattern requires *a* name (`aria-labelledby` or
+  `aria-label`); what it says is undocumented upstream. Use the image's own caption or alt text, so the
+  name identifies the picture rather than announcing "Image viewer" over and over.
 
 ### Loading, progress and busy state (#95)
 
@@ -228,10 +323,19 @@ declarative component and porting HTML examples is easy. Style state off attribu
      class="hidden data-[state=open]:block bg-popover border border-border rounded-md shadow-md">…</div>
 ```
 
-Reuse the proven controllers already in the apps: `modal`, `dropdown`, `tabs`, `sidebar`
-(drawer + collapse), `theme` (dark toggle + localStorage), `toast`, `search` (debounced),
-`multistep`, `form_validation`, `countdown`. Refactor them onto the four mixins so behavior is
-consistent.
+Reuse the proven controllers already in the apps: `modal`, `dropdown`, `tabs`, `sidebar`,
+`theme` (dark toggle + localStorage), `toast`, `search` (debounced), `multistep`,
+`form_validation`, `countdown`. Refactor them onto the four mixins so behavior is consistent.
+
+- **`sidebar` is collapse only — the overlay drawer is `modal`.** This entry used to read "`sidebar`
+  (drawer + collapse)", conflating the two shapes the drawer contract above separates: the persistent
+  panel is *not a dialog* and must not trap focus, while the overlay drawer is a modal dialog and must.
+  One controller doing both is how a persistent sidebar acquires `aria-modal` and a focus trap it should
+  never have. `sidebar` collapses and expands; `modal` (focus-trap + dismissable) drives the overlay,
+  positioned to an edge.
+- **`carousel` is new** — the only new controller the #95 rows need, built on the mixins. Prev/next plus,
+  *only if it auto-rotates*, play/pause and stop-on-hover/focus. The lightbox composes it inside `modal`
+  rather than adding a controller of its own.
 
 ## Real-time & data (standardize)
 

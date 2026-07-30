@@ -330,14 +330,25 @@ same recipe + a trailing chevron.
 module Ui
   class ModalComponent < ViewComponent::Base
     renders_one :title
-    renders_one :actions
+    renders_one :actions   # the BODY is the block content, not a slot — same shape as Alert
     SIZE = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl", full: "max-w-full mx-4" }.freeze
-    def initialize(size: :md, labelledby: "modal-title")
-      @size, @labelledby = size.to_sym, labelledby
+    # A DRAWER IS THIS COMPONENT AT AN EDGE (decision, no upstream): one dialog implementation, one
+    # focus trap, one Esc handler. `placement:` is the whole difference, so a drawer never needs a
+    # second component -- and never needs a caller passing raw positioning classes, which is what an
+    # invented `class:` argument would have meant. NOTE: only the OVERLAY drawer is this component.
+    # A persistent push sidebar is not a dialog at all and must not come through here.
+    PLACEMENT = {
+      center: "imposter",
+      left:   "fixed inset-y-0 left-0 h-full rounded-none",
+      right:  "fixed inset-y-0 right-0 h-full rounded-none",
+      bottom: "fixed inset-x-0 bottom-0 w-full rounded-t-lg rounded-b-none",
+    }.freeze
+    def initialize(size: :md, labelledby: "modal-title", placement: :center)
+      @size, @labelledby, @placement = size.to_sym, labelledby, placement.to_sym
     end
     # A modal is a card-class surface → `rounded-lg` (= --radius-lg = 12px via the token),
     # NOT an arbitrary `rounded-[12px]`. Stay in the radius vocabulary (SKILL non-negotiable).
-    def panel = ["imposter bg-popover text-popover-foreground rounded-lg shadow-lg w-full", SIZE.fetch(@size)].join(" ")
+    def panel = [PLACEMENT.fetch(@placement), "bg-popover text-popover-foreground rounded-lg shadow-lg w-full", SIZE.fetch(@size)].join(" ")
     # Lucide via lucide-rails; NO px size — `with-icon` sizes it to 1em and `currentColor`
     # inherits (CSS overrides the gem's width/height attrs). See "Icons (Lucide)" at the top.
     def close_icon = helpers.lucide_icon("x")
@@ -776,6 +787,69 @@ landmark noise outweighs the structure.
      data-controller="toast" data-toast-timeout-value="5000">
   <div class="cluster" style="--justify: space-between"><span><%= message %></span>
     <button data-action="toast#close" aria-label="Dismiss" class="min-h-touch"><span class="sr-only">Dismiss</span>×</button></div>
+</div>
+```
+
+## Drawer, Carousel and Lightbox — markup, because the roles are what gets wrong
+
+No new ViewComponent classes: the drawer **is** `Ui::Modal` positioned to an edge, and the lightbox is
+that Modal containing the carousel markup below. What needs writing down is the role wiring.
+
+```erb
+<%# ---- DRAWER, overlay: the documented Modal, edge-positioned. Full dialog contract. ---- %>
+<%= render Ui::ModalComponent.new(size: :sm, placement: :right) do |m| %>
+  <% m.with_title { "Filters" } %>
+  <%= render "products/filter_form" %><%# the body is BLOCK CONTENT — there is no `body` slot %>
+<% end %>
+
+<%# ---- DRAWER, persistent: NOT a dialog. No role="dialog", no aria-modal, no focus trap. ---- %>
+<%# The `sidebar` controller collapses it; it never traps focus, never steals initial focus. %>
+<nav data-controller="sidebar" aria-label="Main" class="hidden lg:block w-64 shrink-0">
+  <%= render Layout::SidebarComponent.new %>
+</nav>
+
+<%# Responsive: render BOTH and let the breakpoint choose. Do not toggle aria-modal by media query — %>
+<%# that changes which contract applies to the same element while the user is inside it. %>
+
+<%# ---- CAROUSEL, Basic variant. region OR group on the container; group + slide on each slide. ---- %>
+<%# No auto-rotation here, so NO play/pause button and no stop-on-hover/focus is required. %>
+<section role="region" aria-roledescription="carousel" aria-label="Featured products"
+         data-controller="carousel" class="relative">
+  <div class="cluster" style="--justify: space-between">
+    <button data-action="carousel#prev" aria-label="Previous slide" class="min-h-touch">
+      <span class="with-icon"><%= lucide_icon("chevron-left") %></span>
+    </button>
+    <button data-action="carousel#next" aria-label="Next slide" class="min-h-touch">
+      <span class="with-icon"><%= lucide_icon("chevron-right") %></span>
+    </button>
+  </div>
+
+  <%# Inactive slides leave the a11y tree via `hidden` — NOT aria-hidden, and never by translating %>
+  <%# them off-screen, which is the failure APG actually warns about. %>
+  <% products.each_with_index do |product, i| %>
+    <div role="group" aria-roledescription="slide"
+         aria-label="<%= i + 1 %> of <%= products.size %>"
+         data-carousel-target="slide" <%= "hidden" unless i.zero? %>>
+      <%= render Ui::CardComponent.new do %><%= product.name %><% end %>
+    </div>
+  <% end %>
+</section>
+
+<%# Tabbed variant differs in ONE way that is easy to miss: a slide becomes role="tabpanel" and %>
+<%# DROPS aria-roledescription entirely. Do not carry "slide" over. %>
+<div role="tabpanel" aria-label="1 of 3" data-carousel-target="slide">…</div>
+
+<%# ---- LIGHTBOX: the Modal containing the carousel. Thumbnails are BUTTONS, not links. ---- %>
+<%# Closing returns focus to the thumbnail that was clicked — the invoking element, not the grid. %>
+<%# The dialog's name is the image's own caption, so it names the picture rather than repeating %>
+<%# "Image viewer" on every open. Using a dialog at all is OUR decision (it keeps scroll position), %>
+<%# not a spec requirement — no APG pattern covers lightboxes. %>
+<div class="grid-auto">
+  <% images.each do |image| %>
+    <button data-action="lightbox#open" data-lightbox-id-param="<%= image.id %>" class="frame">
+      <%= image_tag image.thumb_url, alt: image.caption %>
+    </button>
+  <% end %>
 </div>
 ```
 

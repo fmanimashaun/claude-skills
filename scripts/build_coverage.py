@@ -173,6 +173,9 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
     "Progress bar": "## Progress bar\n",
+    "Drawer / off-canvas": "## Drawer / off-canvas\n",
+    "Carousel / Slider": "## Carousel\n",
+    "Image gallery / Lightbox": "## Image gallery / Lightbox\n",
     "Skeleton / loading placeholder": "## Skeleton / loading placeholder\n",
     "Spinner / busy indicator": "## Spinner / busy indicator\n",
     "Badge / Tag / Chip": "## Badge / Tag / Chip",
@@ -303,8 +306,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Toggle / Switch", COMPONENT, "documented", "—", ["application-ui/forms/toggles"], ["Toggle"]),
 
     # ---- planned: #95 application-ui expansion -----------------------------------------
-    E("Drawer / off-canvas", COMPONENT, "needs doctrine #95", "disclosure + dialog",
-      ["application-ui/overlays/drawers"], ["Drawer"]),
+    E("Drawer / off-canvas", COMPONENT, "documented", "modal (overlay) / sidebar (persistent)",
+      ["application-ui/overlays/drawers"], ["Drawer"],
+      "ONE ROW, TWO CONTRACTS: the overlay drawer is a modal dialog and traps focus; the "
+      "persistent push drawer is not a dialog and must not"),
     E("Stacked list", COMPONENT, "derivable", "—",
       ["application-ui/lists/stacked-lists"], ["List Group"],
       "a media object in a divide-y container — build on shipped parts, do not re-implement"),
@@ -404,7 +409,7 @@ ENTRIES: tuple[Entry, ...] = (
            "screen-reader announcement) and native inputs already cover single-date entry",
       build="`input[type=date|time]` via simple_form, plus Rails date helpers — styled with the "
               "shipped field anatomy so it matches everything else"),
-    E("Image gallery / Lightbox", COMPONENT, "needs doctrine #95", "—", [], ["Gallery"],
+    E("Image gallery / Lightbox", COMPONENT, "documented", "modal + carousel", [], ["Gallery"],
       note="focus trapping, keyboard paging and zoom are a large surface, and no current family "
            "has a media-heavy surface",
       build="`grid-auto` of `frame` thumbnails linking to the full image"),
@@ -422,7 +427,7 @@ ENTRIES: tuple[Entry, ...] = (
               "message semantics"),
 
     # ---- declined: a design principle, not a threshold. No revisit trigger by design ----
-    E("Carousel / Slider", COMPONENT, "needs doctrine #95", "—", [], ["Carousel"],
+    E("Carousel / Slider", COMPONENT, "documented", "carousel", [], ["Carousel"],
       note="content behind a timed or manual slide is content most users never see, and the "
            "pattern is a persistent a11y liability. This is a doctrine position, not a backlog "
            "item — if a client insists, build it in the app against the a11y contract rather than "
@@ -622,7 +627,6 @@ BUILD: dict[str, str] = {
     "Store navigation": "the documented navbar / sidebar navigation",
     # needs doctrine — the nearest safe thing to do TODAY
     "Inline link": "the Button `link` variant's classes on an `<a>`, until a token exists",
-    "Drawer / off-canvas": "the documented Modal, positioned to an edge — keep its focus trap",
     # APG has no command-palette pattern (the Patterns index lists 30, none for it), so this is
     # a composition
     # of two documented parts rather than a gap. Keep aria-activedescendant: the input must
@@ -640,9 +644,6 @@ BUILD: dict[str, str] = {
         "not stars alone",
     "Calendar / Date picker / Time picker": "`input[type=date|time]` in the documented field "
         "wrapper, plus Rails date helpers",
-    "Image gallery / Lightbox": "`grid-auto` of `frame` thumbnails linking to the full image",
-    "Carousel / Slider": "`grid-auto`, or a horizontal scroller with real focus order — prefer "
-        "not building one at all",
     "Video player": "native `<video controls>` inside a `frame`",
 }
 
