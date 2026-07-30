@@ -88,6 +88,51 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Behavior:** `dropdown` controller built on the **list-navigation** + **dismissable-layer** + **anchored-position**
   mixins (roving tabindex, Esc/outside-click, placement). Style open state via `data-[state=open]`.
 
+## Combobox / Autocomplete
+- **Reach for it only for one of APG's two scenarios**, not by option count: the value must come from
+  a **closed set** and the list is too long to scan, or the value is **arbitrary** and suggestions
+  help. Neither → native `<select>` (see [forms.md](forms.md)).
+- `Ui::Combobox` (input slot + option list). The **input itself** carries
+  `role="combobox" aria-expanded aria-controls` — `aria-controls` is required, not decorative, and
+  the role goes on the input, never a wrapping div (that is the superseded ARIA 1.1 model).
+- **Popup**: `role="listbox"` is the implicit default and needs no `aria-haspopup`. A `grid`, `tree`
+  or `dialog` popup **must** declare `aria-haspopup` matching that role — and uses
+  `gridcell`/`row`/`treeitem` rather than `option`.
+- **Options**: `role="option"`, and `aria-selected="true"` on the **active** option — selection
+  follows focus in a combobox, so it moves as the user arrows. It is not "the previously chosen
+  value"; that is the common mistake.
+- **`aria-autocomplete`** is required *if* you autocomplete: `list` (filter the popup), `both` (filter
+  plus inline completion), or omit for `none`. A **select-only** combobox has no text to complete, so
+  it carries no `aria-autocomplete` at all and may put the role on a non-`<input>` element.
+- **Collapsed panel**: the popup is `hidden`; `aria-expanded="false"` alone leaves options in the
+  accessibility tree and the tab order.
+- Panel `bg-popover text-popover-foreground rounded-md border border-border shadow-md max-h-64
+  overflow-auto`; active option `data-[active=true]:bg-accent`. An optional **Open button** beside the
+  input is `tabindex="-1"` and outside the tab order — the input already reaches the popup.
+- Error affordances reuse the field contract: `aria-invalid`, `aria-describedby` → the same
+  `aria-errormessage` wiring as every other input. Do not reinvent them.
+- **Behavior:** `combobox` controller on the **list-navigation** + **anchored-position** mixins.
+  `↓` into the popup and `↑`/`↓` within it are required; `Enter` accepts; `Esc` dismisses. **`→`/`←`
+  move the text cursor**, not the selection. `Space` types a space — it is *not* an activation key
+  here. Full required-vs-optional breakdown in
+  [interaction-stimulus.md](interaction-stimulus.md#combobox--the-two-corrections-that-matter-and-a-version-trap-229).
+- **Announcing "5 results available" via a live region is our convention, not APG's** — the pattern
+  never prescribes it. Worth doing; do not cite it as required.
+
+## Command palette
+- **Not an APG pattern** — 33 named patterns, none for a command palette. It is a *composition*, and
+  the sanctioned one is a **Modal dialog containing an editable Combobox with a listbox popup**: the
+  documented `Modal` for the shell, the documented `Combobox` above for the filter and results.
+- **`aria-activedescendant` is effectively mandatory here**, even though both focus models are
+  generally allowed: the input must keep focus for typing to filter, so moving DOM focus into the
+  results list would break typing. The "dialog popups move DOM focus" rule applies to *opening the
+  modal*, not to the filtered list inside it.
+- Trigger is a global shortcut (`⌘K` / `Ctrl+K`), so there is no persistently visible field to hang
+  `aria-haspopup="dialog"` on — that shape belongs to a Date-Picker-style field that expands, not to
+  a palette.
+- Result rows wanting icon + label + shortcut hint need a `grid` popup (`gridcell`/`row`), with
+  `aria-haspopup="grid"` on the input.
+
 ## Disclosure / Accordion
 - `Ui::Disclosure` (trigger slot + panel slot) and `Ui::Accordion` (renders many `Ui::Disclosure`,
   `group:` set). Trigger is a real `<button aria-expanded>` + `aria-controls`; the panel carries
