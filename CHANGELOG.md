@@ -1092,7 +1092,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.18.0 — 2026-07-30
 
 - **Every documented component now has a worked call site — 14 of 20 had none** (#238). A class
   definition shows what a component *accepts*; it never shows how to **call** it, and inferring the
@@ -2294,6 +2294,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.37.0)
+
+> ### `fidara-design` gains two component contracts and a call-site reference
+>
+> Combobox is documented against a verified APG contract, Command palette is derivable from it plus
+> Modal, and **every documented component now has a worked invocation** — 14 of 20 previously had none.
+> `fidara-design.skill` changed; the other three archives are byte-identical.
+
+- **Combobox / Autocomplete is `documented`; Command palette is `derivable`** (#95) — `coverage.md`
+  **29 → 27**. The contract was APG-verified first: `role="combobox"` on the **input** (the wrapper form
+  is the superseded ARIA 1.1 model), `aria-selected` on the **active** option because selection follows
+  focus, `aria-controls` required, and a collapsed popup carrying `hidden` as well as the ARIA state.
+  Command palette turned out not to be a gap at all — APG has no such pattern, so it composes from the
+  documented Modal plus the documented Combobox, with `aria-activedescendant` effectively mandatory
+  because the input must hold focus for typing to filter.
+- **A worked call site for every component** (#238). 14 of 20 had none, so a reader had to infer the
+  invocation — which is how `FieldComponent.new(form:, name:)` and `field_classes` both shipped and
+  raised in a user's project. It also silently disarmed the call-site linter: a component with no call
+  site has nothing to check. `DropdownComponent` turned out never to have been **declared** at all — an
+  ERB template with no class — so its `items:` keyword and `trigger` slot had never been checkable.
+- **Three linter defects, each found by exercising something rather than reading it.** A `renders_many`
+  slot's setter is **singular** (`with_option` for `renders_many :options`), so correct call sites were
+  being flagged — it had never surfaced because no shipped call site used a `renders_many` slot. And two
+  new rules now hold the line: `component-without-call-site` and `undeclared-component-call-site`, both
+  firing **zero** times, because the call sites were written *before* the rules landed. A rule that
+  starts red gets suppressed, and then the class stops being caught at all.
 
 ### 2026-07-30 (release v1.36.0)
 
