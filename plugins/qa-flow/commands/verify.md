@@ -33,6 +33,26 @@ mechanical blast-radius floor runs autonomously; if the change touches
 **auth, tenancy, money, migrations, or a shared concern**, present the regression
 selection for approval before executing.
 
+**Blast radius needs a denominator (#119).** "Select the affected routes" is judgement over an
+unknown set unless you know what the routes *are*, so refresh the route inventory and read the
+coverage gap before selecting:
+
+```bash
+bin/rails routes > qa/reports/routes.txt   # or --sitemap / --fs for other stacks
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/route_coverage.py" enumerate --rails qa/reports/routes.txt
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/route_coverage.py" report \
+  --evidence qa/manual-tests --evidence qa/reports --json
+```
+
+Coverage is attributed from the **already-validated** evidence CSVs, so a route counts as covered
+only when a row that passed `validate_evidence.py` says a pass went there. When the change touches a
+controller, its routes are in `qa/reports/routes.json` — and the ones the report lists as untested
+are the selection you would otherwise have guessed at. **Untested non-GET and authenticated routes
+rank first**, because an untested route that changes state is the worst kind to leave uncovered.
+
+A gap is **not** a failure of the run: it is the deliverable, and `report` exits 0 with one. Use
+`--fail-on-untested` only once a team has reached full coverage and wants to hold it.
+
 ## Phase 3 — Targeted execution (parallel where possible)
 
 Per the plan, dispatch: `e2e-tester` (sanity + selected `@regression` charters,
