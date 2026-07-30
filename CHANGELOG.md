@@ -1092,6 +1092,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   fixing exactly this blind spot for the **icon** rule — *"the rule initially required parentheses, so
   it would not have caught the violation that motivated it"* — but the fix was never carried to its two
   siblings. Same class, same file, unfixed for six releases.
+- **Follow-up: one of those five fixtures was itself vacuous.** Asked directly whether the two linter
+  defects were fixed, I re-checked by reverting each fix and confirming a fixture failed — and the
+  cross-contamination fixture **did not**. The declaration parser registers one component per fenced
+  block, so two classes in a single fence left the second unregistered, its render block skipped, and
+  the scenario never exercised. It passed for the wrong reason. Split into two fences; reverting the
+  fix now fails it. `gate-that-cannot-fail` in the fixture added to prevent one — and it only surfaced
+  because the fix was reverted rather than the fixture read.
 - **And fixing that exposed a false-positive generator.** Slot uses were scanned to
   *end-of-document*, so two blocks binding the same variable — `do |d|` for a Disclosure above
   `do |d|` for a Dropdown — had the second's slots attributed to the first class, flagging **correct**

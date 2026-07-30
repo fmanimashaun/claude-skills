@@ -779,11 +779,15 @@ def selftest() -> int:
     # TWO blocks binding the SAME variable. Scanning to end-of-document attributed the second
     # block's slots to the first class and flagged correct markup — found in #142, where a new
     # `do |d|` landed above an existing one. The window must end at the next render block.
+    # ONE class per fenced block: the declaration parser registers a single component per fence,
+    # so two classes in one fence silently leaves the second unregistered — which made the first
+    # version of the cross-contamination fixture below VACUOUS (it passed with the fix reverted).
+    # Found by reverting the fix and checking the fixture actually failed.
     TWO_CLASSES = (
         "skills/x/references/impl.md",
         "```ruby\nmodule Ui\n  class OneComponent < ViewComponent::Base\n"
-        "    renders_one :alpha\n    def initialize(a:)\n      @a = a\n    end\n  end\n"
-        "  class TwoComponent < ViewComponent::Base\n"
+        "    renders_one :alpha\n    def initialize(a:)\n      @a = a\n    end\n  end\nend\n```\n"
+        "```ruby\nmodule Ui\n  class TwoComponent < ViewComponent::Base\n"
         "    renders_one :beta\n    def initialize(b:)\n      @b = b\n    end\n  end\nend\n```\n",
     )
     scenario("two render blocks reusing one variable name do not bleed into each other",
