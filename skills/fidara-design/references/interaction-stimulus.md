@@ -25,7 +25,13 @@ mixins**, then compose them — don't re-solve accessibility per component.
    flipping; prefer CSS anchor positioning where available, else a small JS positioner. Used by
    dropdown, popover, tooltip, combobox.
 
-## Per-component behavior contract (WAI-ARIA APG)
+## Per-component behavior contract
+
+**Not every row here has an APG pattern**, and the heading used to imply otherwise. APG's index is 30
+patterns: **Toast, Progress bar, Spinner and Skeleton are not among them.** Rows without a pattern are
+sourced to an ARIA *role* definition or composed from primitives, and each says which — an entire row
+implying an authority that does not exist is the same defect class as citing a keybinding a spec never
+mandated (#142).
 
 | Component | Roles / ARIA | Keyboard | Mixins |
 |---|---|---|---|
@@ -38,10 +44,66 @@ mixins**, then compose them — don't re-solve accessibility per component.
 | Combobox | input `role=combobox aria-expanded aria-controls` (**both** required); listbox popup `aria-activedescendant` | ↓ into list · ↑↓ in list · Enter · Esc | list-nav + anchored |
 | Disclosure (collapse) | trigger `<button aria-expanded>` + `aria-controls`; panel `hidden` | Enter **and** Space toggle | disclosure |
 | Accordion | as Disclosure, **plus** header button wrapped in a heading with `aria-level` | Enter/Space · Tab/Shift+Tab between headers | disclosure(group:) |
-| Toast | `role=status`/`alert` `aria-live` | focusable dismiss | dismiss |
+| Toast | `role=status` **or** `alert` — severity decides (below); no APG pattern, nearest is *Alert* | focusable dismiss | dismiss |
+| Progress bar | `role=progressbar` — an ARIA role, not an APG pattern; see the contract below | none (not focusable) | — |
+| Spinner / Skeleton | no role, no pattern — composed from `aria-busy` + a `status` region | none | — |
 
 Non-negotiables: visible `focus-visible` ring meeting contrast; keyboard reaches everything
 the mouse can; restore focus to the trigger on close; announce async changes via a live region.
+
+### Loading, progress and busy state (#95)
+
+**None of these three has an APG pattern.** Progress bar has a normative ARIA *role*; Spinner and
+Skeleton have neither role nor pattern and are compositions. Saying so is part of the contract.
+
+**`progressbar` — every value attribute is optional, which surprises people.** There is no "Required
+States and Properties" row for the role: `aria-valuemin` defaults to `0`, `aria-valuemax` to `100`.
+
+- **Indeterminate means OMIT `aria-valuenow`** — not `0`, not `-1`: *"the author SHOULD omit the
+  `aria-valuenow` attribute."*
+- **An accessible name IS required**, and *Name From: author* — so `aria-label` or `aria-labelledby`
+  only. It cannot come from the element's text.
+- **It is a leaf.** *"Children Presentational: True"* — the inner fill `<div>` is not exposed, so never
+  put the percentage text inside it and expect it read; use `aria-valuetext` or a sibling.
+- **Never use `meter` for progress.** The difference is not stylistic: `meter` **requires**
+  `aria-valuenow` where `progressbar` treats it as optional, and both ARIA and APG say *"authors SHOULD
+  NOT use the `meter` role to indicate progress."* `meter` is a static measurement (disk usage); a
+  progressbar is a task advancing.
+- **Do not announce every increment.** WCAG's own example describes *"intermittent announcements"*, and
+  `aria-busy` on the region is the spec's batching tool. The specific cadence — every 10%, every two
+  seconds — is **our** convention, not a spec figure, so do not cite one for it.
+
+**Announcing the state — `role="status"`, not bare `aria-live`.** `role="status"` carries an implicit
+`aria-live="polite"` **and** an implicit `aria-atomic="true"`. Bare `aria-live="polite"` leaves
+`aria-atomic` at **false**, and then *"assistive technologies will only present the changed node"* — so
+"Total £52.00" announces as "52.00". Use the role.
+
+**`role="alert"` is for severity, not for loading.** It is implicitly *assertive* and interrupts. A
+confirmation ("Copied", "Item added") is `status`; a time-critical failure ("Payment failed", "Session
+expiring") is `alert`. That is the whole decision rule, and offering both without it — as this file did
+— leaves the choice to guesswork.
+
+**WCAG 4.1.3 Status Messages (AA) covers this explicitly**, and unusually the citation is safe: the SC's
+own definition names *"the waiting state of an application"* and *"the progress of a process"*. Cite it.
+
+**Skeleton: hide the shimmer, announce once.** `aria-hidden="true"` on the placeholder shapes plus a
+single `role="status"` message ("Loading invoices…"), and `aria-busy="true"` on the region until content
+arrives. Announcing forty placeholder rectangles is worse than announcing nothing.
+
+- **`aria-busy` must never be the only mechanism.** It is optional and advisory — *"assistive
+  technologies **MAY** want to wait"* — and support is poor in practice. `aria-hidden` on the shapes is
+  what actually does the work; `aria-busy` is the correct signal layered on top.
+- **No W3C source covers skeletons at all.** This shape is sound practitioner convention, not spec — and
+  doctrine says so rather than implying otherwise.
+- **Shimmer and reduced motion: the SC is 2.2.2 Pause/Stop/Hide (A), not 2.3.3.** 2.3.3 covers animation
+  from *interaction*; a skeleton starts on load. And 2.2.2 is **conditional** — more than five seconds
+  *and* presented in parallel with other content — so a fast skeleton, or one that is the only thing on
+  the page, may not trigger it at all. Respect `prefers-reduced-motion` anyway, but know it is not among
+  WCAG's named techniques for that SC.
+
+**Spinner: a spinner is not a progress bar.** If nothing is known about duration it is an indeterminate
+busy state, so `role="status"` with a text message beats `role="progressbar"` with no value — the role
+promises a value it cannot supply. Reserve `progressbar` for when you genuinely know the proportion.
 
 ### Combobox — the two corrections that matter, and a version trap (#229)
 

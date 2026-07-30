@@ -120,7 +120,8 @@ DEFAULTS = { variant: :primary, size: :md }
   never prescribes it. Worth doing; do not cite it as required.
 
 ## Command palette
-- **Not an APG pattern** — 33 named patterns, none for a command palette. It is a *composition*, and
+- **Not an APG pattern** — the APG Patterns index lists **30**, none for a command palette (an
+  earlier note here said 33; it was wrong). It is a *composition*, and
   the sanctioned one is a **Modal dialog containing an editable Combobox with a listbox popup**: the
   documented `Modal` for the shell, the documented `Combobox` above for the filter and results.
 - **`aria-activedescendant` is effectively mandatory here**, even though both focus models are
@@ -243,9 +244,57 @@ DEFAULTS = { variant: :primary, size: :md }
 
 ## Toast / Notification
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
-  `border-l-4` intent + `shadow-md`, `role="status" aria-live="polite"` (errors `assertive`), auto-dismiss +
-  close (the `toast`/`dismiss` mixin). **Emit via Turbo Streams** to prepend into the container. One mechanism
+  `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
+- **`role="status"`, and nothing beside it.** The role already implies `aria-live="polite"` *and*
+  `aria-atomic="true"`; writing `aria-live` next to it is redundant, and writing bare `aria-live`
+  *instead* of it silently drops the atomic half — an announcement then carries only the changed
+  node. **Severity picks the role, not a second attribute:** a confirmation is `status`, a
+  time-critical failure is `role="alert"` (implicitly assertive, interrupts). Do not put
+  `aria-live="assertive"` on a `status`. Full rule in
+  [interaction-stimulus.md](interaction-stimulus.md#loading-progress-and-busy-state-95). **Emit via Turbo Streams** to prepend into the container. One mechanism
   (replaces the duplicate `_flash`/`_flash_messages` pair).
+
+## Progress bar
+- **`role="progressbar"` is an ARIA role, not an APG pattern** — there is no pattern page for it, so
+  the role definition is the authority. Prefer native `<progress>` where the styling allows it.
+- **Every value attribute is optional.** `aria-valuemin` defaults to `0`, `aria-valuemax` to `100`,
+  so a 0–100 bar needs only `aria-valuenow`. **Indeterminate = OMIT `aria-valuenow`** — never `0`
+  (that reads as "no progress made") and never `-1`.
+- **The accessible name is required and comes from the author** — `aria-label` or `aria-labelledby`
+  only. The role is *Children Presentational*, so the inner fill `<div>` is not exposed: text inside
+  it is not read. Use `aria-valuetext` for "Step 2 of 5", or a visible sibling label referenced by
+  `aria-labelledby`.
+- **Not focusable, no keyboard.** It reports; it does not accept input.
+- **Never `role="meter"` for progress.** `meter` is a static measurement (disk usage, score) and it
+  *requires* `aria-valuenow`; ARIA says authors SHOULD NOT use it to indicate progress.
+- `h-2 rounded-full bg-muted` track + `bg-primary` fill, `transition-[width]`. Announce
+  intermittently via the surrounding `role="status"`, not on every increment — the cadence is our
+  convention, not a spec figure.
+
+## Skeleton / loading placeholder
+- **No role, no APG pattern, no W3C source at all** — this is convention, and doctrine says so
+  rather than dressing it as spec. Prefer it over a spinner **whenever the content's size is known**:
+  it reserves the space, so nothing shifts when content arrives (CLS).
+- **Hide the shapes, announce once.** `aria-hidden="true"` on every placeholder block plus **one**
+  `role="status"` message ("Loading invoices…"). Announcing forty placeholder rectangles is worse
+  than announcing nothing.
+- `aria-busy="true"` on the region until content arrives — correct to set, but **never the only
+  mechanism**: it is advisory (assistive tech *MAY* wait) and poorly supported. `aria-hidden` does
+  the actual work.
+- `animate-pulse rounded-md bg-muted` at the content's size. Suppress the animation under
+  `prefers-reduced-motion` — worth doing, but the SC is **2.2.2 Pause/Stop/Hide**, conditional on
+  five-plus seconds *and* parallel content, not 2.3.3 (which covers interaction-triggered motion).
+- The natural pairing is a **Turbo frame** with `loading="lazy"`, the skeleton as the frame's
+  placeholder content.
+
+## Spinner / busy indicator
+- **A spinner is not a progress bar.** If the proportion is unknown, `role="progressbar"` promises a
+  value it cannot supply — use `role="status"` with a text message and reserve `progressbar` for when
+  you genuinely know the fraction.
+- Use it only when the content's size is **unknown**; if it is known, use the Skeleton above.
+- A Lucide `loader-circle` with `animate-spin`, `aria-hidden="true"` (the icon is decoration), and
+  the announcement in a sibling `role="status"` — never `aria-label` on the spinning icon.
+- Same `aria-busy` + reduced-motion notes as Skeleton.
 
 ## Tooltip / Popover
 - `role="tooltip"` + `aria-describedby`; shows on **focus and hover** (keyboard parity), Esc dismiss.

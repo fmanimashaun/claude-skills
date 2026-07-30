@@ -7,6 +7,29 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`lint_self_consistency.py`: the icon rule flagged prose that stated the icon rule** (#95). A
+  paren-less `lucide_icon` scan read the words after the call as its arguments, so the comment
+  *"lucide_icon takes no `size:`/`class:`"* — written to warn readers off exactly that — became a
+  finding. The rule now requires the text to **look like an argument list** (a literal, or an identifier
+  followed by a comma) before inspecting it. This is the second instance of the class in this file: the
+  same false positive was fixed in `unbounded-issue-query`, where a CHANGELOG mention read as an
+  invocation. **Near-miss fixtures pin both edges** — prose is silent, while a call whose first argument
+  is a variable or a symbol is still flagged, so the carve-out cannot become a hole.
+- **NEW guard — a promoted coverage row must not keep its "until the entry lands" fallback** (#95).
+  `BUILD` holds the nearest safe workaround for a `needs doctrine` row. Once the row is `documented`
+  that text tells readers to build the workaround instead of using the doctrine, and it is **invisible
+  in the rendered table** (documented rows print `—` in that column), so nothing surfaced it. The
+  Combobox entry outlived its own promotion this way, still saying *"use the documented Select until the
+  entry lands"* after the Combobox entry had shipped. Deleted, and the guard keys on **status**, not on
+  the name appearing — pinned by a near-miss fixture where a `needs doctrine` row legitimately carries
+  one.
+- **`mutation_check.py`: 19 → 23 mutations**, covering both new guards and both of their carve-outs.
+  Writing them found a third defect of the same family: the new fixture's `build=` argument was accepted
+  by `expect_error` and then **not passed through** to the guard, so the fixture ran against the real
+  table and could not have failed. The selftest caught it, which is the harness doing its job.
+
 ### 2026-07-30 — the verification discipline becomes enforced rather than remembered (#233)
 
 Fifteen defects surfaced in one session: eleven predated it, four were mine. **Two of my four were
@@ -1091,6 +1114,56 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **Loading, progress and busy state are documented — Progress bar, Skeleton, Spinner** (#95).
+  `coverage.md` **15 → 12**. One `role="progressbar"` contract, one skeleton recipe, one spinner recipe,
+  and the rule that decides between the last two: **is the content's size known?** Known → skeleton (it
+  reserves the space, so nothing shifts); unknown → spinner.
+  - **Change type: framework claim under the gate for Progress bar, architecture decision for the other
+    two.** APG has **no pattern for any of the three** — the Patterns index lists 30 and none is Progress
+    bar, Spinner, or Skeleton — so they are not one batch of evidence. Progress bar cites the normative
+    ARIA role
+    ([`progressbar`](https://www.w3.org/TR/wai-aria-1.2/#progressbar)); the other two have **no upstream
+    at all** and say so in the doctrine rather than implying one. Verdict recorded on
+    [#95](https://github.com/fmanimashaun/claude-skills/issues/95).
+  - **Every `progressbar` value attribute is optional** — no "Required States and Properties" row exists
+    for the role. `aria-valuemin` defaults to `0`, `aria-valuemax` to `100`, and **indeterminate means
+    OMITTING `aria-valuenow`**, never `0` (which reads as "no progress made" — a different claim from
+    "unknown"). The name is required and *From: author* only, and the role is **Children Presentational**,
+    so text inside the fill `<div>` is never exposed. `ProgressComponent` raises on a blank label.
+  - **`meter` must not be used for progress**, and the difference is not stylistic: `meter` *requires*
+    `aria-valuenow` where `progressbar` treats it as optional. Both ARIA and APG say authors SHOULD NOT
+    use `meter` to indicate progress.
+  - **Reduced motion for a shimmer is WCAG 2.2.2, not 2.3.3** — 2.3.3 covers motion from *interaction*
+    and a skeleton starts on load. 2.2.2 is also **conditional** (over five seconds *and* parallel
+    content), so a fast skeleton may not trigger it at all. Respect the preference regardless; do not
+    cite the wrong SC for it.
+  - **`aria-busy` is never the only mechanism.** It is advisory — assistive tech *MAY* wait — and poorly
+    supported. `aria-hidden` on the placeholder shapes is what stops forty rectangles being announced.
+
+- **FIX — a shipped `aria-live` that could announce a price without its label** (#95). v1.38.0's Cart
+  anatomy said to wrap the total in `aria-live="polite"`. Bare `aria-live` leaves `aria-atomic` at
+  **false**, and then only the changed node is presented — so a total going £48.00 → £52.00 announces as
+  **"52.00"**. Now `role="status"`, which carries polite **and** atomic implicitly. The Category row
+  shipped in the same release already said `role="status"`, so this was internally inconsistent on
+  arrival. Same fix applied to the basket count.
+  - **The Toast row carried the same shape** — `role="status" aria-live="polite"` (redundant) with
+    "errors `assertive`" (which invites `aria-live="assertive"` on a `status` role). Severity picks the
+    **role**: confirmation → `status`, time-critical failure → `alert`.
+
+- **FIX — a false "(WAI-ARIA APG)" attribution over the whole behaviour table** (#95).
+  `interaction-stimulus.md`'s per-component contract sat under a heading claiming APG for every row,
+  including Toast, which has no pattern. Rows now state their own source — a pattern page, a role
+  definition, or "composed from primitives". Same defect class as citing a keybinding no spec mandates
+  (#142), applied to a heading instead of a row.
+
+- **FIX — "33 named patterns" was wrong; the APG Patterns index lists 30** (#95). Stated twice, in
+  `components.md` and in a `build_coverage.py` comment, both about the Command palette. The conclusion
+  drawn from it was right (no pattern for a command palette) but the figure was not; verified against
+  [the index](https://www.w3.org/WAI/ARIA/apg/patterns/). The v1.19.0 note below repeats the old figure
+  and is left as the historical record.
 
 ### 1.19.0 — 2026-07-30
 

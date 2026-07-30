@@ -523,6 +523,7 @@ One item. Answers *"is this the right thing, and can I buy it?"*
       <h1 class="text-step-3"><%# product name %></h1>
       <%# price: see the discount rule below %>
       <%# stock state as TEXT — "In stock", "2 left", "Out of stock" — never colour alone %>
+      <%# the basket count elsewhere on the page carries role="status" %>
 
       <%= simple_form_for(...) do |f| %>
         <%# variants: a fieldset + legend per axis, radios inside. NOT a styled div, and %>
@@ -542,8 +543,10 @@ One item. Answers *"is this the right thing, and can I buy it?"*
 with `<s>` plus `sr-only` "was" / "now". Colour and a strikethrough alone convey nothing to a screen
 reader, and red-as-cheap is not universal.
 
-**Adding to the basket must be announced.** The button click changes state elsewhere on the page
-(a basket count in the header); that change needs a live region, or only sighted users learn it worked.
+**Adding to the basket must be announced.** The button click changes state elsewhere on the page (a
+basket count in the header); that change needs `role="status"` on the count, or only sighted users learn
+it worked. Same reason as the cart total: `role="status"` bundles polite *and* atomic, so the
+announcement carries "Basket, 5 items" rather than a bare "5".
 
 ## Cart
 
@@ -562,7 +565,7 @@ A mutable list. Answers *"what am I about to buy, and can I still change it?"*
 
   <aside class="box stack" aria-label="Order summary">
     <%# subtotal, delivery, tax, total. Ui::DescriptionList with layout: :inline %>
-    <%# the total is inside a live region — see below %>
+    <%# the total carries role="status" — polite AND atomic; see below %>
     <%# checkout CTA %>
   </aside>
 </div>
@@ -571,9 +574,13 @@ A mutable list. Answers *"what am I about to buy, and can I still change it?"*
 **A remove control must name what it removes.** An icon-only `×` announces as "button" and there are
 six of them. `aria-label="Remove Blue T-shirt, medium"` — the item, not the row number.
 
-**Quantity and total changes go in a live region.** Change a quantity and the total changes silently;
-wrap the summary total in `aria-live="polite"` so the consequence of the edit is announced. This is the
-single most-missed thing in commerce a11y, and the one with a direct revenue cost.
+**Quantity and total changes go in a live region — `role="status"`, not bare `aria-live`.** Change a
+quantity and the total changes silently, so the consequence of the edit must be announced. Use
+`role="status"` on the total: it carries an implicit `aria-live="polite"` **and** an implicit
+`aria-atomic="true"`. Bare `aria-live="polite"` defaults `aria-atomic` to **false**, and then
+*"assistive technologies will only present the changed node"* — so a total going from £48.00 to £52.00
+announces as **"52.00"**, the number without its label. This is the single most-missed thing in commerce
+a11y, and the one with a direct revenue cost.
 
 **An empty basket is a page, not a blank.** Say it is empty and give one route back to browsing.
 

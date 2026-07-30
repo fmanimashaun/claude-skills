@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 54 |
+| — `documented` | 57 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 15 |
+| — `needs doctrine` (tracked writing gap) | 12 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -64,8 +64,11 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Navigation — header / navbar | component | ✓ | ✓ | the app's top bar in the stacked shell | — |
 | Navigation — sidebar / vertical | component | ✓ | ✓ | the app's primary rail in the sidebar/multi-column shells | — |
 | Pagination | component | ✓ | ✓ | any index over ~25 rows; pair with the Table | — |
+| Progress bar | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | the Flowbite audit surfaced LABELLED progress bars specifically |
 | Radio group | component | ✓ | ✓ | one choice from 2–5 visible options, in a fieldset | — |
 | Select | component | ✓ | ✓ | a closed set of ~2–10 options; above that reach for the combobox | — |
+| Skeleton / loading placeholder | component | — | ✓ | a Turbo frame whose content size IS known — preferred over a spinner because it does not shift layout | Turbo frame loading states need this; without it agents invent spinners |
+| Spinner / busy indicator | component | — | ✓ | a region whose content is loading and has no known size | — |
 | Table (CRUD) | component | ✓ | ✓ | the index of a resource — sortable headers, row actions, select-all | — |
 | Tabs | component | ✓ | ✓ | switching views of the SAME resource; never as page navigation | — |
 | Text input | component | ✓ | ✓ | single-line entry; the shipped wrapper supplies label, hint and error | floating label is a variant, not a component |
@@ -167,11 +170,8 @@ replace that approach with a proper entry.
 | File upload / Dropzone | component | — | ✓ | #95 | the documented file field; add drag-and-drop as an enhancement, never as the only path | an authenticated app screen, inside one of the three shells |
 | Image gallery / Lightbox | component | — | ✓ | #95 | `grid-auto` of `frame` thumbnails linking to the full image | media-heavy surfaces: portfolio, product media, docs |
 | Mega menu / Flyout | component | ✓ | ✓ | #90 | the documented Dropdown for now; hover-intent is what #90 must specify | a marketing surface (landing, pricing, about) — not app screens, which use the shell navigation |
-| Progress bar | component | ✓ | ✓ | #95 | `<progress>`, or a div with `role=progressbar` + `aria-valuenow/min/max` and a visible label | an authenticated app screen, inside one of the three shells |
 | Range input | component | — | ✓ | #95 | `<input type=range>` in the documented field wrapper; leave the native track | an authenticated app screen, inside one of the three shells |
 | Reviews + Rating | component | ✓ | ✓ | #91 | Media object rows; the rating needs an accessible name ("4 out of 5"), not stars alone | a commerce surface (catalog, product, cart, checkout) |
-| Skeleton / loading placeholder | component | — | ✓ | #95 | a muted `box` at the content's size, suppressed under `prefers-reduced-motion` | a Turbo frame whose content size IS known — preferred over a spinner because it does not shift layout |
-| Spinner / busy indicator | component | — | ✓ | #95 | a Lucide spinner with `aria-busy` on the region it replaces; honour reduced-motion | a region whose content is loading and has no known size |
 | Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
 | Video player | component | — | ✓ | #95 | native `<video controls>` inside a `frame` for ratio | marketing and docs surfaces; inside a `frame` so layout never shifts |
 | Inline link | primitive | — | ✓ | #95 | the Button `link` variant's classes on an `<a>`, until a token exists | body copy and prose; for actions use the Button `link` variant |

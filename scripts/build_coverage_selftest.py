@@ -44,33 +44,37 @@ def _tick() -> None:
 SYNTH_EVIDENCE = {"Button": "## Button\n", "Badge": "## Badge / Tag / Chip"}
 
 
-def _run_guard(entries, evidence, tw, fb):
-    """Swap BOTH module tables, run the guard, restore. They are cross-checked, so patching
-    only ENTRIES makes every fixture fail on orphaned evidence keys."""
-    orig_entries, orig_evidence = bc.ENTRIES, bc.DOCUMENTED_EVIDENCE
+def _run_guard(entries, evidence, tw, fb, build=None):
+    """Swap the module tables, run the guard, restore. They are cross-checked, so patching
+    only ENTRIES makes every fixture fail on orphaned evidence keys. BUILD is swapped only when
+    a fixture supplies one -- the real table is keyed by real row names, none of them synthetic."""
+    orig_entries, orig_evidence, orig_build = bc.ENTRIES, bc.DOCUMENTED_EVIDENCE, bc.BUILD
     bc.ENTRIES = entries
     bc.DOCUMENTED_EVIDENCE = SYNTH_EVIDENCE if evidence is None else evidence
+    if build is not None:
+        bc.BUILD = build
     try:
         bc.verify_totality(TW if tw is None else tw, FB if fb is None else fb)
     finally:
-        bc.ENTRIES, bc.DOCUMENTED_EVIDENCE = orig_entries, orig_evidence
+        bc.ENTRIES, bc.DOCUMENTED_EVIDENCE, bc.BUILD = orig_entries, orig_evidence, orig_build
 
 
-def expect_ok(label: str, entries: tuple[bc.Entry, ...], *, tw=None, fb=None, evidence=None) -> None:
+def expect_ok(label: str, entries: tuple[bc.Entry, ...], *, tw=None, fb=None, evidence=None,
+              build=None) -> None:
     """The guard must STAY SILENT on a complete, consistent mapping."""
     _tick()
     try:
-        _run_guard(entries, evidence, tw, fb)
+        _run_guard(entries, evidence, tw, fb, build)
     except bc.BuildError as exc:
         FAILURES.append(f"{label}: expected clean, got BuildError:\n{exc}")
 
 
 def expect_error(label: str, entries: tuple[bc.Entry, ...], *, contains: str,
-                 tw=None, fb=None, evidence=None) -> None:
+                 tw=None, fb=None, evidence=None, build=None) -> None:
     """The guard must FIRE, and say something actionable."""
     _tick()
     try:
-        _run_guard(entries, evidence, tw, fb)
+        _run_guard(entries, evidence, tw, fb, build)
     except bc.BuildError as exc:
         if contains.lower() not in str(exc).lower():
             FAILURES.append(f"{label}: message does not mention {contains!r}:\n{exc}")
@@ -286,6 +290,28 @@ def run() -> int:
         COMPLETE,
         contains="matching no row",
         evidence=dict(SYNTH_EVIDENCE, **{"Ghost Component": "## Button\n"}),
+    )
+
+    # ---- a promoted row must not keep its "until the entry lands" fallback -------------
+    # Invisible in the rendered table (documented rows print `—` in that column), so only a
+    # guard finds it. The Combobox entry outlived its own row's promotion this way (#95).
+    expect_error(
+        "a documented row still carrying its BUILD fallback",
+        COMPLETE,
+        contains="still carrying a BUILD fallback",
+        build={"Button": "the documented Link until the entry lands"},
+    )
+    # NEAR MISS: a BUILD entry on a row that is still `needs doctrine` is the whole point of
+    # the table -- the guard must key on the row's STATUS, not merely on the name appearing.
+    expect_ok(
+        "a needs-doctrine row carrying a BUILD fallback is correct",
+        (
+            COMPLETE[0],
+            bc.E("Badge", bc.COMPONENT, "needs doctrine #1",
+                 tw=["application-ui/elements/badges"], fb=["Badge"]),
+        ),
+        evidence=BUTTON_ONLY,
+        build={"Badge": "the nearest safe thing for now"},
     )
     # Near miss: a heading that is a PREFIX of another must not satisfy the longer one. If
     # evidence were "## Button" without the newline, a docs file containing only
