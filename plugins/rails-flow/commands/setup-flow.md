@@ -69,6 +69,43 @@ adapter, auth/authz gems, form builder, test stack, deployment), `config/applica
 docs. Note every place the project deviates from the rails-8 skill's vanilla doctrine —
 those become **Project Overrides**.
 
+Also detect **existing agent-instruction files** — `AGENTS.md`, `.claude/CLAUDE.md`,
+`.claude/rules/` — before writing anything. An `AGENTS.md` is increasingly present in Rails 8
+apps and anything derived from a 37signals template, and scaffolding a second orientation file
+beside it creates two entry points that can contradict each other. Handle it per §1b.
+
+## 1b. Coexist with an existing `AGENTS.md` (one source of truth)
+
+Claude Code reads `CLAUDE.md`, **not** `AGENTS.md`. When a repo already has an `AGENTS.md`
+(kept for other coding agents), do NOT duplicate its content into `CLAUDE.md` and do NOT leave
+two competing orientation files — **import it**, which is the pattern Claude Code's own memory
+docs prescribe and the one 37signals use in fizzy and writebook (their `.claude/CLAUDE.md` is a
+single line, `@../AGENTS.md`):
+
+```markdown
+@AGENTS.md
+
+<!-- rails-flow:begin app-identity -->
+...rails-flow-managed sections go BELOW the import...
+<!-- rails-flow:end app-identity -->
+```
+
+The imported file loads first, then rails-flow's marked sections append after it — so the
+existing file stays the source of truth for what it already covers, and rails-flow adds only
+what is missing. Rules:
+
+- **Never generate an `AGENTS.md` where none exists.** `CLAUDE.md` is the native file; a
+  greenfield project gets `CLAUDE.md` alone (the flow is Claude-native by decision).
+- The import is a **coexistence** tool, not the default layout. If the `AGENTS.md` is thin or
+  stale, propose folding it into `CLAUDE.md`'s marked sections instead — as an approved diff —
+  and say why: an `@`-import still loads fully into context at launch, so it organises without
+  saving tokens. Reserve it for a live `AGENTS.md` another tool owns.
+- Relative paths resolve **relative to the importing file**: `@AGENTS.md` from a root
+  `CLAUDE.md`, `@../AGENTS.md` from `.claude/CLAUDE.md`. Pick one location for `CLAUDE.md` and
+  state which; do not create both.
+- Treat an authored `AGENTS.md` as hand-authored content under the idempotency contract —
+  never rewrite or gitignore it (see also §5, which guards it against the graph installer).
+
 ## 2. CLAUDE.md — create or update within markers
 
 First run: create CLAUDE.md with this structure, wrapping each rails-flow section in
@@ -84,6 +121,17 @@ This file is the AI agent entry point. Read it before starting any task.
 ## App Identity
 <table of framework, database, jobs, cache, websockets, storage, auth, authorization,
 asset pipeline, CSS, deployment, test suite — filled from the Gemfile/config inspection>
+
+## Architecture Overview
+<the NON-OBVIOUS, cross-cutting mechanisms and domain vocabulary an agent must know before
+touching anything — 5-10 lines, prose. Include ONLY what cannot be derived by reading the
+code: the tenancy model and how scope is set (middleware? Current.*?), the auth model, any
+non-standard primary key, domain terms whose meaning is not their English meaning, and any
+rule that holds app-wide ("every query is tenant-scoped"). NOT a directory tour, NOT a
+dependency list, NOT "it uses Service Objects" — Claude Code's own /doctor trims derivable
+overviews, and an agent can read the tree. Structure lives in the graph; point there:
+"for what-calls-what, query docs/architecture/graph.json". An empty section is a valid
+answer for a simple CRUD app — say so rather than padding it.>
 
 ## Common Commands
 <dev server, console, migrate, targeted + full rspec, rubocop on changed files, brakeman,
@@ -124,6 +172,10 @@ execution to subagents; keep judgment here.
 - Defects reported mid-session get **FILED as issues first**, then worked one at a time via
   `/rails-flow:fix` (own branch → PR → spec). Never hot-fix inline, and never stack several
   unrelated fixes on the checked-out branch.
+- Before writing or reviewing Ruby, read the **rails-8 skill's `references/style.md`** — how
+  code should read here (conditional returns, method + invocation ordering, bang methods,
+  visibility modifiers, `_later`/`_now` job naming). Project Overrides above win where they
+  conflict; everything else follows the skill.
 
 ## Structural map (read before grepping)
 `docs/architecture/graph.json` — `{nodes, edges, flows}` for this app: every controller,
@@ -135,6 +187,33 @@ the tree; walk `edges` backwards from a node for its blast radius. Regenerate wi
 ## See Also
 AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md
 ```
+
+## 2b. Area- or mode-specific instructions belong in `.claude/rules/`
+
+Keep `CLAUDE.md` short — Claude Code targets **under 200 lines**, and adherence drops as it
+grows. So when instructions apply only to *part* of the codebase or only in a *mode*, do not
+inline them here and do not invent a bespoke conditional import. Use a **path-scoped rule**:
+
+```markdown
+---
+paths:
+  - "app/models/**/*.rb"
+---
+# Model conventions for this app
+- Every scope goes through `Current.account`; a bare `.unscoped` needs a comment saying why.
+```
+
+Rules live in `.claude/rules/*.md` (committed, team-shared) and a rule with `paths:` loads
+**only when Claude reads a matching file** — so it costs nothing on sessions that never touch
+that area. A rule with no `paths:` loads every session, same as `CLAUDE.md`; use that only for
+genuinely global content.
+
+Do **not** scaffold rules by default — most projects need none, and empty machinery is worse
+than none. Surface the mechanism, and propose a rule only where the project actually shows the
+need: a mode switch (an OSS/hosted split, as in fizzy's conditional `saas/AGENTS.md`), a
+distinct area with its own conventions (`app/components`, an API namespace), or a per-project
+style file, which belongs here scoped to `**/*.rb` rather than in a root `STYLE.md` that
+loads in full every session.
 
 ## 3. Create `GUARDRAILS.md`
 
@@ -377,3 +456,15 @@ Also surface the upstream feedback path: if you hit friction with the toolchain 
 hook, command, skill, or setup step misbehaving), `/rails-flow:report <what you saw>`
 drafts a structured, deduped, version-pinned issue to the claude-skills repo — toolchain
 only, drafts by default. It's how the flow improves from real use.
+
+---
+
+**Why this scaffold has the shape it does.** The agent-instruction conventions above — the
+`AGENTS.md` import (§1b), the Architecture Overview constraint (§2), the `.claude/rules/`
+placement (§2b), and the style pointer instead of a per-project `STYLE.md` — were decided by
+comparing this scaffold against 37signals' own agent instructions in
+[fizzy](https://github.com/basecamp/fizzy) and
+[writebook](https://github.com/basecamp/writebook), and against Claude Code's memory docs.
+Each adopt / adapt / reject decision is recorded with its citation in
+`${CLAUDE_PLUGIN_ROOT}/reference/agent-instruction-conventions.md` — read it before changing
+any of them, since several look like arbitrary style choices and are not.

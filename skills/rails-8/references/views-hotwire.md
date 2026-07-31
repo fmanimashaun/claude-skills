@@ -215,7 +215,7 @@ Broadcast-driven (over Action Cable / Solid Cable) — model side:
 class Comment < ApplicationRecord
   belongs_to :post
   broadcasts_to ->(comment) { [comment.post, :comments] }, inserts_by: :append
-  # granular: broadcast_replace_to / broadcast_append_later_to etc. — prefer *_later variants
+  # granular: broadcast_replace_to / broadcast_append_later_to etc.
 end
 ```
 
@@ -223,6 +223,15 @@ View subscribes: `<%= turbo_stream_from @post, :comments %>`. Broadcasts
 render the model's partial by convention. **Security:** stream names are
 signed; still scope channels to what the viewer may see — never broadcast
 per-user data on a shared stream.
+
+**`_later` by default, with two exceptions** — this line used to read "prefer
+`*_later` variants" flat, and that was incomplete. turbo-rails recommends
+`_later` for anything that renders, but **`remove` needs no `_later`** (it
+renders nothing, only a `dom_id`), and **`_later` gives up ordering**: nothing
+in ActiveJob or Solid Queue guarantees that two `_later` broadcasts to the
+same stream arrive in enqueue order. When order is observable — a transcript,
+a feed — broadcast synchronously. Full reasoning, with the production case
+that depends on it, in the hotwire skill's `references/production.md` §1.1.
 
 ## 8. Page refreshes + morphing
 
