@@ -300,6 +300,21 @@ def provenance() -> dict:
     }
 
 
+def committed_blob(rel: Path | str) -> str | None:
+    """The file's content **as committed at HEAD**, or None if it is not tracked there.
+
+    Deliberately not `Path.read_text`. The drift gate's claim is that the page is a deliverable
+    other maintainers can see, and only the committed blob can support that claim: a page built
+    locally and never added — or rebuilt and never committed — is invisible to every other clone
+    while sitting right there on disk.
+
+    Fixtures stub this to exercise the three outcomes; the git plumbing itself is exercised for
+    real on every `--check` run, which is what the `coverage artifact drift` doctor gate does.
+    """
+    # git pathspecs are forward-slashed everywhere, including on Windows, where `str(Path)` is not.
+    return _git("show", f"HEAD:{Path(rel).as_posix()}", raw=True)
+
+
 def stable_provenance(prov: dict) -> dict:
     """The subset a COMMITTED page can honestly stamp about itself.
 
@@ -1017,11 +1032,16 @@ def main(argv: list[str] | None = None) -> int:
         # drift — the generator emits "\n" and git may hand back "\r\n" on Windows.
         rel_out = args.out.relative_to(REPO) if args.out.is_relative_to(REPO) else args.out
         remedy = "  -> python3 scripts/build_coverage_artifact.py && git add docs/"
-        if not args.out.is_file():
+        # Compare the COMMITTED BLOB, not the file on disk. An earlier version checked `is_file()`
+        # and read the working copy, so a freshly built but untracked — or built but uncommitted —
+        # page passed the very gate whose message says "is not committed". That is the exact defect
+        # this whole change exists to close: a deliverable no other machine can see.
+        committed = committed_blob(rel_out)
+        if committed is None:
             print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "
                   f"must be able to see, not a local build.\n{remedy}", file=sys.stderr)
             return 1
-        if args.out.read_text(encoding="utf-8").replace("\r\n", "\n") != doc.replace("\r\n", "\n"):
+        if committed.replace("\r\n", "\n") != doc.replace("\r\n", "\n"):
             print(f"DRIFT: committed {rel_out} is not a clean build — a row moved and the artifact "
                   f"was not regenerated.\n{remedy}", file=sys.stderr)
             return 1

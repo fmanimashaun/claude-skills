@@ -645,15 +645,24 @@ GUARDS: tuple[Guard, ...] = (
         mutations=(
             Mutation(
                 "the drift comparison stops comparing, so a stale artifact passes",
-                '        if args.out.read_text(encoding="utf-8").replace("\\r\\n", "\\n") != doc.replace("\\r\\n", "\\n"):',
+                '        if committed.replace("\\r\\n", "\\n") != doc.replace("\\r\\n", "\\n"):',
                 '        if False:',
                 "--check FAILS on a stale artifact",
+            ),
+            # The gate must read git, not the working copy. An `is_file()` + `read_text` version
+            # passed a freshly built, never-added page — the exact "invisible deliverable" this
+            # whole change exists to close, waved through by the gate built to close it.
+            Mutation(
+                "the gate goes back to trusting the working copy instead of the commit",
+                "        committed = committed_blob(rel_out)",
+                '        committed = args.out.read_text(encoding="utf-8") if args.out.is_file() else None',
+                "a built-but-untracked page is DRIFT, not a pass",
             ),
             Mutation(
                 "an absent artifact is reported as OK instead of drift",
                 '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 1',
                 '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 0',
-                "--check FAILS when the artifact is not committed",
+                "--check FAILS when the artifact is nowhere at all",
             ),
             Mutation(
                 "a dirty tree is reported as OK instead of skipping",

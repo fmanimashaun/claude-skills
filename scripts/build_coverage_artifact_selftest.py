@@ -390,6 +390,7 @@ def run() -> int:
     # whether the developer happened to have edits, testing the environment rather than the gate.
     # The dirty case is asserted explicitly further down, with its own stub.
     _prov_real = art.provenance
+    _blob_real = art.committed_blob
     art.provenance = lambda: dict(_prov_real(), state="clean", dirty=[])
     with tempfile.TemporaryDirectory() as _d:
         _out = Path(_d) / "coverage.html"
@@ -398,28 +399,49 @@ def run() -> int:
         check("--check is silent on a freshly written artifact",
               art.main(["--out", str(_out)]) == 0,
               "generating to a temp path should succeed")
-        check("--check passes when the file IS the clean build",
+        _fresh = _out.read_text(encoding="utf-8")
+
+        # The gate compares the COMMITTED BLOB, so that is what these fixtures vary. The working
+        # copy is deliberately left alone to prove it plays no part.
+        art.committed_blob = lambda _rel: _fresh
+        check("--check passes when the COMMITTED blob is the clean build",
               art.main(["--check", "--out", str(_out)]) == 0,
-              "a just-generated file must satisfy --check")
+              "a committed clean build must satisfy --check")
 
         # STALE: one appended byte must fail. This is the case that actually happens — a row flips
         # and nobody regenerates.
-        _out.write_text(_out.read_text(encoding="utf-8") + "<!-- drift -->", encoding="utf-8")
+        art.committed_blob = lambda _rel: _fresh + "<!-- drift -->"
         check("--check FAILS on a stale artifact",
               art.main(["--check", "--out", str(_out)]) == 1,
               "an edited artifact must be reported as drift, or the gate is decorative")
 
-        # ABSENT: not committed at all is drift too, not a pass — that was the whole defect being
-        # fixed here, where the output lived in an ignored build/ directory and no gate could see it.
+        # NOT TRACKED, but sitting on disk as a perfect clean build. THE defect this gate exists to
+        # close, and the one an `is_file()` check passed: a deliverable no other clone can see is
+        # not a deliverable. The file below is byte-identical to a clean build and still drift.
+        art.committed_blob = lambda _rel: None
+        check("a built-but-untracked page is DRIFT, not a pass",
+              _out.is_file() and art.main(["--check", "--out", str(_out)]) == 1,
+              "the gate must read git, not the working copy — that was the whole point")
+
+        # ABSENT from disk as well: still drift, and must not crash reaching for a file.
         _out.unlink()
-        check("--check FAILS when the artifact is not committed",
+        check("--check FAILS when the artifact is nowhere at all",
               art.main(["--check", "--out", str(_out)]) == 1,
               "a missing artifact must fail, not pass by absence")
 
+        # THE OTHER DIRECTION: a scratched-up working copy over a clean COMMIT is not drift. Nothing
+        # a maintainer has locally can make the committed deliverable stale, and a gate that said
+        # otherwise would fire on every uncommitted experiment.
+        art.main(["--out", str(_out)])
+        _out.write_text("locally scribbled over", encoding="utf-8")
+        art.committed_blob = lambda _rel: _fresh
+        check("a dirty working copy over a clean COMMIT is not drift",
+              art.main(["--check", "--out", str(_out)]) == 0,
+              "only the committed blob decides")
+
         # NEAR MISS: differing only by line endings must NOT be drift — git may hand back CRLF on
         # Windows, and reporting that as a stale artifact would make the gate unusable there.
-        art.main(["--out", str(_out)])
-        _out.write_bytes(_out.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
+        art.committed_blob = lambda _rel: _fresh.replace("\n", "\r\n")
         # A DIRTY tree makes drift unassessable, because the page stamps its own provenance. That
         # must be exit 3 (-> SKIP), never 0 and never 1: reporting ok would hide a stale artifact,
         # and reporting drift would fail every developer's working copy forever.
@@ -436,6 +458,7 @@ def run() -> int:
               art.main(["--check", "--out", str(_out)]) == 0,
               "line-ending normalisation is not drift")
     art.provenance = _prov_real
+    art.committed_blob = _blob_real
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
