@@ -106,10 +106,12 @@ Going out of the computed order is allowed; doing it silently is not. Say so in 
 
 ## What fails, and what only advises
 
-This follows the rule #132 proposes recording: **fail closed for gates, fail open for advisories.**
-It is stated here as this tool's own contract rather than cited as settled doctrine, because
-CLAUDE.md does not yet carry it — today it says only that *hooks* fail open when a dependency is
-missing. #132 is the issue that would write the general rule down.
+This follows the general rule: **fail closed for gates, fail open for advisories** — now recorded in
+[`harness-doctrine.md`](harness-doctrine.md) §5, which also states the scoping this tool relies on
+(fail closed for what the gate guards, exit 0 otherwise). It is still restated here as this tool's own
+contract, because a reader of this file should not have to follow a link to learn what exits non-zero.
+Note that CLAUDE.md's *Platform* sentence remains narrower than the general rule — it says only that
+*hooks* fail open when a dependency is missing, which is true of seven hooks and false of two.
 
 **Exit 1 — the graph is wrong.** A cycle; an edge to an issue not in the tracker; a
 self-reference; a typo'd key; a malformed line; a declaration outside its fence; declarations

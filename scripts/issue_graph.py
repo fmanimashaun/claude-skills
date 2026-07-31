@@ -17,8 +17,9 @@ an edge to an issue that does not exist, a typo'd key, a declaration outside its
 filing error and each exits non-zero. And when the graph is broken the queue is **not printed at
 all**, only the errors. A ranked queue computed from a graph we already know is wrong is worse
 than no queue, because it reads exactly like a correct one. That split — fail closed for gates,
-fail open for advisories — is this tool's own contract, and is the general rule #132 proposes
-recording; CLAUDE.md today states only the narrower "hooks fail open when a dependency is missing".
+fail open for advisories — is the general rule now recorded in `docs/harness-doctrine.md` §5
+(which also gives the scoping this tool relies on: fail closed for what the gate guards, exit 0
+otherwise), restated here as this tool's own contract.
 
 AND THE QUEUE ITSELF IS A GATE, AT THE POINT OF USE (`--ready`). Reporting an order changes
 nothing on its own: `/maintainer-work` said "take the head of the triaged queue" while nothing
