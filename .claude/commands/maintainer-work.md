@@ -28,8 +28,27 @@ test as the SessionStart hook.)
 ## Phase 0 — Pick & context
 
 Confirm `gh auth status`. If `$ARGUMENTS` names an issue, work it; else take the head of
-the triaged queue (run `/maintainer-triage` first if nothing is triaged). Read the
-issue and its labels. Comment on the issue that work is starting. Branch off **`dev`** —
+the triaged queue (run `/maintainer-triage` first if nothing is triaged).
+
+**Then check the pick against the graph before branching, naming every issue you intend to
+put on the branch** (#133):
+
+```bash
+python3 scripts/issue_graph.py --ready 109 110
+```
+
+It exits non-zero — refusal on stderr, stdout left empty — when any named issue waits on open
+work, is already closed, is absent from the tracker, or when the graph is too broken to answer
+from. "Take the head of the queue" was a claim nothing checked; this is the check. Edges
+*between* the issues you named are satisfied by the branch itself, so a grouped branch
+declares its whole set in one call and only learns which member goes first.
+
+On a refusal: work the blocker first, or state in the PR body that you are going out of the
+computed order on purpose and why. Do not silently proceed. A READY verdict on an issue that
+declares no edges says so in a note — that means the tracker names no blocker, not that
+none exists, and it is the common case until the epic backfill lands.
+
+Read the issue and its labels. Comment on the issue that work is starting. Branch off **`dev`** —
 the integration branch, NOT the default branch (`main` is default because it is the install
 surface, and work never starts from it): `fix/issue-<n>-<slug>` for bugs/doctrine,
 `feature/issue-<n>-<slug>` otherwise.
