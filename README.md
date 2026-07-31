@@ -15,7 +15,7 @@ knowledge → build → test → ship → design.
 | Plugin | Role | Key commands |
 |--------|------|--------------|
 | **rails-stack** | The knowledge — Rails 8 + Hotwire + design-system skills that auto-load when relevant | *(skills, no commands)* |
-| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/pr-comments` `/issues` `/curate` `/explain` `/graph` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
+| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/pr-comments` `/issues` `/curate` `/explain` `/handoff` `/graph` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:smoke` `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
 | **design-flow** | UI/design — applies the Fidara design system for consistent, modern, responsive UI | `/design-flow:setup` `/design-flow:component` `/design-flow:audit` |
@@ -181,7 +181,17 @@ owner rather than an agent: a plain-language `docs/GUIDE.md` with GitHub-rendere
 diagrams and a *"check it yourself"* section per area, section-scoped so a re-run never
 rewrites your own prose — it links to the generated architecture graph and `DECISIONS.md`
 instead of restating them, so the part that can go stale stays small. Also runs on a *plan*
-(`explain plan`), where rejecting a wrong premise costs a paragraph instead of a build cycle.
+(`explain plan`), where rejecting a wrong premise costs a paragraph instead of a build cycle ·
+`/rails-flow:handoff` writes the **work order** for a unit of work — `docs/handoff/<slug>.md`, the
+one file an executor can run from with no conversation history: goal, the criteria ids that grade it,
+files in *and explicitly out of* scope, the guardrails in play, the **stop conditions** (numeric
+attempt cap, no-progress detector, blast-radius cap, and the four escapes that end a run — weakening
+a failing spec, reverting a passing unit, editing outside scope, disabling a guardrail), how to
+verify, and what to record on completion. `check_handoff.py` enforces the falsifiable parts — every
+section present, each stop-condition number actually a number, every verify step naming something
+runnable, every cited `AC-n` resolving in the acceptance file, and no reference to the conversation or
+leftover `<placeholder>` — because "self-contained" asserted in prose is the one thing its author
+cannot see is false. It does not judge whether the goal is the right goal; that stays with the human.
 
 **Agents** (8): rails-developer, migration-writer, code-reviewer, test-runner,
 security-auditor, design-auditor, doc-updater, pr-reviewer — each context-isolated, tool-

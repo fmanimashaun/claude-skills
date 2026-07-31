@@ -43,11 +43,16 @@ this flow exists to prevent. Say which issues you filed before you start fixing.
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md" --specs spec`;
    the spec cites the id (`it "AC-1 denies cross-tenant reads"`). The Stop gate enforces both
    on `fix/*` branches.
-4. **Every behavioral change gets a NEW spec proving the new behavior.** Passing the
+4. **A phase backlog gets a work order.** For a single reproduced bug the criteria are usually
+   enough. For a multi-phase report — and for anything that will run unattended — write
+   `docs/handoff/<phase-or-slug>.md` with `/rails-flow:handoff` first: the scope boundary and the
+   stop conditions are what keep a grinder inside the rails, and the Stop gate validates the file
+   whenever it exists.
+5. **Every behavioral change gets a NEW spec proving the new behavior.** Passing the
    existing suite only proves you didn't break old behavior.
-5. **Never introduce a regression**: if a fix touches scoping or authorization, check every
+6. **Never introduce a regression**: if a fix touches scoping or authorization, check every
    caller; verify legitimate users still pass and unauthorized ones still fail.
-6. **Verify the fix addresses the reported issue** — re-read the reported line/method after
+7. **Verify the fix addresses the reported issue** — re-read the reported line/method after
    editing and confirm it actually changed.
 
 ## Workflow (per phase)
@@ -77,3 +82,22 @@ The whole backlog can run without a human in the loop:
 one phase at a time`. The guardrail hooks, stop gate, and non-skippable merge review
 keep autonomy inside the rails: no destructive git/db operations, no unproven
 behavioral changes, nothing past `dev` without a CLEAN tool verdict.
+
+**Those keep the run from doing damage; they do not tell it when to stop.** An agent that cannot
+make progress does not idle — it digs: reverts its own fixes, loosens a spec until it passes, widens
+scope to route around the blocker. Every one of those looks like activity in a log and two look like
+success. So an unattended run needs the work order's **stop conditions** as well as the hooks:
+
+- **Attempt cap** (default 3 per phase). On exhaustion: stop, write the diagnosis, move to the next
+  **independent** phase. Never retry an unchanged failure indefinitely.
+- **No progress** = the same failure signature twice with nothing changed. Repetition *without a
+  changing error* is the signal; a changing error is progress.
+- **Forbidden, and they end the run**: weakening or deleting a failing spec; reverting a phase that
+  already passed to unblock this one; editing outside the phase's declared scope; disabling a
+  guardrail or hook.
+- **The final report distinguishes complete / partial / stopped** and names every phase not
+  attempted. A grinder that reports "all phases done" having skipped two has produced a worse
+  outcome than one that stopped at phase one and said so.
+
+Write them into `docs/handoff/<phase-or-slug>.md` (`/rails-flow:handoff`) before starting the run —
+a bound that lives only in the prompt is gone the moment the session is resumed.

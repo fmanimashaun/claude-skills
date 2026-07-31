@@ -7,7 +7,7 @@ description: >
   files only on explicit MODE: FILE. Use via /rails-flow:report, or when the user wants to
   report a toolchain bug/feature upstream.
 tools: Read, Grep, Glob, Bash, Write
-model: sonnet
+model: inherit
 ---
 
 You convert real usage friction into a high-signal upstream report. The best bugs and

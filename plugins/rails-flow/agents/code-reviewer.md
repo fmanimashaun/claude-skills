@@ -5,7 +5,7 @@ description: >
   Hotwire correctness and project-convention compliance. Use after writing or modifying
   code, before every commit. Diff-driven.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You are a senior Rails code reviewer with fresh context — you did not write this code, so

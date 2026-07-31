@@ -91,6 +91,31 @@ case "$branch" in
         fi
       fi
     fi
+    # ---------------------------------------------------------------------------------
+    # The work order (#127), validated ONLY when one exists.
+    #
+    # Deliberately not required: a work order is new, and demanding one would block every
+    # branch already in flight, plus every ad-hoc fix that never entered the flow. But an
+    # EXISTING work order that no longer holds is worse than none -- it is a contract the
+    # executor is reading and the file has stopped meaning. So: absent is silence, present
+    # is enforced. `command -v python3` decides whether the check RUNS; it never softens
+    # the verdict.
+    # ---------------------------------------------------------------------------------
+    handoff="docs/handoff/${slug}.md"
+    if [ -f "$handoff" ] && command -v python3 >/dev/null 2>&1; then
+      hchecker="${CLAUDE_PLUGIN_ROOT:-}/scripts/check_handoff.py"
+      if [ -f "$hchecker" ]; then
+        set -- "$handoff"
+        [ -f "$criteria" ] && set -- "$@" --criteria "$criteria"
+        if ! hout="$(python3 "$hchecker" "$@" 2>&1)"; then
+          {
+            echo "rails-flow stop gate: the work order does not hold."
+            printf '%s\n' "$hout"
+          } >&2
+          exit 2
+        fi
+      fi
+    fi
     ;;
 esac
 
