@@ -309,6 +309,14 @@ GUARDS: tuple[Guard, ...] = (
                 "        if False:",
                 "submitted an invalid form but recorded no verdict",
             ),
+            # Both structural counters are bounded by the same denominator, and the loop is what
+            # makes them one rule instead of two copies that can drift.
+            Mutation(
+                "a form may report more unlabelled controls than it has (#115)",
+                '        if {"Controls", column} <= counts.keys() and counts[column] > counts["Controls"]:',
+                "        if False:",
+                "more unlabelled controls than the form has",
+            ),
             # The shared recompute behind both new profiles: `_runtime_extra` spells its own
             # comparison out, so this mutation covers the keyboard/forms path specifically.
             Mutation(

@@ -145,7 +145,7 @@ def run() -> int:
     (ev / "2026-07-30-x-forms.csv").write_text(
         ve.FORMS.header + "\n"
         "new-user,/users,Exercised,200,https://x.test/users,https://x.test/users,"
-        "heading 'Users',4,0,dry-run,Not run,Not run,Not run,Not run,Not run,none,,\n",
+        "heading 'Users',4,0,0,dry-run,Not run,Not run,Not run,Not run,Not run,none,,\n",
         encoding="utf-8",
     )
     seen = rc.visited_paths([ev])

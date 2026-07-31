@@ -134,7 +134,9 @@ Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Interactive,Tab
 
 Per form: check structure statically, then submit. `Controls` is the denominator; `Unlabelled`
 counts controls with no accessible name from any of `for`/`id`, a wrapping `<label>`,
-`aria-label`, or `aria-labelledby`.
+`aria-label`, or `aria-labelledby`, and `Required Unexposed` counts controls that are required in
+fact but expose it to nothing — neither `required` nor `aria-required="true"`. Neither counter may
+exceed `Controls`.
 
 **`aria-invalid` requires the value, not the attribute.** Its default is `false`, and an absent
 attribute, `aria-invalid=""` and `aria-invalid="false"` are *all* equivalent to not-invalid. So
@@ -151,7 +153,7 @@ pay); default to `dry-run` for anything unrecognised. Valid-submit testing is op
 for non-destructive, idempotent endpoints.
 
 ```csv
-Form,Route,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,Submit Mode,Invalid Marked,Message Linked,Announced,Values Retained,Colour Only,Severity,Evidence,Notes
+Form,Route,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,Required Unexposed,Submit Mode,Invalid Marked,Message Linked,Announced,Values Retained,Colour Only,Severity,Evidence,Notes
 ```
 
 - `Status` — `Exercised`, `Blocked`, or `Out of Scope`.
@@ -166,7 +168,9 @@ Form,Route,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,Sub
   **not** be `Not run` when it is. The checker enforces both directions, because a verdict on an
   error state nobody triggered reads exactly like a real result.
 - `Severity` — recomputed as above. `Unlabelled > 0`, or a `Fail` on `Invalid Marked`,
-  `Message Linked`, `Announced` or `Colour Only` → **S1**; `Values Retained` fail → **S2**.
+  `Message Linked`, `Announced` or `Colour Only` → **S1**; `Required Unexposed > 0` or a
+  `Values Retained` fail → **S2**. (A required control that *has* a label is still operable and
+  announced — it just does not say it is mandatory — so it ranks below one with no name at all.)
 
 For a form inside a modal, the CRUD expectation is a **422 re-render inside the modal** with
 inline errors — assert it as `functional-tester` specifies it rather than restating it here.

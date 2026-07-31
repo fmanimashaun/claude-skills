@@ -692,11 +692,17 @@ FORM_CONTRACT: tuple[tuple[str, str], ...] = (
     ("Colour Only", S1),
     ("Values Retained", S2),
 )
-FORMS_GATING: tuple[tuple[str, str], ...] = (("Unlabelled", S1),) + FORM_CONTRACT
-FORMS_COUNTERS = ("Controls", "Unlabelled")
-# What can force a severity: the label gap plus each contract Fail. `Controls` is the
+# `Required Unexposed` is S2 rather than S1: a required control with a label is still
+# operable and announced, it just does not tell an assistive technology that it is mandatory --
+# worse than fine, not as bad as a control with no accessible name at all.
+FORMS_GATING: tuple[tuple[str, str], ...] = (
+    ("Unlabelled", S1),
+    ("Required Unexposed", S2),
+) + FORM_CONTRACT
+FORMS_COUNTERS = ("Controls", "Unlabelled", "Required Unexposed")
+# What can force a severity: the two structural gaps plus each contract Fail. `Controls` is the
 # denominator and never a defect.
-FORMS_GRADED = ("Unlabelled",) + tuple(column for column, _ in FORM_CONTRACT)
+FORMS_GRADED = ("Unlabelled", "Required Unexposed") + tuple(c for c, _ in FORM_CONTRACT)
 
 
 def _forms_extra(row: dict[str, str], where: str, status: str) -> list[str]:
@@ -710,11 +716,14 @@ def _forms_extra(row: dict[str, str], where: str, status: str) -> list[str]:
             f"{where}: 0 Controls -- a form with no controls is not a form under test; if there "
             "was nothing to exercise, this row is Out of Scope"
         )
-    if {"Controls", "Unlabelled"} <= counts.keys() and counts["Unlabelled"] > counts["Controls"]:
-        findings.append(
-            f"{where}: {counts['Unlabelled']} unlabelled of {counts['Controls']} control(s) -- "
-            "more controls lack a label than the form has"
-        )
+    # Both structural counters are bounded by the same denominator: a form cannot have more
+    # unlabelled -- or more required-but-unexposed -- controls than it has controls.
+    for column, what in (("Unlabelled", "lack a label"), ("Required Unexposed", "are required")):
+        if {"Controls", column} <= counts.keys() and counts[column] > counts["Controls"]:
+            findings.append(
+                f"{where}: {counts[column]} of {counts['Controls']} control(s) in {column} -- "
+                f"more controls {what} than the form has"
+            )
 
     mode = row["Submit Mode"].lower()
     if not mode:
@@ -792,6 +801,7 @@ FORMS = Profile(
         "Assertion",
         "Controls",
         "Unlabelled",
+        "Required Unexposed",
         "Submit Mode",
         "Invalid Marked",
         "Message Linked",
