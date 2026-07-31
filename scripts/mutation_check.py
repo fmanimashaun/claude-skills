@@ -627,6 +627,22 @@ GUARDS: tuple[Guard, ...] = (
                 'if True:\n            self.add(PASS, "design corpora present"',
                 "corpora",
             ),
+            # Both directions of the corpora exemption. Too NARROW was the live defect: `coverage
+            # artifact drift` was missing, so a machine without the optional licensed kits was told
+            # to fix failures before doing maintenance work. Too BROAD silently shrinks the sweep.
+            Mutation(
+                "the corpora exemption goes narrow again and fails a corpora-less machine",
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift"})',
+                "CORPORA_GATES is",
+            ),
+            Mutation(
+                "the corpora exemption goes broad and skips a gate that needs nothing",
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift", '
+                '"packaging determinism"})',
+                "CORPORA_GATES is",
+            ),
         ),
     ),
     # rails-flow #126. Two of these break a POSITIVE rule; two break a fixture whose job is to

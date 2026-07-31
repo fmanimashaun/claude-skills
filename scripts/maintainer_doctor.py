@@ -104,8 +104,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("coverage matrix drift", ("python3", "scripts/build_coverage.py", "--check")),
     ("coverage matrix selftest", ("python3", "scripts/build_coverage.py", "--selftest")),
     # The artifact is COMMITTED (docs/coverage.html), so it can go stale exactly as coverage.md
-    # can — same shape, same gate. Neither needs the corpora: build_coverage declares ENTRIES
-    # statically, so the generator runs on a machine without the licensed kits.
+    # can — same shape, same gate, and the same corpora dependency. An earlier version of this
+    # comment claimed neither gate needed the licensed kits, because `ENTRIES` is declared
+    # statically. That was wrong and was proved wrong by running it: the page also EMBEDS the
+    # upstream corpus totals, so a corpora-less machine renders different bytes and the drift gate
+    # returns 1 on a perfectly good checkout. Hence its place in CORPORA_GATES below.
     ("coverage artifact drift", ("python3", "scripts/build_coverage_artifact.py", "--check")),
     # The selftest is a gate too: one that exists but that `--gates` never runs makes a clean sweep a
     # claim about work nobody did — the coverage-gap class. It was registered TWICE for a while, which
@@ -132,11 +135,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
-# FAIL. Only the drift check qualifies: `build_coverage.py --selftest` already reports its two
-# corpora-dependent checks as SKIPPED and still exits 0, so it belongs in the list above.
+# FAIL. Only the two DRIFT checks qualify, and for the same reason: both compare a committed
+# artifact against a fresh build, and both artifacts carry the upstream corpus totals, so without
+# the kits the rebuild differs and the gate reports drift on a healthy checkout. The matching
+# SELFTESTS do NOT belong here — each reports its corpora-dependent checks as SKIPPED and still
+# exits 0, which is the honest shape and leaves the rest of the fixtures running.
 # Keyed by gate NAME, and the selftest asserts every name here exists in GATES — otherwise a
-# rename would silently stop the exemption applying.
-CORPORA_GATES = frozenset({"coverage matrix drift"})
+# rename would silently stop the exemption applying — and that the set is exactly these two.
+CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})
 
 
 @dataclass

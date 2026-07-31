@@ -39,6 +39,23 @@ is measured by the generator and cross-checked against `coverage.md`'s own Total
   bytes, so reproducibility genuinely cannot be observed from a dirty checkout. `--check` returns
   **3**, which `maintainer_doctor.py` maps to **SKIP** — never `ok`. The gate is real exactly where it
   matters: CI, a fresh clone, the moment before a promotion.
+- **FIX — the new drift gate failed on every machine without the licensed corpora.** The doctor
+  comment registering it asserted *"neither needs the corpora: `build_coverage` declares `ENTRIES`
+  statically"*. The generator does run — but the page **embeds the upstream corpus totals**, so a
+  corpora-less rebuild produces different bytes and `--check` returned **1** on a healthy checkout,
+  telling a contributor to fix failures about **optional private files**. Proved by pointing the
+  corpora root at a nonexistent path, which is also how the false comment was caught: CLAUDE.md
+  promises *"no gate fails for their absence"*, and this one did. `coverage artifact drift` joins
+  `CORPORA_GATES`; the doctor's selftest now pins that set **exactly**, so both too-narrow (a
+  corpora-less machine fails) and too-broad (a gate that needs nothing gets skipped, shrinking the
+  sweep behind a healthy summary) require a deliberate edit with a reason. Verified end-to-end
+  through the real `check_gates()` loop: both drift gates SKIP, both selftests still PASS.
+  CLAUDE.md's *"exactly one file reads them"* is corrected to distinguish one **reader** from one
+  **dependency** — importing `build_coverage` inherits it.
+- **FIX — one gate was registered twice.** `coverage artifact selftest` appeared in `GATES` twice, so
+  `--gates` ran it twice and printed a total larger than the number of distinct checks performed. The
+  only consumer of those names was a set comprehension, which collapses duplicates, so nothing could
+  see it. Names are asserted unique now.
 - **Six mutations guard it, and three of them lied the first time.** They reported *caught — but not
   by the expected fixture*, because the guard declared no `deps`: the selftest died at import inside
   the mutation workdir, so every mutation was "caught" by a **traceback**. A crash is not a verdict.

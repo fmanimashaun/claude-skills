@@ -429,15 +429,21 @@ def run() -> int:
         )
 
     # ---- and the exemption must be NARROW: only corpora-dependent gates may skip -------
-    # The near-miss that matters. If this set grew to cover a gate that does not read the kits, a
-    # corpora-less machine would skip a check it can perfectly well run — silently reducing the
-    # sweep while still printing a healthy summary.
+    # The near-miss that matters, pinned as an EXACT set rather than a substring heuristic. Both
+    # failure directions are real and neither is hypothetical:
+    #   too broad — a gate that runs perfectly well without the kits gets skipped, silently
+    #     shrinking the sweep while the summary still reads healthy;
+    #   too narrow — `coverage artifact drift` was MISSING, and a corpora-less machine was told to
+    #     "fix the failures before doing maintenance work" about optional licensed files. Proved by
+    #     pointing the corpora root at a nonexistent path: the gate returned 1.
+    # An exact set means either direction has to be a deliberate edit here, with a reason.
     _tick()
-    over_broad = sorted(n for n in md.CORPORA_GATES if "coverage matrix" not in n)
-    if over_broad:
+    expected = {"coverage matrix drift", "coverage artifact drift"}
+    if set(md.CORPORA_GATES) != expected:
         FAILURES.append(
-            f"CORPORA_GATES exempts gates that do not read the corpora: {over_broad} — only the "
-            "coverage-matrix drift check needs them; --selftest handles absence itself"
+            f"CORPORA_GATES is {sorted(md.CORPORA_GATES)}, expected {sorted(expected)} — exactly "
+            "the two gates that rebuild an artifact embedding the upstream corpus totals. A "
+            "selftest belongs in neither: it SKIPs those checks itself and still exits 0."
         )
 
     if FAILURES:
