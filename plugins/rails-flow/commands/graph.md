@@ -53,6 +53,11 @@ onboarding *and* for an agent asking "what does creating an invoice actually tou
   `dist/` guard. `generated_at`/`commit` are excluded, so re-running on an unchanged tree is
   a no-op, while a real structural change cannot hide. Exit 1 = the code moved and the graph
   did not.
+- **Structure lives here; meaning lives in `docs/GUIDE.md`.** `/rails-flow:explain` reads this
+  artefact's `flows` rather than re-deriving them, and links to `graph.md` instead of copying any
+  of it. The split is the point: these three files are generated and digest-guarded, so they
+  cannot rot, while the guide's plain-language prose can — which is why the guide stays thin and
+  points here for the exhaustive view.
 - **Read the extraction notes.** The parser is regex over Ruby/ERB, not an AST: routes built
   by `mount`/`match`/dynamic DSL, and structure created by metaprogramming, are invisible to
   it and are reported in `notes` rather than silently dropped. Treat a growing notes list as

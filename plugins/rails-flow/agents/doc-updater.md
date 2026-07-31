@@ -35,6 +35,21 @@ Given the session's changes (`git log --oneline <base>..HEAD` + `git diff --stat
    from the diff. Cheap safety: run `--check` first; exit 0 means nothing structural moved
    and there is nothing to do. This is a generated artefact — never hand-edit it, and never
    commit a partial set.
+6. **`docs/GUIDE.md` exists and this session changed behaviour it describes** → keep the
+   human guide honest. Validate it, and name the areas that have gone stale:
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check_guide.py docs/GUIDE.md --decisions docs/brain/DECISIONS.md
+   ```
+
+   Exit 1 (findings) or a stale area → report `run /rails-flow:explain <area>` and stop
+   there. **Do not rewrite an area's explanation yourself.** Same rule as curated skills and
+   the architecture graph above: a mechanical session-end pass reports drift, it does not
+   regenerate the artefact. The guide is the one document written for the human owner, and
+   prose that explains *why* a system is shaped as it is takes the judgement the `/explain`
+   command is set up for — a cheap sweep that rewrites it produces confident, fluent
+   nonsense, which is worse than the staleness it replaced. Fixing a marker, a broken
+   diagram label or the date stamp is fair game; replacing the explanation is not.
 
 Rules: edit surgically — never rewrite documents wholesale; keep MEMORY.md a one-line-per-
 entry index (link + 8-15 word summary); never document aspirations as facts. Report which

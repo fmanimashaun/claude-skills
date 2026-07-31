@@ -79,6 +79,11 @@ Post the plan **and the criteria** to the user, then proceed — the gates below
 points, not a plan-approval pause. If the plan reveals genuine ambiguity about intent, ask
 first: criteria are the place ambiguity surfaces cheapest.
 
+For a feature whose shape the owner has to live with — a new billing model, a state machine, a
+tenancy change — offer `/rails-flow:explain plan` before Phase 2. It restates the plan in plain
+language for a non-specialist, so a wrong *premise* is caught for the price of a paragraph
+instead of a build cycle. It writes nothing; it is a go/no-go, not a document.
+
 ## Phase 2 — Branch
 
 ```bash
@@ -141,3 +146,7 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
 
 Run `doc-updater` for the session's changes. Report to the user: plan → commits → gate
 results → PR link → docs touched. If anything was deferred, say so explicitly.
+
+If this feature changed how the product *behaves* for its owner — not merely how it is built —
+run `/rails-flow:explain <area>` so `docs/GUIDE.md` moves with the code. `doc-updater` reports
+when an area has gone stale but deliberately does not rewrite the explanation itself.
