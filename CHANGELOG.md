@@ -9,6 +9,35 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **FIX — a selftest existed that no gate ran.** `maintainer_doctor.py`'s own selftest flagged
+  `build_coverage_artifact_selftest.py` as having no `GATES` entry — *"`--gates` would report a clean
+  sweep having never executed them"*. Wired; sweep **34 → 35**. The check that caught it exists for
+  exactly this coverage-gap class, and this is the first time it has fired on a real omission rather
+  than a fixture.
+
+- **FIX — an interpreter stall was reported as a syntax error** in the markdown-code gate. This is the
+  unreproducible `30 passed, 1 failed` a parallel session saw and honestly flagged rather than papered
+  over, saying it had truncated the output and could not name the gate. **Not papering over it is why
+  it got found.**
+  - **The mechanism:** `subprocess.TimeoutExpired` is a **subclass** of `SubprocessError`, so the
+    single `except (OSError, subprocess.SubprocessError)` swallowed a stall into the same rc-127 path
+    as *"interpreter missing"*. From there it flowed through the context ladder and came out as
+    **"did not parse in any documented context"** — an environment stall presented as a **code
+    defect**, non-deterministically and only under load. A full sweep here takes ~110 s against a 30 s
+    per-block limit, close enough to fire occasionally. In someone's diff it would have read as a real
+    finding.
+  - A stall now raises `InterpreterStalled`, is reported as **skip** with the offending blocks named,
+    and makes the run **incomplete** (exit 3 → SKIP) — because the honest verdict is that the block was
+    never checked. Real findings still win the exit code, but the stall notice always prints, so it is
+    never silently absorbed.
+  - **Two of my own fixtures were wrong before this landed, both caught by mutation.** The first
+    stubbed `mc._run`, which **bypasses the very except-ordering under test** — so it passed with the
+    code broken. Patching `subprocess.run` one level lower fixed it. The second mutation reverted the
+    `raise` to `pass`, which produces an `UnboundLocalError` rather than the original defect, so it
+    tripped the fixture's catch-all branch instead of the intended one; it now reverts to the **actual
+    pre-fix behaviour**. A mutation that breaks the code differently from how it was broken proves less
+    than it appears to.
+
 - **TOOLING — the coverage matrix gets a filterable HTML rendering, generated from the source rather
   than from its own output.** `scripts/build_coverage_artifact.py` renders the 113 fidara rows as one
   filterable table (guidance × kind × corpus, plus search), because the question a maintainer actually

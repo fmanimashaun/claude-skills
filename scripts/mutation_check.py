@@ -237,6 +237,12 @@ GUARDS: tuple[Guard, ...] = (
                 "```json is NOT javascript",
             ),
             Mutation(
+                "a stalled interpreter is reported as a syntax error again",
+                '        raise InterpreterStalled(f"{cmd[0]} did not answer within 30s") from exc',
+                '        return 127, "", f"could not run {cmd[0]}: {exc}"',
+                "a stalled interpreter did not raise",
+            ),
+            Mutation(
                 "the ERB block-tag normalisation is removed (20 false positives return)",
                 '    code = ERB_BLOCK_TAG.sub(r"<%\\1%>", ERB_RAW_TAG.sub("<%=", code))',
                 "    code = ERB_RAW_TAG.sub(\"<%=\", code)",
