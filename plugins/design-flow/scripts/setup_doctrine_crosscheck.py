@@ -173,15 +173,37 @@ def setup_steps(text: str) -> list[str]:
     Coarse on purpose. The unit only has to be small enough that a key and the initializer
     generating it must be *deliberately* placed together, and large enough that the real
     setup.md — where step 7 spans several wrapped lines — is one chunk rather than three.
+
+    **Fenced code is never a boundary.** A shell comment (`# …`) at column 0 inside a ``` block
+    matches the heading pattern exactly, and setup.md's own pack-resolution snippet contains two.
+    Splitting there would cut a step in half, so a step that showed a code example *between* its
+    initializer and its key read would be reported as unprovided — a false drift error on
+    correct input, which is how a check earns being switched off. Fence content is still scanned
+    for keys and initializers; it just cannot start a new chunk.
     """
-    marks = [m.start() for m in STEP_BOUNDARY.finditer(text)]
-    if not marks:
-        return [text]
-    chunks = [text[:marks[0]]] if marks[0] else []
-    for index, start in enumerate(marks):
-        stop = marks[index + 1] if index + 1 < len(marks) else len(text)
-        chunks.append(text[start:stop])
-    return chunks
+    chunks: list[str] = []
+    current: list[str] = []
+    fence = ""   # the marker that opened the current fence; empty when outside one
+
+    for line in text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if fence:
+            if stripped.startswith(fence):
+                fence = ""
+            current.append(line)
+            continue
+        if stripped[:3] in ("```", "~~~"):
+            fence = stripped[:3]
+            current.append(line)
+            continue
+        if STEP_BOUNDARY.match(line) and current:
+            chunks.append("".join(current))
+            current = []
+        current.append(line)
+
+    if current:
+        chunks.append("".join(current))
+    return chunks or [text]
 
 
 def setup_provides(setup_path: str) -> tuple[set[str], set[str], set[str]]:
@@ -459,6 +481,35 @@ def selftest() -> int:
               code == 2,
               f"expected exit 2 (environment) for an unreadable input, got {code} — an "
               "environment fault is being reported as doctrine drift")
+
+        # --- Fixture I: a fenced code example must not split a step ---
+        # A shell comment at column 0 inside ``` matches the heading pattern exactly. setup.md's
+        # own pack-resolution snippet contains two. If a fence could start a chunk, this step —
+        # which generates the initializer, shows a snippet, THEN names the key — would be split
+        # and reported as unprovided: a false drift error on correct input.
+        doc = os.path.join(tmp, "i-doctrine")
+        _write(doc, "component-implementations.md",
+               "brand = Rails.configuration.x.brand\n")
+        # The fence and its comments sit at COLUMN 0, mirroring setup.md. Indenting them would
+        # make this fixture vacuous: `^#` cannot match a leading-space line, so it would pass
+        # whether or not the splitter tracked fences at all.
+        _write(tmp, "i-setup.md",
+               "# setup\n"
+               "7. **Brand config**: generate `config/initializers/brand.rb`.\n"
+               "\n"
+               "```bash\n"
+               "# resolve the pack directory before generating\n"
+               "# (fidara, _template) live inside the plugin\n"
+               "python3 \"$LINT\" \"$PACK\"\n"
+               "```\n"
+               "\n"
+               "so `Rails.configuration.x.brand` exposes `variants`.\n")
+        rep = cross_check(os.path.join(tmp, "i-setup.md"), doc)
+        check("a fenced code example does not split a step",
+              rep.ok and not rep.errors,
+              f"a `# ` comment inside a fence split the step, so the key and its initializer "
+              f"landed in different chunks — the check now cries wolf on correct input. "
+              f"Got: {rep.errors}")
 
     total = passed + failed
     if failed:
