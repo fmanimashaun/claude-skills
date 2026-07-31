@@ -7,7 +7,8 @@ real — each adds permanent complexity.
 ## Contents
 1. Composite primary keys
 2. Multiple databases (roles, shards, switching)
-3. Active Record Encryption
+3. Full-text search in the database
+4. Active Record Encryption
 
 ---
 
@@ -171,7 +172,83 @@ Testing note: point each abstract class's role at the right test database in
 `database.yml`; parallel tests create per-worker copies of **all** configured
 databases.
 
-## 3. Active Record Encryption
+## 3. Full-text search in the database (#98)
+
+**Start in PostgreSQL.** `ecosystem-gems.md` §7 names the gems; this is the mechanism, its limits, and
+the point at which the database stops being the right answer.
+
+### The column, and the trigger you should no longer write
+
+`tsvector` + a **GIN** index is the mechanism. Maintain the column with a **stored generated column**,
+not a trigger — PostgreSQL's own documentation retired the trigger approach:
+
+> *"The method described in this section has been obsoleted by the use of stored generated columns."*
+
+```ruby
+# Generated columns: PostgreSQL 12+. `t.virtual … stored: true` is Rails 7.0+.
+create_table :documents do |t|
+  t.string :title
+  t.text   :body
+  t.virtual :searchable, type: :tsvector, stored: true,
+            as: "to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''))"
+end
+add_index :documents, :searchable, using: :gin
+```
+
+**Rails gives you the schema layer and no query builder.** There is no Active Record API for full text
+— querying is a raw fragment, which is correct and worth knowing rather than hunting for:
+
+```ruby
+Document.where("searchable @@ to_tsquery('english', ?)", "cat & dog")
+```
+
+So **`pg_search` is for ergonomics, not necessity** — ranking, prefix matching, multi-column weights.
+It works either way: query-time `to_tsvector` by default, or against a precomputed column, and its own
+README notes the column *"speeds up searching dramatically"*. Status to be accurate about: last tagged
+release **2.3.7 (Aug 2024)**, `activerecord >= 6.1` with no upper bound, repo active in 2026 — so it is
+compatible by that floor rather than by a Rails 8 certification.
+
+> **Name collision worth knowing.** There is also a **PostgreSQL extension** called `pg_search`
+> (ParadeDB/Neon) that implements BM25 via tantivy. Different thing entirely from the Ruby gem our
+> doctrine means. If you read a blog comparing "pg_search" to Elasticsearch, check which one.
+
+### Do NOT shard a Postgres search index the way MySQL forces you to
+
+Canonical practice here is **adapter-specific and does not transfer**. 37signals' fizzy shards its
+search table **16 ways by CRC32 of the account id** — on MySQL. That is forced: MySQL documents that
+*partitioned tables do not support `FULLTEXT` indexes or searches*, so anyone wanting a partitioned
+full-text table on MySQL is pushed out of native partitioning and into application-level table
+splitting.
+
+**PostgreSQL has no such constraint.** Indexes on partitioned tables arrived in **PostgreSQL 11** — a
+`CREATE INDEX … USING gin` on the parent is a template that propagates to every partition, present and
+future. So declarative partitioning plus one GIN index gets the locality without any app-level shard
+router. Copying the 16-way scheme onto Postgres would be inheriting a workaround for a limitation we do
+not have. (The one real GIN restriction is unrelated: it cannot back an `EXCLUDE` constraint, on any
+table.)
+
+### When the database stops being enough — documented limits first
+
+**Quotable, from PostgreSQL:**
+
+- **GIN write amplification** — *"Updating a GIN index tends to be slow because of the intrinsic nature
+  of inverted indexes: inserting or updating one heap row can cause many inserts into the index."*
+  `fastupdate` defers some of it; for very large updates the docs suggest dropping and recreating.
+- **Hard ceilings** — a `tsvector` under **1 MB**, each lexeme under **2 KB**, a `tsquery` under
+  **32,768** nodes. Rarely reached, but real.
+
+**Practitioner consensus, and labelled as such because no PostgreSQL document says it:**
+
+- **Ranking.** `ts_rank` is term-frequency based with no corpus-wide IDF, so no BM25. Fine for "find
+  the matching invoice", weak for relevance-ranked search over a large corpus.
+- **Typo tolerance.** None natively; it means adding `pg_trgm`, a separate extension.
+- **Faceting.** No native faceted counts — hand-rolled `GROUP BY` queries that get expensive.
+
+**So: reach for Elasticsearch/OpenSearch/Meilisearch when you need BM25-quality ranking, typo
+tolerance, or faceting at scale** — not because Postgres "cannot do search". Adding a search cluster is
+a permanent operational commitment; the bar is a measured need, not an anticipated one.
+
+## 4. Active Record Encryption
 
 Application-level (in addition to at-rest disk) encryption for sensitive
 columns — values are encrypted before SQL, so DB dumps and logs never see
