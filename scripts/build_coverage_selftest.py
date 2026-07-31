@@ -313,6 +313,32 @@ def run() -> int:
         evidence=BUTTON_ONLY,
         build={"Badge": "the nearest safe thing for now"},
     )
+    # The SECOND source of that same text. `resolve_build` prefers a row's own `build=` kwarg
+    # over the BUILD dict, so a guard reading only the dict passed a documented row whose
+    # fallback sat inline -- the defect it exists to catch, in the half nobody looked at.
+    expect_error(
+        "a documented row carrying its fallback inline rather than in BUILD",
+        (
+            COMPLETE[0],
+            bc.E("Badge", bc.COMPONENT, "documented",
+                 tw=["application-ui/elements/badges"], fb=["Badge"],
+                 build="the documented Link until the entry lands"),
+        ),
+        contains="still carrying a BUILD fallback",
+    )
+    # NEAR MISS for that one too: inline `build=` on a row that is still `needs doctrine` is
+    # required, not stale -- the guard must key on STATUS here as well, not on the kwarg's
+    # mere presence.
+    expect_ok(
+        "a needs-doctrine row carrying its fallback inline is correct",
+        (
+            COMPLETE[0],
+            bc.E("Badge", bc.COMPONENT, "needs doctrine #1",
+                 tw=["application-ui/elements/badges"], fb=["Badge"],
+                 build="the nearest safe thing for now"),
+        ),
+        evidence=BUTTON_ONLY,
+    )
     # Near miss: a heading that is a PREFIX of another must not satisfy the longer one. If
     # evidence were "## Button" without the newline, a docs file containing only
     # "## Button group" would wrongly satisfy a Button row.

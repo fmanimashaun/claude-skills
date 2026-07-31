@@ -129,6 +129,60 @@ DEFAULTS = { variant: :primary, size: :md }
   because it keeps the grid's scroll position), and the dialog's name string — use the image's caption or
   alt text so it names the picture rather than repeating "Image viewer".
 
+## Video player
+- **No APG pattern, and therefore no upstream keyboard model.** The index lists 30 patterns and none
+  is a media player; the source repo's `content/patterns` directory has no media entry either. So
+  anything presented as "the video player pattern" is somebody's convention, not a citation. Ours:
+  **ship the native control set and inherit the UA's keyboard model rather than authoring one.**
+- **`<video controls>` inside a `frame`** — and be honest about what `controls` buys. The HTML
+  Standard is deliberately loose: the UA *"**should** expose a user interface"* including *"features
+  to begin playback, pause playback, seek to an arbitrary position … change the volume, change the
+  display of closed captions"*. A **should**, and the section specifies **no key bindings at all**.
+  Space-to-play and arrows-to-seek are browser convention; never write them down as a contract.
+- **Custom controls are the expensive path, and two AA criteria switch on the moment you take it.**
+  Both exempt native chrome *by name*: **1.4.11 Non-text Contrast (AA)** carves out *"where the
+  appearance of the component is determined by the user agent and not modified by the author"*, and
+  **2.5.8 Target Size (Minimum) (AA)** carves out *"User Agent Control — the size of the target is
+  determined by the user agent and is not modified by the author"*. Replace the chrome and you own
+  **3:1** on every control and state and **24 × 24 CSS px** on every target — plus the whole keyboard
+  model you just declined to inherit. Do it only when a requirement forces it.
+- **Captions are Level A, and `captions` is not `subtitles`.** **1.2.2 Captions (Prerecorded)** is
+  **Level A**: *"Captions are provided for all prerecorded audio content in synchronized media."* The
+  element is `<track kind="captions">`, which the spec defines as covering *"sound effects, relevant
+  musical cues, and other relevant audio information, suitable for when sound is unavailable or not
+  clearly audible"*. `kind="subtitles"` is a **different track** — *"suitable for when the sound is
+  available but not understood"* — so shipping subtitles where captions are owed fails 1.2.2.
+- **Audio description is two criteria at two levels. Do not merge them.** **1.2.3 (Level A)** accepts
+  *"an alternative for time-based media **or** audio description"* — a transcript passes. **1.2.5
+  (Level AA)** removes that escape hatch: *"Audio description is provided for all prerecorded video
+  content in synchronized media."* At AA a transcript is not enough, and the track is
+  `<track kind="descriptions">` (*"Textual descriptions of the video component … Synthesized as
+  audio"*). A **silent** clip is neither: that is **1.2.1 (A)**, wanting a text alternative or an
+  audio track.
+- **Autoplay is governed by 2.2.2 at Level A — that, not reduced-motion, is the rule.** A hero video
+  starting on load is *"moving … information that (1) starts automatically, (2) lasts more than five
+  seconds, and (3) is presented in parallel with other content"*, so it needs *"a mechanism for the
+  user to pause, stop, or hide it"*. Understanding 2.2.2 names the case — *"Common examples include
+  motion pictures, synchronized media presentations, animations"* — and scopes the trigger: *"'starts
+  automatically' broadly refers to animations/updates that are not the direct result of a user's
+  intentional activation"*. **A player the visitor presses play on is out of scope; a background loop
+  is not.** If sound can play automatically past 3 s, **1.4.2 Audio Control (A)** applies on top and
+  wants a pause/stop mechanism or volume control independent of the system's.
+- **Three things here are ours, and each says so because none has an upstream.** (1) **Muted-by-default
+  is our rule, not an exemption** — "autoplay is blocked unless muted" is UA policy, and the HTML
+  Standard offers it only as an example of a policy a UA *could* adopt: *"an exception could be made
+  to allow playback while muted."* Never state it as a guarantee. (2) **Reduced motion suppresses
+  autoplay.** `prefers-reduced-motion` in Media Queries 5 says nothing about video, media or autoplay,
+  and the nearest normative criterion — 2.3.3 — is **AAA and about interaction-triggered animation**,
+  not this. We do it anyway: gate the autoplay inside `@media (prefers-reduced-motion: no-preference)`,
+  the construction `motion.md` already prescribes. The 2.2.2 pause control stays visible either way —
+  it is a Level A obligation, not a fallback for the reduce branch. (3) **The player carries an
+  accessible name** (`aria-label`, or `aria-labelledby` pointing at its caption/heading); "Video" is
+  not a name.
+- **`frame` crops — set `--ratio`.** `layout-primitives.md` gives `frame > *` `object-fit: cover`, so
+  a 4/3 source in the default 16/9 frame silently loses its edges. Also set `poster` so the frame is
+  never blank, and `preload="metadata"` so a marketing page does not fetch the whole file.
+
 ## Dropdown / Menu
 > **Scope: an application/action menu, NOT site navigation.** `role="menu"` is correct here — a "…"
 > button opening Edit / Duplicate / Delete is exactly what the role is for. It is **wrong for a nav
