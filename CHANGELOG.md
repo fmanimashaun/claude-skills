@@ -1465,6 +1465,38 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Mega menu / Flyout is documented** (#90). `coverage.md` **5 → 4**. **No APG pattern** — the index
+  lists 30 and none is a mega menu — so it is governed by the **Disclosure** pattern's *Navigation Menu*
+  examples, and the verdict changed what the row could say.
+  - **APG recommends AGAINST `role="menu"` for site navigation**, in a callout on its own Menubar
+    example: *"A pattern more suited for typical site navigation with expandable groups of links is the
+    Disclosure Pattern… few sites need the additional keyboard functionality required to support the
+    ARIA `menubar` and `menu` roles."* And on the Disclosure example: *"it does not use the WAI-ARIA
+    `menu` role… Typical site navigation does not need all the keyboard interactions specified by the
+    menu and menubar pattern."* There is an open upstream proposal to **delete** the Menubar navigation
+    example for this reason, so it is not the endorsed route either.
+  - **Therefore the row shares NO ARIA with Dropdown**, and the shipped **Dropdown / Menu row gains a
+    scoping note**: `role="menu"` is right for an application/action menu and wrong for a nav bar. The
+    two look similar and are structurally opposite, which is exactly why a reader would otherwise reach
+    for the wrong one. Same citations; a note rather than a rewrite, because that row is not wrong — it
+    was unscoped.
+  - **A top-level item that must both navigate and expand is TWO elements.** APG's hybrid example:
+    *"each item contains a top-level link and an associated disclosure button."* The link navigates, the
+    adjacent button carries `aria-expanded`/`aria-controls`. One element doing both is neither properly.
+  - **`Tab` and `Esc` are required; arrow keys are explicitly "(Optional)"** in the example's own
+    keyboard table. And APG ties `Esc` to an obligation rather than taste: *"Implementing this Esc
+    behavior is necessary to meet the WCAG 2.1 1.4.13: Content on Hover or Focus criterion."*
+  - **Hover triggers WCAG 1.4.13 (AA) in full** — dismissible, **hoverable**, persistent. The pointer
+    must be able to travel into the panel without it vanishing, so **no gap between trigger and panel**;
+    a menu that closes across a 4px gap fails *hoverable*, and that is the most common way this is got
+    wrong.
+  - **Three things are ours and say so**: hover-intent delay (no citation exists anywhere — ~120ms in,
+    ~240ms out, and hover is an *enhancement* over a button that works on click), column grouping (APG's
+    examples are single-column and silent on it — a heading plus a plain `<ul>`, and **no** invented
+    `role="group"`/`aria-labelledby` attributed to APG, and **no** announced item counts), and the
+    small-viewport collapse (no upstream at all — it becomes the mobile drawer's nested disclosure list,
+    reusing that contract rather than inventing a second mobile nav).
+
 - **File upload/Dropzone and Copy to clipboard are documented** (#95). `coverage.md` **7 → 5**. Batched
   on one mechanism and it held: both are a **native control plus an enhancement**, and in both the
   enhancement's result is invisible without a `role="status"` announcement. **Neither has an APG
