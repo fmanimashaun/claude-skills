@@ -21,12 +21,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     pass either.
   - **Found by simulating the container**, not by reading the code — a stub `ruby` on `PATH` was
     enough to show the green line over an 88%-unchecked run.
+- **A commit message explaining the closing-keyword rule triggered the very bug it described.** The
+  commit said, in prose and inside backticks, that a promotion had wrongly used a closing keyword on
+  issue 95. GitHub parses the pattern **wherever it appears** — context, backticks and intent are
+  irrelevant — so when that commit reached `main` via the v1.41.0 promotion it **closed issue 95 for
+  the second time in one day**, twenty-six minutes after it was reopened. CLAUDE.md now says: never
+  write a closing keyword next to a real issue number in a commit message or PR body, even when
+  quoting a mistake; use a placeholder number or name the issue separately from the keyword. The
+  existing prose in CLAUDE.md was reworded to stop modelling the dangerous shape.
 
 ### 1.22.0 — 2026-07-30
 
 - **An umbrella issue was closed by a promotion that shipped one of its groups** — and the rule that
   allowed it is now written down. #95's body says *"Ship in sub-releases, one group at a time"* and
-  carries a checklist; `Closes #95` on the v1.37.0 promotion retired it with **seven rows still
+  carries a checklist; a closing keyword on it in the v1.37.0 promotion retired it with **seven rows still
   undocumented**, after which **four further slices landed against a closed issue**. CLAUDE.md's
   promotion section now says plainly: an issue that ships incrementally gets `Refs`, never `Closes`,
   until its last increment — and to check the body for unticked boxes before writing `Closes`. #95 is
@@ -2344,6 +2352,21 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+- **NEW `scripts/setup_doctrine_crosscheck.py`** — catches doctrine that references a runtime
+  artefact `/design-flow:setup` never generates. The unit of dependency is a
+  `Rails.configuration.x.<key>` read: doctrine reading a key setup does not generate is an
+  **error** (it raises `NoMethodError` at a user's first setup run, in no test), setup generating
+  config no doctrine reads is a **warning**. Deliberately narrow — a bare `config/initializers/*.rb`
+  named in doctrine is *not* flagged, because `simple_form.rb` belongs to `/design-flow:component`,
+  not setup, and flagging it would be the false positive that gets the check switched off. Proven
+  against real history rather than asserted: exit 1 at `ced38c4` (the #104 defect) and exit 0 at
+  `5902250` (its in-branch fix). A run that scans zero doctrine files exits **2**, not 0 — "no
+  findings" over input it never read is the gate-that-cannot-fail shape, not a pass. Stdlib-only,
+  wired into `/design-flow:audit` and the gate sweep, with 6 fixtures and 5 declared mutations in
+  `scripts/mutation_check.py` — one per fixture, including the out-of-scope-initializer near-miss
+  and the zero-input guard. Refs #150.
 
 ### 1.5.0 — 2026-07-29
 - `/design-flow:component` step 1 previously said a screen should be built by "composing existing

@@ -353,6 +353,50 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        name="setup_doctrine_crosscheck",
+        subject="plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
+        selftest="plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
+        mutations=(
+            Mutation(
+                "the error direction is disabled — #104 instance 1 ships again",
+                "        if key in provided:\n            continue",
+                "        if True:\n            continue",
+                "instance-1 regression fires",
+            ),
+            Mutation(
+                "every config key is treated as ungenerated, so the fixed state fails too",
+                "        if key in provided:\n            continue",
+                "        if False:\n            continue",
+                "fixed state is clean",
+            ),
+            Mutation(
+                "generated-but-unreferenced is escalated from a warning to an error",
+                '        report.warn(\n            f"setup.md sets',
+                '        report.error(\n            f"setup.md sets',
+                "unreferenced config warns without failing",
+            ),
+            # Guards the anti-false-positive control: without the `reads and` conjunct, a
+            # doctrine that names an out-of-scope initializer (simple_form, owned by
+            # /design-flow:component) and reads no config at all would error. That is the
+            # exact false positive #150 would die of.
+            Mutation(
+                "the structural check fires with no config read at all (cries wolf)",
+                "    if reads and not inits:",
+                "    if not inits:",
+                "out-of-scope initializer is not flagged",
+            ),
+            # A run that scanned nothing prints the same clean verdict as a run that scanned
+            # the whole tree. Without this guard the check can be pointed anywhere and still
+            # report a pass — the failure mode build_coverage.py --selftest had.
+            Mutation(
+                "a run that examined zero files reports clean again",
+                "    if not scanned:",
+                "    if False:",
+                "empty doctrine tree is an error, not a pass",
+            ),
+        ),
+    ),
+    Guard(
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
         selftest="scripts/maintainer_doctor_selftest.py",
