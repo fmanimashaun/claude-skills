@@ -166,6 +166,13 @@ Why the split matters: closing keywords fire only on merge into the **default** 
 with `main` default the `Closes #n` lines *must* live on the promotion PR. That is the
 desired behaviour — issues close when the fix ships, not when it lands on a staging branch.
 
+**An issue that ships incrementally gets `Refs`, never `Closes`, until its last increment.** EPICs and
+umbrellas — anything whose body says *"ship in sub-releases"* or carries a checklist of groups — are
+not closed by the promotion that ships one group. This is not hypothetical: a promotion put
+`Closes #95` on the Phase-2 component umbrella, retiring it while **seven** of its rows were still
+undocumented, and **four further slices landed against a closed issue** before anyone noticed. Check
+the issue body before writing `Closes`: a checklist with unticked boxes means `Refs`.
+
 **Why "never commit to `main`" is a correctness rule, not tidiness:** a merge **unions**, it does
 not override. Merging `dev → main` brings dev's changes in; it never removes content that exists
 only on `main`. So a direct commit to `main` lives there permanently and is **invisible to every
