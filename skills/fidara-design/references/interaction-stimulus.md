@@ -48,7 +48,7 @@ listener"* or it stays stuck in its pressed state the moment a user alt-tabs. Fu
 ## Per-component behavior contract
 
 **Not every row here has an APG pattern**, and the heading used to imply otherwise. APG's index is 30
-patterns: **Toast, Progress bar, Spinner, Skeleton and any date picker are not among them** — a date
+patterns: **Toast, Progress bar, Spinner, Skeleton, any date picker and any mega menu are not among them** — a date
 picker is two *examples*, under Dialog and under Combobox. Rows without a pattern are
 sourced to an ARIA *role* definition or composed from primitives, and each says which — an entire row
 implying an authority that does not exist is the same defect class as citing a keybinding a spec never
@@ -61,6 +61,7 @@ mandated (#142).
 | Drawer (overlay) | as Dialog — no APG pattern of its own | Esc · Tab trapped | focus-trap + dismissable |
 | Drawer (persistent / push) | **not a dialog** — see the contract below | none | none |
 | Carousel | `role=region` **or** `group` + `aria-roledescription=carousel` | prev/next buttons | carousel |
+| Mega menu / Flyout | **disclosure, NOT a menu** — `aria-expanded` + `aria-controls` on a button; no `role=menu`, no `aria-haspopup` | Tab · **Esc required** (WCAG 1.4.13) · arrows **optional** | disclosure + dismissable |
 | Range / Slider | **native `input type=range` already IS `role=slider`** — adding the role or `aria-valuemin/max` is NOT RECOMMENDED | native: arrows · Home/End (**PgUp/PgDn optional**) | none |
 | Slider, custom (multi-thumb only) | one `role=slider` **per thumb**, each with its own name + `aria-valuenow` | as above, per thumb | none — test on touch AT first |
 | Date / Time input | native `input[type=date\|time]` — **"No corresponding role"** in ARIA in HTML | the platform picker's own | none |

@@ -7,6 +7,85 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-31 — a stall is not a syntax error
+
+
+- **FIX — an interpreter stall was reported as a syntax error** in the markdown-code gate. This is the
+  unreproducible `30 passed, 1 failed` a parallel session saw and honestly flagged rather than papered
+  over, saying it had truncated the output and could not name the gate. **Not papering over it is why
+  it got found.**
+  - **The mechanism:** `subprocess.TimeoutExpired` is a **subclass** of `SubprocessError`, so the
+    single `except (OSError, subprocess.SubprocessError)` swallowed a stall into the same rc-127 path
+    as *"interpreter missing"*. From there it flowed through the context ladder and came out as
+    **"did not parse in any documented context"** — an environment stall presented as a **code
+    defect**, non-deterministically and only under load. A full sweep here takes ~110 s against a 30 s
+    per-block limit, close enough to fire occasionally. In someone's diff it would have read as a real
+    finding.
+  - A stall now raises `InterpreterStalled`, is reported as **skip** with the offending blocks named,
+    and makes the run **incomplete** (exit 3 → SKIP) — because the honest verdict is that the block was
+    never checked. Real findings still win the exit code, but the stall notice always prints, so it is
+    never silently absorbed.
+  - **Two of my own fixtures were wrong before this landed, both caught by mutation.** The first
+    stubbed `mc._run`, which **bypasses the very except-ordering under test** — so it passed with the
+    code broken. Patching `subprocess.run` one level lower fixed it. The second mutation reverted the
+    `raise` to `pass`, which produces an `UnboundLocalError` rather than the original defect, so it
+    tripped the fixture's catch-all branch instead of the intended one; it now reverts to the **actual
+    pre-fix behaviour**. A mutation that breaks the code differently from how it was broken proves less
+    than it appears to.
+
+- **TOOLING — the coverage matrix gets a filterable HTML rendering, generated from the source rather
+  than from its own output.** `scripts/build_coverage_artifact.py` renders the 113 fidara rows as one
+  filterable table (guidance × kind × corpus, plus search), because the question a maintainer actually
+  asks — *"what needs doctrine, of kind composition, that only Flowbite carries?"* — cuts across the
+  three tables `coverage.md` splits them into, and markdown cannot express a filter. Change type:
+  **maintainer tooling**, no skill doctrine touched and no external framework claim, so no
+  `doctrine-verifier` verdict applies; the licensing boundary is inherited from `build_coverage.py`
+  rather than re-earned (names, statuses and our own prose only — no corpus markup, so a published
+  page cannot leak licensed content).
+  - **It imports `build_coverage.ENTRIES`; it does not parse `coverage.md`.** The first draft parsed
+    the markdown and failed its own count assertion on the first run: the Totals label `documented`
+    also matches `— derivable from documented parts`, so 44 derivable rows were counted as
+    documented. `coverage.md` is *generated English*, and pattern-matching it re-derives — badly —
+    structure the generator already had (three tables whose column order differs, `✓`/`—` standing in
+    for booleans, a tracked issue buried inside a status string). `is_documented` / `is_derivable` /
+    `needs_doctrine` are predicates on a frozen dataclass, so there is no label left to mis-match.
+  - **That moves one bug class rather than removing it, and the new one is guarded.** The predicates
+    are `status.startswith(...)`, so a typo'd status (`"documentd"`) matches none of them and the row
+    would vanish from the page with no error — 112 rendered where 113 exist. `verify_partition`
+    asserts the buckets are total **and** disjoint; the disjoint half is unreachable via real status
+    strings, so a stub matching all three exercises it. A completeness matrix that silently drops a
+    row is worse than no matrix, because the missing row looks like a row that does not exist.
+  - **The count assertion is kept, but against data rather than against our own regex.**
+    `cross_check_committed` compares the counts to the Totals table in the *committed* `coverage.md`
+    — an independently generated artifact of the same source — and reports **three** states, where
+    `skip` (file absent or unparseable) is not a pass. A `fail` aborts the build instead of warning.
+    The one surviving label match is the ordering that caused the original bug, pinned by a fixture
+    whose four numbers are all distinct so a mis-mapping cannot pass by coincidence.
+  - **A shared page stamps what it was built from.** An HTML snapshot outlives its commit, and a
+    stale second source of truth that looks authoritative is the failure mode this repo keeps
+    writing down — so the page carries the commit, the branch, the rails-stack version, and whether
+    that commit is in a published release. An unreleased or dirty build says so on the page itself,
+    in amber. The HTML is deliberately **not committed**: it is a rendering, not a source, and a
+    committed copy would be a second thing to keep in sync — which is why there is no `--check` and
+    therefore no mutation (that requirement attaches to gates).
+  - **Corpora stay optional.** Only the two upstream enumeration totals need `design-corpora/`; the
+    113 rows are ours. Without the corpora the page omits those two numbers and says so, rather than
+    printing a zero that reads like a finding. 40 selftest checks, of which 8 are guards observed
+    firing — including `</script>` inside entry prose, which `json.dumps` does **not** neutralise,
+    and whose escape must stay value-preserving (the first attempt turned `<!--` into `<--`).
+
+- **FIX — the call-site rule flagged a CORRECT call site** (#95). `ButtonComponent.new(…, data: { action:
+  … })` is legal: its initializer ends in **`**attrs`**, which forwards arbitrary keywords — and that is
+  how ViewComponent passes HTML attributes through, so the rule was set to fire on most correct call
+  sites the moment one appeared. It now excludes splat-forwarding initializers from the unknown-keyword
+  check (declared components 20 → 14; the six with splats keep their **slot** checking, which a splat
+  does not affect).
+  - **The carve-out keys on the splat, not on weakening the check** — the `ModalComponent` flag that
+    preceded it was *correct*, because that one has no splat. Three fixtures pin all three edges: a
+    splat silences the keyword check, a component **without** one still fires, and a splat **never**
+    excuses an undeclared slot. Plus a mutation that removes the carve-out, so it cannot regress.
+    `mutation_check` **64 → 65**.
+
 ### 2026-07-31 — six parallel sessions, and what they caught in each other
 
 - **FIX — a broken plugin pointer, and the reason the new rule could not see it** (#272).
@@ -773,6 +852,54 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.13.0 — 2026-07-31
+
+- **The flow can now explain a system back to the human who owns it** (#126). New
+  `/rails-flow:explain` writes `docs/GUIDE.md`: plain-language sections, mermaid diagrams that
+  render on GitHub, and a *"check it yourself"* block per area — the human-runnable form of the
+  acceptance criteria. Every other artefact this toolchain produces is written for an agent, and
+  `/rails-flow:curate` runs docs → skills; nothing ran the other way. The design half is the
+  maintainer decision recorded on [#126](https://github.com/fmanimashaun/claude-skills/issues/126)
+  (this is an architecture change to our own doctrine, so its authority is that decision, not an
+  upstream citation); the mermaid half is externally verifiable and cited below.
+  - **The guide is thin by construction, and that is the whole design.** It *links* to
+    `docs/architecture/graph.md` for structure and `docs/brain/DECISIONS.md` (`D-nnn`) for
+    rationale rather than restating either, because those are generated/digest-guarded and
+    authored-once respectively, while the guide's prose can rot. Same reasoning as the capped
+    `## Architecture Overview` in setup-flow §2: 37signals cut their own `AGENTS.md` from 166
+    lines to 70 by deleting four claims that had drifted into being false
+    ([fizzy #2999](https://github.com/basecamp/fizzy/pull/2999), 2026-07-28).
+  - **Two claims in the issue body are now enforced rather than asserted**, via the new
+    `plugins/rails-flow/scripts/check_guide.py` (47-check selftest, 5 declared mutations).
+    "Idempotent, section-scoped updates" holds only while the managed markers are balanced, and
+    "diagrams are mermaid (GitHub-renderable)" fails *silently* — GitHub shows an error box, and
+    the diff is valid markdown either way. Both were `claims-vs-enforcement` waiting to happen.
+  - **Verified against upstream, 2026-07-31.** Mermaid renders in *"GitHub Issues, GitHub
+    Discussions, pull requests, wikis, and Markdown files"*
+    ([GitHub docs](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)),
+    gists too ([changelog](https://github.blog/changelog/2022-02-28-gists-now-support-mermaid-diagrams/));
+    a bare lowercase `end` *"will break the Flowchart"* and quoting is the documented fix for
+    bracket characters ([mermaid](https://mermaid.js.org/syntax/flowchart.html)); `%%{init:...}%%`
+    is *"deprecated from v10.5.0"* ([mermaid](https://mermaid.js.org/config/directives.html)).
+  - **Three things checking refuted, and the doctrine says so.** `graph` is **not** deprecated in
+    favour of `flowchart` — *"Instead of `flowchart` one can also use `graph`"*, no deprecation
+    notice — so the preference is recorded as a house convention and both spellings pass.
+    GitHub **does not publish** its bundled mermaid version (its docs offer a self-check and never
+    state the number), which is why the diagram-type rule is an allowlist rather than a version
+    comparison. And GitHub documents **no** node/size cap: the 60-node cap in
+    `architecture_graph.py` is ours, and the doctrine now says not to repeat it as an upstream
+    limit.
+  - **Two deliberate deviations from the issue body**, both stated so they can be overruled:
+    `explain plan` writes **nothing** — a planned area written into the guide is an aspiration
+    presented as fact, which `doc-updater` is already forbidden to do — and `doc-updater`
+    *reports* a stale area rather than rewriting its explanation, matching the rule this repo
+    already applies to curated skills and the architecture graph. The model-tier question that
+    sits behind the second is #127's, not pre-empted here.
+  - Resolves a dead declaration: `commands/graph.md` has listed `/explain` as a consumer of
+    `graph.json` since the graph shipped, naming a command that did not exist.
+  - Also fixed in passing: the README's rails-flow command row omitted `/graph` and
+    `/pr-comments` — the #203 defect class, in the line this change already touched.
+
 ### 1.12.0 — 2026-07-31
 
 - **The scaffold now knows how to brief an agent in a repo that already briefs agents** (#100,
@@ -1335,6 +1462,111 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.24.0 — 2026-07-31
+
+- **Mega menu / Flyout is documented** (#90). `coverage.md` **5 → 4**. **No APG pattern** — the index
+  lists 30 and none is a mega menu — so it is governed by the **Disclosure** pattern's *Navigation Menu*
+  examples, and the verdict changed what the row could say.
+  - **APG recommends AGAINST `role="menu"` for site navigation**, in a callout on its own Menubar
+    example: *"A pattern more suited for typical site navigation with expandable groups of links is the
+    Disclosure Pattern… few sites need the additional keyboard functionality required to support the
+    ARIA `menubar` and `menu` roles."* And on the Disclosure example: *"it does not use the WAI-ARIA
+    `menu` role… Typical site navigation does not need all the keyboard interactions specified by the
+    menu and menubar pattern."* There is an open upstream proposal to **delete** the Menubar navigation
+    example for this reason, so it is not the endorsed route either.
+  - **Therefore the row shares NO ARIA with Dropdown**, and the shipped **Dropdown / Menu row gains a
+    scoping note**: `role="menu"` is right for an application/action menu and wrong for a nav bar. The
+    two look similar and are structurally opposite, which is exactly why a reader would otherwise reach
+    for the wrong one. Same citations; a note rather than a rewrite, because that row is not wrong — it
+    was unscoped.
+  - **A top-level item that must both navigate and expand is TWO elements.** APG's hybrid example:
+    *"each item contains a top-level link and an associated disclosure button."* The link navigates, the
+    adjacent button carries `aria-expanded`/`aria-controls`. One element doing both is neither properly.
+  - **`Tab` and `Esc` are required; arrow keys are explicitly "(Optional)"** in the example's own
+    keyboard table. And APG ties `Esc` to an obligation rather than taste: *"Implementing this Esc
+    behavior is necessary to meet the WCAG 2.1 1.4.13: Content on Hover or Focus criterion."*
+  - **Hover triggers WCAG 1.4.13 (AA) in full** — dismissible, **hoverable**, persistent. The pointer
+    must be able to travel into the panel without it vanishing, so **no gap between trigger and panel**;
+    a menu that closes across a 4px gap fails *hoverable*, and that is the most common way this is got
+    wrong.
+  - **Three things are ours and say so**: hover-intent delay (no citation exists anywhere — ~120ms in,
+    ~240ms out, and hover is an *enhancement* over a button that works on click), column grouping (APG's
+    examples are single-column and silent on it — a heading plus a plain `<ul>`, and **no** invented
+    `role="group"`/`aria-labelledby` attributed to APG, and **no** announced item counts), and the
+    small-viewport collapse (no upstream at all — it becomes the mobile drawer's nested disclosure list,
+    reusing that contract rather than inventing a second mobile nav).
+
+- **File upload/Dropzone and Copy to clipboard are documented** (#95). `coverage.md` **7 → 5**. Batched
+  on one mechanism and it held: both are a **native control plus an enhancement**, and in both the
+  enhancement's result is invisible without a `role="status"` announcement. **Neither has an APG
+  pattern** — the index lists 30 and contains no file upload, drag-and-drop or clipboard entry — so both
+  are compositions, and the doctrine says so rather than citing.
+  - **`accept` is a hint, not validation**, quoted from MDN: *"It is still possible (in most cases) for
+    users to toggle an option in the file chooser… and then choose incorrect file types"*, and therefore
+    *"you should make sure that the `accept` attribute is backed up by appropriate server-side
+    validation."* **Server-side validation is mandatory**, not good practice.
+  - **A script cannot set a file input's value**, which has a design consequence rather than just being
+    a security note: a dropzone cannot fill the native input, so the two are **parallel paths to one
+    submission**, not a wrapper.
+  - **`preventDefault()` on `dragover` or the drop never fires** — the most-missed detail in the API.
+    Expressed as Stimulus's `drop->dropzone#drop:prevent` so it cannot be forgotten in the controller.
+  - **The WCAG 2.5.7 trap, which is the opposite of the obvious assumption.** Dragging Movements (AA)
+    is satisfied by the visible file button — but *"achieving keyboard equivalence for a dragging
+    operation does not automatically meet this success criterion, unless that equivalent keyboard
+    operation also provides controls that can be clicked or tapped with a pointer."* **So a
+    `sr-only`-hidden input behind a dropzone is a 2.5.7 failure even though it is keyboard-operable.**
+    That is why the native input stays visible.
+  - **Clipboard: the announcement IS the feature.** `navigator.clipboard.writeText` is Baseline **widely
+    available since March 2020** and **secure-context only**, rejecting with `NotAllowedError` — so
+    failure is a real branch, met first on plain-HTTP staging. Three rules in order of how often they
+    are missed: announce it (**WCAG 4.1.3 Status Messages**, AA — a success message that never receives
+    focus); **clear the region so a repeat re-announces**, because setting identical text is not a DOM
+    change and the second copy would be silent; and handle the failure visibly by selecting the text.
+  - **`document.execCommand('copy')` is not the fallback** — it is deprecated, and a deprecated API as a
+    safety net is a second thing to maintain that will itself be removed. Selecting the text is the
+    honest fallback.
+
+- **Phase B's last two patterns are written — full-text search and bulk transfers** (#98), which
+  completes EPIC #96: A, C, D and E were already closed, and these were the only items left in B.
+  Placed in their existing homes rather than a new file — search in `advanced-active-record.md` beside
+  the other PostgreSQL power features, transfers in `jobs-and-realtime.md` beside the continuations they
+  depend on.
+  - **The trigger you should no longer write.** PostgreSQL's own docs retired it: *"The method described
+    in this section has been obsoleted by the use of stored generated columns."* So maintain `tsvector`
+    with a **stored generated column** — PG **12+**, and `t.virtual … stored: true` is Rails **7.0+**.
+  - **Rails ships the schema layer and no query builder** for full text; querying is a raw fragment.
+    That makes `pg_search` an ergonomics choice rather than a requirement, which is worth stating
+    plainly. Its status recorded accurately: last tagged release **2.3.7 (Aug 2024)**, `activerecord >=
+    6.1` with no upper bound, repo active — compatible by that floor, not by a Rails 8 certification.
+  - **A name collision that could mislead a reader**: there is also a *PostgreSQL extension* called
+    `pg_search` (ParadeDB/Neon) implementing BM25 via tantivy. Not the Ruby gem our doctrine means.
+  - **Do NOT copy fizzy's 16-way CRC32 search sharding onto Postgres.** It is a **MySQL-forced**
+    workaround — MySQL documents that partitioned tables do not support `FULLTEXT`. PostgreSQL has
+    supported **indexes on partitioned tables since 11**, where a GIN index on the parent propagates to
+    every partition, so declarative partitioning needs no app-level shard router. Inheriting that scheme
+    would be importing a workaround for a limitation we do not have.
+  - **When the database stops being enough, with the documented and the consensus halves separated.**
+    Quotable from PostgreSQL: GIN *"insert or update one heap row can cause many inserts into the
+    index"*, and the hard ceilings (`tsvector` < 1 MB, lexeme < 2 KB, `tsquery` < 32,768 nodes).
+    Labelled as practitioner consensus, because no PostgreSQL document says it: no BM25/IDF ranking, no
+    native typo tolerance (that is `pg_trgm`), no native faceting.
+  - **`rubyzip` is not a streaming writer, and "stream a ZIP with rubyzip" would have been wrong.** It
+    rewinds and finalises, so it wants a **seekable** destination; **`zip_kit`** exists for the
+    non-seekable case and is written by a rubyzip contributor. Pick by destination: tempfile →
+    `rubyzip`, straight to a client or S3 → `zip_kit`. Ruby's stdlib has no ZIP writer at all.
+    `send_stream` is Rails **7.0**.
+  - **Two Active Storage ceilings, not one** — conflating them is how a 500 GB export gets designed
+    against the wrong limit. Server-side `create_and_upload!` switches to **multipart above 100 MB**
+    (Rails 6.1+) and is bounded by S3's real limits (**48.8 TiB**, 10,000 parts); **browser direct
+    upload is a single presigned PUT capped at 5 GB**, which Rails' tracker records as expected
+    behaviour rather than a bug. A large transfer must use the server-side path.
+  - **Resumable-transfer safety is entirely application-level**, and doctrine says so rather than
+    implying framework support: continuations checkpoint *the cursor*, not the half-written archive or
+    the half-completed upload. Cursor column, manifest of completed chunks, per-part checksums, explicit
+    status enum.
+  - **fizzy's 500+GB is their production scale, not a Rails or Active Storage limit** — not cited as a
+    boundary.
 
 ### 1.23.0 — 2026-07-31
 
@@ -2184,6 +2416,75 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### 1.13.0 — 2026-07-31
+
+- **Emulated media conditions are tested, and most of what they find is advisory on purpose**
+  (#116). Doctrine required motion to be gated on `prefers-reduced-motion` and required meaning
+  never to rest on colour alone; nothing verified either, though Playwright emulates reduced
+  motion, forced colors and print offline and for free. The new `emulation` evidence profile does,
+  one row per route × mode — but the shape of it comes from a verification that **contradicted the
+  issue on its central point**, so the change is mostly about what must *not* gate.
+  - **`prefers-reduced-motion` is a Level AAA concern, so it is advisory.** [SC 2.3.3 Animation
+    from Interactions](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html)
+    is **AAA**, and `prefers-reduced-motion` (techniques C39/SCR40) is literally its sufficient
+    technique — there is no A or AA criterion the media query satisfies. `a11y-auditor` audits to
+    AA, so "this animation ignores the preference" is counted in `Motion Not Suppressed` and left
+    `Severity none`, exactly as SC 2.4.13 Focus Appearance is handled in the keyboard pass. What
+    *does* gate is the narrow subset [SC 2.2.2 Pause, Stop,
+    Hide](https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide.html) (**Level A**) actually
+    covers: autostarting motion running **over five seconds** in parallel with other content and
+    offering no way to stop it. #116 specified no severity at all, which would have defaulted this
+    pass into the same gating tier as axe — wrong for nearly everything it flags.
+  - **So the recompute gained the direction the other profiles leave open.** Keyboard (#114) and
+    forms (#115) stop a row grading a real defect *down*; here a row may not grade an advisory
+    *up*. An audit whose findings are mostly unactionable gets switched off — the same failure the
+    #106 over-correction would have caused — so the AAA and no-upstream boundaries are arithmetic,
+    not prose. Print gates **nothing** and the checker enforces that.
+  - **A forced-colors run on WebKit is `Blocked`, never a result.** Playwright will make the media
+    query report `active` in all three engines, but WebKit implements none of the *forcing* — its
+    own media-query commit records that Cocoa has no concept of forced colors, and
+    `forced-color-adjust` is unimplemented in Safari — so it strips no shadow and forces no system
+    colour, and the pass reports **clean on an app that breaks for a real Windows high-contrast
+    user**. Note the direction: #114's WebKit caveat manufactures false *defects*, this one
+    manufactures false *confidence*, so it is a hard rejection rather than a `Notes` requirement.
+  - **The highest-value finding is a focus ring that only the forced-colors pass can see.** Per
+    [CSS Color Adjustment Level 1](https://www.w3.org/TR/css-color-adjust-1/), forced colors mode
+    computes `box-shadow` and `text-shadow` to **`none`**. The keyboard pass reads indicators from
+    `outline-width`/`outline-style`/`box-shadow`, so a ring built from box-shadow with no outline
+    passes there and genuinely vanishes here.
+  - **The reduced-motion check reads `document.getAnimations()`, not computed style.** #116
+    proposed asserting a trivial `animation-duration`/`transition-duration`; that instrument is
+    wrong twice over — its initial value is `0s` and it exists whether or not `animation-name` is
+    set, and it is entirely blind to the **Web Animations API**, so `element.animate()` and every
+    library built on it go unseen. Recorded with its residual blind spot: `getAnimations()` reports
+    only what is running at the instant it is called.
+  - **`emulateMedia()` merges, so `emulateMedia({})` resets nothing.** Verified against the
+    shipped implementation and its own test rather than the docs, whose usage example shows the
+    opposite; state lives on the Page and survives navigation, so a missed reset leaks `reduce`
+    into every later pass. Doctrine requires nulling every dimension explicitly, and says plainly
+    that no column detects a leak.
+  - **Print records print-stylesheet sanity and does not claim to find clipped content.**
+    `emulateMedia({ media: 'print' })` is a real media-type switch, but a screenshot is one
+    viewport-shaped render with no pagination; page-boundary clipping exists only in paginated
+    output and `page.pdf()` is Headless-Chromium-only. #116 conflated the two; the counters are
+    named for what they measure.
+  - **No WCAG criterion covers forced-colors support or print output** — searched for and not
+    found, so both are recorded as **maintainer decisions** on #116 rather than dressed in a
+    citation. `Colour Only` is the exception and keeps a real one: [SC 1.4.1 Use of
+    Color](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html), **Level A**, the same
+    criterion the forms pass already cites.
+- **`qa-reporter`'s list of finding sources no longer contradicts the checker that enforces it**
+  (found while working #116). The agent's prose named nine sources while `FINDING_SOURCES`
+  accepted eleven: `keyboard` and `forms` shipped in v1.12.0 as sources the checker allowed and
+  the doctrine denied, so an agent reading only the prose would never roll their findings up.
+  Fixed, and the selftest now holds the two in step — a `claims-vs-enforcement` defect in the
+  direction that silently drops data.
+- **The shared severity recompute no longer explains one profile's defects in another's words.**
+  `_check_severity` hardcoded the keyboard rationale, so a *forms* colour-only finding told the
+  reader about "an element a keyboard user cannot reach". The rationale is now a required argument
+  rather than a default, because a default is how the next profile inherits the wrong sentence
+  silently.
 
 ### 1.12.0 — 2026-07-31
 
@@ -3287,6 +3588,72 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-31 (release v1.43.0)
+
+> ### EPIC #96 completes, and the release note's best material is what the gate refused
+>
+> **Phase B's last two patterns** (full-text search, bulk transfers) close the 37signals doctrine
+> review — five phases, all shipped. Plus **`/rails-flow:explain`**, the **emulated-media QA pass**,
+> **file upload + clipboard**, and **Mega menu as a disclosure**. `coverage.md` **7 → 4**.
+>
+> `rails-8` and `fidara-design` skills changed; `hotwire` and `code-review` are byte-identical.
+
+- **EPIC #96 is complete** — canonical-Rails doctrine from campfire, writebook and fizzy, in five
+  phases: style conventions, architecture, Hotwire under load, agent-instruction conventions, and the
+  two deliberate divergences. Phase B's final patterns land here: **PostgreSQL full-text search** (the
+  generated `tsvector` column, which PostgreSQL's own docs say *obsoletes* the trigger approach) and
+  **bulk transfers**.
+- **Mega menu is a disclosure, not a menu** (#90) — and APG says so in a callout on its **own** Menubar
+  example: *"A pattern more suited for typical site navigation with expandable groups of links is the
+  Disclosure Pattern… few sites need the additional keyboard functionality required to support the ARIA
+  `menubar` and `menu` roles."* So it shares **no ARIA** with our Dropdown row, and that row gains a
+  **scoping note** — `role="menu"` is right for an action menu and wrong for a nav bar. The two look
+  alike and are structurally opposite.
+  - A nav item that must navigate **and** expand is **two elements** — a link plus an adjacent
+    disclosure button. Arrow keys are explicitly *"(Optional)"*; `Esc` is required, and APG ties it to
+    **WCAG 1.4.13** rather than to taste. Hover triggers 1.4.13 in full, and *hoverable* is the one that
+    fails in practice: **no gap between trigger and panel**.
+- **File upload and clipboard** (#95). `accept` is a **hint, not validation** — *"you should make sure
+  that the `accept` attribute is backed up by appropriate server-side validation"* — and a script
+  **cannot** set a file input's value, so a dropzone is a *parallel path*, not a wrapper.
+  - **The WCAG 2.5.7 trap**, which is the opposite of the obvious assumption: *"achieving keyboard
+    equivalence for a dragging operation does not automatically meet this success criterion, unless that
+    equivalent keyboard operation also provides controls that can be clicked or tapped with a pointer."*
+    **So a `sr-only`-hidden file input behind a dropzone FAILS 2.5.7 even though it is keyboard-operable.**
+  - Clipboard: the announcement **is** the feature (WCAG 4.1.3), and a repeat needs the live region
+    cleared or **the second copy is silent** — identical text is not a DOM change.
+- **`/rails-flow:explain`** (#126) — a plain-language `docs/GUIDE.md` with GitHub-rendered diagrams,
+  section-scoped so a re-run never rewrites your prose, and runnable on a *plan* so a wrong premise
+  costs a paragraph instead of a build cycle. Its mermaid output is **enforced** by a checker with 47
+  selftest checks, half of them in the silence direction.
+  - Three refutations kept it honest: **`graph` is not deprecated** in favour of `flowchart`; **GitHub
+    does not publish its bundled mermaid version**, so the diagram rule is an allowlist rather than a
+    version check; and **GitHub documents no node cap**, so our 60-node limit is **ours** and says so.
+- **The emulated-media QA pass** (#116), whose guarantee runs **opposite** to its siblings: the keyboard
+  and forms passes stop a row grading a real defect *down*; this one stops a row grading an advisory
+  *up*. Reduced motion is **SC 2.3.3, Level AAA**, and `prefers-reduced-motion` is its *sufficient
+  technique* — so implemented as the issue asked it would have filed S1s for 300 ms transitions. What
+  gates is the narrow **2.2.2 (Level A)** subset.
+  - **`emulateMedia()` merges** — `emulateMedia({})` resets nothing, contrary to Playwright's own docs
+    example; the source at v1.62.1 settles it. A forced-colors row on **WebKit is `Blocked`, never a
+    result**, because WebKit answers the media query while implementing none of the forcing — false
+    *confidence*, which is worse than false defects. And **print cannot detect clipped content** at all,
+    so that acceptance criterion is recorded as refuted rather than quietly dropped.
+- **FIX — a stalled interpreter was reported as a syntax error.** `subprocess.TimeoutExpired` is a
+  **subclass** of `SubprocessError`, so one `except` swallowed a stall into the missing-interpreter path
+  and it emerged as *"did not parse in any documented context"* — an environment stall presented as a
+  **code defect**, non-deterministically and only under load. Found because a parallel session reported
+  an unreproducible `30 passed, 1 failed` and **said plainly it had truncated the output and could not
+  name the gate** rather than papering over it. A stall now reports **skip**.
+- **FIX — the call-site rule flagged a CORRECT call site.** `ButtonComponent.new(…, data: {…})` is legal
+  because that initializer ends in `**attrs`, which is how ViewComponent forwards HTML attributes — so
+  the rule was primed to fire on most correct call sites. The carve-out keys on the **splat**, not on
+  weakening the check, because the `ModalComponent` flag that preceded it was right.
+- **Two umbrellas were closed while still carrying undocumented rows** (#91, and #95 earlier today).
+  Both reopened, with the remaining rows enumerated. The rule added this cycle — *an issue with unticked
+  increments gets `Refs`, never `Closes`* — was itself violated twice before it existed, which is why it
+  now exists.
 
 ### 2026-07-31 (release v1.42.0)
 

@@ -151,6 +151,12 @@ GUARDS: tuple[Guard, ...] = (
                 "plugin points at a reference file it does not ship",
             ),
             Mutation(
+                "the **attrs carve-out is removed, so correct call sites are flagged (#95)",
+                '                if not _KW_SPLAT.search(match.group(1)):',
+                '                if True:',
+                "a **attrs initializer accepts arbitrary keywords",
+            ),
+            Mutation(
                 "the pointer rule goes back to an extension allowlist (#272)",
                 'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\\.[A-Za-z0-9]+)")',
                 'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]+\\.(?:md|py|sh|json))")',
@@ -229,6 +235,12 @@ GUARDS: tuple[Guard, ...] = (
                 r'FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")\b[^\n]*\n(.*?)^[ \t]*```",',
                 r'FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")[^\n]*\n(.*?)^[ \t]*```",',
                 "```json is NOT javascript",
+            ),
+            Mutation(
+                "a stalled interpreter is reported as a syntax error again",
+                '        raise InterpreterStalled(f"{cmd[0]} did not answer within 30s") from exc',
+                '        return 127, "", f"could not run {cmd[0]}: {exc}"',
+                "a stalled interpreter did not raise",
             ),
             Mutation(
                 "the ERB block-tag normalisation is removed (20 false positives return)",
@@ -330,6 +342,45 @@ GUARDS: tuple[Guard, ...] = (
                 "    elif required == S1:",
                 "    elif False:",
                 "unreachable elements downgraded to S2",
+            ),
+            # #116 -- this profile's distinctive guarantee runs the OPPOSITE way to keyboard's and
+            # forms': it stops a row grading an advisory UP into a defect. Both halves of that
+            # boundary get a mutation, because each alone leaves the other criterion unguarded.
+            Mutation(
+                "motion ignoring the preference becomes gating (SC 2.3.3 is Level AAA) (#116)",
+                '        gating=(("Autoplay No Control", S1), ("End State Committed", S1)),',
+                '        gating=(("Autoplay No Control", S1), ("End State Committed", S1),'
+                ' ("Motion Not Suppressed", S1)),',
+                "recorded as advisory",
+            ),
+            Mutation(
+                "a print nit becomes a release-blocking defect, with no WCAG upstream (#116)",
+                "        gating=(),",
+                '        gating=(("Ink Burning", S1),),',
+                "print nit inflated",
+            ),
+            # The mode contract. Without it a row carries counts from a condition it never
+            # emulated, which is the forms Submit Mode hole in a new dimension.
+            Mutation(
+                "an emulation row may carry counts from a mode it never emulated (#116)",
+                "        if column in spec.numeric:\n            continue\n        if row[column]:",
+                "        if column in spec.numeric:\n            continue\n        if False:",
+                "carrying a forced-colors count",
+            ),
+            # The WebKit ceiling. Removing it lets a forced-colors run on an engine that applies
+            # no forcing report CLEAN -- false confidence, not false defects.
+            Mutation(
+                "a forced-colors result on webkit stops being a platform ceiling (#116)",
+                '    if mode == "forced-colors" and engine == "webkit":',
+                "    if False:",
+                "platform ceiling",
+            ),
+            Mutation(
+                "an emulation count may exceed the inventory it was drawn from (#116)",
+                "        if {column, denominator} <= counts.keys() and counts[column] > "
+                "counts[denominator]:",
+                "        if False:",
+                "more unsuppressed animations",
             ),
         ),
     ),
@@ -575,6 +626,53 @@ GUARDS: tuple[Guard, ...] = (
                 'if not missing:\n            self.add(PASS, "design corpora present"',
                 'if True:\n            self.add(PASS, "design corpora present"',
                 "corpora",
+            ),
+        ),
+    ),
+    # rails-flow #126. Two of these break a POSITIVE rule; two break a fixture whose job is to
+    # stay SILENT, which is the direction that decides whether a mermaid linter survives contact
+    # with real diagrams. Both directions are declared on purpose: a guard proven only to fire is
+    # half-proven, and the half nobody checks is the half that gets the tool switched off.
+    Guard(
+        name="check_guide",
+        subject="plugins/rails-flow/scripts/check_guide.py",
+        selftest="plugins/rails-flow/scripts/check_guide_selftest.py",
+        mutations=(
+            Mutation(
+                "subgraph depth stops deciding whether a bare `end` is legal",
+                "            if depth == 0:",
+                "            if False:",
+                "a bare lowercase `end` closing no subgraph",
+            ),
+            Mutation(
+                "a correctly quoted label is read as unquoted (the false-positive direction)",
+                "            if text.startswith('\"') and text.endswith('\"') and len(text) >= 2:",
+                "            if False:",
+                "a quoted label containing parentheses",
+            ),
+            Mutation(
+                "an unclosed managed section stops being unusable",
+                "    if open_section is not None:\n        raise Unusable(",
+                "    if False:\n        raise Unusable(",
+                "an unclosed section would swallow everything after it",
+            ),
+            Mutation(
+                "the ASCII-art rule loses its arrow carve-out and eats directory trees",
+                "                if len(drawn) >= 3 and any(ARROW_RE.search(b) for b in diagram.body):",
+                "                if len(drawn) >= 3:",
+                "a directory tree is box-drawing WITHOUT arrows and must pass",
+            ),
+            Mutation(
+                "the diagram-type allowlist stops rejecting unverified types",
+                "                if declared not in KNOWN_DIAGRAM_TYPES:",
+                "                if False:",
+                "a diagram type with no evidence GitHub renders it",
+            ),
+            Mutation(
+                "the image rule widens from diagrams to every picture, eating screenshots",
+                "                if any(w in haystack for w in DIAGRAM_WORDS):",
+                "                if True:",
+                "a screenshot is legitimate",
             ),
         ),
     ),

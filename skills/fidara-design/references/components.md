@@ -130,11 +130,60 @@ DEFAULTS = { variant: :primary, size: :md }
   alt text so it names the picture rather than repeating "Image viewer".
 
 ## Dropdown / Menu
+> **Scope: an application/action menu, NOT site navigation.** `role="menu"` is correct here — a "…"
+> button opening Edit / Duplicate / Delete is exactly what the role is for. It is **wrong for a nav
+> bar**, and APG says so in a callout on its own Menubar example: *"A pattern more suited for typical
+> site navigation with expandable groups of links is the Disclosure Pattern… few sites need the
+> additional keyboard functionality required to support the ARIA `menubar` and `menu` roles."* For
+> navigation, use [Mega menu / Flyout](#mega-menu--flyout) below, which is a **disclosure** and shares
+> none of this row's ARIA. The two look similar and are structurally opposite; that is why this note
+> exists.
+
 - `Ui::Dropdown` (trigger slot + items). `role="menu"`/`menuitem`; trigger `aria-haspopup="menu" aria-expanded
   aria-controls`. Panel `bg-popover text-popover-foreground rounded-md border border-border shadow-md
   divide-y divide-border`. Item types: link, button, checkbox, radio, header, divider.
 - **Behavior:** `dropdown` controller built on the **list-navigation** + **dismissable-layer** + **anchored-position**
   mixins (roving tabindex, Esc/outside-click, placement). Style open state via `data-[state=open]`.
+
+## Mega menu / Flyout
+- **No APG pattern, and the governing material tells you NOT to reuse Dropdown.** The index lists 30
+  patterns and none is a mega menu. What governs is the **Disclosure** pattern — specifically its
+  *Disclosure Navigation Menu* and *Disclosure Navigation Menu with Top-Level Links* examples.
+- **It is a disclosure, not a menu. No `role="menu"`, no `menuitem`, no `aria-haspopup`.** APG's own
+  words: *"it does not use the WAI-ARIA `menu` role… Typical site navigation does not need all the
+  keyboard interactions specified by the menu and menubar pattern."* Plain `<ul>`/`<li>`/`<a>` inside a
+  panel a button expands. (APG also carries a *Navigation Menubar* example, and there is an open
+  upstream proposal to **delete** it for this reason — do not take it as the endorsed route.)
+- **A top-level item that must both navigate and expand is TWO elements, not one.** APG's hybrid
+  example: *"each item contains a top-level link and an associated disclosure button."* The link
+  navigates; the adjacent button carries `aria-expanded` + `aria-controls`. Do not make one element
+  both — a link with `aria-expanded` is neither thing properly.
+- **Keyboard: `Tab` and `Esc` are required; arrow keys are explicitly optional.** The example's own
+  table marks arrows, `Home` and `End` **"(Optional)"** — Tab through the links is sufficient. `Esc`
+  closes and **returns focus to the button**, and APG ties that to a WCAG obligation rather than taste:
+  *"Implementing this Esc behavior is necessary to meet the WCAG 2.1 1.4.13: Content on Hover or Focus
+  criterion."*
+- **If it opens on hover, WCAG 1.4.13 Content on Hover or Focus (AA) applies in full** — all three:
+  **dismissible** without moving pointer or focus, **hoverable** (the pointer can travel into the panel
+  without it vanishing — so no gap between trigger and panel), and **persistent** until dismissed or no
+  longer valid. A hover menu that closes when the pointer crosses a 4px gap fails *hoverable*, and it
+  is the most common way this is got wrong.
+- Panel `bg-popover text-popover-foreground rounded-md border border-border shadow-md`, laid out with
+  `grid-auto`; columns are a `<ul>` each with a heading. Behavior: the **disclosure** mixin
+  (`aria-expanded` + dismissable-layer), **not** the `dropdown` controller.
+
+**Three things here are ours, and are labelled as ours rather than cited:**
+
+- **Hover-intent delay.** Neither APG nor WCAG mentions one. Open on hover after ~120ms of intent and
+  close after ~240ms, so a pointer crossing the nav does not flash every panel — a convention, not a
+  requirement. Hover is an *enhancement*: the button must work on click and on `Enter`/`Space` first.
+- **Column grouping.** APG's examples are single-column and say nothing about columns, `role="group"`,
+  or headings. A heading element per column followed by a plain `<ul>` is enough; do not invent
+  `aria-labelledby` group semantics and attribute them to APG. And **do not announce column or item
+  counts** — no guidance exists for it, and it is noise.
+- **What it becomes on a small viewport.** No upstream at all. Ours: the mega menu collapses into the
+  mobile drawer's nested disclosure list — the same `aria-expanded` button per section, stacked, with no
+  hover path. That reuses the drawer contract rather than inventing a second mobile nav.
 
 ## Combobox / Autocomplete
 - **Reach for it only for one of APG's two scenarios**, not by option count: the value must come from

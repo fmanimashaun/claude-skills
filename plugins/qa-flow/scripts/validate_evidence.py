@@ -325,11 +325,26 @@ def _read_counters(
 def _check_severity(
     row: dict[str, str], where: str, counts: dict[str, int],
     gating: tuple[tuple[str, str], ...], every: tuple[str, ...],
+    *, s1_because: str, inflated_because: str,
 ) -> list[str]:
     """Compare the stated Severity against the one the counters force.
 
-    `every` is the profile's full counter list: an unexplained severity is only reported when
-    every counter parsed, or a single missing counter would be reported twice over.
+    `every` is the counter list this call grades against: an unexplained severity is only
+    reported when all of them parsed, or a single missing counter would be reported twice over.
+    The invariant is that `counts` and `every` describe the SAME set of columns -- callers may
+    include their denominators (keyboard) or exclude them (forms), but not disagree, because the
+    all-parsed test is a length comparison between the two.
+
+    The two rationale strings are required rather than defaulted because this helper serves
+    profiles whose defects have nothing to do with each other. It used to hardcode the keyboard
+    reason, so a FORMS colour-only finding explained itself as "an element a keyboard user cannot
+    reach" -- a caller's finding described in another caller's vocabulary. A default would let the
+    next profile inherit the same wrong sentence silently.
+
+    `inflated_because` covers the opposite direction from `s1_because`, and it is the one an
+    AA-targeted audit needs: a row may not grade a finding ABOVE what its counters force. That is
+    what keeps a Level AAA criterion (or a check with no upstream at all) advisory in fact rather
+    than only in prose.
     """
     findings: list[str] = []
     severity = row["Severity"].lower()
@@ -354,12 +369,12 @@ def _check_severity(
         if len(counts) == len(every):
             findings.append(
                 f"{where}: Severity {row['Severity']} on a row whose gating counters are all "
-                "0 -- either a counter is wrong or this row is clean (Severity none)"
+                f"0 -- {inflated_because}"
             )
     elif required == S1:
         findings.append(
-            f"{where}: {', '.join(drivers)} is S1 but Severity says {row['Severity']} -- an "
-            "element a keyboard user cannot reach or see focus on is not a lesser defect"
+            f"{where}: {', '.join(drivers)} is S1 but Severity says {row['Severity']} -- "
+            f"{s1_because}"
         )
     elif severity == NO_SEVERITY:
         findings.append(
@@ -593,7 +608,13 @@ def _keyboard_extra(row: dict[str, str], where: str, status: str) -> list[str]:
             f"{'/'.join(sorted(SKIP_LINK_STATES))}"
         )
 
-    findings.extend(_check_severity(row, where, counts, KEYBOARD_GATING, KEYBOARD_COUNTERS))
+    findings.extend(_check_severity(
+        row, where, counts, KEYBOARD_GATING, KEYBOARD_COUNTERS,
+        s1_because=(
+            "an element a keyboard user cannot reach or see focus on is not a lesser defect"
+        ),
+        inflated_because="either a counter is wrong or this row is clean (Severity none)",
+    ))
 
     # The verified WebKit caveat, applied where it does damage: as an app defect.
     if engine == "webkit" and counts.get("Unreachable", 0) > 0:
@@ -772,7 +793,14 @@ def _forms_extra(row: dict[str, str], where: str, status: str) -> list[str]:
 
     graded = {column: value for column, value in counts.items() if column != "Controls"}
     graded.update(verdicts)
-    findings.extend(_check_severity(row, where, graded, FORMS_GATING, FORMS_GRADED))
+    findings.extend(_check_severity(
+        row, where, graded, FORMS_GATING, FORMS_GRADED,
+        s1_because=(
+            "an unnamed control, or an error state conveyed by colour alone, fails a Level A "
+            "criterion -- it is not a lesser defect"
+        ),
+        inflated_because="either a counter is wrong or this form is clean (Severity none)",
+    ))
 
     severity = row["Severity"].lower()
     if severity == S1 and not row["Evidence"]:
@@ -819,6 +847,314 @@ FORMS = Profile(
 
 
 # ---------------------------------------------------------------------------------------
+# Profile: emulated media conditions -- reduced motion, forced colors, print (#116)
+#
+# Doctrine requires motion to be gated on `prefers-reduced-motion` and requires meaning never to
+# rest on colour alone. Playwright can emulate all three conditions offline and for free, so this
+# was unverified doctrine with a trivial verification path. What the path is NOT is a fourth
+# copy of the axe/keyboard severity model, and the reason is the whole shape of this profile.
+#
+# THE HOLE THIS CLOSES IS THE OPPOSITE OF THE OTHER PROFILES'. Keyboard (#114) and forms (#115)
+# stop a row from grading a real defect DOWN. Here the risk runs the other way: the reduced-motion
+# and print checks have little or no WCAG force behind them, so a row that grades them S1 inflates
+# an advisory nit into a release-blocking defect, and an audit whose findings are mostly
+# unactionable gets switched off -- the same way the #106 over-correction would have been. So
+# `_check_severity` is called with an explicit `inflated_because`, and the AAA / no-upstream
+# boundary is arithmetic rather than prose.
+#
+# WHAT GATES, AND ON WHOSE AUTHORITY. Verified against the specifications, not the issue body:
+#
+#   SC 2.3.3 Animation from Interactions   Level AAA  -> ADVISORY. This is the criterion whose
+#       sufficient techniques (C39, SCR40) literally ARE `prefers-reduced-motion`. So "this
+#       animation ignores the preference" is a Level AAA finding, and `a11y-auditor` targets AA.
+#       Identical treatment to SC 2.4.13 Focus Appearance in the keyboard profile above.
+#   SC 2.2.2 Pause, Stop, Hide             Level A    -> GATES, but only for the narrow subset it
+#       actually covers: motion that starts automatically, runs MORE THAN FIVE SECONDS, and is
+#       presented in parallel with other content, with no mechanism to pause/stop/hide it. That
+#       is `Autoplay No Control` -- deliberately not named after the media query, because the
+#       failure is the missing control, not the missing `@media` block.
+#   SC 1.4.1 Use of Color                  Level A    -> GATES. `Colour Only`, the same criterion
+#       and the same citation the forms profile already uses for its own colour-only column.
+#   forced-colors support                  NO SC      -> our decision, recorded as one.
+#   print output                           NO SC      -> our decision, and it gates NOTHING.
+#
+# There is no WCAG success criterion requiring forced-colors / Windows High Contrast support at
+# all, and none covering print output. Both were searched for and not found rather than assumed
+# absent. `Text Invisible` and `Focus Indicator Lost` therefore gate on a MAINTAINER DECISION
+# (recorded on #116): content that cannot be read, and a focus ring that vanishes, are the same
+# defects the keyboard profile already rates S1, so a user agent revealing them does not make
+# them lesser. Print gates nothing, because its own technique cannot support a gate (below).
+#
+# WHY `Focus Indicator Lost` IS A REAL CLASS AND NOT A THEORY. In forced colors mode `box-shadow`
+# and `text-shadow` COMPUTE TO `none` (W3C CSS Color Adjustment Module Level 1, "Properties
+# Affected by Forced Colors Mode"). The keyboard pass reads focus indicators from
+# `outline-width`/`outline-style`/`box-shadow`, so a ring implemented with box-shadow and no
+# outline genuinely disappears for a forced-colors user while passing the keyboard pass. That is
+# the highest-value finding here and it is why the two profiles are worth having separately.
+#
+# WHY THE ENGINE IS PART OF THE CONTRACT -- AND WHY IT FAILS OPEN THE OTHER WAY THAN #114'S.
+# Playwright can make the `forced-colors` media query report `active` in all three engines (its
+# own conformance test carries no per-engine skip). WebKit, however, never implements the forcing
+# itself: its media-query commit says outright that there is no concept of forced colors in
+# Cocoa, and `forced-color-adjust` is unimplemented in Safari to this day. So WebKit strips no
+# box-shadow and forces no system colour, and a forced-colors run there reports CLEAN on an app
+# that breaks for real Windows high-contrast users. #114's WebKit caveat manufactures false
+# defects; this one manufactures false confidence, which is worse, so it is not a Notes
+# requirement -- a forced-colors row on webkit cannot be a result row at all.
+#
+# WHAT IS DELIBERATELY NOT CLAIMED. `emulateMedia({ media: 'print' })` switches the CSS media type
+# for real -- computed styles and screenshots follow it -- but a screenshot is one viewport-shaped
+# render with NO PAGINATION. Page-boundary clipping exists only in genuinely paginated output, and
+# `page.pdf()` is Headless-Chromium-only (the server throws "PDF generation is only supported for
+# Headless Chromium" elsewhere). So this profile records print-stylesheet sanity -- ink-burning
+# backgrounds, content overflowing the print width -- and must not be read as proving nothing is
+# clipped at a page break. #116 conflated the two; the counters are named for what they measure.
+# ---------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class EmulationMode:
+    """One emulated media condition: what its row must record, and what may gate."""
+
+    numeric: tuple[str, ...]          # counters this mode must record, denominator first
+    verdicts: tuple[str, ...]         # Pass/Fail/Not run columns this mode must carry
+    gating: tuple[tuple[str, str], ...]      # (column, forced severity floor)
+    bounds: tuple[tuple[str, str], ...]      # (counter, the denominator bounding it)
+    advisory: tuple[str, ...]         # counted, reported, and NEVER a severity
+    require_nonzero: tuple[str, ...]  # denominators for which 0 means "nothing was inspected"
+    blind: str                        # completes "...indistinguishable from one where {blind}"
+    s1_because: str
+    inflated_because: str
+
+
+EMULATION_BY_MODE: dict[str, EmulationMode] = {
+    "reduced-motion": EmulationMode(
+        numeric=("Animations", "Motion Not Suppressed", "Autoplay No Control"),
+        verdicts=("End State Committed",),
+        # SC 2.2.2 is Level A; the committed-end-state invariant is ours (motion.md: "the trip is
+        # skipped, the information still arrives") and a broken one means content never arrives.
+        gating=(("Autoplay No Control", S1), ("End State Committed", S1)),
+        bounds=(("Motion Not Suppressed", "Animations"),
+                ("Autoplay No Control", "Animations")),
+        advisory=("Motion Not Suppressed",),
+        # 0 animations is a legitimate, checkable result: a route may simply not animate.
+        require_nonzero=(),
+        blind="document.getAnimations() was never called and nothing was ever sampled",
+        s1_because=(
+            "an animation that autostarts, runs over five seconds alongside other content and "
+            "offers no way to stop it fails SC 2.2.2 at Level A, and a state change that never "
+            "commits means the information never arrives at all"
+        ),
+        inflated_because=(
+            "motion that merely ignores prefers-reduced-motion is SC 2.3.3 at Level AAA, so it "
+            "belongs in the advisory list under an AA-targeted audit -- record the count and "
+            "grade the row none"
+        ),
+    ),
+    "forced-colors": EmulationMode(
+        numeric=("Elements Checked", "Text Invisible", "Focus Indicator Lost", "Colour Only"),
+        verdicts=(),
+        gating=(("Text Invisible", S1), ("Focus Indicator Lost", S1), ("Colour Only", S1)),
+        bounds=(("Text Invisible", "Elements Checked"),
+                ("Focus Indicator Lost", "Elements Checked"),
+                ("Colour Only", "Elements Checked")),
+        advisory=(),
+        require_nonzero=("Elements Checked",),
+        blind="forced colors was never applied and no element was ever inspected",
+        s1_because=(
+            "text that cannot be read and a focus ring that vanishes are the same defects the "
+            "keyboard profile rates S1; colour-only meaning fails SC 1.4.1 at Level A"
+        ),
+        inflated_because="either a counter is wrong or this route is clean (Severity none)",
+    ),
+    "print": EmulationMode(
+        numeric=("Elements Checked", "Ink Burning", "Print Overflow"),
+        verdicts=(),
+        # Nothing gates. No WCAG criterion covers print output, and the technique cannot prove
+        # page-boundary clipping, so a gate here would rest on neither a citation nor a
+        # measurement. An empty tuple makes that boundary enforced in both directions.
+        gating=(),
+        bounds=(("Ink Burning", "Elements Checked"),
+                ("Print Overflow", "Elements Checked")),
+        advisory=("Ink Burning", "Print Overflow"),
+        require_nonzero=("Elements Checked",),
+        blind="the print stylesheet never resolved and no element was ever inspected",
+        s1_because="",  # unreachable: nothing in this mode can force a severity
+        inflated_because=(
+            "no WCAG success criterion covers print output, and emulateMedia cannot prove "
+            "page-boundary clipping, so a print row is advisory -- record the counts and grade "
+            "it none"
+        ),
+    ),
+}
+
+# Every counter and verdict column any mode uses. A column outside the row's own mode must be
+# BLANK: that is this profile's version of the forms Submit Mode rule, and the same failure it
+# prevents -- a number in `Colour Only` on a `print` row is a verdict on a media condition the
+# row never emulated, and it reads exactly like a real result.
+EMULATION_NUMERIC: tuple[str, ...] = tuple(
+    dict.fromkeys(column for spec in EMULATION_BY_MODE.values() for column in spec.numeric)
+)
+EMULATION_VERDICT_COLUMNS: tuple[str, ...] = tuple(
+    dict.fromkeys(column for spec in EMULATION_BY_MODE.values() for column in spec.verdicts)
+)
+
+
+def _emulation_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    """An emulated-media row may only carry counts for the condition it actually emulated."""
+    mode = row["Mode"].lower()
+    if not mode:
+        return [
+            f"{where}: no Mode ({'/'.join(sorted(EMULATION_BY_MODE))}) -- which condition was "
+            "emulated is what decides which columns may carry a number at all"
+        ]
+    spec = EMULATION_BY_MODE.get(mode)
+    if spec is None:
+        return [
+            f"{where}: Mode {row['Mode']!r} is not one of "
+            f"{'/'.join(sorted(EMULATION_BY_MODE))}"
+        ]
+
+    findings: list[str] = []
+    engine = row["Engine"].lower()
+    if not engine:
+        findings.append(
+            f"{where}: no Engine ({'/'.join(sorted(ENGINES))}) -- forced-colors behaviour is not "
+            "the same in every engine, so a result that does not say where it ran cannot be read"
+        )
+    elif engine not in ENGINES:
+        findings.append(
+            f"{where}: Engine {row['Engine']!r} is not one of {'/'.join(sorted(ENGINES))}"
+        )
+
+    # THE WEBKIT CEILING. WebKit answers the media query but implements none of the forcing, so a
+    # result row here is a statement about WebKit, not about the app -- and its most likely value
+    # is a clean one, which is why this is a hard finding rather than a Notes requirement.
+    if mode == "forced-colors" and engine == "webkit":
+        findings.append(
+            f"{where}: forced-colors result on webkit -- WebKit matches the media query but "
+            "never applies forced colors (no forced-color-adjust support), so it strips no "
+            "box-shadow and forces no system colour. A clean row here is a platform ceiling, "
+            "not evidence about the app: record it Blocked and run this mode on chromium or "
+            "firefox"
+        )
+
+    # ---- the mode contract: this mode's columns are required, every other one must be blank ---
+    for column in EMULATION_NUMERIC:
+        if column in spec.numeric:
+            continue
+        if row[column]:
+            findings.append(
+                f"{where}: {column} records {row[column]!r} but Mode {row['Mode']} never "
+                f"emulated the condition {column} measures -- that is a count from a media "
+                "condition this row did not apply, and it reads exactly like a real result"
+            )
+    for column in EMULATION_VERDICT_COLUMNS:
+        if column in spec.verdicts:
+            continue
+        if row[column]:
+            findings.append(
+                f"{where}: {column} claims {row[column]!r} but Mode {row['Mode']} never "
+                f"emulated the condition {column} is a verdict on -- leave it blank"
+            )
+
+    counts, count_findings = _read_counters(row, where, spec.numeric, spec.blind)
+    findings.extend(count_findings)
+
+    for column in spec.require_nonzero:
+        if counts.get(column) == 0:
+            findings.append(
+                f"{where}: 0 {column} -- a pass that inspected nothing is not a result; if there "
+                "was nothing to examine on this route, the row is Out of Scope"
+            )
+
+    # Every defect counter is bounded by the inventory it was drawn from. This is the rule that
+    # makes sampling impossible to hide, exactly as in the keyboard profile: you cannot find more
+    # unsuppressed animations than animations that were running.
+    for column, denominator in spec.bounds:
+        if {column, denominator} <= counts.keys() and counts[column] > counts[denominator]:
+            findings.append(
+                f"{where}: {counts[column]} in {column} but only {counts[denominator]} "
+                f"{denominator} -- a count cannot exceed the inventory it was drawn from"
+            )
+
+    verdicts: dict[str, int] = {}
+    for column in spec.verdicts:
+        raw = row[column].lower()
+        if not raw:
+            findings.append(f"{where}: no {column} verdict (Pass / Fail / Not run)")
+            continue
+        if raw not in VERDICTS:
+            findings.append(
+                f"{where}: {column} {row[column]!r} is not one of Pass / Fail / Not run"
+            )
+            continue
+        verdicts[column] = 1 if raw == "fail" else 0
+
+    # Grade against this mode's gating columns only, and pass `counts`/`every` over the same set
+    # so the all-parsed test compares like with like.
+    graded_names = tuple(column for column, _ in spec.gating)
+    graded = {name: value for name, value in {**counts, **verdicts}.items()
+              if name in graded_names}
+    findings.extend(_check_severity(
+        row, where, graded, spec.gating, graded_names,
+        s1_because=spec.s1_because, inflated_because=spec.inflated_because,
+    ))
+
+    severity = row["Severity"].lower()
+    if severity == S1 and not row["Evidence"]:
+        findings.append(
+            f"{where}: S1 without an Evidence path -- the capture taken under the emulated "
+            "condition that lets a human re-check it"
+        )
+    if severity in {S1, S2} and not row["Notes"]:
+        findings.append(
+            f"{where}: {row['Severity']} without Notes naming the element(s) -- a defect nobody "
+            "can locate is not actionable"
+        )
+    # An advisory count is the whole output of the AAA / no-upstream modes, so it carries the same
+    # burden a graded finding does. A bare number nobody can act on is how an advisory list
+    # becomes noise and then gets ignored.
+    advisory_hits = [c for c in spec.advisory if counts.get(c, 0) > 0]
+    if advisory_hits and not row["Notes"]:
+        findings.append(
+            f"{where}: {', '.join(advisory_hits)} above 0 without Notes naming the element(s) -- "
+            "an advisory finding is still a finding, and this row is its only record"
+        )
+    return findings
+
+
+EMULATION = Profile(
+    name="emulation",
+    written_by="a11y-auditor (emulated media conditions pass)",
+    columns=(
+        "Route",
+        "Mode",
+        "Status",
+        "HTTP",
+        "Requested URL",
+        "Final URL",
+        "Assertion",
+        "Engine",
+        "Animations",
+        "Motion Not Suppressed",
+        "Autoplay No Control",
+        "End State Committed",
+        "Elements Checked",
+        "Text Invisible",
+        "Focus Indicator Lost",
+        "Colour Only",
+        "Ink Burning",
+        "Print Overflow",
+        "Severity",
+        "Evidence",
+        "Notes",
+    ),
+    result_statuses=frozenset({"emulated"}),
+    ident_columns=("Route", "Mode"),
+    extra=_emulation_extra,
+)
+
+
+# ---------------------------------------------------------------------------------------
 # Profile: qa-reporter's deduplicated findings rollup (#118)
 #
 # Repeated shared UI inflates raw counts enormously. Measured on a real crawl: **773**
@@ -840,7 +1176,7 @@ FINDING_SEVERITIES = {"s1", "s2", "s3"}
 # Every finding source must be able to land here -- #118 is explicit that dedupe applies to
 # all of them, not just the a11y pass where the 773 was found.
 FINDING_SOURCES = {"a11y", "links", "runtime", "visual", "interaction", "functional", "api",
-                   "perf", "security", "keyboard", "forms"}
+                   "perf", "security", "keyboard", "forms", "emulation"}
 _SEVERITY_RANK = {"s1": 0, "s2": 1, "s3": 2}
 
 
@@ -983,7 +1319,7 @@ FINDINGS = Profile(
 )
 
 
-PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, FINDINGS)
+PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, EMULATION, FINDINGS)
 
 # Kept as a module-level alias: the functional contract is the one mirrored in
 # functional-tester.md, and external callers/selftests refer to it by this name.

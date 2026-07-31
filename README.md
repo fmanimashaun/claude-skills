@@ -15,7 +15,7 @@ knowledge → build → test → ship → design.
 | Plugin | Role | Key commands |
 |--------|------|--------------|
 | **rails-stack** | The knowledge — Rails 8 + Hotwire + design-system skills that auto-load when relevant | *(skills, no commands)* |
-| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/issues` `/curate` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
+| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/pr-comments` `/issues` `/curate` `/explain` `/graph` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:smoke` `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
 | **design-flow** | UI/design — applies the Fidara design system for consistent, modern, responsive UI | `/design-flow:setup` `/design-flow:component` `/design-flow:audit` |
@@ -175,7 +175,13 @@ PR auto-closing its issue · `/rails-flow:pr-comments` sweeps a PR's review feed
 every actionable comment is fixed on-branch or folded into a tracked issue, and **no
 next task starts until the current PR closes clean** · `/rails-flow:curate` distills
 `docs/` (PRDs, branding, architecture) into project-local skills and keeps them
-synced as documentation evolves — the project's agents get smarter as its docs grow.
+synced as documentation evolves — the project's agents get smarter as its docs grow ·
+`/rails-flow:explain` runs that loop **backwards**, the only command here aimed at the human
+owner rather than an agent: a plain-language `docs/GUIDE.md` with GitHub-rendered mermaid
+diagrams and a *"check it yourself"* section per area, section-scoped so a re-run never
+rewrites your own prose — it links to the generated architecture graph and `DECISIONS.md`
+instead of restating them, so the part that can go stale stays small. Also runs on a *plan*
+(`explain plan`), where rejecting a wrong premise costs a paragraph instead of a build cycle.
 
 **Agents** (8): rails-developer, migration-writer, code-reviewer, test-runner,
 security-auditor, design-auditor, doc-updater, pr-reviewer — each context-isolated, tool-
