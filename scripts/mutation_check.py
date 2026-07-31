@@ -235,6 +235,14 @@ GUARDS: tuple[Guard, ...] = (
                 "set()\n",
                 "a documented row carrying its fallback inline rather than in BUILD",
             ),
+            # The Needs-doctrine section reached ZERO rows (#95/#91), so the empty branch is now
+            # the live one -- a regression to the always-table form would read as normal output.
+            Mutation(
+                "the empty Needs-doctrine section prints guidance for rows that do not exist",
+                "    if needs:\n",
+                "    if True:\n",
+                "yet the Tracked table header was still emitted",
+            ),
         ),
     ),
     Guard(
