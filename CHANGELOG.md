@@ -1697,6 +1697,55 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Inline link is documented, and `coverage.md` reaches ZERO `needs doctrine` rows** (#95). **1 → 0.**
+  Every row in the matrix is now `documented` or `derivable`; no component in either corpus requires an
+  agent to invent an a11y contract. This row had a **real APG pattern** — rare in this file — and two
+  findings that came from measuring rather than reading.
+  - **The 3:1 link figure is a *technique*, not the criterion.** SC 1.4.1 Use of Color (**A**) says only
+    *"Color is not used as the only visual means of conveying information…"* — **no ratio, no mention of
+    links.** The 3:1 lives in **G183, a Sufficient Technique**. Doctrine says "G183 recommends", never
+    "WCAG requires 3:1". And **G183's own test names hover only** (*"Check that hovering over the link
+    causes a visual enhancement"*) — focus is the separate obligation 2.4.7, which G183 cites only by
+    analogy.
+  - **APG's Link pattern says less than it is usually quoted for.** Its keyboard table is exactly two
+    rows — *"Enter: Executes the link…"* and *"Shift + F10 (Optional)"*. It says **nothing about `Space`
+    and nothing about an `<a>` without `href`.* The familiar "Enter activates, Space does not" is real
+    browser behaviour but is **not in the pattern**, so the entry does not cite APG for it. It does carry
+    APG's actual instruction: *"Authors are strongly encouraged to use a native host language link
+    element, such as an HTML `<A>` element with an `href` attribute."*
+  - **Measured against our own tokens, and the numbers decided the rule** (CLAUDE.md: *measure anything
+    measurable*). Light `--primary` `#0077CC` is **3.93:1** against body text — clears G183. Dark
+    `--primary` `#00A3FF` is **2.59:1** — **under 3:1, so in dark mode colour cannot be the
+    distinguisher at all.** An underline at rest is therefore **mandatory, not stylistic**, and since it
+    is required in dark it is used in both: one link recipe, not two. The calculator was validated
+    against the standard controls (`#767676`/`#FFFFFF` = 4.54:1, `#000000`/`#FFFFFF` = 21:1) before any
+    figure was trusted.
+  - **This retires the row's own previous guidance.** It said to use the Button `link` variant's classes
+    — but that variant is `text-primary underline-offset-4 hover:underline`, **no underline at rest**,
+    i.e. precisely the colour-only-plus-hover shape that dark mode's 2.59:1 cannot support. The Button
+    entry gains a one-line scope note pointing at the new one; the variant is still right for a *button*
+    that looks like a link.
+  - **2.5.8 Target Size (Minimum) (AA) does NOT apply to a link in a sentence** — its **Inline**
+    exception, with the Understanding doc's worked example being this exact case: *"Links within
+    paragraphs of text do not need to meet the 24 by 24 CSS pixels requirements."* Worth stating, because
+    padding an inline link to 24 px wrecks the line rhythm to satisfy a criterion that exempts it.
+  - **Three level corrections carried into the entry**: 2.4.4 is **A** and 2.4.9 is **AAA** (the *"click
+    here"* failure **F84** is filed under the AAA one, so it is wrong to say it "fails AA"); **2.4.13
+    Focus Appearance is AAA**, not AA, so its 2 px/3:1 rule is a target and not an obligation; 2.4.11
+    Focus Not Obscured (Minimum) is **AA** and new in 2.2.
+  - **Filed, not fixed: [#304](https://github.com/fmanimashaun/claude-skills/issues/304).** Light-mode
+    `--primary` on `--background` measures **4.42:1**, under 1.4.3's **4.5:1** for normal-size text (it
+    clears on `--card` at 4.66:1). That is a **brand-token** defect, not a component rule, so it is an
+    issue rather than a workaround written into this entry.
+
+- **The empty `Needs doctrine` section stopped printing guidance for rows that do not exist.** Hitting
+  zero left a table header, a column legend and *"Build them when a project needs them"* above **nothing
+  at all** — a dead declaration in the one section that exists to mark honest gaps. The renderer now
+  states the zero explicitly and keeps the section (the status still exists; the next unclassified
+  upstream component may land there). Both directions are fixtures — empty must not emit the table,
+  non-empty must not claim there are none — proven by mutating `if needs:` to `if True:`, which fails 3
+  of them. **37 → 39 checks**, and a fifth `build_coverage` mutation so the gate keeps proving it.
+
 - **Stepper / wizard is documented** (#95). `coverage.md` **2 → 1**. The gate came back **largely
   INCONCLUSIVE**, which is the correct answer for this row, not a failure — so most of the entry is a
   **maintainer decision recorded on

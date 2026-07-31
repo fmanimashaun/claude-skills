@@ -206,6 +206,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Tabs": "## Tabs",
     "Logo / Brand mark": "## Logo / Brand mark",
     "Divider": "## Divider\n",
+    "Inline link": "## Inline link\n",
     # primitives + compositions
     "List container (divide-y)": "divide-y divide-border",
     "Stat tile": "stat cards",
@@ -295,10 +296,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Prose / long-form type", PRIMITIVE, "documented", "—", [],
       ["Paragraphs", "Blockquote", "Lists", "Text"],
       "fluid --text-step-* scale + measure in foundations-tokens.md"),
-    E("Inline link", PRIMITIVE, "needs doctrine #95", "—", [], ["Links"],
-      "surfaced by this matrix: we ship a Button `link` VARIANT (components.md) and links inside "
-      "prose, but no standalone inline-link token — so an agent styling a body link has nothing to "
-      "cite. Small, and a real gap"),
+    E("Inline link", PRIMITIVE, "documented", "—", [], ["Links"],
+      "the Button `link` variant is NOT this — it has no underline at rest, and dark-mode "
+      "`--primary` is 2.59:1 against body text, under G183's 3:1, so colour cannot carry it. The "
+      "3:1 figure is technique G183, not SC 1.4.1 itself; 2.5.8 exempts links inside a sentence"),
     E("Frame (aspect-ratio media)", PRIMITIVE, "documented", "—", [], ["Images"]),
     E("Center / container", PRIMITIVE, "documented", "—", ["application-ui/layout/containers"], []),
 
@@ -638,7 +639,6 @@ BUILD: dict[str, str] = {
     "Category filters": "`<details>`/`<summary>` groups inside a `stack`, until #142 lands",
     "Store navigation": "the documented navbar / sidebar navigation",
     # needs doctrine — the nearest safe thing to do TODAY
-    "Inline link": "the Button `link` variant's classes on an `<a>`, until a token exists",
     # APG has no command-palette pattern (the Patterns index lists 30, none for it), so this is
     # a composition
     # of two documented parts rather than a gap. Keep aria-activedescendant: the input must
@@ -907,21 +907,34 @@ def render(tw_found: set[str], fb_found: set[str]) -> str:
         )
     add("")
 
+    # The empty case is rendered DIFFERENTLY, not as a table with no rows. Emitting the header
+    # plus "Build them when a project needs them" above zero rows tells the reader how to handle
+    # rows that do not exist -- a dead declaration, and the section that is supposed to be the
+    # file's one honest gap-marker becomes noise. Reaching zero is also the single most
+    # informative thing this file can say, so it says it.
     add("## Needs doctrine — buildable today, but you are carrying the risk")
     add("")
-    add("These need an a11y or interaction contract the docs do not yet state (a keyboard model, an")
-    add("ARIA pattern, a reduced-motion rule). **Build them when a project needs them** — the")
-    add("**Nearest guidance** column is the safest current approach — and expect the tracked issue to")
-    add("replace that approach with a proper entry.")
-    add("")
-    add("| Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |")
-    add("|---|---|---|---|---|---|---|")
-    for e in sorted(needs, key=lambda x: (x.kind, x.name)):
-        issue = e.status.replace("needs doctrine", "").strip() or "—"
-        add(
-            f"| {e.name} | {e.kind} | {_mark(bool(e.tw))} | {_mark(bool(e.fb))} | {issue} | "
-            f"{resolve_build(e)} | {resolve_use(e)} |"
-        )
+    if needs:
+        add("These need an a11y or interaction contract the docs do not yet state (a keyboard model, an")
+        add("ARIA pattern, a reduced-motion rule). **Build them when a project needs them** — the")
+        add("**Nearest guidance** column is the safest current approach — and expect the tracked issue to")
+        add("replace that approach with a proper entry.")
+        add("")
+        add("| Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |")
+        add("|---|---|---|---|---|---|---|")
+        for e in sorted(needs, key=lambda x: (x.kind, x.name)):
+            issue = e.status.replace("needs doctrine", "").strip() or "—"
+            add(
+                f"| {e.name} | {e.kind} | {_mark(bool(e.tw))} | {_mark(bool(e.fb))} | {issue} | "
+                f"{resolve_build(e)} | {resolve_use(e)} |"
+            )
+    else:
+        add("**None — every row above is `documented` or `derivable`.** No component in either corpus")
+        add("now requires an agent to invent an a11y or interaction contract.")
+        add("")
+        add("This section is not deleted, because the status still exists and the next unclassified")
+        add("upstream component may well land here. An empty table would have been worse than this")
+        add("sentence: it would print guidance for rows that are not there.")
     add("")
 
     add("## Interaction patterns")

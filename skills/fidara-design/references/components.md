@@ -34,6 +34,81 @@ DEFAULTS = { variant: :primary, size: :md }
   Lucide `loader-2` + keep label; set `aria-busy`). Icon: `left|right|only` (icon-only → `sr-only` label).
 - **a11y:** real `<button>`/`<a>`; `min-h-touch`; visible focus ring; `aria-busy` when loading.
 - **Responsive:** in toolbars/headers, full-width stacked on mobile → inline at `md`: `w-full md:w-auto`.
+- **The `link` variant is a BUTTON that looks like a link** — an action in a toolbar, not a link in a
+  sentence. For prose see [Inline link](#inline-link) below, which explains why its
+  `hover:underline` is the wrong contract inside running text.
+
+## Inline link
+- **This row has a real APG pattern** — unusually, for this file. Purpose: *"A link widget provides an
+  interactive reference to a resource. The target resource can be either external or local."* And it is
+  emphatic about the element: *"Authors are strongly encouraged to use a native host language link
+  element, such as an HTML `<A>` element with an `href` attribute … applying the `link` role to an
+  element will not cause browsers to enhance the element with standard link behaviors … providing these
+  features of the element is the author's responsibility."* **So: a real `<a href>`.** `role="link"` is
+  for when you genuinely cannot have one, and it hands you the entire job.
+- **Its keyboard table is two rows, and that is all of it**: *"Enter: Executes the link and moves focus
+  to the link target"* and *"Shift + F10 (Optional): Opens a context menu for the link."* **APG says
+  nothing about `Space`, and nothing about an `<a>` without `href`** — we looked. "Enter activates, Space
+  does not" is real browser behaviour but it is **not in this pattern**, so never cite APG for it.
+- **The 3:1 figure is a technique, not the criterion.** SC 1.4.1 Use of Color (**Level A**) reads only
+  *"Color is not used as the only visual means of conveying information…"* — **no ratio, and no mention
+  of links.** The 3:1 comes from **G183, a *Sufficient Technique***: *"a relative luminance (lightness)
+  difference of 3:1 or greater with the text around can be used"*, plus *"visual highlights when the user
+  hovers over each link."* Write "G183 recommends", **never** "WCAG requires 3:1" — a technique is one
+  way to pass, not the bar.
+  - **G183's own test names hover only** — *"Check that hovering over the link causes a visual
+    enhancement."* Focus is a **separate** obligation (2.4.7), referenced by G183 only as an analogy. And
+    G183 is explicit that the cue is not a substitute: *"Hover or focus style changes alone are not
+    sufficient to meet the criterion."*
+  - **A carve-out worth knowing and not using:** 1.4.1's Understanding says *"a hyperlink which has been
+    styled to appear no different than neighboring static text would not fail this success criterion, as
+    there would be no color differentiation."* An invisible link is outside 1.4.1 **entirely**. That is a
+    gap in the criterion, not a licence — it still leaves 2.4.4 in play and is plainly bad. Never offer it
+    as a defence.
+- **Underline is a convention upstream, and a requirement here.** G183 offers *"such as an underline, a
+  change in font style such as bold or italics, or an increase in font size"*, and G14/G182 are
+  underline-free sufficient alternatives. So **no upstream mandates underline** — but **we do, at rest, in
+  prose.** That is our decision, and the measurements below are why it is not merely taste.
+- **Measured against our own tokens** (re-derivable from `foundations-tokens.md`; ratios are WCAG relative
+  luminance):
+
+  | mode | link | vs body text | vs `--background` | vs `--card` |
+  |---|---|---|---|---|
+  | light | `--primary` `#0077CC` | **3.93:1** ✓ clears G183's 3:1 | **4.42:1** ✗ under 1.4.3's 4.5:1 | 4.66:1 ✓ |
+  | dark | `--primary` `#00A3FF` | **2.59:1** ✗ under G183's 3:1 | 6.30:1 ✓ | 5.21:1 ✓ |
+
+  Two consequences, and they are the practical content of this entry:
+  1. **In dark mode the colour route is unavailable.** 2.59:1 against body text is below G183's 3:1, so
+     colour cannot be the distinguisher and a **non-colour cue at rest is mandatory** — not stylistic.
+     Since the cue must be there in dark mode anyway, it is there in both; one link recipe, not two.
+  2. **In light mode an inline link on `--background` is 4.42:1 — below 1.4.3 Contrast (Minimum) (AA),
+     which wants 4.5:1 for normal-size text.** It clears on `--card` (4.66:1). Body copy is never *large
+     scale* (*"at least 18 point or 14 point bold"*, ≈24 px / ≈18.5 px at 1 pt = 1.333 px), so the 3:1
+     large-text allowance never applies to it. **This is a token defect, not a usage rule** — tracked
+     separately; do not work around it per-component.
+- **So: prose links get `underline underline-offset-4`, not the Button `link` variant.** That variant is
+  `text-primary underline-offset-4 hover:underline` — **no underline at rest**, i.e. exactly the
+  colour-only-plus-hover shape G183 permits *only* at 3:1 against surrounding text, which dark mode misses.
+  The variant stays right for a button styled as a link; it was never right inside a sentence, and this
+  row's previous guidance ("the Button `link` variant's classes on an `<a>`") was pointing at it.
+- **2.5.8 Target Size (Minimum) (AA) does NOT apply to a link in a sentence.** Its **Inline** exception:
+  *"The target is in a sentence or its size is otherwise constrained by the line-height of non-target
+  text"*, and the Understanding doc's worked example is literally this case — *"Links within paragraphs of
+  text do not need to meet the 24 by 24 CSS pixels requirements, so the success criterion passes."*
+  **Do not pad an inline link to 24 px**: it wrecks the line rhythm to satisfy a criterion that exempts it.
+- **Link text: 2.4.4 is A, 2.4.9 is AAA — do not swap them.** 2.4.4 Link Purpose (In Context) (**A**):
+  purpose determinable *"from the link text alone or from the link text together with its programmatically
+  determined link context."* 2.4.9 Link Purpose (Link Only) is **AAA**, and the well-known *"click here"*
+  failure (**F84**) is filed under **2.4.9**. So generic link text is a **named failure at AAA** and an
+  ambiguity risk at A — it is wrong to claim it "fails AA".
+- **Focus, at the right levels.** 2.4.7 Focus Visible **AA**. 2.4.11 Focus Not Obscured (Minimum) **AA**
+  (new in 2.2) — *"the component is not entirely hidden due to author-created content"*, which sticky
+  headers break. 1.4.11 **AA** carries the indicator's own contrast at 3:1: *"the visual focus indicator
+  for a component must have sufficient contrast against the adjacent background."* **2.4.13 Focus
+  Appearance is AAA**, not AA — its 2 px-perimeter / 3:1 rule is a target we aim at, never an obligation
+  we claim to enforce.
+- **a11y:** external links get a visible cue plus `sr-only` text, not `title`. Never `target="_blank"`
+  without saying so in the accessible name.
 
 ## Card
 - Slot layout, not a variant enum. `Ui::Card` slots: `media` (a `frame`), `header`, `body`, `footer/actions`.

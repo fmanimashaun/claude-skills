@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 68 |
+| — `documented` | 69 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 1 |
+| — `needs doctrine` (tracked writing gap) | 0 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -109,6 +109,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Center / container | primitive | ✓ | — | the outer wrapper of page content, capping it at the measure | — |
 | Divider | primitive | ✓ | ✓ | between unrelated blocks; inside a list use `divide-y` on the container instead | an <hr> is already role=separator; in lists the answer is divide-y on the container |
 | Frame (aspect-ratio media) | primitive | — | ✓ | every image or video, so layout never shifts on load | — |
+| Inline link | primitive | — | ✓ | body copy and prose; for actions use the Button `link` variant | the Button `link` variant is NOT this — it has no underline at rest, and dark-mode `--primary` is 2.59:1 against body text, under G183's 3:1, so colour cannot carry it. The 3:1 figure is technique G183, not SC 1.4.1 itself; 2.5.8 exempts links inside a sentence |
 | List container (divide-y) | primitive | ✓ | — | any stacked list of rows — the container owns the separators | — |
 | Prose / long-form type | primitive | — | ✓ | any body copy; the measure cap is what keeps it readable | fluid --text-step-* scale + measure in foundations-tokens.md |
 
@@ -167,14 +168,12 @@ screen consistent with everything already in the app.
 
 ## Needs doctrine — buildable today, but you are carrying the risk
 
-These need an a11y or interaction contract the docs do not yet state (a keyboard model, an
-ARIA pattern, a reduced-motion rule). **Build them when a project needs them** — the
-**Nearest guidance** column is the safest current approach — and expect the tracked issue to
-replace that approach with a proper entry.
+**None — every row above is `documented` or `derivable`.** No component in either corpus
+now requires an agent to invent an a11y or interaction contract.
 
-| Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |
-|---|---|---|---|---|---|---|
-| Inline link | primitive | — | ✓ | #95 | the Button `link` variant's classes on an `<a>`, until a token exists | body copy and prose; for actions use the Button `link` variant |
+This section is not deleted, because the status still exists and the next unclassified
+upstream component may well land here. An empty table would have been worse than this
+sentence: it would print guidance for rows that are not there.
 
 ## Interaction patterns
 
