@@ -45,9 +45,11 @@ decides whether you file **18 issues or 773**.
 - **Rank by severity, then reach.** A defect on every route outranks a single-page one of the
   same severity, and the report must be ordered that way — the highest-impact defect must not
   sit below a single-page cosmetic one.
-- **Apply this to every finding source** — a11y, links, runtime, visual, interaction,
-  functional, api, perf, security. It is not an a11y-only rule; that is only where it was
-  measured.
+- **Apply this to every finding source** — a11y, api, emulation, forms, functional, interaction,
+  keyboard, links, perf, runtime, security, visual. It is not an a11y-only rule; that is only
+  where it was measured. This list is the `Source` vocabulary the checker enforces, and its
+  selftest holds the two in step — when they drifted, `keyboard` and `forms` were accepted by the
+  checker while this sentence still denied they existed.
 - **Keep the full instance list** in a JSON artefact (`qa/reports/<date>-<slug>-findings.json`).
   The human-readable report shows distinct findings only. Collapsing 773 occurrences into one
   row must *summarise* the data, never destroy it.
