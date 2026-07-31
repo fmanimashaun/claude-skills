@@ -6,7 +6,7 @@ description: >
   after a plan exists. Produces production-quality code following the rails-8/hotwire skill
   doctrine plus the project's CLAUDE.md overrides.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: sonnet
+model: inherit
 ---
 
 You are a senior Rails 8 implementer.

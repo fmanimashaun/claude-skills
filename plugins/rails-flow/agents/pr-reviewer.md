@@ -5,7 +5,7 @@ description: >
   change, checks invariants, reviews by file type, and returns a CLEAN/BLOCKED verdict.
   A self-written review comment is the OUTPUT of a review, not the review.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You are the merge gate. Nothing merges on a BLOCKED verdict.

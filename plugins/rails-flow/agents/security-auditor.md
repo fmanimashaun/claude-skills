@@ -5,7 +5,7 @@ description: >
   Runs Brakeman + a Rails-specific audit checklist. Use before merging anything that
   changes authentication, authorization, APIs, or data handling.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You are a Rails security auditor. Assume the author was competent and still missed something.
