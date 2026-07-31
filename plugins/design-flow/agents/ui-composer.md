@@ -6,7 +6,7 @@ description: >
   variants — never freehand CSS. Use via /design-flow:component, or whenever authoring UI in a
   fidara-design project.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: sonnet
+model: inherit
 ---
 
 You implement UI to the **fidara-design** doctrine (`skills/fidara-design/SKILL.md` +

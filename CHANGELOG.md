@@ -1837,6 +1837,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Every plugin agent's model pin is now a decision with a named proof** (#299). #127 found that
+  rails-flow's agents pinned `sonnet`, which is a **cap**: frontmatter resolves above the session
+  model, so a user who deliberately started an Opus session got a Sonnet reviewer. That fix stopped
+  at one plugin. The same defect sat in **fifteen more agents** across qa-flow, design-flow and
+  pipeline — the `code-review` skill's own rule that a contradiction travels in groups.
+  - **19 `inherit`, 6 `haiku`, zero `sonnet`, zero expensive aliases** across all 25 plugin agents.
+  - **One checker, four tables.** `check_handoff.py`'s markers were hardcoded to `rails-flow:tiers:*`;
+    they now match `<!-- <plugin>:tiers:begin -->` for any plugin. The issue floated a per-plugin copy
+    instead — that would be four sources of truth for one contract, the second-source-of-truth failure
+    this module's own comments warn against. A **half-renamed** block (opens `qa-flow`, closes
+    `rails-flow`) is refused rather than reconciled against the wrong plugin's agents: that failure is
+    *created* by the parameterisation, so it gets its own fixture. Selftest 78 → **80**.
+  - **qa-flow legitimately keeps more cheap pins**, and this is the interesting decision rather than
+    an oversight. Its outputs are artefacts a script can **reject** — `validate_evidence.py` grades
+    a11y and performance rows, `evidence_manifest.py` grades the report — so the model cannot mark its
+    own homework. Each `haiku` row names that grader, and an empty proof cell is a hard error.
+  - **design-flow keeps none, despite owning three linters** — the distinction the whole table turns
+    on. Those scripts grade the **artefact**, not the agent: `rendered_conformance.py` judges a
+    rendered page against 11 rules and says nothing about whether `design-auditor` weighed a
+    deliberate deviation correctly. Noted there that rails-flow's table lists a *different, narrower*
+    agent of the same name as mechanical — same name, different contract.
+  - **pipeline keeps none**: it ships no deterministic scripts at all, and `kamal-configurator`
+    performs autonomous production deploys — the last agent that should be capped below the model a
+    user chose.
+  - **Four reconciliation gates added to `--gates`**, because a table nothing enforces is the exact
+    state #127 found. Both failure modes proven on purpose: an agent drifting off its row, and an
+    agent pinning `opus`. Each exits 1.
+
 - **FIX (P1) — the focus ring was invisible in forced-colors mode, in nine shipped recipes** (#305).
   **Change type: incorrect doctrine.** Verdict CONFIRMED against two upstreams, both quoted.
   - Every recipe read `focus-visible:outline-none focus-visible:ring-2 …`. Under **Tailwind v4**,

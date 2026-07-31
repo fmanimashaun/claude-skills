@@ -7,7 +7,7 @@ description: >
   deploy.yml — then deploys and self-verifies. Never prompts for values; never commits
   plaintext secrets. Use via /pipeline:deploy-cloud and /pipeline:setup-cloud.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: sonnet
+model: inherit
 ---
 
 You configure and run a full Kamal 2 deployment with zero human prompting for values.

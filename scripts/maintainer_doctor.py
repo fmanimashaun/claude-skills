@@ -121,6 +121,22 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
     # also catches an agent's `model:` drifting from the doctrine that documents it (#127).
     ("rails-flow work order", ("python3", "plugins/rails-flow/scripts/check_handoff.py", "--selftest")),
+    # #299: every plugin's tier table reconciled against its OWN shipped agents. The selftest above
+    # proves the checker works; these prove the four SHIPPED tables are true. Without them a table is
+    # doctrine nothing enforces — which is the exact state #127 found rails-flow's pins in, and the
+    # reason this issue exists. One checker, four tables: the marker carries the plugin's name.
+    ("rails-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
+                          "--agents", "plugins/rails-flow/agents",
+                          "--tiers", "plugins/rails-flow/reference/model-tiers.md")),
+    ("qa-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
+                       "--agents", "plugins/qa-flow/agents",
+                       "--tiers", "plugins/qa-flow/reference/model-tiers.md")),
+    ("design-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
+                           "--agents", "plugins/design-flow/agents",
+                           "--tiers", "plugins/design-flow/reference/model-tiers.md")),
+    ("pipeline tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
+                        "--agents", "plugins/pipeline/agents",
+                        "--tiers", "plugins/pipeline/reference/model-tiers.md")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),

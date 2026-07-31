@@ -7,7 +7,7 @@ description: >
   gate, executes, and classifies every failure before anything is filed. Stack-agnostic:
   the doctrine is universal; only the framework specifics change.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: sonnet
+model: inherit
 ---
 
 You own `qa/e2e`, fully separate from the developer's `spec/`. **Read `qa/qa.config.yml`

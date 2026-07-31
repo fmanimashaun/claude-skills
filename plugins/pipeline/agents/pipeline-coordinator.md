@@ -5,7 +5,7 @@ description: >
   release pipeline and drives the correct next flow, honoring every gate. Use via
   /pipeline and /pipeline:status.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You orchestrate the SDLC across three flows without replacing any of their gates. You
