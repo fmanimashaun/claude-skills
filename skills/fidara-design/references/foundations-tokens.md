@@ -18,8 +18,8 @@ Dark mode re-points the *roles* under `.dark`; component classes never change.
   /* dark surfaces */
   --color-fm-navy:     #0C1B33;  --color-fm-midnight: #152238;  --color-fm-ink: #1A2B45;
   /* accents (Prism facets / product modules) */
-  --color-fm-cerulean: #0077CC;  --color-fm-cerulean-foreground: #FFFFFF;
-  --color-fm-electric: #00A3FF;  --color-fm-electric-foreground: #FFFFFF;
+  --color-fm-cerulean: #0077CC;  --color-fm-cerulean-700: #0072C4;  --color-fm-cerulean-foreground: #FFFFFF;
+  --color-fm-electric: #00A3FF;  --color-fm-electric-foreground: var(--color-fm-navy);
   --color-fm-cyan:     #00D4FF;
   --color-fm-orange:   #FF6B35;  --color-fm-coral: #FF8C5A;   /* CTAs/accent — use sparingly */
   /* feedback */
@@ -48,14 +48,14 @@ surface role has a `-foreground` companion** — always write `bg-X text-X-foreg
   --background: var(--color-fm-slate-50);   --foreground: var(--color-fm-slate-900);
   --card: #FFFFFF;                           --card-foreground: var(--color-fm-slate-900);
   --popover: #FFFFFF;                        --popover-foreground: var(--color-fm-slate-900);
-  --primary: var(--color-fm-cerulean);       --primary-foreground: #FFFFFF;   /* hover: primary/90 */
+  --primary: var(--color-fm-cerulean-700);   --primary-foreground: #FFFFFF;   /* hover: primary/90 */
   --secondary: var(--color-fm-slate-100);    --secondary-foreground: var(--color-fm-slate-900);
   --muted: var(--color-fm-slate-100);        --muted-foreground: var(--color-fm-slate-500);
   --accent: var(--color-fm-slate-100);       --accent-foreground: var(--color-fm-slate-900); /* hover/active bg */
   --destructive: var(--color-fm-error);      --destructive-foreground: #FFFFFF;
   --success: var(--color-fm-success);        --warning: var(--color-fm-warning);  --info: var(--color-fm-info);
   --border: var(--color-fm-slate-200);       --input: var(--color-fm-slate-200);
-  --ring: var(--color-fm-cerulean);          /* focus ring, used at /30 opacity */
+  --ring: var(--color-fm-cerulean-700);      /* focus ring, used at /30 opacity */
 }
 .dark {
   --background: var(--color-fm-navy);        --foreground: var(--color-fm-slate-50);
@@ -66,6 +66,7 @@ surface role has a `-foreground` companion** — always write `bg-X text-X-foreg
   --accent: var(--color-fm-slate-800);       --accent-foreground: var(--color-fm-slate-50);
   --border: var(--color-fm-slate-800);       --input: var(--color-fm-slate-800);
   --primary: var(--color-fm-electric);       /* brand lifts to electric on dark */
+  --primary-foreground: var(--color-fm-navy);  /* NOT white: white on electric is 2.73:1 */
 }
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);

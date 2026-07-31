@@ -101,8 +101,13 @@ DEFAULTS = { variant: :primary, size: :md }
 
   | mode | link | vs body text | vs `--background` | vs `--card` |
   |---|---|---|---|---|
-  | light | `--primary` `#0077CC` | **3.93:1** ✓ clears G183's 3:1 | **4.42:1** ✗ under 1.4.3's 4.5:1 | 4.66:1 ✓ |
+  | light | `--primary` `#0072C4` | **3.66:1** ✓ clears G183's 3:1 | **4.74:1** ✓ clears 1.4.3 | 5.00:1 ✓ |
   | dark | `--primary` `#00A3FF` | **2.59:1** ✗ under G183's 3:1 | 6.30:1 ✓ | 5.21:1 ✓ |
+
+  Light `--primary` was `#0077CC` and measured **4.42:1** against `--background` — under 1.4.3 (#304).
+  It now points at `--color-fm-cerulean-700`, an accessible step; the brand mark keeps `#0077CC`,
+  because a logo is not text. Re-derive any figure here with
+  `python3 scripts/check_token_contrast.py`, which gates all ten role-token text pairs.
 
   Two consequences, and they are the practical content of this entry:
   1. **In dark mode the colour route is unavailable.** 2.59:1 against body text is below G183's 3:1, so

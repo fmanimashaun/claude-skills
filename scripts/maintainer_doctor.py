@@ -114,6 +114,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # claim about work nobody did — the coverage-gap class. It was registered TWICE for a while, which
     # inflates the sweep count; GATE names are asserted unique in the selftest now.
     ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
+    # #304: contrast is the most measurable claim in the design system and was asserted in prose.
+    ("token contrast", ("python3", "scripts/check_token_contrast.py")),
+    ("token contrast selftest", ("python3", "scripts/check_token_contrast.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
