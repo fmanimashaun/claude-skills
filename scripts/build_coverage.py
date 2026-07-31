@@ -173,6 +173,8 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
     "Progress bar": "## Progress bar\n",
+    "File upload / Dropzone": "## File upload / Dropzone (#95)\n",
+    "Copy to clipboard": "## Copy to clipboard (#95)\n",
     "Range input": "## Range input (#95)\n",
     "Calendar / Date picker / Time picker": "## Calendar / Date picker / Time picker (#95)\n",
     "Drawer / off-canvas": "## Drawer / off-canvas\n",
@@ -327,8 +329,8 @@ ENTRIES: tuple[Entry, ...] = (
     E("Combobox / Autocomplete", COMPONENT, "documented", "new controller (filter + list-navigation)",
       ["application-ui/forms/comboboxes"], []),
     E("Action panel", COMPONENT, "derivable", "—", ["application-ui/forms/action-panels"], []),
-    E("File upload / Dropzone", COMPONENT, "needs doctrine #95", "new controller (drag + drop)", [],
-      ["File Input"], "surfaced by the Flowbite audit: dashed drag-and-drop zone"),
+    E("File upload / Dropzone", COMPONENT, "documented", "new controller (drag + drop)", [],
+      ["File Input"], "the native input stays VISIBLE — hiding it behind the dropzone fails WCAG 2.5.7"),
     E("Search input", COMPONENT, "derivable", "—", [], ["Search Input"]),
     E("Number input", COMPONENT, "derivable", "—", [], ["Number Input"]),
     E("Range input", COMPONENT, "documented", "—", [], ["Range"],
@@ -340,7 +342,8 @@ ENTRIES: tuple[Entry, ...] = (
     E("Spinner / busy indicator", COMPONENT, "documented", "—", [], ["Spinner"]),
     E("Stepper / wizard", COMPONENT, "needs doctrine #95", "—", [], ["Stepper"],
       "also feeds #91's checkout flow"),
-    E("Copy to clipboard", COMPONENT, "needs doctrine #95", "new controller", [], ["Clipboard"]),
+    E("Copy to clipboard", COMPONENT, "documented", "new controller", [], ["Clipboard"],
+      "the announcement IS the feature; a repeat needs the region cleared or it stays silent"),
     E("Keyboard key (KBD)", PRIMITIVE, "derivable", "—", [], ["KBD"],
       "trivial, but the command palette needs it"),
     E("Accordion / Disclosure", COMPONENT, "documented", "disclosure (collapse + accordion)",
@@ -636,11 +639,7 @@ BUILD: dict[str, str] = {
     # hold focus for typing to filter, so moving DOM focus into the results breaks it.
     "Command palette": "the documented Modal containing the documented Combobox with a "
         "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
-    "File upload / Dropzone": "the documented file field; add drag-and-drop as an enhancement, "
-        "never as the only path",
     "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
-    "Copy to clipboard": "a Button plus a Toast confirmation; the clipboard call is a small "
-        "controller",
     "Mega menu / Flyout": "the documented Dropdown for now; hover-intent is what #90 must specify",
     "Reviews + Rating": "Media object rows; the rating needs an accessible name (\"4 out of 5\"), "
         "not stars alone",

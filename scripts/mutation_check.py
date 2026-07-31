@@ -151,6 +151,12 @@ GUARDS: tuple[Guard, ...] = (
                 "plugin points at a reference file it does not ship",
             ),
             Mutation(
+                "the **attrs carve-out is removed, so correct call sites are flagged (#95)",
+                '                if not _KW_SPLAT.search(match.group(1)):',
+                '                if True:',
+                "a **attrs initializer accepts arbitrary keywords",
+            ),
+            Mutation(
                 "the pointer rule goes back to an extension allowlist (#272)",
                 'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\\.[A-Za-z0-9]+)")',
                 'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]+\\.(?:md|py|sh|json))")',

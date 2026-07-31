@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 62 |
+| — `documented` | 64 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 7 |
+| — `needs doctrine` (tracked writing gap) | 5 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -55,10 +55,12 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Carousel / Slider | component | — | ✓ | prefer not to — if a client insists, a marketing surface only | content behind a timed or manual slide is content most users never see, and the pattern is a persistent a11y liability. This is a doctrine position, not a backlog item — if a client insists, build it in the app against the a11y contract rather than blessing it as a kit primitive |
 | Checkbox | component | ✓ | ✓ | independent booleans; multiples need a fieldset with a legend | — |
 | Combobox / Autocomplete | component | ✓ | — | an authenticated app screen, inside one of the three shells | — |
+| Copy to clipboard | component | — | ✓ | next to an API key, invite link or ID | the announcement IS the feature; a repeat needs the region cleared or it stays silent |
 | Description list | component | ✓ | — | read-only attribute/value pairs on a detail or settings screen | blank values render an em dash + sr-only 'not set', never an empty <dd> |
 | Drawer / off-canvas | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | ONE ROW, TWO CONTRACTS: the overlay drawer is a modal dialog and traps focus; the persistent push drawer is not a dialog and must not |
 | Dropdown / Menu | component | ✓ | ✓ | overflow actions and scope pickers; not for navigation between pages | — |
 | Empty state | component | ✓ | — | the zero-row branch of every index — required, not optional | — |
+| File upload / Dropzone | component | — | ✓ | an authenticated app screen, inside one of the three shells | the native input stays VISIBLE — hiding it behind the dropzone fails WCAG 2.5.7 |
 | Form layout | component | ✓ | — | every form — simple_form owns the field anatomy app-wide | simple_form owns every form; the wrapper anatomy is defined once in an initializer |
 | Heading blocks (page / section / card) | component | ✓ | ✓ | the top of every page, section and card — the scale prop picks the level, so never style a heading down | one anatomy; scale is the only axis, so a card heading can never be an h2 styled small |
 | Image gallery / Lightbox | component | — | ✓ | media-heavy surfaces: portfolio, product media, docs | focus trapping, keyboard paging and zoom are a large surface, and no current family has a media-heavy surface |
@@ -168,8 +170,6 @@ replace that approach with a proper entry.
 
 | Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |
 |---|---|---|---|---|---|---|
-| Copy to clipboard | component | — | ✓ | #95 | a Button plus a Toast confirmation; the clipboard call is a small controller | next to an API key, invite link or ID |
-| File upload / Dropzone | component | — | ✓ | #95 | the documented file field; add drag-and-drop as an enhancement, never as the only path | an authenticated app screen, inside one of the three shells |
 | Mega menu / Flyout | component | ✓ | ✓ | #90 | the documented Dropdown for now; hover-intent is what #90 must specify | a marketing surface (landing, pricing, about) — not app screens, which use the shell navigation |
 | Reviews + Rating | component | ✓ | ✓ | #91 | Media object rows; the rating needs an accessible name ("4 out of 5"), not stars alone | a commerce surface (catalog, product, cart, checkout) |
 | Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
