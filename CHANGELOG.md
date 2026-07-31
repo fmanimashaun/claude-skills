@@ -7,7 +7,72 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-07-31 — a stall is not a syntax error
+
+
+- **FIX — an interpreter stall was reported as a syntax error** in the markdown-code gate. This is the
+  unreproducible `30 passed, 1 failed` a parallel session saw and honestly flagged rather than papered
+  over, saying it had truncated the output and could not name the gate. **Not papering over it is why
+  it got found.**
+  - **The mechanism:** `subprocess.TimeoutExpired` is a **subclass** of `SubprocessError`, so the
+    single `except (OSError, subprocess.SubprocessError)` swallowed a stall into the same rc-127 path
+    as *"interpreter missing"*. From there it flowed through the context ladder and came out as
+    **"did not parse in any documented context"** — an environment stall presented as a **code
+    defect**, non-deterministically and only under load. A full sweep here takes ~110 s against a 30 s
+    per-block limit, close enough to fire occasionally. In someone's diff it would have read as a real
+    finding.
+  - A stall now raises `InterpreterStalled`, is reported as **skip** with the offending blocks named,
+    and makes the run **incomplete** (exit 3 → SKIP) — because the honest verdict is that the block was
+    never checked. Real findings still win the exit code, but the stall notice always prints, so it is
+    never silently absorbed.
+  - **Two of my own fixtures were wrong before this landed, both caught by mutation.** The first
+    stubbed `mc._run`, which **bypasses the very except-ordering under test** — so it passed with the
+    code broken. Patching `subprocess.run` one level lower fixed it. The second mutation reverted the
+    `raise` to `pass`, which produces an `UnboundLocalError` rather than the original defect, so it
+    tripped the fixture's catch-all branch instead of the intended one; it now reverts to the **actual
+    pre-fix behaviour**. A mutation that breaks the code differently from how it was broken proves less
+    than it appears to.
+
+- **TOOLING — the coverage matrix gets a filterable HTML rendering, generated from the source rather
+  than from its own output.** `scripts/build_coverage_artifact.py` renders the 113 fidara rows as one
+  filterable table (guidance × kind × corpus, plus search), because the question a maintainer actually
+  asks — *"what needs doctrine, of kind composition, that only Flowbite carries?"* — cuts across the
+  three tables `coverage.md` splits them into, and markdown cannot express a filter. Change type:
+  **maintainer tooling**, no skill doctrine touched and no external framework claim, so no
+  `doctrine-verifier` verdict applies; the licensing boundary is inherited from `build_coverage.py`
+  rather than re-earned (names, statuses and our own prose only — no corpus markup, so a published
+  page cannot leak licensed content).
+  - **It imports `build_coverage.ENTRIES`; it does not parse `coverage.md`.** The first draft parsed
+    the markdown and failed its own count assertion on the first run: the Totals label `documented`
+    also matches `— derivable from documented parts`, so 44 derivable rows were counted as
+    documented. `coverage.md` is *generated English*, and pattern-matching it re-derives — badly —
+    structure the generator already had (three tables whose column order differs, `✓`/`—` standing in
+    for booleans, a tracked issue buried inside a status string). `is_documented` / `is_derivable` /
+    `needs_doctrine` are predicates on a frozen dataclass, so there is no label left to mis-match.
+  - **That moves one bug class rather than removing it, and the new one is guarded.** The predicates
+    are `status.startswith(...)`, so a typo'd status (`"documentd"`) matches none of them and the row
+    would vanish from the page with no error — 112 rendered where 113 exist. `verify_partition`
+    asserts the buckets are total **and** disjoint; the disjoint half is unreachable via real status
+    strings, so a stub matching all three exercises it. A completeness matrix that silently drops a
+    row is worse than no matrix, because the missing row looks like a row that does not exist.
+  - **The count assertion is kept, but against data rather than against our own regex.**
+    `cross_check_committed` compares the counts to the Totals table in the *committed* `coverage.md`
+    — an independently generated artifact of the same source — and reports **three** states, where
+    `skip` (file absent or unparseable) is not a pass. A `fail` aborts the build instead of warning.
+    The one surviving label match is the ordering that caused the original bug, pinned by a fixture
+    whose four numbers are all distinct so a mis-mapping cannot pass by coincidence.
+  - **A shared page stamps what it was built from.** An HTML snapshot outlives its commit, and a
+    stale second source of truth that looks authoritative is the failure mode this repo keeps
+    writing down — so the page carries the commit, the branch, the rails-stack version, and whether
+    that commit is in a published release. An unreleased or dirty build says so on the page itself,
+    in amber. The HTML is deliberately **not committed**: it is a rendering, not a source, and a
+    committed copy would be a second thing to keep in sync — which is why there is no `--check` and
+    therefore no mutation (that requirement attaches to gates).
+  - **Corpora stay optional.** Only the two upstream enumeration totals need `design-corpora/`; the
+    113 rows are ours. Without the corpora the page omits those two numbers and says so, rather than
+    printing a zero that reads like a finding. 40 selftest checks, of which 8 are guards observed
+    firing — including `</script>` inside entry prose, which `json.dumps` does **not** neutralise,
+    and whose escape must stay value-preserving (the first attempt turned `<!--` into `<--`).
 
 - **FIX — a selftest existed that no gate ran.** `maintainer_doctor.py`'s own selftest flagged
   `build_coverage_artifact_selftest.py` as having no `GATES` entry — *"`--gates` would report a clean
@@ -868,7 +933,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.13.0 — 2026-07-31
 
 - **The flow can now explain a system back to the human who owns it** (#126). New
   `/rails-flow:explain` writes `docs/GUIDE.md`: plain-language sections, mermaid diagrams that
@@ -1479,7 +1544,39 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.24.0 — 2026-07-31
+
+- **Mega menu / Flyout is documented** (#90). `coverage.md` **5 → 4**. **No APG pattern** — the index
+  lists 30 and none is a mega menu — so it is governed by the **Disclosure** pattern's *Navigation Menu*
+  examples, and the verdict changed what the row could say.
+  - **APG recommends AGAINST `role="menu"` for site navigation**, in a callout on its own Menubar
+    example: *"A pattern more suited for typical site navigation with expandable groups of links is the
+    Disclosure Pattern… few sites need the additional keyboard functionality required to support the
+    ARIA `menubar` and `menu` roles."* And on the Disclosure example: *"it does not use the WAI-ARIA
+    `menu` role… Typical site navigation does not need all the keyboard interactions specified by the
+    menu and menubar pattern."* There is an open upstream proposal to **delete** the Menubar navigation
+    example for this reason, so it is not the endorsed route either.
+  - **Therefore the row shares NO ARIA with Dropdown**, and the shipped **Dropdown / Menu row gains a
+    scoping note**: `role="menu"` is right for an application/action menu and wrong for a nav bar. The
+    two look similar and are structurally opposite, which is exactly why a reader would otherwise reach
+    for the wrong one. Same citations; a note rather than a rewrite, because that row is not wrong — it
+    was unscoped.
+  - **A top-level item that must both navigate and expand is TWO elements.** APG's hybrid example:
+    *"each item contains a top-level link and an associated disclosure button."* The link navigates, the
+    adjacent button carries `aria-expanded`/`aria-controls`. One element doing both is neither properly.
+  - **`Tab` and `Esc` are required; arrow keys are explicitly "(Optional)"** in the example's own
+    keyboard table. And APG ties `Esc` to an obligation rather than taste: *"Implementing this Esc
+    behavior is necessary to meet the WCAG 2.1 1.4.13: Content on Hover or Focus criterion."*
+  - **Hover triggers WCAG 1.4.13 (AA) in full** — dismissible, **hoverable**, persistent. The pointer
+    must be able to travel into the panel without it vanishing, so **no gap between trigger and panel**;
+    a menu that closes across a 4px gap fails *hoverable*, and that is the most common way this is got
+    wrong.
+  - **Three things are ours and say so**: hover-intent delay (no citation exists anywhere — ~120ms in,
+    ~240ms out, and hover is an *enhancement* over a button that works on click), column grouping (APG's
+    examples are single-column and silent on it — a heading plus a plain `<ul>`, and **no** invented
+    `role="group"`/`aria-labelledby` attributed to APG, and **no** announced item counts), and the
+    small-viewport collapse (no upstream at all — it becomes the mobile drawer's nested disclosure list,
+    reusing that contract rather than inventing a second mobile nav).
 
 - **File upload/Dropzone and Copy to clipboard are documented** (#95). `coverage.md` **7 → 5**. Batched
   on one mechanism and it held: both are a **native control plus an enhancement**, and in both the
@@ -2401,7 +2498,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.13.0 — 2026-07-31
 
 - **Emulated media conditions are tested, and most of what they find is advisory on purpose**
   (#116). Doctrine required motion to be gated on `prefers-reduced-motion` and required meaning
@@ -3572,6 +3669,72 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-31 (release v1.43.0)
+
+> ### EPIC #96 completes, and the release note's best material is what the gate refused
+>
+> **Phase B's last two patterns** (full-text search, bulk transfers) close the 37signals doctrine
+> review — five phases, all shipped. Plus **`/rails-flow:explain`**, the **emulated-media QA pass**,
+> **file upload + clipboard**, and **Mega menu as a disclosure**. `coverage.md` **7 → 4**.
+>
+> `rails-8` and `fidara-design` skills changed; `hotwire` and `code-review` are byte-identical.
+
+- **EPIC #96 is complete** — canonical-Rails doctrine from campfire, writebook and fizzy, in five
+  phases: style conventions, architecture, Hotwire under load, agent-instruction conventions, and the
+  two deliberate divergences. Phase B's final patterns land here: **PostgreSQL full-text search** (the
+  generated `tsvector` column, which PostgreSQL's own docs say *obsoletes* the trigger approach) and
+  **bulk transfers**.
+- **Mega menu is a disclosure, not a menu** (#90) — and APG says so in a callout on its **own** Menubar
+  example: *"A pattern more suited for typical site navigation with expandable groups of links is the
+  Disclosure Pattern… few sites need the additional keyboard functionality required to support the ARIA
+  `menubar` and `menu` roles."* So it shares **no ARIA** with our Dropdown row, and that row gains a
+  **scoping note** — `role="menu"` is right for an action menu and wrong for a nav bar. The two look
+  alike and are structurally opposite.
+  - A nav item that must navigate **and** expand is **two elements** — a link plus an adjacent
+    disclosure button. Arrow keys are explicitly *"(Optional)"*; `Esc` is required, and APG ties it to
+    **WCAG 1.4.13** rather than to taste. Hover triggers 1.4.13 in full, and *hoverable* is the one that
+    fails in practice: **no gap between trigger and panel**.
+- **File upload and clipboard** (#95). `accept` is a **hint, not validation** — *"you should make sure
+  that the `accept` attribute is backed up by appropriate server-side validation"* — and a script
+  **cannot** set a file input's value, so a dropzone is a *parallel path*, not a wrapper.
+  - **The WCAG 2.5.7 trap**, which is the opposite of the obvious assumption: *"achieving keyboard
+    equivalence for a dragging operation does not automatically meet this success criterion, unless that
+    equivalent keyboard operation also provides controls that can be clicked or tapped with a pointer."*
+    **So a `sr-only`-hidden file input behind a dropzone FAILS 2.5.7 even though it is keyboard-operable.**
+  - Clipboard: the announcement **is** the feature (WCAG 4.1.3), and a repeat needs the live region
+    cleared or **the second copy is silent** — identical text is not a DOM change.
+- **`/rails-flow:explain`** (#126) — a plain-language `docs/GUIDE.md` with GitHub-rendered diagrams,
+  section-scoped so a re-run never rewrites your prose, and runnable on a *plan* so a wrong premise
+  costs a paragraph instead of a build cycle. Its mermaid output is **enforced** by a checker with 47
+  selftest checks, half of them in the silence direction.
+  - Three refutations kept it honest: **`graph` is not deprecated** in favour of `flowchart`; **GitHub
+    does not publish its bundled mermaid version**, so the diagram rule is an allowlist rather than a
+    version check; and **GitHub documents no node cap**, so our 60-node limit is **ours** and says so.
+- **The emulated-media QA pass** (#116), whose guarantee runs **opposite** to its siblings: the keyboard
+  and forms passes stop a row grading a real defect *down*; this one stops a row grading an advisory
+  *up*. Reduced motion is **SC 2.3.3, Level AAA**, and `prefers-reduced-motion` is its *sufficient
+  technique* — so implemented as the issue asked it would have filed S1s for 300 ms transitions. What
+  gates is the narrow **2.2.2 (Level A)** subset.
+  - **`emulateMedia()` merges** — `emulateMedia({})` resets nothing, contrary to Playwright's own docs
+    example; the source at v1.62.1 settles it. A forced-colors row on **WebKit is `Blocked`, never a
+    result**, because WebKit answers the media query while implementing none of the forcing — false
+    *confidence*, which is worse than false defects. And **print cannot detect clipped content** at all,
+    so that acceptance criterion is recorded as refuted rather than quietly dropped.
+- **FIX — a stalled interpreter was reported as a syntax error.** `subprocess.TimeoutExpired` is a
+  **subclass** of `SubprocessError`, so one `except` swallowed a stall into the missing-interpreter path
+  and it emerged as *"did not parse in any documented context"* — an environment stall presented as a
+  **code defect**, non-deterministically and only under load. Found because a parallel session reported
+  an unreproducible `30 passed, 1 failed` and **said plainly it had truncated the output and could not
+  name the gate** rather than papering over it. A stall now reports **skip**.
+- **FIX — the call-site rule flagged a CORRECT call site.** `ButtonComponent.new(…, data: {…})` is legal
+  because that initializer ends in `**attrs`, which is how ViewComponent forwards HTML attributes — so
+  the rule was primed to fire on most correct call sites. The carve-out keys on the **splat**, not on
+  weakening the check, because the `ModalComponent` flag that preceded it was right.
+- **Two umbrellas were closed while still carrying undocumented rows** (#91, and #95 earlier today).
+  Both reopened, with the remaining rows enumerated. The rule added this cycle — *an issue with unticked
+  increments gets `Refs`, never `Closes`* — was itself violated twice before it existed, which is why it
+  now exists.
 
 ### 2026-07-31 (release v1.42.0)
 

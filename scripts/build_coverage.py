@@ -173,6 +173,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
     "Progress bar": "## Progress bar\n",
+    "Mega menu / Flyout": "## Mega menu / Flyout\n",
     "File upload / Dropzone": "## File upload / Dropzone (#95)\n",
     "Copy to clipboard": "## Copy to clipboard (#95)\n",
     "Range input": "## Range input (#95)\n",
@@ -370,8 +371,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Footer", COMPOSITION, "derivable", "—", ["marketing/sections/footers"], ["Footer"]),
     E("Marketing header", COMPOSITION, "derivable", "disclosure",
       ["marketing/elements/headers", "marketing/sections/header"], []),
-    E("Mega menu / Flyout", COMPONENT, "needs doctrine #90", "disclosure + menu",
-      ["marketing/elements/flyout-menus"], ["Mega Menu"]),
+    E("Mega menu / Flyout", COMPONENT, "documented", "disclosure + dismissable",
+      ["marketing/elements/flyout-menus"], ["Mega Menu"],
+      "a DISCLOSURE, not a menu — APG advises against role=menu for site nav, so it shares no ARIA "
+      "with the Dropdown row"),
     E("Landing page archetype", ARCHETYPE, "documented", "—", ["marketing/page-examples/landing-pages"], []),
     E("Pricing page archetype", ARCHETYPE, "documented", "—", ["marketing/page-examples/pricing-pages"], []),
     E("About page archetype", ARCHETYPE, "documented", "—", ["marketing/page-examples/about-pages"], []),
@@ -640,7 +643,6 @@ BUILD: dict[str, str] = {
     "Command palette": "the documented Modal containing the documented Combobox with a "
         "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
     "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
-    "Mega menu / Flyout": "the documented Dropdown for now; hover-intent is what #90 must specify",
     "Reviews + Rating": "Media object rows; the rating needs an accessible name (\"4 out of 5\"), "
         "not stars alone",
     "Video player": "native `<video controls>` inside a `frame`",
