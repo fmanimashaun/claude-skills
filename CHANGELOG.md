@@ -3614,6 +3614,77 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+- **NEW — `/design-flow:audit` gains a browser mode: conformance measured on the RENDERED page,
+  not grepped from source (#107).** A source grep cannot see what the cascade resolves to — a
+  colour injected by a third-party partial, a role token that never resolved, a focus rule that no
+  longer matches the element it was written for. Two new files: `scripts/conformance_collector.js`
+  (runs in the page via Playwright, reusing qa-flow's `app:` launch config rather than inventing a
+  second boot path) and `scripts/rendered_conformance.py` (11 named rules plus two snapshot guards, over the resulting
+  snapshot JSON).
+
+  **The browser measures; Python judges.** Nothing in the collector decides anything, which is
+  what makes a browser-driven check testable offline: `--selftest` carries **86 assertions** and
+  `scripts/mutation_check.py` **55 declared mutations**, every one caught by the intended fixture. It
+  also disposes of the hardest correctness problem for free — the collector resolves each role
+  token through the same browser in the same run, so comparing a rendered colour to a token is set
+  membership, never colour-space arithmetic.
+
+  Rules: `literal-colour`, `numbered-step-binding`, `focus-ring-missing`, `tap-target-small`,
+  `icon-only-unnamed`, `aria-controls-no-expanded`, `horizontal-overflow`, `off-scale-type`,
+  `radius-off-scale` (zero-tolerance) plus `dark-variant-sprawl` and `breakpoint-driven-layout`
+  (count-based trends, thresholds tunable). Facts print even when clean — the `dark:` count, the
+  breakpoint count and the radius-language distribution are the trend #107 asks for.
+
+  **Three of #107's acceptance items are deliberately NOT implemented, because each would fire on
+  doctrine-conformant input** — and a conformance linter that cries wolf is switched off, after
+  which it catches nothing. px-space-off-the-fluid-scale contradicts our own *Control density*
+  table (`px-3 py-2` comes from Tailwind's numeric scale, not `--space-*`); chrome-vs-content type
+  step contradicts `component-implementations.md` in 6 places (filed as #306, with the
+  forced-colors focus-ring gap as #305); and alpha-modified
+  colours are unjudgeable without decomposing a `color-mix`, which the doctrine blesses anyway
+  (`primary/90`, `ring-ring/30`). All three are recorded in the module docstring with the
+  reasoning, not silently dropped.
+
+  Externally verified rather than assumed, each load-bearing for a rule or a carve-out: Tailwind v4
+  opacity modifiers compile to `color-mix(in oklab, … N%, transparent)`
+  ([docs](https://tailwindcss.com/docs/colors), `oklab` per
+  [tailwindlabs/tailwindcss#15201](https://github.com/tailwindlabs/tailwindcss/pull/15201)), so an
+  opacity modifier always lands with alpha < 1; the v4 default palette is authored in `oklch()`;
+  ring utilities are **box-shadow**, not outline ([docs](https://tailwindcss.com/docs/box-shadow)),
+  so a shadow must count as a focus indicator or every conformant `focus-visible:ring-2` would be
+  reported; and `box-shadow` **computes to `none`** in forced-colors mode
+  ([css-color-adjust-1](https://drafts.csswg.org/css-color-adjust-1/)), reported as a counted fact
+  rather than a finding for the same reason.
+
+  **Two defects in this work were found by running it against a real browser, not by any fixture**,
+  which is the argument for having done so. An inline-link target-size exemption written as
+  "display starts with `inline`" silently exempted **every** native `<button>` (Chrome computes
+  them `inline-block`), hiding the whole `tap-target-small` rule; and the radius rule counted the
+  four corners of one element as four elements, so a single `rounded-[7px]` button reported as "4
+  element(s)" and the distribution read four times too high. Both now have a fixture and a
+  mutation. The first also moved a *judgement* out of the collector into Python where a fixture can
+  see it — the collector reports `display`, and `is_inline_link_in_text` decides.
+
+  The mutation check and a self-review against `skills/code-review/SKILL.md` then found nine more,
+  all in this diff. The ones worth naming: `outline: 2px solid var(--ring)` written as the shorthand
+  was read as *no* focus indicator, so the rule flagged the exact fix it recommends — and the fix
+  for the forced-colors gap above; the printed `--schema` contract had already gone stale against
+  the snapshot it documents, and is now compared mechanically against both the fields the rules read
+  and the fields the collector emits, so it cannot drift again; `unreadableSheets` was collected and
+  read by nothing; a guard no real Tailwind class could reach was deleted rather than covered by a
+  fixture for a class nobody writes; two carve-outs were redundant with `is_visible`; two fixtures
+  passed for the wrong reason (a foreign-schema one that would have failed the empty-basis guard
+  instead, an invisible-outline one silenced by a zero width before the style test ran); and a
+  docstring claim about `<sub>`/`<sup>`/`<small>` was wrong in its specifics — now the measured
+  83.33% rather than an asserted 75%/80%.
+
+  A shipped `.js` file is read by no markdown linter — the fenced-code checkers only see markdown —
+  so `rendered_conformance.py --check-collector` `node --check`s it, and both it and the selftest
+  are registered in `maintainer_doctor.py`'s gate sweep. It **skips loudly** when node is absent
+  rather than failing the sweep for want of a binary, and the selftest proves that path is a skip
+  by pointing it at a binary that cannot exist.
+
 ### 1.6.0 — 2026-07-31
 - **FIX — two defects in the cross-check added hours earlier, both found by an external reviewer
   on the already-merged PR rather than by us.**
