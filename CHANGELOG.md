@@ -7,6 +7,57 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+Version numbers are assigned at the promotion, never here.
+
+- **TOOLING — the computed work queue becomes a gate at the point of use** (#133). `issue_graph.py`
+  could already tell you the order; nothing checked that anyone followed it. `/maintainer-work`
+  Phase 0 said *"take the head of the triaged queue"* — a claim with no enforcement, which is the
+  same **prose-is-not-a-queue** defect #133 was filed about, one level up. New
+  `python3 scripts/issue_graph.py --ready 109 110` answers one question — may this be started now,
+  as one branch? — and **exits non-zero with the refusal on stderr and stdout left empty** when any
+  named issue waits on open work, is already closed, is absent from the tracker, or when the graph
+  is too broken to answer from, so a caller reading stdout alone cannot mistake a refusal for a
+  go-ahead (`--json` is the stated exception). Wired into `/maintainer-work` Phase 0, where the
+  standing instruction had been prose. Change type: **maintainer tooling**; no skill
+  doctrine and no external framework claim, so no `doctrine-verifier` verdict applies, and the
+  declaration format it reads remains the maintainer decision recorded on
+  [#133](https://github.com/fmanimashaun/claude-skills/issues/133).
+  - **Edges *between* the requested issues are satisfied by the branch itself**, because grouping
+    related issues onto one branch is this repo's preferred shape (CLAUDE.md, *Grouping related
+    issues on one branch*). `--ready 110` refuses while `--ready 109 110` clears, with a note
+    saying which member goes first. That carve-out has the near-miss test that matters:
+    `--ready 110 42` still refuses, so padding the set cannot launder a blocker away. A gate that
+    refused the doctrine's own branch shape would be switched off inside a week, after which
+    nothing checks the order at all.
+  - **A dependency on a *closed* issue is not a refusal.** That is what a met prerequisite looks
+    like — pinned by a silence fixture, because treating it as a block would make every finished
+    edge permanent.
+  - **A green light says what it does not know.** On an issue declaring no edges the verdict
+    carries a note: the tracker names no blocker, which is not the same as nothing blocking it.
+    Until the epic backfill lands that is the common case, and reporting the first as the second is
+    the `unverified-negative` class from `skills/code-review/SKILL.md`.
+  - **59 selftest checks** (was 43) and **6 new declared mutations** appended to
+    `mutation_check.py`'s `issue_graph` guard — 17 total, all caught, each observed failing on
+    purpose. They cover both directions of the group carve-out, the absent/closed refusals, and
+    both directions of the coverage caveat. The one temp-dir helper every end-to-end fixture goes
+    through is what
+    the pre-existing *"writes its fixture into the repo again"* mutation anchors on, so a future
+    `main()` fixture cannot quietly acquire its own unguarded write path.
+  - **FIX — the documented backfill procedure could destroy an issue body, and exit 0 doing it.**
+    `gh issue view … > /tmp/body.md` truncates the target *before* `gh` runs, so an expired token
+    or a wrong number left an empty file; the next two lines then appended the deps block and
+    handed it to `gh issue edit`, **replacing an entire downstream report with nothing but the
+    edges**. Reproduced against a stubbed `gh` before and after: the old snippet loses the body and
+    returns 0, the new one refuses and returns 1. It now runs under `set -euo pipefail`, uses
+    `mktemp` rather than a shared filename, and greps for an existing `deps` fence first — the
+    parser reads *every* `deps` block in a body, so appending a second is silent and a drifted
+    duplicate contributes edges nobody wrote.
+  - **Still open on #133:** the last acceptance criterion, backfilling epics #89 / #96 / #108 and
+    their phases with edges. That is tracker work rather than a repo change, and every declaration
+    it adds is what makes the coverage caveat above stop firing.
+
 ### 2026-07-31 — a stall is not a syntax error
 
 
