@@ -1399,9 +1399,9 @@ def _perf_extra(row: dict[str, str], where: str, status: str) -> list[str]:
     if severity == S1:
         findings.append(
             f"{where}: Severity S1 on a perf row -- no WCAG criterion and no standard of any kind "
-            "mandates a performance budget, and a client-side timing taken on an unthrottled dev "
-            "machine against localhost cannot establish that a release is blocked. The ceiling "
-            "here is S2"
+            "mandates a performance budget, and a timing taken on an unthrottled dev machine "
+            "against localhost cannot establish that the page is broken, which is what S1 means "
+            "in every other pass. The ceiling here is S2"
         )
     else:
         graded: dict[str, int] = {}
