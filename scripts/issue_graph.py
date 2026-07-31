@@ -291,23 +291,42 @@ def chain_lengths(graph: Graph) -> dict[int, int]:
     """Longest chain of OPEN work starting at each open issue, itself included.
 
     Closed issues are done, so they are not on anybody's remaining path.
+
+    Iterative post-order, for the same reason `_cycle_in` is: chain depth is bounded by the
+    tracker, not by us, and Python's stack is ~1000 frames. The first version of this function
+    recursed while the cycle detector three functions up did not — an inconsistency inside one
+    module, which is how the deep-chain case ends up untested in exactly one of the two places
+    it matters. Pinned by a 1500-issue fixture that raises RecursionError on the old code.
     """
     lengths: dict[int, int] = {}
-
-    def walk(number: int) -> int:
-        if number in lengths:
-            return lengths[number]
-        lengths[number] = 1        # provisional; cycles are already a hard error
-        best = 1
-        for after in graph.successors(number):
-            if graph.issues[after].is_open:
-                best = max(best, 1 + walk(after))
-        lengths[number] = best
-        return best
-
-    for number, issue in graph.issues.items():
-        if issue.is_open:
-            walk(number)
+    visiting: set[int] = set()
+    for start in sorted(number for number, issue in graph.issues.items() if issue.is_open):
+        if start in lengths:
+            continue
+        stack: list[tuple[int, bool]] = [(start, False)]
+        while stack:
+            number, expanded = stack.pop()
+            if expanded:
+                visiting.discard(number)
+                best = 1
+                for after in graph.successors(number):
+                    if graph.issues[after].is_open:
+                        best = max(best, 1 + lengths.get(after, 1))
+                lengths[number] = best
+                continue
+            # `visiting` is what stops a CYCLE from looping forever. The recursive version got
+            # this free by writing a provisional length before recursing; dropping that on the
+            # rewrite turned a cycle into an infinite loop, which `mutation_check` found by
+            # disabling cycle detection and watching this hang. Callers are not required to have
+            # validated first — main() has, but analyse() is importable — and a hang is a far
+            # worse failure than a wrong number on a graph that is already a filing error.
+            if number in lengths or number in visiting:
+                continue
+            visiting.add(number)
+            stack.append((number, True))         # revisit once the successors below resolve
+            for after in graph.successors(number):
+                if graph.issues[after].is_open and after not in lengths and after not in visiting:
+                    stack.append((after, False))
     return lengths
 
 
@@ -817,6 +836,41 @@ def selftest() -> int:
     if (coverage["open"], coverage["declaring"], coverage["undeclared"]) != (4, 2, [4, 10]):
         failures.append(f"coverage: expected 2 of 4 open declaring, #4/#10 silent, got {coverage}")
 
+    # -- a chain deeper than the call stack ------------------------------------------
+    # 1500 issues in one line, which is past CPython's ~1000-frame default. The recursive
+    # version of chain_lengths raised RecursionError here; the graph is perfectly valid, so
+    # /maintainer-triage would have died on a tracker that had done nothing wrong.
+    checks += 1
+    deep = [issue(n, deps(f"blocks: #{n + 1}")) for n in range(1, 1500)] + [issue(1500)]
+    try:
+        deep_graph = build(deep)
+        if deep_graph.problems:
+            failures.append(f"deep chain: expected a valid graph, got {deep_graph.problems[:2]}")
+        elif chain_lengths(deep_graph)[1] != 1500:
+            failures.append(
+                f"deep chain: expected a chain of 1500, got {chain_lengths(deep_graph)[1]}"
+            )
+    except RecursionError:
+        failures.append("deep chain: chain_lengths blew the stack on a valid 1500-issue chain")
+
+    # A cyclic graph is a hard error, so chain_lengths should never SEE one — but it is an
+    # importable function and "should never" is not a guarantee. It must terminate rather than
+    # hang; the value it returns for a cycle is meaningless and deliberately unasserted.
+    checks += 1
+    cyclic = build([issue(1, deps("blocks: #2")), issue(2, deps("blocks: #3")),
+                    issue(3, deps("blocks: #1"))])
+    try:
+        chain_lengths(cyclic)
+    except RecursionError:
+        failures.append("chain_lengths on a cyclic graph: blew the stack instead of terminating")
+
+    # -- the selftest itself must not write into the repo ----------------------------
+    # The gate runs inside `maintainer_doctor.py`, where a diagnostic that mutates the working
+    # tree is a defect in its own right. Asserted rather than assumed, because the first version
+    # of this selftest did exactly that.
+    checks += 1
+    before = {p.name for p in Path(__file__).resolve().parent.iterdir()}
+
     # -- the truncation guard --------------------------------------------------------
     # #211's whole story. Exercised with an injected runner because `gh` is not present on
     # every machine that runs this selftest, and a check skipped for want of a binary is the
@@ -870,21 +924,33 @@ def selftest() -> int:
     ])
     import io
     import contextlib
+    import tempfile
 
+    # A SYSTEM temp dir, never the repo. The first version wrote `scripts/.issue_graph_selftest.json`
+    # and unlinked it in a `finally` — which mutates the working tree of whoever runs the gate, fails
+    # on a read-only checkout, and races two concurrent runs on one fixed filename. `mutation_check.py`
+    # already records this exact lesson ("one interrupted process away from leaving a mutated repo"),
+    # and `maintainer_doctor.py` runs this selftest as a gate, where a diagnostic must never write.
     stdout, stderr = io.StringIO(), io.StringIO()
-    tmp = Path(__file__).resolve().parent / ".issue_graph_selftest.json"
-    tmp.write_text(broken, encoding="utf-8")
-    try:
+    with tempfile.TemporaryDirectory(prefix="issue-graph-selftest-") as workdir:
+        fixture = Path(workdir) / "broken.json"
+        fixture.write_text(broken, encoding="utf-8")
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = main(["--from", str(tmp)])
-    finally:
-        tmp.unlink(missing_ok=True)
+            code = main(["--from", str(fixture)])
     if code != 1:
         failures.append(f"a cyclic graph exited {code}, expected 1")
     if "READY NOW" in stdout.getvalue():
         failures.append("a queue was printed for a graph known to be cyclic")
     if "cycle" not in stderr.getvalue():
         failures.append("the cycle was not reported on stderr")
+
+    # Closes the no-repo-writes check opened above, after every scenario that touches disk.
+    stray = {p.name for p in Path(__file__).resolve().parent.iterdir()} - before
+    if stray:
+        failures.append(
+            f"the selftest left files in scripts/: {sorted(stray)} — a gate the doctor runs "
+            "must not mutate the working tree"
+        )
 
     for failure in failures:
         print(f"  FAIL {failure}")
