@@ -151,6 +151,12 @@ GUARDS: tuple[Guard, ...] = (
                 "plugin points at a reference file it does not ship",
             ),
             Mutation(
+                "the pointer rule goes back to an extension allowlist (#272)",
+                'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\\.[A-Za-z0-9]+)")',
+                'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]+\\.(?:md|py|sh|json))")',
+                "a non-allowlisted extension is still a pointer",
+            ),
+            Mutation(
                 "the skill-pointer half stops being reported (#100)",
                 "            if (ROOT / match.group(1)).exists():\n                continue",
                 "            if True:\n                continue",

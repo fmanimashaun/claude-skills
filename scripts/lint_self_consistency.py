@@ -652,13 +652,20 @@ def check_invisible_characters() -> tuple[list[Finding], int]:
 #   `skills/rails-8/references/style.md`    -- resolved against the repo root
 # Both must name a file (a real extension), so `skills/**` and a bare `skills/` stay out: a glob
 # is not a pointer. A trailing `:28` line-anchor is stripped -- CLAUDE.md cites doctrine that way.
-_PLUGIN_ROOT_POINTER = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]+\.(?:md|py|sh|json))")
+# ANY extension, not a named list. The first version allowlisted `md|py|sh|json` and therefore
+# missed `${CLAUDE_PLUGIN_ROOT}/../templates/env.example` (#272) — a real broken pointer, in a file
+# type nobody had thought to add. That is the same failure mode CLAUDE.md already records for
+# packaging's binary detection: "never an extension allowlist, which fails open on the first type
+# nobody added". A dot-extension still keeps globs and bare directories out, which is all the
+# allowlist was ever doing.
+_PLUGIN_ROOT_POINTER = re.compile(
+    r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)")
 _SKILL_POINTER = re.compile(
     # The lookbehind rejects a path that is only a SUFFIX of a longer one -- `.claude/skills/…`
     # is the user's project directory, not ours, and `/` before `skills` is what tells them apart.
     # It must NOT exclude a backtick: almost every real pointer is written `skills/x/y.md`, and
     # excluding it made this rule silently skip its main case until the selftest caught it.
-    r"(?<![\w./-])(skills/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+\.(?:md|py|sh|json))(?::\d+)?"
+    r"(?<![\w./-])(skills/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+)(?::\d+)?"
 )
 
 
@@ -1165,6 +1172,21 @@ def selftest() -> int:
     # NEAR MISS: the exact false positive this rule had before it shipped. `${CLAUDE_PLUGIN_ROOT}`
     # in a CHANGELOG or a skill is prose ABOUT a plugin variable and has no plugin to resolve
     # against; guessing an owner would invent a finding on correct text.
+    # #272: the first version allowlisted md|py|sh|json and so missed a real broken pointer at
+    # `templates/env.example`. ANY extension now counts. Both directions, because the whole risk of
+    # widening a pattern is that it starts firing on prose.
+    scenario("a non-allowlisted extension is still a pointer", rule=P, expect_finding=True,
+             files={"plugins/pipeline/commands/setup-cloud.md":
+                    "base it on `${CLAUDE_PLUGIN_ROOT}/templates/env.example`\n"})
+    scenario("...and is silent when that file exists", rule=P, expect_finding=False,
+             files={"plugins/pipeline/commands/setup-cloud.md":
+                    "base it on `${CLAUDE_PLUGIN_ROOT}/templates/env.example`\n",
+                    "plugins/pipeline/templates/env.example": "RAILS_ENV=production\n"})
+    scenario("the spurious /.. that walked out of the plugin (#272)", rule=P, expect_finding=True,
+             files={"plugins/pipeline/commands/setup-cloud.md":
+                    "base it on `${CLAUDE_PLUGIN_ROOT}/../templates/env.example`\n",
+                    "plugins/pipeline/templates/env.example": "RAILS_ENV=production\n"})
+
     scenario("plugin-root prose outside a plugin is not resolvable", rule=P, expect_finding=False,
              files={"CHANGELOG.md": "the hook runs `${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py`\n"})
     # NEAR MISS: a glob is not a pointer. Flagging `skills/**` would fire on this repo's own

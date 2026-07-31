@@ -9,6 +9,24 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **FIX — a broken plugin pointer, and the reason the new rule could not see it** (#272).
+  `plugins/pipeline/commands/setup-cloud.md` pointed at
+  `${CLAUDE_PLUGIN_ROOT}/../templates/env.example`. `${CLAUDE_PLUGIN_ROOT}` **is** the plugin's root,
+  so the `/..` walked out of it: the path resolved to `plugins/templates/env.example`, which does not
+  exist, while the real file sat at `plugins/pipeline/templates/env.example`. One spurious `/..`.
+  - **The interesting half is why `broken-doc-pointer` — added days earlier for exactly this class —
+    stayed silent.** Its regex required the extension to be one of `md|py|sh|json`, and this pointer
+    ends in `.example`. **An extension allowlist fails open on the first type nobody added**, which is
+    the failure mode CLAUDE.md already records for packaging's binary detection (*"never an extension
+    allowlist"*). The rule now accepts **any** dot-extension, which still keeps globs and bare
+    directories out — all the allowlist was ever doing. Pointers examined: **41 → 46**, still clean.
+  - Three fixtures, both directions, including the exact `/..` shape from this issue; plus a mutation
+    that **reverts the regex to the allowlist**, so the widening cannot silently regress. `mutation_check`
+    **58 → 64**; its selftest **81 → 87**.
+  - Building that mutation took two attempts — hand-escaping a regex-inside-a-regex drifted, and the
+    checker's stale-anchor error caught it rather than letting a mutation pass vacuously. Rebuilt by
+    reading the anchor line out of the file itself.
+
 - **`issue_graph.py`: a gate that wrote into the repo, and a rewrite that could hang** — two review
   findings on #267 plus a third the fix itself exposed. All three shipped in that promotion, so this
   is the follow-up.
