@@ -99,6 +99,43 @@ Version numbers are assigned at the promotion, never here.
     other two placements — a pointer from `CLAUDE.md` and a mirror into rails-flow's scaffolded
     conventions — remain open.
 
+**The coverage page's bytes depend only on its data** (#89). The gate above shipped, and then broke
+twice in one afternoon — both times because something that is *not the data* had leaked into the
+rendered bytes. The rule, arrived at the hard way: **a committed generated artifact may be a function
+of tracked content and nothing else.**
+
+- **FIX — git state, round two: the dirty caveat was a footgun, not a safeguard.** Round one removed
+  the SHA, branch and released/unreleased split. The dirty flag survived, and it was worse:
+  regenerating `coverage.md` *necessarily* dirties the tree, so the very next command wrote a
+  `state: "dirty"` page to the **committed** path, and the gate then failed permanently until someone
+  rebuilt from a clean checkout. `--check` guarded the *comparison* and left the *write* wide open.
+  I did this to myself in the regeneration PR and diagnosed it by extracting both `DATA` blobs and
+  diffing them field by field — only `provenance` differed — rather than theorising. With git state
+  gone the dirty-tree **exit-3 skip goes too**, and that is a strict improvement: mid-edit the honest
+  verdict is a real one (*"the committed page does not match your data"*), which is exactly what
+  `build_coverage.py --check` reports for `coverage.md` with no exemption at all. `EXIT_INCOMPLETE`
+  is deleted as the dead declaration it became. Proven by re-running `--check` from a deliberately
+  dirtied tree: **exit 0**, where it used to be unpassable.
+- **FIX — corpora availability was the second leak, and the carve-out I added for it was the wrong
+  fix.** The page walked the licensed kits for the upstream totals, so a machine without them
+  committed `tw: null, fb: null` and broke the gate for everyone who had them. A web session hit
+  exactly this and flagged it. Earlier the same day I had added `coverage artifact drift` to
+  `CORPORA_GATES` — which only stops the check failing on the machine that is **missing** them and
+  cannot stop that machine committing a stripped page. **The exemption moved the damage rather than
+  removing it.** Both counts now come from the committed `coverage.md` Totals table — which every
+  clone has, and which `build_coverage.py --check` already gates by enumerating the kits — so the
+  authority is unchanged and only the *reader* moved. The exemption is reverted, with the reasoning
+  recorded in both directions so it is not re-added. Verified by hashing the render with the corpora
+  attached and with the root pointed at nothing: **identical**.
+- **Three fixtures had to be rebuilt, each because `mutation_check.py` refused a coincidental catch.**
+  The corpora-independence fixture now stubs the kits **in** at two different sizes rather than
+  stubbing them away — the mutation workdir has no corpora at all, so stubbing away was **vacuous**
+  while the mutant merely **crashed** on the missing directory. It runs **first** and returns
+  immediately, because every later fixture calls `collect()` and a traceback is not a verdict. The
+  totals-parser fixture that pinned the corpus rows as *"not buckets"* was translated rather than
+  deleted: they now parse under keys of their own, and the guarantee that actually mattered — corpus
+  counts must never land in a fidara bucket and inflate a percentage — is asserted structurally.
+
 **The coverage matrix is a committed deliverable now, and its gate reads git** (#89).
 **Change type: repository tooling.** Nothing under `skills/` changed and no framework behaviour is
 claimed, so no `doctrine-verifier` verdict is in scope. The one factual assertion — the row counts —
