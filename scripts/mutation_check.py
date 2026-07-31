@@ -676,6 +676,79 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # rails-flow #127 + the rails-flow half of #128. FOUR of these seven break a fixture whose job
+    # is to stay SILENT, because a work order is ordinary prose about files and tests: `<...>` is a
+    # placeholder AND an HTML tag, "above" is the conversation AND the table three lines up, `TODO`
+    # is an unresolved decision AND part of `todo.rb`. A rule that flags the second of each pair
+    # gets the tool switched off, so the carve-outs are what need guarding.
+    Guard(
+        name="check_handoff",
+        subject="plugins/rails-flow/scripts/check_handoff.py",
+        selftest="plugins/rails-flow/scripts/check_handoff_selftest.py",
+        # The criteria parser: the traceability rule imports it to resolve the cited AC ids.
+        deps=("plugins/rails-flow/scripts/check_criteria.py",),
+        # Read, not imported. The selftest's last checks run the REAL tier table against the REAL
+        # agents and FAIL rather than skip when absent -- so the mutant needs them, or every
+        # mutation reports as "caught by the wrong fixture" and the real signal is buried.
+        needs=(
+            "plugins/rails-flow/reference/model-tiers.md",
+            "plugins/rails-flow/commands/handoff.md",
+            "plugins/rails-flow/agents/claude-skills-reporter.md",
+            "plugins/rails-flow/agents/code-reviewer.md",
+            "plugins/rails-flow/agents/design-auditor.md",
+            "plugins/rails-flow/agents/doc-updater.md",
+            "plugins/rails-flow/agents/migration-writer.md",
+            "plugins/rails-flow/agents/pr-reviewer.md",
+            "plugins/rails-flow/agents/rails-developer.md",
+            "plugins/rails-flow/agents/security-auditor.md",
+            "plugins/rails-flow/agents/skill-curator.md",
+            "plugins/rails-flow/agents/test-runner.md",
+        ),
+        mutations=(
+            Mutation(
+                "`retry` back in the attempt-cap vocabulary (the real bug a fixture found)",
+                '("attempt cap", ("attempt", "retries", "retry limit", "retry cap", "tries")),',
+                '("attempt cap", ("attempt", "retry", "retries", "tries")),',
+                "no numeric attempt cap",
+            ),
+            Mutation(
+                "the stale-row rule stops noticing a table row no agent defines",
+                "        if row.agent not in agents:",
+                "        if False:",
+                "a stale row naming an agent",
+            ),
+            Mutation(
+                "a tier's model requirement stops being enforced",
+                "        elif row.model != want:",
+                "        elif False:",
+                "a judgement agent pinned to a model",
+            ),
+            Mutation(
+                "heading aliases match inside words again (the false-positive direction)",
+                'return any(re.search(rf"\\b{re.escape(a)}\\b", low) for a in aliases)',
+                "return any(a in low for a in aliases)",
+                "is not the in-scope list",
+            ),
+            Mutation(
+                "fenced blocks stop being skipped, so a quoted view snippet is a placeholder",
+                "            if offset < len(section.fenced) and section.fenced[offset]:",
+                "            if False:",
+                "a fenced snippet holding a tag is code",
+            ),
+            Mutation(
+                "inline code stops being stripped, so a backticked tag is a placeholder",
+                "            line = _strip_code(raw)",
+                "            line = raw",
+                "a backticked HTML tag is code",
+            ),
+            Mutation(
+                "the unresolved-token rule goes case-insensitive and eats todo.rb",
+                'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b")',
+                'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b", re.I)',
+                "the word todo in prose",
+            ),
+        ),
+    ),
 )
 
 

@@ -852,6 +852,73 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A unit of work now has a work order, and the model tiers are decided rather than accidental**
+  (#127). New `/rails-flow:handoff` writes `docs/handoff/<slug>.md`: the one file an executor can run
+  from with **no conversation history** — goal, the `AC-n` ids that grade it, files in *and explicitly
+  out of* scope, the guardrails in play, the stop conditions, how to verify, what to record. New
+  `plugins/rails-flow/reference/model-tiers.md` records which agent runs on which model and why. The
+  design half is the maintainer decision recorded on
+  [#127](https://github.com/fmanimashaun/claude-skills/issues/127#issuecomment-5146942862) (an
+  architecture change to our own doctrine, so its authority is that decision, not an upstream
+  citation); every claim about Claude Code's own behaviour is cited below.
+  - **Ten agents' `model:` lines changed, and the old ones were backwards.** Verified 2026-07-31:
+    frontmatter *beats* the session model in Claude Code's resolution order, so a pin is a **cap** —
+    the seven agents pinned `sonnet` were **downgrading** every user who had deliberately started an
+    Opus session, which is the opposite of what the issue asked for. Judgement agents (review,
+    security, migrations, implementation, curation, reporting) now say `model: inherit`; the three
+    mechanical ones (`test-runner`, `design-auditor`, `doc-updater`) keep `haiku` and each **names the
+    external proof** that makes a cheap tier safe. The precedent is the platform's own: *"As of
+    v2.1.198, Explore inherits the main conversation's model instead of always running on Haiku"*.
+  - **The issue's three-row table has no mechanism, and that is now written down.** There is no "mid"
+    model to select — the middle row is `effort` (`low`..`max`), a separate field. It is deliberately
+    **not set**: *"available levels depend on the model"* and Claude Code does not publish which,
+    so the value would be unverifiable. Recorded as the next lever rather than left silent.
+  - **`docs/handoff/<slug>.md`, committed — both against the issue body**, which proposed a root
+    `HANDOFF.md` and left committed-vs-gitignored open. Concurrent branches each have a work order, so
+    a root file is overwritten by whichever touched it last: the artefact whose purpose is surviving a
+    context switch would be the one thing that cannot. And a file a fresh clone does not have cannot
+    fix loss of context between machines. The slug rule matches `docs/acceptance/<slug>.md` exactly.
+  - **"Self-contained by construction" is enforced, not asserted** —
+    `plugins/rails-flow/scripts/check_handoff.py` (78-check selftest, 7 declared mutations, **four in
+    the silence direction**). It rejects a work order that points at the conversation, leaves
+    `<placeholders>`/`TBD`, restates criteria instead of citing ids, cites an `AC-n` the acceptance
+    file does not define, or whose stop conditions carry no number. Its second mode reconciles all ten
+    agents against the tier table, so #127's "no agent silently contradicting it" cannot decay back
+    into folklore. The Stop gate validates a work order **when one exists** and never demands one, so
+    branches already in flight are unaffected.
+  - **Verified against upstream, 2026-07-31** ([sub-agents](https://code.claude.com/docs/en/sub-agents),
+    [model-config](https://code.claude.com/docs/en/model-config),
+    [settings](https://code.claude.com/docs/en/settings),
+    [skills](https://code.claude.com/docs/en/skills)): `model:` takes *"`sonnet`, `opus`, `haiku`,
+    `fable`, a full model ID … or `inherit`. Defaults to `inherit`"*; resolution runs
+    `CLAUDE_CODE_SUBAGENT_MODEL` → per-invocation parameter → *"the subagent definition's `model`
+    frontmatter"* → *"the main conversation's model"*; a value outside the org's `availableModels` is
+    skipped and the agent *"runs … on the inherited model instead"*, so pinning up buys nothing;
+    `model` **is** honoured for plugin agents (only *"`hooks`, `mcpServers`, or `permissionMode`"* are
+    ignored); aliases resolve per provider (`sonnet` is Sonnet 5 on the Anthropic API, **Sonnet 4.5**
+    on Bedrock and Foundry) and *"update over time"*; plugin agents are priority *"5 (lowest)"* so a
+    same-named file in `.claude/agents/` overrides ours; and a command's `model` *"applies for the
+    rest of the current turn"*, which is why no command is pinned.
+- **Unattended runs now have stop conditions instead of only guardrails** (#128, rails-flow half —
+  see the decision record on
+  [#128](https://github.com/fmanimashaun/claude-skills/issues/128#issuecomment-5146943177)). The hooks
+  already stopped a run doing damage; nothing said when to **stop and escalate**, and an agent that
+  cannot make progress does not idle, it digs — reverting its own fixes, loosening specs until they
+  pass, widening scope around a blocker, each of which looks like activity in a log. Every work order
+  now carries a numeric **attempt cap** (default 3), a **no-progress detector** (2 identical failure
+  signatures), a **blast-radius cap** (10 files, never outside the declared scope), a **budget** with
+  the remainder reported, and all four **forbidden escapes** enumerated — each individually checked,
+  and each number required to *be* a number, because "stop when you are stuck" cannot be evaluated by
+  the thing that is stuck. `feature.md` (Phase 3, Phase 7) and `fix.md` (*Unattended operation*) now
+  require the final report to say **complete / partial / stopped** and name what was not attempted.
+  Also documents that `maxTurns` is *"Maximum number of agentic turns before the subagent stops"*
+  ([docs](https://code.claude.com/docs/en/sub-agents), 2026-07-31) — a **turn** bound, so it
+  complements the attempt cap rather than replacing it. **The `comp:pipeline` half is not done**: no
+  file under `plugins/pipeline/**` was touched, and each plugin resolves its own
+  `${CLAUDE_PLUGIN_ROOT}`, so pipeline needs its own doctrine and its own checker.
+
 ### 1.13.0 — 2026-07-31
 
 - **The flow can now explain a system back to the human who owns it** (#126). New

@@ -4,7 +4,7 @@ description: >
   Writes and reviews database migrations. Use for any db/migrate change — new tables,
   columns, indexes, backfills. Enforces reversibility and production safety.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: sonnet
+model: inherit
 ---
 
 You write production-safe Rails migrations.
