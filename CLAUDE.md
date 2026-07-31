@@ -502,4 +502,21 @@ hard limit. Direct file transfer if you need it; it drops into `design-corpora/`
 
 The `.claude/` hook and the plugins' hooks are **bash + `python3`**, and the flow drives
 **`gh`** (authenticated: `gh auth status`). On Windows, run Claude Code in **WSL or Git
-Bash** with `python3` and `gh` on PATH. Hooks fail open when a dependency is missing.
+Bash** with `python3` and `gh` on PATH.
+
+**Hooks do NOT all fail open, and the two exceptions are deliberate.** This line used to say they
+did, flatly. Of the ten hook scripts, eight are advisory — a status line, a linter, a
+cross-check — and a missing `python3` degrades them to silence, which is right: an advisory that
+blocks work when a dependency is absent is an advisory people disable. The two **gates** fail
+**closed**, verified by running them with `python3` shadowed by a stub that exits 127:
+
+- `plugins/rails-flow/hooks/scripts/guard-bash.sh` — still exits **2**. Line 7 falls back to the raw
+  JSON payload when the parse fails, and the payload still contains the command text, so every
+  pattern still matches. `git add -A` is blocked either way.
+- `plugins/qa-flow/hooks/scripts/release-gate.sh` — exits **2** when `python3` is missing *and* the
+  command targets `main`, and **0** otherwise. Fail-closed **scoped to the command it guards**, which
+  is the distinction that matters: a gate that failed closed on unrelated work would get switched off.
+
+Which behaviour a new hook should have is not a matter of taste — classify it before writing it,
+using the guarantee-vs-advice test in **[`docs/harness-doctrine.md`](docs/harness-doctrine.md)**
+(*"if a model ignores this, what happens?"*). Advisory → fail open. Guarantee → fail closed, scoped.
