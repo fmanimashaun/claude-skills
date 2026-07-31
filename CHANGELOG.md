@@ -7,6 +7,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **FIX — the call-site rule flagged a CORRECT call site** (#95). `ButtonComponent.new(…, data: { action:
+  … })` is legal: its initializer ends in **`**attrs`**, which forwards arbitrary keywords — and that is
+  how ViewComponent passes HTML attributes through, so the rule was set to fire on most correct call
+  sites the moment one appeared. It now excludes splat-forwarding initializers from the unknown-keyword
+  check (declared components 20 → 14; the six with splats keep their **slot** checking, which a splat
+  does not affect).
+  - **The carve-out keys on the splat, not on weakening the check** — the `ModalComponent` flag that
+    preceded it was *correct*, because that one has no splat. Three fixtures pin all three edges: a
+    splat silences the keyword check, a component **without** one still fires, and a splat **never**
+    excuses an undeclared slot. Plus a mutation that removes the carve-out, so it cannot regress.
+    `mutation_check` **64 → 65**.
+
 ### 2026-07-31 — six parallel sessions, and what they caught in each other
 
 - **FIX — a broken plugin pointer, and the reason the new rule could not see it** (#272).
