@@ -198,6 +198,63 @@ def run() -> int:
                 "vacuously, which is the failure this checker exists to prevent"
             )
 
+    # ---- 7. every RULE inside a multi-rule guard is backed by a mutation ----------------
+    # The gap this closes: "mutation coverage" asserts every GUARD declares mutations, and the
+    # lint_self_consistency guard already declared twelve. So a SEVENTH rule bolted onto that same
+    # subject sailed through green with no mutation behind it (#100's `broken-doc-pointer`, caught
+    # in review, not by a gate). A guard-level count cannot see a rule-level gap.
+    #
+    # Checked STRUCTURALLY — which function does each mutation's anchor live in, and which rules
+    # does that function emit — rather than by matching fixture labels. `expects` is matched as a
+    # substring of the whole selftest output (rule names included), so a label comparison both
+    # misses real coverage and invents gaps. Ask the question the anchor can actually answer.
+    import re as _re
+
+    for guard in mc.GUARDS:
+        subject = original_repo / guard.subject
+        if not subject.is_file():
+            continue
+        body = subject.read_text(encoding="utf-8")
+        # Top-level function blocks, in source order.
+        defs = [(m.start(), m.group(1)) for m in _re.finditer(r"^def (\w+)\(", body, _re.M)]
+        if len(defs) < 2:
+            continue
+        bounds = [(name, s, defs[i + 1][0] if i + 1 < len(defs) else len(body))
+                  for i, (s, name) in enumerate(defs)]
+
+        def _owner(index: int) -> str | None:
+            for name, s, e in bounds:
+                if s <= index < e:
+                    return name
+            return None
+
+        # rule name -> the functions that can emit it
+        emitters: dict[str, set[str]] = {}
+        for m in _re.finditer(r'Finding\(\s*\n?\s*"([a-z][a-z-]+)"', body):
+            owner = _owner(m.start())
+            if owner:
+                emitters.setdefault(m.group(1), set()).add(owner)
+        if not emitters:
+            continue
+
+        # functions with at least one mutation anchored inside them
+        mutated: set[str] = set()
+        for mutation in guard.mutations:
+            index = body.find(mutation.old)
+            if index != -1:
+                owner = _owner(index)
+                if owner:
+                    mutated.add(owner)
+
+        for rule in sorted(emitters):
+            _tick()
+            if not (emitters[rule] & mutated):
+                FAILURES.append(
+                    f"{guard.name}: rule {rule!r} is emitted by {sorted(emitters[rule])} and NO "
+                    "declared mutation touches that function — nothing proves its fixtures would "
+                    "fail if the rule broke. A guard-level mutation count cannot see this."
+                )
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for failure in FAILURES:

@@ -9,6 +9,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The `mutation coverage` gate could not see a new RULE added to an existing guard** — so a rule
+  shipped with no mutation behind it, and only review caught it. The gate asserts every *guard*
+  declares mutations; `lint_self_consistency` already declared twelve, so #100's new
+  `broken-doc-pointer` rule sailed through green. A guard-level count is blind to a rule-level gap.
+  - **Now checked structurally, per rule**: which function does each mutation's anchor live in, and
+    which rules does that function emit? Any rule emitted by a function no mutation touches is a
+    failure. Deliberately *not* done by matching fixture labels — `expects` is matched as a substring
+    of the whole selftest output, so a label comparison both misses real coverage and invents gaps.
+    The first version did exactly that and reported six false gaps.
+  - **It immediately found a genuine pre-existing hole: the two ORIGINAL rules** —
+    `dead-settings-key` and `unenforced-mandatory-flag` — had fixtures but **never had mutations**,
+    from the day `mutation_check.py` was written. Three rules later, nothing had noticed. Both now
+    have one.
+  - `mutation_check` **43 → 47** mutations across 8 guards; its selftest **67 → 69** checks.
+
 - **FIX — a skip was masquerading as a pass in the gate added hours earlier.** `lint_markdown_code.py`
   fails open when `node` or `ruby` is absent, printing a SKIP notice — but it **exited 0**, so
   `maintainer_doctor.py` printed `[ ok ] gate: markdown code lint` while **242 of 276 blocks went
