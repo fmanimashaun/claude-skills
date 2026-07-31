@@ -773,6 +773,54 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The flow can now explain a system back to the human who owns it** (#126). New
+  `/rails-flow:explain` writes `docs/GUIDE.md`: plain-language sections, mermaid diagrams that
+  render on GitHub, and a *"check it yourself"* block per area — the human-runnable form of the
+  acceptance criteria. Every other artefact this toolchain produces is written for an agent, and
+  `/rails-flow:curate` runs docs → skills; nothing ran the other way. The design half is the
+  maintainer decision recorded on [#126](https://github.com/fmanimashaun/claude-skills/issues/126)
+  (this is an architecture change to our own doctrine, so its authority is that decision, not an
+  upstream citation); the mermaid half is externally verifiable and cited below.
+  - **The guide is thin by construction, and that is the whole design.** It *links* to
+    `docs/architecture/graph.md` for structure and `docs/brain/DECISIONS.md` (`D-nnn`) for
+    rationale rather than restating either, because those are generated/digest-guarded and
+    authored-once respectively, while the guide's prose can rot. Same reasoning as the capped
+    `## Architecture Overview` in setup-flow §2: 37signals cut their own `AGENTS.md` from 166
+    lines to 70 by deleting four claims that had drifted into being false
+    ([fizzy #2999](https://github.com/basecamp/fizzy/pull/2999), 2026-07-28).
+  - **Two claims in the issue body are now enforced rather than asserted**, via the new
+    `plugins/rails-flow/scripts/check_guide.py` (47-check selftest, 5 declared mutations).
+    "Idempotent, section-scoped updates" holds only while the managed markers are balanced, and
+    "diagrams are mermaid (GitHub-renderable)" fails *silently* — GitHub shows an error box, and
+    the diff is valid markdown either way. Both were `claims-vs-enforcement` waiting to happen.
+  - **Verified against upstream, 2026-07-31.** Mermaid renders in *"GitHub Issues, GitHub
+    Discussions, pull requests, wikis, and Markdown files"*
+    ([GitHub docs](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)),
+    gists too ([changelog](https://github.blog/changelog/2022-02-28-gists-now-support-mermaid-diagrams/));
+    a bare lowercase `end` *"will break the Flowchart"* and quoting is the documented fix for
+    bracket characters ([mermaid](https://mermaid.js.org/syntax/flowchart.html)); `%%{init:...}%%`
+    is *"deprecated from v10.5.0"* ([mermaid](https://mermaid.js.org/config/directives.html)).
+  - **Three things checking refuted, and the doctrine says so.** `graph` is **not** deprecated in
+    favour of `flowchart` — *"Instead of `flowchart` one can also use `graph`"*, no deprecation
+    notice — so the preference is recorded as a house convention and both spellings pass.
+    GitHub **does not publish** its bundled mermaid version (its docs offer a self-check and never
+    state the number), which is why the diagram-type rule is an allowlist rather than a version
+    comparison. And GitHub documents **no** node/size cap: the 60-node cap in
+    `architecture_graph.py` is ours, and the doctrine now says not to repeat it as an upstream
+    limit.
+  - **Two deliberate deviations from the issue body**, both stated so they can be overruled:
+    `explain plan` writes **nothing** — a planned area written into the guide is an aspiration
+    presented as fact, which `doc-updater` is already forbidden to do — and `doc-updater`
+    *reports* a stale area rather than rewriting its explanation, matching the rule this repo
+    already applies to curated skills and the architecture graph. The model-tier question that
+    sits behind the second is #127's, not pre-empted here.
+  - Resolves a dead declaration: `commands/graph.md` has listed `/explain` as a consumer of
+    `graph.json` since the graph shipped, naming a command that did not exist.
+  - Also fixed in passing: the README's rails-flow command row omitted `/graph` and
+    `/pr-comments` — the #203 defect class, in the line this change already touched.
+
 ### 1.12.0 — 2026-07-31
 
 - **The scaffold now knows how to brief an agent in a repo that already briefs agents** (#100,

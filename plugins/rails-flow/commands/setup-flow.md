@@ -398,6 +398,19 @@ user about `/rails-flow:curate`: it distills those into project-local skills in
 `.claude/skills/` (committed, team-shared) and keeps them synced via a manifest as
 docs evolve. Don't run it unprompted during setup — just surface it.
 
+## 7b. The human guide (`docs/GUIDE.md`)
+
+§7 runs docs → agent skills. Tell the user about the direction nothing else covers:
+`/rails-flow:explain` writes `docs/GUIDE.md`, a plain-language guide to their own system with
+mermaid diagrams that render on GitHub, plus a *"check it yourself"* section per area — the
+human-runnable form of the acceptance criteria.
+
+Say why it exists rather than listing it: every other file this scaffold creates is written for
+an agent, and agents now produce more code per day than an owner can read. The guide is bounded
+on purpose — it links to `docs/architecture/graph.md` for structure and `docs/brain/DECISIONS.md`
+for rationale instead of restating either, so the parts that can go stale stay small. Don't
+generate it during setup; there is nothing to explain yet.
+
 ## 8. GitHub CI economy (`.github/workflows/ci.yml`)
 
 If `.github/workflows/ci.yml` exists (the Rails 8 default), check its `on:` triggers. The scaffold
