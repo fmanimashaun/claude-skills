@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 1.22.0 — 2026-07-30
 
 - **An umbrella issue was closed by a promotion that shipped one of its groups** — and the rule that
   allowed it is now written down. #95's body says *"Ship in sub-releases, one group at a time"* and
@@ -1174,7 +1174,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-07-30 — the umbrella-Closes rule
 
 - **NEW `references/motion.md` — motion doctrine** (#136). Our entire motion doctrine was **one
   line** (*"150–200ms `ease-out`, transition colors/opacity/transform, gated on
@@ -2870,6 +2870,64 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.41.0)
+
+> ### Three new rails-8/fidara-design references, and doctrine corrected twice by its own gates
+>
+> **`style.md`** (how Rails code should read — 37signals' `STYLE.md`), **`multi-tenancy.md`**
+> (row-level isolation, session-selected tenant) and **`motion.md`** (tokenised timing, reduced
+> motion, gesture abandonment). Plus a cross-plane sign-in contract and **four corrections to the
+> security checklist**.
+>
+> `rails-8.skill` and `fidara-design.skill` changed; `hotwire.skill` and `code-review.skill` are
+> byte-identical.
+
+- **`references/style.md` — how Rails code should read** (#97). The skill prescribed architecture,
+  testing and deployment and said nothing about how code reads. Six conventions adopted, one
+  **adapted**, two found to be doctrine we already had — that last being the more interesting result:
+  *"a new resource, not a custom action"* and *"no service-object layer by default"* are what Basecamp
+  actually ships, not our inference. The adapted one is *expanded conditionals over guard clauses*,
+  which is **demonstrably contrary to prevailing Ruby advice** — stock RuboCop enables
+  `Style/GuardClause` by default — so we take the preference and its two exceptions and add: **do not
+  "fix" an existing guard clause, and never reject a change solely for using one.**
+- **`references/multi-tenancy.md` — row-level isolation, session-selected tenant** (#98). Rails
+  documents **no** row-level tenancy doctrine, so every choice is recorded as a choice. It separates
+  the two axes people collapse into one — **isolation** and **identification** — and records the
+  decision: the tenant comes from the **session, never the URL**; subdomains separate *planes*, not
+  tenants.
+  - **Five verified reasons not to use `default_scope`**, including that a wrong-tenant `find_by`
+    returns **`nil` rather than raising**, and that it is evaluated when a `Relation` is *constructed*,
+    not when the query runs.
+  - **The job boundary is worse than an ordering problem.** GlobalID's default locator is an
+    `UnscopedLocator` that strips **all** scopes by design, so `default_scope` gives **zero**
+    protection for a record arriving as a job argument — and `deserialize_arguments_if_needed` runs
+    *before* `run_callbacks :perform`, so a tenant restored in `around_perform` is too late.
+  - **PostgreSQL RLS is inert by default in a Rails app**: *"table owners normally bypass row
+    security"*, and your app owns the tables its migrations created. `FORCE ROW LEVEL SECURITY` is the
+    lever; checking for `BYPASSRLS` proves nothing.
+- **Cross-plane sign-in, and four corrections to the security checklist** (#98). One front door
+  authenticating both realms, holding **no session of its own**, minting a short-lived single-use
+  **encrypted** grant. Encrypt rather than sign because the grant rides in a URL and *"the payload is
+  merely encoded (Base64 by default) and can be decoded by anyone."* Corrections: **`config.hosts` is
+  empty in production by default** (we framed it as a dev concern); Rails 8.1 added
+  **`allowed_redirect_hosts`**, safer than `allow_other_host: true`; `authenticate_by` is **7.1**;
+  `rate_limit` is **7.2** and is a **permanent no-op under `:null_store`**, the Rails test default —
+  so a throttling spec passes whether or not throttling works.
+- **`references/motion.md` — tokenised timing and reduced motion** (#136). Our motion doctrine was
+  **one line**. Now: two curves with a **departure always shorter than an arrival**, three durations
+  chosen by **travel distance**, opacity finishing before height on disclosure, and the **eight ways a
+  gesture can be abandoned** — *"if a component can be mid-gesture, it registers a window `blur`
+  listener"*, or alt-tabbing mid-press leaves the element stuck.
+  - **Reduced motion changes behaviour, not just timing** — *"the information still arrives, the trip
+    is skipped."* And gating on `no-preference` is recorded as **our reasoned default, not a
+    citation**: MDN's own example and WebKit's own article both use the opposite direction.
+  - **An entrance no longer needs JavaScript** — `@starting-style` + `transition-behavior:
+    allow-discrete`, Baseline *newly* available Aug 2024, so a progressive enhancement rather than a
+    floor.
+- **Tooling: an umbrella issue gets `Refs`, never `Closes`.** A promotion retired the Phase-2 component
+  umbrella while seven of its rows were undocumented, after which four further slices landed against a
+  closed issue. CLAUDE.md now says to check the body for unticked boxes before writing `Closes`.
 
 ### 2026-07-30 (release v1.40.0)
 
