@@ -173,6 +173,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
     "Progress bar": "## Progress bar\n",
+    "Stepper / wizard": "## Stepper / wizard\n",
     "Mega menu / Flyout": "## Mega menu / Flyout\n",
     "File upload / Dropzone": "## File upload / Dropzone (#95)\n",
     "Copy to clipboard": "## Copy to clipboard (#95)\n",
@@ -343,8 +344,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Skeleton / loading placeholder", COMPONENT, "documented", "—", [], ["Skeleton"],
       "Turbo frame loading states need this; without it agents invent spinners"),
     E("Spinner / busy indicator", COMPONENT, "documented", "—", [], ["Spinner"]),
-    E("Stepper / wizard", COMPONENT, "needs doctrine #95", "—", [], ["Stepper"],
-      "also feeds #91's checkout flow"),
+    E("Stepper / wizard", COMPONENT, "documented", "—", [], ["Stepper"],
+      "a display, not a widget: no tablist, no progressbar, no arrow keys. Move focus on advance and "
+      "then do NOT add a live region — 4.1.3 excludes what a change of context already announced. "
+      "Also feeds #91's checkout flow, which is inside 3.3.4 (AA)"),
     E("Copy to clipboard", COMPONENT, "documented", "new controller", [], ["Clipboard"],
       "the announcement IS the feature; a repeat needs the region cleared or it stays silent"),
     E("Keyboard key (KBD)", PRIMITIVE, "derivable", "—", [], ["KBD"],
@@ -642,7 +645,6 @@ BUILD: dict[str, str] = {
     # hold focus for typing to filter, so moving DOM focus into the results breaks it.
     "Command palette": "the documented Modal containing the documented Combobox with a "
         "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
-    "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
 }
 
 BUILD_DEFAULTS: dict[tuple[str, str], str] = {

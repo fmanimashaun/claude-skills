@@ -1557,6 +1557,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Stepper / wizard is documented** (#95). `coverage.md` **2 → 1**. The gate came back **largely
+  INCONCLUSIVE**, which is the correct answer for this row, not a failure — so most of the entry is a
+  **maintainer decision recorded on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95#issuecomment-5147018825)**, and every
+  such line in the entry says so. Only the cited lines are citable.
+  - **What is citable.** `aria-current="step"` is a real ARIA token (*"Represents the current step
+    within a process"*) and *"Authors **SHOULD** only mark one element in a set of elements as current"*.
+    **ARIA itself separates a stepper from a tablist**: *"Authors SHOULD NOT use the `aria-current`
+    attribute as a substitute for `aria-selected` … For example, in a `tablist`, `aria-selected` is used
+    on a `tab`."* And a checkout wizard is inside **3.3.4 Error Prevention (Legal, Financial, Data) at
+    Level AA** — Reversible, Checked or Confirmed. Levels stated because they differ: **3.2.2 is A,
+    3.3.4 is AA, 3.3.6 is AAA.**
+  - **Two absences recorded as absences.** There is **no APG Stepper/Wizard pattern** ("stepper",
+    "wizard", "multi-step" appear nowhere on the index), and — checked deliberately — **APG contains no
+    warning against reusing Tabs for wizard flows.** Our position that a gated, ordered sequence is not
+    *"layered sections of content"* is ours, not APG's.
+  - **The finding worth the whole entry: announce by moving focus, and then do NOT add a live region.**
+    4.1.3 Status Messages (**AA**) has a two-part test — the message must concern *"the progress of a
+    process"* (a step change does) **and** must *"not [be] delivered via a change in context."* Moving
+    focus **is** a change of context, and the Understanding document excludes it by name: *"Changes of
+    context, by their nature, interrupt the user by taking focus … and so have already met the goal to
+    alert the user."* So the two designs are exclusive: move focus to the new step's heading (satisfies
+    2.4.3, and 4.1.3 then does not apply), **or** announce via `role="status"` without moving focus.
+    Doing both double-announces. An implementer would otherwise reach for the live region *and* the
+    focus move, believing both were required.
+  - **Decided as ours:** `<ol>` always but `<nav aria-label="Progress">` only when the steps are really
+    links (Breadcrumb's landmark rule is real but not transferable — a breadcrumb is a trail to
+    ancestors); **no widget keyboard model at all** (it is a display, not a widget — no roving tabindex,
+    no arrow keys); **not a `progressbar`** either, since ARIA scopes that to *"tasks that take a long
+    time"* that are *"always read-only"* and a clickable step list is not read-only; and **never
+    auto-advance on input**, which sidesteps 3.2.2 rather than papering over it with an advisory.
+  - **The Progress bar entry gains a scoping note** rather than a rewrite. It was not wrong — it was
+    unscoped: a continuous bar showing overall completion *is* that component and `aria-valuetext="Step
+    2 of 5"` is right for it; the enumerated named-step list is this one. The two are a paragraph apart
+    and a reader would otherwise pick either.
+
 - **Reviews + Rating is documented** (#91). `coverage.md` **3 → 2**. The verdict's most valuable output
   was again negative: **the intuitive citation is the wrong one.**
   - **The governing criterion is 1.1.1 Non-text Content (Level A), not 1.4.1 Use of Color.** A star row
