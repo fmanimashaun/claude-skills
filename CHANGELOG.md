@@ -1236,6 +1236,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`controllers-routing.md` §7 shipped a Ruby block that raises `SyntaxError` on paste** (#269).
+  `private def render_not_found = render file: …` does not parse; parenthesising the body fixes it.
+  Verified against the **reference implementation** (ruby 3.3.6) rather than asserted — `ruby -c`
+  gives `syntax error, unexpected label, expecting 'do' or '{' or '('`, and `Syntax OK` with parens.
+  - **The rule is narrower than it looks, so the corrected block now says why.** It is *not* "endless
+    defs reject bare keyword arguments" — `def a = foo k: 1` is **valid**. It breaks only when the
+    endless `def` is an argument to another call: `private def a = foo` parses first, leaving `k: 1`
+    with nothing to attach to. Version boundary: measured on ruby 3.3.6; the parse rule is not
+    version-specific to 8.1 and the parenthesised form is valid on every Ruby with endless defs (3.0+).
+  - **Present since `38c2091` (initial release, 2026-07-05)** — live on `main` for the skill's whole
+    life and baked into `dist/rails-8.skill`, so it reached the claude.ai upload path too. `dist/`
+    repackaged.
+  - **Grepped for the class, not just the instance** — `private def … = …` occurs exactly once in
+    `skills/`, so this one did not travel in a group. Caught by `lint_markdown_code.py`, which is
+    precisely the copy-paste hazard it was built to find; the gate now reports `no findings`.
+
 ### 2026-07-30 — the umbrella-Closes rule
 
 - **NEW `references/motion.md` — motion doctrine** (#136). Our entire motion doctrine was **one
