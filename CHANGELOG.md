@@ -11,6 +11,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 Version numbers are assigned at the promotion, never here.
 
+- **FIX — CLAUDE.md claimed all hooks fail open; two fail closed on purpose** (#132). A
+  `doctrine-contradiction` in our own file, flagged by the session that wrote the harness doctrine and
+  **verified here by running the hooks** with `python3` shadowed by a stub that exits 127 — not by
+  reading them. Of the **ten** hook scripts, eight are advisory and degrade to silence, which is
+  correct: an advisory that blocks work when a dependency is missing is an advisory people disable.
+  The two gates fail **closed**: `guard-bash.sh` still exits **2** on `git add -A`, because its
+  fallback passes the raw JSON payload and the command text is still in it; `release-gate.sh` exits
+  **2** when `python3` is absent *and* the command targets `main`, **0** otherwise. That scoping is the
+  load-bearing detail — a gate that failed closed on unrelated work would be switched off within a day.
+- **`docs/harness-doctrine.md` is now referenced from the maintenance guidance** (#132), closing its
+  last open acceptance criterion. It was cited only from a sibling doc, so the doctrine existed and the
+  people who needed it — anyone adding a hook — had no pointer to it. The reference sits at the exact
+  place the decision gets made, next to the fail-open/fail-closed split, with the guarantee-vs-advice
+  test named: *"if a model ignores this, what happens?"*
+
 - **TOOLING — the computed work queue becomes a gate at the point of use** (#133). `issue_graph.py`
   could already tell you the order; nothing checked that anyone followed it. `/maintainer-work`
   Phase 0 said *"take the head of the triaged queue"* — a claim with no enforcement, which is the
