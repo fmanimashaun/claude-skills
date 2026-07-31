@@ -1,0 +1,963 @@
+#!/usr/bin/env python3
+"""Render the fidara component coverage matrix as a filterable, shareable HTML page.
+
+Run:  python3 scripts/build_coverage_artifact.py              # write the HTML
+      python3 scripts/build_coverage_artifact.py --out P      # ...somewhere else
+      python3 scripts/build_coverage_artifact.py --selftest   # prove the guards fire and stay silent
+
+WHY HTML AND NOT THE MARKDOWN WE ALREADY HAVE. `coverage.md` splits 113 rows across three
+tables because markdown cannot express a filter. The one question a maintainer actually asks
+of it -- "what needs doctrine, of kind composition, that only Flowbite carries?" -- cuts
+ACROSS that split, so answering it today means reading three tables and holding the join in
+your head. One table plus filter chips is not a prettier coverage.md; it is the same data in
+a shape that can answer the question.
+
+WHY THIS IMPORTS build_coverage RATHER THAN PARSING ITS OUTPUT. The first version of this
+script parsed `coverage.md`, and its very first run failed its own count assertion: matching
+the Totals label "documented" also matched `— derivable from documented parts`, so 44
+derivable rows were counted as documented. That bug is not a slip to be more careful about --
+it is the *category*. `coverage.md` is generated English, and pattern-matching generated
+English re-derives, badly, structure the generator already had:
+
+  - three tables whose column ORDER differs (documented is use-then-note, derivable is
+    build-then-use), so one transposition silently swaps two columns of prose;
+  - `✓`/`—` glyphs standing in for booleans;
+  - a status prefix (`needs doctrine #95`) that carries the tracked issue inside a string.
+
+Importing `build_coverage.ENTRIES` removes every one of those: `is_documented` /
+`is_derivable` / `needs_doctrine` are predicates on a frozen dataclass, `bool(e.tw)` is the
+corpus flag, and `resolve_use` / `resolve_build` return the same prose the markdown renders,
+already separated. There is no label left to mis-match.
+
+WHAT THAT MOVES RATHER THAN REMOVES. Importing kills the parse bug and inherits a different
+one: the predicates are `status.startswith(...)`, so a typo'd status (`"documentd"`) makes
+all three FALSE and the row would simply vanish from the page -- 112 rows rendered where 113
+exist, with nothing to notice. So the partition is asserted total and disjoint (`verify_partition`),
+which is the check the old regex could not have made at all.
+
+THE SECOND CHECK IS AGAINST DATA, NOT AGAINST OURSELVES. Asserting our counts against
+`len([e for e in ENTRIES if e.is_documented])` would be a tautology -- the same expression
+twice. Instead `cross_check_committed` compares them to the Totals table in the COMMITTED
+`coverage.md`: an independently generated artifact of the same source, so agreement means the
+two renderers agree about the data. It reports three states, never two -- and `skip` (the file
+is absent or stale) is not a pass.
+
+CORPORA. Only the two enumeration totals ("93 Tailwind UI leaf components") need the licensed
+corpora, because only they count upstream directories. The 113 rows are ours. So this runs on
+a machine without `design-corpora/` and says the totals are unavailable rather than printing a
+zero that reads like a finding.
+
+LICENSING (#89, #123). Same boundary as the builder, inherited rather than re-earned: this
+reads `Entry` names, statuses and our own prose. No markup, class list or asset from either
+kit is emitted, so the published page cannot leak licensed content.
+
+PROVENANCE. A shared HTML page outlives the commit it was built from, and a stale second
+source of truth that looks authoritative is the failure this repo keeps writing down. So the
+page stamps the commit it was generated from and whether that commit is in a published
+release -- an unreleased or dirty build says so, loudly, on the page itself.
+
+Stdlib only, no network.
+"""
+
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import build_coverage as bc  # noqa: E402  — the source of truth, imported not parsed
+
+REPO = Path(__file__).resolve().parents[1]
+MARKETPLACE = REPO / ".claude-plugin" / "marketplace.json"
+DEFAULT_OUT = REPO / "dist" / "coverage.html"
+
+GUIDANCE_DOCUMENTED = "documented"
+GUIDANCE_DERIVABLE = "derivable"
+GUIDANCE_NEEDS = "needs-doctrine"
+
+
+class ArtifactError(Exception):
+    """A guard tripped. Never write a file after one of these."""
+
+
+# ---------------------------------------------------------------------------- text
+
+def inline(md: str) -> str:
+    """Markdown inline -> HTML fragment.
+
+    Escapes FIRST and unconditionally: the prose in ENTRIES contains literal `<dd>`,
+    `<hr>`, `<video controls>` and `cover > center > stack`, and every string here
+    reaches the DOM through `innerHTML`.
+    """
+    s = html.escape(md.strip())
+    s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", s)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+    return s
+
+
+def searchable(*parts: str) -> str:
+    s = " ".join(p for p in parts if p)
+    s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", s)
+    return re.sub(r"[`*]", "", s).lower()
+
+
+# ------------------------------------------------------------------------- guards
+
+def verify_partition(entries) -> None:
+    """Every entry lands in exactly one guidance bucket.
+
+    The predicates are `status.startswith(...)`, so a typo'd status matches none of them and
+    the row would disappear from the page with no error. Silent omission from a completeness
+    matrix is the one failure it must never have.
+    """
+    problems: list[str] = []
+    for e in entries:
+        hits = [
+            name for name, ok in (
+                (GUIDANCE_DOCUMENTED, e.is_documented),
+                (GUIDANCE_DERIVABLE, e.is_derivable),
+                (GUIDANCE_NEEDS, e.needs_doctrine),
+            ) if ok
+        ]
+        if len(hits) != 1:
+            problems.append(
+                f"{e.name!r} has status {e.status!r}, which matches {len(hits)} guidance "
+                f"predicates ({', '.join(hits) or 'none'}) — it must match exactly one, or the "
+                "row is silently dropped from a matrix whose whole claim is completeness"
+            )
+    if problems:
+        raise ArtifactError("\n".join(f"  - {p}" for p in problems))
+
+
+def verify_prose(entries) -> None:
+    """Every row must resolve a `where / when`, and every non-documented row a `build from`.
+
+    `build_coverage` enforces both when it renders the markdown; this asserts them again
+    because THIS renderer would emit a visibly empty cell rather than failing.
+    """
+    problems: list[str] = []
+    for e in entries:
+        if not bc.resolve_use(e).strip():
+            problems.append(f"{e.name!r} resolves no `where / when to use it`")
+        if not e.is_documented and not bc.resolve_build(e).strip():
+            problems.append(f"{e.name!r} is {e.status!r} but resolves no `build from`")
+    if problems:
+        raise ArtifactError("\n".join(f"  - {p}" for p in problems))
+
+
+TOTALS_KEYS = (
+    # ORDER MATTERS and is the point of the original bug: the derivable label reads
+    # "— derivable from documented parts", so a substring test for "documented" must come
+    # LAST or it steals that row. Kept ordered *and* commented because this cross-check is
+    # now the only place a label is matched at all.
+    ("needs doctrine", GUIDANCE_NEEDS),
+    ("derivable", GUIDANCE_DERIVABLE),
+    ("documented", GUIDANCE_DOCUMENTED),
+)
+
+
+def parse_committed_totals(text: str) -> dict[str, int]:
+    """The `## Totals` table of a rendered coverage.md, as {bucket: count}."""
+    block = text.split("\n## Totals", 1)
+    if len(block) != 2:
+        return {}
+    out: dict[str, int] = {}
+    for line in block[1].split("\n## ", 1)[0].split("\n"):
+        m = re.match(r"\|\s*(.+?)\s*\|\s*(\d+)\s*\|\s*$", line)
+        if not m:
+            continue
+        label, count = re.sub(r"[`*—]", "", m.group(1)).strip(), int(m.group(2))
+        if label.startswith("fidara"):
+            out["rows"] = count
+            continue
+        for needle, key in TOTALS_KEYS:
+            if needle in label:
+                out[key] = count
+                break
+    return out
+
+
+def cross_check_committed(counted: dict[str, int]) -> tuple[str, str]:
+    """Compare our counts to the committed coverage.md's own Totals table.
+
+    Returns (state, message) where state is `ok`, `skip` or `fail`. **`skip` is not a pass** —
+    it means the check did not run, and saying so is the whole reason it returns three states.
+    """
+    if not bc.OUT.is_file():
+        return "skip", f"{bc.OUT.name} is not present — cross-check did not run"
+    claimed = parse_committed_totals(bc.OUT.read_text(encoding="utf-8"))
+    if not claimed:
+        return "skip", f"{bc.OUT.name} has no parseable Totals table — cross-check did not run"
+    diffs = [
+        f"{k}: artifact {counted[k]} vs {bc.OUT.name} {claimed[k]}"
+        for k in sorted(counted) if k in claimed and claimed[k] != counted[k]
+    ]
+    if diffs:
+        return "fail", (
+            "the committed matrix and this artifact disagree about the same ENTRIES — "
+            + "; ".join(diffs)
+            + f". Regenerate with `python3 scripts/build_coverage.py` if {bc.OUT.name} is stale"
+        )
+    missing = sorted(set(counted) - set(claimed))
+    if missing:
+        return "skip", f"{bc.OUT.name} Totals omits {', '.join(missing)} — partial cross-check"
+    return "ok", f"agrees with the Totals table in {bc.OUT.name}"
+
+
+# --------------------------------------------------------------------- provenance
+
+def _git(*args: str) -> str | None:
+    try:
+        r = subprocess.run(("git", *args), cwd=REPO, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def provenance() -> dict:
+    """What this page was built from — so a shared snapshot can never imply it is current."""
+    versions: dict[str, str] = {}
+    try:
+        m = json.loads(MARKETPLACE.read_text(encoding="utf-8"))
+        versions["release"] = m.get("metadata", {}).get("version", "")
+        for p in m.get("plugins", []):
+            if p.get("name") == "rails-stack" and p.get("version"):
+                versions["railsStack"] = p["version"]
+    except (OSError, ValueError):
+        pass
+
+    commit = _git("rev-parse", "--short", "HEAD")
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    # Only sources this page is actually built from count as "dirty" — an unrelated edit
+    # elsewhere in the tree does not make this rendering unreliable.
+    # `bc.OUT` is module state, so it is not guaranteed to sit under REPO (the selftest
+    # repoints it at a temp dir). Fall back rather than raising: a provenance stamp must never
+    # be the thing that fails a build.
+    watched = ["scripts/build_coverage.py", "scripts/build_coverage_artifact.py"]
+    watched.append(str(bc.OUT.relative_to(REPO)) if bc.OUT.is_relative_to(REPO)
+                   else "skills/fidara-design/references/coverage.md")
+    dirty_out = _git("status", "--porcelain", "--", *watched)
+    dirty = sorted(l[3:] for l in (dirty_out or "").splitlines() if l.strip())
+
+    released = None
+    if commit:
+        for ref in ("origin/main", "main"):
+            if _git("rev-parse", "--verify", "--quiet", ref):
+                r = subprocess.run(("git", "merge-base", "--is-ancestor", "HEAD", ref),
+                                   cwd=REPO, capture_output=True, text=True)
+                released = r.returncode == 0
+                break
+
+    if dirty:
+        state, label = "dirty", "Uncommitted working tree"
+    elif released is True:
+        state, label = "released", f"Released — v{versions.get('release', '?')}"
+    elif released is False:
+        state, label = "unreleased", "Unreleased snapshot"
+    else:
+        state, label = "unknown", "Provenance unavailable"
+
+    return {
+        "state": state, "label": label, "commit": commit, "branch": branch,
+        "dirty": dirty, "versions": versions,
+    }
+
+
+# --------------------------------------------------------------------------- data
+
+def collect() -> dict:
+    entries = list(bc.ENTRIES)
+    verify_partition(entries)
+    verify_prose(entries)
+
+    rows = []
+    for e in entries:
+        guidance = (GUIDANCE_DOCUMENTED if e.is_documented else
+                    GUIDANCE_DERIVABLE if e.is_derivable else GUIDANCE_NEEDS)
+        use = bc.resolve_use(e)
+        build = "" if e.is_documented else bc.resolve_build(e)
+        # the tracked issue lives inside the status string: "needs doctrine #95"
+        m = re.search(r"#\d+", e.status) if e.needs_doctrine else None
+        tracked = m.group(0) if m else ""
+        rows.append({
+            "name": e.name, "nameHtml": inline(e.name),
+            "kind": e.kind, "kindHtml": html.escape(e.kind),
+            "tw": bool(e.tw), "fb": bool(e.fb),
+            "guidance": guidance,
+            "whereHtml": inline(use),
+            "buildHtml": inline(build) if build.strip() else None,
+            "watchHtml": inline(e.note) if e.note.strip() else None,
+            "tracked": tracked, "trackedHtml": html.escape(tracked) if tracked else None,
+            "q": searchable(e.name, e.kind, guidance, use, build, e.note, tracked),
+        })
+    rows.sort(key=lambda r: (r["kind"], r["name"]))
+
+    counted = {
+        "rows": len(rows),
+        GUIDANCE_DOCUMENTED: sum(1 for r in rows if r["guidance"] == GUIDANCE_DOCUMENTED),
+        GUIDANCE_DERIVABLE: sum(1 for r in rows if r["guidance"] == GUIDANCE_DERIVABLE),
+        GUIDANCE_NEEDS: sum(1 for r in rows if r["guidance"] == GUIDANCE_NEEDS),
+    }
+    state, message = cross_check_committed(counted)
+    if state == "fail":
+        raise ArtifactError(f"  - {message}")
+
+    # Only these two need the licensed corpora. Absent -> say so; never emit a zero.
+    corpora: dict[str, object] = {"available": False, "tw": None, "fb": None}
+    try:
+        tw, fb = bc.discover_tw(), bc.discover_fb()
+        corpora = {"available": True, "tw": len(tw), "fb": len(fb)}
+    except (bc.BuildError, OSError):
+        pass
+
+    return {
+        "entries": rows,
+        "totals": counted,
+        "corpora": corpora,
+        "crossCheck": {"state": state, "message": message},
+        "patterns": [{"name": inline(n), "status": inline(s), "note": inline(note)}
+                     for n, s, note in bc.INTERACTION_PATTERNS],
+        "primitives": [{"name": inline(f"`{n}`"), "status": inline(s)}
+                       for n, s in bc.LAYOUT_PRIMITIVES],
+        "provenance": provenance(),
+    }
+
+
+def render(data: dict) -> str:
+    """Substitute the data blob into the template.
+
+    `json.dumps` escapes what JSON needs, which is NOT what an inline `<script>` needs: a
+    literal `</script>` or `<!--` inside any string would end the script element early, and
+    the rest of the page would render as text. HTML-escaping cannot help here (the blob is
+    parsed as JavaScript, not HTML), so the two sequences are broken with `\\/` and `\\u002D`
+    — both valid JSON escapes, so the value the page parses is unchanged.
+    """
+    blob = json.dumps(data, ensure_ascii=False)
+    # `<!--` keeps the `!` — escaping to `<--` would decode to `<--`,
+    # silently changing the value the page reads. The selftest pins that round-trip.
+    blob = blob.replace("</", "<\\/").replace("<!--", "<!\\u002D\\u002D")
+    doc = TEMPLATE.replace("__DATA__", blob)
+    if "__DATA__" in doc:
+        raise ArtifactError("  - the __DATA__ placeholder survived substitution")
+    # Check the emitted SCRIPT BODY, not the whole document: the template's own closing tag
+    # is legitimate, so scanning `doc` would flag every successful build.
+    body = doc[doc.index("const DATA = "):doc.rindex("</script>")]
+    if "</script" in body or "<!--" in body:
+        raise ArtifactError(
+            "  - the data blob still contains a script-terminating sequence after escaping"
+        )
+    return doc
+
+
+# ----------------------------------------------------------------------- template
+
+TEMPLATE = r"""<title>fidara component coverage</title>
+<style>
+/* ---------------------------------------------------------------------- tokens
+   Palette, type scale, spacing, radius and the light/dark role mapping are the
+   fidara kit's OWN, from skills/fidara-design/references/foundations-tokens.md:
+   fm-* primitives bound through the semantic role layer. The one thing a page
+   documenting a design system must not do is invent a look. */
+:root {
+  --fm-navy:#0C1B33; --fm-ink:#1A2B45; --fm-midnight:#152238;
+  --fm-cerulean:#0077CC; --fm-electric:#00A3FF;
+  --fm-success:#22C55E; --fm-warning:#F59E0B; --fm-error:#EF4444;
+  --s50:#F8F9FB; --s100:#F1F3F7; --s200:#E2E6ED; --s300:#C8CDD8; --s400:#8F96A3;
+  --s500:#5E6775; --s600:#3D4654; --s700:#2A3240; --s800:#1C2531; --s900:#0F1520;
+
+  --background:var(--s50); --foreground:var(--s900);
+  --card:#FFFFFF; --muted:var(--s100); --muted-foreground:var(--s500);
+  --border:var(--s200); --hairline:var(--s200);
+  --primary:var(--fm-cerulean); --primary-foreground:#FFFFFF; --ring:var(--fm-cerulean);
+  --chip:#FFFFFF; --chip-border:var(--s300);
+  --tint:rgba(0,119,204,.06);
+  --ok-fg:#166534; --ok-bg:rgba(34,197,94,.13); --ok-bd:rgba(34,197,94,.30);
+  --info-fg:#075985; --info-bg:rgba(0,119,204,.12); --info-bd:rgba(0,119,204,.28);
+  --warn-fg:#92400E; --warn-bg:rgba(245,158,11,.15); --warn-bd:rgba(245,158,11,.35);
+  --bad-fg:#991B1B; --bad-bg:rgba(239,68,68,.13); --bad-bd:rgba(239,68,68,.30);
+
+  /* fluid Utopia scale, and the corpus-calibrated assignment it ships with:
+     interface chrome is SMALLER than prose — step--1 for chrome, step-0 for reading. */
+  --step--2:clamp(.72rem,.70rem + .10vw,.78rem);
+  --step--1:clamp(.833rem,.80rem + .15vw,.9rem);
+  --step-0:clamp(1rem,.95rem + .25vw,1.125rem);
+  --step-1:clamp(1.2rem,1.12rem + .4vw,1.42rem);
+  --step-2:clamp(1.44rem,1.31rem + .65vw,1.8rem);
+  --step-3:clamp(1.73rem,1.54rem + .97vw,2.28rem);
+  --space-2xs:clamp(.5rem,.46rem + .18vw,.625rem);
+  --space-xs:clamp(.75rem,.70rem + .27vw,.9375rem);
+  --space-s:clamp(1rem,.93rem + .36vw,1.25rem);
+  --space-m:clamp(1.5rem,1.39rem + .54vw,1.875rem);
+  --space-l:clamp(2rem,1.86rem + .71vw,2.5rem);
+  --width-shell:80rem; --measure:65ch;
+  --radius:.5rem; --radius-sm:calc(var(--radius) - 2px);
+  --shadow-xs:0 1px 2px rgb(12 27 51 / .04);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --duration-fast:120ms; --duration:180ms;
+
+  /* Brand faces if the viewer has them, else the stacks the token file itself
+     declares. No CDN <link>: the artifact CSP blocks font hosts, and a blocked
+     link is a silent fallback wearing a webfont's clothes. */
+  --font-sans:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --font-display:"Newsreader",ui-serif,Georgia,serif;
+  --font-mono:"Overpass Mono",ui-monospace,SFMono-Regular,monospace;
+}
+/* dark re-points the ROLES only; component rules below never name a theme.
+   --primary lifts cerulean -> electric, exactly as the kit's .dark block does. */
+@media (prefers-color-scheme:dark){:root{
+  --background:var(--fm-navy); --foreground:var(--s50);
+  --card:var(--fm-ink); --muted:var(--s800); --muted-foreground:var(--s400);
+  --border:var(--s800); --hairline:#243349;
+  --primary:var(--fm-electric); --primary-foreground:var(--fm-navy); --ring:var(--fm-electric);
+  --chip:var(--fm-midnight); --chip-border:#2C3E58;
+  --tint:rgba(0,163,255,.09);
+  --ok-fg:#7EE2A8; --info-fg:#7CD4FF; --warn-fg:#FCD34D; --bad-fg:#FCA5A5;
+}}
+:root[data-theme="dark"]{
+  --background:var(--fm-navy); --foreground:var(--s50);
+  --card:var(--fm-ink); --muted:var(--s800); --muted-foreground:var(--s400);
+  --border:var(--s800); --hairline:#243349;
+  --primary:var(--fm-electric); --primary-foreground:var(--fm-navy); --ring:var(--fm-electric);
+  --chip:var(--fm-midnight); --chip-border:#2C3E58;
+  --tint:rgba(0,163,255,.09);
+  --ok-fg:#7EE2A8; --info-fg:#7CD4FF; --warn-fg:#FCD34D; --bad-fg:#FCA5A5;
+}
+:root[data-theme="light"]{
+  --background:var(--s50); --foreground:var(--s900);
+  --card:#FFFFFF; --muted:var(--s100); --muted-foreground:var(--s500);
+  --border:var(--s200); --hairline:var(--s200);
+  --primary:var(--fm-cerulean); --primary-foreground:#FFFFFF; --ring:var(--fm-cerulean);
+  --chip:#FFFFFF; --chip-border:var(--s300);
+  --tint:rgba(0,119,204,.06);
+  --ok-fg:#166534; --info-fg:#075985; --warn-fg:#92400E; --bad-fg:#991B1B;
+}
+
+/* ------------------------------------------------------------------------ base */
+*{box-sizing:border-box}
+body{margin:0; background:var(--background); color:var(--foreground);
+  font-family:var(--font-sans); font-size:var(--step-0); line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+.shell{max-inline-size:var(--width-shell); margin-inline:auto; padding-inline:var(--space-s)}
+code{font-family:var(--font-mono); font-size:.92em; background:var(--muted);
+  padding:.1em .35em; border-radius:var(--radius-sm)}
+:where(a,button,input):focus-visible{outline:2px solid var(--ring); outline-offset:2px}
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip-path:inset(50%); white-space:nowrap; border:0}
+@media (prefers-reduced-motion:reduce){*{transition-duration:0ms !important}}
+
+/* -------------------------------------------------------------------- masthead */
+.masthead{padding-block:var(--space-l) var(--space-s)}
+.eyebrow{font-size:var(--step--2); text-transform:uppercase; letter-spacing:.09em;
+  font-weight:600; color:var(--muted-foreground); margin:0 0 var(--space-2xs)}
+h1{font-size:var(--step-3); line-height:1.1; margin:0; font-weight:640;
+  text-wrap:balance; letter-spacing:-.015em}
+.tagline{font-family:var(--font-display); font-style:italic; font-size:var(--step-1);
+  color:var(--muted-foreground); margin:var(--space-2xs) 0 0;
+  max-inline-size:var(--measure); text-wrap:balance}
+
+/* provenance: a snapshot that cannot imply it is current */
+.stamp{display:flex; flex-wrap:wrap; gap:var(--space-2xs) var(--space-s); align-items:baseline;
+  margin-top:var(--space-s); padding:var(--space-2xs) var(--space-xs);
+  border:1px solid var(--border); border-left-width:3px; border-radius:var(--radius-sm);
+  background:var(--card); font-size:var(--step--1)}
+.stamp.released{border-left-color:var(--fm-success)}
+.stamp.unreleased,.stamp.dirty{border-left-color:var(--fm-warning)}
+.stamp.unknown{border-left-color:var(--s400)}
+.stamp .badge{font-size:var(--step--2); font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; padding:.15rem .5rem; border-radius:99px; border:1px solid transparent}
+.stamp.released .badge{color:var(--ok-fg); background:var(--ok-bg); border-color:var(--ok-bd)}
+.stamp.unreleased .badge,.stamp.dirty .badge{color:var(--warn-fg); background:var(--warn-bg);
+  border-color:var(--warn-bd)}
+.stamp.unknown .badge{color:var(--muted-foreground); background:var(--muted);
+  border-color:var(--border)}
+.stamp .meta{color:var(--muted-foreground)}
+.stamp .meta b{color:var(--foreground); font-family:var(--font-mono); font-weight:400}
+.provenance{margin:var(--space-s) 0 0; font-size:var(--step--1);
+  color:var(--muted-foreground); max-inline-size:var(--measure)}
+.provenance code{background:transparent; padding:0; color:var(--foreground)}
+
+/* ----------------------------------------------------------------- stat tiles */
+.tiles{display:grid; gap:var(--space-xs); grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));
+  margin-block:var(--space-m)}
+.tile{background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+  box-shadow:var(--shadow-xs); padding:var(--space-xs) var(--space-s)}
+.tile .k{font-size:var(--step--2); text-transform:uppercase; letter-spacing:.07em;
+  font-weight:600; color:var(--muted-foreground)}
+.tile .v{font-size:var(--step-2); font-weight:650; font-variant-numeric:tabular-nums;
+  line-height:1.15; margin-top:.15em; letter-spacing:-.02em}
+.tile .v.na{font-size:var(--step-0); font-weight:500; color:var(--muted-foreground);
+  letter-spacing:0; font-style:italic}
+.tile.span2{grid-column:span 2}
+@media (max-width:38rem){.tile.span2{grid-column:span 1}}
+.meter{display:flex; height:.5rem; border-radius:99px; overflow:hidden; margin-top:.55em;
+  background:var(--muted)}
+.meter i{display:block}
+.meter i.documented{background:var(--fm-success)}
+.meter i.derivable{background:var(--primary)}
+.meter i.needs-doctrine{background:var(--fm-warning)}
+.meter-key{display:flex; flex-wrap:wrap; gap:var(--space-xs); margin-top:.6em;
+  font-size:var(--step--2); color:var(--muted-foreground)}
+.meter-key span{display:inline-flex; align-items:center; gap:.4em; white-space:nowrap}
+.meter-key b{color:var(--foreground); font-variant-numeric:tabular-nums}
+.dot{width:.5rem; height:.5rem; border-radius:99px; flex:none}
+.dot.documented{background:var(--fm-success)}
+.dot.derivable{background:var(--primary)}
+.dot.needs-doctrine{background:var(--fm-warning)}
+
+/* ------------------------------------------------------------------- controls */
+.controls{position:sticky; top:0; z-index:5; background:var(--background);
+  border-block:1px solid var(--hairline); padding-block:var(--space-xs)}
+.controls .row{display:flex; flex-wrap:wrap; gap:var(--space-xs); align-items:center}
+.controls .row + .row{margin-top:.5rem}
+.search{flex:1 1 16rem; min-inline-size:0; display:flex}
+.search input{inline-size:100%; font:inherit; font-size:var(--step--1);
+  font-family:var(--font-sans); padding:.5rem .75rem; height:2.25rem;
+  color:var(--foreground); background:var(--card); border:1px solid var(--chip-border);
+  border-radius:var(--radius-sm)}
+.search input::placeholder{color:var(--muted-foreground)}
+.group{display:flex; flex-wrap:wrap; gap:.35rem; align-items:center}
+.group > .lbl{font-size:var(--step--2); text-transform:uppercase; letter-spacing:.07em;
+  font-weight:600; color:var(--muted-foreground); margin-inline-end:.15rem}
+.chip{font:inherit; font-size:var(--step--1); font-family:var(--font-sans); line-height:1;
+  padding:.4rem .7rem; min-height:2rem; cursor:pointer; color:var(--foreground);
+  background:var(--chip); border:1px solid var(--chip-border); border-radius:99px;
+  display:inline-flex; align-items:center; gap:.4em;
+  transition:background var(--duration-fast) var(--ease-out),
+             border-color var(--duration-fast) var(--ease-out)}
+.chip:hover{background:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--primary); border-color:var(--primary);
+  color:var(--primary-foreground)}
+.chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1px var(--primary-foreground)}
+.reset{margin-inline-start:auto; font:inherit; font-size:var(--step--1);
+  font-family:var(--font-sans); background:none; border:0; color:var(--primary);
+  cursor:pointer; padding:.4rem .25rem; text-decoration:underline; text-underline-offset:3px}
+.count{font-size:var(--step--1); color:var(--muted-foreground);
+  padding-block:var(--space-2xs); margin:0; font-variant-numeric:tabular-nums}
+.count b{color:var(--foreground)}
+
+/* ---------------------------------------------------------------------- table */
+.tablewrap{overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius);
+  background:var(--card); margin-block:var(--space-m) var(--space-l)}
+table{border-collapse:collapse; inline-size:100%; min-inline-size:44rem}
+thead th{position:sticky; top:0; background:var(--card); text-align:left;
+  font-size:var(--step--2); text-transform:uppercase; letter-spacing:.07em; font-weight:600;
+  color:var(--muted-foreground); padding:.7rem var(--space-xs);
+  border-bottom:1px solid var(--border); white-space:nowrap}
+thead th abbr{text-decoration:none; border-bottom:1px dotted var(--muted-foreground)}
+tbody td{font-size:var(--step--1); padding:.55rem var(--space-xs); vertical-align:top;
+  border-bottom:1px solid var(--hairline)}
+tbody tr.entry:hover td,tbody tr.entry.open td{background:var(--tint)}
+td.stripe{padding:0; width:3px}
+td.stripe i{display:block; inline-size:3px; block-size:100%; min-block-size:2.2rem}
+tr.documented td.stripe i{background:var(--fm-success)}
+tr.derivable td.stripe i{background:var(--primary)}
+tr.needs-doctrine td.stripe i{background:var(--fm-warning)}
+.namebtn{font:inherit; font-size:var(--step--1); font-family:var(--font-sans);
+  font-weight:560; text-align:left; background:none; border:0; padding:0;
+  color:var(--foreground); cursor:pointer; display:flex; gap:.5em; align-items:baseline;
+  inline-size:100%}
+.namebtn:hover{color:var(--primary)}
+.namebtn .caret{flex:none; font-size:.7em; color:var(--muted-foreground); display:inline-block;
+  transition:transform var(--duration) var(--ease-out); translate:0 -.1em}
+.namebtn[aria-expanded="true"] .caret{transform:rotate(90deg); color:var(--primary)}
+.kind{font-size:var(--step--2); color:var(--muted-foreground); white-space:nowrap}
+.pill{display:inline-block; font-size:var(--step--2); font-weight:600; white-space:nowrap;
+  padding:.15rem .5rem; border-radius:99px; border:1px solid transparent}
+.pill.documented{color:var(--ok-fg); background:var(--ok-bg); border-color:var(--ok-bd)}
+.pill.derivable{color:var(--info-fg); background:var(--info-bg); border-color:var(--info-bd)}
+.pill.needs-doctrine{color:var(--warn-fg); background:var(--warn-bg); border-color:var(--warn-bd)}
+/* provenance as two cells, filled = carried by that corpus. Scannable in a way
+   ✓ / — is not: "ours alone" is the one row where both read hollow. */
+.prov{display:inline-flex; gap:2px}
+.prov b{inline-size:1.15rem; block-size:1.15rem; border-radius:3px; display:grid;
+  place-items:center; font-size:.6rem; font-weight:700; letter-spacing:.02em;
+  border:1px solid var(--chip-border); color:var(--muted-foreground); background:transparent}
+.prov b.on{background:var(--primary); border-color:var(--primary); color:var(--primary-foreground)}
+/* clamp the SPAN, never the cell: display:-webkit-box on a <td> drops it out of
+   table layout and the column collapses. */
+.where{color:var(--muted-foreground)}
+.where .clamp{display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical;
+  overflow:hidden; max-inline-size:34ch}
+tr.detail > td{padding:0 var(--space-xs) var(--space-s); background:var(--tint);
+  border-bottom:1px solid var(--hairline)}
+tr.detail dl{margin:0; display:grid; gap:var(--space-2xs) var(--space-s);
+  grid-template-columns:max-content minmax(0,var(--measure))}
+tr.detail dt{font-size:var(--step--2); text-transform:uppercase; letter-spacing:.07em;
+  font-weight:600; color:var(--muted-foreground); padding-top:.15em}
+tr.detail dd{margin:0; font-size:var(--step--1)}
+@media (max-width:44rem){
+  tr.detail dl{grid-template-columns:1fr}
+  tr.detail dt{padding-top:var(--space-2xs)}
+}
+.empty{padding:var(--space-l); text-align:center; color:var(--muted-foreground);
+  font-size:var(--step--1); margin:0}
+
+/* --------------------------------------------------------------------- panels */
+h2{font-size:var(--step-2); font-weight:620; margin:0 0 var(--space-2xs); letter-spacing:-.01em}
+.lede{color:var(--muted-foreground); font-size:var(--step-0);
+  max-inline-size:var(--measure); margin:0 0 var(--space-s)}
+.panels{display:grid; gap:var(--space-m);
+  grid-template-columns:repeat(auto-fit,minmax(20rem,1fr)); margin-bottom:var(--space-l)}
+.panel{background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+  box-shadow:var(--shadow-xs); padding:var(--space-s)}
+.panel h3{font-size:var(--step-1); font-weight:620; margin:0 0 var(--space-2xs)}
+.panel p.hint{font-size:var(--step--1); color:var(--muted-foreground); margin:0 0 var(--space-s)}
+.plist{list-style:none; margin:0; padding:0; display:grid; gap:.55rem}
+.plist li{display:grid; grid-template-columns:max-content 1fr; gap:.55rem;
+  align-items:baseline; font-size:var(--step--1)}
+.plist .st{font-size:var(--step--2); font-weight:600; white-space:nowrap; padding:.1rem .45rem;
+  border-radius:99px; border:1px solid transparent; justify-self:start}
+.st.shipped{color:var(--ok-fg); background:var(--ok-bg); border-color:var(--ok-bd)}
+.st.planned{color:var(--warn-fg); background:var(--warn-bg); border-color:var(--warn-bd)}
+.st.declined{color:var(--bad-fg); background:var(--bad-bg); border-color:var(--bad-bd)}
+.plist .nm{font-weight:560}
+.plist .note{grid-column:1/-1; font-size:var(--step--2); color:var(--muted-foreground);
+  max-inline-size:var(--measure)}
+.plist.prims li{grid-template-columns:1fr max-content}
+.plist.prims .nm{font-weight:400}
+
+footer{border-top:1px solid var(--hairline); padding-block:var(--space-m) var(--space-l);
+  font-size:var(--step--2); color:var(--muted-foreground); max-inline-size:var(--measure)}
+footer p{margin:0 0 var(--space-2xs)}
+footer .xc.fail{color:var(--bad-fg)} footer .xc.skip{color:var(--warn-fg)}
+</style>
+
+<div class="shell">
+  <header class="masthead">
+    <p class="eyebrow">fidara-design · component coverage</p>
+    <h1>Component coverage</h1>
+    <p class="tagline">Every row is buildable today — the only axis is how much the doctrine
+      already tells you.</p>
+    <div class="stamp" id="stamp"></div>
+    <p class="provenance">Generated from the <code>ENTRIES</code> table in
+      <code>scripts/build_coverage.py</code> — the same source
+      <code>references/coverage.md</code> is generated from, imported rather than parsed.
+      Names, statuses and our own prose only: no markup, class list or asset from either
+      licensed corpus.</p>
+  </header>
+
+  <section class="tiles" aria-label="Totals">
+    <div class="tile">
+      <div class="k">Tailwind UI enumerated</div>
+      <div class="v" id="t-tw">—</div>
+    </div>
+    <div class="tile">
+      <div class="k">Flowbite enumerated</div>
+      <div class="v" id="t-fb">—</div>
+    </div>
+    <div class="tile span2">
+      <div class="k">fidara rows</div>
+      <div class="v" id="t-rows">—</div>
+      <div class="meter" id="meter" role="img" aria-labelledby="meter-key"></div>
+      <div class="meter-key" id="meter-key"></div>
+    </div>
+  </section>
+
+  <div class="controls">
+    <div class="row">
+      <div class="search">
+        <label class="sr" for="q">Search components</label>
+        <input id="q" type="search" placeholder="Search name, guidance, or where to use it…"
+               autocomplete="off">
+      </div>
+      <div class="group" id="f-guidance" role="group" aria-label="Filter by guidance"></div>
+      <button class="reset" type="button" id="reset">Clear filters</button>
+    </div>
+    <div class="row">
+      <div class="group" id="f-kind" role="group" aria-label="Filter by kind"></div>
+      <div class="group" id="f-corpus" role="group" aria-label="Filter by corpus"></div>
+    </div>
+    <p class="count" id="count" aria-live="polite"></p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th><span class="sr">Guidance colour</span></th>
+          <th scope="col">Component</th>
+          <th scope="col">Kind</th>
+          <th scope="col"><abbr title="Which corpus carries the pattern. TW = Tailwind UI, FB = Flowbite">In</abbr></th>
+          <th scope="col">Guidance</th>
+          <th scope="col">Where / when to use it</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p class="empty" id="empty" hidden>No component matches those filters.</p>
+  </div>
+
+  <h2>Patterns and primitives</h2>
+  <p class="lede">Enumerated separately: interaction patterns cut across components rather
+    than mapping onto a corpus directory, and the layout primitives are the vocabulary every
+    row above composes from.</p>
+  <div class="panels">
+    <section class="panel">
+      <h3>Interaction patterns</h3>
+      <p class="hint">Flowbite's <code>data-*</code> trigger attributes are the better source
+        here — these cut across components.</p>
+      <ul class="plist" id="patterns"></ul>
+    </section>
+    <section class="panel">
+      <h3>Layout primitives</h3>
+      <p class="hint">The layout vocabulary as shipped — all present, all composable.</p>
+      <ul class="plist prims" id="primitives"></ul>
+    </section>
+  </div>
+
+  <footer>
+    <p id="xc"></p>
+    <p id="corpnote"></p>
+    <p>Brand faces (Bricolage Grotesque · Newsreader · Overpass Mono) render if installed
+      locally; otherwise this falls back to the stacks the kit's token file itself declares.
+      Type steps, spacing, radius and the light/dark role mapping are the kit's own values.</p>
+  </footer>
+</div>
+
+<script>
+const DATA = __DATA__;
+const E = DATA.entries;
+
+const GUIDANCE = [
+  ['documented','Documented'],
+  ['derivable','Derivable'],
+  ['needs-doctrine','Needs doctrine'],
+];
+const KINDS = ['primitive','component','composition','page archetype'];
+const CORPUS = [['tw','Tailwind UI'],['fb','Flowbite'],['ours','Ours alone']];
+const GLABEL = Object.fromEntries(GUIDANCE);
+const state = {q:'', guidance:new Set(), kind:new Set(), corpus:new Set()};
+
+/* ---- provenance stamp ---- */
+{
+  const p = DATA.provenance, el = document.getElementById('stamp');
+  el.className = 'stamp ' + p.state;
+  const bits = [];
+  if (p.commit) bits.push(`commit <b>${p.commit}</b>`);
+  if (p.branch && p.branch !== 'HEAD') bits.push(`branch <b>${p.branch}</b>`);
+  if (p.versions.railsStack) bits.push(`rails-stack <b>${p.versions.railsStack}</b>`);
+  if (p.state === 'dirty') bits.push(`uncommitted: <b>${p.dirty.join(', ')}</b>`);
+  if (p.state === 'unreleased') bits.push('not in any published release');
+  el.innerHTML = `<span class="badge">${p.label}</span>` +
+    `<span class="meta">${bits.join(' · ')}</span>` +
+    `<span class="meta">A snapshot — regenerate with ` +
+    `<code>python3 scripts/build_coverage_artifact.py</code></span>`;
+}
+
+/* ---- totals ---- */
+const T = DATA.totals, C = DATA.corpora;
+const twEl = document.getElementById('t-tw'), fbEl = document.getElementById('t-fb');
+if (C.available) { twEl.textContent = C.tw; fbEl.textContent = C.fb; }
+else {
+  for (const el of [twEl, fbEl]) { el.textContent = 'corpora not attached'; el.className = 'v na'; }
+}
+document.getElementById('t-rows').textContent = T.rows;
+const meter = document.getElementById('meter'), mkey = document.getElementById('meter-key');
+for (const [key,label] of GUIDANCE) {
+  const seg = document.createElement('i');
+  seg.className = key; seg.style.flex = String(T[key]);
+  meter.append(seg);
+  const s = document.createElement('span');
+  s.innerHTML = `<span class="dot ${key}"></span><b>${T[key]}</b> ${label.toLowerCase()}`;
+  mkey.append(s);
+}
+
+/* ---- filter chips ---- */
+function chips(host, items, group, withDot) {
+  for (const [val,label] of items) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip';
+    b.setAttribute('aria-pressed','false');
+    b.innerHTML = (withDot ? `<span class="dot ${val}"></span>` : '') + label;
+    b.addEventListener('click', () => {
+      const on = b.getAttribute('aria-pressed') === 'true';
+      b.setAttribute('aria-pressed', String(!on));
+      if (on) state[group].delete(val); else state[group].add(val);
+      render();
+    });
+    host.append(b);
+  }
+}
+for (const [id, items, group, dot, label] of [
+  ['f-guidance', GUIDANCE, 'guidance', true, 'Guidance'],
+  ['f-kind', KINDS.map(k => [k,k]), 'kind', false, 'Kind'],
+  ['f-corpus', CORPUS, 'corpus', false, 'Corpus'],
+]) {
+  const host = document.getElementById(id);
+  const lbl = document.createElement('span');
+  lbl.className = 'lbl'; lbl.textContent = label;
+  host.append(lbl);
+  chips(host, items, group, dot);
+}
+document.getElementById('q').addEventListener('input', e => {
+  state.q = e.target.value.trim().toLowerCase(); render();
+});
+document.getElementById('reset').addEventListener('click', () => {
+  state.q = ''; state.guidance.clear(); state.kind.clear(); state.corpus.clear();
+  document.getElementById('q').value = '';
+  document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed','false'));
+  render();
+});
+
+/* ---- rows ---- */
+const tbody = document.getElementById('tbody');
+E.forEach((e, i) => {
+  const tr = document.createElement('tr');
+  tr.className = 'entry ' + e.guidance;
+  tr.dataset.i = String(i);
+  tr.innerHTML = `
+    <td class="stripe"><i></i></td>
+    <td>
+      <button class="namebtn" type="button" aria-expanded="false" aria-controls="d${i}">
+        <span class="caret" aria-hidden="true">▶</span>
+        <span>${e.nameHtml}</span>
+      </button>
+    </td>
+    <td class="kind">${e.kindHtml}</td>
+    <td>
+      <span class="prov">
+        <b class="${e.tw ? 'on' : ''}" title="${e.tw ? 'In Tailwind UI' : 'Not in Tailwind UI'}">TW</b>
+        <b class="${e.fb ? 'on' : ''}" title="${e.fb ? 'In Flowbite' : 'Not in Flowbite'}">FB</b>
+      </span>
+    </td>
+    <td><span class="pill ${e.guidance}">${e.trackedHtml ? 'needs ' + e.trackedHtml : GLABEL[e.guidance]}</span></td>
+    <td class="where"><span class="clamp">${e.whereHtml}</span></td>`;
+
+  const detail = document.createElement('tr');
+  detail.className = 'detail ' + e.guidance;
+  detail.id = 'd' + i;
+  detail.hidden = true;
+  const dl = [['Where / when', e.whereHtml]];
+  if (e.buildHtml) dl.push([e.guidance === 'derivable' ? 'Build from' : 'Nearest guidance', e.buildHtml]);
+  if (e.watchHtml) dl.push(['Watch out for', e.watchHtml]);
+  if (e.trackedHtml) dl.push(['Tracked', e.trackedHtml]);
+  detail.innerHTML = '<td></td><td colspan="5"><dl>' +
+    dl.map(([k,v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl></td>';
+
+  const btn = tr.querySelector('.namebtn');
+  btn.addEventListener('click', () => {
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!open));
+    detail.hidden = open;
+    tr.classList.toggle('open', !open);
+  });
+  tbody.append(tr, detail);
+});
+
+function matches(e) {
+  if (state.q && !e.q.includes(state.q)) return false;
+  if (state.guidance.size && !state.guidance.has(e.guidance)) return false;
+  if (state.kind.size && !state.kind.has(e.kind)) return false;
+  if (state.corpus.size) {
+    const ok = (state.corpus.has('tw') && e.tw)
+            || (state.corpus.has('fb') && e.fb)
+            || (state.corpus.has('ours') && !e.tw && !e.fb);
+    if (!ok) return false;
+  }
+  return true;
+}
+
+const countEl = document.getElementById('count'), emptyEl = document.getElementById('empty');
+function render() {
+  let shown = 0;
+  tbody.querySelectorAll('tr.entry').forEach(tr => {
+    const ok = matches(E[+tr.dataset.i]);
+    tr.hidden = !ok;
+    const detail = document.getElementById('d' + tr.dataset.i);
+    if (!ok) {
+      detail.hidden = true;
+      tr.classList.remove('open');
+      tr.querySelector('.namebtn').setAttribute('aria-expanded','false');
+    } else shown++;
+  });
+  const filtered = state.q || state.guidance.size || state.kind.size || state.corpus.size;
+  countEl.innerHTML = filtered
+    ? `Showing <b>${shown}</b> of ${E.length} components`
+    : `<b>${E.length}</b> components — click any row for the full contract`;
+  emptyEl.hidden = shown > 0;
+}
+render();
+
+/* ---- panels ---- */
+function statusClass(s) {
+  const t = s.toLowerCase();
+  if (t.startsWith('shipped')) return 'shipped';
+  if (t.startsWith('declined')) return 'declined';
+  return 'planned';
+}
+for (const p of DATA.patterns) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="st ${statusClass(p.status)}">${p.status}</span>` +
+    `<span class="nm">${p.name}</span>` +
+    (p.note ? `<span class="note">${p.note}</span>` : '');
+  document.getElementById('patterns').append(li);
+}
+for (const p of DATA.primitives) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="nm">${p.name}</span>` +
+    `<span class="st ${statusClass(p.status)}">${p.status}</span>`;
+  document.getElementById('primitives').append(li);
+}
+
+/* ---- footer: report the cross-check honestly, including when it did not run ---- */
+{
+  const xc = DATA.crossCheck, el = document.getElementById('xc');
+  el.className = 'xc ' + xc.state;
+  el.textContent = `Row-count cross-check: ${xc.state} — ${xc.message}.`;
+  document.getElementById('corpnote').textContent = C.available
+    ? `Corpus enumeration: ${C.tw} Tailwind UI leaf components, ${C.fb} Flowbite catalogue entries.`
+    : 'Corpus enumeration unavailable — the licensed corpora were not attached when this was built, ' +
+      'so the two upstream totals are omitted rather than shown as zero. The 113 rows are ours and unaffected.';
+}
+</script>
+"""
+
+
+# --------------------------------------------------------------------------- main
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Render the fidara coverage matrix as a filterable HTML page.")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
+                        help=f"where to write (default {DEFAULT_OUT.relative_to(REPO)})")
+    parser.add_argument("--selftest", action="store_true",
+                        help="prove the guards fire and stay silent")
+    args = parser.parse_args(argv)
+
+    if args.selftest:
+        import build_coverage_artifact_selftest as st
+        return st.run()
+
+    try:
+        data = collect()
+        doc = render(data)
+    except ArtifactError as exc:
+        print(f"ARTIFACT BUILD FAILED:\n{exc}", file=sys.stderr)
+        return 2
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(doc, encoding="utf-8")
+
+    t, xc, prov = data["totals"], data["crossCheck"], data["provenance"]
+    rel = args.out.relative_to(REPO) if args.out.is_relative_to(REPO) else args.out
+    print(f"wrote {rel} — {t['rows']} rows "
+          f"({t['documented']} documented / {t['derivable']} derivable / "
+          f"{t['needs-doctrine']} needs doctrine)")
+    print(f"  cross-check: {xc['state']} — {xc['message']}")
+    c = data["corpora"]
+    print(f"  corpora: {'TW ' + str(c['tw']) + ' + FB ' + str(c['fb'])}" if c["available"]
+          else "  corpora: skip — design-corpora/ not attached, upstream totals omitted")
+    print(f"  provenance: {prov['state']} — {prov['label']}"
+          + (f" ({', '.join(prov['dirty'])})" if prov["dirty"] else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
