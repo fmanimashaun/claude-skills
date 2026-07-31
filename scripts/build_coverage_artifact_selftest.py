@@ -317,8 +317,35 @@ def test_real_build() -> None:
               for f in p["dirty"]), f"got {p['dirty']}")
 
 
+def test_dirty_paths() -> None:
+    """`git status --porcelain` is FIXED-WIDTH, and the first column is often a space.
+
+    The bug this pins reported `cripts/build_coverage_artifact.py`: `_git` stripped the output,
+    which removed the leading space of an UNSTAGED ` M path` line and shifted the slice by one.
+    It was invisible for staged (`M  path`) lines, so a fixture using only staged entries would
+    have passed the whole time.
+    """
+    porcelain = (
+        " M scripts/build_coverage.py\n"       # unstaged  — the leading space is significant
+        "M  scripts/build_coverage_artifact.py\n"  # staged
+        "MM skills/fidara-design/references/coverage.md\n"  # staged + further unstaged edits
+        "?? scripts/brand-new.py\n"            # untracked
+    )
+    got = dirty = art.dirty_paths(porcelain)
+    want = sorted([
+        "scripts/build_coverage.py", "scripts/build_coverage_artifact.py",
+        "skills/fidara-design/references/coverage.md", "scripts/brand-new.py",
+    ])
+    check("dirty: every status form yields the WHOLE path", got == want, f"got {got}")
+    check("dirty: no path lost its first character",
+          all(not p.startswith(("cripts/", "kills/")) for p in dirty), f"got {dirty}")
+    check("dirty: empty output means a clean tree", art.dirty_paths("") == [], "expected []")
+    check("dirty: a blank line is not a path", art.dirty_paths("   \n") == [], "expected []")
+
+
 def run() -> int:
     test_partition()
+    test_dirty_paths()
     test_prose()
     test_totals_label_ordering()
     test_cross_check_states()

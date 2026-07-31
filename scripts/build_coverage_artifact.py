@@ -75,7 +75,11 @@ import build_coverage as bc  # noqa: E402  — the source of truth, imported not
 
 REPO = Path(__file__).resolve().parents[1]
 MARKETPLACE = REPO / ".claude-plugin" / "marketplace.json"
-DEFAULT_OUT = REPO / "dist" / "coverage.html"
+# NOT `dist/`: that holds the committed `.skill` artifacts, and the packaging check is "run
+# package_core.py, then confirm `git status` shows only the intended dist/ change" — an
+# untracked HTML file there would sit inside the very signal that check reads. `/build` is
+# gitignored, because this is a rendering to regenerate, not a source to commit.
+DEFAULT_OUT = REPO / "build" / "coverage.html"
 
 GUIDANCE_DOCUMENTED = "documented"
 GUIDANCE_DERIVABLE = "derivable"
@@ -213,12 +217,26 @@ def cross_check_committed(counted: dict[str, int]) -> tuple[str, str]:
 
 # --------------------------------------------------------------------- provenance
 
-def _git(*args: str) -> str | None:
+def _git(*args: str, raw: bool = False) -> str | None:
+    """Run git, or return None if it cannot run at all.
+
+    `raw=True` skips the `.strip()`. That is not a nicety: `git status --porcelain` encodes
+    status in a FIXED-WIDTH two-column prefix, and an unstaged change is ` M path` — leading
+    space significant. Stripping it shifts every subsequent offset by one, which silently
+    reported `cripts/build_coverage_artifact.py` as the dirty file.
+    """
     try:
         r = subprocess.run(("git", *args), cwd=REPO, capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
-    return r.stdout.strip() if r.returncode == 0 else None
+    if r.returncode != 0:
+        return None
+    return r.stdout if raw else r.stdout.strip()
+
+
+def dirty_paths(porcelain: str) -> list[str]:
+    """Paths out of `git status --porcelain` output. Never strip the line before slicing."""
+    return sorted(line[3:] for line in porcelain.splitlines() if line[3:].strip())
 
 
 def provenance() -> dict:
@@ -243,8 +261,7 @@ def provenance() -> dict:
     watched = ["scripts/build_coverage.py", "scripts/build_coverage_artifact.py"]
     watched.append(str(bc.OUT.relative_to(REPO)) if bc.OUT.is_relative_to(REPO)
                    else "skills/fidara-design/references/coverage.md")
-    dirty_out = _git("status", "--porcelain", "--", *watched)
-    dirty = sorted(l[3:] for l in (dirty_out or "").splitlines() if l.strip())
+    dirty = dirty_paths(_git("status", "--porcelain", "--", *watched, raw=True) or "")
 
     released = None
     if commit:

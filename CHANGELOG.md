@@ -75,9 +75,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     therefore no mutation (that requirement attaches to gates).
   - **Corpora stay optional.** Only the two upstream enumeration totals need `design-corpora/`; the
     113 rows are ours. Without the corpora the page omits those two numbers and says so, rather than
-    printing a zero that reads like a finding. 40 selftest checks, of which 8 are guards observed
-    firing — including `</script>` inside entry prose, which `json.dumps` does **not** neutralise,
-    and whose escape must stay value-preserving (the first attempt turned `<!--` into `<--`).
+    printing a zero that reads like a finding.
+  - **44 selftest checks — 6 guards observed raising, 5 silence fixtures, 33 assertions.** Three of
+    them exist because they caught something during the build, not by anticipation:
+    - `</script>` inside entry prose, which `json.dumps` does **not** neutralise (it is valid JSON
+      and still ends the script element). The escape has to be value-preserving, and the first
+      attempt turned `<!--` into `<--`.
+    - **`git status --porcelain` is fixed-width, and `.strip()` corrupts it.** An unstaged change is
+      `" M path"` — leading space significant — so stripping the output shifted the slice and the
+      stamp reported `cripts/build_coverage_artifact.py`. Invisible for *staged* files, which is
+      why the first run looked right; the fixture therefore covers ` M`, `M `, `MM` and `??`.
+    - **The default output must not be `dist/`.** That directory holds the committed `.skill`
+      artifacts, and the packaging check is "repackage, then confirm `git status` shows only the
+      intended `dist/` change" — an untracked HTML file there sits inside the very signal that
+      check reads. It writes to a new gitignored `/build` instead.
 
 - **FIX — the call-site rule flagged a CORRECT call site** (#95). `ButtonComponent.new(…, data: { action:
   … })` is legal: its initializer ends in **`**attrs`**, which forwards arbitrary keywords — and that is
