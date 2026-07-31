@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-07-31 — six parallel sessions, and what they caught in each other
 
 - **FIX — a broken plugin pointer, and the reason the new rule could not see it** (#272).
   `plugins/pipeline/commands/setup-cloud.md` pointed at
@@ -773,7 +773,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.12.0 — 2026-07-31
 
 - **The scaffold now knows how to brief an agent in a repo that already briefs agents** (#100,
   Phase D of #96). Compared `/rails-flow:setup-flow`'s generated scaffold against 37signals' own
@@ -1336,7 +1336,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.23.0 — 2026-07-31
 
 - **#275's open measurement boundary is now closed by a reading, and it found one more thing.** The
   entry below deliberately recorded that Ruby 4.0 was *not* measured. It has been now, on 4.0.6, and
@@ -2185,7 +2185,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.12.0 — 2026-07-31
 
 *(Two issues on one branch per CLAUDE.md's grouping rule. The shared mechanism is one sentence:
 both add a per-page evidence profile whose verdict is **recomputed against a denominator**, so a
@@ -2700,7 +2700,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.6.0 — 2026-07-31
 - **FIX — two defects in the cross-check added hours earlier, both found by an external reviewer
   on the already-merged PR rather than by us.**
   - **A mention was accepted as a generation.** `setup_provides()`'s docstring claimed a key was
@@ -3287,6 +3287,94 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-31 (release v1.42.0)
+
+> ### Six sessions in parallel — and the release note worth reading is what they caught in each other
+>
+> **`hotwire/references/production.md`** (Hotwire under real load, from campfire + fizzy),
+> **rails-flow agent-instruction conventions**, a **computed work queue** from a declared dependency
+> graph, **qa-flow keyboard + forms evidence contracts**, and a **design-flow setup cross-check**.
+> Plus nine fixes, most of them defects one session found in another's merged work — or in its own.
+>
+> `rails-8`, `hotwire` and `fidara-design` skills changed; `code-review.skill` is byte-identical.
+
+- **Hotwire in production** (#99). Doctrine from once-campfire and fizzy under real load — broadcast
+  patterns, morphing, presence, and the catch-up path for when the socket drops, which our doctrine
+  never had: we documented how to broadcast and never what happens when delivery fails.
+  - **The gate refuted the issue's own question.** #99 asked what fizzy's `turbo-rails` offline-cache
+    pin implies. It implies **you cannot use it**: `Turbo.offline` ships in no released Turbo or
+    turbo-rails, the branch re-exports an unmerged PR, and the matching turbo-rails PR was closed by
+    its own author. Reading that Gemfile as licence to copy would have put an unreleasable git-branch
+    dependency into shipped doctrine.
+  - **The two apps disagree, and that is the finding.** fizzy is the larger app with **zero** Action
+    Cable channels; campfire has **six**. Size does not pick the mechanism — update rate, render cost
+    and client state do. Sharpened into a testable rule: **Action Cable when the payload is a *fact*,
+    not a *fragment*.** None of campfire's six channels carries HTML.
+  - **Three corrections to doctrine we had already shipped**, one found by grepping for the pattern
+    after fixing the first: append/prepend de-duplication **removes then appends at the container
+    edge** (id uniqueness, not position); *"prefer the `_later` broadcast variants"* was stated flat
+    when **nothing in ActiveJob or Solid Queue orders two `_later` broadcasts to one stream** — which
+    is why campfire broadcasts synchronously — and the same wrong rule was then found in
+    `rails-8/references/views-hotwire.md`; and `turbo:morph` was paired with a different-scope event
+    while `turbo:before-morph-attribute` was missing entirely.
+  - **On our four-mixin doctrine: neither validated nor contradicted**, recorded as such. Neither app
+    uses mixins; both parameterise one generic controller. The negative first rested on an empty
+    `gh search code` result — **which is not evidence** — and was re-done against repository tarballs:
+    161 JS files, zero mixin compositions, 96 of 104 controllers extending the bare `Controller`.
+- **Agent-instruction conventions** (#100) — how 37signals brief coding agents, against what our
+  scaffold generates. An existing `AGENTS.md` is now **imported, not duplicated** (Claude Code reads
+  `CLAUDE.md`, and both apps use a one-line `@AGENTS.md`); a constrained architecture overview is
+  added; `.claude/rules/` is named as the home for mode-specific instruction but **not scaffolded** —
+  empty machinery is worse than none. A per-project `STYLE.md` is **rejected**: Phase A already
+  extracted it into the skill, and copying it per project would duplicate shipped doctrine and drift.
+- **A computed work queue** (#133) — dependencies declared in a parseable block instead of prose, so
+  "what next?" stops being re-derived by hand and inconsistently.
+- **qa-flow: keyboard and forms evidence contracts** (#114, #115). Both recompute their verdict against
+  a **denominator**, so a pass cannot report a result on surface it never exercised. The keyboard
+  design is shaped by *why* the hand-rolled probe failed silently: it checked one button per page and
+  produced focus evidence for **25 of 72 pages while reporting nothing missing**.
+  - **`Engine` is part of the contract**, because Playwright's WebKit inherits the macOS default where
+    Tab reaches text fields and lists only — so a WebKit run reports every link unreachable unless the
+    platform setting is confirmed. Otherwise the harness fabricates findings.
+- **design-flow: setup cross-checks its own doctrine** (#150). Doctrine referencing a runtime artefact
+  the generator never produces was invisible to every check we had, and surfaced at a user's first
+  `/design-flow:setup` as a `NoMethodError`. Scoped to `Rails.configuration.x.<key>` reads, which is
+  what makes it self-scope to things that actually raise.
+- **FIX — `config.hosts` is EMPTY in production by default** (#98). The security checklist framed Host
+  authorization as a development concern. Where the list is empty the middleware returns immediately
+  and does **nothing**, so anything deriving a redirect target from `request.host` trusts an
+  attacker-controlled header until it is set.
+- **FIX — an endless-def `SyntaxError` was asserted unconditionally when it is parser-scoped** (#275),
+  measured across two Rubies and both parsers. `parse.y` rejects the form on 3.4.7 and **accepts it on
+  4.0.6**; Prism accepts it on both. The failing combination is `parse.y` on **Ruby 3.2–3.3**, where it
+  is also the default — and this skill's floor is 3.2 while it recommends the latest stable, which is
+  exactly how a snippet ships broken: parsing on the author's machine, raising on the user's.
+- **FIX — a pointer that walked out of its own plugin** (#272), and the reason the rule built days
+  earlier for that class stayed silent: its regex **allowlisted extensions**, and the path ended
+  `.example`. CLAUDE.md already records that failure mode for packaging — *"never an extension
+  allowlist, which fails open on the first type nobody added"* — and the rule repeated it anyway.
+- **FIX — a skip was masquerading as a pass.** `lint_markdown_code.py` failed open on a missing
+  interpreter and **exited 0**, so the doctor printed `ok` while **242 of 276 blocks went unchecked**.
+  On a container without Ruby the whole sweep read green over a gate that checked 12% of its input.
+  Exit 3 now maps to **skip**.
+- **FIX — a gate that wrote into the working tree**, and the framing matters more than the fix:
+  `mutation_check.py`'s own docstring already recorded that exact lesson, and it was violated three
+  files away. Now a temp dir, an assertion that nothing is left behind, and a mutation so the
+  assertion cannot go quiet.
+- **FIX — mutation coverage is checked per RULE, not per guard.** A new lint rule shipped with no
+  mutation behind it and the gate reported green, because the guard already declared twelve. The
+  structural check immediately found a **pre-existing** hole: the two *original* rules had fixtures
+  but never had mutations, from the day the checker was written.
+- **FIX — one rule at two precisions across two skills.** Not a contradiction, which is why no gate
+  saw it: `fidara-design` stated the Action Cable rule as a judgement call while `hotwire` derived a
+  testable one. Two statements of one rule at different sharpness is how a reader cites the weaker.
+- **FIX — an umbrella closed by a promotion that shipped one of its groups**, and then a commit message
+  *explaining that rule* closed the same issue a second time, because it contained the literal keyword
+  beside the number. GitHub parses the pattern wherever it appears.
+- **Tooling now covers `docs/`, `CLAUDE.md` and `README.md`**, and strips blockquote markers so fenced
+  code inside a quote is scanned — two coverage gaps in the markdown linters. **310 blocks** checked
+  (185 ruby, 89 erb), verified under **Ruby 4.0.6** as well as 3.4.7.
 
 ### 2026-07-30 (release v1.41.0)
 
