@@ -1338,6 +1338,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **#275's open measurement boundary is now closed by a reading, and it found one more thing.** The
+  entry below deliberately recorded that Ruby 4.0 was *not* measured. It has been now, on 4.0.6, and
+  **`parse.y` itself changed**: the form it rejects on 3.4.7 it **accepts** on 4.0.6.
+
+  | `private def a = foo k: 1` | ruby 3.4.7 | ruby 4.0.6 |
+  |---|---|---|
+  | `--parser=parse.y` | **syntax error** | Syntax OK |
+  | `--parser=prism` | Syntax OK | Syntax OK |
+  | default | Syntax OK | Syntax OK |
+
+  So the failing combination is narrower than first written: **`parse.y` on Ruby 3.2–3.3**, where it is
+  also the default. The advice (parenthesize) and the reason (our floor is 3.2) are unchanged — the
+  table replaces an inference with four readings. Confirmed the flag is still honoured in 4.0.6 rather
+  than silently falling back, since a bogus `--parser` value raises `unknown parser`.
+  - **The whole corpus was re-checked under 4.0.6: 310 fenced blocks — 185 ruby, 89 erb — all parse,
+    and the sweep is 34 passed / 0 failed / 0 skipped.** Worth stating because the markdown-code gate
+    runs whichever `ruby` is on `PATH`, so a toolchain upgrade silently changes what that gate means.
+
 - **FIX — an endless-def `SyntaxError` was asserted unconditionally when it is parser-scoped** (#275).
   `controllers-routing.md` §7 said `private def m = render x: 1` *"is a `SyntaxError`"* flat. Measured
   on one binary, ruby 3.4.7, changing only the parser: **`parse.y` errors** (`unexpected label`,
