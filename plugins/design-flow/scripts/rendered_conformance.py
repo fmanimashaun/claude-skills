@@ -152,9 +152,10 @@ PALETTE_STEP = re.compile(r"-(?:50|950|[1-9]00)\Z")
 # positives land in the trend that decides blocking.
 BREAKPOINT_VARIANTS = ("sm", "md", "lg", "xl", "2xl")
 
-# UA-scaled tags. Tailwind's preflight resets headings to `font-size: inherit`, but leaves
-# `sub`/`sup` at 75% and `small` to the UA's 80% — so their computed size is off any scale by
-# construction and flagging it would be a false positive on untouched HTML.
+# UA-scaled tags: the UA sizes these RELATIVE to their parent, so their computed size is off any
+# absolute scale by construction and flagging it would be a false positive on untouched markup.
+# Measured in Chrome rather than assumed — all three resolve to 13.3333px inside a 16px parent
+# (83.33%: `font-size: smaller` for sub/sup, `0.8333em` for small).
 UA_SCALED_TAGS = frozenset({"sub", "sup", "small"})
 
 # Tags that carry no design-system type/colour of their own.
@@ -671,10 +672,18 @@ def rule_focus_ring(snapshot: dict, report: Report) -> None:
             continue
         declarations = {str(k).lower(): str(v).strip().lower()
                         for k, v in (focus.get("declarations") or {}).items()}
-        outline_style = declarations.get("outline-style", declarations.get("outline", ""))
-        outline_width = canon_px(declarations.get("outline-width", "")) or "0.0"
-        has_outline = (outline_style not in INVISIBLE_OUTLINE_STYLES
-                       and outline_width != "0.0")
+        # The shorthand counts, and an unreadable width does not veto. `outline: 2px solid
+        # var(--ring)` is the fix this rule should be recommending, so reading only
+        # `outline-style` would report the one focus style that survives forced colors. Likewise a
+        # width of `medium` or a var() is unparseable, and treating unparseable as zero would
+        # report a visible outline as missing — only an EXPLICIT zero kills it.
+        shorthand = declarations.get("outline", "")
+        style_visible = declarations.get("outline-style", "") not in INVISIBLE_OUTLINE_STYLES
+        if shorthand:
+            style_visible = "none" not in shorthand and "hidden" not in shorthand
+        width_token = declarations.get("outline-width")
+        width_is_zero = width_token is not None and canon_px(width_token) == "0.0"
+        has_outline = style_visible and not width_is_zero
         has_shadow = any(p in declarations and declarations[p] not in ("none", "")
                          for p in SHADOW_PROPS)
         has_repaint = any(p in declarations for p in REPAINT_PROPS)
@@ -1018,6 +1027,17 @@ def analyse(snapshot: dict, max_dark: int = 5, max_breakpoint: int = 25,
     if snapshot.get("truncated"):
         report.notice(f"the collector stopped at its element cap ({len(elements)}) — the page has "
                       f"more; findings below are therefore a floor, not a total")
+    # A cross-origin stylesheet throws on `.cssRules`, so its focus rules are invisible. The
+    # collector nulls every element's focus record when it could read NO rules at all (then
+    # `focus-ring-missing` skips by name); when it read some, the rule still runs, because an app's
+    # own utilities live in its own same-origin sheet. Either way the count is stated: silently
+    # judging a page whose stylesheets were partly unreadable is how a false positive gets shipped
+    # with a straight face.
+    unreadable = snapshot.get("unreadableSheets") or 0
+    if unreadable:
+        report.notice(f"{unreadable} stylesheet(s) could not be read (cross-origin `.cssRules`); "
+                      f"{snapshot.get('focusRuleCount', 0)} focus rule(s) were readable. Focus "
+                      f"findings are judged on those only.")
 
     rule_literal_colour(snapshot, report)
     if report.no_input:
@@ -1194,6 +1214,19 @@ def selftest() -> int:                                        # noqa: C901 - a f
           "a colour form the canonicaliser cannot parse became a finding — an unparsed value "
           "must fail silent, or the first new browser serialization floods the report")
 
+    snap = _snapshot(elements=[_element(tag="script",
+                                        colours={"background-color": "rgb(1, 2, 3)"})])
+    check("a non-painting tag is not judged for colour",
+          "literal-colour" not in rules(analyse(snap)),
+          "a <script>/<svg>-class tag was judged for a painted colour — it paints none, and the "
+          "analyser must not depend on the collector having filtered them out")
+
+    snap = _snapshot(elements=[_element(colours={"background-color": "#ff6b35"})])
+    check("a hex colour is canonicalised, not skipped as unparseable",
+          "literal-colour" in rules(analyse(snap)),
+          "a `#rrggbb` value was not judged — the canonicaliser accepts hex, and silently "
+          "skipping a form it claims to handle is a rule that quietly covers less than it says")
+
     snap = _snapshot(elements=[_element(colours={"background-color": "rgba(0, 119, 204, 1)"})])
     check("rgba with alpha 1 matches the rgb basis",
           "literal-colour" not in rules(analyse(snap)),
@@ -1272,6 +1305,35 @@ def selftest() -> int:                                        # noqa: C901 - a f
           "focus-ring-missing" not in rules(analyse(snap)),
           "an element with a visible outline was reported as having no focus indicator")
 
+    # `outline: 2px solid var(--ring)` — the shorthand, and the very focus style this rule should
+    # be recommending (it is the one that survives forced colors). Reading only `outline-style`
+    # reported it as missing.
+    snap = _snapshot(elements=[_element(
+        focus={"declarations": {"outline": "2px solid var(--color-ring)"}})])
+    check("the outline shorthand is an indicator",
+          "focus-ring-missing" not in rules(analyse(snap)),
+          "`outline: 2px solid` was reported as no focus indicator — the shorthand is not being "
+          "read, so the rule flags the exact fix it recommends")
+
+    snap = _snapshot(elements=[_element(focus={"declarations": {"outline": "none"}})])
+    check("the outline shorthand set to none is not an indicator",
+          "focus-ring-missing" in rules(analyse(snap)),
+          "`outline: none` in the shorthand was accepted as an indicator")
+
+    # An unparseable width must not veto a visible style: `medium` is the CSS initial value and a
+    # var() is common. Treating unparseable as zero reported visible outlines as missing.
+    snap = _snapshot(elements=[_element(
+        focus={"declarations": {"outline-style": "solid", "outline-width": "medium"}})])
+    check("an unparseable outline width does not veto a visible style",
+          "focus-ring-missing" not in rules(analyse(snap)),
+          "`outline-width: medium` was read as zero, so a visible outline was reported as missing")
+
+    snap = _snapshot(elements=[_element(
+        focus={"declarations": {"outline-style": "solid", "outline-width": "0px"}})])
+    check("an explicitly zero outline width is not an indicator",
+          "focus-ring-missing" in rules(analyse(snap)),
+          "a 0px outline was accepted as a focus indicator — it draws nothing")
+
     # The doctrine's own idiom, and the single most important silence fixture in this file:
     # components.md prescribes `focus-visible:outline-none focus-visible:ring-2
     # focus-visible:ring-ring/30`, and a ring is box-shadow (verified claim 3).
@@ -1296,6 +1358,24 @@ def selftest() -> int:                                        # noqa: C901 - a f
     check("a non-interactive div needs no focus ring",
           "focus-ring-missing" not in rules(analyse(snap)),
           "a plain <div> was treated as interactive")
+
+    # An explicit non-interactive role beats the tag. `<button role="presentation">` inside a
+    # composite widget is not the tab stop — the widget's container is — so demanding a focus ring
+    # and a name from it is a false positive on a correct pattern.
+    snap = _snapshot(elements=[_element(role="presentation", name="",
+                                        focus={"declarations": {}})])
+    check("an explicit non-interactive role beats the tag",
+          not ({"focus-ring-missing", "icon-only-unnamed"} & set(rules(analyse(snap)))),
+          "a `<button role=\"presentation\">` was judged as interactive — the role wins, and this "
+          "fires on every composite widget built the way APG prescribes")
+
+    # An unreadable stylesheet is stated, not hidden: judging a page whose CSS was partly
+    # unreadable while saying nothing is how a false positive ships with a straight face.
+    report = analyse(_snapshot(unreadableSheets=2, focusRuleCount=17))
+    check("unreadable stylesheets are reported as a notice",
+          any("could not be read" in n for n in report.notices),
+          "a snapshot collected over unreadable cross-origin stylesheets was judged without "
+          "saying so — the collector counts them and nothing read the count")
 
     snap = _snapshot(elements=[_element(focus=None)])
     report = analyse(snap)
@@ -1571,6 +1651,46 @@ def selftest() -> int:                                        # noqa: C901 - a f
               main([os.path.join(tmp, "nope.json"), "--quiet"]) == 2,
               "a missing file did not exit 2")
 
+        # ---- the contract, the fixtures and the collector must name the same fields -------
+        # `--schema` is a printed promise about what the collector emits, and a promise nothing
+        # checks goes stale silently: this file's contract still documented `inlineInText` after
+        # the field was replaced, and omitted two fields the collector had started emitting. So
+        # the three artefacts are compared mechanically instead.
+        # The field set comes from what the RULES ACTUALLY READ — every quoted field name passed to
+        # an `element.get(...)` or `snapshot.get(...)` in this module — not from the fixture dicts.
+        # (Written without a literal example on purpose: the first draft's comment contained one,
+        # and the scan below dutifully matched it.) Taking the set from the
+        # fixtures was itself a coverage gap: `display` is only ever passed as an override, so it
+        # was absent from the baseline dict and the check could not see the field whose contract
+        # entry had gone stale in the first place.
+        import re as _re
+
+        with open(os.path.abspath(__file__), encoding="utf-8") as handle:
+            own_source = handle.read()
+        accessor = _re.compile(r"""(?:element|snapshot)\.get\(["']([a-zA-Z]+)["']""")
+        read_fields = sorted(set(accessor.findall(own_source)))
+        check("the analyser reads a plausible number of snapshot fields",
+              len(read_fields) >= 15,
+              f"only {len(read_fields)} field(s) were discovered ({read_fields}) — the accessor "
+              f"pattern has stopped matching, so the two parity checks below are comparing "
+              f"nothing and would pass over any drift")
+
+        undocumented = [f for f in read_fields if f'"{f}"' not in SCHEMA_DOC]
+        check("every field the analyser reads is in the printed contract",
+              not undocumented,
+              f"--schema does not document {undocumented} — the contract a user reads has drifted "
+              f"from the snapshot this file actually judges")
+
+        collector_source = ""
+        if os.path.isfile(COLLECTOR):
+            with open(COLLECTOR, encoding="utf-8") as handle:
+                collector_source = handle.read()
+        unemitted = [f for f in read_fields if collector_source and f not in collector_source]
+        check("every field the analyser reads is emitted by the collector",
+              not unemitted,
+              f"the collector never emits {unemitted} — a rule is reading a field no real run "
+              f"produces, so it judges `None` forever and its silence means nothing")
+
         # ---- the collector check ---------------------------------------------------------
         check("the shipped collector parses",
               check_collector() == 0,
@@ -1619,6 +1739,8 @@ The collector (see commands/audit.md) MEASURES; this script JUDGES. Nothing belo
   "viewport": {"width": 390, "height": 844},
   "theme":    "light" | "dark",
   "truncated": false,                       // true when the element cap was hit
+  "unreadableSheets": 0,                    // cross-origin sheets whose .cssRules threw
+  "focusRuleCount": 42,                     // :focus rules the collector could read
   "overflow": {"scrollWidth": 390, "clientWidth": 390},
   "basis": {                                // the app's OWN tokens, resolved by the browser
     "color":    {"--color-primary": ["rgb(0, 119, 204)", "oklab(...)"], ...},
@@ -1635,13 +1757,26 @@ The collector (see commands/audit.md) MEASURES; this script JUDGES. Nothing belo
     "rect": {"w": 120, "h": 44},
     "name": "Save",                         // approximate accessible name
     "aria": {"controls": null, "expanded": null, "selected": null, "pressed": null},
-    "ariaHidden": false, "disabled": false, "inlineInText": false, "tabindex": null,
+    "ariaHidden": false, "disabled": false, "tabindex": null,
+    "display": "inline-block",              // MEASUREMENTS, not the exemption they feed
+    "textLength": 4, "parentTextLength": 210,
     "focus": {"declarations": {"--tw-ring-shadow": "0 0 0 2px", "outline-style": "none"}}
   }]
 }
 
 `focus` is null when the collector could not read the matching rules (a cross-origin stylesheet
 throws on .cssRules). Null is a SKIP, reported by name — never a pass.
+
+The collector reports measurements and never a verdict: no rule, count or threshold lives in JS.
+Where it must scope WHAT it measures, that scoping is part of this contract and is stated above —
+a border colour only where a border is drawn, `fontSize` only on an element with its own text, and
+no record at all for `display: none`. The line is worth keeping sharp: `inlineInText` used to be a
+field here, and deciding it in JS put a judgement somewhere no fixture could reach, which is
+exactly how it shipped wide enough to exempt every native `<button>` from the touch floor.
+
+`focus.declarations` merges the matching rules in the order the collector read them, which is
+source order, not the full cascade. Enough for Tailwind utilities, which all carry the same
+specificity; a hand-written `!important` focus rule could in principle be overridden here.
 """
 
 

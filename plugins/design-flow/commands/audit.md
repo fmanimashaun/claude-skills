@@ -88,9 +88,10 @@ for (const route of routes) {
 await browser.close();
 ```
 
-**A 390px snapshot is mandatory.** Two rules only run at a mobile viewport (tap targets and
-horizontal overflow) and are reported as SKIPPED above 640px — a desktop-only run reads as clean
-while saying nothing about either. For dark mode, add the app's theme class before collecting
+**A 390px snapshot is mandatory.** `tap-target-small` only runs at a mobile viewport and is
+reported as SKIPPED above 640px, so a desktop-only run reads as clean while saying nothing about
+touch targets. (`horizontal-overflow` runs at every viewport — sideways scroll is a defect at any
+width — but mobile is where it shows up.) For dark mode, add the app's theme class before collecting
 (`page.evaluate(() => document.documentElement.classList.add('dark'))`) and keep it a separate
 snapshot: the role layer is what is under test, and mixing themes in one file hides which one drifted.
 

@@ -3301,12 +3301,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   colour injected by a third-party partial, a role token that never resolved, a focus rule that no
   longer matches the element it was written for. Two new files: `scripts/conformance_collector.js`
   (runs in the page via Playwright, reusing qa-flow's `app:` launch config rather than inventing a
-  second boot path) and `scripts/rendered_conformance.py` (11 named rules over the resulting
+  second boot path) and `scripts/rendered_conformance.py` (11 named rules plus two snapshot guards, over the resulting
   snapshot JSON).
 
   **The browser measures; Python judges.** Nothing in the collector decides anything, which is
-  what makes a browser-driven check testable offline: `--selftest` carries **75 fixtures** and
-  `scripts/mutation_check.py` **46 declared mutations**, all caught by the intended fixture. It
+  what makes a browser-driven check testable offline: `--selftest` carries **86 assertions** and
+  `scripts/mutation_check.py` **55 declared mutations**, every one caught by the intended fixture. It
   also disposes of the hardest correctness problem for free — the collector resolves each role
   token through the same browser in the same run, so comparing a rendered colour to a token is set
   membership, never colour-space arithmetic.
@@ -3321,7 +3321,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   doctrine-conformant input** — and a conformance linter that cries wolf is switched off, after
   which it catches nothing. px-space-off-the-fluid-scale contradicts our own *Control density*
   table (`px-3 py-2` comes from Tailwind's numeric scale, not `--space-*`); chrome-vs-content type
-  step contradicts `component-implementations.md` (both filed as issues); and alpha-modified
+  step contradicts `component-implementations.md` in 6 places (filed as #306, with the
+  forced-colors focus-ring gap as #305); and alpha-modified
   colours are unjudgeable without decomposing a `color-mix`, which the doctrine blesses anyway
   (`primary/90`, `ring-ring/30`). All three are recorded in the module docstring with the
   reasoning, not silently dropped.
@@ -3346,11 +3347,18 @@ boot/validation path — with a bullet each so the promotion could close them se
   mutation. The first also moved a *judgement* out of the collector into Python where a fixture can
   see it — the collector reports `display`, and `is_inline_link_in_text` decides.
 
-  The mutation check then found five more: a guard nothing could exercise (a "family+step"
-  requirement no real Tailwind class can reach — deleted rather than covered by a fixture for a
-  class nobody writes), two redundant carve-outs, and two fixtures that passed for the wrong reason
-  (a foreign-schema fixture that would have failed the empty-basis guard instead, and an
-  invisible-outline fixture silenced by a zero width before the style test ran).
+  The mutation check and a self-review against `skills/code-review/SKILL.md` then found nine more,
+  all in this diff. The ones worth naming: `outline: 2px solid var(--ring)` written as the shorthand
+  was read as *no* focus indicator, so the rule flagged the exact fix it recommends — and the fix
+  for the forced-colors gap above; the printed `--schema` contract had already gone stale against
+  the snapshot it documents, and is now compared mechanically against both the fields the rules read
+  and the fields the collector emits, so it cannot drift again; `unreadableSheets` was collected and
+  read by nothing; a guard no real Tailwind class could reach was deleted rather than covered by a
+  fixture for a class nobody writes; two carve-outs were redundant with `is_visible`; two fixtures
+  passed for the wrong reason (a foreign-schema one that would have failed the empty-basis guard
+  instead, an invisible-outline one silenced by a zero width before the style test ran); and a
+  docstring claim about `<sub>`/`<sup>`/`<small>` was wrong in its specifics — now the measured
+  83.33% rather than an asserted 75%/80%.
 
   A shipped `.js` file is read by no markdown linter — the fenced-code checkers only see markdown —
   so `rendered_conformance.py --check-collector` `node --check`s it, and both it and the selftest

@@ -897,9 +897,9 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "an invisible outline counts as an indicator (v4's outline-none is `none`)",
-                "        has_outline = (outline_style not in INVISIBLE_OUTLINE_STYLES",
-                '        has_outline = (outline_style not in ("__never__",)',
-                "a width on an invisible outline style is still not an indicator",
+                '        style_visible = declarations.get("outline-style", "") not in INVISIBLE_OUTLINE_STYLES',
+                '        style_visible = declarations.get("outline-style", "") not in ("__never__",)',
+                "outline-none alone is not an indicator",
             ),
             Mutation(
                 "every interactive element is treated as focus-styled",
@@ -1106,6 +1106,60 @@ GUARDS: tuple[Guard, ...] = (
                 '            print(f"rendered_conformance: {exc}", file=sys.stderr)\n            return 2',
                 '            print(f"rendered_conformance: {exc}", file=sys.stderr)\n            return 1',
                 "unparseable JSON exits 2, not 1",
+            ),
+            Mutation(
+                "the outline shorthand stops counting, flagging the fix this rule recommends",
+                '        if shorthand:\n            style_visible = "none" not in shorthand',
+                '        if False:\n            style_visible = "none" not in shorthand',
+                "the outline shorthand is an indicator",
+            ),
+            Mutation(
+                "an unparseable outline width is read as zero, hiding a visible outline",
+                '        width_is_zero = width_token is not None and canon_px(width_token) == "0.0"',
+                '        width_is_zero = canon_px(width_token or "") != "2.0"',
+                "an unparseable outline width does not veto a visible style",
+            ),
+            Mutation(
+                "an explicit non-interactive role stops beating the tag",
+                "    if role:\n        # An explicit non-interactive role wins over the tag",
+                "    if False:\n        # An explicit non-interactive role wins over the tag",
+                "an explicit non-interactive role beats the tag",
+            ),
+            Mutation(
+                "unreadable stylesheets are judged over in silence",
+                "    if unreadable:\n        report.notice(",
+                "    if False:\n        report.notice(",
+                "unreadable stylesheets are reported as a notice",
+            ),
+            Mutation(
+                "a non-painting tag is judged for colour",
+                "        if str(element.get(\"tag\", \"\")).lower() in SKIP_TAGS:\n            continue",
+                "        if False:\n            continue",
+                "a non-painting tag is not judged for colour",
+            ),
+            Mutation(
+                "hex colours stop being canonicalised, so a form we claim to handle is skipped",
+                "    hexed = _HEX.match(value)",
+                "    hexed = None",
+                "a hex colour is canonicalised",
+            ),
+            Mutation(
+                "the printed contract loses a field the snapshot carries (it went stale once)",
+                '    "display": "inline-block",              // MEASUREMENTS',
+                '    "displai": "inline-block",              // MEASUREMENTS',
+                "every field the analyser reads is in the printed contract",
+            ),
+            Mutation(
+                "a rule reads a field no real collector run emits, so it judges None forever",
+                '    if str(element.get("display", "")).strip().lower() != "inline":',
+                '    if str(element.get("cssDisplay", "")).strip().lower() != "inline":',
+                "every field the analyser reads is emitted by the collector",
+            ),
+            Mutation(
+                "the accessor scan stops matching, so both parity checks compare nothing",
+                "        read_fields = sorted(set(accessor.findall(own_source)))",
+                "        read_fields = sorted(set())",
+                "the analyser reads a plausible number of snapshot fields",
             ),
             # ---- the collector's own syntax check ----
             Mutation(
