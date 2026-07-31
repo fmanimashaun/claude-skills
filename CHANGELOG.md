@@ -9,6 +9,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`issue_graph.py`: a gate that wrote into the repo, and a rewrite that could hang** — two review
+  findings on #267 plus a third the fix itself exposed. All three shipped in that promotion, so this
+  is the follow-up.
+  - **The selftest wrote `scripts/.issue_graph_selftest.json` into the working tree** and unlinked it
+    in a `finally`. `maintainer_doctor.py` runs that selftest as a gate, and a diagnostic must never
+    mutate the repo — it also fails on a read-only checkout and races two concurrent runs on one
+    fixed filename. `mutation_check.py`'s own docstring already records this exact lesson ("one
+    interrupted process away from leaving a mutated repo"), which is what makes it worth writing
+    down twice. Now a system temp dir, and the selftest **asserts** it leaves no file behind.
+  - **`chain_lengths` recursed while `_cycle_in`, three functions up, deliberately did not** — the
+    same module inconsistent with itself, so the deep-chain case was handled in exactly one of the
+    two places it matters. Now iterative, pinned by a **1500-issue chain** that raises
+    `RecursionError` on the old code.
+  - **The rewrite then introduced a worse bug than the one it fixed.** Recursion got cycle-safety
+    free by writing a provisional length before recursing; the iterative version dropped that, so a
+    cyclic graph looped **forever**. Nothing in the review found it — `mutation_check` did, by
+    disabling cycle detection and watching the run hang. A hang is a far worse failure than a wrong
+    number on a graph that is already a filing error. Fixed with a `visiting` set and its own
+    fixture. Selftest **40 → 43**, `mutation_check` **53 → 54**.
 - **NEW `.github/pull_request_template.md`** — the maintenance rules a PR is judged against now
   arrive *in* the PR instead of having to be remembered from CLAUDE.md. It makes the change-type
   classification an explicit tick (silence is not a claim of exemption), demands the citation or
