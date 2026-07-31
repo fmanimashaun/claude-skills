@@ -634,6 +634,50 @@ GUARDS: tuple[Guard, ...] = (
     # with real diagrams. Both directions are declared on purpose: a guard proven only to fire is
     # half-proven, and the half nobody checks is the half that gets the tool switched off.
     Guard(
+        name="build_coverage_artifact",
+        subject="scripts/build_coverage_artifact.py",
+        selftest="scripts/build_coverage_artifact_selftest.py",
+        # The builder imports build_coverage rather than parsing it, and the --check fixtures build a
+        # real page, so the matrix source has to exist in the workdir. Without these the selftest dies
+        # at import and EVERY mutation reports as "caught" — by a traceback, not by a fixture.
+        deps=("scripts/build_coverage.py",),
+        needs=("skills/fidara-design/references/coverage.md",),
+        mutations=(
+            Mutation(
+                "the drift comparison stops comparing, so a stale artifact passes",
+                '        if args.out.read_text(encoding="utf-8").replace("\\r\\n", "\\n") != doc.replace("\\r\\n", "\\n"):',
+                '        if False:',
+                "--check FAILS on a stale artifact",
+            ),
+            Mutation(
+                "an absent artifact is reported as OK instead of drift",
+                '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 1',
+                '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 0',
+                "--check FAILS when the artifact is not committed",
+            ),
+            Mutation(
+                "a dirty tree is reported as OK instead of skipping",
+                '            return EXIT_INCOMPLETE',
+                '            return 0',
+                "--check SKIPS (exit 3) rather than claiming drift on a dirty tree",
+            ),
+            # The defect that made the gate unpassable: a page that stamps its own checkout changes
+            # bytes the moment it is committed, and again at promotion. Both halves get a mutation.
+            Mutation(
+                "the embedded stamp carries the released/unreleased split again",
+                '        "state": "dirty" if prov["dirty"] else "clean",',
+                '        "state": prov["state"],',
+                "the rendered page differs between two checkouts of the same sources",
+            ),
+            Mutation(
+                "the embedded stamp carries the HEAD sha again",
+                '        "dirty": prov["dirty"],',
+                '        "dirty": prov["dirty"], "commit": prov["commit"],',
+                "no HEAD sha is embedded in the page",
+            ),
+        ),
+    ),
+    Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
         selftest="plugins/rails-flow/scripts/check_guide_selftest.py",

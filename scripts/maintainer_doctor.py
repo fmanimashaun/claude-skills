@@ -103,6 +103,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("self-consistency selftest", ("python3", "scripts/lint_self_consistency.py", "--selftest")),
     ("coverage matrix drift", ("python3", "scripts/build_coverage.py", "--check")),
     ("coverage matrix selftest", ("python3", "scripts/build_coverage.py", "--selftest")),
+    # The artifact is COMMITTED (docs/coverage.html), so it can go stale exactly as coverage.md
+    # can — same shape, same gate. Neither needs the corpora: build_coverage declares ENTRIES
+    # statically, so the generator runs on a machine without the licensed kits.
+    ("coverage artifact drift", ("python3", "scripts/build_coverage_artifact.py", "--check")),
+    ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
     # Its own selftest flagged this absence: a selftest that exists but no gate runs means
     # `--gates` reports a clean sweep having never executed it — the coverage-gap class,
     # caught by the check written for exactly that.

@@ -310,11 +310,38 @@ def test_real_build() -> None:
         SKIPPED.append("corpus enumeration totals — design-corpora/ is not attached")
 
     p = data["provenance"]
-    check("real: provenance reports a known state",
-          p["state"] in {"released", "unreleased", "dirty", "unknown"}, f"got {p['state']!r}")
+    check("real: the EMBEDDED stamp reports clean or dirty and nothing else",
+          p["state"] in {"clean", "dirty"}, f"got {p['state']!r}")
     check("real: a dirty build names only files this page is built from",
           all(f.endswith(("build_coverage.py", "build_coverage_artifact.py", "coverage.md"))
               for f in p["dirty"]), f"got {p['dirty']}")
+    # The full stamp keeps the volatile fields for the console; only the projection is embedded.
+    full = art.provenance()
+    check("real: the full stamp still reports a known checkout state",
+          full["state"] in {"released", "unreleased", "dirty", "unknown"}, f"got {full['state']!r}")
+
+    # ---- the defect that made the drift gate unpassable by construction -------------------
+    # The page embedded its own short SHA and branch, so committing it changed the bytes it would
+    # next be built with, and promotion flipped `unreleased` -> `released`. `--check` could then
+    # only ever pass at the one commit that does not contain the file. Pin BOTH halves: the fields
+    # are gone, AND the rendered bytes are actually independent of the checkout.
+    check("no HEAD sha is embedded in the page",
+          "commit" not in p and "branch" not in p, f"got keys {sorted(p)}")
+
+    _tick()
+    _real = art.provenance
+    try:
+        base = dict(_real(), dirty=[])
+        art.provenance = lambda: dict(base, commit="aaaaaaa", branch="dev", state="released")
+        one = art.render(art.collect())
+        art.provenance = lambda: dict(base, commit="fffffff", branch="main", state="unreleased")
+        two = art.render(art.collect())
+    finally:
+        art.provenance = _real
+    if one != two:
+        FAILURES.append("the rendered page differs between two checkouts of the same sources — "
+                        "it embeds something about the commit, so --check can never pass once "
+                        "the page is committed")
 
 
 def test_dirty_paths() -> None:
@@ -352,6 +379,63 @@ def run() -> int:
     test_escaping()
     test_script_terminator()
     test_real_build()
+
+    # ------------------------------------------------------ the --check drift gate
+    # The artifact is COMMITTED, so it can go stale exactly as coverage.md can. A drift gate that
+    # cannot fail is worse than none, so all three verdicts are pinned: clean, stale, and absent.
+    # Uses main() rather than an internal, because the exit CODE is the contract the doctor reads —
+    # asserting an internal would leave the gate's actual interface untested.
+    # Provenance is PINNED CLEAN for this block. Without it every fixture below inherits the real
+    # tree's state and --check returns 3 (SKIP) for all of them — so they would pass or fail by
+    # whether the developer happened to have edits, testing the environment rather than the gate.
+    # The dirty case is asserted explicitly further down, with its own stub.
+    _prov_real = art.provenance
+    art.provenance = lambda: dict(_prov_real(), state="clean", dirty=[])
+    with tempfile.TemporaryDirectory() as _d:
+        _out = Path(_d) / "coverage.html"
+
+        # written by the generator itself, so "clean" means byte-for-byte what it emits
+        check("--check is silent on a freshly written artifact",
+              art.main(["--out", str(_out)]) == 0,
+              "generating to a temp path should succeed")
+        check("--check passes when the file IS the clean build",
+              art.main(["--check", "--out", str(_out)]) == 0,
+              "a just-generated file must satisfy --check")
+
+        # STALE: one appended byte must fail. This is the case that actually happens — a row flips
+        # and nobody regenerates.
+        _out.write_text(_out.read_text(encoding="utf-8") + "<!-- drift -->", encoding="utf-8")
+        check("--check FAILS on a stale artifact",
+              art.main(["--check", "--out", str(_out)]) == 1,
+              "an edited artifact must be reported as drift, or the gate is decorative")
+
+        # ABSENT: not committed at all is drift too, not a pass — that was the whole defect being
+        # fixed here, where the output lived in an ignored build/ directory and no gate could see it.
+        _out.unlink()
+        check("--check FAILS when the artifact is not committed",
+              art.main(["--check", "--out", str(_out)]) == 1,
+              "a missing artifact must fail, not pass by absence")
+
+        # NEAR MISS: differing only by line endings must NOT be drift — git may hand back CRLF on
+        # Windows, and reporting that as a stale artifact would make the gate unusable there.
+        art.main(["--out", str(_out)])
+        _out.write_bytes(_out.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
+        # A DIRTY tree makes drift unassessable, because the page stamps its own provenance. That
+        # must be exit 3 (-> SKIP), never 0 and never 1: reporting ok would hide a stale artifact,
+        # and reporting drift would fail every developer's working copy forever.
+        _pinned = art.provenance
+        art.provenance = lambda: dict(_prov_real(), state="dirty", dirty=["scripts/x.py"])
+        try:
+            check("--check SKIPS (exit 3) rather than claiming drift on a dirty tree",
+                  art.main(["--check", "--out", str(_out)]) == art.EXIT_INCOMPLETE,
+                  "a dirty tree must be inconclusive, not a false drift report")
+        finally:
+            art.provenance = _pinned
+
+        check("--check tolerates CRLF-normalised checkouts",
+              art.main(["--check", "--out", str(_out)]) == 0,
+              "line-ending normalisation is not drift")
+    art.provenance = _prov_real
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
