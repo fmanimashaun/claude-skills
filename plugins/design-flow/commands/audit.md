@@ -1,5 +1,5 @@
 ---
-description: Audit UI against the Fidara design system — flag drift (raw/brand colors in components, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus ring/ARIA, non-min-h-touch targets, hand-rolled layout CSS) and propose fixes.
+description: Audit UI against the Fidara design system — flag drift (raw/brand colors in components, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus ring/ARIA, non-min-h-touch targets, hand-rolled layout CSS) and propose fixes. Optional browser mode measures conformance on the RENDERED page (literal colours after the cascade, numbered-step bindings, `dark:` count, focus rings, tap targets, radius language) instead of only reading source.
 argument-hint: "[path or view/component to audit; default: changed files]"
 ---
 
@@ -30,6 +30,95 @@ Read the exit code, because two of them mean opposite things:
 
 Treating any non-zero exit as a defect to report conflates the two. Warnings flag config setup
 generates that no doctrine reads: probably dead scaffolding, worth a look but not a blocker.
+
+## Browser mode — measure conformance on the rendered page (optional, #107)
+
+The checklist below reads **source**, so it cannot see what the cascade resolves to: a colour
+injected by a third-party partial, a role token that never resolved, a focus rule that no longer
+matches the element it was written for. Browser mode measures the **rendered** page instead, and
+the numbers it returns are decisive rather than suggestive.
+
+**Needs a running app and Playwright. When either is absent, skip to the checklist and say so in
+the report** — a source audit is the documented fallback, not a failure.
+
+### 1. Boot or reuse the app through qa-flow's launch config
+
+Never invent a second boot path: `qa/qa.config.yml` `app:` (`start`, `port`, `health`) is the one
+place an app's launch is described, and `/qa-flow:smoke` already reads it. Probe before launching
+— two dev servers against one project contend over the same build cache:
+
+```bash
+PORT="$(python3 -c 'import re,sys;m=re.search(r"^\s+port:\s*(\d+)",open("qa/qa.config.yml").read(),re.M);print(m.group(1) if m else 3000)' 2>/dev/null || echo 3000)"
+if curl -fsS -o /dev/null --max-time 5 "http://localhost:${PORT}/up"; then
+  echo "reusing the server already on ${PORT} — not launching a second"
+else
+  echo "nothing on ${PORT}: boot it with qa/qa.config.yml app.start, then re-run"
+fi
+```
+
+No `app:` block? Infer the Rails default (`bin/dev`, port 3000, `/up`) and say so.
+
+### 2. Collect one snapshot per route × viewport × theme
+
+The collector this plugin ships is the **only** sanctioned way to produce a snapshot — it resolves
+the app's own tokens through the same browser that rendered the page, which is what makes the
+comparison downstream a set membership rather than colour arithmetic:
+
+```js
+import { chromium } from 'playwright';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+
+const collector = readFileSync(`${process.env.CLAUDE_PLUGIN_ROOT}/scripts/conformance_collector.js`, 'utf8');
+const routes = ['/', '/dashboard'];                  // the routes under audit
+const viewports = [{ width: 390, height: 844 }, { width: 1280, height: 900 }];
+
+mkdirSync('tmp/conformance', { recursive: true });
+const browser = await chromium.launch();
+for (const route of routes) {
+  for (const viewport of viewports) {
+    const page = await browser.newPage({ viewport });
+    await page.goto(`http://localhost:${process.env.PORT || 3000}${route}`);
+    await page.waitForLoadState('networkidle');      // the token layer must have applied
+    const snapshot = await page.evaluate(`(() => { ${collector}\n return collectConformanceSnapshot(); })()`);
+    const slug = `${route.replace(/\W+/g, '-')}-${viewport.width}`;
+    writeFileSync(`tmp/conformance/${slug}.json`, JSON.stringify(snapshot));
+    await page.close();
+  }
+}
+await browser.close();
+```
+
+**A 390px snapshot is mandatory.** Two rules only run at a mobile viewport (tap targets and
+horizontal overflow) and are reported as SKIPPED above 640px — a desktop-only run reads as clean
+while saying nothing about either. For dark mode, add the app's theme class before collecting
+(`page.evaluate(() => document.documentElement.classList.add('dark'))`) and keep it a separate
+snapshot: the role layer is what is under test, and mixing themes in one file hides which one drifted.
+
+### 3. Judge the snapshots
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/rendered_conformance.py" tmp/conformance/*.json
+```
+
+`--schema` prints the snapshot contract; `--max-dark N` / `--max-breakpoint N` move the two trend
+thresholds. Read the exit code the same way as the cross-check above:
+
+- **Exit 1 — the project drifts.** Zero-tolerance rules (`literal-colour`, `numbered-step-binding`,
+  `focus-ring-missing`, `tap-target-small`, `icon-only-unnamed`, `aria-controls-no-expanded`,
+  `horizontal-overflow`, `off-scale-type`, `radius-off-scale`) plus the two count-based trends
+  (`dark-variant-sprawl`, `breakpoint-driven-layout`) over threshold. Report with `file:line` where
+  you can trace the selector back to a component.
+- **Exit 2 — the snapshot could not be judged** (no elements, no role tokens resolved, wrong
+  schema). That is the *collection*, not the app: the usual cause is collecting before the
+  stylesheet applied. Fix and re-run; filing it as drift sends someone hunting nothing.
+
+**Read `skip:` lines as a third state.** A skipped rule did not run, and is not a pass — if
+`off-scale-type` skipped because no `--text-step-*` resolved, the type scale is not installed,
+which is itself the finding.
+
+Report the FACT lines (`dark:` occurrences, breakpoint occurrences, the radius-language
+distribution, the shadow-only focus count) even when nothing fails: those numbers are the trend
+this mode exists to produce, and a regression in them is a diff rather than an opinion.
 
 ## Checklist (cite file:line for each finding)
 
