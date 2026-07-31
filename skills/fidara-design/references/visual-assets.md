@@ -490,9 +490,13 @@ attributes carry zero CSS specificity. The chip's `text-step-3` is what makes th
 **Two deliberate departures from #135, both recorded.** The issue proposed `bg-primary/10
 text-primary` and `size-12`:
 
-- We keep **`bg-muted`**. `bg-primary/10 text-primary` is the **pagination-active** idiom in
-  `components.md`, not the empty-state chip — adopting it here would give two different meanings to
-  one visual, and an empty state is a neutral condition, not an active selection.
+- We keep **`bg-muted`**. The issue is right that `bg-primary/10 text-primary` is an established
+  icon-chip idiom — `components.md` uses it for the stat/KPI chip (`size-10 rounded-md`), soft-filled
+  badges, avatars and the active pagination link. That is exactly why it is wrong here: in every one
+  of those cases the primary tint marks something **active, selected or affirmative**, and an empty
+  state is the opposite — a neutral, absent condition. `components.md` already specifies `bg-muted`
+  for it, so adopting the tinted chip would both overload the tint and contradict every empty state
+  already built.
 - We keep **`size-16`** for the chip and express "oversized" through the *icon's* font size. Changing
   the chip's dimension would contradict `components.md` for every empty state already built.
 

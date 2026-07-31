@@ -1550,9 +1550,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     them as required roles would fail every existing pack, and a `brand.json` field would trip the
     unrecognised-key warning. No new pack field; `brand.md`'s "colours, logo, chart proof" holds.
   - **Two departures from #135's empty-state recipe, both to avoid contradicting shipped doctrine.**
-    We keep `bg-muted` (the issue's `bg-primary/10 text-primary` is the *pagination-active* idiom in
-    `components.md`, and an empty state is a neutral condition, not an active selection) and keep the
-    `size-16` chip, expressing "oversized" through the chip's **font size** — because `lucide_icon`
+    We keep `bg-muted` — the issue is right that `bg-primary/10 text-primary` is an established
+    icon-chip idiom (stat/KPI chip, soft badges, avatars, active pagination), and that is precisely
+    why it is wrong here: in every one of those the tint marks something **active or affirmative**,
+    while an empty state is a neutral absence, and `components.md` already specifies `bg-muted`.
+    We also keep the `size-16` chip, expressing "oversized" through the chip's **font size** — because `lucide_icon`
     may not take `size:`/`class:`, which the self-consistency lint enforces and the issue's wording
     would have violated.
 - **Video player is documented** (#95). `coverage.md` **4 → 3**. The verdict refuted three framings
