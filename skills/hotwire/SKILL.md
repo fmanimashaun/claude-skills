@@ -12,8 +12,12 @@ description: >-
   "SPA-like without a SPA", partial page updates, live updates over
   WebSockets — or wants a mobile app from their web app: Hotwire Native,
   Turbo Native, Strada, bridge components, path configuration, WKWebView/
-  webview wrapper apps, or "turn my Rails app into an iOS/Android app". Pair
-  with the rails-8 skill for Rails integration specifics.
+  webview wrapper apps, or "turn my Rails app into an iOS/Android app". Also
+  covers production Hotwire patterns extracted from shipped 37signals apps:
+  real-time chat-scale broadcasting, optimistic UI, presence, typing
+  indicators, unread badges, catching up after a dropped WebSocket, morphing
+  hazards, and drag-and-drop without a JS framework. Pair with the rails-8
+  skill for Rails integration specifics.
 ---
 
 # Hotwire: Turbo, Stimulus & Hotwire Native
@@ -73,10 +77,13 @@ attribute.
 | `references/turbo.md` | Drive (visits, caching, prefetch, view transitions), morphing page refreshes, Frames (eager/lazy, targeting, breakout), Streams (the 8 actions, broadcasts, custom actions), events, `turbo-rails` helpers |
 | `references/stimulus.md` | Controllers, lifecycle, actions (descriptors, options, key filters, parameters), targets, values, CSS classes, outlets, cross-controller communication, patterns and anti-patterns |
 | `references/native.md` | Hotwire Native iOS/Android setup, navigation and the routing table, path configuration JSON, bridge components (web + Swift + Kotlin), native screens, web-side detection, turbo-rails native helpers |
+| `references/production.md` | **Anything real-time or interactive.** How two shipped 37signals apps use this stack: choosing refreshes vs hand-written broadcasts, optimistic UI and stream de-duplication, catching up after a dropped WebSocket, morph hazards (open dialogs, edits in progress), Action Cable vs Streams, presence, drag-and-drop, Stimulus organisation at 35–69 controllers |
 
 A typical feature crosses files: a live-updating list with a native app is
 Streams (`turbo.md`) + a controller sprinkle (`stimulus.md`) + path config
-(`native.md`).
+(`native.md`). Before building anything that pushes updates to a live page,
+read `production.md` §0 — it is the escalation test for which rung of the
+ladder the feature actually needs.
 
 ## Working in a Rails app
 
@@ -96,3 +103,11 @@ from a model/job context without controller state, and Stimulus controllers
 clean up in `disconnect()`. For Native work: the path configuration handles
 the new routes and the screen behaves on both platforms or is explicitly
 platform-scoped.
+
+**If the page depends on broadcasts to stay correct, one more item is
+mandatory: a catch-up path.** Streams are fire-and-forget — nothing replays
+what was missed while the socket was down, so a broadcast-only page is
+silently stale after every network blip. Name the high-water mark, the
+`?since=` endpoint that returns the missed streams, and what triggers it
+(cable reconnect, and regaining visibility after a long hide).
+`production.md` §1.4 has the worked shape.
