@@ -524,6 +524,15 @@ GUARDS: tuple[Guard, ...] = (
                 "    return (lengths.get(number, 1), 0, -number)",
                 "critical-path tiebreak",
             ),
+            # The doctor runs this selftest as a gate, and a diagnostic that writes into the
+            # working tree is a defect however tidy its cleanup looks. Reverting to a repo-local
+            # fixture must be caught, not merely tolerated because the file is unlinked after.
+            Mutation(
+                "the selftest writes its fixture into the repo again",
+                '    with tempfile.TemporaryDirectory(prefix="issue-graph-selftest-") as workdir:',
+                "    for workdir in [str(Path(__file__).resolve().parent)]:",
+                "left files in scripts/",
+            ),
             # The property that makes this a gate rather than a report: a graph known to be
             # broken must print NO queue, because a wrong ordering reads exactly like a right one.
             Mutation(
