@@ -638,6 +638,44 @@ _INVISIBLE = {
 }
 
 
+def check_v4_outline_none() -> tuple[list[Finding], int]:
+    """`outline-none` must not appear in shipped doctrine: we mandate Tailwind v4.
+
+    A rename that keeps the old spelling alive with the OPPOSITE meaning. In v3, `outline-none`
+    *"didn't actually set `outline-style: none`, and instead set an invisible outline that would
+    still show up in forced colors mode for accessibility reasons"*. v4 renamed that safe utility to
+    `outline-hidden` and gave the old name to one that really does remove the outline.
+
+    The ring cannot substitute: Tailwind rings are `box-shadow`, and in forced-colors mode
+    `box-shadow` computes to `none`, while `outline-color` is merely force-adjusted. So
+    `outline-none` + `ring-2` leaves a forced-colors user with NO focus indicator -- WCAG 2.4.7,
+    invisible in normal rendering and therefore never caught by eye.
+
+    Nine recipes shipped this way: correct under v3, carried through the v4 migration untouched.
+    Prose alone would not have caught it, which is why this is a check and not a paragraph.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".md"):
+        if "skills/" not in rel(path).replace("\\", "/"):
+            continue
+        examined += 1
+        body = read(path)
+        for index, line in enumerate(body.splitlines(), 1):
+            # `outline-hidden` must not match, and neither may prose ABOUT the rename -- the
+            # doctrine explaining this defect necessarily names the bad utility. Only a real
+            # Tailwind variant usage counts, which always carries a `:` prefix in our recipes.
+            if re.search(r"(?<!-)\b(?:focus|focus-visible|active|group-focus)\:outline-none\b", line):
+                findings.append(Finding(
+                    "v4-outline-none", rel(path), index,
+                    "uses `outline-none`, which in Tailwind v4 sets `outline-style: none` and "
+                    "removes the focus indicator for forced-colors users -- the ring is a "
+                    "box-shadow and computes to `none` there. Use `outline-hidden`, the v4 name "
+                    "for v3's accessible utility. See components.md, 'The focus ring'",
+                ))
+    return findings, examined
+
+
 def check_invisible_characters() -> tuple[list[Finding], int]:
     """No invisible or confusable whitespace in anything we ship."""
     findings: list[Finding] = []
@@ -741,6 +779,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
     pointers, pointers_examined = check_doc_pointers()
+    outlines, outlines_examined = check_v4_outline_none()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -750,10 +789,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "doc_pointers_examined": pointers_examined,
+        "skill_docs_scanned_for_v4_outline": outlines_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers,
+            + pointers + outlines,
             coverage)
 
 
@@ -1103,6 +1143,32 @@ def selftest() -> int:
                     "ActiveRecord::Base.with_connection { |c| c.execute(sql) }\n"
                     "chat.with_instructions(\"be terse\").with_temperature(0.2)\n"
                     "  .with_tool(Weather).with_schema(Schema)\n```\n"})
+
+    # ---- v4-outline-none (#305) ----------------------------------------------------
+    # A rename that kept the old spelling alive with the opposite meaning: v3's `outline-none` was
+    # the ACCESSIBLE utility (an invisible outline that survives forced-colors); v4 renamed it to
+    # `outline-hidden` and gave the old name to one that really removes the outline. Nine recipes
+    # shipped wrong because they were correct under v3 and untouched by the migration.
+    ON = "v4-outline-none"
+    scenario("a v4 recipe using outline-none", rule=ON, expect_finding=True,
+             files={"skills/x/references/t.md":
+                    'BASE = "focus-visible:outline-none focus-visible:ring-2"\n'})
+    scenario("other variants are caught too, not just focus-visible", rule=ON, expect_finding=True,
+             files={"skills/x/references/t.md": '<a class="focus:outline-none ring-2">x</a>\n'})
+    # NEAR MISS, and the one that decides whether this rule survives: the doctrine EXPLAINING the
+    # defect has to name the bad utility repeatedly. If prose fires, the rule is unusable in the very
+    # file that documents it -- components.md mentions `outline-none` five times on purpose.
+    scenario("prose naming the utility must stay silent", rule=ON, expect_finding=False,
+             files={"skills/x/references/t.md":
+                    "Never write `outline-none` in v4: it sets `outline-style: none`. Tailwind v3's\n"
+                    "outline-none was renamed to `outline-hidden`, so outline-none now means the\n"
+                    "opposite. Use outline-hidden instead.\n"})
+    scenario("the correct utility must stay silent", rule=ON, expect_finding=False,
+             files={"skills/x/references/t.md":
+                    'BASE = "focus-visible:outline-hidden focus-visible:ring-2"\n'})
+    # Scope: this is Tailwind-v4 doctrine WE ship. A plugin or script mentioning it is not a recipe.
+    scenario("outside skills/ is out of scope", rule=ON, expect_finding=False,
+             files={"plugins/x/commands/c.md": 'class="focus-visible:outline-none"\n'})
 
     # ---- invisible-character -----------------------------------------------------
     IC = "invisible-character"

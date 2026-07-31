@@ -1835,6 +1835,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **FIX (P1) — the focus ring was invisible in forced-colors mode, in nine shipped recipes** (#305).
+  **Change type: incorrect doctrine.** Verdict CONFIRMED against two upstreams, both quoted.
+  - Every recipe read `focus-visible:outline-none focus-visible:ring-2 …`. Under **Tailwind v4**,
+    which this kit mandates, that is *"`outline-style: none`"* plus a ring that is a **box-shadow** —
+    and *"`box-shadow` and `text-shadow` compute to `none`"* in forced-colors mode
+    ([CSS Color Adjust 1](https://www.w3.org/TR/css-color-adjust-1/)), while `outline-color` is
+    merely force-adjusted to a system colour. So the outline is the half that survives and we had
+    switched it off: **no visible focus indicator at all**, a WCAG **2.4.7** failure.
+  - **The mechanism is a rename that kept the old spelling and inverted its meaning.** Tailwind v3's
+    `outline-none` *"didn't actually set `outline-style: none`, and instead set an invisible outline
+    that would still show up in forced colors mode **for accessibility reasons**"*; v4 renamed that
+    safe utility to **`outline-hidden`** and gave the old name to one that really removes the outline
+    ([v4 upgrade guide](https://tailwindcss.com/docs/upgrade-guide)). Our strings were **correct
+    under v3** and were carried through the migration untouched — which is why nothing looked wrong
+    and why no amount of reading the diff would have caught it.
+  - Fixed in all nine sites across four files, with the reasoning recorded in `components.md` so the
+    next migration has the *why* and not just the string.
+  - **Enforced, not just written down.** New `v4-outline-none` rule in `lint_self_consistency.py`,
+    because a prose rule about a string is precisely what regressed here. Five fixtures including the
+    two that decide whether it survives: doctrine **prose** naming the bad utility must stay silent
+    (`components.md` names it five times on purpose), and `outline-hidden` must not trip it. Proven
+    to fail on purpose by reverting one site, and guarded by a declared mutation. Self-consistency
+    assertions 65 → **70**; `lint_self_consistency` mutations 18 → **19**, all caught.
+
 ### 1.25.0 — 2026-07-31
 
 - **Inline link is documented, and `coverage.md` reaches ZERO `needs doctrine` rows** (#95). **1 → 0.**
