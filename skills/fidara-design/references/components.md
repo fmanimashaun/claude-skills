@@ -472,6 +472,62 @@ DEFAULTS = { variant: :primary, size: :md }
 - `h-2 rounded-full bg-muted` track + `bg-primary` fill, `transition-[width]`. Announce
   intermittently via the surrounding `role="status"`, not on every increment — the cadence is our
   convention, not a spec figure.
+- **Scope vs the Stepper below.** A continuous bar showing overall wizard completion *is* this
+  component, and `aria-valuetext="Step 2 of 5"` is the right way to label it. The **enumerated list of
+  named steps** ("Cart → Shipping → Payment") is not — see [Stepper / wizard](#stepper--wizard).
+
+## Stepper / wizard
+- **No APG pattern, and unusually little upstream of any kind.** The index lists 30; "stepper",
+  "wizard" and "multi-step" appear nowhere on it. Most of this entry is therefore **our decision,
+  recorded on [#95](https://github.com/fmanimashaun/claude-skills/issues/95#issuecomment-5147018825)**,
+  and every such line below says so. Only the cited lines are citable.
+- **`aria-current="step"` on exactly one step.** This part *is* spec: ARIA's values table gives
+  *"step — Represents the current step within a process"*, and *"Authors **SHOULD** only mark one
+  element in a set of elements as current with `aria-current`."*
+- **It is not a tablist, and ARIA is the reason.** *"Authors **SHOULD NOT** use the `aria-current`
+  attribute as a substitute for `aria-selected` in widgets where `aria-selected` has the same meaning.
+  For example, in a `tablist`, `aria-selected` is used on a `tab`."* Be straight about the limit of
+  that: **APG contains no warning against reusing Tabs for wizard flows** — we looked, there is none.
+  The position that a gated, ordered sequence is not *"layered sections of content"* you may select
+  freely is **ours**.
+- **It is not a `progressbar` either, and that is ours too.** ARIA scopes `progressbar` to *"tasks that
+  take a long time"* and says *"it is always read-only"*; HTML says *"the `progress` element is the
+  wrong element to use for something that is just a gauge, as opposed to task progress."* **Neither
+  names steppers**, so neither settles it — but a step list whose completed entries are clickable is
+  not read-only, so we decline both.
+- **Markup: an `<ol>` always; `<nav aria-label="Progress">` only when the steps are really links.**
+  Ours. An ordered sequence is an ordered list. The landmark is conditional because a stepper's future
+  steps are usually not navigable, and a landmark whose contents lead nowhere is noise. (Breadcrumb's
+  *"contained within a navigation landmark region"* is real but **not transferable** — a breadcrumb is
+  a trail of links to ancestors.)
+- **No widget keyboard model. Ours, and deliberately nothing.** There is no upstream keyboard table
+  because there is no pattern. The indicator is a **display**: no roving tabindex, no arrow keys.
+  Navigable completed steps are ordinary links in the page tab order; future steps are not focusable.
+  WCAG asks only that the model be operable (2.1.1) and order-preserving (2.4.3) — an invented
+  arrow-key contract satisfies neither better and surprises everyone.
+- **Announce by moving focus, and then do NOT add a live region.** This is the part an implementer gets
+  wrong twice. 4.1.3 Status Messages (**AA**) has a two-part test: the message must concern *"the
+  progress of a process"* — a step change does — **and** must *"not [be] delivered via a change in
+  context."* Moving focus **is** a change of context, and the Understanding document excludes it by
+  name: *"Changes of context, by their nature, interrupt the user by taking focus … and so have already
+  met the goal to alert the user."* **So: on advancing, move focus to the new step's heading** (ours,
+  and it satisfies 2.4.3) — 4.1.3 then does not apply, and a live region on top would double-announce.
+  A `role="status"` region is correct only in the other design, where the step changes without moving
+  focus. **Pick one branch; never both.**
+- **Never auto-advance on input.** 3.2.2 On Input (**Level A**): *"Changing the setting of any user
+  interface component does not automatically cause a change of context unless the user has been advised
+  of the behavior before using the component."* Advancing on a field change is exactly that. Ours: we
+  do not auto-advance at all — advancing is an explicit button press, which avoids the class rather
+  than papering over it with an advisory.
+- **A checkout wizard is inside 3.3.4's scope, at Level AA.** 3.3.4 Error Prevention (Legal, Financial,
+  Data) covers *"web pages that cause legal commitments or financial transactions for the user to occur,
+  that modify or delete user-controllable data … or that submit user test responses"*, and requires at
+  least one of **Reversible**, **Checked**, or **Confirmed**. A final review step before submit is the
+  usual answer. Note the levels: **3.3.4 is AA; 3.3.6 Error Prevention (All) is AAA** and applies to any
+  information submission — do not quote one at the other's level.
+- Visually a `cluster` of numbered `Badge`s with connectors, or a `stack` on narrow viewports. Each step
+  carries its number **and** its name as text; the state (done / current / upcoming) is never colour
+  alone — a check glyph for done, `aria-current="step"` plus visible weight for current.
 
 ## Skeleton / loading placeholder
 - **No role, no APG pattern, no W3C source at all** — this is convention, and doctrine says so
