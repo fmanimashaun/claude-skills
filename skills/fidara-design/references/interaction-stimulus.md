@@ -37,6 +37,14 @@ mixins**, then compose them — don't re-solve accessibility per component.
    flipping; prefer CSS anchor positioning where available, else a small JS positioner. Used by
    dropdown, popover, tooltip, combobox.
 
+**None of the four is a *gesture* mixin, and when one is built it inherits a contract these do not
+have.** A press or drag does not only end in a clean `pointerup` — there are **eight** ways it can be
+abandoned (`pointercancel`, `lostpointercapture`, `pointerleave`, window `blur`, `visibilitychange`,
+Escape, blur, move tolerance), and *"if a component can be mid-gesture, it registers a window `blur`
+listener"* or it stays stuck in its pressed state the moment a user alt-tabs. Full contract, plus
+`touch-action` by owned axis and the capture-versus-drop distinction, in
+[motion.md](motion.md#6-every-gesture-can-be-abandoned-eight-ways).
+
 ## Per-component behavior contract
 
 **Not every row here has an APG pattern**, and the heading used to imply otherwise. APG's index is 30

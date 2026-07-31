@@ -1166,6 +1166,50 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **NEW `references/motion.md` — motion doctrine** (#136). Our entire motion doctrine was **one
+  line** (*"150–200ms `ease-out`, transition colors/opacity/transform, gated on
+  `prefers-reduced-motion`"*), which governs component state transitions and nothing else. Adapted
+  from [interior](https://github.com/ddoemonn/interior)'s
+  [`DESIGN.md`](https://github.com/ddoemonn/interior/blob/main/DESIGN.md) (MIT, © ddoemonn),
+  **attributed**, with every adapted constant marked as ours rather than quoted.
+  - **A departure is always shorter than an arrival** — the highest-value rule, and we had no version
+    of it. One easing in both directions is why replacements *"either lag or smear together"*. Tokens
+    gain a **departure curve** (`--ease-in`) beside the shipped arrival curve.
+  - **Distance chooses the duration, not component type.** Three tiers — `--duration-fast` 120ms
+    under 20px, `--duration` 180ms for 20–200px, `--duration-slow` 280ms over 200px — and **an exit
+    takes the tier below its entrance**, which turns rule 1 into a table rather than a judgement call.
+    The three figures are **ours**, derived by holding our shipped 180ms as the mid tier; their
+    millisecond values come from spring settling times and do not carry over.
+  - **Opacity finishes before height on disclosure** — *"opacity finishing first hides the reflow."*
+    We ship a Disclosure component with a height transition and never said this.
+  - **Reduced motion: change the behaviour, not just the timing.** *"The information still arrives,
+    the trip is skipped."* Never remove the element or the state change — zero the duration, because
+    *"the element must still end up in the right place"*. And where timing is not the problem, change
+    behaviour: `scroll-behavior: auto`, a text reveal that jumps to its final state, a marquee that
+    stops rather than loops faster. This is the same rule as our existing *"a state change must never
+    depend on an animation event firing"* seen from the other side.
+  - **The eight ways a gesture can be abandoned**, which our four Stimulus mixins said nothing about:
+    `pointercancel`, `lostpointercapture`, `pointerleave`, window `blur`, `visibilitychange`, Escape,
+    blur, and move tolerance. *"If a component can be mid-gesture, it registers a window `blur`
+    listener"* — otherwise alt-tabbing mid-press leaves the element stuck in its pressed state, a bug
+    invisible in testing because nobody alt-tabs during a click on purpose. Also: treat
+    `lostpointercapture` as a **cancel, not a drop**, and pick `touch-action` by the axis you own.
+  - **Cap the stagger** — `per-child delay × count ≤ 1.6s`, because *"a stagger that scales with the
+    data eventually becomes a wait."* Twelve cards at 80ms is pleasant; sixty rows is five seconds of
+    the page assembling itself.
+  - **Physics runs linear, intention runs eased.** A ripple expands at constant speed; a spinner turns
+    at one rate *"because it is reporting an unknown"*. Easing a spinner implies it knows how far along
+    it is — the one thing it is admitting it does not. Consistent with the loading contract.
+  - **Focus: two signals, never three** — never combine a ring, a border change and a shadow. Draw the
+    focus edge after the fill, and as a sibling above anything that slides underneath.
+  - **Zero layout shift**, with the *invisible twin* named as the technique: reserve the widest state
+    permanently and animate opacity inside a box that never resizes.
+  - **What we did NOT take, and why**, rather than a silent filter: the five named springs are
+    `motion` solver constants with no CSS equivalent; velocity handoff needs a spring to hand off to;
+    entry/exit blur is dropped as our call (cost over benefit at our durations); and the React
+    machinery (`layoutId`, quantized step state) becomes "write a custom property on rAF rather than
+    toggling classes" in Stimulus.
+
 - **FIX — the `rate_limit` test-store advice shipped an hour earlier was wrong** (#98). It said to
   "stub a real store (`:memory_store`) in any example asserting either behaviour". That works for the
   single-use marker, which goes through `Rails.cache` directly — and **cannot work for `rate_limit`**,
