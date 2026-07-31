@@ -58,7 +58,10 @@ prefix. See [references/brand.md](references/brand.md).
 5. **Interaction** — [references/interaction-stimulus.md](references/interaction-stimulus.md).
    Behavior is Hotwire, not a JS framework: four reusable Stimulus mixins (list-navigation,
    focus-trap+restore, dismissable-layer, anchored-position) cover every overlay; style off
-   `data-[state=…]` / `aria-*`.
+   `data-[state=…]` / `aria-*`. **Motion** is [references/motion.md](references/motion.md):
+   two curves, three distance-chosen durations, departures shorter than arrivals, and the
+   **eight ways a gesture can be abandoned** — a component that can be mid-gesture registers a
+   window `blur` listener, or it stays stuck in its pressed state when the user alt-tabs.
 6. **Responsive** — [references/responsive.md](references/responsive.md). Fluid-first
    (Utopia) + intrinsic primitives; explicit breakpoints only where layout structure must
    change; touch targets (`min-h-touch` 44px) and safe-areas wired in.
@@ -118,8 +121,12 @@ shapes exactly; don't invent new ones.
   ARIA (`aria-expanded/controls/selected`, roles), `sr-only` labels for icon-only controls.
 - **One radius language**: buttons/inputs `rounded-md`, cards `rounded-lg`, badges/avatars
   `rounded-full`. **Lucide** icons, `1em`-sized, `currentColor`.
-- Motion: 150–200ms `ease-out`, transition `colors/opacity/transform` (never `all`), gated on
-  `prefers-reduced-motion`.
+- **Motion**: two curves — `--ease-out` arriving, `--ease-in` leaving — and three durations picked by
+  **travel distance** (`--duration-fast` 120ms under 20px · `--duration` 180ms · `--duration-slow`
+  280ms over 200px). **A departure is always shorter than an arrival.** Transition named properties,
+  never `all`. Under `prefers-reduced-motion` the information still arrives and only the trip is
+  skipped — never remove the element or the state change. Full doctrine, including the eight ways a
+  gesture can be abandoned, in [references/motion.md](references/motion.md).
 - **Charts** use the **chart role tokens** (`--color-chart-*`, sequential/diverging ramps) and the
   [data-viz.md](references/data-viz.md) rules — fixed categorical order, never cycled; **one axis**
   (never dual); identity never color-alone (legend + direct labels); text wears text tokens; status
