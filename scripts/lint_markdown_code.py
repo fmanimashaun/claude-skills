@@ -231,10 +231,27 @@ def check_block(code: str, lang: str) -> tuple[str | None, str]:
     return _check_ruby(normalised)
 
 
+# Same roots as lint_markdown_shell.py, and for the same reason: `docs/` and `CLAUDE.md` ship
+# code people copy, and until #133 neither linter looked at them. CHANGELOG.md is excluded on
+# purpose — an append-only history, not instructions anyone runs. Kept in step with the shell
+# linter deliberately; two linters over different halves of the same corpus is a coverage gap
+# waiting to be discovered by whichever file lands in the half nobody scans.
+DEFAULT_ROOTS = ["plugins", "skills", ".claude", "docs", "CLAUDE.md", "README.md"]
+
+# A fenced block inside a blockquote is still shipped code; the `^[ \t]*` fence anchor cannot
+# see past the `>`. Stripped line-by-line so line numbers still point at the real file.
+_BLOCKQUOTE = re.compile(r"^[ \t]*(?:>[ \t]?)+", re.M)
+
+
+def read_source(path: str) -> str:
+    """File contents with blockquote markers removed, line numbering preserved."""
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        return _BLOCKQUOTE.sub("", handle.read())
+
+
 def iter_blocks(path: str):
     """Yield (start_line, lang, code) for every fenced code block in a supported language."""
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        src = handle.read()
+    src = read_source(path)
     for match in FENCE.finditer(src):
         start = src[: match.start()].count("\n") + 2   # +1 for the fence line itself
         yield start, match.group(1).lower(), match.group(2)
@@ -272,8 +289,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="lint_markdown_code.py",
         description="Syntax-check the JS, Ruby and ERB embedded in shipped markdown.")
-    parser.add_argument("paths", nargs="*", default=["plugins", "skills", ".claude"],
-                        help="files or directories (default: plugins skills .claude)")
+    parser.add_argument("paths", nargs="*", default=DEFAULT_ROOTS,
+                        help="files or directories (default: " + " ".join(DEFAULT_ROOTS) + ")")
     parser.add_argument("--quiet", action="store_true", help="only print findings")
     parser.add_argument("--audit-coverage", action="store_true",
                         help="cross-check the fence regex against a looser independent scan; a "
@@ -296,7 +313,7 @@ def main(argv: list[str]) -> int:
         return st.run()
 
     try:
-        files = discover(args.paths or ["plugins", "skills", ".claude"])
+        files = discover(args.paths or DEFAULT_ROOTS)
     except FileNotFoundError as exc:
         print(f"lint_markdown_code: no such path: {exc}", file=sys.stderr)
         return 2
@@ -307,8 +324,7 @@ def main(argv: list[str]) -> int:
     if args.audit_coverage:
         gaps, seen, present_total = [], 0, 0
         for path in files:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                src = handle.read()
+            src = read_source(path)
             a, b = len(list(FENCE.finditer(src))), len(LOOSE.findall(src))
             seen += a
             present_total += b
@@ -347,8 +363,7 @@ def main(argv: list[str]) -> int:
     blocks = lines = loose_total = 0
 
     for path in files:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            src = handle.read()
+        src = read_source(path)
         parsed, present = len(list(FENCE.finditer(src))), len(LOOSE.findall(src))
         loose_total += present
         if parsed != present:

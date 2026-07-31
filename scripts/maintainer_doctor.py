@@ -95,6 +95,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("markdown code lint", ("python3", "scripts/lint_markdown_code.py")),
     ("markdown code coverage", ("python3", "scripts/lint_markdown_code.py", "--audit-coverage")),
     ("markdown code selftest", ("python3", "scripts/lint_markdown_code.py", "--selftest")),
+    # Only the SELFTEST is a gate. Validating the live tracker needs `gh`, and a gate that fails
+    # for want of a binary teaches people to ignore gates — the reasoning CORPORA_GATES already
+    # encodes. The live check runs in /maintainer-triage, where `gh` is a stated precondition.
+    ("issue graph selftest", ("python3", "scripts/issue_graph.py", "--selftest")),
     ("self-consistency", ("python3", "scripts/lint_self_consistency.py")),
     ("self-consistency selftest", ("python3", "scripts/lint_self_consistency.py", "--selftest")),
     ("coverage matrix drift", ("python3", "scripts/build_coverage.py", "--check")),
