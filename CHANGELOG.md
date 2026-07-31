@@ -1957,6 +1957,76 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+*(Two issues on one branch per CLAUDE.md's grouping rule. The shared mechanism is one sentence:
+both add a per-page evidence profile whose verdict is **recomputed against a denominator**, so a
+pass cannot report a result on surface it never exercised. Same files — `validate_evidence.py`'s
+profile table, `route_coverage.py`'s attribution map, `a11y-auditor.md` — and neither is a
+framework claim needing a doctrine verdict. A bullet each so the promotion closes them
+separately.)*
+
+- **A keyboard pass can no longer sample and look exhaustive** (#114). Doctrine mandates that
+  every interactive element be keyboard-operable with a visible focus ring, and that overlays trap
+  focus and restore it to the trigger; nothing verified any of it. The new `keyboard` evidence
+  profile does, and the design is shaped by *why* the hand-rolled probe failed silently: it checked
+  one button per page and produced focus evidence for **25 of 72 pages while reporting nothing
+  missing**. Sampling is invisible in a per-page log without an inventory count, so the row carries
+  one: every interactive element is either reached by Tab or reported unreachable, and
+  `Tab Stops + Unreachable < Interactive` is a finding. Missing indicators cannot exceed the
+  elements actually focused, and trap/Escape/restore failures cannot exceed the overlays opened.
+  Severity is recomputed from the counters, so a row cannot talk its own grade down.
+  - **`Engine` is part of the contract, because Playwright's WebKit would otherwise fabricate
+    findings.** WebKit inherits the macOS default where Tab reaches text fields and lists only —
+    not links or buttons — unless Full Keyboard Access is enabled (the setting behind Safari's
+    *"Press Tab to highlight each item on a webpage"*). A keyboard pass run there reports every
+    link as unreachable, so a WebKit unreachable count must confirm the setting in `Notes` or it is
+    rejected as a platform default rather than an application defect.
+    ([playwright#2114](https://github.com/microsoft/playwright/issues/2114),
+    [Apple: Full Keyboard Access](https://support.apple.com/guide/mac-help/mchlc06d1059/mac))
+  - **The indicator check gates on AA and no further.** [WCAG 2.2 SC 2.4.7 Focus
+    Visible](https://www.w3.org/TR/WCAG22/#focus-visible) is **Level AA** — an indicator must
+    exist — but [SC 2.4.13 Focus Appearance](https://www.w3.org/TR/WCAG22/#focus-appearance) is
+    **Level AAA**, so its 2-CSS-px and 3:1 requirements are advisory under an AA-targeted audit and
+    must not be counted as defects. (The W3C quickref rendered 2.4.13 as AA; the specification does
+    not. Verified against the specification.)
+  - **Why axe does not already cover this**, recorded because the obvious guess is wrong: axe runs
+    *no* focus rule under the WCAG tags `a11y-auditor` targets. `tabindex` and `skip-link` are
+    tagged **best-practice** and `focus-order-semantics` is best-practice/experimental, and none is
+    pulled in by `wcag2a`/`wcag2aa`/`wcag21a`/`wcag21aa`/`wcag22aa`. Even with `best-practice`
+    added, nothing in axe checks indicator *visibility* or focus *restoration*.
+    ([axe-core rule descriptions](https://github.com/dequelabs/axe-core/blob/develop/doc/rule-descriptions.md))
+  - Doctrine now says **never enumerate focus with `element.focus()`**: `:focus-visible`
+    deliberately may not match programmatically-moved focus, so such a pass reports *every* element
+    as having no indicator. Drive real `Tab` keypresses.
+    ([MDN `:focus-visible`](https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible))
+
+- **A forms row can no longer carry a verdict on an error state nobody triggered** (#115). The
+  audited corpus held 200+ form controls with no systematic validation testing. The new `forms`
+  profile checks label association against a `Controls` denominator, and ties the five
+  error-contract columns (`aria-invalid`, message link, announcement, value retention,
+  colour-independence) to `Submit Mode` **in both directions**: they must be `Not run` unless the
+  row actually submitted something invalid, and must not be `Not run` when it did. The
+  destructive-form carve-out must name the pattern that matched, so a skipped form is never
+  indistinguishable from a passing one.
+  - **`aria-invalid` is checked by value, not by presence.** Its default is `false`, and an absent
+    attribute, `aria-invalid=""` and `aria-invalid="false"` are all equivalent to not-invalid — so a
+    pass that greps for the attribute name reports a clean contract on a form that marks nothing.
+    ([MDN `aria-invalid`](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/aria-invalid))
+  - Severities follow the actual WCAG floor, which is mostly **Level A** and is why an unlabelled
+    control or a colour-only error is S1 rather than a style note: 3.3.2 Labels or Instructions (A),
+    4.1.2 Name, Role, Value (A), 3.3.1 Error Identification (A), 1.4.1 Use of Color (A), with 3.3.3
+    Error Suggestion at AA. Whether `aria-errormessage` is exposed independently of
+    `aria-invalid="true"` was **not** verified, so it is not asserted either way — the message link
+    accepts `aria-describedby` or `aria-errormessage`.
+
+Both passes earn route-coverage attribution and file deduplicated findings under the new `keyboard`
+and `forms` sources. Every new rule ships a fixture in both directions plus a declared mutation in
+`scripts/mutation_check.py` (38 mutations, all caught). Also fixed in passing: a dead `csv` import
+in `route_coverage.py`, and a `KeyError` in one of the new attribution fixtures that let an
+unrelated assertion take credit for catching a dropped `ROUTE_SOURCES` entry — found because the
+mutation check reported the catch as coming from the wrong fixture.
+
 ### 1.11.0 — 2026-07-30
 
 *(Two issues on one branch per CLAUDE.md's grouping rule. The mechanism they share is specific:
