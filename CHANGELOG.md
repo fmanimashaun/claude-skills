@@ -1086,6 +1086,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **FIX — `model-tiers.md` stated the wrong `opus` version for two named providers** (#127). Caught
+  auditing `dev` against source, hours after the doctrine shipped. The paragraph grouped three
+  providers for the `sonnet` alias — correctly, all three resolve to **Sonnet 4.5** — and then
+  attached ***`opus` = Opus 4.6*** to the same group. Per the provider table in
+  [Claude Code model configuration](https://code.claude.com/docs/en/model-config) (read 2026-07-31),
+  `opus` is **Opus 5** on Amazon Bedrock and Google Cloud's Agent Platform, and **Opus 4.6** only on
+  **Microsoft Foundry**. The paragraph also implied `sonnet` has two values when it has **three**:
+  Sonnet 5 on the Anthropic API, **Sonnet 4.6** on Claude Platform on AWS, Sonnet 4.5 on the other
+  three. Read that table **by row, not by group** — a note in the file now says so.
+  - **The argument was right and only the illustration was wrong**, which is the more dangerous
+    shape: the conclusion — *an alias is not a tier, so a shipped plugin cannot know which model its
+    own frontmatter selects* — is fully supported, so nothing about the surrounding reasoning looks
+    off and a reader has no prompt to check the numbers.
+  - Grepped the pattern rather than fixing the one line, per the rule that a contradiction travels in
+    groups. The CHANGELOG's own summary of the same verdict was **already correct** (it says
+    Sonnet 4.5 on Bedrock and Foundry and makes no `opus` claim), so this was the only instance.
+  - Everything else in that verdict re-verified verbatim against the same docs and holds: `model`
+    *"Defaults to `inherit`"*; the four-step resolution order with frontmatter at 3 and *"The main
+    conversation's model"* at 4; an excluded value *"skipped … runs the subagent on the inherited
+    model instead"*; *"As of v2.1.198, Explore inherits the main conversation's model"*; and
+    `effort`'s *"available levels depend on the model"*. So the seven `inherit` pins stand.
+
 - **A unit of work now has a work order, and the model tiers are decided rather than accidental**
   (#127). New `/rails-flow:handoff` writes `docs/handoff/<slug>.md`: the one file an executor can run
   from with **no conversation history** — goal, the `AC-n` ids that grade it, files in *and explicitly

@@ -29,11 +29,18 @@ Six facts decide this whole document, and four of them contradict the shape #127
    `model` frontmatter 4. The main conversation's model"* ([cc-agents]). Frontmatter beats the
    session. Pinning `sonnet` on a reviewer means a user who deliberately started an Opus session
    gets a **Sonnet** reviewer — we spent their upgrade for them, downwards.
-3. **An alias is not a tier; it is a per-provider lookup that moves over time.** `sonnet` is
-   Sonnet 5 on the Anthropic API but **Sonnet 4.5** on Amazon Bedrock, Google Cloud's Agent
-   Platform and Microsoft Foundry, where `opus` is **Opus 4.6** ([cc-model]). And *"Aliases point
-   to the recommended version for your provider and update over time"* ([cc-model]). A shipped
-   plugin cannot know which model its own frontmatter selects.
+3. **An alias is not a tier; it is a per-provider lookup that moves over time.** `sonnet` resolves
+   to **three different versions** depending on the provider — Sonnet 5 on the Anthropic API,
+   **Sonnet 4.6** on Claude Platform on AWS, **Sonnet 4.5** on Amazon Bedrock and Google Cloud's
+   Agent Platform *and* on Microsoft Foundry. `opus` is Opus 5 on every one of those **except
+   Microsoft Foundry**, where it is **Opus 4.6** ([cc-model]). And *"Aliases point to the
+   recommended version for your provider and update over time"* ([cc-model]). A shipped plugin
+   cannot know which model its own frontmatter selects.
+
+   Read that table by row, not by group. An earlier version of this paragraph named three providers
+   for `sonnet` — correctly, all three are 4.5 — and then attached `opus` **= Opus 4.6** to the same
+   group, where two of the three are Opus **5**. The argument was right and the illustration was
+   wrong, which is the more dangerous shape: nothing about the conclusion looks off.
 4. **Pinning *up* mostly buys nothing.** *"Claude Code checks the environment variable,
    per-invocation parameter, and frontmatter values against your organization's `availableModels`
    allowlist. It skips a value that resolves to an excluded model and runs the subagent on the
