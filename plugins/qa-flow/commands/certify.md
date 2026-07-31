@@ -28,8 +28,10 @@ sweep, k6 load+soak profile, ZAP baseline, fuller exploratory charters.
 
 Dispatch all layers: `e2e-tester` (full `@regression`, chromium+firefox+webkit),
 `api-contract-tester` (full spec + authz matrix), `a11y-auditor` (all primary
-pages), `perf-tester` (load profile with soak), `security-scanner` (ZAP baseline;
-active scan only with explicit approval), `exploratory-tester` (release charters).
+pages), `perf-tester` (load profile with soak, plus the client-side capture across the
+primary pages — run that one on **chromium**, since CLS and render-blocking status exist
+nowhere else), `security-scanner` (ZAP baseline; active scan only with explicit
+approval), `exploratory-tester` (release charters).
 
 ## Phase 4 — Certify or reject
 

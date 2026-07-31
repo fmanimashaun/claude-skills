@@ -38,6 +38,7 @@ RUNTIME_HEADER = ve.RUNTIME.header
 KEYBOARD_HEADER = ve.KEYBOARD.header
 FORMS_HEADER = ve.FORMS.header
 EMULATION_HEADER = ve.EMULATION.header
+PERF_HEADER = ve.PERF.header
 FINDINGS_HEADER = ve.FINDINGS.header
 PROFILE_NAMES = {p.name for p in ve.PROFILES}
 
@@ -1334,6 +1335,268 @@ def run() -> int:
         **em,
     )
 
+    # ---- client-side performance capture (#117) --------------------------------------
+    # Column order: Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Samples,
+    #   TTFB ms,LCP ms,LCP Element,CLS,CLS Budget,Requests,Transfer KB,Opaque Requests,
+    #   Largest Resource KB,Oversized Requests,Fonts No Swap,Render Blocking,Interaction Probe,
+    #   Severity,Evidence,Notes
+    pf = {"header": PERF_HEADER}
+    _pnav = "Measured,200,https://a/d,https://a/d,heading 'D'"
+    _pev = "qa/reports/run-1/results.jsonl"
+    PERF_CLEAN = (
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},"
+    )
+
+    expect_clean("perf: a clean chromium route", f"{PERF_CLEAN}\n", **pf)
+
+    # -- THE ENGINE CAPABILITY CONTRACT, and the carve-out that proves it is not "webkit is
+    # unsupported". LCP shipped in Firefox 122 and Safari 26.2, so it is REQUIRED on every engine;
+    # layout-shift and renderBlockingStatus are Chromium-only, so those columns must be blank
+    # off chromium. Both halves matter: without the first this becomes an engine ban, and without
+    # the second a `CLS 0` from an observer that never existed reads as a perfectly stable page.
+    expect_clean(
+        "perf: firefox row measures LCP and leaves the Chromium-only columns blank",
+        f"/d,default,{_pnav},firefox,3,180,1420,img.hero,,,34,412,0,180,0,0,,"
+        f"separate-visit,none,{_pev},\n",
+        **pf,
+    )
+    expect_clean(
+        "perf: webkit measures LCP too (Safari 26.2 shipped it) -- not an unsupported engine",
+        f"/d,default,{_pnav},webkit,3,210,1650,h1.title,,,34,412,0,180,0,0,,"
+        f"separate-visit,none,{_pev},\n",
+        **pf,
+    )
+    expect_findings(
+        "perf: CLS 0 on firefox, from an observer firefox does not implement",
+        f"/d,default,{_pnav},firefox,3,180,1420,img.hero,0,0.1,34,412,0,180,0,0,,"
+        f"separate-visit,none,{_pev},\n",
+        contains="an API that does not exist", count=2, **pf,
+    )
+    expect_findings(
+        "perf: renderBlockingStatus counted on webkit, where it does not exist",
+        f"/d,default,{_pnav},webkit,3,180,1420,img.hero,,,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="Render Blocking records", count=1, **pf,
+    )
+    expect_findings(
+        "perf: chromium row that recorded no CLS at all",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="finite, non-negative decimal", count=1, **pf,
+    )
+    expect_findings(
+        "perf: chromium row that recorded no render-blocking count",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,,"
+        f"separate-visit,none,{_pev},\n",
+        contains="no Render Blocking count", count=1, **pf,
+    )
+
+    # -- THE CEILING. This profile's distinctive direction: #114/#115 stop a row grading a defect
+    # DOWN, #116 stops it grading an advisory UP, and here nothing may be graded S1 at all. No
+    # standard mandates a performance budget, and a localhost timing cannot establish one.
+    expect_findings(
+        "perf: a client-side timing graded S1",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.34,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,S1,{_pev},hero image shifts the headline\n",
+        contains="ceiling here is S2", count=1, **pf,
+    )
+
+    # -- TIMINGS ARE TRENDED, NEVER GRADED. The pair is the whole "advisory" claim: a 9.4s LCP is
+    # recorded and left alone, and grading it a defect is rejected.
+    expect_clean(
+        "perf: a slow LCP recorded and not graded",
+        f"/d,default,{_pnav},chromium,3,180,9400,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        **pf,
+    )
+    expect_findings(
+        "perf: a slow LCP graded S2 on a row whose gating counters are all 0",
+        f"/d,default,{_pnav},chromium,3,180,9400,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,S2,{_pev},LCP is slow on this route\n",
+        contains="environment-sensitive", count=1, **pf,
+    )
+
+    # -- WHAT DOES GATE: a shift the page really performs, against the budget the row carries.
+    expect_findings(
+        "perf: CLS over the row's own budget, called clean",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.34,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="is S2", count=1, **pf,
+    )
+    expect_clean(
+        "perf: CLS over budget, correctly graded",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.34,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,S2,{_pev},webfont swap reflows the article body\n",
+        **pf,
+    )
+    expect_clean(
+        "perf: a relaxed budget is visible in the row rather than hidden in config",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.34,0.5,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        **pf,
+    )
+    expect_findings(
+        "perf: a request over the byte budget, called clean",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,1900,0,1200,3,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="is S2", count=1, **pf,
+    )
+
+    # -- THE FALSE-CLEAN BYTE VERDICT. transferSize is 0 for a cross-origin asset with no
+    # Timing-Allow-Origin and 0 for a cache hit, so "nothing over budget" can mean "nothing
+    # MEASURABLE over budget". Only the clean direction is rejected: an incomplete positive
+    # finding is still a real one, and that near-miss is what keeps the rule from being a ban.
+    expect_findings(
+        "perf: no oversized requests, among the ones that reported a size at all",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,9,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="bytes nobody measured", count=1, **pf,
+    )
+    expect_clean(
+        "perf: opaque requests alongside a real oversized finding is incomplete, not false",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,9,180,2,0,0,"
+        f"separate-visit,S2,{_pev},vendor.js and the hero jpeg are both over budget\n",
+        **pf,
+    )
+
+    # -- denominators --
+    expect_findings(
+        "perf: more opaque requests than requests",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,40,180,2,0,0,"
+        f"separate-visit,S2,{_pev},two over budget\n",
+        contains="cannot exceed the inventory", count=1, **pf,
+    )
+    expect_findings(
+        "perf: one resource larger than the whole page transfer (encoded/decoded mix-up)",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,300,0,900,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="cannot exceed the inventory", count=1, **pf,
+    )
+    expect_findings(
+        "perf: a route that was never sampled",
+        f"/d,default,{_pnav},chromium,0,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="Out of Scope", count=1, **pf,
+    )
+    expect_findings(
+        "perf: a route whose own document request was never counted",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,0,0,0,0,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="Out of Scope", count=1, **pf,
+    )
+
+    # -- a number with no attributable cause is the complaint #117 exists to answer --
+    expect_findings(
+        "perf: an LCP time with nothing to attribute it to",
+        f"/d,default,{_pnav},chromium,3,180,1420,,0.02,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="a number, not a finding", count=1, **pf,
+    )
+
+    # -- THE PROBE ORDERING HAZARD. Playwright's click is trusted, so it terminates LCP observation
+    # and marks shifts within 500 ms hadRecentInput. A same-visit probe truncates the LCP printed
+    # two columns to its left.
+    expect_findings(
+        "perf: the interaction probe ran on the same visit as the metric read",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f"same-visit,none,{_pev},\n",
+        contains="truncated", count=1, **pf,
+    )
+    expect_clean(
+        "perf: no probe was run at all -- honest, and leaves the metrics intact",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f"not run,none,{_pev},\n",
+        **pf,
+    )
+    expect_findings(
+        "perf: no Interaction Probe recorded",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f",none,{_pev},\n",
+        contains="no Interaction Probe", count=1, **pf,
+    )
+    expect_findings(
+        "perf: an Interaction Probe outside the vocabulary",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        f"inp,none,{_pev},\n",
+        contains="is not one of", count=1, **pf,
+    )
+
+    # -- advisory causes: counted, never graded, and never a bare number --
+    expect_clean(
+        "perf: fonts without font-display recorded as advisory",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,4,0,"
+        f"separate-visit,none,{_pev},Inter and Lora declare no font-display\n",
+        **pf,
+    )
+    expect_findings(
+        "perf: an advisory count with no Notes is unactionable",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,4,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="an advisory finding is still a finding", count=1, **pf,
+    )
+    # The rule covers BOTH advisory columns, so both get a fixture -- exercising one and claiming
+    # the rule is tested is the coverage gap this repo's own review skill names.
+    expect_findings(
+        "perf: a render-blocking count with no Notes is unactionable",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,6,"
+        f"separate-visit,none,{_pev},\n",
+        contains="Render Blocking above 0", count=1, **pf,
+    )
+    expect_clean(
+        "perf: render-blocking stylesheets recorded as advisory, never graded",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,6,"
+        f"separate-visit,none,{_pev},six blocking stylesheets in the document head\n",
+        **pf,
+    )
+
+    # -- persistence is acceptance criterion 3, so it is enforced rather than described --
+    expect_findings(
+        "perf: measured with nothing persisted to compare the next run against",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,412,0,180,0,0,0,"
+        "separate-visit,none,,\n",
+        contains="not a trend", count=1, **pf,
+    )
+
+    # -- vocabulary and placeholders --
+    expect_findings(
+        "perf: no Engine recorded",
+        f"/d,default,{_pnav},,3,180,1420,img.hero,,,34,412,0,180,0,0,,"
+        f"separate-visit,none,{_pev},\n",
+        contains="no Engine", count=1, **pf,
+    )
+    expect_findings(
+        "perf: an unknown Engine",
+        f"/d,default,{_pnav},brave,3,180,1420,img.hero,,,34,412,0,180,0,0,,"
+        f"separate-visit,none,{_pev},\n",
+        contains="is not one of", count=1, **pf,
+    )
+    expect_findings(
+        "perf: a counter filled with placeholder text",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,0.02,0.1,34,n/a,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="records no number", count=1, **pf,
+    )
+    # `float()` accepts both of these and they would sail through a `>` comparison as measurements.
+    expect_findings(
+        "perf: CLS recorded as nan",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,nan,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="finite, non-negative decimal", count=1, **pf,
+    )
+    expect_findings(
+        "perf: a negative CLS",
+        f"/d,default,{_pnav},chromium,3,180,1420,img.hero,-0.4,0.1,34,412,0,180,0,0,0,"
+        f"separate-visit,none,{_pev},\n",
+        contains="finite, non-negative decimal", count=1, **pf,
+    )
+    expect_clean(
+        "perf: a Blocked row still says what it saw",
+        "/d,default,Blocked,none,https://a/d,https://a/d,,firefox,,,,,,,,,,,,,,,,,"
+        "the dev server never answered\n",
+        **pf,
+    )
+
     # ---- the Source vocabulary and the doctrine that names it must agree -------------
     # A pre-existing drift found while adding `emulation`: `keyboard` and `forms` were accepted by
     # the checker for a whole release while qa-reporter.md's own list of sources denied they
@@ -1377,7 +1640,7 @@ def run() -> int:
     for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN),
                       (ve.RUNTIME, RUNTIME_CLEAN), (ve.KEYBOARD, KEYBOARD_CLEAN),
                       (ve.FORMS, FORMS_CLEAN), (ve.EMULATION, EMULATION_CLEAN),
-                      (ve.FINDINGS, NAVBAR)):
+                      (ve.PERF, PERF_CLEAN), (ve.FINDINGS, NAVBAR)):
         got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
         detected.append(got.name)
         if got is not prof:
@@ -1447,6 +1710,10 @@ def run() -> int:
         # accessibility contracts, and the print mode rides along because it is the same
         # emulate-then-assert mechanism, not because it is an a11y concern.
         ("a11y-auditor.md", ve.EMULATION),
+        # The client-side capture is perf-tester's, and lives beside the k6 load profile on
+        # purpose: the two are the easiest pair in this plugin to confuse, and #117's fourth
+        # acceptance criterion is that they are documented as distinct.
+        ("perf-tester.md", ve.PERF),
         ("qa-reporter.md", ve.FINDINGS),
     ):
         _tick()
