@@ -115,7 +115,7 @@ Wire `min-h-touch` on every interactive control (was defined-but-unused); apply 
 Dense tables scroll poorly on phones; ship a card-stack fallback instead of horizontal scroll.
 
 ```erb
-<table class="hidden md:table w-full text-step-0">…</table>   <%# desktop %>
+<table class="hidden md:table w-full text-step--1">…</table>   <%# desktop %>
 <ul class="md:hidden stack" style="--space: var(--space-xs)">  <%# mobile %>
   <% rows.each do |r| %>
     <li class="box bg-card rounded-lg border border-border">

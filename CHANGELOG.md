@@ -1837,6 +1837,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **FIX — chrome used the content type step in eleven places, not the six reported** (#306).
+  **Change type: incorrect doctrine**, and internal rather than external: two of our own files
+  disagreed, so it is settled by measurement against the repo, not by a citation.
+  - `foundations-tokens.md` is emphatic that app chrome is **`text-step--1`** and calls `text-step-0`
+    on chrome *"the most common calibration error, and the reason this table exists"*. The
+    calibration was **measured**, not chosen — 14px chrome beats 16px body ~2.7:1 in both reference
+    corpora. It had then drifted inside the reference implementations, which is the file agents copy
+    from, so the error was **propagating** rather than sitting still.
+  - **The issue named six sites; grepping the pattern found eleven.** The five it missed are the ones
+    that travel furthest: the button `BASE` in **two** files (buttons are named chrome), the
+    form-input base in a **second** file, and a `<table>` in **two** files (table cells are named
+    chrome). This is the `code-review` rule — when you find one instance, grep for the class — paying
+    for itself again.
+  - The sharpest evidence was internal: `component-implementations.md` had a `:label` at
+    `text-step--1` **immediately above** its `:input` at `text-step-0`. Two lines apart.
+  - **Where `text-step-0` stays is now recorded**, because the failure mode of a rule like this is
+    over-correction on the next pass: alert body, card description, page lede, `<dd>` values (whose
+    `<dt>` is chrome), and `AvatarComponent`'s deliberate `sm`/`md`/`lg` ramp. Audited one by one.
+  - **No static lint rule shipped, deliberately.** Chrome and content are only reliably
+    distinguishable in a *rendered* DOM; a grep would have to guess from class strings and its false
+    positives would land on exactly the legitimate uses above — which is how a linter gets switched
+    off. It belongs in design-flow's browser-driven `rendered_conformance.py`, which resolves real
+    elements, and is named there as the home for a `chrome-type-step` rule.
+
 - **Every plugin agent's model pin is now a decision with a named proof** (#299). #127 found that
   rails-flow's agents pinned `sonnet`, which is a **cap**: frontmatter resolves above the session
   model, so a user who deliberately started an Opus session got a Sonnet reviewer. That fix stopped

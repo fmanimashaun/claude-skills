@@ -57,7 +57,7 @@ named wrapper, not a repeated override — see below.
 
 ## Control recipe + states
 
-Base: `block w-full rounded-md border bg-background text-step-0 text-foreground px-3 h-9
+Base: `block w-full rounded-md border bg-background text-step--1 text-foreground px-3 h-9
 placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2
 focus-visible:ring-ring/30 focus-visible:border-ring disabled:opacity-50 min-h-touch`.
 

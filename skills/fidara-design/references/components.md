@@ -39,7 +39,7 @@ pattern without the JS dep:
 
 ```ruby
 # app/components/ui/button_component.rb (shape for every catalog component)
-BASE = "inline-flex items-center justify-center gap-2 rounded-md text-step-0 font-medium " \
+BASE = "inline-flex items-center justify-center gap-2 rounded-md text-step--1 font-medium " \
        "transition-colors duration-[180ms] ease-out " \
        "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2 " \
        "disabled:opacity-50 disabled:pointer-events-none min-h-touch"
@@ -437,7 +437,7 @@ DEFAULTS = { variant: :primary, size: :md }
   `dom_id`-addressable so streams can target them. No full-page new/edit forms. Full flow:
   [crud-modal-pattern.md](crud-modal-pattern.md).
 - Keep the proven `shared/_crud_table`, `_crud_header`, `_crud_row_actions` partials, refactored to role
-  tokens + components. `<table class="w-full text-step-0 text-left">`, header `text-step--1 uppercase
+  tokens + components. `<table class="w-full text-step--1 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.
 - **Responsive:** wrap in `overflow-x-auto` (horizontal scroll). For dense data on small screens prefer a
   **card-stack** fallback (`hidden md:table` + a `md:hidden` list of `box`/`stack` rows) — pick per table and
