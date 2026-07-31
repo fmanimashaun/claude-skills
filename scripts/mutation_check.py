@@ -428,6 +428,37 @@ GUARDS: tuple[Guard, ...] = (
                 "    if False:",
                 "empty doctrine tree is an error, not a pass",
             ),
+            # `provided` reverts to a whole-file scan, so a key MENTIONED anywhere in setup.md
+            # counts as generated. This was a real defect: the docstring claimed the key was
+            # named "precisely at the step that generates the initializer" while the code did
+            # set membership over the whole file — claims-vs-enforcement inside the guard
+            # written to catch that class.
+            Mutation(
+                "a mention anywhere in setup.md counts as a generation again",
+                "    for chunk in setup_steps(text):\n"
+                "        provided |= set(CONFIG_KEY.findall(chunk)) & set(INITIALIZER.findall(chunk))",
+                "    provided = set(mentioned)",
+                "a stray key mention does not count as generated",
+            ),
+            # The 1/2 exit split collapses: an environment fault reports as doctrine drift and
+            # sends a maintainer hunting a defect that does not exist.
+            Mutation(
+                "an unreadable input exits 1 (drift) instead of 2 (environment)",
+                '        print(f"setup_doctrine_crosscheck: {exc}", file=sys.stderr)\n'
+                "        return 2",
+                '        print(f"setup_doctrine_crosscheck: {exc}", file=sys.stderr)\n'
+                "        return 1",
+                "an undecodable doctrine file exits 2, not 1",
+            ),
+            # The read guard degrades from abort to silent skip. A partial scan then produces a
+            # confident verdict over doctrine it never read — the failure mode the whole
+            # `scanned` counter exists to prevent, reintroduced one level down.
+            Mutation(
+                "an unreadable doctrine file is silently skipped instead of aborting",
+                '                raise InputError(f"cannot read doctrine file {rel}: {exc}") from exc',
+                "                continue",
+                "an undecodable doctrine file exits 2, not 1",
+            ),
         ),
     ),
     Guard(

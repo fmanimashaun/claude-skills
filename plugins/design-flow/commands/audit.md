@@ -19,10 +19,17 @@ run. It reads the shipped doctrine and generator, so it is meaningful from any c
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_doctrine_crosscheck.py"
 ```
 
-A non-zero exit is a **toolchain defect, not a project defect** — report it with
-`/rails-flow:report` (component `design-flow`) rather than patching locally. Warnings flag
-config setup generates that no doctrine reads: probably dead scaffolding, worth a look but
-not a blocker.
+Read the exit code, because two of them mean opposite things:
+
+- **Exit 1 — a toolchain defect, not a project defect.** Doctrine reads config the generator
+  never produces. Report it with `/rails-flow:report` (component `design-flow`) rather than
+  patching locally.
+- **Exit 2 — the check could not run** (an input missing, unreadable, or not valid UTF-8). That
+  is *your clone*, not the toolchain: fix the input and re-run. Filing it as a doctrine defect
+  sends a maintainer hunting something that does not exist.
+
+Treating any non-zero exit as a defect to report conflates the two. Warnings flag config setup
+generates that no doctrine reads: probably dead scaffolding, worth a look but not a blocker.
 
 ## Checklist (cite file:line for each finding)
 

@@ -77,7 +77,11 @@ Usage:
   python3 setup_doctrine_crosscheck.py --selftest      # prove the check can fail
 
 Exit: 0 clean (warnings allowed) · 1 a depended-on config key is not generated ·
-      2 usage/environment (a required input is missing).
+      2 usage/environment (a required input is missing, unreadable, or not valid UTF-8).
+
+The 1/2 split is load-bearing: 1 means "doctrine drift a maintainer must fix", 2 means "this
+check could not run". Anything that collapses the two sends someone hunting a defect that does
+not exist, so every read is guarded and every partial scan aborts — see `InputError`.
 """
 
 from __future__ import annotations
@@ -110,6 +114,24 @@ CONFIG_KEY = re.compile(
 # A generated initializer, e.g. `config/initializers/brand.rb`.
 INITIALIZER = re.compile(r"config/initializers/([a-z0-9_]+)\.rb")
 
+# A step boundary in setup.md: a markdown heading, or a top-level numbered step. Used to scope
+# a config key to the step that generates it — see `setup_provides`.
+STEP_BOUNDARY = re.compile(r"^(?:#{1,6} |\d+\. )", re.M)
+
+
+class InputError(Exception):
+    """A required input could not be read or decoded.
+
+    Raised rather than skipped, deliberately. With one doctrine file unread the read-set is
+    incomplete, so every verdict below it is unsound in BOTH directions: a key read only in the
+    unread file looks ungenerated (invented finding), and the run can equally report clean over
+    doctrine it never saw. A partial scan has no honest verdict, so this aborts to exit 2
+    (environment) instead of returning a result indistinguishable from either.
+
+    Without it an undecodable file exits **1** — the code reserved for "a depended-on config key
+    is not generated" — sending a maintainer hunting a doctrine defect that does not exist.
+    """
+
 
 # --------------------------------------------------------------------------
 # extraction
@@ -135,26 +157,65 @@ def config_reads(doctrine_dir: str) -> tuple[dict[str, list[str]], int]:
             path = os.path.join(root, name)
             rel = os.path.relpath(path, doctrine_dir)
             scanned += 1
-            with open(path, encoding="utf-8") as handle:
-                for lineno, line in enumerate(handle, 1):
-                    for key in CONFIG_KEY.findall(line):
-                        reads.setdefault(key, []).append(f"{rel}:{lineno}")
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    for lineno, line in enumerate(handle, 1):
+                        for key in CONFIG_KEY.findall(line):
+                            reads.setdefault(key, []).append(f"{rel}:{lineno}")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise InputError(f"cannot read doctrine file {rel}: {exc}") from exc
     return reads, scanned
 
 
-def setup_provides(setup_path: str) -> tuple[set[str], set[str]]:
-    """(config keys named in setup.md, initializer basenames setup.md generates).
+def setup_steps(text: str) -> list[str]:
+    """Split setup.md into step-sized chunks at headings and top-level numbered steps.
 
-    A key is treated as *provided* when setup.md names it: setup names a
-    `Rails.configuration.x.<key>` precisely at the step that generates the initializer
-    setting it. The separately-collected initializer set lets the check say, structurally,
-    "setup references config keys but creates no initializer to set them" — which is the
-    #104 root cause phrased as a shape rather than a single missing string.
+    Coarse on purpose. The unit only has to be small enough that a key and the initializer
+    generating it must be *deliberately* placed together, and large enough that the real
+    setup.md — where step 7 spans several wrapped lines — is one chunk rather than three.
     """
-    text = open(setup_path, encoding="utf-8").read()
-    keys = set(CONFIG_KEY.findall(text))
+    marks = [m.start() for m in STEP_BOUNDARY.finditer(text)]
+    if not marks:
+        return [text]
+    chunks = [text[:marks[0]]] if marks[0] else []
+    for index, start in enumerate(marks):
+        stop = marks[index + 1] if index + 1 < len(marks) else len(text)
+        chunks.append(text[start:stop])
+    return chunks
+
+
+def setup_provides(setup_path: str) -> tuple[set[str], set[str], set[str]]:
+    """(keys setup GENERATES, initializer basenames, keys setup merely MENTIONS).
+
+    A key counts as *provided* only when some step names `Rails.configuration.x.<key>` **and**
+    generates `config/initializers/<key>.rb` in that same step. Both halves are load-bearing:
+
+    * **Same step**, because a mention is not a generation. Deriving `provided` from a
+      whole-file scan let a stray prose mention stand in for a deleted generation step, so the
+      check reported clean while the `NoMethodError` it exists to prevent shipped. That was a
+      claims-vs-enforcement defect in this very function — the docstring asserted the
+      association was structural while the code did whole-file set membership.
+    * **Matching name**, because the error path already prescribes exactly one filename
+      (*"Add a step generating `config/initializers/<key>.rb`"*). Enforcing the convention the
+      tool prescribes keeps the two consistent; accepting any initializer in the step would let
+      `telemetry.rb` vouch for `brand`.
+
+    `mentioned` is returned so the caller can tell "setup never heard of this key" from "setup
+    talks about it but generates nothing" — the same defect, but only the second is a near miss
+    worth a distinct message.
+    """
+    try:
+        with open(setup_path, encoding="utf-8") as handle:
+            text = handle.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise InputError(f"cannot read setup.md at {setup_path}: {exc}") from exc
+
     inits = set(INITIALIZER.findall(text))
-    return keys, inits
+    mentioned = set(CONFIG_KEY.findall(text))
+    provided: set[str] = set()
+    for chunk in setup_steps(text):
+        provided |= set(CONFIG_KEY.findall(chunk)) & set(INITIALIZER.findall(chunk))
+    return provided, inits, mentioned
 
 
 # --------------------------------------------------------------------------
@@ -187,7 +248,7 @@ class Report:
 def cross_check(setup_path: str, doctrine_dir: str) -> Report:
     report = Report()
     reads, scanned = config_reads(doctrine_dir)
-    provided, inits = setup_provides(setup_path)
+    provided, inits, mentioned = setup_provides(setup_path)
 
     # A pointed-at-the-wrong-place run finds no keys and would otherwise print "setup
     # generates every config key the doctrine reads" — clean, over nothing. That reads
@@ -214,11 +275,23 @@ def cross_check(setup_path: str, doctrine_dir: str) -> Report:
             continue
         sites = reads[key]
         shown = ", ".join(sites[:4]) + (" …" if len(sites) > 4 else "")
-        report.error(
-            f"doctrine reads `Rails.configuration.x.{key}` ({shown}) but setup.md never "
-            f"generates it — the first `/design-flow:setup` run raises NoMethodError on nil. "
-            f"Add a step generating `config/initializers/{key}.rb`."
-        )
+        # Mentioned but not generated is the near miss: setup talks about the key while the step
+        # that created it is gone. It reads as "handled" to a human skimming setup.md, which is
+        # exactly why it needs its own message rather than the generic one.
+        if key in mentioned:
+            report.error(
+                f"doctrine reads `Rails.configuration.x.{key}` ({shown}) and setup.md mentions "
+                f"the key, but no step both names it and generates "
+                f"`config/initializers/{key}.rb` — a mention is not a generation, so nothing "
+                f"sets it at boot and the first `/design-flow:setup` run raises NoMethodError "
+                f"on nil."
+            )
+        else:
+            report.error(
+                f"doctrine reads `Rails.configuration.x.{key}` ({shown}) but setup.md never "
+                f"generates it — the first `/design-flow:setup` run raises NoMethodError on nil. "
+                f"Add a step generating `config/initializers/{key}.rb`."
+            )
 
     # Structural corollary: config is read but setup creates no initializer at all. This
     # would have caught #104 even if the key name in doctrine and generator had drifted.
@@ -331,6 +404,62 @@ def selftest() -> int:
                     "--quiet"]) == 2,
               "expected exit 2 (environment) for a run that examined nothing")
 
+        # --- Fixture F: a mention is not a generation ---
+        # The regression proof for the whole-file-membership defect. setup.md still mentions the
+        # key in prose, and still generates SOME initializer (so the structural corollary stays
+        # quiet), but the step that generated `brand.rb` is gone. Pre-fix this reported clean and
+        # the NoMethodError shipped.
+        doc = os.path.join(tmp, "f-doctrine")
+        _write(doc, "component-implementations.md",
+               "brand = Rails.configuration.x.brand\n")
+        _write(tmp, "f-setup.md",
+               "# setup\n"
+               "1. **Theme**: generate `config/initializers/telemetry.rb`.\n"
+               "2. **Report**: mention that `Rails.configuration.x.brand` drives Ui::Logo.\n")
+        rep = cross_check(os.path.join(tmp, "f-setup.md"), doc)
+        check("a stray key mention does not count as generated",
+              not rep.ok and any("mention is not a generation" in e for e in rep.errors),
+              "setup.md merely MENTIONS the key while generating no matching initializer, and "
+              "the check passed — `provided` is being inferred from a whole-file scan again")
+
+        # --- Fixture G: the safe direction — co-location across a realistic multi-step file ---
+        # Guards the fix from over-correcting. If step-scoping were too tight (say, per-line),
+        # the real setup.md — whose step 7 wraps across several lines — would fail, and a check
+        # that flags the correct shape gets switched off.
+        doc = os.path.join(tmp, "g-doctrine")
+        _write(doc, "component-implementations.md",
+               "brand = Rails.configuration.x.brand\n")
+        _write(tmp, "g-setup.md",
+               "# setup\n"
+               "1. **application.css** — the full `@theme`.\n"
+               "2. **Layout recipes** — stack, cluster, center.\n"
+               "7. **Brand config for `Ui::Logo`**: generate `config/initializers/brand.rb`\n"
+               "   from the pack's `brand.json` so `Rails.configuration.x.brand` exposes\n"
+               "   `default_variant` and `variants`.\n")
+        rep = cross_check(os.path.join(tmp, "g-setup.md"), doc)
+        check("a key generated in its own multi-line step stays clean",
+              rep.ok and not rep.errors,
+              f"the real setup.md shape was flagged — step scoping is too tight and the check "
+              f"will cry wolf on correct input. Got: {rep.errors}")
+
+        # --- Fixture H: an unreadable doctrine file is environment (2), never drift (1) ---
+        # Pre-fix this escaped as a UnicodeDecodeError traceback, which exits 1 — the code that
+        # means "a depended-on config key is not generated". An environment fault was therefore
+        # indistinguishable from a real finding.
+        doc = os.path.join(tmp, "h-doctrine")
+        os.makedirs(doc, exist_ok=True)
+        _write(doc, "fine.md", "brand = Rails.configuration.x.brand\n")
+        with open(os.path.join(doc, "broken.md"), "wb") as handle:
+            handle.write(b"\xff\xfe not valid utf-8\n")
+        _write(tmp, "h-setup.md",
+               "# setup\n7. generate `config/initializers/brand.rb` setting "
+               "`Rails.configuration.x.brand`.\n")
+        code = main(["--setup", os.path.join(tmp, "h-setup.md"), "--doctrine", doc, "--quiet"])
+        check("an undecodable doctrine file exits 2, not 1",
+              code == 2,
+              f"expected exit 2 (environment) for an unreadable input, got {code} — an "
+              "environment fault is being reported as doctrine drift")
+
     total = passed + failed
     if failed:
         print(f"\nselftest: {failed} of {total} FAILED")
@@ -376,7 +505,13 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
         return 2
 
-    report = cross_check(args.setup, args.doctrine)
+    try:
+        report = cross_check(args.setup, args.doctrine)
+    except InputError as exc:
+        # Environment, not a finding. Letting this escape as a traceback exits 1 — the code
+        # reserved for real drift — so an unreadable file would read as a doctrine defect.
+        print(f"setup_doctrine_crosscheck: {exc}", file=sys.stderr)
+        return 2
 
     if not args.quiet:
         for fact in report.facts:

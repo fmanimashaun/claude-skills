@@ -2628,6 +2628,30 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## design-flow (UI/design plugin)
 
 ### Unreleased
+- **FIX — two defects in the cross-check added hours earlier, both found by an external reviewer
+  on the already-merged PR rather than by us.**
+  - **A mention was accepted as a generation.** `setup_provides()`'s docstring claimed a key was
+    named *"precisely at the step that generates the initializer setting it"*, while the code did
+    set membership over the whole of `setup.md` — nothing associated a key with an initializer.
+    True today only incidentally (the key occurs once, inside the generating step). Delete that
+    step while leaving a prose mention anywhere, and the check reported clean while the
+    `NoMethodError` it exists to prevent shipped. This is a **claims-vs-enforcement defect inside
+    the guard written to catch that class**. A key now counts as provided only when one step both
+    names `Rails.configuration.x.<key>` and generates `config/initializers/<key>.rb` — the exact
+    filename the error path already prescribes, so tool and message now agree.
+  - **An unreadable input reported as doctrine drift.** Doctrine files were read unguarded, so a
+    non-UTF-8 or unreadable `.md` escaped as a traceback and exited **1** — the code reserved for
+    "a depended-on config key is not generated" — sending a maintainer hunting a defect that does
+    not exist. Reads are now guarded and raise `InputError`, mapping to **2** (environment).
+    It **aborts rather than skips**: with one file unread the comparison is unsound in both
+    directions, and a partial scan has no honest verdict.
+  - `/design-flow:audit` said *"a non-zero exit is a toolchain defect"*, which conflates the two
+    and would have had agents filing their own unreadable clone as a doctrine bug. It now reads
+    the code: 1 = report it, 2 = fix your input.
+  - Three fixtures and three declared mutations, one per defect plus a silent-skip guard. Fixture
+    G is the safe direction — the real multi-line step 7 shape must stay clean, so the fix cannot
+    over-correct into crying wolf on correct input.
+
 - **NEW `scripts/setup_doctrine_crosscheck.py`** — catches doctrine that references a runtime
   artefact `/design-flow:setup` never generates. The unit of dependency is a
   `Rails.configuration.x.<key>` read: doctrine reading a key setup does not generate is an
