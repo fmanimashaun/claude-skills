@@ -171,7 +171,7 @@ end
     </div>
     <% if @dismissible %>
       <button type="button" data-action="dismiss#close" aria-label="Dismiss"
-              class="with-icon ml-auto min-h-touch rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Dismiss</span><%= close_icon %></button>
+              class="with-icon ml-auto min-h-touch rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Dismiss</span><%= close_icon %></button>
     <% end %>
   </div>
 </div>
@@ -201,7 +201,7 @@ SimpleForm.setup do |config|
     b.use :input, class: "block w-full rounded-md border border-input bg-background " \
                          "text-step-0 text-foreground px-3 h-9 min-h-touch " \
                          "placeholder:text-muted-foreground transition-colors " \
-                         "focus-visible:outline-none focus-visible:ring-2 " \
+                         "focus-visible:outline-hidden focus-visible:ring-2 " \
                          "focus-visible:ring-ring/30 focus-visible:border-ring " \
                          "disabled:opacity-50 disabled:cursor-not-allowed",
                   error_class: "border-destructive focus-visible:ring-destructive/30",
@@ -291,7 +291,7 @@ wrapper definition, never a per-field class override, so the set of field shapes
 module UiHelper
   INPUT_BASE = "block w-full rounded-md border bg-background text-step-0 text-foreground px-3 " \
                "placeholder:text-muted-foreground min-h-touch transition-colors " \
-               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:border-ring " \
+               "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:border-ring " \
                "disabled:opacity-50 disabled:cursor-not-allowed"
   INPUT_SIZE = { sm: "h-8", md: "h-9", lg: "h-10" }.freeze
   def input_classes(state: :default, size: :md)
@@ -365,7 +365,7 @@ end
       <div class="cluster" style="--justify: space-between">
         <h2 id="<%= @labelledby %>" class="text-step-1 font-semibold"><%= title %></h2>
         <button type="button" data-action="modal#close" aria-label="Close"
-                class="with-icon min-h-touch rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
+                class="with-icon min-h-touch rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
       </div>
       <div class="max-h-[70vh] overflow-y-auto"><%= content %></div>
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
@@ -451,7 +451,7 @@ module Ui
 
     def input_classes
       "w-full rounded-md border border-input bg-background px-3 min-h-touch " \
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 " \
+        "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30 " \
         "aria-[invalid=true]:border-destructive"
     end
 
@@ -628,7 +628,7 @@ module Ui
 
     def trigger_classes
       "flex w-full items-center justify-between gap-s py-4 text-left font-medium min-h-touch " \
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"
     end
 
     # No px size on the icon — `with-icon` sizes it to 1em and currentColor inherits.

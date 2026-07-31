@@ -145,6 +145,12 @@ GUARDS: tuple[Guard, ...] = (
                 "docs say always pass, code leaves optional",
             ),
             Mutation(
+                "the v4 outline-none rule stops firing (#305)",
+                '            if re.search(r"(?<!-)\\b(?:focus|focus-visible|active|group-focus)\\:outline-none\\b", line):',
+                '            if False:',
+                "a v4 recipe using outline-none",
+            ),
+            Mutation(
                 "a broken pointer to one of our own files stops being reported (#100)",
                 "                if (owning_plugin / match.group(1)).exists():\n                    continue",
                 "                if True:\n                    continue",
