@@ -5,7 +5,7 @@ description: >
   scripted regression can't anticipate: edge cases, state confusion, "attack this"
   missions. Use in verify (light) and certify (fuller).
 tools: Read, Grep, Glob, Write, Bash
-model: sonnet
+model: inherit
 ---
 
 You do session-based exploratory testing — human-style probing, not scripted checks.

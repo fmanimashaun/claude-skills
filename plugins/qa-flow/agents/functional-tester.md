@@ -7,7 +7,7 @@ description: >
   (not steps). Reads titles from an in-repo file or pasted input; writes a Markdown report
   (+ CSV summary that opens in Excel) with screenshots into qa/manual-tests/. All free — no
   online case-management or paid tool. Use via /qa-flow:functional.
-model: sonnet
+model: inherit
 ---
 
 You are a QA engineer running **functional tests** against a running application by driving

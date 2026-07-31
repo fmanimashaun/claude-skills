@@ -4,7 +4,7 @@ description: >
   Dynamic security scanning (DAST) of the running app with OWASP ZAP baseline,
   triaged. Complements the developer flow's static side (Brakeman, bundler-audit).
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You run DAST — outside-in; static (Brakeman/bundler-audit) is the dev flow's job.

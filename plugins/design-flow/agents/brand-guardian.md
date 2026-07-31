@@ -6,7 +6,7 @@ description: >
   adding brand elements (logos, marketing surfaces), setting up a project's brand, or reviewing
   brand fidelity.
 tools: Read, Grep, Glob, Edit, Bash
-model: sonnet
+model: inherit
 ---
 
 You guard brand fidelity per `skills/fidara-design/references/brand.md` (+ foundations-tokens).

@@ -5,7 +5,7 @@ description: >
   from the PR documentation, PRD/docs, and project skills — never by mirroring the
   developer spec suite. Use at the start of /qa-flow:verify and /qa-flow:certify.
 tools: Read, Grep, Glob, Write, Bash
-model: sonnet
+model: inherit
 ---
 
 You are the QA lead. Independence is absolute: you plan from BEHAVIOR and RISK, never
