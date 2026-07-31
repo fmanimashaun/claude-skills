@@ -5,9 +5,10 @@
 2. Solid Queue: configuration and operation
 3. Recurring jobs
 4. Continuations (8.1) — resumable long jobs
-5. Concurrency controls and good job design
-6. Action Cable with Solid Cable
-7. Threading & the Rails executor
+5. Bulk imports and exports
+6. Concurrency controls and good job design
+7. Action Cable with Solid Cable
+8. Threading & the Rails executor
 
 ---
 
@@ -159,7 +160,68 @@ batch loops so progress inside a step survives too. Reach for continuations
 whenever a job can exceed the shutdown window: imports, exports, backfills,
 fan-out mailers.
 
-## 5. Concurrency controls and good job design
+## 5. Bulk imports and exports (#98)
+
+Continuations above are the *engine*; this is the rest of the machine. §4 already names imports and
+exports as the case continuations exist for — what it does not say is that **everything which makes a
+half-finished transfer safe is yours to build.**
+
+### Continuations checkpoint the cursor, not the side effect
+
+`ActiveJob::Continuable` promises exactly one thing: *"the ability to track the progress of your jobs,
+and continue from where they left off if interrupted."* Nothing in Rails or Solid Queue makes a
+**partially written archive** or a **half-completed upload** safe to resume. So the resumable parts are
+application-level, and doctrine says so rather than implying framework support:
+
+- a **cursor column** on the transfer record (§4's `step.cursor` is the job half of this);
+- a **manifest of completed chunks**, so a resumed run knows what not to redo;
+- **per-part checksums** if a corrupted chunk must be distinguishable from a missing one;
+- an **`enum :status`** with an explicit failure reason, because "stuck at 40%" needs to be a state you
+  can query, not one you infer.
+
+### Writing the archive — `rubyzip` is not a streaming writer
+
+The obvious sentence — *"stream a ZIP with rubyzip so you never buffer it"* — **is wrong**, and it is
+the kind of wrong that only shows up on a large file in production.
+
+- **Ruby's stdlib has no ZIP writer at all** — `zlib`/`Zlib::GzipWriter` is gzip, a different container.
+- **`rubyzip`** (maintained, 3.4.x) needs to rewind and finalize, so it wants a **seekable**
+  destination. Perfectly fine when you write a local tempfile and upload it afterwards.
+- **`zip_kit`** exists precisely for the non-seekable case — written by a rubyzip contributor, it emits
+  metadata as it goes and is built for `ActionController::Live`, Rack hijack, and multipart S3 writes
+  without a local copy.
+
+**So pick by destination, not by habit:** seekable tempfile → `rubyzip`; streaming straight to a client
+or to S3 without touching disk → `zip_kit`.
+
+For streaming a download, `send_stream` (`ActionController::Live`) is the Rails API, and it arrived in
+**Rails 7.0**.
+
+### Uploading it — two Active Storage ceilings, not one
+
+Conflating these is how a 500 GB export gets designed against the wrong limit:
+
+| Path | Behaviour | Ceiling |
+|---|---|---|
+| **Server-side** `create_and_upload!` | transparently switches to **multipart** above 100 MB (Rails **6.1+**), chunked rather than held in memory | S3's real limits — **48.8 TiB** object, **10,000 parts**, 5 MiB–5 GiB each |
+| **Browser direct upload** (the bundled JS) | a **single presigned PUT**, never multipart | **5 GB**, hard |
+
+**A large transfer must go through the server-side path.** Rails' own tracker records the direct-upload
+limit as expected behaviour rather than a bug, so it is not going to change: the bundled JS does not do
+multipart. Reach for a multipart-capable uploader (Uppy) only if the browser genuinely must be the one
+uploading.
+
+### Where the file lives is a config decision, not a code branch
+
+37signals' fizzy supports **local or S3** for the same transfer, chosen by instance config, because an
+OSS install and a hosted one both have to work. Active Storage services already give you that for
+free — so read the service from config and keep one code path. Two code paths for two destinations is
+how the local one rots.
+
+**Their 500+GB figure is fizzy's production scale, not a Rails or Active Storage limit** — do not cite
+it as a boundary.
+
+## 6. Concurrency controls and good job design
 
 ```ruby
 class SyncAccountJob < ApplicationJob
@@ -182,7 +244,7 @@ Design rules that prevent 3 a.m. pages:
 - Let `retry_on` handle transient failures; `discard_on` expected
   no-ops; anything else should fail loudly into the failed set.
 
-## 6. Action Cable with Solid Cable
+## 7. Action Cable with Solid Cable
 
 Solid Cable (DB-backed pub/sub, `config/cable.yml` → `adapter: solid_cable`
 on the `cable` database in production) powers WebSockets without Redis.
@@ -214,7 +276,7 @@ reading the same signed session cookie the web app sets
 (`identified_by :current_user`; reject unless found). Broadcast from
 `after_commit`/jobs, never mid-transaction.
 
-## 7. Threading & the Rails executor
+## 8. Threading & the Rails executor
 
 Rails-managed threads — requests, jobs, Action Cable — already run inside the
 framework Executor. Code that creates its OWN concurrency (`Thread.new`,
