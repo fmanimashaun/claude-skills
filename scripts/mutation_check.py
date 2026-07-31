@@ -780,16 +780,15 @@ GUARDS: tuple[Guard, ...] = (
             # artifact drift` was missing, so a machine without the optional licensed kits was told
             # to fix failures before doing maintenance work. Too BROAD silently shrinks the sweep.
             Mutation(
-                "the corpora exemption goes narrow again and fails a corpora-less machine",
-                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
+                "the artifact drift gate is exempted again, hiding a stripped committed page",
                 'CORPORA_GATES = frozenset({"coverage matrix drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
                 "CORPORA_GATES is",
             ),
             Mutation(
                 "the corpora exemption goes broad and skips a gate that needs nothing",
-                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
-                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift", '
-                '"packaging determinism"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "packaging determinism"})',
                 "CORPORA_GATES is",
             ),
         ),
@@ -830,24 +829,16 @@ GUARDS: tuple[Guard, ...] = (
                 "--check FAILS when the artifact is nowhere at all",
             ),
             Mutation(
-                "a dirty tree is reported as OK instead of skipping",
-                '            return EXIT_INCOMPLETE',
-                '            return 0',
-                "--check SKIPS (exit 3) rather than claiming drift on a dirty tree",
-            ),
-            # The defect that made the gate unpassable: a page that stamps its own checkout changes
-            # bytes the moment it is committed, and again at promotion. Both halves get a mutation.
-            Mutation(
-                "the embedded stamp carries the released/unreleased split again",
-                '        "state": "dirty" if prov["dirty"] else "clean",',
-                '        "state": prov["state"],',
-                "the rendered page differs between two checkouts of the same sources",
+                "git state leaks back into the embedded stamp",
+                '        "label": f"Coverage as of v{release}",',
+                '        "label": f"Coverage as of v{release}",\n        "state": "dirty" if prov["dirty"] else "clean",',
+                "the embedded stamp carries no git state whatsoever",
             ),
             Mutation(
-                "the embedded stamp carries the HEAD sha again",
-                '        "dirty": prov["dirty"],',
-                '        "dirty": prov["dirty"], "commit": prov["commit"],',
-                "no HEAD sha is embedded in the page",
+                "the upstream totals go back to walking the licensed corpora",
+                '    tw_count, fb_count = committed_totals.get("tw"), committed_totals.get("fb")',
+                '    tw_count, fb_count = len(bc.discover_tw()), len(bc.discover_fb())',
+                "collect() requires the licensed corpora",
             ),
         ),
     ),

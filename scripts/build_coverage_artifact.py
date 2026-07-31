@@ -88,10 +88,11 @@ MARKETPLACE = REPO / ".claude-plugin" / "marketplace.json"
 #
 # `docs/` and not `skills/`: this is a maintainer/human view, and anything under `skills/` is packaged
 # into a `.skill` and shipped to agents, which a 95 KB HTML page has no business being.
-# Distinct from 0 (clean) and 1 (drift): the check RAN but could not conclude.
-# maintainer_doctor.py maps 3 to SKIP, never to ok.
-EXIT_INCOMPLETE = 3
-
+# NO EXIT_INCOMPLETE HERE, deliberately. This module briefly had one, returning 3 (-> SKIP in
+# maintainer_doctor) when the tree was dirty, because the page embedded a dirty flag and so could not
+# be compared. Git state is out of the payload now, so `--check` always reaches a real verdict and a
+# `3` would be a lie. `lint_markdown_code.py` keeps its own for a genuine case: a stalled interpreter
+# means blocks that were never read, which is not the same as a comparison that simply succeeded.
 DEFAULT_OUT = REPO / "docs" / "coverage.html"
 
 GUIDANCE_DOCUMENTED = "documented"
@@ -194,10 +195,19 @@ def parse_committed_totals(text: str) -> dict[str, int]:
         if label.startswith("fidara"):
             out["rows"] = count
             continue
-        for needle, key in TOTALS_KEYS:
+        # The two UPSTREAM counts. Read from this committed table rather than by walking the
+        # licensed kits, so the page renders identically with or without them attached. Kept
+        # separate from TOTALS_KEYS because that tuple is order-sensitive for a documented reason
+        # and these two are unambiguous.
+        for needle, key in (("Tailwind UI", "tw"), ("Flowbite", "fb")):
             if needle in label:
                 out[key] = count
                 break
+        else:
+            for needle, key in TOTALS_KEYS:
+                if needle in label:
+                    out[key] = count
+                    break
     return out
 
 
@@ -316,23 +326,35 @@ def committed_blob(rel: Path | str) -> str | None:
 
 
 def stable_provenance(prov: dict) -> dict:
-    """The subset a COMMITTED page can honestly stamp about itself.
+    """The subset a COMMITTED page can honestly stamp about itself — **no git state at all**.
 
-    `commit`, `branch`, and the released/unreleased split all move without the matrix changing at
-    all: HEAD advances the instant this page is committed, and a promotion flips `unreleased` to
-    `released`. Embedding them made the drift gate **unpassable by construction** — the bytes could
-    only ever match at the one commit that does not yet contain the file, and would break again at
-    every promotion. A file inside a commit cannot name its own commit; git already knows.
+    THE RULE: the rendered bytes are a function of the DATA (`ENTRIES`, `coverage.md`, the release
+    version from `marketplace.json`) and of nothing about the checkout. Every field that describes
+    the working copy or HEAD has been removed, in two rounds, each after it broke the gate:
 
-    So the page stamps what is stable and still honest about freshness: the release version it was
-    built at, read from a tracked source, plus the dirty caveat. `--check` guarantees the caveat is
+    1. `commit`, `branch`, and the released/unreleased split. HEAD advances the instant the page is
+       committed and a promotion flips `unreleased` to `released`, so the bytes could only ever match
+       at the one commit that does not yet contain the file. A file inside a commit cannot name its
+       own commit; git already knows.
+    2. **The dirty caveat.** This one bit within an hour of the gate existing. Regenerating
+       `coverage.md` necessarily dirties the tree, so the very next command — building this page —
+       stamped `state: "dirty"` into a file destined for a commit. `--check` refused to *compare*
+       from a dirty tree but nothing stopped it *writing* one, and the committed page then failed
+       the gate permanently until somebody rebuilt from a clean checkout. A caveat that makes the
+       artifact unreproducible costs more than the warning is worth: the version stamp already tells
+       a viewer the vintage, and the gate now guarantees the committed page IS a clean build.
+
+    The payoff is that drift is always assessable, so the gate never has to skip. Its old
+    exit-3-on-dirty branch is gone with the field that motivated it.
+
+    (Superseded reasoning, kept so nobody restores the field: the page stamped the release version
+    it was built at, read from a tracked source, plus the dirty caveat. `--check` guaranteed the
+    caveat was
     absent from the committed copy, because it refuses to compare from a dirty tree at all (exit 3).
     """
     release = prov["versions"].get("release") or "?"
     return {
-        "state": "dirty" if prov["dirty"] else "clean",
-        "label": "Uncommitted working tree" if prov["dirty"] else f"Coverage as of v{release}",
-        "dirty": prov["dirty"],
+        "label": f"Coverage as of v{release}",
         "versions": prov["versions"],
     }
 
@@ -376,13 +398,28 @@ def collect() -> dict:
     if state == "fail":
         raise ArtifactError(f"  - {message}")
 
-    # Only these two need the licensed corpora. Absent -> say so; never emit a zero.
-    corpora: dict[str, object] = {"available": False, "tw": None, "fb": None}
-    try:
-        tw, fb = bc.discover_tw(), bc.discover_fb()
-        corpora = {"available": True, "tw": len(tw), "fb": len(fb)}
-    except (bc.BuildError, OSError):
-        pass
+    committed_totals = (parse_committed_totals(bc.OUT.read_text(encoding="utf-8"))
+                        if bc.OUT.is_file() else {})
+
+    # THE UPSTREAM TOTALS COME FROM THE COMMITTED `coverage.md`, NOT from walking the licensed kits.
+    # Enumerating them made the rendered bytes depend on whether the builder happened to have the
+    # optional private corpora attached, and that is a real hazard rather than a tidiness point: a
+    # corpora-less machine regenerating this page writes `tw: null, fb: null` where 93/63 were, and
+    # `coverage artifact drift` then fails for every machine that DOES have them. The CORPORA_GATES
+    # exemption only stops the check failing on the machine without the kits — it cannot stop that
+    # machine committing a stripped page, so the damage always lands on somebody else. A web session
+    # did exactly this and flagged it.
+    #
+    # `coverage.md` is committed, carries both counts in its Totals table, and is itself gated by
+    # `build_coverage.py --check`, which DOES enumerate the corpora. So the authority is unchanged;
+    # it is just read from the tracked artifact instead of the untracked one. `available` stays in
+    # the payload for the template, and is now simply whether the table carried the numbers.
+    tw_count, fb_count = committed_totals.get("tw"), committed_totals.get("fb")
+    corpora: dict[str, object] = (
+        {"available": True, "tw": tw_count, "fb": fb_count}
+        if tw_count is not None and fb_count is not None
+        else {"available": False, "tw": None, "fb": None}
+    )
 
     return {
         "entries": rows,
@@ -534,15 +571,12 @@ h1{font-size:var(--step-3); line-height:1.1; margin:0; font-weight:640;
   margin-top:var(--space-s); padding:var(--space-2xs) var(--space-xs);
   border:1px solid var(--border); border-left-width:3px; border-radius:var(--radius-sm);
   background:var(--card); font-size:var(--step--1)}
-/* Two states only — clean or dirty. `released`/`unreleased` were dropped because they change
-   the committed bytes at promotion time; see stable_provenance(). */
-.stamp.clean{border-left-color:var(--fm-success)}
-.stamp.dirty{border-left-color:var(--fm-warning)}
+/* ONE state. `released`/`unreleased` and the dirty flag were all dropped: each made the committed
+   bytes a function of the checkout rather than of the data. See stable_provenance(). */
+.stamp{border-left-color:var(--fm-success)}
 .stamp .badge{font-size:var(--step--2); font-weight:700; text-transform:uppercase;
   letter-spacing:.06em; padding:.15rem .5rem; border-radius:99px; border:1px solid transparent}
-.stamp.clean .badge{color:var(--ok-fg); background:var(--ok-bg); border-color:var(--ok-bd)}
-.stamp.dirty .badge{color:var(--warn-fg); background:var(--warn-bg);
-  border-color:var(--warn-bd)}
+.stamp .badge{color:var(--ok-fg); background:var(--ok-bg); border-color:var(--ok-bd)}
 .stamp .meta{color:var(--muted-foreground)}
 .stamp .meta b{color:var(--foreground); font-family:var(--font-mono); font-weight:400}
 .provenance{margin:var(--space-s) 0 0; font-size:var(--step--1);
@@ -804,12 +838,12 @@ const state = {q:'', guidance:new Set(), kind:new Set(), corpus:new Set()};
 /* ---- provenance stamp ---- */
 {
   const p = DATA.provenance, el = document.getElementById('stamp');
-  el.className = 'stamp ' + p.state;
-  /* Deliberately no commit or branch: see stable_provenance() — a page that names its own
-     checkout drifts on every commit, which made the --check gate unpassable. */
+  el.className = 'stamp';
+  /* Deliberately NOTHING about the checkout here — no commit, no branch, no dirty flag. See
+     stable_provenance(): every one of those made the committed bytes a function of git state,
+     so the --check gate could not pass. The version is the freshness signal. */
   const bits = [];
   if (p.versions.railsStack) bits.push(`rails-stack <b>${p.versions.railsStack}</b>`);
-  if (p.state === 'dirty') bits.push(`uncommitted: <b>${p.dirty.join(', ')}</b>`);
   el.innerHTML = `<span class="badge">${p.label}</span>` +
     `<span class="meta">${bits.join(' · ')}</span>` +
     `<span class="meta">A snapshot — regenerate with ` +
@@ -1010,23 +1044,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.check:
-        # PROVENANCE MAKES DRIFT UNASSESSABLE FROM A DIRTY TREE, and pretending otherwise would give
-        # this gate a permanent false positive. The page stamps what it was built from — including
-        # "Uncommitted working tree" — so an artifact generated and committed while dirty can never
-        # match a build from a clean checkout, and the gate would fail forever on CI through no fault
-        # of the data.
+        # NO DIRTY-TREE SKIP. There was one, returning exit 3, because the page stamped
+        # "Uncommitted working tree" into its own bytes — so a build from a dirty tree could never
+        # match the committed copy. Removing git state from the payload removed the reason, and
+        # removing the skip is a strict improvement twice over:
         #
-        # Exit 3 == "ran, but could not check" — the same convention lint_markdown_code.py uses, which
-        # maintainer_doctor.py maps to SKIP rather than ok. That is the honest verdict: reproducibility
-        # is not observable from here. On a clean tree — CI, a fresh clone, the moment before a
-        # promotion — the gate is real, which is exactly when it matters.
-        if data["provenance"]["state"] == "dirty":
-            print("SKIP: the working tree is dirty for sources this page is built from "
-                  f"({', '.join(data['provenance']['dirty'])}), and the page stamps its own "
-                  "provenance — so a build from here cannot be compared against the committed copy. "
-                  "This is a skip, NOT a pass. Re-run on a clean tree.", file=sys.stderr)
-            return EXIT_INCOMPLETE
-
+        #  * it was a footgun. Regenerating `coverage.md` necessarily dirties the tree, so the very
+        #    next command wrote a dirty-stamped page to the committed path, and the gate then failed
+        #    permanently until somebody rebuilt from a clean checkout. It guarded the COMPARISON and
+        #    left the WRITE wide open. That happened within an hour of the gate existing.
+        #  * a gate that skips during normal work barely runs. Mid-edit the honest answer is not
+        #    "cannot tell" — it is "the committed page does not match your data, regenerate it",
+        #    which is a TRUE finding and exactly what `build_coverage.py --check` reports for
+        #    `coverage.md` with no exemption at all. Same shape, same expectations.
+        #
         # Same contract as `build_coverage.py --check`: the committed file must BE the clean build.
         # Compared as TEXT, not bytes, so a checkout that normalised line endings is not reported as
         # drift — the generator emits "\n" and git may hand back "\r\n" on Windows.
@@ -1058,14 +1089,16 @@ def main(argv: list[str] | None = None) -> int:
           f"{t['needs-doctrine']} needs doctrine)")
     print(f"  cross-check: {xc['state']} — {xc['message']}")
     c = data["corpora"]
-    print(f"  corpora: {'TW ' + str(c['tw']) + ' + FB ' + str(c['fb'])}" if c["available"]
-          else "  corpora: skip — design-corpora/ not attached, upstream totals omitted")
-    # The CONSOLE may report the volatile fields the page must not embed — it is a build log, not
-    # a committed artifact, so nothing drifts when they change.
+    print(f"  upstream: {'TW ' + str(c['tw']) + ' + FB ' + str(c['fb'])} (from the committed "
+          f"{bc.OUT.name} Totals, not the licensed kits)" if c["available"]
+          else f"  upstream: skip — {bc.OUT.name} Totals carried no corpus counts")
+    # The CONSOLE may report the volatile git fields the PAGE must not embed — a build log is not a
+    # committed artifact, so nothing drifts when they change. This is also the one place a dirty tree
+    # is worth mentioning: it no longer affects the bytes, but it does tell you why a rebuild moved.
     full = provenance()
-    print(f"  provenance: {prov['state']} — {prov['label']}"
-          + (f" ({', '.join(prov['dirty'])})" if prov["dirty"] else "")
-          + (f" @ {full['commit']} on {full['branch']}" if full["commit"] else ""))
+    print(f"  provenance: {prov['label']}"
+          + (f" @ {full['commit']} on {full['branch']}" if full["commit"] else "")
+          + (f" — uncommitted: {', '.join(full['dirty'])}" if full["dirty"] else ""))
     return 0
 
 

@@ -163,13 +163,22 @@ def test_totals_label_ordering() -> None:
     documented=44.
     """
     got = art.parse_committed_totals(TOTALS_FIXTURE)
-    want = {"rows": 113, "documented": 64, "derivable": 44, "needs-doctrine": 5}
+    # `tw`/`fb` ARE parsed now, under keys of their own. The page reads its upstream counts from this
+    # committed table instead of walking the licensed kits, so that the rendered bytes do not depend
+    # on whether the builder happened to have the optional corpora attached.
+    want = {"rows": 113, "documented": 64, "derivable": 44, "needs-doctrine": 5, "tw": 91, "fb": 61}
     check("totals: labels map to the right buckets", got == want, f"got {got}, want {want}")
 
-    # The enumeration rows must NOT leak into the bucket counts -- they are corpus totals,
-    # not fidara rows, and summing them in would inflate every percentage on the page.
-    check("totals: corpus enumeration rows are not buckets",
-          91 not in got.values() and 61 not in got.values(), f"got {got}")
+    # The guarantee the previous version of this fixture protected, kept and made sharper. It used to
+    # assert the corpus numbers appeared NOWHERE, which stopped being true when the page started
+    # reading them. What actually matters is unchanged: they must never land in a FIDARA bucket,
+    # because summing corpus totals into our own rows would inflate every percentage on the page.
+    # Distinct keys make that structural, so assert the structure rather than the absence.
+    check("totals: corpus enumeration rows never land in a fidara bucket",
+          got["tw"] == 91 and got["fb"] == 61
+          and all(got[k] not in (91, 61)
+                  for k in ("rows", "documented", "derivable", "needs-doctrine")),
+          f"got {got}")
 
     # A file with no Totals table is `skip`, never a silent empty pass.
     check("totals: a file with no Totals table parses to nothing",
@@ -309,39 +318,23 @@ def test_real_build() -> None:
         _tick()
         SKIPPED.append("corpus enumeration totals — design-corpora/ is not attached")
 
+    # ---- NOT ONE FIELD ABOUT THE CHECKOUT MAY BE EMBEDDED --------------------------------
+    # Two rounds of this, each of which broke the gate in production: first `commit`/`branch`/the
+    # released split, then the dirty flag. Named explicitly rather than checked as a byte-equality
+    # only, because the equality test says *that* something leaked and this says *which* field.
+    # `label` and `versions` are the whole allowed surface: both are functions of tracked files.
     p = data["provenance"]
-    check("real: the EMBEDDED stamp reports clean or dirty and nothing else",
-          p["state"] in {"clean", "dirty"}, f"got {p['state']!r}")
-    check("real: a dirty build names only files this page is built from",
-          all(f.endswith(("build_coverage.py", "build_coverage_artifact.py", "coverage.md"))
-              for f in p["dirty"]), f"got {p['dirty']}")
-    # The full stamp keeps the volatile fields for the console; only the projection is embedded.
+    check("the embedded stamp carries no git state whatsoever",
+          set(p) == {"label", "versions"}, f"got keys {sorted(p)}")
+    check("the embedded label is the release version, not a checkout description",
+          p["label"].startswith("Coverage as of v"), f"got {p['label']!r}")
+    # The FULL stamp keeps the volatile fields — the console may print them, the page may not.
     full = art.provenance()
-    check("real: the full stamp still reports a known checkout state",
+    check("the full stamp still reports a known checkout state for the console",
           full["state"] in {"released", "unreleased", "dirty", "unknown"}, f"got {full['state']!r}")
-
-    # ---- the defect that made the drift gate unpassable by construction -------------------
-    # The page embedded its own short SHA and branch, so committing it changed the bytes it would
-    # next be built with, and promotion flipped `unreleased` -> `released`. `--check` could then
-    # only ever pass at the one commit that does not contain the file. Pin BOTH halves: the fields
-    # are gone, AND the rendered bytes are actually independent of the checkout.
-    check("no HEAD sha is embedded in the page",
-          "commit" not in p and "branch" not in p, f"got keys {sorted(p)}")
-
-    _tick()
-    _real = art.provenance
-    try:
-        base = dict(_real(), dirty=[])
-        art.provenance = lambda: dict(base, commit="aaaaaaa", branch="dev", state="released")
-        one = art.render(art.collect())
-        art.provenance = lambda: dict(base, commit="fffffff", branch="main", state="unreleased")
-        two = art.render(art.collect())
-    finally:
-        art.provenance = _real
-    if one != two:
-        FAILURES.append("the rendered page differs between two checkouts of the same sources — "
-                        "it embeds something about the commit, so --check can never pass once "
-                        "the page is committed")
+    check("the full stamp names only files this page is built from",
+          all(f.endswith(("build_coverage.py", "build_coverage_artifact.py", "coverage.md"))
+              for f in full["dirty"]), f"got {full['dirty']}")
 
 
 def test_dirty_paths() -> None:
@@ -371,6 +364,38 @@ def test_dirty_paths() -> None:
 
 
 def run() -> int:
+    # ---- collect() MUST NOT REQUIRE THE LICENSED CORPORA ------------------------------------
+    # FIRST, and it returns immediately on failure, because every other fixture below calls
+    # `collect()`. If it reaches for the optional private kits, the run dies in a traceback from
+    # whichever fixture happens to call it first — and a traceback is not a verdict, it is how a
+    # mutation gets "caught" by an accident. Reported and stopped here instead.
+    #
+    # The invariant: the upstream counts come from the committed `coverage.md` Totals, which every
+    # clone has. Walking the kits instead means a corpora-less machine cannot regenerate the page,
+    # and worse, a machine that CAN renders different bytes from one that cannot — so whoever
+    # commits last breaks the drift gate for the other. That happened.
+    _tick()
+    _tw0, _fb0 = bc.discover_tw, bc.discover_fb
+
+    def _absent():
+        raise bc.BuildError("design-corpora/ is not attached")
+
+    try:
+        bc.discover_tw = bc.discover_fb = _absent
+        art.collect()
+    except bc.BuildError:
+        FAILURES.append(
+            "collect() requires the licensed corpora — it must read the upstream counts from the "
+            "committed coverage.md Totals, which every clone has, not the optional private kits")
+    finally:
+        bc.discover_tw, bc.discover_fb = _tw0, _fb0
+
+    if FAILURES:
+        print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
+        for failure in FAILURES:
+            print(f"  - {failure}", file=sys.stderr)
+        return 1
+
     test_partition()
     test_dirty_paths()
     test_prose()
@@ -378,6 +403,7 @@ def run() -> int:
     test_cross_check_states()
     test_escaping()
     test_script_terminator()
+
     test_real_build()
 
     # ------------------------------------------------------ the --check drift gate
@@ -385,13 +411,11 @@ def run() -> int:
     # cannot fail is worse than none, so all three verdicts are pinned: clean, stale, and absent.
     # Uses main() rather than an internal, because the exit CODE is the contract the doctor reads —
     # asserting an internal would leave the gate's actual interface untested.
-    # Provenance is PINNED CLEAN for this block. Without it every fixture below inherits the real
-    # tree's state and --check returns 3 (SKIP) for all of them — so they would pass or fail by
-    # whether the developer happened to have edits, testing the environment rather than the gate.
-    # The dirty case is asserted explicitly further down, with its own stub.
-    _prov_real = art.provenance
+    # NOTHING IS PINNED for this block any more, and that is the improvement. An earlier version had
+    # to stub `provenance` clean, because the page embedded a dirty flag and every fixture below
+    # otherwise returned 3 (SKIP) on a developer's tree — testing the environment instead of the gate.
+    # Git state is out of the payload, so these fixtures now run identically on any checkout.
     _blob_real = art.committed_blob
-    art.provenance = lambda: dict(_prov_real(), state="clean", dirty=[])
     with tempfile.TemporaryDirectory() as _d:
         _out = Path(_d) / "coverage.html"
 
@@ -442,23 +466,73 @@ def run() -> int:
         # NEAR MISS: differing only by line endings must NOT be drift — git may hand back CRLF on
         # Windows, and reporting that as a stale artifact would make the gate unusable there.
         art.committed_blob = lambda _rel: _fresh.replace("\n", "\r\n")
-        # A DIRTY tree makes drift unassessable, because the page stamps its own provenance. That
-        # must be exit 3 (-> SKIP), never 0 and never 1: reporting ok would hide a stale artifact,
-        # and reporting drift would fail every developer's working copy forever.
-        _pinned = art.provenance
-        art.provenance = lambda: dict(_prov_real(), state="dirty", dirty=["scripts/x.py"])
-        try:
-            check("--check SKIPS (exit 3) rather than claiming drift on a dirty tree",
-                  art.main(["--check", "--out", str(_out)]) == art.EXIT_INCOMPLETE,
-                  "a dirty tree must be inconclusive, not a false drift report")
-        finally:
-            art.provenance = _pinned
-
         check("--check tolerates CRLF-normalised checkouts",
               art.main(["--check", "--out", str(_out)]) == 0,
               "line-ending normalisation is not drift")
-    art.provenance = _prov_real
+
+        # A DIRTY TREE IS NOT A SKIP. It was, returning exit 3, and that was a footgun rather than a
+        # safeguard: regenerating coverage.md dirties the tree, so the next command wrote a
+        # dirty-stamped page to the committed path and the gate failed permanently. Mid-edit the
+        # honest verdict is a real one — 0 if the commit matches, 1 if it does not — never "cannot
+        # tell". `coverage matrix drift` has no such exemption either.
+        art.committed_blob = lambda _rel: _fresh
+        check("a dirty tree still reaches a REAL verdict, never exit 3",
+              art.main(["--check", "--out", str(_out)]) == 0,
+              "git state must not affect the comparison at all")
     art.committed_blob = _blob_real
+
+    # ---- THE INVARIANT BOTH OF THE ABOVE REST ON ----------------------------------------
+    # The rendered bytes are a function of the DATA and of nothing else. Two non-content inputs
+    # reached them and each broke the gate in production, so both directions are pinned here.
+    _tick()
+    _real = art.provenance
+    try:
+        base = art.provenance()
+        # (a) GIT STATE — dirty vs clean, different commit, different branch, released vs not.
+        art.provenance = lambda: dict(base, commit="aaaaaaa", branch="dev", state="released",
+                                      dirty=[])
+        clean_build = art.render(art.collect())
+        art.provenance = lambda: dict(base, commit="fffffff", branch="main", state="dirty",
+                                      dirty=["scripts/build_coverage.py"])
+        dirty_build = art.render(art.collect())
+    finally:
+        art.provenance = _real
+    if clean_build != dirty_build:
+        FAILURES.append(
+            "the rendered page differs between a clean and a dirty checkout of the SAME data — a "
+            "page built while regenerating coverage.md then fails its own drift gate forever, which "
+            "is exactly what happened")
+
+    # (b) CORPORA AVAILABILITY. A machine without the licensed kits used to render `tw: null,
+    # fb: null` where 93/63 were, commit that, and break the gate for everyone who HAS them. The
+    # CORPORA_GATES exemption cannot help: it stops the check failing on the machine that is
+    # missing them, never the bad commit. The counts come from the committed Totals table now.
+    # Stubs the corpora IN with deliberately wrong sizes rather than stubbing them away. Stubbing
+    # them away cannot work: this selftest also runs inside mutation_check's temp workdir, which has
+    # no `design-corpora/` at all, so "without" and the baseline were identical and the fixture was
+    # vacuous — while the mutant merely CRASHED on the missing directory. A crash is not a verdict.
+    # Returning values means the fixture discriminates on every machine, corpora attached or not.
+    # BOTH sides are rendered under stubs, with different sizes. Neither call may touch the real
+    # corpora, for a reason proved by running the mutant: this selftest also runs in
+    # mutation_check's temp workdir, which has no `design-corpora/`, so a real call raises
+    # `BuildError` and the mutant died in a traceback instead of failing this fixture. A crash is
+    # not a verdict. Two stubs also make the assertion sharper than stub-vs-real — it says the
+    # bytes are independent of the COUNT, not merely of the directory existing.
+    _tick()
+    _tw_real, _fb_real = bc.discover_tw, bc.discover_fb
+    try:
+        bc.discover_tw = lambda: {f"tw-{i}" for i in range(5)}
+        bc.discover_fb = lambda: {f"fb-{i}" for i in range(7)}
+        few = art.render(art.collect())
+        bc.discover_tw = lambda: {f"tw-{i}" for i in range(41)}
+        bc.discover_fb = lambda: {f"fb-{i}" for i in range(43)}
+        many = art.render(art.collect())
+    finally:
+        bc.discover_tw, bc.discover_fb = _tw_real, _fb_real
+    if few != many:
+        FAILURES.append(
+            "the rendered page differs with and without the licensed corpora attached — a "
+            "corpora-less machine can commit a stripped page that fails the gate for everyone else")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

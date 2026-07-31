@@ -435,25 +435,42 @@ Two properties of the gate are worth knowing before you touch it, because both w
 - **`--check` compares the blob at `HEAD`, never the file on disk.** It used to test `is_file()` and
   read the working copy, so a page built and never `git add`ed passed the gate whose own message says
   *"is not committed"* — the invisible-deliverable failure waved through by the gate built to stop it.
-- **The page must not stamp anything about the checkout.** It embedded its own short SHA, branch and
-  released/unreleased state, which made the gate **unpassable by construction**: committing the page
-  advances `HEAD`, and a promotion flips `unreleased` → `released`, so the bytes could only match at
-  the one commit that does not yet contain the file. A file inside a commit cannot name its own
-  commit. It stamps the release version and the dirty caveat, and nothing else.
+- **The rendered bytes must be a function of the DATA and nothing else.** Two kinds of non-content
+  input leaked in, and each broke the gate in production:
+  - **Git state.** It embedded its own short SHA, branch and released/unreleased state, making the
+    gate **unpassable by construction** — committing the page advances `HEAD` and a promotion flips
+    `unreleased` → `released`, so the bytes could only match at the one commit that does not yet
+    contain the file. A file inside a commit cannot name its own commit. Then the **dirty caveat**
+    did the same thing more sharply: regenerating `coverage.md` necessarily dirties the tree, so the
+    very next command wrote a `state: "dirty"` page to the committed path and the gate failed
+    permanently. `--check` guarded the *comparison* and left the *write* wide open.
+  - **Corpora availability.** It walked the licensed kits for the upstream totals, so a machine
+    without them committed `tw: null, fb: null` and broke the gate for everyone who had them. Adding
+    it to `CORPORA_GATES` only stopped the check failing on the machine that was *missing* them; the
+    damage still landed elsewhere. **Fix the input, don't widen the carve-out** — both counts now come
+    from the committed `coverage.md` Totals table, and the exemption is removed.
 
-A **dirty** tree makes drift genuinely unassessable — the dirty caveat is part of the bytes — so
-`--check` returns **3 (INCOMPLETE)**, which the doctor maps to **SKIP**, never `ok`.
+  The page therefore stamps the **release version and nothing else**, and `--check` needs no
+  dirty-tree exemption: mid-edit the honest verdict is a real one ("the committed page doesn't match
+  your data — regenerate it"), which is exactly what `build_coverage.py --check` reports for
+  `coverage.md` with no exemption at all. Same shape, same expectations.
+
+**Regenerating `coverage.md` means regenerating the page too.** They are built from the same data and
+both are committed, so four PRs in one afternoon left the page stale and failed the gate for whoever
+ran next. `build_coverage.py` now prints the follow-up command when it writes; do what it says.
 
 **The licensed corpora** (Tailwind UI, Flowbite, Every Layout) live in a separate **private**
-repo, `fmanimashaun/design-corpora`, and are **OPTIONAL**. Exactly one file *opens* them —
-`scripts/build_coverage.py` — but read that as "one reader", not "one dependency": anything
-importing it inherits the dependency, and `build_coverage_artifact.py` does. So a machine without
-them can do everything except regenerate or drift-check **either** coverage artifact, and
-**no gate fails for their absence** — the two `*-drift` gates SKIP (they are the whole content of
-`CORPORA_GATES`), and both selftests still run, reporting their corpora-dependent fixtures as
-skipped. That is asserted, not assumed: the doctor's selftest pins that set exactly, in both
-directions, because the artifact drift gate was missing from it and a corpora-less machine was told
-to "fix the failures before doing maintenance work" about files it is not required to have.
+repo, `fmanimashaun/design-corpora`, and are **OPTIONAL**. Exactly one file needs them:
+`scripts/build_coverage.py`, which enumerates the kits to rebuild `coverage.md`. So a machine without
+them can do everything except regenerate or drift-check **`coverage.md`**, and **no gate fails for
+their absence** — `coverage matrix drift` SKIPs (it is the entire content of `CORPORA_GATES`) and
+every selftest still runs, reporting its corpora-dependent fixtures as skipped.
+
+`build_coverage_artifact.py` *imports* `build_coverage` but is **not** corpora-dependent: it reads the
+upstream counts from the committed `coverage.md` Totals table, so the HTML page renders identically
+with or without the kits attached. It was corpora-dependent, and briefly exempted for it — see the
+section above for why exempting it was the wrong fix. The doctor's selftest pins `CORPORA_GATES`
+**exactly**, in both directions, so re-adding it takes a deliberate edit with a reason.
 Attach them as **one nested clone in a gitignored `design-corpora/` subfolder**:
 
 ```bash

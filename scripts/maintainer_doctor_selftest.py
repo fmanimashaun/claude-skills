@@ -438,12 +438,16 @@ def run() -> int:
     #     pointing the corpora root at a nonexistent path: the gate returned 1.
     # An exact set means either direction has to be a deliberate edit here, with a reason.
     _tick()
-    expected = {"coverage matrix drift", "coverage artifact drift"}
+    expected = {"coverage matrix drift"}
     if set(md.CORPORA_GATES) != expected:
         FAILURES.append(
-            f"CORPORA_GATES is {sorted(md.CORPORA_GATES)}, expected {sorted(expected)} — exactly "
-            "the two gates that rebuild an artifact embedding the upstream corpus totals. A "
-            "selftest belongs in neither: it SKIPs those checks itself and still exits 0."
+            f"CORPORA_GATES is {sorted(md.CORPORA_GATES)}, expected {sorted(expected)} — only "
+            "`build_coverage.py --check` genuinely enumerates the kits. `coverage artifact drift` "
+            "was in here and was removed: exempting it stopped the check failing on the machine "
+            "missing the corpora but not that machine committing a stripped page, which then broke "
+            "the gate for everyone who had them. The page reads its upstream counts from the "
+            "committed coverage.md Totals now. Fix the input, do not widen the carve-out. A "
+            "selftest never belongs here: it SKIPs its own corpora fixtures and still exits 0."
         )
 
     if FAILURES:

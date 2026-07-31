@@ -143,14 +143,21 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
-# FAIL. Only the two DRIFT checks qualify, and for the same reason: both compare a committed
-# artifact against a fresh build, and both artifacts carry the upstream corpus totals, so without
-# the kits the rebuild differs and the gate reports drift on a healthy checkout. The matching
-# SELFTESTS do NOT belong here — each reports its corpora-dependent checks as SKIPPED and still
-# exits 0, which is the honest shape and leaves the rest of the fixtures running.
-# Keyed by gate NAME, and the selftest asserts every name here exists in GATES — otherwise a
-# rename would silently stop the exemption applying — and that the set is exactly these two.
-CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})
+# FAIL. Exactly ONE qualifies. `build_coverage.py --check` genuinely enumerates the kits, so without
+# them it cannot rebuild `coverage.md` to compare against.
+#
+# `coverage artifact drift` was briefly in here and has been REMOVED, which is the more instructive
+# half. It was added because the HTML page embedded the upstream corpus totals by walking the kits,
+# so a corpora-less rebuild produced different bytes. But exempting it only stopped the CHECK failing
+# on the machine that lacked them — it could not stop that machine committing a page with
+# `tw: null, fb: null`, which then failed the gate for everyone who HAD them. The exemption moved the
+# damage rather than removing it, and a web session hit exactly that. The page now reads both counts
+# from the committed `coverage.md` Totals table, so its bytes are corpora-independent and the gate
+# runs everywhere. Fix the input; do not widen the carve-out.
+#
+# Keyed by gate NAME, and the selftest asserts the name exists in GATES — otherwise a rename would
+# silently stop the exemption applying — and that the set is exactly this one.
+CORPORA_GATES = frozenset({"coverage matrix drift"})
 
 
 @dataclass
