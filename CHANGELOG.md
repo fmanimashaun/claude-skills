@@ -9,6 +9,55 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+Version numbers are assigned at the promotion, never here.
+
+- **TOOLING — the computed work queue becomes a gate at the point of use** (#133). `issue_graph.py`
+  could already tell you the order; nothing checked that anyone followed it. `/maintainer-work`
+  Phase 0 said *"take the head of the triaged queue"* — a claim with no enforcement, which is the
+  same **prose-is-not-a-queue** defect #133 was filed about, one level up. New
+  `python3 scripts/issue_graph.py --ready 109 110` answers one question — may this be started now,
+  as one branch? — and **exits non-zero with the refusal on stderr and stdout left empty** when any
+  named issue waits on open work, is already closed, is absent from the tracker, or when the graph
+  is too broken to answer from, so a caller reading stdout alone cannot mistake a refusal for a
+  go-ahead (`--json` is the stated exception). Wired into `/maintainer-work` Phase 0, where the
+  standing instruction had been prose. Change type: **maintainer tooling**; no skill
+  doctrine and no external framework claim, so no `doctrine-verifier` verdict applies, and the
+  declaration format it reads remains the maintainer decision recorded on
+  [#133](https://github.com/fmanimashaun/claude-skills/issues/133).
+  - **Edges *between* the requested issues are satisfied by the branch itself**, because grouping
+    related issues onto one branch is this repo's preferred shape (CLAUDE.md, *Grouping related
+    issues on one branch*). `--ready 110` refuses while `--ready 109 110` clears, with a note
+    saying which member goes first. That carve-out has the near-miss test that matters:
+    `--ready 110 42` still refuses, so padding the set cannot launder a blocker away. A gate that
+    refused the doctrine's own branch shape would be switched off inside a week, after which
+    nothing checks the order at all.
+  - **A dependency on a *closed* issue is not a refusal.** That is what a met prerequisite looks
+    like — pinned by a silence fixture, because treating it as a block would make every finished
+    edge permanent.
+  - **A green light says what it does not know.** On an issue declaring no edges the verdict
+    carries a note: the tracker names no blocker, which is not the same as nothing blocking it.
+    Until the epic backfill lands that is the common case, and reporting the first as the second is
+    the `unverified-negative` class from `skills/code-review/SKILL.md`.
+  - **59 selftest checks** (was 43) and **6 new declared mutations** appended to
+    `mutation_check.py`'s `issue_graph` guard — 17 total, all caught, each observed failing on
+    purpose. They cover both directions of the group carve-out, the absent/closed refusals, and
+    both directions of the coverage caveat. The one temp-dir helper every end-to-end fixture goes
+    through is what
+    the pre-existing *"writes its fixture into the repo again"* mutation anchors on, so a future
+    `main()` fixture cannot quietly acquire its own unguarded write path.
+  - **FIX — the documented backfill procedure could destroy an issue body, and exit 0 doing it.**
+    `gh issue view … > /tmp/body.md` truncates the target *before* `gh` runs, so an expired token
+    or a wrong number left an empty file; the next two lines then appended the deps block and
+    handed it to `gh issue edit`, **replacing an entire downstream report with nothing but the
+    edges**. Reproduced against a stubbed `gh` before and after: the old snippet loses the body and
+    returns 0, the new one refuses and returns 1. It now runs under `set -euo pipefail`, uses
+    `mktemp` rather than a shared filename, and greps for an existing `deps` fence first — the
+    parser reads *every* `deps` block in a body, so appending a second is silent and a drifted
+    duplicate contributes edges nobody wrote.
+  - **Still open on #133:** the last acceptance criterion, backfilling epics #89 / #96 / #108 and
+    their phases with edges. That is tracker work rather than a repo change, and every declaration
+    it adds is what makes the coverage caveat above stop firing.
+
 - **NEW `docs/harness-doctrine.md` — the rule we had been following without writing down** (#132):
   *put your guarantees in the deterministic layer*, with the guarantee-vs-advice test (*"if a model
   ignores this, what happens?"*), the three tiers (prose / output contract / deterministic), the
@@ -1534,6 +1583,55 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     keyboard model rather than authoring one), and the **accessible-name string** (`"4 out of 5 stars"`;
     nothing upstream prescribes wording).
 
+- **Visual asset doctrine — what fills the large visual area** (#135). New
+  `fidara-design/references/visual-assets.md`. Every marketing surface has a region that is neither
+  text nor control, and the system said nothing about it — so an agent left it empty, invented
+  something inconsistent, or reached for stock art.
+  - **Change type: MIXED, and split accordingly.** The hierarchy, the per-surface prescriptions and
+    the decision to keep illustration last are **our design decisions** recorded on
+    [#135](https://github.com/fmanimashaun/claude-skills/issues/135) — there is **no APG pattern** for
+    a decorative background or a product screenshot, and none is invented. The Tailwind v4, image
+    format, WCAG and Playwright statements are **external claims** and each carries its citation and
+    version boundary in the file. Shipped separately from #131 (pure architecture) because CLAUDE.md's
+    grouping condition 3 forbids one branch carrying both kinds.
+  - **The gate refuted a claim that would have shipped silently broken.** `bg-gradient-to-*` is not
+    deprecated in Tailwind v4, it is **removed**, with no compatibility alias — it is `bg-linear-to-*`
+    ([v4 release notes](https://tailwindcss.com/blog/tailwindcss-v4)). The v3 name emits **no class at
+    all**, so the failure is invisible.
+  - **Three more version boundaries the verdict pinned.** `mask-*` utilities need **Tailwind ≥ 4.1.0**
+    ([v4.1.0 release](https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.1.0)), not merely
+    "v4" — so the recipes avoid them and say why. Theme custom properties take the **parenthesis**
+    form `from-(--decor-1)`; `from-[--decor-1]` emits the raw token and silently does nothing. A
+    custom `@keyframes` must be **nested inside `@theme`** beside its `--animate-*` variable.
+  - **AVIF is "Newly available", WebP is "Widely available"** (Baseline, checked 2026-07-31) — stated
+    precisely rather than calling both widely available, with `<picture>` source order documented as
+    significant (first match wins) and the LCP rule from
+    [web.dev](https://web.dev/articles/lazy-loading-images): never lazy-load the hero image.
+  - **A deliberate departure from the issue, on a WCAG boundary.** #135 asked for ambient
+    `gradient-drift`; an infinite decorative animation satisfies all three conditions of **WCAG 2.2.2
+    Pause, Stop, Hide** (automatic, over five seconds, parallel with other content), which needs a
+    **pause control** — and `prefers-reduced-motion` is not that control. So we ship a **one-shot
+    1.2s settle** instead and say what taking the loop would cost.
+  - **Both motion patterns the issue named did not exist.** `gradient-drift` and `reveal-on-scroll`
+    appear nowhere in the repo; the issue prescribed them as though shipped. They are defined here
+    from `motion.md`'s existing tokens and renamed `decor-*`. `decor-reveal` applies its hidden state
+    **from JavaScript**, so a page whose observer never runs renders fully visible — the obvious
+    CSS-first implementation hides content permanently on any JS failure.
+  - **Decoration cannot name `fm-*` primitives**, since `brand.md` makes `Ui::Logo` the only component
+    permitted literal colours. It reads four optional `--decor-*` properties with **role fallbacks**,
+    so a pack declaring none still renders on-brand. Verified against
+    `plugins/design-flow/scripts/brand_pack_lint.py`: `ROLES`, `DARK_REQUIRED` and the `-foreground`
+    pairs are fixed lists, so extra `:root` properties pass **with no plugin change** — whereas adding
+    them as required roles would fail every existing pack, and a `brand.json` field would trip the
+    unrecognised-key warning. No new pack field; `brand.md`'s "colours, logo, chart proof" holds.
+  - **Two departures from #135's empty-state recipe, both to avoid contradicting shipped doctrine.**
+    We keep `bg-muted` — the issue is right that `bg-primary/10 text-primary` is an established
+    icon-chip idiom (stat/KPI chip, soft badges, avatars, active pagination), and that is precisely
+    why it is wrong here: in every one of those the tint marks something **active or affirmative**,
+    while an empty state is a neutral absence, and `components.md` already specifies `bg-muted`.
+    We also keep the `size-16` chip, expressing "oversized" through the chip's **font size** — because `lucide_icon`
+    may not take `size:`/`class:`, which the self-consistency lint enforces and the issue's wording
+    would have violated.
 - **Video player is documented** (#95). `coverage.md` **4 → 3**. The verdict refuted three framings
   before a line was written, and the most useful anchor was one the issue never mentioned.
   - **No APG pattern for a media player.** The index lists 30 and none is one; `w3c/aria-practices`
