@@ -955,7 +955,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   [#127](https://github.com/fmanimashaun/claude-skills/issues/127#issuecomment-5146942862) (an
   architecture change to our own doctrine, so its authority is that decision, not an upstream
   citation); every claim about Claude Code's own behaviour is cited below.
-  - **Ten agents' `model:` lines changed, and the old ones were backwards.** Verified 2026-07-31:
+  - **All ten agents' `model:` lines are now decided; seven of them changed, and the old value was
+    backwards.** Verified 2026-07-31:
     frontmatter *beats* the session model in Claude Code's resolution order, so a pin is a **cap** —
     the seven agents pinned `sonnet` were **downgrading** every user who had deliberately started an
     Opus session, which is the opposite of what the issue asked for. Judgement agents (review,

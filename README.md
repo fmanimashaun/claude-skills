@@ -187,8 +187,11 @@ one file an executor can run from with no conversation history: goal, the criter
 files in *and explicitly out of* scope, the guardrails in play, the **stop conditions** (numeric
 attempt cap, no-progress detector, blast-radius cap, and the four escapes that end a run — weakening
 a failing spec, reverting a passing unit, editing outside scope, disabling a guardrail), how to
-verify, and what to record on completion. `check_handoff.py` enforces all of that, because
-"self-contained" asserted in prose is the one thing its author cannot see is false.
+verify, and what to record on completion. `check_handoff.py` enforces the falsifiable parts — every
+section present, each stop-condition number actually a number, every verify step naming something
+runnable, every cited `AC-n` resolving in the acceptance file, and no reference to the conversation or
+leftover `<placeholder>` — because "self-contained" asserted in prose is the one thing its author
+cannot see is false. It does not judge whether the goal is the right goal; that stays with the human.
 
 **Agents** (8): rails-developer, migration-writer, code-reviewer, test-runner,
 security-auditor, design-auditor, doc-updater, pr-reviewer — each context-isolated, tool-
