@@ -108,10 +108,12 @@ is measured by the generator and cross-checked against `coverage.md`'s own Total
   wrote to a **gitignored** path, so the deliverable existed only on the machine that built it — the
   defect the maintainer named directly (*"if the build is gitignore, then other maintainer machine
   can't see it"*). Output moved to **`docs/coverage.html`**, committed, with a `--check` drift mode
-  wired into `maintainer_doctor.py` beside its selftest. 113 rows: 66 documented / 44 derivable /
-  3 needs doctrine, agreeing with the committed Totals table. Those counts are read off the build,
-  not carried over — they moved from 65/44/4 while this branch was open, because merging `dev`
-  brought another session's marketing-copy rows in, and the drift gate caught the stale page.
+  wired into `maintainer_doctor.py` beside its selftest. All 113 rows classified, cross-checked
+  against the Totals table committed in `coverage.md` on every run, so the two cannot silently
+  diverge. **The per-state split is deliberately not quoted here** — it moved twice while this branch
+  was open (65/44/4 → 66/44/3 → 67/44/2) as parallel sessions landed marketing-copy, visual-asset and
+  Reviews+Rating doctrine. `coverage.md` is the authority on the state of the matrix; this entry is
+  about the tooling. The drift gate caught the stale page both times, which is the whole point of it.
 - **FIX — the drift gate was unpassable by construction.** The page embedded its own short SHA,
   branch, and released/unreleased state. Committing the page advances `HEAD`, and a promotion flips
   `unreleased` → `released`, so the committed bytes could only ever match a build made at the one
