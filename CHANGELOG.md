@@ -20,7 +20,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   - **The graph is a gate, the queue is advice.** A cycle, a dangling edge, a typo'd key or a
     declaration outside its fence exits non-zero and prints **no queue at all** — a ranked queue
     computed from a graph already known to be broken reads exactly like a correct one. Blocked work
-    and priority contradictions only advise. (CLAUDE.md's fail-closed/fail-open rule, #132.)
+    and priority contradictions only advise — fail closed for gates, fail open for advisories,
+    stated as this tool's own contract. CLAUDE.md does **not** yet carry that rule generally (only
+    "hooks fail open when a dependency is missing"), which is exactly what #132 exists to fix; the
+    first draft of this entry cited it as settled doctrine, which was the `doctrine-contradiction`
+    class in a PR about catching it.
   - **Requiring the `deps` tag is only safe because missing it is an error.** `depends_on: :owner` is
     a Rails association, so a bare fence cannot be told from a code sample — but silent strictness is
     the `gate-that-cannot-fail` class, so both near-misses are *reported*: a fence that is nothing but

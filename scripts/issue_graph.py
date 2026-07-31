@@ -15,8 +15,9 @@ WHAT MAKES IT A GATE, NOT A REPORT. The reports below are advisory. The *graph* 
 an edge to an issue that does not exist, a typo'd key, a declaration outside its fence — each is a
 filing error and each exits non-zero. And when the graph is broken the queue is **not printed at
 all**, only the errors. A ranked queue computed from a graph we already know is wrong is worse
-than no queue, because it reads exactly like a correct one. (CLAUDE.md: fail closed for gates,
-fail open for advisories — #132.)
+than no queue, because it reads exactly like a correct one. That split — fail closed for gates,
+fail open for advisories — is this tool's own contract, and is the general rule #132 proposes
+recording; CLAUDE.md today states only the narrower "hooks fail open when a dependency is missing".
 
 THE DECLARATION FORMAT. One fenced block in the issue body, tagged `deps`:
 
