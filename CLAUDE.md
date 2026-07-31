@@ -152,8 +152,15 @@ release is:
 
 | # | Step | Branch / PR | Publishes? |
 |---|---|---|---|
-| 1 | **Arm** — assign versions, convert `Unreleased` headings, write the one release block | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
+| 1 | **Arm** — assign versions, convert `Unreleased` headings, write the one release block, **regenerate `docs/coverage.html`** | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
 | 2 | **Promote** — merge dev into main | `dev` → **`main`** | **Yes** — the push to `main` fires the workflow |
+
+The coverage page is on the arm step because it stamps the **release version**, read from
+`marketplace.json`. That is tracked content, so it legitimately belongs in the bytes — but it means
+bumping the version invalidates the committed page and `coverage artifact drift` fails until you
+rebuild. The gate caught this on the v1.44.0 arm, which is the gate working; do what it says rather
+than removing the stamp, because the version is the only freshness signal a shared copy of that page
+carries.
 
 Name step 1 `chore/arm-vX.Y.Z`, **never `release/vX.Y.Z`**, and title it
 "arm vX.Y.Z — version assignment (does not publish)". A branch called `release/*` merging into

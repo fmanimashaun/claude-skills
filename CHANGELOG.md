@@ -7,9 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
-
-Version numbers are assigned at the promotion, never here.
+### 2026-07-31 — a committed coverage page, and bytes that depend only on data
 
 - **FIX — CLAUDE.md claimed all hooks fail open; two fail closed on purpose** (#132). A
   `doctrine-contradiction` in our own file, flagged by the session that wrote the harness doctrine and
@@ -1136,7 +1134,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.14.0 — 2026-07-31
 
 - **FIX — `model-tiers.md` stated the wrong `opus` version for two named providers** (#127). Caught
   auditing `dev` against source, hours after the doctrine shipped. The paragraph grouped three
@@ -1837,7 +1835,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.25.0 — 2026-07-31
 
 - **Inline link is documented, and `coverage.md` reaches ZERO `needs doctrine` rows** (#95). **1 → 0.**
   Every row in the matrix is now `documented` or `derivable`; no component in either corpus requires an
@@ -3039,7 +3037,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.14.0 — 2026-07-31
 
 - **Client-side performance is captured during the crawl, and none of it can reach S1** (#117). `perf-tester` measured server capacity with k6 and nothing measured what a user
   experiences, though the harness already loads every route in a real browser. The new `perf`
@@ -3688,7 +3686,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.7.0 — 2026-07-31
 - **NEW — `/design-flow:audit` gains a browser mode: conformance measured on the RENDERED page,
   not grepped from source (#107).** A source grep cannot see what the cascade resolves to — a
   colour injected by a third-party partial, a role token that never resolved, a focus rule that no
@@ -4346,6 +4344,65 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-31 (release v1.44.0)
+
+> ### `needs doctrine` reaches zero, and three gates learned that their own output was not reproducible
+>
+> Every one of the **113** rows in the fidara coverage matrix now carries doctrine — the last four
+> (video player, reviews + rating, stepper/wizard, inline link) landed here, closing a column that
+> stood at 27 a fortnight ago. Plus **`/rails-flow:handoff`** with a decided model-tier policy,
+> **client-side performance capture** in qa-flow, a **rendered-page conformance linter** in
+> design-flow, and marketing-copy + visual-asset doctrine for fidara.
+>
+> The release's most useful material is again what verification **refused**: five reported claims were
+> wrong in their *direction*, not their detail — a `model:` pin turned out to be a downgrade rather
+> than an upgrade, star ratings turned out to engage 1.1.1 rather than 1.4.1, and autoplay turned out
+> to be 2.2.2 at Level A rather than a reduced-motion question.
+>
+> `fidara-design` changed; `rails-8`, `hotwire` and `code-review` are byte-identical. `pipeline` is
+> untouched and stays at 1.1.5.
+
+- **The coverage matrix is browsable, committed, and gated** — `docs/coverage.html`, generated from
+  `build_coverage.py` by import rather than by parsing, cross-checked against `coverage.md`'s own
+  Totals table on every build. It was first written to a **gitignored** path, so the deliverable
+  existed only on the machine that built it.
+  - Its drift gate then failed three times in a day, each time teaching the same lesson: **a committed
+    generated artifact may be a function of tracked content and nothing else.** It embedded its own
+    SHA and branch (so committing it changed the bytes it would next be built with — a file inside a
+    commit cannot name its own commit); then a dirty-tree caveat (so regenerating `coverage.md`, which
+    *necessarily* dirties the tree, wrote a `dirty` page to the committed path and broke the gate
+    permanently); then the upstream corpus totals by walking the **optional licensed kits** (so a
+    machine without them committed `tw: null` and broke the gate for everyone who had them).
+  - The third one is the instructive one, because the first fix was **wrong**: exempting the gate on
+    corpora-less machines only stopped the *check* failing there and could not stop that machine
+    *committing* a stripped page. **Fix the input, don't widen the carve-out.** The counts now come
+    from the committed Totals table and the exemption is reverted.
+  - `--check` also compared the file **on disk**, so a page built and never `git add`ed passed the gate
+    whose own message says *"is not committed"*. It reads the blob at `HEAD` now.
+- **A unit of work has a work order, and the model tiers are decided rather than accidental**
+  (rails-flow 1.14.0). `/rails-flow:handoff` writes the one file an executor can run from with no
+  conversation history, enforced by `check_handoff.py`. The reported model defect was **real with its
+  direction inverted**: frontmatter sits *above* the session model in the resolution order, so seven
+  agents pinned `sonnet` were **downgrading** every user who deliberately started an Opus session.
+  Two tiers now, not three — judgement inherits, mechanical stays on `haiku`.
+- **Client-side performance capture during the crawl** (qa-flow 1.14.0) — one evidence row per route.
+  The engine rule is **per column, not per row**: LCP reached Firefox 122 and Safari 26.2, so it is
+  required everywhere, while `layout-shift` and `renderBlockingStatus` remain Chromium-only. Severity
+  is capped at S2, and `transferSize` is explicitly **not** used for a byte budget — it is 0 for a
+  cross-origin asset without `Timing-Allow-Origin`, 0 for a cache hit, and a flat 300 for a 304.
+- **A rendered-page conformance linter** (design-flow 1.7.0) — the browser measures, Python judges. No
+  rule, count or threshold lives in JS, which is what lets a browser-driven check be gated in a repo
+  with no browser in CI.
+- **Marketing-copy and visual-asset doctrine** for fidara (rails-stack 1.25.0), plus the last four
+  coverage rows and a Mega-menu/Dropdown correction. Verification **removed** a Tailwind claim that
+  would have failed silently: `bg-gradient-to-*` is not deprecated in v4, it is *removed* with no
+  alias, so the v3 name emits no class at all.
+- **Harness doctrine written down** — `docs/harness-doctrine.md`: put your guarantees in the
+  deterministic layer, with the guarantee-vs-advice test and the rule that **determinism is necessary,
+  not sufficient**. A gate ran every time and still let behavioural code finish with no spec.
+- **The computed work queue became a gate at the point of use** — `issue_graph.py --ready` refuses,
+  with the reason on stderr and stdout empty, when an issue waits on open work.
 
 ### 2026-07-31 (release v1.43.0)
 
