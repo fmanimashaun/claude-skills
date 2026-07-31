@@ -1336,6 +1336,49 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Phase B's last two patterns are written — full-text search and bulk transfers** (#98), which
+  completes EPIC #96: A, C, D and E were already closed, and these were the only items left in B.
+  Placed in their existing homes rather than a new file — search in `advanced-active-record.md` beside
+  the other PostgreSQL power features, transfers in `jobs-and-realtime.md` beside the continuations they
+  depend on.
+  - **The trigger you should no longer write.** PostgreSQL's own docs retired it: *"The method described
+    in this section has been obsoleted by the use of stored generated columns."* So maintain `tsvector`
+    with a **stored generated column** — PG **12+**, and `t.virtual … stored: true` is Rails **7.0+**.
+  - **Rails ships the schema layer and no query builder** for full text; querying is a raw fragment.
+    That makes `pg_search` an ergonomics choice rather than a requirement, which is worth stating
+    plainly. Its status recorded accurately: last tagged release **2.3.7 (Aug 2024)**, `activerecord >=
+    6.1` with no upper bound, repo active — compatible by that floor, not by a Rails 8 certification.
+  - **A name collision that could mislead a reader**: there is also a *PostgreSQL extension* called
+    `pg_search` (ParadeDB/Neon) implementing BM25 via tantivy. Not the Ruby gem our doctrine means.
+  - **Do NOT copy fizzy's 16-way CRC32 search sharding onto Postgres.** It is a **MySQL-forced**
+    workaround — MySQL documents that partitioned tables do not support `FULLTEXT`. PostgreSQL has
+    supported **indexes on partitioned tables since 11**, where a GIN index on the parent propagates to
+    every partition, so declarative partitioning needs no app-level shard router. Inheriting that scheme
+    would be importing a workaround for a limitation we do not have.
+  - **When the database stops being enough, with the documented and the consensus halves separated.**
+    Quotable from PostgreSQL: GIN *"insert or update one heap row can cause many inserts into the
+    index"*, and the hard ceilings (`tsvector` < 1 MB, lexeme < 2 KB, `tsquery` < 32,768 nodes).
+    Labelled as practitioner consensus, because no PostgreSQL document says it: no BM25/IDF ranking, no
+    native typo tolerance (that is `pg_trgm`), no native faceting.
+  - **`rubyzip` is not a streaming writer, and "stream a ZIP with rubyzip" would have been wrong.** It
+    rewinds and finalises, so it wants a **seekable** destination; **`zip_kit`** exists for the
+    non-seekable case and is written by a rubyzip contributor. Pick by destination: tempfile →
+    `rubyzip`, straight to a client or S3 → `zip_kit`. Ruby's stdlib has no ZIP writer at all.
+    `send_stream` is Rails **7.0**.
+  - **Two Active Storage ceilings, not one** — conflating them is how a 500 GB export gets designed
+    against the wrong limit. Server-side `create_and_upload!` switches to **multipart above 100 MB**
+    (Rails 6.1+) and is bounded by S3's real limits (**48.8 TiB**, 10,000 parts); **browser direct
+    upload is a single presigned PUT capped at 5 GB**, which Rails' tracker records as expected
+    behaviour rather than a bug. A large transfer must use the server-side path.
+  - **Resumable-transfer safety is entirely application-level**, and doctrine says so rather than
+    implying framework support: continuations checkpoint *the cursor*, not the half-written archive or
+    the half-completed upload. Cursor column, manifest of completed chunks, per-part checksums, explicit
+    status enum.
+  - **fizzy's 500+GB is their production scale, not a Rails or Active Storage limit** — not cited as a
+    boundary.
+
 ### 1.23.0 — 2026-07-31
 
 - **#275's open measurement boundary is now closed by a reading, and it found one more thing.** The
