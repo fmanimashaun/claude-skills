@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-07-31 — a stall is not a syntax error
 
 
 - **FIX — an interpreter stall was reported as a syntax error** in the markdown-code gate. This is the
@@ -852,7 +852,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.13.0 — 2026-07-31
 
 - **The flow can now explain a system back to the human who owns it** (#126). New
   `/rails-flow:explain` writes `docs/GUIDE.md`: plain-language sections, mermaid diagrams that
@@ -1463,7 +1463,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.24.0 — 2026-07-31
 
 - **Mega menu / Flyout is documented** (#90). `coverage.md` **5 → 4**. **No APG pattern** — the index
   lists 30 and none is a mega menu — so it is governed by the **Disclosure** pattern's *Navigation Menu*
@@ -2417,7 +2417,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.13.0 — 2026-07-31
 
 - **Emulated media conditions are tested, and most of what they find is advisory on purpose**
   (#116). Doctrine required motion to be gated on `prefers-reduced-motion` and required meaning
@@ -3588,6 +3588,72 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-31 (release v1.43.0)
+
+> ### EPIC #96 completes, and the release note's best material is what the gate refused
+>
+> **Phase B's last two patterns** (full-text search, bulk transfers) close the 37signals doctrine
+> review — five phases, all shipped. Plus **`/rails-flow:explain`**, the **emulated-media QA pass**,
+> **file upload + clipboard**, and **Mega menu as a disclosure**. `coverage.md` **7 → 4**.
+>
+> `rails-8` and `fidara-design` skills changed; `hotwire` and `code-review` are byte-identical.
+
+- **EPIC #96 is complete** — canonical-Rails doctrine from campfire, writebook and fizzy, in five
+  phases: style conventions, architecture, Hotwire under load, agent-instruction conventions, and the
+  two deliberate divergences. Phase B's final patterns land here: **PostgreSQL full-text search** (the
+  generated `tsvector` column, which PostgreSQL's own docs say *obsoletes* the trigger approach) and
+  **bulk transfers**.
+- **Mega menu is a disclosure, not a menu** (#90) — and APG says so in a callout on its **own** Menubar
+  example: *"A pattern more suited for typical site navigation with expandable groups of links is the
+  Disclosure Pattern… few sites need the additional keyboard functionality required to support the ARIA
+  `menubar` and `menu` roles."* So it shares **no ARIA** with our Dropdown row, and that row gains a
+  **scoping note** — `role="menu"` is right for an action menu and wrong for a nav bar. The two look
+  alike and are structurally opposite.
+  - A nav item that must navigate **and** expand is **two elements** — a link plus an adjacent
+    disclosure button. Arrow keys are explicitly *"(Optional)"*; `Esc` is required, and APG ties it to
+    **WCAG 1.4.13** rather than to taste. Hover triggers 1.4.13 in full, and *hoverable* is the one that
+    fails in practice: **no gap between trigger and panel**.
+- **File upload and clipboard** (#95). `accept` is a **hint, not validation** — *"you should make sure
+  that the `accept` attribute is backed up by appropriate server-side validation"* — and a script
+  **cannot** set a file input's value, so a dropzone is a *parallel path*, not a wrapper.
+  - **The WCAG 2.5.7 trap**, which is the opposite of the obvious assumption: *"achieving keyboard
+    equivalence for a dragging operation does not automatically meet this success criterion, unless that
+    equivalent keyboard operation also provides controls that can be clicked or tapped with a pointer."*
+    **So a `sr-only`-hidden file input behind a dropzone FAILS 2.5.7 even though it is keyboard-operable.**
+  - Clipboard: the announcement **is** the feature (WCAG 4.1.3), and a repeat needs the live region
+    cleared or **the second copy is silent** — identical text is not a DOM change.
+- **`/rails-flow:explain`** (#126) — a plain-language `docs/GUIDE.md` with GitHub-rendered diagrams,
+  section-scoped so a re-run never rewrites your prose, and runnable on a *plan* so a wrong premise
+  costs a paragraph instead of a build cycle. Its mermaid output is **enforced** by a checker with 47
+  selftest checks, half of them in the silence direction.
+  - Three refutations kept it honest: **`graph` is not deprecated** in favour of `flowchart`; **GitHub
+    does not publish its bundled mermaid version**, so the diagram rule is an allowlist rather than a
+    version check; and **GitHub documents no node cap**, so our 60-node limit is **ours** and says so.
+- **The emulated-media QA pass** (#116), whose guarantee runs **opposite** to its siblings: the keyboard
+  and forms passes stop a row grading a real defect *down*; this one stops a row grading an advisory
+  *up*. Reduced motion is **SC 2.3.3, Level AAA**, and `prefers-reduced-motion` is its *sufficient
+  technique* — so implemented as the issue asked it would have filed S1s for 300 ms transitions. What
+  gates is the narrow **2.2.2 (Level A)** subset.
+  - **`emulateMedia()` merges** — `emulateMedia({})` resets nothing, contrary to Playwright's own docs
+    example; the source at v1.62.1 settles it. A forced-colors row on **WebKit is `Blocked`, never a
+    result**, because WebKit answers the media query while implementing none of the forcing — false
+    *confidence*, which is worse than false defects. And **print cannot detect clipped content** at all,
+    so that acceptance criterion is recorded as refuted rather than quietly dropped.
+- **FIX — a stalled interpreter was reported as a syntax error.** `subprocess.TimeoutExpired` is a
+  **subclass** of `SubprocessError`, so one `except` swallowed a stall into the missing-interpreter path
+  and it emerged as *"did not parse in any documented context"* — an environment stall presented as a
+  **code defect**, non-deterministically and only under load. Found because a parallel session reported
+  an unreproducible `30 passed, 1 failed` and **said plainly it had truncated the output and could not
+  name the gate** rather than papering over it. A stall now reports **skip**.
+- **FIX — the call-site rule flagged a CORRECT call site.** `ButtonComponent.new(…, data: {…})` is legal
+  because that initializer ends in `**attrs`, which is how ViewComponent forwards HTML attributes — so
+  the rule was primed to fire on most correct call sites. The carve-out keys on the **splat**, not on
+  weakening the check, because the `ModalComponent` flag that preceded it was right.
+- **Two umbrellas were closed while still carrying undocumented rows** (#91, and #95 earlier today).
+  Both reopened, with the remaining rows enumerated. The rule added this cycle — *an issue with unticked
+  increments gets `Refs`, never `Closes`* — was itself violated twice before it existed, which is why it
+  now exists.
 
 ### 2026-07-31 (release v1.42.0)
 
