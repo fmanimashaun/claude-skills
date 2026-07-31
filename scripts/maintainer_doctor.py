@@ -107,10 +107,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # can — same shape, same gate. Neither needs the corpora: build_coverage declares ENTRIES
     # statically, so the generator runs on a machine without the licensed kits.
     ("coverage artifact drift", ("python3", "scripts/build_coverage_artifact.py", "--check")),
-    ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
-    # Its own selftest flagged this absence: a selftest that exists but no gate runs means
-    # `--gates` reports a clean sweep having never executed it — the coverage-gap class,
-    # caught by the check written for exactly that.
+    # The selftest is a gate too: one that exists but that `--gates` never runs makes a clean sweep a
+    # claim about work nobody did — the coverage-gap class. It was registered TWICE for a while, which
+    # inflates the sweep count; GATE names are asserted unique in the selftest now.
     ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),

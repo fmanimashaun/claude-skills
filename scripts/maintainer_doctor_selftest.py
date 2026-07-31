@@ -404,6 +404,21 @@ def run() -> int:
     # ---- the corpora-gate exemption is keyed by name, so the names must be real -------
     # A stringly-keyed carve-out that stops matching is the failure mode: rename the gate and the
     # exemption quietly lapses. Cheap to pin, so pinned.
+    # ---- GATE NAMES MUST BE UNIQUE -----------------------------------------------------
+    # `coverage artifact selftest` was registered twice, so `--gates` ran it twice and reported an
+    # inflated total — a sweep that overstates how much it covered. It went unnoticed because the
+    # only thing reading these names was the set comprehension below, which collapses duplicates.
+    # The name is also the key CORPORA_GATES matches on, so a duplicate makes that carve-out
+    # ambiguous as well.
+    _tick()
+    _all = [name for name, _ in md.GATES]
+    _dupes = sorted({n for n in _all if _all.count(n) > 1})
+    if _dupes:
+        FAILURES.append(
+            f"GATES registers these names more than once: {_dupes} — the sweep runs them twice and "
+            "reports a total larger than the number of distinct checks it performed"
+        )
+
     _tick()
     gate_names = {name for name, _ in md.GATES}
     unknown = sorted(md.CORPORA_GATES - gate_names)

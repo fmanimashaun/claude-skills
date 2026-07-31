@@ -7,6 +7,45 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-31 — the coverage page is a committed deliverable, and its gate reads git
+
+**Change type: repository tooling.** Nothing under `skills/` changed and no framework behaviour is
+claimed, so no `doctrine-verifier` verdict is in scope. The one factual assertion — the row counts —
+is measured by the generator and cross-checked against `coverage.md`'s own Totals table on every run.
+
+- **The coverage matrix now ships as a page other machines can see.** `build_coverage_artifact.py`
+  wrote to a **gitignored** path, so the deliverable existed only on the machine that built it — the
+  defect the maintainer named directly (*"if the build is gitignore, then other maintainer machine
+  can't see it"*). Output moved to **`docs/coverage.html`**, committed, with a `--check` drift mode
+  wired into `maintainer_doctor.py` beside its selftest. 113 rows: 65 documented / 44 derivable /
+  4 needs doctrine, agreeing with the committed Totals table.
+- **FIX — the drift gate was unpassable by construction.** The page embedded its own short SHA,
+  branch, and released/unreleased state. Committing the page advances `HEAD`, and a promotion flips
+  `unreleased` → `released`, so the committed bytes could only ever match a build made at the one
+  commit that does not yet contain the file. **A file inside a commit cannot name its own commit**;
+  git already knows. `stable_provenance()` now embeds only what is stable and still honest about
+  freshness — the release version, read from a tracked source — plus the dirty caveat. The console
+  keeps logging commit and branch, where volatility costs nothing. Two mutations pin both halves,
+  and a fixture renders the page under two different fake checkouts and requires byte equality.
+- **FIX — the gate trusted the working copy, so it passed a page that was never committed.** It
+  tested `args.out.is_file()` and compared the file on disk. Run against an untracked, *byte-identical*
+  `docs/coverage.html`, it exited **0** — the exact "invisible deliverable" failure above, waved
+  through by the gate built to close it, with the message *"is not committed"* one branch away. This
+  is `claims-vs-enforcement` in new code, the third instance the `code-review` skill's own class has
+  caught. It now compares the blob at `HEAD` via `committed_blob()`, verified against real git rather
+  than a stub. Fixtures pin both directions: an untracked clean build **is** drift; a locally
+  scribbled working copy over a clean commit is **not**.
+- **A dirty tree is INCOMPLETE, not clean and not drift.** The dirty caveat is part of the rendered
+  bytes, so reproducibility genuinely cannot be observed from a dirty checkout. `--check` returns
+  **3**, which `maintainer_doctor.py` maps to **SKIP** — never `ok`. The gate is real exactly where it
+  matters: CI, a fresh clone, the moment before a promotion.
+- **Six mutations guard it, and three of them lied the first time.** They reported *caught — but not
+  by the expected fixture*, because the guard declared no `deps`: the selftest died at import inside
+  the mutation workdir, so every mutation was "caught" by a **traceback**. A crash is not a verdict.
+  The guard now declares `build_coverage.py` and `coverage.md`. Separately, a mutation anchor
+  hand-transcribed as a multi-line string was mangled by `re.sub`'s backslash handling in the
+  authoring step — anchors are read out of the file, never typed.
+
 ### 2026-07-31 — a stall is not a syntax error
 
 
