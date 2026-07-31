@@ -36,6 +36,9 @@ WHAT IT CHECKS
   doctrine-call-site-mismatch a call site in skills/ naming an API those skills do not
                               declare — a wrong initializer keyword, an undeclared slot,
                               or an icon passed a size it must not take
+  broken-doc-pointer          a documented path to one of OUR files that does not resolve: an
+                              agent is told to read doctrine that cannot be opened, and the
+                              pointer still reads as authoritative
 
 Deliberately narrow. Both rules are mechanical with no judgement, so a finding is
 always real. Classes that need judgement (a docstring promising behaviour the code
@@ -644,6 +647,67 @@ def check_invisible_characters() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# A pointer to one of OUR files, in one of the two forms that are unambiguously ours:
+#   `${CLAUDE_PLUGIN_ROOT}/reference/x.md`  -- resolved against the OWNING plugin's directory
+#   `skills/rails-8/references/style.md`    -- resolved against the repo root
+# Both must name a file (a real extension), so `skills/**` and a bare `skills/` stay out: a glob
+# is not a pointer. A trailing `:28` line-anchor is stripped -- CLAUDE.md cites doctrine that way.
+_PLUGIN_ROOT_POINTER = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]+\.(?:md|py|sh|json))")
+_SKILL_POINTER = re.compile(
+    # The lookbehind rejects a path that is only a SUFFIX of a longer one -- `.claude/skills/…`
+    # is the user's project directory, not ours, and `/` before `skills` is what tells them apart.
+    # It must NOT exclude a backtick: almost every real pointer is written `skills/x/y.md`, and
+    # excluding it made this rule silently skip its main case until the selftest caught it.
+    r"(?<![\w./-])(skills/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+\.(?:md|py|sh|json))(?::\d+)?"
+)
+
+
+def check_doc_pointers() -> tuple[list[Finding], int]:
+    """A documented path to one of our own files must resolve.
+
+    Commands and skills tell an agent to READ a specific file of ours -- setup-flow points at
+    `skills/rails-8/references/style.md` for style doctrine, and at its own
+    `${CLAUDE_PLUGIN_ROOT}/reference/…` for rationale. Nothing made those true. Rename or move the
+    target and the pointer still reads as authoritative while resolving to nothing, so a downstream
+    agent is told to consult doctrine it cannot find -- claims-vs-enforcement, in the shipped
+    surface. Skills and plugins are edited by different hands (and, here, by parallel sessions),
+    which is exactly when a cross-component pointer rots.
+
+    Scoped to the two unambiguous forms above so it cannot false-positive on the many paths in this
+    corpus that belong to a USER's project (`docs/brain/STATUS.md`, `config/routes.rb`,
+    `.claude/skills/…`) rather than to us.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".md"):
+        body = read(path)
+        parts = Path(rel(path)).parts
+        # `${CLAUDE_PLUGIN_ROOT}` only has a referent INSIDE a plugin. Elsewhere (the CHANGELOG
+        # describing a plugin's script, a skill quoting a command) it is prose about a variable,
+        # not a path this linter can resolve -- and guessing an owner would invent findings.
+        owning_plugin = ROOT / parts[0] / parts[1] if len(parts) >= 2 and parts[0] == "plugins" else None
+        if owning_plugin is not None:
+            for match in _PLUGIN_ROOT_POINTER.finditer(body):
+                examined += 1
+                if (owning_plugin / match.group(1)).exists():
+                    continue
+                findings.append(Finding(
+                    "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
+                    f"points at `{match.group(0)}`, which does not exist in "
+                    f"{owning_plugin.name} -- an agent told to read it finds nothing",
+                ))
+        for match in _SKILL_POINTER.finditer(body):
+            examined += 1
+            if (ROOT / match.group(1)).exists():
+                continue
+            findings.append(Finding(
+                "broken-doc-pointer", rel(path), body[:match.start()].count("\n") + 1,
+                f"points at `{match.group(1)}`, which does not exist -- a pointer to doctrine "
+                "that cannot be opened reads as authoritative while resolving to nothing",
+            ))
+    return findings, examined
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -657,6 +721,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
+    pointers, pointers_examined = check_doc_pointers()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -665,9 +730,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "gh_list_calls_examined": queries_examined,
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
+        "doc_pointers_examined": pointers_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible,
+    return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
+            + pointers,
             coverage)
 
 
@@ -1074,6 +1141,42 @@ def selftest() -> int:
              files={"skills/x/references/impl.md":
                     "```erb\n<%= render(Ui::MysteryComponent.new(whatever: 1)) %>\n```\n"})
 
+    # -- broken-doc-pointer ------------------------------------------------
+    P = "broken-doc-pointer"
+    scenario("plugin points at a reference file it does not ship", rule=P, expect_finding=True,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "Read `${CLAUDE_PLUGIN_ROOT}/reference/agent-instruction-conventions.md`.\n"})
+    scenario("...and is silent once that file exists", rule=P, expect_finding=False,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "Read `${CLAUDE_PLUGIN_ROOT}/reference/agent-instruction-conventions.md`.\n",
+                    "plugins/rails-flow/reference/agent-instruction-conventions.md": "# rationale\n"})
+    scenario("command points at a skill doc that was renamed away", rule=P, expect_finding=True,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "Before writing Ruby read `skills/rails-8/references/style.md`.\n"})
+    scenario("...and is silent when the skill doc is there", rule=P, expect_finding=False,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "Before writing Ruby read `skills/rails-8/references/style.md`.\n",
+                    "skills/rails-8/references/style.md": "# Style\n"})
+    # A line anchor is how CLAUDE.md cites doctrine (`jobs-and-realtime.md:28`); the pointer is
+    # still the file, so the anchor must not defeat resolution.
+    scenario("a `:line` anchor does not break resolution", rule=P, expect_finding=False,
+             files={"CLAUDE.md": "see `skills/rails-8/references/jobs-and-realtime.md:28`\n",
+                    "skills/rails-8/references/jobs-and-realtime.md": "# jobs\n"})
+    # NEAR MISS: the exact false positive this rule had before it shipped. `${CLAUDE_PLUGIN_ROOT}`
+    # in a CHANGELOG or a skill is prose ABOUT a plugin variable and has no plugin to resolve
+    # against; guessing an owner would invent a finding on correct text.
+    scenario("plugin-root prose outside a plugin is not resolvable", rule=P, expect_finding=False,
+             files={"CHANGELOG.md": "the hook runs `${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py`\n"})
+    # NEAR MISS: a glob is not a pointer. Flagging `skills/**` would fire on this repo's own
+    # doctrine (CLAUDE.md says "after any `skills/**` edit") — the route to being switched off.
+    scenario("a glob is not a pointer", rule=P, expect_finding=False,
+             files={"CLAUDE.md": "after any `skills/**` edit, repackage; see `skills/` for sources\n"})
+    # NEAR MISS: `.claude/skills/` is the USER's project directory, not ours. The prefix is what
+    # distinguishes them, so a rule keyed on a bare `skills/` substring would flag a correct path.
+    scenario("a user-project skills path is not ours", rule=P, expect_finding=False,
+             files={"plugins/rails-flow/commands/curate.md":
+                    "distils docs into `.claude/skills/domain/SKILL.md` in the user's repo\n"})
+
     print(f"ran {checks} self-consistency assertion(s)")
     if failures:
         print(f"\n{len(failures)} FAILED:")
@@ -1125,6 +1228,7 @@ def main(argv: list[str]) -> int:
         "declared_plugins": "declared plugin(s)",
         "gh_list_calls_examined": "gh list call(s)",
         "documented_components": "documented component(s)",
+        "doc_pointers_examined": "doc pointer(s) to our own files",
         "skill_docs": "skill doc(s)",
         "declared_components": "declared component(s)",
     }

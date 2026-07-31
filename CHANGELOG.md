@@ -673,6 +673,45 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The scaffold now knows how to brief an agent in a repo that already briefs agents** (#100,
+  Phase D of #96). Compared `/rails-flow:setup-flow`'s generated scaffold against 37signals' own
+  agent instructions — [fizzy](https://github.com/basecamp/fizzy)'s `AGENTS.md` / `STYLE.md` /
+  `.claude/CLAUDE.md` and [writebook](https://github.com/basecamp/writebook)'s `AGENTS.md`, read
+  from `main` on 2026-07-31 — and recorded every adopt / adapt / reject decision with its citation
+  in the new `plugins/rails-flow/reference/agent-instruction-conventions.md`. Four scaffold changes:
+  - **An existing `AGENTS.md` is imported, not duplicated** (new §1b). Claude Code reads
+    `CLAUDE.md`, *not* `AGENTS.md`, and its
+    [memory docs](https://code.claude.com/docs/en/memory) prescribe exactly what both 37signals
+    apps do — a `CLAUDE.md` whose first line is `@AGENTS.md`, with tool-specific content below.
+    The scaffold previously assumed greenfield and would create a **second** orientation file
+    beside an existing one: two entry points that can contradict each other, where "Claude may
+    pick one arbitrarily". We still never *generate* an `AGENTS.md` (Claude-native, #159) — the
+    import is a coexistence tool, not the default layout.
+  - **A constrained `## Architecture Overview`** — fizzy's most useful section (URL-based
+    tenancy via middleware, the entropy system, UUIDv7 base36 PKs, account-scoped jobs) and the
+    one conceptual layer neither `Patterns` (code shapes) nor `docs/architecture/graph.json`
+    (structure) could carry. Capped at **non-derivable** mechanisms and domain vocabulary, because
+    Claude Code's own `/doctor` trims overviews it can derive from the codebase and keeps
+    "conventions that differ from tool defaults" — so an unconstrained overview is worse than none.
+  - **A per-project `STYLE.md` is rejected, and the pointer replaces it.** fizzy's `AGENTS.md`
+    ends with "read STYLE.md"; we already extracted that file into `skills/rails-8/references/style.md`
+    in Phase A (#97). Copying it per project would duplicate shipped doctrine and drift, so the
+    generated `CLAUDE.md` now points at the skill instead. Where a genuine per-project style file
+    is warranted, the Claude-native home is a **path-scoped `.claude/rules/style.md`**
+    (`paths: ["**/*.rb"]`), which loads only when Ruby is being read — not a root `STYLE.md` that
+    costs its full weight every session.
+  - **`.claude/rules/` is documented as the home for area/mode-specific instructions** (new §2b),
+    which is the sanctioned mechanism for what fizzy solves with a conditional `saas/AGENTS.md`.
+    Not scaffolded by default — empty machinery is worse than none — but named, so a project that
+    needs it doesn't invent a bespoke conditional import.
+  - **A claim in the issue was false, and that is the finding worth keeping.** Both #100 and #96
+    assert fizzy's `AGENTS.md` wires "Chrome MCP for local dev", offered as the comparand to
+    qa-flow's Playwright MCP. It appears in **none** of the five source files as of 2026-07-31 —
+    the #142 pattern again: attributed to a specific file, absent from that file today. No MCP
+    tooling was scaffolded on that basis, and qa-flow's choice is untouched.
+
 ### 1.11.0 — 2026-07-29
 
 - **Acceptance criteria are defined BEFORE implementation, and the Stop gate enforces it** (#125).
