@@ -37,6 +37,7 @@ A11Y_HEADER = ve.A11Y.header
 RUNTIME_HEADER = ve.RUNTIME.header
 KEYBOARD_HEADER = ve.KEYBOARD.header
 FORMS_HEADER = ve.FORMS.header
+EMULATION_HEADER = ve.EMULATION.header
 FINDINGS_HEADER = ve.FINDINGS.header
 PROFILE_NAMES = {p.name for p in ve.PROFILES}
 
@@ -1140,12 +1141,243 @@ def run() -> int:
         contains="Blocked without Notes", **fd,
     )
 
+    # ---- emulated media conditions (#116) -------------------------------------------
+    # Column order: Route,Mode,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Animations,
+    #   Motion Not Suppressed,Autoplay No Control,End State Committed,Elements Checked,
+    #   Text Invisible,Focus Indicator Lost,Colour Only,Ink Burning,Print Overflow,Severity,
+    #   Evidence,Notes
+    em = {"header": EMULATION_HEADER}
+    _id = "200,https://a/d,https://a/d,heading 'D',chromium"
+    EMULATION_CLEAN = f"/d,reduced-motion,Emulated,{_id},4,0,0,Pass,,,,,,,none,,"
+
+    expect_clean("emulation: a clean reduced-motion route", f"{EMULATION_CLEAN}\n", **em)
+    expect_clean(
+        "emulation: a route that simply does not animate (0 is a real result)",
+        f"/static,reduced-motion,Emulated,{_id},0,0,0,Not run,,,,,,,none,,\n",
+        **em,
+    )
+    expect_clean(
+        "emulation: a clean forced-colors route",
+        f"/d,forced-colors,Emulated,{_id},,,,,120,0,0,0,,,none,,\n",
+        **em,
+    )
+    expect_clean(
+        "emulation: a clean print route",
+        f"/d,print,Emulated,{_id},,,,,90,,,,0,0,none,,\n",
+        **em,
+    )
+
+    # -- THE ADVISORY BOUNDARY, both directions. SC 2.3.3 is Level AAA, so motion that ignores the
+    # preference is counted and reported but must NOT be graded a defect. This pair is why the
+    # profile has the shape it has; deleting either half reopens the hole.
+    expect_clean(
+        "emulation: unsuppressed motion recorded as advisory (SC 2.3.3 is AAA)",
+        f"/d,reduced-motion,Emulated,{_id},6,3,0,Pass,,,,,,,none,,"
+        "spinner and skeleton shimmer ignore the preference\n",
+        **em,
+    )
+    expect_findings(
+        "emulation: an AAA advisory inflated into an S1 defect",
+        f"/d,reduced-motion,Emulated,{_id},6,3,0,Pass,,,,,,,S1,e.png,shimmer animates\n",
+        contains="Level AAA", count=1, **em,
+    )
+    expect_findings(
+        "emulation: a print nit inflated into a defect (no WCAG upstream at all)",
+        f"/d,print,Emulated,{_id},,,,,90,,,,4,2,S1,e.png,dark hero burns ink\n",
+        contains="no WCAG success criterion covers print output", count=1, **em,
+    )
+    expect_findings(
+        "emulation: an advisory count with no Notes is unactionable",
+        f"/d,reduced-motion,Emulated,{_id},6,3,0,Pass,,,,,,,none,,\n",
+        contains="an advisory finding is still a finding", count=1, **em,
+    )
+
+    # -- what DOES gate --
+    expect_findings(
+        "emulation: >5s autoplay with no control called clean (SC 2.2.2 is Level A)",
+        f"/d,reduced-motion,Emulated,{_id},6,0,2,Pass,,,,,,,none,,carousel\n",
+        contains="is S1", count=1, **em,
+    )
+    expect_clean(
+        "emulation: >5s autoplay correctly graded S1",
+        f"/d,reduced-motion,Emulated,{_id},6,0,2,Pass,,,,,,,S1,e.png,"
+        "hero carousel loops with no pause control\n",
+        **em,
+    )
+    expect_findings(
+        "emulation: a state change that never commits called clean",
+        f"/d,reduced-motion,Emulated,{_id},2,0,0,Fail,,,,,,,none,,\n",
+        contains="is S1", count=1, **em,
+    )
+    expect_findings(
+        "emulation: a box-shadow-only focus ring lost under forced colors, called clean",
+        f"/d,forced-colors,Emulated,{_id},,,,,120,0,7,0,,,none,,\n",
+        contains="is S1", count=1, **em,
+    )
+    expect_clean(
+        "emulation: focus rings lost under forced colors, correctly graded",
+        f"/d,forced-colors,Emulated,{_id},,,,,120,0,7,0,,,S1,e.png,"
+        "all buttons ring via box-shadow with no outline\n",
+        **em,
+    )
+    expect_findings(
+        "emulation: colour-only meaning called clean (SC 1.4.1 is Level A)",
+        f"/d,forced-colors,Emulated,{_id},,,,,40,0,0,5,,,none,,\n",
+        contains="is S1", count=1, **em,
+    )
+    expect_findings(
+        "emulation: unreadable text under forced colors called clean",
+        f"/d,forced-colors,Emulated,{_id},,,,,40,9,0,0,,,none,,\n",
+        contains="is S1", count=1, **em,
+    )
+
+    # -- THE MODE CONTRACT: a count from a condition the row never emulated --
+    expect_findings(
+        "emulation: a print row carrying a forced-colors count",
+        f"/d,print,Emulated,{_id},,,,,90,,,3,0,0,none,,x\n",
+        contains="never emulated the condition", count=1, **em,
+    )
+    expect_findings(
+        "emulation: a forced-colors row carrying an animation count",
+        f"/d,forced-colors,Emulated,{_id},5,,,,120,0,0,0,,,none,,\n",
+        contains="never emulated the condition", count=1, **em,
+    )
+    expect_findings(
+        "emulation: a print row carrying a reduced-motion verdict",
+        f"/d,print,Emulated,{_id},,,,Pass,90,,,,0,0,none,,\n",
+        contains="never emulated the condition", count=1, **em,
+    )
+    expect_findings(
+        "emulation: a reduced-motion row that recorded no verdict at all",
+        f"/d,reduced-motion,Emulated,{_id},4,0,0,,,,,,,,none,,\n",
+        contains="no End State Committed verdict", count=1, **em,
+    )
+
+    # -- THE WEBKIT CEILING, and its near-miss. WebKit answers the forced-colors media query but
+    # applies none of the forcing, so a result there reports clean on a broken app. Reduced motion
+    # is purely author-side, so the SAME engine is perfectly valid for that mode -- which is what
+    # makes this a real carve-out rather than "webkit is unsupported".
+    expect_findings(
+        "emulation: forced-colors result on webkit is a platform ceiling",
+        "/d,forced-colors,Emulated,200,https://a/d,https://a/d,heading 'D',webkit,,,,,"
+        "120,0,0,0,,,none,,\n",
+        contains="platform ceiling", count=1, **em,
+    )
+    expect_clean(
+        "emulation: forced-colors on webkit recorded Blocked instead",
+        "/d,forced-colors,Blocked,200,https://a/d,https://a/d,heading 'D',webkit,,,,,"
+        ",,,,,,none,,webkit implements no forced-color-adjust; ran chromium instead\n",
+        **em,
+    )
+    expect_clean(
+        "emulation: reduced-motion on webkit is fine (author-side only)",
+        "/d,reduced-motion,Emulated,200,https://a/d,https://a/d,heading 'D',webkit,"
+        "3,0,0,Pass,,,,,,,none,,\n",
+        **em,
+    )
+
+    # -- denominators: sampling stays impossible to hide --
+    expect_findings(
+        "emulation: more unsuppressed animations than animations running",
+        f"/d,reduced-motion,Emulated,{_id},2,5,0,Pass,,,,,,,none,,five\n",
+        contains="cannot exceed the inventory", count=1, **em,
+    )
+    expect_findings(
+        "emulation: more lost focus rings than elements inspected",
+        f"/d,forced-colors,Emulated,{_id},,,,,10,0,25,0,,,S1,e.png,twenty-five\n",
+        contains="cannot exceed the inventory", count=1, **em,
+    )
+    expect_findings(
+        "emulation: forced-colors row that inspected nothing",
+        f"/d,forced-colors,Emulated,{_id},,,,,0,0,0,0,,,none,,\n",
+        contains="inspected nothing", count=1, **em,
+    )
+    # The print mode shares `Elements Checked` as its denominator, so it needs its own bound
+    # fixture -- the forced-colors one above exercises a different pair of columns.
+    expect_findings(
+        "emulation: more print overflows than elements inspected",
+        f"/d,print,Emulated,{_id},,,,,12,,,,0,30,none,,thirty\n",
+        contains="cannot exceed the inventory", count=1, **em,
+    )
+    expect_findings(
+        "emulation: an end-state verdict outside the vocabulary",
+        f"/d,reduced-motion,Emulated,{_id},4,0,0,Committed,,,,,,,none,,\n",
+        contains="is not one of Pass / Fail / Not run", count=1, **em,
+    )
+    expect_findings(
+        "emulation: a counter filled with placeholder text",
+        f"/d,forced-colors,Emulated,{_id},,,,,120,n/a,0,0,,,none,,\n",
+        contains="records no number", count=1, **em,
+    )
+
+    # -- vocabulary --
+    expect_findings(
+        "emulation: an unknown Mode",
+        f"/d,dark-mode,Emulated,{_id},,,,,,,,,,,none,,\n",
+        contains="is not one of", count=1, **em,
+    )
+    expect_findings(
+        "emulation: no Mode at all",
+        f"/d,,Emulated,{_id},4,0,0,Pass,,,,,,,none,,\n",
+        contains="no Mode", count=1, **em,
+    )
+    expect_findings(
+        "emulation: no Engine recorded",
+        "/d,forced-colors,Emulated,200,https://a/d,https://a/d,heading 'D',,,,,,"
+        "120,0,0,0,,,none,,\n",
+        contains="no Engine", count=1, **em,
+    )
+    expect_clean(
+        "emulation: a Blocked row still says what it saw",
+        "/d,print,Blocked,none,https://a/d,https://a/d,,chromium,,,,,,,,,,,none,,"
+        "navigation timed out\n",
+        **em,
+    )
+
+    # ---- the Source vocabulary and the doctrine that names it must agree -------------
+    # A pre-existing drift found while adding `emulation`: `keyboard` and `forms` were accepted by
+    # the checker for a whole release while qa-reporter.md's own list of sources denied they
+    # existed. Prose is what the agent reads, so a source missing from it is a pass whose findings
+    # never reach the rollup -- claims-vs-enforcement, in the direction that silently drops data.
+    _tick()
+    reporter = Path(__file__).resolve().parents[1] / "agents" / "qa-reporter.md"
+    if not reporter.is_file():
+        FAILURES.append(f"cannot find {reporter} to cross-check the Source vocabulary")
+    else:
+        lines = reporter.read_text(encoding="utf-8").splitlines()
+        start = next((i for i, ln in enumerate(lines) if "every finding source" in ln), None)
+        if start is None:
+            FAILURES.append(
+                "qa-reporter.md no longer states which finding sources the rule applies to -- "
+                "that sentence IS the agent's copy of FINDING_SOURCES"
+            )
+        else:
+            # The bullet WRAPS, so read its continuation lines too. Reading one line found six
+            # sources "missing" that were simply on the next line -- a checker that mis-parses its
+            # input is indistinguishable from one reporting a real defect.
+            bullet = [lines[start]]
+            for line in lines[start + 1:]:
+                if not line.startswith("  ") or line.strip().startswith("- "):
+                    break
+                bullet.append(line.strip())
+            # After the FIRST em-dash (later prose contains more), up to the end of that sentence.
+            listing = " ".join(bullet).split("—", 1)[-1].split(".", 1)[0]
+            named = {word.strip(" *_`") for word in listing.split(",")}
+            unlisted = ve.FINDING_SOURCES - named
+            if unlisted:
+                FAILURES.append(
+                    f"qa-reporter.md's finding-source list omits {sorted(unlisted)}, which "
+                    "validate_evidence.py accepts as a Source -- those passes' findings would "
+                    "never be rolled up"
+                )
+
     # ---- profile detection is by header, and must never guess -----------------------
     _tick()
     detected = []
     for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN),
                       (ve.RUNTIME, RUNTIME_CLEAN), (ve.KEYBOARD, KEYBOARD_CLEAN),
-                      (ve.FORMS, FORMS_CLEAN), (ve.FINDINGS, NAVBAR)):
+                      (ve.FORMS, FORMS_CLEAN), (ve.EMULATION, EMULATION_CLEAN),
+                      (ve.FINDINGS, NAVBAR)):
         got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
         detected.append(got.name)
         if got is not prof:
@@ -1211,6 +1443,10 @@ def run() -> int:
         # functional-tester rather than restated, so there stays one copy of it.
         ("a11y-auditor.md", ve.KEYBOARD),
         ("a11y-auditor.md", ve.FORMS),
+        # The emulated-media pass is a11y-auditor's too: reduced motion and colour-only meaning are
+        # accessibility contracts, and the print mode rides along because it is the same
+        # emulate-then-assert mechanism, not because it is an a11y concern.
+        ("a11y-auditor.md", ve.EMULATION),
         ("qa-reporter.md", ve.FINDINGS),
     ):
         _tick()

@@ -188,6 +188,159 @@ Both passes feed `qa-reporter` under sources `keyboard` and `forms`, so findings
 **deduplicated by component signature** — one navbar focus bug across 72 routes is one finding
 with a reach of 72, not 72 findings.
 
+## The emulated-media pass — three conditions, and most of it is advisory
+
+Playwright emulates reduced motion, forced colors and print for free and offline, so doctrine
+that was never verified now can be. Run **one row per route × mode**, and read the severity rules
+before writing any: **this is the one pass where the danger is grading findings too high.**
+
+**Reset every dimension explicitly when the mode is done.** `page.emulateMedia()` **merges** —
+a key you omit keeps its previous value, so `emulateMedia({})` resets *nothing*:
+
+```js
+// The only reliable reset. Playwright's own docs example shows `emulateMedia({})` restoring
+// `screen`; its shipped implementation and test say otherwise, so null every key you touched.
+async function resetEmulation(page) {
+  await page.emulateMedia({
+    media: null,
+    colorScheme: null,
+    reducedMotion: null,
+    forcedColors: null,
+    contrast: null,
+  });
+}
+```
+
+Emulated state lives on the **Page** and survives navigation, so a missed reset leaks `reduce`
+into every later pass on that page — the theme-parity pass, the keyboard walk, everything. Reset
+after each mode, or give each mode its own `page`. **Nothing in the CSV can detect a leak**; it is
+not machine-checked and no column pretends otherwise.
+
+### Reduced motion — `emulateMedia({ reducedMotion: 'reduce' })`
+
+**Read what is running, not what CSS declares.** `getComputedStyle().animationDuration` is the
+wrong instrument twice over: its initial value is `0s` and it exists whether or not
+`animation-name` is set (so a stray `transition: all 300ms` reads as motion on an element that
+never moves), and it is entirely blind to the **Web Animations API** — `element.animate()`, and
+every JS library built on it, never touches those properties. Use `document.getAnimations()`,
+which reports CSS animations, CSS transitions and Web Animations together, with live state:
+
+```js
+const running = document.getAnimations()
+  .filter((animation) => animation.playState === 'running')
+  .map((animation) => ({
+    target: animation.effect ? animation.effect.target : null,
+    duration: animation.effect ? animation.effect.getTiming().duration : null,
+  }));
+```
+
+It reports only what is in effect **at the instant you call it**, so sample after load *and*
+after exercising the known animated components (spinner, toast, modal, skeleton). Scroll- and
+observer-triggered motion that starts later is a blind spot: say so in `Notes` rather than
+letting `Animations 0` imply a route that never animates.
+
+**`prefers-reduced-motion` does nothing on its own.** The browser suppresses no motion; the media
+feature only *detects* the setting, so every finding here is "the author wrote no override" —
+never "the browser failed to honour a promise". (Forced colors is the opposite: that one the user
+agent really does enforce.) Our own CSS gates motion inside
+`@media (prefers-reduced-motion: no-preference)` rather than overriding inside `reduce` — see
+`fidara-design`'s `references/motion.md`, which also records why that direction is ours and not a
+published rule.
+
+**What gates, and what does not — the whole point of this mode:**
+
+- **Motion that merely ignores the preference is [SC 2.3.3 Animation from
+  Interactions](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html),
+  which is Level AAA** — and `prefers-reduced-motion` (techniques C39/SCR40) is literally its
+  sufficient technique. You audit to AA, so this is **advisory**: count it in
+  `Motion Not Suppressed`, name the elements in `Notes`, and leave `Severity` `none`. Identical
+  treatment to SC 2.4.13 in the keyboard pass, and the checker enforces it — a row that grades an
+  advisory count S1 is rejected.
+- **What does gate is [SC 2.2.2 Pause, Stop,
+  Hide](https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide.html), Level A**, and only
+  for what it actually covers: motion that starts automatically, runs **more than five seconds**,
+  and is presented in parallel with other content, with no mechanism to pause, stop or hide it.
+  That is `Autoplay No Control` → **S1**. A 300 ms load-in transition is not this.
+- **`End State Committed`** is ours, from `motion.md`: *the trip is skipped, the information still
+  arrives*. A suppressed transition must still commit its end state, and a state change must never
+  depend on an animation event firing — with motion suppressed that event never comes. A `Fail`
+  means the content never arrives at all → **S1**.
+
+### Forced colors — `emulateMedia({ forcedColors: 'active' })`, chromium or firefox only
+
+**No WCAG success criterion requires forced-colors support.** Searched for and not found — so
+testing it is **our decision** (#116), and the severities below are maintainer decisions, not
+citations. What the mode does is reveal whether the WCAG contract you *already* owe survives when
+the user agent strips author colour.
+
+**Run this on chromium or firefox. A `forced-colors` row on `webkit` is `Blocked`, never a
+result.** Playwright will happily make the media query report `active` in all three engines, but
+WebKit implements none of the *forcing* — its own media-query commit records that Cocoa has no
+concept of forced colors, and `forced-color-adjust` is unimplemented in Safari. So WebKit strips
+no shadow and forces no system colour, and the pass reports **clean** on an app that breaks for a
+real Windows high-contrast user. Note the direction: the keyboard pass's WebKit caveat
+manufactures false *defects*; this one manufactures false *confidence*, which is why it is a hard
+rejection rather than a `Notes` requirement.
+
+Per [CSS Color Adjustment Level 1](https://www.w3.org/TR/css-color-adjust-1/), forced colors mode
+computes `box-shadow` and `text-shadow` to **`none`**, drops `background-image` unless it is a
+`url()`, and forces remaining colours to the system keywords (`Canvas`, `CanvasText`,
+`ButtonText`, `Highlight`, …); `forced-color-adjust: none` is the author opt-out.
+
+- **`Focus Indicator Lost`** → **S1**, and it is the highest-value finding in this pass. The
+  keyboard pass reads indicators from `outline-width`/`outline-style`/`box-shadow`, so a ring
+  built from **box-shadow with no outline** passes there and genuinely vanishes here.
+- **`Text Invisible`** → **S1**. Text that cannot be read is not a lesser defect for arriving via
+  a user-agent setting.
+- **`Colour Only`** → **S1**, and this one *does* have an upstream: [SC 1.4.1 Use of
+  Color](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html) is **Level A**, the same
+  criterion and citation the forms pass uses. Chart marks and status pills are the highest-risk
+  cases — forcing distinct author colours to one system colour is exactly what exposes them.
+- `Elements Checked` is the denominator; a defect count may never exceed it, and `0` means
+  nothing was inspected, which is `Out of Scope`, not a clean route.
+
+### Print — `emulateMedia({ media: 'print' })`, and it gates nothing
+
+This is a real CSS media-type switch: computed styles and screenshots follow it. **No WCAG
+criterion covers print output** (searched for, not found), so testing it is our decision too, and
+`Severity` on a print row must be `none` — the checker rejects anything else.
+
+**Do not claim this finds clipped content.** A screenshot under print emulation is one
+viewport-shaped render with **no pagination**; content cut off at a *page boundary* only exists in
+genuinely paginated output, and `page.pdf()` is Headless-Chromium-only. So record what the
+technique can actually see, which is print-stylesheet sanity: `Ink Burning` (dark or filled
+backgrounds surviving into print) and `Print Overflow` (content wider than the print width). Both
+are advisory and both need `Notes`.
+
+### The artifact
+
+One row per route × mode to `qa/reports/emulation-<slug>-pages.csv`. The header is **fixed**:
+
+```csv
+Route,Mode,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Animations,Motion Not Suppressed,Autoplay No Control,End State Committed,Elements Checked,Text Invisible,Focus Indicator Lost,Colour Only,Ink Burning,Print Overflow,Severity,Evidence,Notes
+```
+
+- `Status` — `Emulated`, `Blocked`, or `Out of Scope`. Page identity is validated exactly as the
+  audit log above, and a `forced-colors` row on webkit is `Blocked`.
+- `Mode` — `reduced-motion`, `forced-colors`, or `print`. It decides which columns may carry a
+  value at all: **a column belonging to another mode must be left blank.** A number in
+  `Colour Only` on a `print` row is a count from a condition that row never emulated, and it
+  reads exactly like a real result — same rule, and same reason, as `Submit Mode` in the forms
+  pass.
+- `Severity` — `S1` / `S2` / `none`, **recomputed** from the counters, so it cannot be talked
+  down. This pass adds the direction the others leave open: **a row whose counters force nothing
+  may not grade itself a defect**, so an AAA criterion and a check with no upstream stay advisory
+  in fact rather than only in prose. (Escalating an S2 to S1 stays tolerated as conservative,
+  exactly as in the keyboard and forms passes — nothing in this pass forces an S2 floor anyway.)
+
+Each mode is its own finding group, feeding `qa-reporter` under source `emulation`. Validate
+before reporting — same contract and exit codes as every other artifact:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_evidence.py" \
+  "qa/reports/emulation-<slug>-pages.csv"
+```
+
 ## Evidence durability and standards
 
 An axe pass over 70 routes is a long browser run, so the same contract applies: append one JSON

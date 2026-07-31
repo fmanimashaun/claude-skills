@@ -2320,6 +2320,75 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Emulated media conditions are tested, and most of what they find is advisory on purpose**
+  (#116). Doctrine required motion to be gated on `prefers-reduced-motion` and required meaning
+  never to rest on colour alone; nothing verified either, though Playwright emulates reduced
+  motion, forced colors and print offline and for free. The new `emulation` evidence profile does,
+  one row per route × mode — but the shape of it comes from a verification that **contradicted the
+  issue on its central point**, so the change is mostly about what must *not* gate.
+  - **`prefers-reduced-motion` is a Level AAA concern, so it is advisory.** [SC 2.3.3 Animation
+    from Interactions](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html)
+    is **AAA**, and `prefers-reduced-motion` (techniques C39/SCR40) is literally its sufficient
+    technique — there is no A or AA criterion the media query satisfies. `a11y-auditor` audits to
+    AA, so "this animation ignores the preference" is counted in `Motion Not Suppressed` and left
+    `Severity none`, exactly as SC 2.4.13 Focus Appearance is handled in the keyboard pass. What
+    *does* gate is the narrow subset [SC 2.2.2 Pause, Stop,
+    Hide](https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide.html) (**Level A**) actually
+    covers: autostarting motion running **over five seconds** in parallel with other content and
+    offering no way to stop it. #116 specified no severity at all, which would have defaulted this
+    pass into the same gating tier as axe — wrong for nearly everything it flags.
+  - **So the recompute gained the direction the other profiles leave open.** Keyboard (#114) and
+    forms (#115) stop a row grading a real defect *down*; here a row may not grade an advisory
+    *up*. An audit whose findings are mostly unactionable gets switched off — the same failure the
+    #106 over-correction would have caused — so the AAA and no-upstream boundaries are arithmetic,
+    not prose. Print gates **nothing** and the checker enforces that.
+  - **A forced-colors run on WebKit is `Blocked`, never a result.** Playwright will make the media
+    query report `active` in all three engines, but WebKit implements none of the *forcing* — its
+    own media-query commit records that Cocoa has no concept of forced colors, and
+    `forced-color-adjust` is unimplemented in Safari — so it strips no shadow and forces no system
+    colour, and the pass reports **clean on an app that breaks for a real Windows high-contrast
+    user**. Note the direction: #114's WebKit caveat manufactures false *defects*, this one
+    manufactures false *confidence*, so it is a hard rejection rather than a `Notes` requirement.
+  - **The highest-value finding is a focus ring that only the forced-colors pass can see.** Per
+    [CSS Color Adjustment Level 1](https://www.w3.org/TR/css-color-adjust-1/), forced colors mode
+    computes `box-shadow` and `text-shadow` to **`none`**. The keyboard pass reads indicators from
+    `outline-width`/`outline-style`/`box-shadow`, so a ring built from box-shadow with no outline
+    passes there and genuinely vanishes here.
+  - **The reduced-motion check reads `document.getAnimations()`, not computed style.** #116
+    proposed asserting a trivial `animation-duration`/`transition-duration`; that instrument is
+    wrong twice over — its initial value is `0s` and it exists whether or not `animation-name` is
+    set, and it is entirely blind to the **Web Animations API**, so `element.animate()` and every
+    library built on it go unseen. Recorded with its residual blind spot: `getAnimations()` reports
+    only what is running at the instant it is called.
+  - **`emulateMedia()` merges, so `emulateMedia({})` resets nothing.** Verified against the
+    shipped implementation and its own test rather than the docs, whose usage example shows the
+    opposite; state lives on the Page and survives navigation, so a missed reset leaks `reduce`
+    into every later pass. Doctrine requires nulling every dimension explicitly, and says plainly
+    that no column detects a leak.
+  - **Print records print-stylesheet sanity and does not claim to find clipped content.**
+    `emulateMedia({ media: 'print' })` is a real media-type switch, but a screenshot is one
+    viewport-shaped render with no pagination; page-boundary clipping exists only in paginated
+    output and `page.pdf()` is Headless-Chromium-only. #116 conflated the two; the counters are
+    named for what they measure.
+  - **No WCAG criterion covers forced-colors support or print output** — searched for and not
+    found, so both are recorded as **maintainer decisions** on #116 rather than dressed in a
+    citation. `Colour Only` is the exception and keeps a real one: [SC 1.4.1 Use of
+    Color](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html), **Level A**, the same
+    criterion the forms pass already cites.
+- **`qa-reporter`'s list of finding sources no longer contradicts the checker that enforces it**
+  (found while working #116). The agent's prose named nine sources while `FINDING_SOURCES`
+  accepted eleven: `keyboard` and `forms` shipped in v1.12.0 as sources the checker allowed and
+  the doctrine denied, so an agent reading only the prose would never roll their findings up.
+  Fixed, and the selftest now holds the two in step — a `claims-vs-enforcement` defect in the
+  direction that silently drops data.
+- **The shared severity recompute no longer explains one profile's defects in another's words.**
+  `_check_severity` hardcoded the keyboard rationale, so a *forms* colour-only finding told the
+  reader about "an element a keyboard user cannot reach". The rationale is now a required argument
+  rather than a default, because a default is how the next profile inherits the wrong sentence
+  silently.
+
 ### 1.12.0 — 2026-07-31
 
 *(Two issues on one branch per CLAUDE.md's grouping rule. The shared mechanism is one sentence:

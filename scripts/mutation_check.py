@@ -337,6 +337,45 @@ GUARDS: tuple[Guard, ...] = (
                 "    elif False:",
                 "unreachable elements downgraded to S2",
             ),
+            # #116 -- this profile's distinctive guarantee runs the OPPOSITE way to keyboard's and
+            # forms': it stops a row grading an advisory UP into a defect. Both halves of that
+            # boundary get a mutation, because each alone leaves the other criterion unguarded.
+            Mutation(
+                "motion ignoring the preference becomes gating (SC 2.3.3 is Level AAA) (#116)",
+                '        gating=(("Autoplay No Control", S1), ("End State Committed", S1)),',
+                '        gating=(("Autoplay No Control", S1), ("End State Committed", S1),'
+                ' ("Motion Not Suppressed", S1)),',
+                "recorded as advisory",
+            ),
+            Mutation(
+                "a print nit becomes a release-blocking defect, with no WCAG upstream (#116)",
+                "        gating=(),",
+                '        gating=(("Ink Burning", S1),),',
+                "print nit inflated",
+            ),
+            # The mode contract. Without it a row carries counts from a condition it never
+            # emulated, which is the forms Submit Mode hole in a new dimension.
+            Mutation(
+                "an emulation row may carry counts from a mode it never emulated (#116)",
+                "        if column in spec.numeric:\n            continue\n        if row[column]:",
+                "        if column in spec.numeric:\n            continue\n        if False:",
+                "carrying a forced-colors count",
+            ),
+            # The WebKit ceiling. Removing it lets a forced-colors run on an engine that applies
+            # no forcing report CLEAN -- false confidence, not false defects.
+            Mutation(
+                "a forced-colors result on webkit stops being a platform ceiling (#116)",
+                '    if mode == "forced-colors" and engine == "webkit":',
+                "    if False:",
+                "platform ceiling",
+            ),
+            Mutation(
+                "an emulation count may exceed the inventory it was drawn from (#116)",
+                "        if {column, denominator} <= counts.keys() and counts[column] > "
+                "counts[denominator]:",
+                "        if False:",
+                "more unsuppressed animations",
+            ),
         ),
     ),
     Guard(
