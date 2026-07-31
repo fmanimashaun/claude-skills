@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 1.22.0 — 2026-07-30
+
+- **An umbrella issue was closed by a promotion that shipped one of its groups** — and the rule that
+  allowed it is now written down. #95's body says *"Ship in sub-releases, one group at a time"* and
+  carries a checklist; `Closes #95` on the v1.37.0 promotion retired it with **seven rows still
+  undocumented**, after which **four further slices landed against a closed issue**. CLAUDE.md's
+  promotion section now says plainly: an issue that ships incrementally gets `Refs`, never `Closes`,
+  until its last increment — and to check the body for unticked boxes before writing `Closes`. #95 is
+  reopened with the remaining seven rows enumerated.
+
 ### 2026-07-30 — the fences are syntax-checked, and invisible characters are caught
 
 - **NEW rule `invisible-character`** (#95) — no invisible or confusable whitespace in anything we
@@ -1163,6 +1173,262 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-07-30 — the umbrella-Closes rule
+
+- **NEW `references/motion.md` — motion doctrine** (#136). Our entire motion doctrine was **one
+  line** (*"150–200ms `ease-out`, transition colors/opacity/transform, gated on
+  `prefers-reduced-motion`"*), which governs component state transitions and nothing else. Adapted
+  from [interior](https://github.com/ddoemonn/interior)'s
+  [`DESIGN.md`](https://github.com/ddoemonn/interior/blob/main/DESIGN.md) (MIT, © ddoemonn),
+  **attributed**, with every adapted constant marked as ours rather than quoted.
+  - **A departure is always shorter than an arrival** — the highest-value rule, and we had no version
+    of it. One easing in both directions is why replacements *"either lag or smear together"*. Tokens
+    gain a **departure curve** (`--ease-in`) beside the shipped arrival curve.
+  - **Distance chooses the duration, not component type.** Three tiers — `--duration-fast` 120ms
+    under 20px, `--duration` 180ms for 20–200px, `--duration-slow` 280ms over 200px — and **an exit
+    takes the tier below its entrance**, which turns rule 1 into a table rather than a judgement call.
+    The three figures are **ours**, derived by holding our shipped 180ms as the mid tier; their
+    millisecond values come from spring settling times and do not carry over.
+  - **Opacity finishes before height on disclosure** — *"opacity finishing first hides the reflow."*
+    We ship a Disclosure component with a height transition and never said this.
+  - **Reduced motion: change the behaviour, not just the timing.** *"The information still arrives,
+    the trip is skipped."* Never remove the element or the state change — zero the duration, because
+    *"the element must still end up in the right place"*. And where timing is not the problem, change
+    behaviour: `scroll-behavior: auto`, a text reveal that jumps to its final state, a marquee that
+    stops rather than loops faster. This is the same rule as our existing *"a state change must never
+    depend on an animation event firing"* seen from the other side.
+  - **The eight ways a gesture can be abandoned**, which our four Stimulus mixins said nothing about:
+    `pointercancel`, `lostpointercapture`, `pointerleave`, window `blur`, `visibilitychange`, Escape,
+    blur, and move tolerance. *"If a component can be mid-gesture, it registers a window `blur`
+    listener"* — otherwise alt-tabbing mid-press leaves the element stuck in its pressed state, a bug
+    invisible in testing because nobody alt-tabs during a click on purpose. Also: treat
+    `lostpointercapture` as a **cancel, not a drop**, and pick `touch-action` by the axis you own.
+  - **Cap the stagger** — `per-child delay × count ≤ 1.6s`, because *"a stagger that scales with the
+    data eventually becomes a wait."* Twelve cards at 80ms is pleasant; sixty rows is five seconds of
+    the page assembling itself.
+  - **Physics runs linear, intention runs eased.** A ripple expands at constant speed; a spinner turns
+    at one rate *"because it is reporting an unknown"*. Easing a spinner implies it knows how far along
+    it is — the one thing it is admitting it does not. Consistent with the loading contract.
+  - **Focus: two signals, never three** — never combine a ring, a border change and a shadow. Draw the
+    focus edge after the fill, and as a sibling above anything that slides underneath.
+  - **Zero layout shift**, with the *invisible twin* named as the technique: reserve the widest state
+    permanently and animate opacity inside a box that never resizes.
+  - **CSS primitives, verified with version boundaries rather than assumed.** **CSS has no spring
+    easing** — three families only (linear, cubic-bézier, step) — which is why the springs do not port.
+    `linear()` *can* pre-sample a spring curve, is Baseline **since December 2023**, and the technique
+    is documented by Chrome's own developer site; we hold off on **cost** (40-plus points per curve,
+    unreadable at the call site), not support. And an **entrance no longer needs JavaScript**:
+    `@starting-style` + `transition-behavior: allow-discrete` make `display: none → block`
+    transitionable, Baseline **"Newly available" 6 Aug 2024** — *not* yet widely available (that tier
+    is Feb 2027), so it is a progressive enhancement, not a floor.
+  - **A refutation worth recording.** I was going to present gating on
+    `@media (prefers-reduced-motion: no-preference)` as best practice. **MDN's own canonical example
+    and WebKit's own article both use the opposite direction**, and the Media Queries spec makes no
+    authoring recommendation at all. We keep `no-preference` because it **fails safe** — a UA without
+    the media feature never matches it, so motion never activates — but it is now recorded as **our
+    reasoned default, not a citation**.
+  - **Token consumption is asymmetric, and getting it wrong means a class silently does nothing.**
+    `--ease-*` **is** a Tailwind v4 namespace, so `--ease-in` generates an `ease-in` utility and
+    **overrides** Tailwind's default (as our shipped `--ease-out` already does). There is **no
+    `--duration-*` namespace** — durations are consumed as `var(--duration-fast)` or with Tailwind's
+    `duration-(--duration-fast)` custom-property syntax.
+  - **Cross-page motion (Turbo 8).** v8.0.0 shipped **two separate features** commonly conflated:
+    morphing page refreshes (idiomorph) and **View Transitions support for navigations**. The latter
+    needs `<meta name="view-transition" content="same-origin">` on **both** pages. Correction worth
+    having: the Hotwire handbook does **not** provide `view-transition-name` — that is **plain CSS**
+    from the View Transitions API, working because Turbo enabled transitions for the navigation, not
+    because Turbo wraps it.
+  - **What we did NOT take, and why**, rather than a silent filter: the five named springs are
+    `motion` solver constants with no CSS equivalent; velocity handoff needs a spring to hand off to;
+    entry/exit blur is dropped as our call (cost over benefit at our durations); and the React
+    machinery (`layoutId`, quantized step state) becomes "write a custom property on rAF rather than
+    toggling classes" in Stimulus.
+
+- **FIX — the `rate_limit` test-store advice shipped an hour earlier was wrong** (#98). It said to
+  "stub a real store (`:memory_store`) in any example asserting either behaviour". That works for the
+  single-use marker, which goes through `Rails.cache` directly — and **cannot work for `rate_limit`**,
+  which counts through `config.action_controller.cache_store` and, because the signature is
+  `store: cache_store`, evaluates that default **when the class body loads** and captures it in the
+  `before_action` closure. By the time an example runs the store is already bound, so
+  `allow(Rails).to receive(:cache)` never reaches it and the spec goes green while the limiter does
+  nothing. The doctrine now gives the two cases **different** fixes: a per-example stub for the marker,
+  and a real store configured in the test environment plus a per-example `clear` for the limiter (one
+  instance per process, so counts otherwise accumulate and the suite turns order-dependent).
+  - **Found by applying the doctrine to a real app rather than by re-reading it.** The first attempt
+    used the stub the doctrine prescribed, the throttle spec failed, and the mechanism came out of
+    diagnosing why — which is the same lesson as every other defect this session: executing found it,
+    reading would not have.
+
+- **Cross-plane sign-in doctrine, and four corrections to the security checklist** (#98). A unified
+  sign-in front door authenticating **both** realms, holding **no session of its own**, minting a
+  short-lived single-use **encrypted** grant and handing off to the plane that exchanges it for its own
+  host-scoped session (fidara-ledger D-038/D-039, accepted 24 Jul 2026).
+  - **Why a hand-off and not a shared cookie:** a cookie with no `Domain` is confined to the exact host
+    that set it (RFC 6265), and Rails' `domain: :all` — which *would* share it — is declined on purpose,
+    because a shared cookie lets an XSS on one plane reach another plane's session.
+  - **Encrypt, do not sign, and the reasoning is verified rather than repeated.** `MessageVerifier`'s own
+    docs: *"Signing is not encryption… The payload is merely encoded (Base64 by default) and can be
+    decoded by anyone."* The grant rides in a URL, so signed-only would publish the raw record id to
+    browser history, referrer headers and CDN logs.
+  - **`decrypt_and_verify`'s failure modes are asymmetrical** — it **returns `nil`** on expiry and on a
+    purpose mismatch, and **raises** only on tamper or corrupt format. A `rescue`-only implementation
+    sails past an expired grant with a `nil` and blows up on the next call. Check the return value *and*
+    rescue.
+  - **`config.hosts` is EMPTY in production by default** — the checklist previously framed Host
+    authorization as a development concern only. Where the list is empty the middleware returns
+    immediately and does nothing, so anything deriving a redirect target from `request.host`/`.domain`
+    trusts an attacker-controlled header until it is set. It rejects with **403 before the app runs**,
+    which is what makes it a real defence.
+  - **Rails 8.1 replaced `raise_on_open_redirects` with `action_on_open_redirect`** (`:log`/`:notify`/
+    `:raise`; framework defaults still raise) and added
+    **`config.action_controller.allowed_redirect_hosts`** — preferred over `allow_other_host: true`,
+    which disables the check for the *entire call* while the allowlist keeps every other host blocked.
+    Also recorded: **"another host" is an exact match and subdomains count**, so `app.` → `admin.` is
+    cross-host.
+  - **Two specs in this area pass whether or not the code works**, because the Rails test environment
+    defaults to `:null_store`. `NullStore` ignores `unless_exist` and returns `true` every time, so a
+    **single-use** spec never sees a rejected replay; and `rate_limit` calls `store.increment`, which
+    `NullStore` answers with `nil`, making **`rate_limit` a permanent no-op in test**. Stub
+    `:memory_store` or the test is vacuous. (`rate_limit` arrived in **7.2** and needs a real store.)
+  - **`unless_exist` atomicity is store-specific, not an API guarantee.** On **Solid Cache** the write
+    takes a `SELECT … FOR UPDATE`, which is genuinely atomic for an existing key — but a brand-new key
+    has **no row to lock**, so two concurrent first-claims can both win. Narrow and bounded, and written
+    down rather than implied airtight. Redis `SET NX`/memcached `ADD` have no such window, so the caveat
+    is Solid Cache's, not `Rails.cache`'s.
+  - **`authenticate_by` is Rails 7.1, not 7.0**, and it is required here rather than optional: it *"takes
+    the same amount of time regardless of whether a user with a matching email is found"*, so a `find_by`
+    + `authenticate` pair would be a timing oracle defeating the uniformity the front door works for.
+  - **A residual timing channel the uniform messages do not close**, flagged rather than glossed:
+    `User.authenticate_by || StaffUser.authenticate_by` runs **one** lookup on a tenant hit and **two**
+    when neither matches, so latency still varies by realm. Evaluate both unconditionally if realm
+    disclosure matters.
+  - **Terminology pinned rather than invented:** identifier-first sign-in is **home realm discovery**,
+    and the enumeration requirement is **OWASP WSTG-IDNT-04**, which asks for *"the same error message
+    **and length**"* — so keep the response *shape* constant, not just the wording.
+  - **`allow_unauthenticated_access` is generated code, not a framework method** — the Rails 8
+    authentication generator defines it as `skip_before_action :require_authentication`.
+
+- **FIX — a Phase B claim shipped an hour earlier was incomplete** (#98). `multi-tenancy.md` said *"each
+  plane gets its own authentication stack, not a role check on a shared one."* True for the invariant it
+  protects — two identity models, two session tables, two cookies — but readable as forbidding **any**
+  shared component, which the unified front door above would then contradict. Now scoped: "its own stack"
+  means its own session, cookie and identity model, not "no shared code may precede it", with a forward
+  reference to the pattern. Found by checking the implementation rather than by review.
+
+- **NEW `references/multi-tenancy.md`** (#98, Phase B of EPIC #96). Rails documents **no** row-level
+  tenancy doctrine — the guides' only use of "multi-tenant" is horizontal *sharding* — so every choice
+  here is recorded as a choice and every framework fact is cited to source.
+  - **The file's first job is separating two axes people collapse into one:** *isolation* (separate
+    database / schema / **row-level**) and *identification* (subdomain / URL path / **session** /
+    header). Choosing "subdomain" says nothing about how queries are scoped, and that confusion is why
+    this file exists.
+  - **Maintainer decision recorded: session-selected tenant, never in the URL** (fidara-ledger D-009,
+    accepted 19 Jul 2026). Three reasons in the order they mattered: it is the category norm (Xero,
+    QuickBooks, Wave, Zoho, FreshBooks all use an org switcher); the alternative's main benefit did not
+    apply, because external users hit **one-off tokenized links** rather than a standing per-tenant
+    space; and it is **the most reversible** — path or subdomain tenancy can be layered on later without
+    a data-model change, while backing out of either is the expensive direction.
+  - **Subdomains separate *planes*, not tenants** (D-012): root for marketing, `app.` for the product,
+    `admin.` for the operator console — routed with `constraints subdomain:` + `scope module:` (not
+    `namespace`) so the host picks the controller and URLs stay identical. **Each plane gets its own auth
+    stack**, so a tenant session grants zero admin access *structurally* rather than because a
+    `before_action` remembered.
+  - **The session value is still re-authorised every request.** `Current.user.organizations.find_by(id:
+    session[:organization_id])` is the authorisation — written as `Organization.find_by(id: …)` the same
+    line is a tenant-switching hole, and that distinction is the load-bearing detail.
+  - **Five verified reasons not to use `default_scope`**, each confirmed against Rails 8.1 source or by
+    running it: a wrong-tenant `find_by` returns **`nil` rather than raising**, so the block reads as
+    "not found"; it leaks into `new`/`create` (and sets a null FK when `Current` is nil — the database
+    `NOT NULL` constraint is the real safety net); `unscoped` bypasses it; it is evaluated **when a
+    `Relation` is constructed, not when the query runs**, so a memoized or cross-boundary relation keeps
+    a stale tenant; and `joins` with `default_scope` has open Rails bugs spanning 4.2→7.2. Both
+    fidara-ledger and 37signals' fizzy contain **zero** `default_scope`.
+  - **The job boundary is the section to read twice, and it is worse than an ordering problem.** `Current`
+    never survives enqueue → perform (ActiveJob wraps every execution in the reloader, which calls
+    `clear_all`), and Rails ships no built-in carrier. But **GlobalID's default locator is an
+    `UnscopedLocator`** — it strips *all* scopes by design, and has since 2016 — so `default_scope`
+    provides **zero** protection for a record arriving as a job argument. Not "depends on timing":
+    structurally none. And `deserialize_arguments_if_needed` runs **before** `run_callbacks :perform`, so
+    a tenant restored in `around_perform` is restored too late. Restore it in the job's
+    **`deserialize(job_data)`**, and re-check tenancy explicitly inside `perform`.
+  - **PostgreSQL RLS has one trap that makes it inert**, and it is the fact most likely to be written
+    down wrong: *"table owners normally bypass row security as well."* A Rails app usually **owns** the
+    tables its migrations created, so the default outcome is policies defined, RLS enabled, and RLS doing
+    **nothing**, silently. `FORCE ROW LEVEL SECURITY` is the lever that matters; checking for
+    `BYPASSRLS` proves nothing. Plus: `SET LOCAL` is transaction-scoped and a bare `SET` **leaks to the
+    next tenant on a pooled connection**, and `SET LOCAL` outside a transaction is a silent no-op.
+  - **Identifiers, since the org is not in the URL.** Ours keeps the PK and mints an opaque prefixed
+    `public_id`, with the **unique index as the guarantee** plus a bounded collision retry that matches
+    the violation **by index name** (not by sniffing the message) and **only retries a self-minted
+    value**, so a caller-supplied duplicate still surfaces the real error. For UUID PKs, four facts
+    first: `id: :uuid` is **PostgreSQL-only** in Rails; `gen_random_uuid()` is UUID**v4** (random, so
+    index bloat); **no Rails version generates UUIDv7** — that is `SecureRandom.uuid_v7` on **Ruby ≥
+    3.3** or PostgreSQL ≥ 18's `uuidv7()`; and 16 bytes vs 8 repeats on every FK. "base36, 25 chars" is
+    fizzy's own scheme, not a standard.
+  - **Gem landscape corrected:** `acts_as_tenant` is row-level, maintained, and openly `default_scope`-
+    based — so it centralises the hazards rather than avoiding them, and it has an **open issue about
+    Solid Queue specifically**, our default adapter, where the tenant is missing from the stored job
+    payload. `apartment`/`ros-apartment` are **schema/database-per-tenant — a different axis**, not
+    row-level alternatives.
+  - **Enforcement, stated honestly:** no standard tool proves every tenant query is scoped. The building
+    block (`sql.active_record` notifications) is real; the subscriber is a hand-roll. Until then the
+    enforcement is a `NOT NULL` tenant FK, association traversal that makes an unscoped query *look*
+    wrong in review, and the per-job re-check above.
+
+- **FIX — `extending-rails.md` taught subdomain-based *tenant* resolution** (#98), which contradicted the
+  decision above. Its Rack-middleware example resolved a tenant from `request.subdomain`, so anyone
+  skimming for "how do I do tenants" found tacit endorsement of a model the doctrine rules out. The Rack
+  mechanics are identical for any cross-cutting concern, so the example now tags the request and resolves
+  the **plane**, and the "when to write middleware" list no longer leads with tenant resolution.
+
+- **FIX — `sso.md` needed its tenancy claim scoped, not rewritten** (#98). It resolves a workspace from
+  the subdomain, which is defensible for enterprise SSO (IdP redirect URIs are commonly workspace-scoped)
+  but is not our general model. A scope note now says so and points at the new reference — and notes that
+  its **isolation** half is already correct: `workspace.users.find_by(…)`, association traversal, no
+  `default_scope`. That is what generalises.
+
+- **NEW `references/style.md` — how Rails code should read** (#97, Phase A of EPIC #96). The skill
+  prescribed architecture, testing and deployment and said **nothing** about how code reads. Sourced to
+  [37signals' `STYLE.md`](https://github.com/basecamp/fizzy/blob/main/STYLE.md) in
+  [basecamp/fizzy](https://github.com/basecamp/fizzy) — production Rails by the people who make Rails,
+  licensed MIT-equivalent so quoting is permitted, and **attributed**. All twelve upstream claims
+  verified verbatim against the source; every adopt/adapt decision and its reason recorded, because
+  inheriting a convention silently is how a project ends up with two styles and an argument.
+  - **Six conventions adopted:** method ordering (class → public with `initialize` first → private),
+    invocation order (vertical, call-order), bang methods, visibility-modifier indentation (plus the
+    private-only-module variant), and the `_later`/`_now` job-naming pair.
+  - **`_later`/`_now` is the most immediately useful of them** because it settles a question every Rails
+    app re-litigates: **the logic lives on the model**, and the job is a two-line adapter. `_later` names
+    the enqueuing method so a call site reads as non-blocking; **`_now` is scoped to the
+    callback-into-self case**, not a suffix for every synchronous method — generalising it would misread
+    the source.
+  - **One convention ADAPTED, not adopted wholesale.** *Expanded conditionals over guard clauses* is
+    **demonstrably contrary to prevailing Ruby advice**: stock RuboCop enables `Style/GuardClause` **by
+    default**, keyed to the community style guide's *"Prefer a guard clause when you can assert invalid
+    data."* The pattern fizzy calls "bad" is the one the community guide calls good. We adopt the
+    preference **and its two named exceptions**, and add a rule of our own: **do not "fix" an existing
+    guard clause, and never reject a change solely for using one.** A style preference that generates
+    review churn costs more than it earns, and an agent applying this dogmatically produces `if`/`else`
+    where a guard was clearer.
+  - **Two conventions turned out to be doctrine we already had** — *"a new resource, not a custom
+    action"* (`controllers-routing.md` §1) and *"no service-object layer by default"* (`models.md` §7).
+    That is the more interesting result: the vanilla-Rails posture this skill has prescribed all along is
+    what Basecamp actually ships, not our inference. Both now carry the citation, and §7 gains the nuance
+    we lacked — *"when justified, it is fine to use services or form objects, but don't treat those as
+    special artifacts"*, which is what makes the rule workable rather than a prohibition.
+  - **Nothing was rejected**, and the file says so rather than implying a filter was applied.
+  - **A provenance error caught by the gate before it shipped.** I was going to write that
+    `rubocop-rails-omakase` is *37signals'* config. It is not: the README calls it *"the idiosyncratic
+    aesthetic sensibilities of Rails' creator"*, the gemspec author is DHH, and it lives under the
+    **`rails`** org. Related to fizzy's house style, not the same artifact, and not interchangeable in a
+    citation.
+  - **The linter cannot contradict any of this, verified rather than assumed.** `rubocop-rails-omakase`
+    disables whole cop **departments** and re-enables a short list; `Style/GuardClause` is never
+    mentioned, so it is off. And `Layout/IndentationConsistency` is `Enabled: false` **while carrying
+    `EnforcedStyle: indented_internal_methods`** — so the indentation style §5 prescribes is
+    *pre-declared* in the config we already mandate, switched off precisely for the private-only-concern
+    case §5 documents.
 
 ### 1.21.0 — 2026-07-30
 
@@ -2604,6 +2870,64 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-30 (release v1.41.0)
+
+> ### Three new rails-8/fidara-design references, and doctrine corrected twice by its own gates
+>
+> **`style.md`** (how Rails code should read — 37signals' `STYLE.md`), **`multi-tenancy.md`**
+> (row-level isolation, session-selected tenant) and **`motion.md`** (tokenised timing, reduced
+> motion, gesture abandonment). Plus a cross-plane sign-in contract and **four corrections to the
+> security checklist**.
+>
+> `rails-8.skill` and `fidara-design.skill` changed; `hotwire.skill` and `code-review.skill` are
+> byte-identical.
+
+- **`references/style.md` — how Rails code should read** (#97). The skill prescribed architecture,
+  testing and deployment and said nothing about how code reads. Six conventions adopted, one
+  **adapted**, two found to be doctrine we already had — that last being the more interesting result:
+  *"a new resource, not a custom action"* and *"no service-object layer by default"* are what Basecamp
+  actually ships, not our inference. The adapted one is *expanded conditionals over guard clauses*,
+  which is **demonstrably contrary to prevailing Ruby advice** — stock RuboCop enables
+  `Style/GuardClause` by default — so we take the preference and its two exceptions and add: **do not
+  "fix" an existing guard clause, and never reject a change solely for using one.**
+- **`references/multi-tenancy.md` — row-level isolation, session-selected tenant** (#98). Rails
+  documents **no** row-level tenancy doctrine, so every choice is recorded as a choice. It separates
+  the two axes people collapse into one — **isolation** and **identification** — and records the
+  decision: the tenant comes from the **session, never the URL**; subdomains separate *planes*, not
+  tenants.
+  - **Five verified reasons not to use `default_scope`**, including that a wrong-tenant `find_by`
+    returns **`nil` rather than raising**, and that it is evaluated when a `Relation` is *constructed*,
+    not when the query runs.
+  - **The job boundary is worse than an ordering problem.** GlobalID's default locator is an
+    `UnscopedLocator` that strips **all** scopes by design, so `default_scope` gives **zero**
+    protection for a record arriving as a job argument — and `deserialize_arguments_if_needed` runs
+    *before* `run_callbacks :perform`, so a tenant restored in `around_perform` is too late.
+  - **PostgreSQL RLS is inert by default in a Rails app**: *"table owners normally bypass row
+    security"*, and your app owns the tables its migrations created. `FORCE ROW LEVEL SECURITY` is the
+    lever; checking for `BYPASSRLS` proves nothing.
+- **Cross-plane sign-in, and four corrections to the security checklist** (#98). One front door
+  authenticating both realms, holding **no session of its own**, minting a short-lived single-use
+  **encrypted** grant. Encrypt rather than sign because the grant rides in a URL and *"the payload is
+  merely encoded (Base64 by default) and can be decoded by anyone."* Corrections: **`config.hosts` is
+  empty in production by default** (we framed it as a dev concern); Rails 8.1 added
+  **`allowed_redirect_hosts`**, safer than `allow_other_host: true`; `authenticate_by` is **7.1**;
+  `rate_limit` is **7.2** and is a **permanent no-op under `:null_store`**, the Rails test default —
+  so a throttling spec passes whether or not throttling works.
+- **`references/motion.md` — tokenised timing and reduced motion** (#136). Our motion doctrine was
+  **one line**. Now: two curves with a **departure always shorter than an arrival**, three durations
+  chosen by **travel distance**, opacity finishing before height on disclosure, and the **eight ways a
+  gesture can be abandoned** — *"if a component can be mid-gesture, it registers a window `blur`
+  listener"*, or alt-tabbing mid-press leaves the element stuck.
+  - **Reduced motion changes behaviour, not just timing** — *"the information still arrives, the trip
+    is skipped."* And gating on `no-preference` is recorded as **our reasoned default, not a
+    citation**: MDN's own example and WebKit's own article both use the opposite direction.
+  - **An entrance no longer needs JavaScript** — `@starting-style` + `transition-behavior:
+    allow-discrete`, Baseline *newly* available Aug 2024, so a progressive enhancement rather than a
+    floor.
+- **Tooling: an umbrella issue gets `Refs`, never `Closes`.** A promotion retired the Phase-2 component
+  umbrella while seven of its rows were undocumented, after which four further slices landed against a
+  closed issue. CLAUDE.md now says to check the body for unticked boxes before writing `Closes`.
 
 ### 2026-07-30 (release v1.40.0)
 

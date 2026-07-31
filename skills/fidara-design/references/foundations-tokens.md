@@ -120,9 +120,14 @@ the `clamp()`s; the shape:
   --shadow-sm: 0 1px 3px rgb(12 27 51 / .06);
   --shadow-md: 0 4px 16px rgb(12 27 51 / .10);   /* toasts/dropdowns */
   --shadow-lg: 0 20px 60px rgb(12 27 51 / .15);  /* modals */
-  /* motion */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration: 180ms;
+  /* motion — two curves (arrival + departure) and three durations chosen by TRAVEL DISTANCE,
+     not by component type. Full rules in motion.md; the short version is that a departure is
+     always shorter than an arrival, and an exit takes the tier below its entrance. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);   /* arrival — decelerates into place */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);       /* departure — accelerates away */
+  --duration-fast: 120ms;                      /* under 20px: chips, labels, focus */
+  --duration: 180ms;                           /* 20-200px: rows, cells, menu items (default) */
+  --duration-slow: 280ms;                      /* over 200px: drawers, modals, cross-viewport */
 }
 ```
 

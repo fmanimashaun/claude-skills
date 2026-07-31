@@ -172,17 +172,26 @@ config.middleware.delete Rack::Runtime
 A minimal middleware:
 
 ```ruby
-# lib/middleware/tenant_resolver.rb
-class TenantResolver
+# lib/middleware/request_tagger.rb
+class RequestTagger
   def initialize(app) = @app = app
 
   def call(env)
     request = ActionDispatch::Request.new(env)
-    env["myapp.tenant"] = request.subdomain.presence
+    env["myapp.request_id"] = request.request_id
+    env["myapp.plane"] = request.subdomain.presence   # which HOST answered, not which tenant
     @app.call(env)
   end
 end
 ```
+
+**This example used to resolve a *tenant* from the subdomain, and that was a
+contradiction** with [multi-tenancy.md](multi-tenancy.md): we resolve the tenant from
+the **session**, never from the URL or host (decision D-009), and the subdomain
+separates *planes* (marketing / `app.` / `admin.`) rather than tenants. The Rack
+mechanics are identical either way — a middleware is the right tool for a
+cross-cutting concern that must run before routing — so the example now shows one
+that does not smuggle in an identification model the rest of the doctrine rules out.
 
 (Autoload note: `lib/` isn't eagerly available at config time — `require` the
 file in `application.rb` or place middleware under an autoloaded, eager-loaded
@@ -197,7 +206,7 @@ get "/ping", to: ->(env) { [200, { "Content-Type" => "text/plain" }, ["pong"]] }
 mount MyRackApp, at: "/internal"
 ```
 
-When to write middleware: cross-cutting HTTP concerns (tenant resolution,
-request tagging, custom instrumentation) that must run for *every* request
+When to write middleware: cross-cutting HTTP concerns (request tagging, custom
+instrumentation, host/plane resolution) that must run for *every* request
 including ones that never reach a controller. Otherwise a `before_action` in
 `ApplicationController` is simpler and more Rails-idiomatic.
