@@ -259,9 +259,14 @@ are not optional style — they are correctness. Open-redirect protection:
 ```ruby
 class ApplicationController < ActionController::Base
   rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
-  private def render_not_found = render file: Rails.public_path.join("404.html"), status: :not_found, layout: false
+  private def render_not_found = render(file: Rails.public_path.join("404.html"), status: :not_found, layout: false)
 end
 ```
+
+Those parentheses around `render(...)` are load-bearing: `private def m = render x: 1`
+is a `SyntaxError`, because `private def m = render` parses first and leaves `x: 1`
+with nothing to attach to. Bare `def m = render x: 1` is fine — it only breaks when
+the endless `def` is an argument to another call, so parenthesize the body.
 
 Unrescued exceptions map to public error pages in production
 (404/422/500 under `public/`). Don't rescue broadly to hide bugs; report

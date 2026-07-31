@@ -130,6 +130,32 @@ GUARDS: tuple[Guard, ...] = (
                 "    for name in []:",
                 "nothing declares",
             ),
+            # The two ORIGINAL rules had fixtures but never got mutations — the per-rule coverage
+            # check in mutation_check_selftest.py found that, three rules later.
+            Mutation(
+                "a dead settings key stops being reported (the file's first rule)",
+                "        if not keys:\n            continue",
+                "        if True:\n            continue",
+                "settings key no reader reads",
+            ),
+            Mutation(
+                "an unenforced mandatory flag stops being reported (the file's second rule)",
+                "                if any(flag_is_enforced(flag, src) for src in definers.values()):",
+                "                if True:",
+                "docs say always pass, code leaves optional",
+            ),
+            Mutation(
+                "a broken pointer to one of our own files stops being reported (#100)",
+                "                if (owning_plugin / match.group(1)).exists():\n                    continue",
+                "                if True:\n                    continue",
+                "plugin points at a reference file it does not ship",
+            ),
+            Mutation(
+                "the skill-pointer half stops being reported (#100)",
+                "            if (ROOT / match.group(1)).exists():\n                continue",
+                "            if True:\n                continue",
+                "command points at a skill doc that was renamed away",
+            ),
             Mutation(
                 "invisible characters stop being reported (#95)",
                 "                if index == -1:\n                    continue",
@@ -282,6 +308,14 @@ GUARDS: tuple[Guard, ...] = (
                 '        if exercised and raw == "not run":',
                 "        if False:",
                 "submitted an invalid form but recorded no verdict",
+            ),
+            # Both structural counters are bounded by the same denominator, and the loop is what
+            # makes them one rule instead of two copies that can drift.
+            Mutation(
+                "a form may report more unlabelled controls than it has (#115)",
+                '        if {"Controls", column} <= counts.keys() and counts[column] > counts["Controls"]:',
+                "        if False:",
+                "more unlabelled controls than the form has",
             ),
             # The shared recompute behind both new profiles: `_runtime_extra` spells its own
             # comparison out, so this mutation covers the keyboard/forms path specifically.
