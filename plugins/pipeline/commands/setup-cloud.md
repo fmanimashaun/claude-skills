@@ -25,7 +25,7 @@ Inspect the app (Gemfile, config, routes, `pipeline.yml`) to discover which app
 secrets the running app actually needs, then write `.env.example` documenting every
 value — grouped by WHERE THE AGENT WILL ROUTE IT, names/format only, no real values.
 Use the canonical template in this plugin
-(`${CLAUDE_PLUGIN_ROOT}/../templates/env.example`) as the base and add app-specific
+(`${CLAUDE_PLUGIN_ROOT}/templates/env.example`) as the base and add app-specific
 runtime secrets discovered from the code. Commit `.env.example`; never commit `.env`.
 
 ## 2. Safety scaffolding
