@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 66 |
+| — `documented` | 68 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 3 |
+| — `needs doctrine` (tracked writing gap) | 1 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -74,9 +74,11 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Progress bar | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | the Flowbite audit surfaced LABELLED progress bars specifically |
 | Radio group | component | ✓ | ✓ | one choice from 2–5 visible options, in a fieldset | — |
 | Range input | component | — | ✓ | an authenticated app screen, inside one of the three shells | native `input type=range` already IS role=slider; custom only for two thumbs |
+| Reviews + Rating | component | ✓ | ✓ | a commerce surface (catalog, product, cart, checkout) | the governing criterion is 1.1.1 (A), NOT 1.4.1 — filled-vs-empty stars differ in shape, so 1.4.1 bites only where hue alone carries the distinction; read-only average and interactive picker are different contracts |
 | Select | component | ✓ | ✓ | a closed set of ~2–10 options; above that reach for the combobox | — |
 | Skeleton / loading placeholder | component | — | ✓ | a Turbo frame whose content size IS known — preferred over a spinner because it does not shift layout | Turbo frame loading states need this; without it agents invent spinners |
 | Spinner / busy indicator | component | — | ✓ | a region whose content is loading and has no known size | — |
+| Stepper / wizard | component | — | ✓ | a multi-step flow: checkout, onboarding, long forms | a display, not a widget: no tablist, no progressbar, no arrow keys. Move focus on advance and then do NOT add a live region — 4.1.3 excludes what a change of context already announced. Also feeds #91's checkout flow, which is inside 3.3.4 (AA) |
 | Table (CRUD) | component | ✓ | ✓ | the index of a resource — sortable headers, row actions, select-all | — |
 | Tabs | component | ✓ | ✓ | switching views of the SAME resource; never as page navigation | — |
 | Text input | component | ✓ | ✓ | single-line entry; the shipped wrapper supplies label, hint and error | floating label is a variant, not a component |
@@ -172,8 +174,6 @@ replace that approach with a proper entry.
 
 | Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |
 |---|---|---|---|---|---|---|
-| Reviews + Rating | component | ✓ | ✓ | #91 | Media object rows; the rating needs an accessible name ("4 out of 5"), not stars alone | a commerce surface (catalog, product, cart, checkout) |
-| Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
 | Inline link | primitive | — | ✓ | #95 | the Button `link` variant's classes on an `<a>`, until a token exists | body copy and prose; for actions use the Button `link` variant |
 
 ## Interaction patterns

@@ -393,6 +393,57 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Responsive:** never stacks — the side-by-side relationship *is* the pattern. If the body needs full
   width on a phone, it was a Card, not a media object.
 
+## Reviews + Rating
+- **Two different things in one row, and they have different contracts.** The **review list** is
+  documented **Media object** rows in a `divide-y` container — avatar, author, date, body — and adds
+  nothing new. The **rating** is the part with an a11y contract, and it splits again into a
+  **read-only average** and an **interactive picker**. Do not give them the same markup.
+- **No APG rating pattern.** The index lists 30 and none is a rating; `w3c/aria-practices`
+  `content/patterns` has no `rating` directory. So nothing here is "per the APG".
+- **The governing criterion is 1.1.1 Non-text Content (Level A), not 1.4.1.** This is worth being
+  exact about, because the intuitive citation is the wrong one. 1.1.1: *"All non-text content that is
+  presented to the user has a text alternative that serves the equivalent purpose."* A star row that
+  encodes a value is **informational** non-text content, so it cannot claim the *"pure decoration"*
+  exception — *"if non-text content is pure decoration … then it is implemented in a way that it can
+  be ignored by assistive technology."* **A star row with no text alternative fails 1.1.1.**
+- **1.4.1 Use of Color (A) applies only in a narrower case** — *"Color is not used as the only visual
+  means of conveying information."* Filled-vs-empty stars differ in **shape**, and the Understanding
+  document names shape as the *remedy* for 1.4.1 (*"Use information in addition to color, such as
+  shape or text"*), not as something it regulates. So 1.4.1 bites **only when the filled/empty
+  distinction is carried by hue alone** — gold vs grey stars of identical shape, a `1`–`5` scale
+  coloured red-to-green. Then it applies in full. Cite 1.1.1 first and 1.4.1 conditionally; the
+  reverse overstates one and misses the other.
+- **Read-only average: `role="img"` plus an accessible name.** The ARIA spec makes this exact: an
+  `img` is *"a container for a collection of elements that form an image"*, its characteristics are
+  **`Children Presentational: True`** and **`Accessible Name Required: True`**, and *"authors **MUST**
+  provide the element with an accessible name … using the `aria-label` or `aria-labelledby`
+  attribute."* That is precisely the job — collapse five glyphs into one unit and name it once. Five
+  separately-announced stars is the failure this prevents.
+- **`<meter>` is also spec-conformant for a numeric average** — *"The `meter` element represents a
+  scalar measurement within a known range, or a fractional value"* — and a 4.2-out-of-5 is exactly
+  that. Two spec-honest routes; **we default to `role="img"`** so the average and the per-review value
+  share one mechanism. Note the spec's own exclusions if you reach for it: *"The `meter` element should
+  not be used to indicate progress (as in a progress bar)"*, and it *"does not represent a scalar value
+  of arbitrary range … unless there is a known maximum value."*
+- **Interactive picker: a radio group, and that is OUR decision.** There is **no upstream** naming a
+  widget for a 1–5 star picker — neither Radio Group nor Slider mentions ratings, and no APG pattern
+  covers it. We choose **Radio Group** because a rating is a discrete choice of one value from five
+  named ones, which is Radio Group's stated purpose (*"a set of checkable buttons … where no more than
+  one of the buttons can be checked at a time"*), and not Slider's continuous single-thumb range. Build
+  it as a real `<fieldset>` of radios styled as stars, so it inherits that pattern's keyboard model
+  (Tab into the group, arrows move **and** select, Space checks) for free. **Do not** attribute the
+  choice to APG.
+- **The accessible name string is ours too.** Nothing upstream prescribes wording — 1.1.1 requires *a*
+  text alternative "that serves the equivalent purpose" and is silent on phrasing. Ours: **"4 out of 5
+  stars"** for the average and **"Rate 4 out of 5 stars"** for each picker radio. Spelled out, because
+  "4/5" and "★★★★☆" are read aloud badly, and because a consistent string is what makes a rating
+  comparable across screens.
+- **Half stars are a rounding of the label, never a new mechanism.** Render 4.2 however you like; the
+  name says the real value. And the visible count **must** appear as text next to the stars — that is
+  the review-list convention and it satisfies 1.1.1 without relying on the label at all.
+- **Responsive:** the rating is a `cluster` and never wraps mid-row — set `flex-none` on it so a long
+  author name cannot break the stars across two lines.
+
 ## Toast / Notification
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
   `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
@@ -421,6 +472,62 @@ DEFAULTS = { variant: :primary, size: :md }
 - `h-2 rounded-full bg-muted` track + `bg-primary` fill, `transition-[width]`. Announce
   intermittently via the surrounding `role="status"`, not on every increment — the cadence is our
   convention, not a spec figure.
+- **Scope vs the Stepper below.** A continuous bar showing overall wizard completion *is* this
+  component, and `aria-valuetext="Step 2 of 5"` is the right way to label it. The **enumerated list of
+  named steps** ("Cart → Shipping → Payment") is not — see [Stepper / wizard](#stepper--wizard).
+
+## Stepper / wizard
+- **No APG pattern, and unusually little upstream of any kind.** The index lists 30; "stepper",
+  "wizard" and "multi-step" appear nowhere on it. Most of this entry is therefore **our decision,
+  recorded on [#95](https://github.com/fmanimashaun/claude-skills/issues/95#issuecomment-5147018825)**,
+  and every such line below says so. Only the cited lines are citable.
+- **`aria-current="step"` on exactly one step.** This part *is* spec: ARIA's values table gives
+  *"step — Represents the current step within a process"*, and *"Authors **SHOULD** only mark one
+  element in a set of elements as current with `aria-current`."*
+- **It is not a tablist, and ARIA is the reason.** *"Authors **SHOULD NOT** use the `aria-current`
+  attribute as a substitute for `aria-selected` in widgets where `aria-selected` has the same meaning.
+  For example, in a `tablist`, `aria-selected` is used on a `tab`."* Be straight about the limit of
+  that: **APG contains no warning against reusing Tabs for wizard flows** — we looked, there is none.
+  The position that a gated, ordered sequence is not *"layered sections of content"* you may select
+  freely is **ours**.
+- **It is not a `progressbar` either, and that is ours too.** ARIA scopes `progressbar` to *"tasks that
+  take a long time"* and says *"it is always read-only"*; HTML says *"the `progress` element is the
+  wrong element to use for something that is just a gauge, as opposed to task progress."* **Neither
+  names steppers**, so neither settles it — but a step list whose completed entries are clickable is
+  not read-only, so we decline both.
+- **Markup: an `<ol>` always; `<nav aria-label="Progress">` only when the steps are really links.**
+  Ours. An ordered sequence is an ordered list. The landmark is conditional because a stepper's future
+  steps are usually not navigable, and a landmark whose contents lead nowhere is noise. (Breadcrumb's
+  *"contained within a navigation landmark region"* is real but **not transferable** — a breadcrumb is
+  a trail of links to ancestors.)
+- **No widget keyboard model. Ours, and deliberately nothing.** There is no upstream keyboard table
+  because there is no pattern. The indicator is a **display**: no roving tabindex, no arrow keys.
+  Navigable completed steps are ordinary links in the page tab order; future steps are not focusable.
+  WCAG asks only that the model be operable (2.1.1) and order-preserving (2.4.3) — an invented
+  arrow-key contract satisfies neither better and surprises everyone.
+- **Announce by moving focus, and then do NOT add a live region.** This is the part an implementer gets
+  wrong twice. 4.1.3 Status Messages (**AA**) has a two-part test: the message must concern *"the
+  progress of a process"* — a step change does — **and** must *"not [be] delivered via a change in
+  context."* Moving focus **is** a change of context, and the Understanding document excludes it by
+  name: *"Changes of context, by their nature, interrupt the user by taking focus … and so have already
+  met the goal to alert the user."* **So: on advancing, move focus to the new step's heading** (ours,
+  and it satisfies 2.4.3) — 4.1.3 then does not apply, and a live region on top would double-announce.
+  A `role="status"` region is correct only in the other design, where the step changes without moving
+  focus. **Pick one branch; never both.**
+- **Never auto-advance on input.** 3.2.2 On Input (**Level A**): *"Changing the setting of any user
+  interface component does not automatically cause a change of context unless the user has been advised
+  of the behavior before using the component."* Advancing on a field change is exactly that. Ours: we
+  do not auto-advance at all — advancing is an explicit button press, which avoids the class rather
+  than papering over it with an advisory.
+- **A checkout wizard is inside 3.3.4's scope, at Level AA.** 3.3.4 Error Prevention (Legal, Financial,
+  Data) covers *"web pages that cause legal commitments or financial transactions for the user to occur,
+  that modify or delete user-controllable data … or that submit user test responses"*, and requires at
+  least one of **Reversible**, **Checked**, or **Confirmed**. A final review step before submit is the
+  usual answer. Note the levels: **3.3.4 is AA; 3.3.6 Error Prevention (All) is AAA** and applies to any
+  information submission — do not quote one at the other's level.
+- Visually a `cluster` of numbered `Badge`s with connectors, or a `stack` on narrow viewports. Each step
+  carries its number **and** its name as text; the state (done / current / upcoming) is never colour
+  alone — a check glyph for done, `aria-current="step"` plus visible weight for current.
 
 ## Skeleton / loading placeholder
 - **No role, no APG pattern, no W3C source at all** — this is convention, and doctrine says so
