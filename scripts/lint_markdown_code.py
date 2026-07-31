@@ -119,6 +119,22 @@ def substitute(code: str, lang: str) -> str:
     return code
 
 
+class InterpreterStalled(Exception):
+    """An interpreter did not answer in time. NOT a syntax error.
+
+    `subprocess.TimeoutExpired` is a subclass of `SubprocessError`, so catching the latter
+    swallowed a stall into the same rc-127 path as "interpreter missing" — and from there it flowed
+    through the context ladder and was reported as "did not parse in any documented context". An
+    environment stall presented as a *code defect*, non-deterministically and only under load.
+    That is what a parallel session saw as an unreproducible `30 passed, 1 failed` and could not
+    name. A full sweep here takes ~110s, close enough to the 30s per-block limit to fire
+    occasionally, and it would have been read as a real finding in someone's diff.
+
+    So a stall raises out of the checker entirely and makes the RUN incomplete (exit 3 -> SKIP),
+    which is the honest verdict: the block was never checked.
+    """
+
+
 def _run(cmd: list[str], payload: str) -> tuple[int, str, str]:
     """Run an interpreter over `payload` on stdin. Returns (rc, stdout, stderr-or-stdout).
 
@@ -129,6 +145,9 @@ def _run(cmd: list[str], payload: str) -> tuple[int, str, str]:
     try:
         proc = subprocess.run(cmd, input=payload.encode("utf-8"),
                               capture_output=True, timeout=30)
+    except subprocess.TimeoutExpired as exc:
+        # Ordered BEFORE the SubprocessError catch below, which it is a subclass of.
+        raise InterpreterStalled(f"{cmd[0]} did not answer within 30s") from exc
     except (OSError, subprocess.SubprocessError) as exc:
         return 127, "", f"could not run {cmd[0]}: {exc}"
     out = proc.stdout.decode("utf-8", "replace")
@@ -249,6 +268,10 @@ def read_source(path: str) -> str:
         return _BLOCKQUOTE.sub("", handle.read())
 
 
+def rel_path(path: str) -> str:
+    return path.replace(os.sep, "/")
+
+
 def iter_blocks(path: str):
     """Yield (start_line, lang, code) for every fenced code block in a supported language."""
     src = read_source(path)
@@ -357,6 +380,7 @@ def main(argv: list[str]) -> int:
     # Reconciled on EVERY run, not only under --audit-coverage: an extractor that under-matches
     # reports "no findings" for input it never read, which is indistinguishable from a clean result.
     findings: list[Finding] = []
+    stalled: list[str] = []          # blocks an interpreter never answered for
     coverage_gaps: list[tuple[str, int, int]] = []
     counts: dict[str, int] = {}
     accepted_by: dict[str, int] = {}
@@ -377,7 +401,14 @@ def main(argv: list[str]) -> int:
             blocks += 1
             lines += len(code.strip().splitlines())
             counts[lang] = counts.get(lang, 0) + 1
-            problem, context = check_block(code, lang)
+            try:
+                problem, context = check_block(code, lang)
+            except InterpreterStalled as exc:
+                # NOT a finding. Record it and let the run end INCOMPLETE, because this block was
+                # never actually checked — reporting it as a syntax error is how an overloaded
+                # machine invents a defect in someone's diff.
+                stalled.append(f"{rel_path(path)}:{start} [{lang}] {exc}")
+                continue
             if problem:
                 snippet = next((ln.strip() for ln in code.splitlines() if ln.strip()), "")
                 findings.append(Finding(path, start, lang, problem, snippet))
@@ -401,11 +432,18 @@ def main(argv: list[str]) -> int:
         if accepted_by:
             print("  accepted as: " + ", ".join(f"{n} {k}" for k, n in sorted(accepted_by.items())))
 
+    if stalled:
+        print(f"\nlint_markdown_code: SKIP — {len(stalled)} block(s) stalled; an interpreter did "
+              "not answer in time, so they were NOT checked. This is a skip, NOT a pass, and NOT a "
+              "syntax error:", file=sys.stderr)
+        for item in stalled[:5]:
+            print(f"  - {item}", file=sys.stderr)
+
     if not findings:
         if not args.quiet:
             print("no findings.")
         # Clean, but only over what could be checked — see EXIT_INCOMPLETE.
-        return EXIT_INCOMPLETE if missing else 0
+        return EXIT_INCOMPLETE if (missing or stalled) else 0
 
     for finding in sorted(findings, key=lambda f: (f.path, f.line)):
         print(f"\n{finding.path}:{finding.line}  [{finding.lang}]")
@@ -414,6 +452,8 @@ def main(argv: list[str]) -> int:
         detail = finding.detail if len(finding.detail) < 400 else finding.detail[:400] + " …"
         print(f"    -> {detail}")
     print(f"\n{len(findings)} block(s) do not parse in any documented context.")
+    # Findings win over a stall for the exit code — a real defect is more actionable than an
+    # incomplete run — but the stall notice above still prints, so it is never silently absorbed.
     return 1
 
 

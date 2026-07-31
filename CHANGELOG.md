@@ -9,6 +9,71 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+
+- **FIX — an interpreter stall was reported as a syntax error** in the markdown-code gate. This is the
+  unreproducible `30 passed, 1 failed` a parallel session saw and honestly flagged rather than papered
+  over, saying it had truncated the output and could not name the gate. **Not papering over it is why
+  it got found.**
+  - **The mechanism:** `subprocess.TimeoutExpired` is a **subclass** of `SubprocessError`, so the
+    single `except (OSError, subprocess.SubprocessError)` swallowed a stall into the same rc-127 path
+    as *"interpreter missing"*. From there it flowed through the context ladder and came out as
+    **"did not parse in any documented context"** — an environment stall presented as a **code
+    defect**, non-deterministically and only under load. A full sweep here takes ~110 s against a 30 s
+    per-block limit, close enough to fire occasionally. In someone's diff it would have read as a real
+    finding.
+  - A stall now raises `InterpreterStalled`, is reported as **skip** with the offending blocks named,
+    and makes the run **incomplete** (exit 3 → SKIP) — because the honest verdict is that the block was
+    never checked. Real findings still win the exit code, but the stall notice always prints, so it is
+    never silently absorbed.
+  - **Two of my own fixtures were wrong before this landed, both caught by mutation.** The first
+    stubbed `mc._run`, which **bypasses the very except-ordering under test** — so it passed with the
+    code broken. Patching `subprocess.run` one level lower fixed it. The second mutation reverted the
+    `raise` to `pass`, which produces an `UnboundLocalError` rather than the original defect, so it
+    tripped the fixture's catch-all branch instead of the intended one; it now reverts to the **actual
+    pre-fix behaviour**. A mutation that breaks the code differently from how it was broken proves less
+    than it appears to.
+
+- **TOOLING — the coverage matrix gets a filterable HTML rendering, generated from the source rather
+  than from its own output.** `scripts/build_coverage_artifact.py` renders the 113 fidara rows as one
+  filterable table (guidance × kind × corpus, plus search), because the question a maintainer actually
+  asks — *"what needs doctrine, of kind composition, that only Flowbite carries?"* — cuts across the
+  three tables `coverage.md` splits them into, and markdown cannot express a filter. Change type:
+  **maintainer tooling**, no skill doctrine touched and no external framework claim, so no
+  `doctrine-verifier` verdict applies; the licensing boundary is inherited from `build_coverage.py`
+  rather than re-earned (names, statuses and our own prose only — no corpus markup, so a published
+  page cannot leak licensed content).
+  - **It imports `build_coverage.ENTRIES`; it does not parse `coverage.md`.** The first draft parsed
+    the markdown and failed its own count assertion on the first run: the Totals label `documented`
+    also matches `— derivable from documented parts`, so 44 derivable rows were counted as
+    documented. `coverage.md` is *generated English*, and pattern-matching it re-derives — badly —
+    structure the generator already had (three tables whose column order differs, `✓`/`—` standing in
+    for booleans, a tracked issue buried inside a status string). `is_documented` / `is_derivable` /
+    `needs_doctrine` are predicates on a frozen dataclass, so there is no label left to mis-match.
+  - **That moves one bug class rather than removing it, and the new one is guarded.** The predicates
+    are `status.startswith(...)`, so a typo'd status (`"documentd"`) matches none of them and the row
+    would vanish from the page with no error — 112 rendered where 113 exist. `verify_partition`
+    asserts the buckets are total **and** disjoint; the disjoint half is unreachable via real status
+    strings, so a stub matching all three exercises it. A completeness matrix that silently drops a
+    row is worse than no matrix, because the missing row looks like a row that does not exist.
+  - **The count assertion is kept, but against data rather than against our own regex.**
+    `cross_check_committed` compares the counts to the Totals table in the *committed* `coverage.md`
+    — an independently generated artifact of the same source — and reports **three** states, where
+    `skip` (file absent or unparseable) is not a pass. A `fail` aborts the build instead of warning.
+    The one surviving label match is the ordering that caused the original bug, pinned by a fixture
+    whose four numbers are all distinct so a mis-mapping cannot pass by coincidence.
+  - **A shared page stamps what it was built from.** An HTML snapshot outlives its commit, and a
+    stale second source of truth that looks authoritative is the failure mode this repo keeps
+    writing down — so the page carries the commit, the branch, the rails-stack version, and whether
+    that commit is in a published release. An unreleased or dirty build says so on the page itself,
+    in amber. The HTML is deliberately **not committed**: it is a rendering, not a source, and a
+    committed copy would be a second thing to keep in sync — which is why there is no `--check` and
+    therefore no mutation (that requirement attaches to gates).
+  - **Corpora stay optional.** Only the two upstream enumeration totals need `design-corpora/`; the
+    113 rows are ours. Without the corpora the page omits those two numbers and says so, rather than
+    printing a zero that reads like a finding. 40 selftest checks, of which 8 are guards observed
+    firing — including `</script>` inside entry prose, which `json.dumps` does **not** neutralise,
+    and whose escape must stay value-preserving (the first attempt turned `<!--` into `<--`).
+
 - **FIX — the call-site rule flagged a CORRECT call site** (#95). `ButtonComponent.new(…, data: { action:
   … })` is legal: its initializer ends in **`**attrs`**, which forwards arbitrary keywords — and that is
   how ViewComponent passes HTML attributes through, so the rule was set to fire on most correct call
