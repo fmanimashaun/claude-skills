@@ -166,10 +166,18 @@ Why the split matters: closing keywords fire only on merge into the **default** 
 with `main` default the `Closes #n` lines *must* live on the promotion PR. That is the
 desired behaviour — issues close when the fix ships, not when it lands on a staging branch.
 
+**Never write a closing keyword next to a real issue number in a commit message or PR body —
+not even inside backticks, not even when quoting a past mistake.** GitHub parses the pattern
+wherever it appears and does not care that the sentence is *about* the mistake. The commit that
+introduced the rule below said, in prose, that a promotion had wrongly used a closing keyword on
+issue 95 — and reaching `main` via the promotion, that sentence **closed issue 95 for the second
+time in one day**, minutes after it had been reopened. When you must write about this, use a
+placeholder number or name the issue separately from the keyword.
+
 **An issue that ships incrementally gets `Refs`, never `Closes`, until its last increment.** EPICs and
 umbrellas — anything whose body says *"ship in sub-releases"* or carries a checklist of groups — are
 not closed by the promotion that ships one group. This is not hypothetical: a promotion put
-`Closes #95` on the Phase-2 component umbrella, retiring it while **seven** of its rows were still
+a closing keyword on the Phase-2 component umbrella (issue 95), retiring it while **seven** of its rows were still
 undocumented, and **four further slices landed against a closed issue** before anyone noticed. Check
 the issue body before writing `Closes`: a checklist with unticked boxes means `Refs`.
 

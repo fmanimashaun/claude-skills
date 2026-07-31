@@ -7,11 +7,22 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **A commit message explaining the closing-keyword rule triggered the very bug it described.** The
+  commit said, in prose and inside backticks, that a promotion had wrongly used a closing keyword on
+  issue 95. GitHub parses the pattern **wherever it appears** — context, backticks and intent are
+  irrelevant — so when that commit reached `main` via the v1.41.0 promotion it **closed issue 95 for
+  the second time in one day**, twenty-six minutes after it was reopened. CLAUDE.md now says: never
+  write a closing keyword next to a real issue number in a commit message or PR body, even when
+  quoting a mistake; use a placeholder number or name the issue separately from the keyword. The
+  existing prose in CLAUDE.md was reworded to stop modelling the dangerous shape.
+
 ### 1.22.0 — 2026-07-30
 
 - **An umbrella issue was closed by a promotion that shipped one of its groups** — and the rule that
   allowed it is now written down. #95's body says *"Ship in sub-releases, one group at a time"* and
-  carries a checklist; `Closes #95` on the v1.37.0 promotion retired it with **seven rows still
+  carries a checklist; a closing keyword on it in the v1.37.0 promotion retired it with **seven rows still
   undocumented**, after which **four further slices landed against a closed issue**. CLAUDE.md's
   promotion section now says plainly: an issue that ships incrementally gets `Refs`, never `Closes`,
   until its last increment — and to check the body for unticked boxes before writing `Closes`. #95 is
