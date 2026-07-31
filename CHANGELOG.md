@@ -2341,6 +2341,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+- **NEW `scripts/setup_doctrine_crosscheck.py`** — catches doctrine that references a runtime
+  artefact `/design-flow:setup` never generates. The unit of dependency is a
+  `Rails.configuration.x.<key>` read: doctrine reading a key setup does not generate is an
+  **error** (it raises `NoMethodError` at a user's first setup run, in no test), setup generating
+  config no doctrine reads is a **warning**. Deliberately narrow — a bare `config/initializers/*.rb`
+  named in doctrine is *not* flagged, because `simple_form.rb` belongs to `/design-flow:component`,
+  not setup, and flagging it would be the false positive that gets the check switched off. Proven
+  against real history rather than asserted: exit 1 at `ced38c4` (the #104 defect) and exit 0 at
+  `5902250` (its in-branch fix). A run that scans zero doctrine files exits **2**, not 0 — "no
+  findings" over input it never read is the gate-that-cannot-fail shape, not a pass. Stdlib-only,
+  wired into `/design-flow:audit` and the gate sweep, with 6 fixtures and 5 declared mutations in
+  `scripts/mutation_check.py` — one per fixture, including the out-of-scope-initializer near-miss
+  and the zero-input guard. Refs #150.
+
 ### 1.5.0 — 2026-07-29
 - `/design-flow:component` step 1 previously said a screen should be built by "composing existing
   components + layout primitives" and gave nowhere to compose *from* — no page-level doctrine
