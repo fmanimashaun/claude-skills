@@ -404,6 +404,21 @@ def run() -> int:
     # ---- the corpora-gate exemption is keyed by name, so the names must be real -------
     # A stringly-keyed carve-out that stops matching is the failure mode: rename the gate and the
     # exemption quietly lapses. Cheap to pin, so pinned.
+    # ---- GATE NAMES MUST BE UNIQUE -----------------------------------------------------
+    # `coverage artifact selftest` was registered twice, so `--gates` ran it twice and reported an
+    # inflated total — a sweep that overstates how much it covered. It went unnoticed because the
+    # only thing reading these names was the set comprehension below, which collapses duplicates.
+    # The name is also the key CORPORA_GATES matches on, so a duplicate makes that carve-out
+    # ambiguous as well.
+    _tick()
+    _all = [name for name, _ in md.GATES]
+    _dupes = sorted({n for n in _all if _all.count(n) > 1})
+    if _dupes:
+        FAILURES.append(
+            f"GATES registers these names more than once: {_dupes} — the sweep runs them twice and "
+            "reports a total larger than the number of distinct checks it performed"
+        )
+
     _tick()
     gate_names = {name for name, _ in md.GATES}
     unknown = sorted(md.CORPORA_GATES - gate_names)
@@ -414,15 +429,21 @@ def run() -> int:
         )
 
     # ---- and the exemption must be NARROW: only corpora-dependent gates may skip -------
-    # The near-miss that matters. If this set grew to cover a gate that does not read the kits, a
-    # corpora-less machine would skip a check it can perfectly well run — silently reducing the
-    # sweep while still printing a healthy summary.
+    # The near-miss that matters, pinned as an EXACT set rather than a substring heuristic. Both
+    # failure directions are real and neither is hypothetical:
+    #   too broad — a gate that runs perfectly well without the kits gets skipped, silently
+    #     shrinking the sweep while the summary still reads healthy;
+    #   too narrow — `coverage artifact drift` was MISSING, and a corpora-less machine was told to
+    #     "fix the failures before doing maintenance work" about optional licensed files. Proved by
+    #     pointing the corpora root at a nonexistent path: the gate returned 1.
+    # An exact set means either direction has to be a deliberate edit here, with a reason.
     _tick()
-    over_broad = sorted(n for n in md.CORPORA_GATES if "coverage matrix" not in n)
-    if over_broad:
+    expected = {"coverage matrix drift", "coverage artifact drift"}
+    if set(md.CORPORA_GATES) != expected:
         FAILURES.append(
-            f"CORPORA_GATES exempts gates that do not read the corpora: {over_broad} — only the "
-            "coverage-matrix drift check needs them; --selftest handles absence itself"
+            f"CORPORA_GATES is {sorted(md.CORPORA_GATES)}, expected {sorted(expected)} — exactly "
+            "the two gates that rebuild an artifact embedding the upstream corpus totals. A "
+            "selftest belongs in neither: it SKIPs those checks itself and still exits 0."
         )
 
     if FAILURES:

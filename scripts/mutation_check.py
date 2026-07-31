@@ -768,12 +768,81 @@ GUARDS: tuple[Guard, ...] = (
                 'if True:\n            self.add(PASS, "design corpora present"',
                 "corpora",
             ),
+            # Both directions of the corpora exemption. Too NARROW was the live defect: `coverage
+            # artifact drift` was missing, so a machine without the optional licensed kits was told
+            # to fix failures before doing maintenance work. Too BROAD silently shrinks the sweep.
+            Mutation(
+                "the corpora exemption goes narrow again and fails a corpora-less machine",
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift"})',
+                "CORPORA_GATES is",
+            ),
+            Mutation(
+                "the corpora exemption goes broad and skips a gate that needs nothing",
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift", '
+                '"packaging determinism"})',
+                "CORPORA_GATES is",
+            ),
         ),
     ),
     # rails-flow #126. Two of these break a POSITIVE rule; two break a fixture whose job is to
     # stay SILENT, which is the direction that decides whether a mermaid linter survives contact
     # with real diagrams. Both directions are declared on purpose: a guard proven only to fire is
     # half-proven, and the half nobody checks is the half that gets the tool switched off.
+    Guard(
+        name="build_coverage_artifact",
+        subject="scripts/build_coverage_artifact.py",
+        selftest="scripts/build_coverage_artifact_selftest.py",
+        # The builder imports build_coverage rather than parsing it, and the --check fixtures build a
+        # real page, so the matrix source has to exist in the workdir. Without these the selftest dies
+        # at import and EVERY mutation reports as "caught" — by a traceback, not by a fixture.
+        deps=("scripts/build_coverage.py",),
+        needs=("skills/fidara-design/references/coverage.md",),
+        mutations=(
+            Mutation(
+                "the drift comparison stops comparing, so a stale artifact passes",
+                '        if committed.replace("\\r\\n", "\\n") != doc.replace("\\r\\n", "\\n"):',
+                '        if False:',
+                "--check FAILS on a stale artifact",
+            ),
+            # The gate must read git, not the working copy. An `is_file()` + `read_text` version
+            # passed a freshly built, never-added page — the exact "invisible deliverable" this
+            # whole change exists to close, waved through by the gate built to close it.
+            Mutation(
+                "the gate goes back to trusting the working copy instead of the commit",
+                "        committed = committed_blob(rel_out)",
+                '        committed = args.out.read_text(encoding="utf-8") if args.out.is_file() else None',
+                "a built-but-untracked page is DRIFT, not a pass",
+            ),
+            Mutation(
+                "an absent artifact is reported as OK instead of drift",
+                '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 1',
+                '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 0',
+                "--check FAILS when the artifact is nowhere at all",
+            ),
+            Mutation(
+                "a dirty tree is reported as OK instead of skipping",
+                '            return EXIT_INCOMPLETE',
+                '            return 0',
+                "--check SKIPS (exit 3) rather than claiming drift on a dirty tree",
+            ),
+            # The defect that made the gate unpassable: a page that stamps its own checkout changes
+            # bytes the moment it is committed, and again at promotion. Both halves get a mutation.
+            Mutation(
+                "the embedded stamp carries the released/unreleased split again",
+                '        "state": "dirty" if prov["dirty"] else "clean",',
+                '        "state": prov["state"],',
+                "the rendered page differs between two checkouts of the same sources",
+            ),
+            Mutation(
+                "the embedded stamp carries the HEAD sha again",
+                '        "dirty": prov["dirty"],',
+                '        "dirty": prov["dirty"], "commit": prov["commit"],',
+                "no HEAD sha is embedded in the page",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",

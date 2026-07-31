@@ -99,6 +99,65 @@ Version numbers are assigned at the promotion, never here.
     other two placements — a pointer from `CLAUDE.md` and a mirror into rails-flow's scaffolded
     conventions — remain open.
 
+**The coverage matrix is a committed deliverable now, and its gate reads git** (#89).
+**Change type: repository tooling.** Nothing under `skills/` changed and no framework behaviour is
+claimed, so no `doctrine-verifier` verdict is in scope. The one factual assertion — the row counts —
+is measured by the generator and cross-checked against `coverage.md`'s own Totals table on every run.
+
+- **The coverage matrix now ships as a page other machines can see.** `build_coverage_artifact.py`
+  wrote to a **gitignored** path, so the deliverable existed only on the machine that built it — the
+  defect the maintainer named directly (*"if the build is gitignore, then other maintainer machine
+  can't see it"*). Output moved to **`docs/coverage.html`**, committed, with a `--check` drift mode
+  wired into `maintainer_doctor.py` beside its selftest. All 113 rows classified, cross-checked
+  against the Totals table committed in `coverage.md` on every run, so the two cannot silently
+  diverge. **The per-state split is deliberately not quoted here** — it moved twice while this branch
+  was open (65/44/4 → 66/44/3 → 67/44/2) as parallel sessions landed marketing-copy, visual-asset and
+  Reviews+Rating doctrine. `coverage.md` is the authority on the state of the matrix; this entry is
+  about the tooling. The drift gate caught the stale page both times, which is the whole point of it.
+- **FIX — the drift gate was unpassable by construction.** The page embedded its own short SHA,
+  branch, and released/unreleased state. Committing the page advances `HEAD`, and a promotion flips
+  `unreleased` → `released`, so the committed bytes could only ever match a build made at the one
+  commit that does not yet contain the file. **A file inside a commit cannot name its own commit**;
+  git already knows. `stable_provenance()` now embeds only what is stable and still honest about
+  freshness — the release version, read from a tracked source — plus the dirty caveat. The console
+  keeps logging commit and branch, where volatility costs nothing. Two mutations pin both halves,
+  and a fixture renders the page under two different fake checkouts and requires byte equality.
+- **FIX — the gate trusted the working copy, so it passed a page that was never committed.** It
+  tested `args.out.is_file()` and compared the file on disk. Run against an untracked, *byte-identical*
+  `docs/coverage.html`, it exited **0** — the exact "invisible deliverable" failure above, waved
+  through by the gate built to close it, with the message *"is not committed"* one branch away. This
+  is `claims-vs-enforcement` in new code, the third instance the `code-review` skill's own class has
+  caught. It now compares the blob at `HEAD` via `committed_blob()`, verified against real git rather
+  than a stub. Fixtures pin both directions: an untracked clean build **is** drift; a locally
+  scribbled working copy over a clean commit is **not**.
+- **A dirty tree is INCOMPLETE, not clean and not drift.** The dirty caveat is part of the rendered
+  bytes, so reproducibility genuinely cannot be observed from a dirty checkout. `--check` returns
+  **3**, which `maintainer_doctor.py` maps to **SKIP** — never `ok`. The gate is real exactly where it
+  matters: CI, a fresh clone, the moment before a promotion.
+- **FIX — the new drift gate failed on every machine without the licensed corpora.** The doctor
+  comment registering it asserted *"neither needs the corpora: `build_coverage` declares `ENTRIES`
+  statically"*. The generator does run — but the page **embeds the upstream corpus totals**, so a
+  corpora-less rebuild produces different bytes and `--check` returned **1** on a healthy checkout,
+  telling a contributor to fix failures about **optional private files**. Proved by pointing the
+  corpora root at a nonexistent path, which is also how the false comment was caught: CLAUDE.md
+  promises *"no gate fails for their absence"*, and this one did. `coverage artifact drift` joins
+  `CORPORA_GATES`; the doctor's selftest now pins that set **exactly**, so both too-narrow (a
+  corpora-less machine fails) and too-broad (a gate that needs nothing gets skipped, shrinking the
+  sweep behind a healthy summary) require a deliberate edit with a reason. Verified end-to-end
+  through the real `check_gates()` loop: both drift gates SKIP, both selftests still PASS.
+  CLAUDE.md's *"exactly one file reads them"* is corrected to distinguish one **reader** from one
+  **dependency** — importing `build_coverage` inherits it.
+- **FIX — one gate was registered twice.** `coverage artifact selftest` appeared in `GATES` twice, so
+  `--gates` ran it twice and printed a total larger than the number of distinct checks performed. The
+  only consumer of those names was a set comprehension, which collapses duplicates, so nothing could
+  see it. Names are asserted unique now.
+- **Six mutations guard it, and three of them lied the first time.** They reported *caught — but not
+  by the expected fixture*, because the guard declared no `deps`: the selftest died at import inside
+  the mutation workdir, so every mutation was "caught" by a **traceback**. A crash is not a verdict.
+  The guard now declares `build_coverage.py` and `coverage.md`. Separately, a mutation anchor
+  hand-transcribed as a multi-line string was mangled by `re.sub`'s backslash handling in the
+  authoring step — anchors are read out of the file, never typed.
+
 ### 2026-07-31 — a stall is not a syntax error
 
 
@@ -165,6 +224,87 @@ Version numbers are assigned at the promotion, never here.
     printing a zero that reads like a finding. 40 selftest checks, of which 8 are guards observed
     firing — including `</script>` inside entry prose, which `json.dumps` does **not** neutralise,
     and whose escape must stay value-preserving (the first attempt turned `<!--` into `<--`).
+
+- **FIX — a selftest existed that no gate ran.** `maintainer_doctor.py`'s own selftest flagged
+  `build_coverage_artifact_selftest.py` as having no `GATES` entry — *"`--gates` would report a clean
+  sweep having never executed them"*. Wired; sweep **34 → 35**. The check that caught it exists for
+  exactly this coverage-gap class, and this is the first time it has fired on a real omission rather
+  than a fixture.
+
+- **FIX — an interpreter stall was reported as a syntax error** in the markdown-code gate. This is the
+  unreproducible `30 passed, 1 failed` a parallel session saw and honestly flagged rather than papered
+  over, saying it had truncated the output and could not name the gate. **Not papering over it is why
+  it got found.**
+  - **The mechanism:** `subprocess.TimeoutExpired` is a **subclass** of `SubprocessError`, so the
+    single `except (OSError, subprocess.SubprocessError)` swallowed a stall into the same rc-127 path
+    as *"interpreter missing"*. From there it flowed through the context ladder and came out as
+    **"did not parse in any documented context"** — an environment stall presented as a **code
+    defect**, non-deterministically and only under load. A full sweep here takes ~110 s against a 30 s
+    per-block limit, close enough to fire occasionally. In someone's diff it would have read as a real
+    finding.
+  - A stall now raises `InterpreterStalled`, is reported as **skip** with the offending blocks named,
+    and makes the run **incomplete** (exit 3 → SKIP) — because the honest verdict is that the block was
+    never checked. Real findings still win the exit code, but the stall notice always prints, so it is
+    never silently absorbed.
+  - **Two of my own fixtures were wrong before this landed, both caught by mutation.** The first
+    stubbed `mc._run`, which **bypasses the very except-ordering under test** — so it passed with the
+    code broken. Patching `subprocess.run` one level lower fixed it. The second mutation reverted the
+    `raise` to `pass`, which produces an `UnboundLocalError` rather than the original defect, so it
+    tripped the fixture's catch-all branch instead of the intended one; it now reverts to the **actual
+    pre-fix behaviour**. A mutation that breaks the code differently from how it was broken proves less
+    than it appears to.
+
+- **TOOLING — the coverage matrix gets a filterable HTML rendering, generated from the source rather
+  than from its own output.** `scripts/build_coverage_artifact.py` renders the 113 fidara rows as one
+  filterable table (guidance × kind × corpus, plus search), because the question a maintainer actually
+  asks — *"what needs doctrine, of kind composition, that only Flowbite carries?"* — cuts across the
+  three tables `coverage.md` splits them into, and markdown cannot express a filter. Change type:
+  **maintainer tooling**, no skill doctrine touched and no external framework claim, so no
+  `doctrine-verifier` verdict applies; the licensing boundary is inherited from `build_coverage.py`
+  rather than re-earned (names, statuses and our own prose only — no corpus markup, so a published
+  page cannot leak licensed content).
+  - **It imports `build_coverage.ENTRIES`; it does not parse `coverage.md`.** The first draft parsed
+    the markdown and failed its own count assertion on the first run: the Totals label `documented`
+    also matches `— derivable from documented parts`, so 44 derivable rows were counted as
+    documented. `coverage.md` is *generated English*, and pattern-matching it re-derives — badly —
+    structure the generator already had (three tables whose column order differs, `✓`/`—` standing in
+    for booleans, a tracked issue buried inside a status string). `is_documented` / `is_derivable` /
+    `needs_doctrine` are predicates on a frozen dataclass, so there is no label left to mis-match.
+  - **That moves one bug class rather than removing it, and the new one is guarded.** The predicates
+    are `status.startswith(...)`, so a typo'd status (`"documentd"`) matches none of them and the row
+    would vanish from the page with no error — 112 rendered where 113 exist. `verify_partition`
+    asserts the buckets are total **and** disjoint; the disjoint half is unreachable via real status
+    strings, so a stub matching all three exercises it. A completeness matrix that silently drops a
+    row is worse than no matrix, because the missing row looks like a row that does not exist.
+  - **The count assertion is kept, but against data rather than against our own regex.**
+    `cross_check_committed` compares the counts to the Totals table in the *committed* `coverage.md`
+    — an independently generated artifact of the same source — and reports **three** states, where
+    `skip` (file absent or unparseable) is not a pass. A `fail` aborts the build instead of warning.
+    The one surviving label match is the ordering that caused the original bug, pinned by a fixture
+    whose four numbers are all distinct so a mis-mapping cannot pass by coincidence.
+  - **A shared page stamps what it was built from.** An HTML snapshot outlives its commit, and a
+    stale second source of truth that looks authoritative is the failure mode this repo keeps
+    writing down — so the page carries the commit, the branch, the rails-stack version, and whether
+    that commit is in a published release. An unreleased or dirty build says so on the page itself,
+    in amber. The HTML is deliberately **not committed**: it is a rendering, not a source, and a
+    committed copy would be a second thing to keep in sync — which is why there is no `--check` and
+    therefore no mutation (that requirement attaches to gates).
+  - **Corpora stay optional.** Only the two upstream enumeration totals need `design-corpora/`; the
+    113 rows are ours. Without the corpora the page omits those two numbers and says so, rather than
+    printing a zero that reads like a finding.
+  - **44 selftest checks — 6 guards observed raising, 5 silence fixtures, 33 assertions.** Three of
+    them exist because they caught something during the build, not by anticipation:
+    - `</script>` inside entry prose, which `json.dumps` does **not** neutralise (it is valid JSON
+      and still ends the script element). The escape has to be value-preserving, and the first
+      attempt turned `<!--` into `<--`.
+    - **`git status --porcelain` is fixed-width, and `.strip()` corrupts it.** An unstaged change is
+      `" M path"` — leading space significant — so stripping the output shifted the slice and the
+      stamp reported `cripts/build_coverage_artifact.py`. Invisible for *staged* files, which is
+      why the first run looked right; the fixture therefore covers ` M`, `M `, `MM` and `??`.
+    - **The default output must not be `dist/`.** That directory holds the committed `.skill`
+      artifacts, and the packaging check is "repackage, then confirm `git status` shows only the
+      intended `dist/` change" — an untracked HTML file there sits inside the very signal that
+      check reads. It writes to a new gitignored `/build` instead.
 
 - **FIX — the call-site rule flagged a CORRECT call site** (#95). `ButtonComponent.new(…, data: { action:
   … })` is legal: its initializer ends in **`**attrs`**, which forwards arbitrary keywords — and that is
