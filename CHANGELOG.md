@@ -1465,6 +1465,54 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Visual asset doctrine — what fills the large visual area** (#135). New
+  `fidara-design/references/visual-assets.md`. Every marketing surface has a region that is neither
+  text nor control, and the system said nothing about it — so an agent left it empty, invented
+  something inconsistent, or reached for stock art.
+  - **Change type: MIXED, and split accordingly.** The hierarchy, the per-surface prescriptions and
+    the decision to keep illustration last are **our design decisions** recorded on
+    [#135](https://github.com/fmanimashaun/claude-skills/issues/135) — there is **no APG pattern** for
+    a decorative background or a product screenshot, and none is invented. The Tailwind v4, image
+    format, WCAG and Playwright statements are **external claims** and each carries its citation and
+    version boundary in the file. Shipped separately from #131 (pure architecture) because CLAUDE.md's
+    grouping condition 3 forbids one branch carrying both kinds.
+  - **The gate refuted a claim that would have shipped silently broken.** `bg-gradient-to-*` is not
+    deprecated in Tailwind v4, it is **removed**, with no compatibility alias — it is `bg-linear-to-*`
+    ([v4 release notes](https://tailwindcss.com/blog/tailwindcss-v4)). The v3 name emits **no class at
+    all**, so the failure is invisible.
+  - **Three more version boundaries the verdict pinned.** `mask-*` utilities need **Tailwind ≥ 4.1.0**
+    ([v4.1.0 release](https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.1.0)), not merely
+    "v4" — so the recipes avoid them and say why. Theme custom properties take the **parenthesis**
+    form `from-(--decor-1)`; `from-[--decor-1]` emits the raw token and silently does nothing. A
+    custom `@keyframes` must be **nested inside `@theme`** beside its `--animate-*` variable.
+  - **AVIF is "Newly available", WebP is "Widely available"** (Baseline, checked 2026-07-31) — stated
+    precisely rather than calling both widely available, with `<picture>` source order documented as
+    significant (first match wins) and the LCP rule from
+    [web.dev](https://web.dev/articles/lazy-loading-images): never lazy-load the hero image.
+  - **A deliberate departure from the issue, on a WCAG boundary.** #135 asked for ambient
+    `gradient-drift`; an infinite decorative animation satisfies all three conditions of **WCAG 2.2.2
+    Pause, Stop, Hide** (automatic, over five seconds, parallel with other content), which needs a
+    **pause control** — and `prefers-reduced-motion` is not that control. So we ship a **one-shot
+    1.2s settle** instead and say what taking the loop would cost.
+  - **Both motion patterns the issue named did not exist.** `gradient-drift` and `reveal-on-scroll`
+    appear nowhere in the repo; the issue prescribed them as though shipped. They are defined here
+    from `motion.md`'s existing tokens and renamed `decor-*`. `decor-reveal` applies its hidden state
+    **from JavaScript**, so a page whose observer never runs renders fully visible — the obvious
+    CSS-first implementation hides content permanently on any JS failure.
+  - **Decoration cannot name `fm-*` primitives**, since `brand.md` makes `Ui::Logo` the only component
+    permitted literal colours. It reads four optional `--decor-*` properties with **role fallbacks**,
+    so a pack declaring none still renders on-brand. Verified against
+    `plugins/design-flow/scripts/brand_pack_lint.py`: `ROLES`, `DARK_REQUIRED` and the `-foreground`
+    pairs are fixed lists, so extra `:root` properties pass **with no plugin change** — whereas adding
+    them as required roles would fail every existing pack, and a `brand.json` field would trip the
+    unrecognised-key warning. No new pack field; `brand.md`'s "colours, logo, chart proof" holds.
+  - **Two departures from #135's empty-state recipe, both to avoid contradicting shipped doctrine.**
+    We keep `bg-muted` (the issue's `bg-primary/10 text-primary` is the *pagination-active* idiom in
+    `components.md`, and an empty state is a neutral condition, not an active selection) and keep the
+    `size-16` chip, expressing "oversized" through the chip's **font size** — because `lucide_icon`
+    may not take `size:`/`class:`, which the self-consistency lint enforces and the issue's wording
+    would have violated.
+
 - **Marketing copy doctrine — what each section *says*** (#131). New
   `fidara-design/references/marketing-copy.md`. The kits supply layout and visual system; they supply
   no information architecture and no words, so an agent could compose a structurally perfect landing
