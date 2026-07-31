@@ -1204,6 +1204,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     focus edge after the fill, and as a sibling above anything that slides underneath.
   - **Zero layout shift**, with the *invisible twin* named as the technique: reserve the widest state
     permanently and animate opacity inside a box that never resizes.
+  - **CSS primitives, verified with version boundaries rather than assumed.** **CSS has no spring
+    easing** — three families only (linear, cubic-bézier, step) — which is why the springs do not port.
+    `linear()` *can* pre-sample a spring curve, is Baseline **since December 2023**, and the technique
+    is documented by Chrome's own developer site; we hold off on **cost** (40-plus points per curve,
+    unreadable at the call site), not support. And an **entrance no longer needs JavaScript**:
+    `@starting-style` + `transition-behavior: allow-discrete` make `display: none → block`
+    transitionable, Baseline **"Newly available" 6 Aug 2024** — *not* yet widely available (that tier
+    is Feb 2027), so it is a progressive enhancement, not a floor.
+  - **A refutation worth recording.** I was going to present gating on
+    `@media (prefers-reduced-motion: no-preference)` as best practice. **MDN's own canonical example
+    and WebKit's own article both use the opposite direction**, and the Media Queries spec makes no
+    authoring recommendation at all. We keep `no-preference` because it **fails safe** — a UA without
+    the media feature never matches it, so motion never activates — but it is now recorded as **our
+    reasoned default, not a citation**.
+  - **Token consumption is asymmetric, and getting it wrong means a class silently does nothing.**
+    `--ease-*` **is** a Tailwind v4 namespace, so `--ease-in` generates an `ease-in` utility and
+    **overrides** Tailwind's default (as our shipped `--ease-out` already does). There is **no
+    `--duration-*` namespace** — durations are consumed as `var(--duration-fast)` or with Tailwind's
+    `duration-(--duration-fast)` custom-property syntax.
+  - **Cross-page motion (Turbo 8).** v8.0.0 shipped **two separate features** commonly conflated:
+    morphing page refreshes (idiomorph) and **View Transitions support for navigations**. The latter
+    needs `<meta name="view-transition" content="same-origin">` on **both** pages. Correction worth
+    having: the Hotwire handbook does **not** provide `view-transition-name` — that is **plain CSS**
+    from the View Transitions API, working because Turbo enabled transitions for the navigation, not
+    because Turbo wraps it.
   - **What we did NOT take, and why**, rather than a silent filter: the five named springs are
     `motion` solver constants with no CSS equivalent; velocity handoff needs a spring to hand off to;
     entry/exit blur is dropped as our call (cost over benefit at our durations); and the React

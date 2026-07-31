@@ -49,6 +49,15 @@ mirrors it: fast out of frame rather than soft into place.
 **Never use one curve for both.** An element that leaves on the arrival curve hangs about; an element
 that arrives on the departure curve snaps and reads as a jump.
 
+**How these reach markup differs between the two, and getting it wrong means the class silently does
+nothing.** `--ease-*` **is** a Tailwind v4 theme namespace: defining `--ease-in` generates an
+`ease-in` utility, and because Tailwind ships its own `--ease-in`/`--ease-out` defaults, our
+definitions **override** them — which is deliberate, and already true of the `--ease-out` we ship.
+There is **no `--duration-*` namespace**: `duration-*` utilities take numbers or arbitrary values, so
+our duration tokens are consumed either as `var(--duration-fast)` in CSS or with Tailwind's
+custom-property syntax **`duration-(--duration-fast)`** in a class. Do not expect a `duration-fast`
+class to exist.
+
 ## 2. Distance chooses the duration
 
 > *"Over 200 pixels → DISCLOSE, 20–200 → CELL, under 20 → SMALL."*
@@ -89,6 +98,33 @@ from `top`, not `center`.
 **We drop the blur.** interior enters with `blur(6px)` and exits with `blur(3px)`. Animating `filter`
 is expensive and, at our durations, buys little — this is **our** call, not a flaw in theirs.
 
+**An entrance no longer needs JavaScript.** An element appearing from `display: none` — a popover, a
+dialog, a Turbo-inserted row — could not be transitioned in CSS, which is why entrance animation used
+to mean a controller toggling classes on the next frame. Two features fixed that:
+
+- **`@starting-style`** supplies the values to transition *from* on an element's first style update;
+- **`transition-behavior: allow-discrete`** makes discrete properties like `display` transitionable
+  at all, which is what lets `display: none → block` participate.
+
+```css
+@media (prefers-reduced-motion: no-preference) {
+  .popover {
+    transition: opacity var(--duration) var(--ease-out),
+                scale   var(--duration) var(--ease-out),
+                display var(--duration) allow-discrete;
+  }
+  @starting-style {
+    .popover:popover-open { opacity: 0; scale: 0.97; }
+  }
+}
+```
+
+**Version boundary, stated precisely because it is still moving.** This pair reached Baseline
+**"Newly available" on 6 August 2024** (Firefox 129 closed the gap). It is *not* yet "widely
+available" — that tier is 30 months on, i.e. **February 2027** — so treat a CSS-only entrance as a
+progressive enhancement, not a floor. Without support the element simply appears, which is the
+correct fallback.
+
 ## 4. On disclosure, opacity finishes before height
 
 > *"Height and opacity get separate durations when disclosing."*
@@ -121,6 +157,15 @@ sufficient. The invariant to hold is theirs, and it is sharper:
   `smooth`; a text reveal **jumps to its final state** rather than typing; a marquee **stops
   looping** rather than looping faster.
 - **Do not animate on mount** — the entrance is the trip, and the content is the information.
+
+**We gate on `no-preference`, and that is our decision, not a rule anyone published.** Our CSS wraps
+motion in `@media (prefers-reduced-motion: no-preference)` rather than overriding inside
+`@media (prefers-reduced-motion: reduce)`. Worth being straight about: **MDN's own canonical example
+and WebKit's own article both use the opposite direction**, and the Media Queries Level 5 spec makes
+no authoring recommendation either way — it only defines the two values. We choose `no-preference`
+because it **fails safe**: a user agent that does not support the media feature at all never matches
+`no-preference`, so motion never activates, whereas the `reduce`-override direction leaves motion on
+by default in exactly that case. Do not cite a spec for this; it is a reasoned default.
 
 This is already load-bearing elsewhere in our doctrine: the **skeleton** shimmer and the **spinner**
 both suppress under reduced motion, and `interaction-stimulus.md` requires that *a state change never
@@ -244,6 +289,40 @@ This composes with the live-region rule in
 
 ---
 
+## 13. Cross-page motion — Turbo 8 view transitions
+
+Everything above is motion *within* a page. Turbo 8 (**v8.0.0, February 2024**) added two separate
+things that are easy to conflate:
+
+- **page refreshes with morphing** (idiomorph DOM-diffing) — nothing to do with view transitions;
+- **View Transitions API support for navigations** — this is the cross-page motion one.
+
+**Opt in with a meta tag on *both* the current and the next page**, or nothing happens:
+
+```erb
+<meta name="view-transition" content="same-origin">
+```
+
+**One correction worth having, because the assumption is natural and wrong:** the Hotwire handbook
+does **not** provide or document `view-transition-name`. That property is **plain CSS from the View
+Transitions API** — it works because Turbo turned transitions on for the navigation, not because
+Turbo wraps it. Naming an element and styling its transition is standard CSS:
+
+```css
+.sidebar { view-transition-name: sidebar; }
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(sidebar),
+  ::view-transition-new(sidebar) { animation-duration: var(--duration-slow); }
+}
+```
+
+Turbo does add `data-turbo-visit-direction` (`forward` / `back` / `none`) on `<html>`, which is the
+hook for direction-aware transitions.
+
+**The rules above still apply across pages** — a departure is still shorter than an arrival, and a
+cross-viewport transition is still `--duration-slow`.
+
 ## What we did not take
 
 - **The five springs** (`CELL`, `CROSSFADE`, `SMALL`, `DISCLOSE`, `SURFACE`). They are `motion`
@@ -252,11 +331,13 @@ This composes with the live-region rule in
   cubic-bézier (`ease*`, `cubic-bezier()`) and step (`steps()`, `step-start`, `step-end`). §2 keeps
   the *distance-chooses-timing* principle and expresses it in durations instead.
   - **The approximation route, and why we are not taking it yet.** `linear()` takes a list of sampled
-    progress points, so a spring curve *can* be pre-sampled into one. It is real and specified
-    (CSS Easing Functions Level 2) — but MDN's page distinguishes the "widely available" Baseline of
-    the easing-function *type* from `linear()` itself, which is newer, so we are **not** asserting a
-    support floor for it here. Revisit with a support check when a component genuinely needs spring
-    feel; do not scatter hand-sampled point lists through the codebase before then.
+    progress points, so a spring curve *can* be pre-sampled into one — and that is an **established
+    technique**, documented by Chrome's own developer site, not something we would be inventing.
+    `linear()` is [CSS Easing Functions Level 2](https://drafts.csswg.org/css-easing/#the-linear-easing-function)
+    and Baseline **since December 2023**. The reason to hold off is not support, it is **cost**: a
+    convincing spring needs 40-plus sampled points, and a hand-pasted point list is unreadable and
+    unmaintainable at every call site. Reach for it when a specific component genuinely needs spring
+    feel and generate the points; do not scatter them through the codebase before then.
 - **Velocity handoff** (*"every release passes `info.velocity` into the spring that takes over"*).
   Correct, and it needs a spring to hand off *to*. Revisit if we ever adopt a JS animation library.
 - **Entry/exit blur.** Dropped as our call — cost over benefit at our durations.
