@@ -213,7 +213,10 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "a promoted row keeps its stale BUILD fallback unnoticed (#95)",
-                "    stale = sorted(set(BUILD) & {e.name for e in ENTRIES if e.is_documented})",
+                "    stale = sorted(\n"
+                "        {e.name for e in ENTRIES if e.is_documented and e.build.strip()}\n"
+                "        | (set(BUILD) & {e.name for e in ENTRIES if e.is_documented})\n"
+                "    )",
                 "    stale = []",
                 "still carrying a BUILD fallback",
             ),
@@ -222,6 +225,23 @@ GUARDS: tuple[Guard, ...] = (
                 "{e.name for e in ENTRIES if e.is_documented})",
                 "{e.name for e in ENTRIES})",
                 "a needs-doctrine row carrying a BUILD fallback is correct",
+            ),
+            # The guard reads TWO sources -- `resolve_build` prefers a row's own `build=` kwarg
+            # over the BUILD dict -- so each half needs its own mutation. Covering only the dict
+            # half is how the inline half went unguarded in the first place (#95).
+            Mutation(
+                "the stale-fallback guard stops reading a row's inline `build=` kwarg",
+                "{e.name for e in ENTRIES if e.is_documented and e.build.strip()}\n",
+                "set()\n",
+                "a documented row carrying its fallback inline rather than in BUILD",
+            ),
+            # The Needs-doctrine section reached ZERO rows (#95/#91), so the empty branch is now
+            # the live one -- a regression to the always-table form would read as normal output.
+            Mutation(
+                "the empty Needs-doctrine section prints guidance for rows that do not exist",
+                "    if needs:\n",
+                "    if True:\n",
+                "yet the Tracked table header was still emitted",
             ),
         ),
     ),
@@ -376,11 +396,89 @@ GUARDS: tuple[Guard, ...] = (
                 "platform ceiling",
             ),
             Mutation(
+                # Now anchored in the shared `_check_bounds` helper rather than in one profile:
+                # perf (#117) was the third caller to want this rule, and a third textual copy
+                # would have made this very anchor match twice -- a hard error, by design.
                 "an emulation count may exceed the inventory it was drawn from (#116)",
                 "        if {column, denominator} <= counts.keys() and counts[column] > "
                 "counts[denominator]:",
                 "        if False:",
                 "more unsuppressed animations",
+            ),
+            # #117 -- every other profile's blind spot leaves a BLANK. This one's returns a
+            # plausible number: `CLS 0` from an engine with no layout-shift observer, a byte total
+            # summed from an API that reports 0 for cross-origin assets. So each mutation below
+            # makes a fabricated measurement read as a real one.
+            Mutation(
+                "a metric may be recorded from an engine whose observer does not exist (#117)",
+                "        for column in PERF_CHROMIUM_ONLY:\n            if row[column]:",
+                "        for column in PERF_CHROMIUM_ONLY:\n            if False:",
+                "CLS 0 on firefox",
+            ),
+            # The ceiling is this profile's distinctive direction -- #114/#115 stop a row grading a
+            # defect down, #116 stops it grading an advisory up, and this stops it blocking a
+            # release on a number no standard underwrites.
+            Mutation(
+                "a client-side timing may block a release (#117's severity ceiling)",
+                '    if severity == S1:\n        findings.append(\n            f"{where}: '
+                "Severity S1 on a perf row",
+                '    if False:\n        findings.append(\n            f"{where}: '
+                "Severity S1 on a perf row",
+                "a client-side timing graded S1",
+            ),
+            Mutation(
+                "LCP joins the gating counters, so a localhost timing becomes a defect (#117)",
+                "PERF_GATING: tuple[tuple[str, str], ...] = (\n    (CLS_OVER_BUDGET, S2),",
+                'PERF_GATING: tuple[tuple[str, str], ...] = (\n    ("LCP ms", S2),\n'
+                "    (CLS_OVER_BUDGET, S2),",
+                "a slow LCP graded S2",
+            ),
+            # The byte instrument. transferSize is 0 for a cross-origin asset with no
+            # Timing-Allow-Origin and 0 for a cache hit, so without this a budget passes by
+            # measuring nothing -- a gate that cannot fail, in the literal sense.
+            Mutation(
+                "a clean byte verdict may be reported over bytes nobody measured (#117)",
+                '    if counts.get("Opaque Requests", 0) > 0 and counts.get('
+                '"Oversized Requests") == 0:',
+                "    if False:",
+                "among the ones that reported a size",
+            ),
+            Mutation(
+                "CLS stops being compared against the budget the row carries (#117)",
+                "            cls_over = 1 if measured > budget else 0",
+                "            cls_over = 0",
+                "CLS over the row's own budget",
+            ),
+            # `float()` accepts nan and inf; both sail through the budget comparison as if they
+            # were measurements, and nan compares false against everything.
+            Mutation(
+                "a non-finite or negative CLS is accepted as a measurement (#117)",
+                "    if not math.isfinite(number) or number < 0:",
+                "    if False:",
+                "CLS recorded as nan",
+            ),
+            Mutation(
+                "the interaction probe may run on the visit it is measuring (#117)",
+                '    elif probe == "same-visit":',
+                "    elif False:",
+                "ran on the same visit as the metric read",
+            ),
+            # #117's own acceptance criteria, which the profile claims to ENFORCE rather than
+            # describe: breaches carry an attributable cause, and metrics persist for trending.
+            # A claim of "enforced" with no mutation behind it is the prose it replaced.
+            Mutation(
+                "an LCP time may be recorded with nothing to attribute it to (#117)",
+                '    if "LCP ms" in counts and not row["LCP Element"]:',
+                "    if False:",
+                "nothing to attribute it to",
+            ),
+            Mutation(
+                "a measured route may persist nothing to compare the next run against (#117)",
+                '    if not row["Evidence"]:\n        findings.append(\n            f"{where}: '
+                "measured without an Evidence path",
+                '    if False:\n        findings.append(\n            f"{where}: '
+                "measured without an Evidence path",
+                "nothing persisted to compare",
             ),
         ),
     ),
@@ -593,10 +691,12 @@ GUARDS: tuple[Guard, ...] = (
             # The doctor runs this selftest as a gate, and a diagnostic that writes into the
             # working tree is a defect however tidy its cleanup looks. Reverting to a repo-local
             # fixture must be caught, not merely tolerated because the file is unlinked after.
+            # Anchored on the ONE temp-dir helper every end-to-end fixture goes through, so a
+            # second `main()` call cannot quietly acquire its own unguarded write path.
             Mutation(
                 "the selftest writes its fixture into the repo again",
-                '    with tempfile.TemporaryDirectory(prefix="issue-graph-selftest-") as workdir:',
-                "    for workdir in [str(Path(__file__).resolve().parent)]:",
+                '        with tempfile.TemporaryDirectory(prefix="issue-graph-selftest-") as workdir:',
+                "        for workdir in [str(Path(__file__).resolve().parent)]:",
                 "left files in scripts/",
             ),
             # The property that makes this a gate rather than a report: a graph known to be
@@ -606,6 +706,55 @@ GUARDS: tuple[Guard, ...] = (
                 '    if graph.problems:\n        print(f"ISSUE GRAPH INVALID',
                 '    if False:\n        print(f"ISSUE GRAPH INVALID',
                 "cyclic",
+            ),
+            # --- the gate at the point of use (`--ready`) --------------------------------
+            # Both directions, because each alone leaves the other half unguarded: a gate that
+            # stops refusing is useless, and a gate that refuses the doctrine's preferred branch
+            # shape gets switched off, after which nothing checks the order at all.
+            Mutation(
+                "--ready stops noticing a blocker outside the requested set",
+                "        outside = [p for p in waiting if p not in inside]",
+                "        outside = []",
+                "an issue waiting on open work is not ready",
+            ),
+            Mutation(
+                "--ready treats a group's own internal dependency as a blocker",
+                "    inside = set(wanted)",
+                "    inside = set()",
+                "a group takes its own internal dependency with it",
+            ),
+            Mutation(
+                "--ready clears an issue that is not in the tracker at all",
+                "            problems.append(\n"
+                '                f"#{number} is not in the tracker, so nothing is known about what'
+                ' it waits on"\n            )',
+                "            notes.append(\n"
+                '                f"#{number} is not in the tracker, so nothing is known about what'
+                ' it waits on"\n            )',
+                "an issue absent from the tracker",
+            ),
+            Mutation(
+                "--ready clears an issue that is already closed",
+                "        if not issue.is_open:",
+                "        if False:",
+                "an already-closed issue is not work to start",
+            ),
+            # The honesty half. Without the caveat a READY on an issue that declared nothing
+            # reads as "nothing blocks it" rather than "the tracker names no blocker" — the
+            # unverified-negative class, and with the backfill incomplete it is the common case.
+            Mutation(
+                "a READY verdict stops saying the issue declared no edges",
+                "        if number not in graph.declared:",
+                "        if False:",
+                "coverage caveat",
+            ),
+            # The other direction: a caveat on EVERY verdict is a caveat nobody reads, which
+            # destroys the signal exactly as thoroughly as having none.
+            Mutation(
+                "the coverage caveat fires on issues that did declare edges",
+                "        if number not in graph.declared:",
+                "        if True:",
+                "declares edges",
             ),
         ),
     ),
@@ -627,12 +776,72 @@ GUARDS: tuple[Guard, ...] = (
                 'if True:\n            self.add(PASS, "design corpora present"',
                 "corpora",
             ),
+            # Both directions of the corpora exemption. Too NARROW was the live defect: `coverage
+            # artifact drift` was missing, so a machine without the optional licensed kits was told
+            # to fix failures before doing maintenance work. Too BROAD silently shrinks the sweep.
+            Mutation(
+                "the artifact drift gate is exempted again, hiding a stripped committed page",
+                'CORPORA_GATES = frozenset({"coverage matrix drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "coverage artifact drift"})',
+                "CORPORA_GATES is",
+            ),
+            Mutation(
+                "the corpora exemption goes broad and skips a gate that needs nothing",
+                'CORPORA_GATES = frozenset({"coverage matrix drift"})',
+                'CORPORA_GATES = frozenset({"coverage matrix drift", "packaging determinism"})',
+                "CORPORA_GATES is",
+            ),
         ),
     ),
     # rails-flow #126. Two of these break a POSITIVE rule; two break a fixture whose job is to
     # stay SILENT, which is the direction that decides whether a mermaid linter survives contact
     # with real diagrams. Both directions are declared on purpose: a guard proven only to fire is
     # half-proven, and the half nobody checks is the half that gets the tool switched off.
+    Guard(
+        name="build_coverage_artifact",
+        subject="scripts/build_coverage_artifact.py",
+        selftest="scripts/build_coverage_artifact_selftest.py",
+        # The builder imports build_coverage rather than parsing it, and the --check fixtures build a
+        # real page, so the matrix source has to exist in the workdir. Without these the selftest dies
+        # at import and EVERY mutation reports as "caught" — by a traceback, not by a fixture.
+        deps=("scripts/build_coverage.py",),
+        needs=("skills/fidara-design/references/coverage.md",),
+        mutations=(
+            Mutation(
+                "the drift comparison stops comparing, so a stale artifact passes",
+                '        if committed.replace("\\r\\n", "\\n") != doc.replace("\\r\\n", "\\n"):',
+                '        if False:',
+                "--check FAILS on a stale artifact",
+            ),
+            # The gate must read git, not the working copy. An `is_file()` + `read_text` version
+            # passed a freshly built, never-added page — the exact "invisible deliverable" this
+            # whole change exists to close, waved through by the gate built to close it.
+            Mutation(
+                "the gate goes back to trusting the working copy instead of the commit",
+                "        committed = committed_blob(rel_out)",
+                '        committed = args.out.read_text(encoding="utf-8") if args.out.is_file() else None',
+                "a built-but-untracked page is DRIFT, not a pass",
+            ),
+            Mutation(
+                "an absent artifact is reported as OK instead of drift",
+                '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 1',
+                '            print(f"DRIFT: {rel_out} is not committed — the artifact is a deliverable other machines "\n                  f"must be able to see, not a local build.\\n{remedy}", file=sys.stderr)\n            return 0',
+                "--check FAILS when the artifact is nowhere at all",
+            ),
+            Mutation(
+                "git state leaks back into the embedded stamp",
+                '        "label": f"Coverage as of v{release}",',
+                '        "label": f"Coverage as of v{release}",\n        "state": "dirty" if prov["dirty"] else "clean",',
+                "the embedded stamp carries no git state whatsoever",
+            ),
+            Mutation(
+                "the upstream totals go back to walking the licensed corpora",
+                '    tw_count, fb_count = committed_totals.get("tw"), committed_totals.get("fb")',
+                '    tw_count, fb_count = len(bc.discover_tw()), len(bc.discover_fb())',
+                "collect() requires the licensed corpora",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
@@ -673,6 +882,440 @@ GUARDS: tuple[Guard, ...] = (
                 "                if any(w in haystack for w in DIAGRAM_WORDS):",
                 "                if True:",
                 "a screenshot is legitimate",
+            ),
+        ),
+    ),
+    # design-flow #107. A conformance linter's whole risk is FALSE POSITIVES — one that fires on
+    # correct input is switched off, and then catches nothing — so roughly half of these break a
+    # CARVE-OUT rather than a rule, and are expected to be caught by a fixture whose job is to stay
+    # silent. Two of them exist because running the collector against a real page found the defect
+    # first: corners counted as elements, and an inline-link exemption wide enough to swallow every
+    # native <button>.
+    Guard(
+        name="rendered_conformance",
+        subject="plugins/design-flow/scripts/rendered_conformance.py",
+        selftest="plugins/design-flow/scripts/rendered_conformance.py",
+        # The selftest `node --check`s the shipped collector, which lives beside the subject.
+        # Without this the mutant's collector is missing, every run fails on that fixture, and
+        # every mutation reads as caught by the wrong one.
+        needs=("plugins/design-flow/scripts/conformance_collector.js",),
+        mutations=(
+            # ---- literal-colour ----
+            Mutation(
+                "the role-token basis stops silencing anything, so nothing is a literal colour",
+                "            if key in basis:\n                continue",
+                "            if True:\n                continue",
+                "a stock-palette colour is reported",
+            ),
+            Mutation(
+                "translucent colours are judged — the `/90` flood the carve-out prevents",
+                "            if alpha != 1.0:\n                translucent += 1\n                continue",
+                "            if False:\n                translucent += 1\n                continue",
+                "a translucent colour whose base is not in the basis is still not judged",
+            ),
+            Mutation(
+                "an unparsed colour form becomes a finding instead of a counted skip",
+                "            if canon is None:\n                unparsed += 1\n                continue",
+                '            if canon is None:\n                unparsed += 1\n                canon = ("unknown-form", 1.0)',
+                "an unrecognised colour form is counted, not reported",
+            ),
+            Mutation(
+                "the empty-basis guard is removed, so every colour on the page is reported",
+                "    if not basis:\n        report.no_input = True",
+                "    if False:\n        report.no_input = True",
+                "an empty role basis refuses to run",
+            ),
+            Mutation(
+                "a transparent value is counted as an alpha-modified colour",
+                '            if key == "transparent":\n                continue',
+                "            if False:\n                continue",
+                "a transparent background is neither judged nor counted",
+            ),
+            Mutation(
+                "rgba(r, g, b, 1) no longer canonicalises to rgb(r, g, b)",
+                '    base = "rgb" if name == "rgba" else ("hsl" if name == "hsla" else name)',
+                "    base = name",
+                "rgba with alpha 1 matches the rgb basis",
+            ),
+            # ---- numbered-step-binding ----
+            Mutation(
+                "the colour-utility prefix gate is removed, so any numbered utility is a binding",
+                "            if prefix not in COLOUR_UTILITIES:\n                continue",
+                "            if False:\n                continue",
+                "correct utility `translate-x-100` is not a numbered-step binding",
+            ),
+            Mutation(
+                "the palette-step requirement is removed, so `text-step--1` is a binding",
+                "            if not PALETTE_STEP.search(stem):\n                continue",
+                "            if False:\n                continue",
+                "a conformant snapshot is clean",
+            ),
+            Mutation(
+                "variant prefixes stop being stripped, so `dark:hover:` hides the binding",
+                "            base = base_utility(cls)",
+                "            base = cls",
+                "a variant-prefixed numbered step is reported",
+            ),
+            # ---- focus-ring-missing ----
+            Mutation(
+                "a shadow stops counting as an indicator, so the doctrine's ring idiom is flagged",
+                "        if has_outline or has_shadow or has_repaint:",
+                "        if has_outline or has_repaint:",
+                "the doctrine's ring idiom is not reported",
+            ),
+            Mutation(
+                "an invisible outline counts as an indicator (v4's outline-none is `none`)",
+                '        style_visible = declarations.get("outline-style", "") not in INVISIBLE_OUTLINE_STYLES',
+                '        style_visible = declarations.get("outline-style", "") not in ("__never__",)',
+                "outline-none alone is not an indicator",
+            ),
+            Mutation(
+                "every interactive element is treated as focus-styled",
+                "        if has_outline or has_shadow or has_repaint:\n            if has_shadow and not has_outline:",
+                "        if True:\n            if has_shadow and not has_outline:",
+                "an unstyled focus state is reported",
+            ),
+            Mutation(
+                "an element whose focus rules could not be read is silently passed",
+                "    if unmeasured:\n        report.skip(",
+                "    if False:\n        report.skip(",
+                "an unmeasured focus state is skipped, not passed",
+            ),
+            Mutation(
+                "disabled controls are required to have a focus ring",
+                '                 if is_interactive(e) and is_visible(e) and not e.get("disabled")]',
+                "                 if is_interactive(e) and is_visible(e)]",
+                "a disabled control needs no focus ring",
+            ),
+            Mutation(
+                "the forced-colors exposure of a shadow-only ring goes unreported",
+                "    if shadow_only:",
+                "    if False:",
+                "a shadow-only ring is a counted fact, not a finding",
+            ),
+            # ---- tap-target-small ----
+            Mutation(
+                "the 44px touch floor stops being checked",
+                "        if height >= TOUCH_MIN_PX:\n            continue",
+                "        if True:\n            continue",
+                "a short tap target is reported",
+            ),
+            Mutation(
+                "a desktop snapshot is judged against the touch floor",
+                "    if width > MOBILE_MAX_WIDTH:",
+                "    if False:",
+                "a desktop viewport skips the touch rule",
+            ),
+            Mutation(
+                "the inline exemption widens to any inline-* display, swallowing every button",
+                '    if str(element.get("display", "")).strip().lower() != "inline":',
+                '    if not str(element.get("display", "")).strip().lower().startswith("inline"):',
+                "a link styled as a button is NOT exempt from the touch floor",
+            ),
+            Mutation(
+                "the inline exemption drops its surrounding-text requirement",
+                "    return around > own + 1",
+                "    return True",
+                "an inline link with no surrounding text is still a tap target",
+            ),
+            # ---- icon-only-unnamed ----
+            Mutation(
+                "a named control is reported as unnamed",
+                "        if name:\n            continue",
+                "        if False:\n            continue",
+                "an sr-only name silences the rule",
+            ),
+            Mutation(
+                "the accessible-name rule stops reporting",
+                '        name = str(element.get("name") or "").strip()',
+                '        name = "always named"',
+                "an unnamed control is reported",
+            ),
+            Mutation(
+                "an aria-hidden subtree stops being excluded, so it is judged for a11y",
+                '    return width > 0 and height > 0 and not element.get("ariaHidden")',
+                "    return width > 0 and height > 0",
+                "an aria-hidden control is not judged",
+            ),
+            Mutation(
+                "a disabled control is excused from having a name",
+                '        name = str(element.get("name") or "").strip()\n        if name:',
+                '        name = str(element.get("name") or "").strip()\n        if name or element.get("disabled"):',
+                "a disabled control still needs a name",
+            ),
+            # ---- aria-controls-no-expanded ----
+            Mutation(
+                "the disclosure rule stops reporting",
+                '        if aria.get("expanded") is not None:\n            continue',
+                "        if True:\n            continue",
+                "a disclosure trigger without aria-expanded is reported",
+            ),
+            Mutation(
+                "the aria-pressed/aria-selected carve-out is removed, flagging a toggle button",
+                '        if aria.get("selected") is not None or aria.get("pressed") is not None:\n            continue',
+                "        if False:\n            continue",
+                "a toggle button using aria-pressed is exempt",
+            ),
+            Mutation(
+                "the role carve-out is removed, flagging a role=option",
+                '        if role in ("tab", "tablist", "radio", "option"):\n            continue',
+                "        if False:\n            continue",
+                "a role=option is exempt by role",
+            ),
+            Mutation(
+                "the role carve-out widens to combobox, hiding a required-state defect",
+                '        if role in ("tab", "tablist", "radio", "option"):',
+                '        if role in ("tab", "tablist", "radio", "option", "combobox"):',
+                "a combobox is not exempt",
+            ),
+            # ---- horizontal-overflow ----
+            Mutation(
+                "horizontal overflow stops being reported",
+                "    if scroll - client <= 1:\n        return",
+                "    if True:\n        return",
+                "horizontal overflow is reported",
+            ),
+            Mutation(
+                "the 1px sub-pixel slack is removed, so pages that do not scroll are reported",
+                "    if scroll - client <= 1:\n        return\n    report.add(Finding(",
+                "    if scroll - client <= 0:\n        return\n    report.add(Finding(",
+                "sub-pixel width is not overflow",
+            ),
+            # ---- off-scale-type ----
+            Mutation(
+                "the type-scale check stops reporting",
+                "        if size is None or size in basis:\n            continue",
+                "        if size is None or True:\n            continue",
+                "an off-scale font size is reported",
+            ),
+            Mutation(
+                "the UA-scaled carve-out is removed, flagging an untouched <sup>",
+                "        if tag in SKIP_TAGS or tag in UA_SCALED_TAGS:",
+                "        if tag in SKIP_TAGS:",
+                "a UA-scaled tag is exempt",
+            ),
+            Mutation(
+                "a missing type basis reads as a pass instead of a named skip",
+                '    if not basis:\n        report.skip("off-scale-type",',
+                '    if False:\n        report.skip("off-scale-type",',
+                "no type basis skips the rule by name",
+            ),
+            # ---- radius-off-scale ----
+            Mutation(
+                "the radius-scale check stops reporting",
+                "            if token is None:\n                groups.setdefault(value, []).append(_ref(element))",
+                "            if False:\n                groups.setdefault(value, []).append(_ref(element))",
+                "an arbitrary radius is reported",
+            ),
+            Mutation(
+                "the pill carve-out is removed, flagging every rounded-full badge",
+                "            if float(value) >= FULL_RADIUS_MIN_PX:",
+                "            if False:",
+                "a pill radius is always legitimate",
+            ),
+            Mutation(
+                "a square corner is judged, flagging every unrounded element on the page",
+                "            if float(value) == 0.0:\n                continue",
+                "            if False:\n                continue",
+                "a square corner is not off-scale",
+            ),
+            Mutation(
+                "corners are counted as elements again, multiplying every radius number by four",
+                "            if value is None or value in seen:",
+                "            if value is None:",
+                "four equal corners are one radius decision",
+            ),
+            # ---- trends ----
+            Mutation(
+                "the dark: threshold is ignored, so any occurrence is a finding",
+                '    if total <= threshold:\n        return\n    report.add(Finding(\n        "dark-variant-sprawl", "trend",',
+                '    if False:\n        return\n    report.add(Finding(\n        "dark-variant-sprawl", "trend",',
+                "dark: sprawl under the threshold is silent but counted",
+            ),
+            Mutation(
+                "dark: sprawl over the threshold stops being reported",
+                '    report.fact(f"`dark:` occurrences: {total} (threshold {threshold})")\n    if total <= threshold:',
+                '    report.fact(f"`dark:` occurrences: {total} (threshold {threshold})")\n    if True:',
+                "dark: sprawl over the threshold is a trend finding",
+            ),
+            Mutation(
+                "the breakpoint count stops being reported",
+                '    report.fact(f"breakpoint occurrences: {total} (threshold {threshold})")\n    if total <= threshold:',
+                '    report.fact(f"breakpoint occurrences: {total} (threshold {threshold})")\n    if True:',
+                "breakpoint sprawl over the threshold is a trend finding",
+            ),
+            Mutation(
+                "a bare utility counts as a breakpoint occurrence",
+                "            if any(p in BREAKPOINT_VARIANTS for p in variant_prefixes(cls)):",
+                "            if True:",
+                "an unprefixed utility is not counted as a breakpoint occurrence",
+            ),
+            # ---- snapshot guards: judging nothing must never read as conformant ----
+            Mutation(
+                "a snapshot with zero elements reports clean",
+                "    if not isinstance(elements, list) or not elements:",
+                "    if False:",
+                "an empty element list is not a pass",
+            ),
+            Mutation(
+                "a snapshot from a different collector version is analysed anyway",
+                '    if snapshot.get("schema") != SCHEMA:',
+                "    if False:",
+                "a foreign schema is refused",
+            ),
+            Mutation(
+                "an unjudgeable snapshot exits 1 (drift) instead of 2 (environment)",
+                "    if environment:",
+                "    if False:",
+                "a snapshot with nothing to judge exits 2, not 1",
+            ),
+            Mutation(
+                "an unreadable snapshot is reported as design drift",
+                '            print(f"rendered_conformance: {exc}", file=sys.stderr)\n            return 2',
+                '            print(f"rendered_conformance: {exc}", file=sys.stderr)\n            return 1',
+                "unparseable JSON exits 2, not 1",
+            ),
+            Mutation(
+                "the outline shorthand stops counting, flagging the fix this rule recommends",
+                '        if shorthand:\n            style_visible = "none" not in shorthand',
+                '        if False:\n            style_visible = "none" not in shorthand',
+                "the outline shorthand is an indicator",
+            ),
+            Mutation(
+                "an unparseable outline width is read as zero, hiding a visible outline",
+                '        width_is_zero = width_token is not None and canon_px(width_token) == "0.0"',
+                '        width_is_zero = canon_px(width_token or "") != "2.0"',
+                "an unparseable outline width does not veto a visible style",
+            ),
+            Mutation(
+                "an explicit non-interactive role stops beating the tag",
+                "    if role:\n        # An explicit non-interactive role wins over the tag",
+                "    if False:\n        # An explicit non-interactive role wins over the tag",
+                "an explicit non-interactive role beats the tag",
+            ),
+            Mutation(
+                "unreadable stylesheets are judged over in silence",
+                "    if unreadable:\n        report.notice(",
+                "    if False:\n        report.notice(",
+                "unreadable stylesheets are reported as a notice",
+            ),
+            Mutation(
+                "a non-painting tag is judged for colour",
+                "        if str(element.get(\"tag\", \"\")).lower() in SKIP_TAGS:\n            continue",
+                "        if False:\n            continue",
+                "a non-painting tag is not judged for colour",
+            ),
+            Mutation(
+                "hex colours stop being canonicalised, so a form we claim to handle is skipped",
+                "    hexed = _HEX.match(value)",
+                "    hexed = None",
+                "a hex colour is canonicalised",
+            ),
+            Mutation(
+                "the printed contract loses a field the snapshot carries (it went stale once)",
+                '    "display": "inline-block",              // MEASUREMENTS',
+                '    "displai": "inline-block",              // MEASUREMENTS',
+                "every field the analyser reads is in the printed contract",
+            ),
+            Mutation(
+                "a rule reads a field no real collector run emits, so it judges None forever",
+                '    if str(element.get("display", "")).strip().lower() != "inline":',
+                '    if str(element.get("cssDisplay", "")).strip().lower() != "inline":',
+                "every field the analyser reads is emitted by the collector",
+            ),
+            Mutation(
+                "the accessor scan stops matching, so both parity checks compare nothing",
+                "        read_fields = sorted(set(accessor.findall(own_source)))",
+                "        read_fields = sorted(set())",
+                "the analyser reads a plausible number of snapshot fields",
+            ),
+            # ---- the collector's own syntax check ----
+            Mutation(
+                "the collector syntax check cannot fail",
+                "    if result.returncode != 0:",
+                "    if False:",
+                "a collector that does not parse exits 1",
+            ),
+            Mutation(
+                "an absent node fails the sweep instead of skipping loudly",
+                "    if shutil.which(node_bin) is None:",
+                "    if False:",
+                # No expectation: with the guard gone, subprocess raises FileNotFoundError before
+                # the fixture can print its label, so any failure is the honest bar here.
+                "",
+            ),
+        ),
+    ),
+    # rails-flow #127 + the rails-flow half of #128. FOUR of these seven break a fixture whose job
+    # is to stay SILENT, because a work order is ordinary prose about files and tests: `<...>` is a
+    # placeholder AND an HTML tag, "above" is the conversation AND the table three lines up, `TODO`
+    # is an unresolved decision AND part of `todo.rb`. A rule that flags the second of each pair
+    # gets the tool switched off, so the carve-outs are what need guarding.
+    Guard(
+        name="check_handoff",
+        subject="plugins/rails-flow/scripts/check_handoff.py",
+        selftest="plugins/rails-flow/scripts/check_handoff_selftest.py",
+        # The criteria parser: the traceability rule imports it to resolve the cited AC ids.
+        deps=("plugins/rails-flow/scripts/check_criteria.py",),
+        # Read, not imported. The selftest's last checks run the REAL tier table against the REAL
+        # agents and FAIL rather than skip when absent -- so the mutant needs them, or every
+        # mutation reports as "caught by the wrong fixture" and the real signal is buried.
+        needs=(
+            "plugins/rails-flow/reference/model-tiers.md",
+            "plugins/rails-flow/commands/handoff.md",
+            "plugins/rails-flow/agents/claude-skills-reporter.md",
+            "plugins/rails-flow/agents/code-reviewer.md",
+            "plugins/rails-flow/agents/design-auditor.md",
+            "plugins/rails-flow/agents/doc-updater.md",
+            "plugins/rails-flow/agents/migration-writer.md",
+            "plugins/rails-flow/agents/pr-reviewer.md",
+            "plugins/rails-flow/agents/rails-developer.md",
+            "plugins/rails-flow/agents/security-auditor.md",
+            "plugins/rails-flow/agents/skill-curator.md",
+            "plugins/rails-flow/agents/test-runner.md",
+        ),
+        mutations=(
+            Mutation(
+                "`retry` back in the attempt-cap vocabulary (the real bug a fixture found)",
+                '("attempt cap", ("attempt", "retries", "retry limit", "retry cap", "tries")),',
+                '("attempt cap", ("attempt", "retry", "retries", "tries")),',
+                "no numeric attempt cap",
+            ),
+            Mutation(
+                "the stale-row rule stops noticing a table row no agent defines",
+                "        if row.agent not in agents:",
+                "        if False:",
+                "a stale row naming an agent",
+            ),
+            Mutation(
+                "a tier's model requirement stops being enforced",
+                "        elif row.model != want:",
+                "        elif False:",
+                "a judgement agent pinned to a model",
+            ),
+            Mutation(
+                "heading aliases match inside words again (the false-positive direction)",
+                'return any(re.search(rf"\\b{re.escape(a)}\\b", low) for a in aliases)',
+                "return any(a in low for a in aliases)",
+                "is not the in-scope list",
+            ),
+            Mutation(
+                "fenced blocks stop being skipped, so a quoted view snippet is a placeholder",
+                "            if offset < len(section.fenced) and section.fenced[offset]:",
+                "            if False:",
+                "a fenced snippet holding a tag is code",
+            ),
+            Mutation(
+                "inline code stops being stripped, so a backticked tag is a placeholder",
+                "            line = _strip_code(raw)",
+                "            line = raw",
+                "a backticked HTML tag is code",
+            ),
+            Mutation(
+                "the unresolved-token rule goes case-insensitive and eats todo.rb",
+                'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b")',
+                'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b", re.I)',
+                "the word todo in prose",
             ),
         ),
     ),

@@ -77,4 +77,6 @@ from three declared edges out of forty open issues is worth having, but reportin
 without saying so implies knowledge the tracker does not contain.
 
 Do not start fixing. End by naming the head of the queue and inviting
-`/maintainer-work <n>`.
+`/maintainer-work <n>`, which re-checks the pick against the graph
+(`scripts/issue_graph.py --ready <n>`) before it branches — so a queue posted here is acted
+on rather than read.

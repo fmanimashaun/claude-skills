@@ -34,6 +34,81 @@ DEFAULTS = { variant: :primary, size: :md }
   Lucide `loader-2` + keep label; set `aria-busy`). Icon: `left|right|only` (icon-only → `sr-only` label).
 - **a11y:** real `<button>`/`<a>`; `min-h-touch`; visible focus ring; `aria-busy` when loading.
 - **Responsive:** in toolbars/headers, full-width stacked on mobile → inline at `md`: `w-full md:w-auto`.
+- **The `link` variant is a BUTTON that looks like a link** — an action in a toolbar, not a link in a
+  sentence. For prose see [Inline link](#inline-link) below, which explains why its
+  `hover:underline` is the wrong contract inside running text.
+
+## Inline link
+- **This row has a real APG pattern** — unusually, for this file. Purpose: *"A link widget provides an
+  interactive reference to a resource. The target resource can be either external or local."* And it is
+  emphatic about the element: *"Authors are strongly encouraged to use a native host language link
+  element, such as an HTML `<A>` element with an `href` attribute … applying the `link` role to an
+  element will not cause browsers to enhance the element with standard link behaviors … providing these
+  features of the element is the author's responsibility."* **So: a real `<a href>`.** `role="link"` is
+  for when you genuinely cannot have one, and it hands you the entire job.
+- **Its keyboard table is two rows, and that is all of it**: *"Enter: Executes the link and moves focus
+  to the link target"* and *"Shift + F10 (Optional): Opens a context menu for the link."* **APG says
+  nothing about `Space`, and nothing about an `<a>` without `href`** — we looked. "Enter activates, Space
+  does not" is real browser behaviour but it is **not in this pattern**, so never cite APG for it.
+- **The 3:1 figure is a technique, not the criterion.** SC 1.4.1 Use of Color (**Level A**) reads only
+  *"Color is not used as the only visual means of conveying information…"* — **no ratio, and no mention
+  of links.** The 3:1 comes from **G183, a *Sufficient Technique***: *"a relative luminance (lightness)
+  difference of 3:1 or greater with the text around can be used"*, plus *"visual highlights when the user
+  hovers over each link."* Write "G183 recommends", **never** "WCAG requires 3:1" — a technique is one
+  way to pass, not the bar.
+  - **G183's own test names hover only** — *"Check that hovering over the link causes a visual
+    enhancement."* Focus is a **separate** obligation (2.4.7), referenced by G183 only as an analogy. And
+    G183 is explicit that the cue is not a substitute: *"Hover or focus style changes alone are not
+    sufficient to meet the criterion."*
+  - **A carve-out worth knowing and not using:** 1.4.1's Understanding says *"a hyperlink which has been
+    styled to appear no different than neighboring static text would not fail this success criterion, as
+    there would be no color differentiation."* An invisible link is outside 1.4.1 **entirely**. That is a
+    gap in the criterion, not a licence — it still leaves 2.4.4 in play and is plainly bad. Never offer it
+    as a defence.
+- **Underline is a convention upstream, and a requirement here.** G183 offers *"such as an underline, a
+  change in font style such as bold or italics, or an increase in font size"*, and G14/G182 are
+  underline-free sufficient alternatives. So **no upstream mandates underline** — but **we do, at rest, in
+  prose.** That is our decision, and the measurements below are why it is not merely taste.
+- **Measured against our own tokens** (re-derivable from `foundations-tokens.md`; ratios are WCAG relative
+  luminance):
+
+  | mode | link | vs body text | vs `--background` | vs `--card` |
+  |---|---|---|---|---|
+  | light | `--primary` `#0077CC` | **3.93:1** ✓ clears G183's 3:1 | **4.42:1** ✗ under 1.4.3's 4.5:1 | 4.66:1 ✓ |
+  | dark | `--primary` `#00A3FF` | **2.59:1** ✗ under G183's 3:1 | 6.30:1 ✓ | 5.21:1 ✓ |
+
+  Two consequences, and they are the practical content of this entry:
+  1. **In dark mode the colour route is unavailable.** 2.59:1 against body text is below G183's 3:1, so
+     colour cannot be the distinguisher and a **non-colour cue at rest is mandatory** — not stylistic.
+     Since the cue must be there in dark mode anyway, it is there in both; one link recipe, not two.
+  2. **In light mode an inline link on `--background` is 4.42:1 — below 1.4.3 Contrast (Minimum) (AA),
+     which wants 4.5:1 for normal-size text.** It clears on `--card` (4.66:1). Body copy is never *large
+     scale* (*"at least 18 point or 14 point bold"*, ≈24 px / ≈18.5 px at 1 pt = 1.333 px), so the 3:1
+     large-text allowance never applies to it. **This is a token defect, not a usage rule** — tracked
+     separately; do not work around it per-component.
+- **So: prose links get `underline underline-offset-4`, not the Button `link` variant.** That variant is
+  `text-primary underline-offset-4 hover:underline` — **no underline at rest**, i.e. exactly the
+  colour-only-plus-hover shape G183 permits *only* at 3:1 against surrounding text, which dark mode misses.
+  The variant stays right for a button styled as a link; it was never right inside a sentence, and this
+  row's previous guidance ("the Button `link` variant's classes on an `<a>`") was pointing at it.
+- **2.5.8 Target Size (Minimum) (AA) does NOT apply to a link in a sentence.** Its **Inline** exception:
+  *"The target is in a sentence or its size is otherwise constrained by the line-height of non-target
+  text"*, and the Understanding doc's worked example is literally this case — *"Links within paragraphs of
+  text do not need to meet the 24 by 24 CSS pixels requirements, so the success criterion passes."*
+  **Do not pad an inline link to 24 px**: it wrecks the line rhythm to satisfy a criterion that exempts it.
+- **Link text: 2.4.4 is A, 2.4.9 is AAA — do not swap them.** 2.4.4 Link Purpose (In Context) (**A**):
+  purpose determinable *"from the link text alone or from the link text together with its programmatically
+  determined link context."* 2.4.9 Link Purpose (Link Only) is **AAA**, and the well-known *"click here"*
+  failure (**F84**) is filed under **2.4.9**. So generic link text is a **named failure at AAA** and an
+  ambiguity risk at A — it is wrong to claim it "fails AA".
+- **Focus, at the right levels.** 2.4.7 Focus Visible **AA**. 2.4.11 Focus Not Obscured (Minimum) **AA**
+  (new in 2.2) — *"the component is not entirely hidden due to author-created content"*, which sticky
+  headers break. 1.4.11 **AA** carries the indicator's own contrast at 3:1: *"the visual focus indicator
+  for a component must have sufficient contrast against the adjacent background."* **2.4.13 Focus
+  Appearance is AAA**, not AA — its 2 px-perimeter / 3:1 rule is a target we aim at, never an obligation
+  we claim to enforce.
+- **a11y:** external links get a visible cue plus `sr-only` text, not `title`. Never `target="_blank"`
+  without saying so in the accessible name.
 
 ## Card
 - Slot layout, not a variant enum. `Ui::Card` slots: `media` (a `frame`), `header`, `body`, `footer/actions`.
@@ -128,6 +203,60 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Two things here are ours, not the spec's:** using a dialog rather than a full-page route (decided,
   because it keeps the grid's scroll position), and the dialog's name string — use the image's caption or
   alt text so it names the picture rather than repeating "Image viewer".
+
+## Video player
+- **No APG pattern, and therefore no upstream keyboard model.** The index lists 30 patterns and none
+  is a media player; the source repo's `content/patterns` directory has no media entry either. So
+  anything presented as "the video player pattern" is somebody's convention, not a citation. Ours:
+  **ship the native control set and inherit the UA's keyboard model rather than authoring one.**
+- **`<video controls>` inside a `frame`** — and be honest about what `controls` buys. The HTML
+  Standard is deliberately loose: the UA *"**should** expose a user interface"* including *"features
+  to begin playback, pause playback, seek to an arbitrary position … change the volume, change the
+  display of closed captions"*. A **should**, and the section specifies **no key bindings at all**.
+  Space-to-play and arrows-to-seek are browser convention; never write them down as a contract.
+- **Custom controls are the expensive path, and two AA criteria switch on the moment you take it.**
+  Both exempt native chrome *by name*: **1.4.11 Non-text Contrast (AA)** carves out *"where the
+  appearance of the component is determined by the user agent and not modified by the author"*, and
+  **2.5.8 Target Size (Minimum) (AA)** carves out *"User Agent Control — the size of the target is
+  determined by the user agent and is not modified by the author"*. Replace the chrome and you own
+  **3:1** on every control and state and **24 × 24 CSS px** on every target — plus the whole keyboard
+  model you just declined to inherit. Do it only when a requirement forces it.
+- **Captions are Level A, and `captions` is not `subtitles`.** **1.2.2 Captions (Prerecorded)** is
+  **Level A**: *"Captions are provided for all prerecorded audio content in synchronized media."* The
+  element is `<track kind="captions">`, which the spec defines as covering *"sound effects, relevant
+  musical cues, and other relevant audio information, suitable for when sound is unavailable or not
+  clearly audible"*. `kind="subtitles"` is a **different track** — *"suitable for when the sound is
+  available but not understood"* — so shipping subtitles where captions are owed fails 1.2.2.
+- **Audio description is two criteria at two levels. Do not merge them.** **1.2.3 (Level A)** accepts
+  *"an alternative for time-based media **or** audio description"* — a transcript passes. **1.2.5
+  (Level AA)** removes that escape hatch: *"Audio description is provided for all prerecorded video
+  content in synchronized media."* At AA a transcript is not enough, and the track is
+  `<track kind="descriptions">` (*"Textual descriptions of the video component … Synthesized as
+  audio"*). A **silent** clip is neither: that is **1.2.1 (A)**, wanting a text alternative or an
+  audio track.
+- **Autoplay is governed by 2.2.2 at Level A — that, not reduced-motion, is the rule.** A hero video
+  starting on load is *"moving … information that (1) starts automatically, (2) lasts more than five
+  seconds, and (3) is presented in parallel with other content"*, so it needs *"a mechanism for the
+  user to pause, stop, or hide it"*. Understanding 2.2.2 names the case — *"Common examples include
+  motion pictures, synchronized media presentations, animations"* — and scopes the trigger: *"'starts
+  automatically' broadly refers to animations/updates that are not the direct result of a user's
+  intentional activation"*. **A player the visitor presses play on is out of scope; a background loop
+  is not.** If sound can play automatically past 3 s, **1.4.2 Audio Control (A)** applies on top and
+  wants a pause/stop mechanism or volume control independent of the system's.
+- **Three things here are ours, and each says so because none has an upstream.** (1) **Muted-by-default
+  is our rule, not an exemption** — "autoplay is blocked unless muted" is UA policy, and the HTML
+  Standard offers it only as an example of a policy a UA *could* adopt: *"an exception could be made
+  to allow playback while muted."* Never state it as a guarantee. (2) **Reduced motion suppresses
+  autoplay.** `prefers-reduced-motion` in Media Queries 5 says nothing about video, media or autoplay,
+  and the nearest normative criterion — 2.3.3 — is **AAA and about interaction-triggered animation**,
+  not this. We do it anyway: gate the autoplay inside `@media (prefers-reduced-motion: no-preference)`,
+  the construction `motion.md` already prescribes. The 2.2.2 pause control stays visible either way —
+  it is a Level A obligation, not a fallback for the reduce branch. (3) **The player carries an
+  accessible name** (`aria-label`, or `aria-labelledby` pointing at its caption/heading); "Video" is
+  not a name.
+- **`frame` crops — set `--ratio`.** `layout-primitives.md` gives `frame > *` `object-fit: cover`, so
+  a 4/3 source in the default 16/9 frame silently loses its edges. Also set `poster` so the frame is
+  never blank, and `preload="metadata"` so a marketing page does not fetch the whole file.
 
 ## Dropdown / Menu
 > **Scope: an application/action menu, NOT site navigation.** `role="menu"` is correct here — a "…"
@@ -339,6 +468,57 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Responsive:** never stacks — the side-by-side relationship *is* the pattern. If the body needs full
   width on a phone, it was a Card, not a media object.
 
+## Reviews + Rating
+- **Two different things in one row, and they have different contracts.** The **review list** is
+  documented **Media object** rows in a `divide-y` container — avatar, author, date, body — and adds
+  nothing new. The **rating** is the part with an a11y contract, and it splits again into a
+  **read-only average** and an **interactive picker**. Do not give them the same markup.
+- **No APG rating pattern.** The index lists 30 and none is a rating; `w3c/aria-practices`
+  `content/patterns` has no `rating` directory. So nothing here is "per the APG".
+- **The governing criterion is 1.1.1 Non-text Content (Level A), not 1.4.1.** This is worth being
+  exact about, because the intuitive citation is the wrong one. 1.1.1: *"All non-text content that is
+  presented to the user has a text alternative that serves the equivalent purpose."* A star row that
+  encodes a value is **informational** non-text content, so it cannot claim the *"pure decoration"*
+  exception — *"if non-text content is pure decoration … then it is implemented in a way that it can
+  be ignored by assistive technology."* **A star row with no text alternative fails 1.1.1.**
+- **1.4.1 Use of Color (A) applies only in a narrower case** — *"Color is not used as the only visual
+  means of conveying information."* Filled-vs-empty stars differ in **shape**, and the Understanding
+  document names shape as the *remedy* for 1.4.1 (*"Use information in addition to color, such as
+  shape or text"*), not as something it regulates. So 1.4.1 bites **only when the filled/empty
+  distinction is carried by hue alone** — gold vs grey stars of identical shape, a `1`–`5` scale
+  coloured red-to-green. Then it applies in full. Cite 1.1.1 first and 1.4.1 conditionally; the
+  reverse overstates one and misses the other.
+- **Read-only average: `role="img"` plus an accessible name.** The ARIA spec makes this exact: an
+  `img` is *"a container for a collection of elements that form an image"*, its characteristics are
+  **`Children Presentational: True`** and **`Accessible Name Required: True`**, and *"authors **MUST**
+  provide the element with an accessible name … using the `aria-label` or `aria-labelledby`
+  attribute."* That is precisely the job — collapse five glyphs into one unit and name it once. Five
+  separately-announced stars is the failure this prevents.
+- **`<meter>` is also spec-conformant for a numeric average** — *"The `meter` element represents a
+  scalar measurement within a known range, or a fractional value"* — and a 4.2-out-of-5 is exactly
+  that. Two spec-honest routes; **we default to `role="img"`** so the average and the per-review value
+  share one mechanism. Note the spec's own exclusions if you reach for it: *"The `meter` element should
+  not be used to indicate progress (as in a progress bar)"*, and it *"does not represent a scalar value
+  of arbitrary range … unless there is a known maximum value."*
+- **Interactive picker: a radio group, and that is OUR decision.** There is **no upstream** naming a
+  widget for a 1–5 star picker — neither Radio Group nor Slider mentions ratings, and no APG pattern
+  covers it. We choose **Radio Group** because a rating is a discrete choice of one value from five
+  named ones, which is Radio Group's stated purpose (*"a set of checkable buttons … where no more than
+  one of the buttons can be checked at a time"*), and not Slider's continuous single-thumb range. Build
+  it as a real `<fieldset>` of radios styled as stars, so it inherits that pattern's keyboard model
+  (Tab into the group, arrows move **and** select, Space checks) for free. **Do not** attribute the
+  choice to APG.
+- **The accessible name string is ours too.** Nothing upstream prescribes wording — 1.1.1 requires *a*
+  text alternative "that serves the equivalent purpose" and is silent on phrasing. Ours: **"4 out of 5
+  stars"** for the average and **"Rate 4 out of 5 stars"** for each picker radio. Spelled out, because
+  "4/5" and "★★★★☆" are read aloud badly, and because a consistent string is what makes a rating
+  comparable across screens.
+- **Half stars are a rounding of the label, never a new mechanism.** Render 4.2 however you like; the
+  name says the real value. And the visible count **must** appear as text next to the stars — that is
+  the review-list convention and it satisfies 1.1.1 without relying on the label at all.
+- **Responsive:** the rating is a `cluster` and never wraps mid-row — set `flex-none` on it so a long
+  author name cannot break the stars across two lines.
+
 ## Toast / Notification
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
   `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
@@ -367,6 +547,62 @@ DEFAULTS = { variant: :primary, size: :md }
 - `h-2 rounded-full bg-muted` track + `bg-primary` fill, `transition-[width]`. Announce
   intermittently via the surrounding `role="status"`, not on every increment — the cadence is our
   convention, not a spec figure.
+- **Scope vs the Stepper below.** A continuous bar showing overall wizard completion *is* this
+  component, and `aria-valuetext="Step 2 of 5"` is the right way to label it. The **enumerated list of
+  named steps** ("Cart → Shipping → Payment") is not — see [Stepper / wizard](#stepper--wizard).
+
+## Stepper / wizard
+- **No APG pattern, and unusually little upstream of any kind.** The index lists 30; "stepper",
+  "wizard" and "multi-step" appear nowhere on it. Most of this entry is therefore **our decision,
+  recorded on [#95](https://github.com/fmanimashaun/claude-skills/issues/95#issuecomment-5147018825)**,
+  and every such line below says so. Only the cited lines are citable.
+- **`aria-current="step"` on exactly one step.** This part *is* spec: ARIA's values table gives
+  *"step — Represents the current step within a process"*, and *"Authors **SHOULD** only mark one
+  element in a set of elements as current with `aria-current`."*
+- **It is not a tablist, and ARIA is the reason.** *"Authors **SHOULD NOT** use the `aria-current`
+  attribute as a substitute for `aria-selected` in widgets where `aria-selected` has the same meaning.
+  For example, in a `tablist`, `aria-selected` is used on a `tab`."* Be straight about the limit of
+  that: **APG contains no warning against reusing Tabs for wizard flows** — we looked, there is none.
+  The position that a gated, ordered sequence is not *"layered sections of content"* you may select
+  freely is **ours**.
+- **It is not a `progressbar` either, and that is ours too.** ARIA scopes `progressbar` to *"tasks that
+  take a long time"* and says *"it is always read-only"*; HTML says *"the `progress` element is the
+  wrong element to use for something that is just a gauge, as opposed to task progress."* **Neither
+  names steppers**, so neither settles it — but a step list whose completed entries are clickable is
+  not read-only, so we decline both.
+- **Markup: an `<ol>` always; `<nav aria-label="Progress">` only when the steps are really links.**
+  Ours. An ordered sequence is an ordered list. The landmark is conditional because a stepper's future
+  steps are usually not navigable, and a landmark whose contents lead nowhere is noise. (Breadcrumb's
+  *"contained within a navigation landmark region"* is real but **not transferable** — a breadcrumb is
+  a trail of links to ancestors.)
+- **No widget keyboard model. Ours, and deliberately nothing.** There is no upstream keyboard table
+  because there is no pattern. The indicator is a **display**: no roving tabindex, no arrow keys.
+  Navigable completed steps are ordinary links in the page tab order; future steps are not focusable.
+  WCAG asks only that the model be operable (2.1.1) and order-preserving (2.4.3) — an invented
+  arrow-key contract satisfies neither better and surprises everyone.
+- **Announce by moving focus, and then do NOT add a live region.** This is the part an implementer gets
+  wrong twice. 4.1.3 Status Messages (**AA**) has a two-part test: the message must concern *"the
+  progress of a process"* — a step change does — **and** must *"not [be] delivered via a change in
+  context."* Moving focus **is** a change of context, and the Understanding document excludes it by
+  name: *"Changes of context, by their nature, interrupt the user by taking focus … and so have already
+  met the goal to alert the user."* **So: on advancing, move focus to the new step's heading** (ours,
+  and it satisfies 2.4.3) — 4.1.3 then does not apply, and a live region on top would double-announce.
+  A `role="status"` region is correct only in the other design, where the step changes without moving
+  focus. **Pick one branch; never both.**
+- **Never auto-advance on input.** 3.2.2 On Input (**Level A**): *"Changing the setting of any user
+  interface component does not automatically cause a change of context unless the user has been advised
+  of the behavior before using the component."* Advancing on a field change is exactly that. Ours: we
+  do not auto-advance at all — advancing is an explicit button press, which avoids the class rather
+  than papering over it with an advisory.
+- **A checkout wizard is inside 3.3.4's scope, at Level AA.** 3.3.4 Error Prevention (Legal, Financial,
+  Data) covers *"web pages that cause legal commitments or financial transactions for the user to occur,
+  that modify or delete user-controllable data … or that submit user test responses"*, and requires at
+  least one of **Reversible**, **Checked**, or **Confirmed**. A final review step before submit is the
+  usual answer. Note the levels: **3.3.4 is AA; 3.3.6 Error Prevention (All) is AAA** and applies to any
+  information submission — do not quote one at the other's level.
+- Visually a `cluster` of numbered `Badge`s with connectors, or a `stack` on narrow viewports. Each step
+  carries its number **and** its name as text; the state (done / current / upcoming) is never colour
+  alone — a check glyph for done, `aria-current="step"` plus visible weight for current.
 
 ## Skeleton / loading placeholder
 - **No role, no APG pattern, no W3C source at all** — this is convention, and doctrine says so

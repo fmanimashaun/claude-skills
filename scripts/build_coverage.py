@@ -173,6 +173,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
     "Progress bar": "## Progress bar\n",
+    "Stepper / wizard": "## Stepper / wizard\n",
     "Mega menu / Flyout": "## Mega menu / Flyout\n",
     "File upload / Dropzone": "## File upload / Dropzone (#95)\n",
     "Copy to clipboard": "## Copy to clipboard (#95)\n",
@@ -181,6 +182,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Drawer / off-canvas": "## Drawer / off-canvas\n",
     "Carousel / Slider": "## Carousel\n",
     "Image gallery / Lightbox": "## Image gallery / Lightbox\n",
+    "Video player": "## Video player\n",
     "Skeleton / loading placeholder": "## Skeleton / loading placeholder\n",
     "Spinner / busy indicator": "## Spinner / busy indicator\n",
     "Badge / Tag / Chip": "## Badge / Tag / Chip",
@@ -195,6 +197,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Table (CRUD)": "## Table (CRUD)",
     "Description list": "## Description list\n",
     "Media object": "## Media object\n",
+    "Reviews + Rating": "## Reviews + Rating\n",
     "Pagination": "## Pagination\n",
     "Empty state": "## Empty state\n",
     "Breadcrumbs": "## Breadcrumbs\n",
@@ -203,6 +206,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Tabs": "## Tabs",
     "Logo / Brand mark": "## Logo / Brand mark",
     "Divider": "## Divider\n",
+    "Inline link": "## Inline link\n",
     # primitives + compositions
     "List container (divide-y)": "divide-y divide-border",
     "Stat tile": "stat cards",
@@ -292,10 +296,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Prose / long-form type", PRIMITIVE, "documented", "—", [],
       ["Paragraphs", "Blockquote", "Lists", "Text"],
       "fluid --text-step-* scale + measure in foundations-tokens.md"),
-    E("Inline link", PRIMITIVE, "needs doctrine #95", "—", [], ["Links"],
-      "surfaced by this matrix: we ship a Button `link` VARIANT (components.md) and links inside "
-      "prose, but no standalone inline-link token — so an agent styling a body link has nothing to "
-      "cite. Small, and a real gap"),
+    E("Inline link", PRIMITIVE, "documented", "—", [], ["Links"],
+      "the Button `link` variant is NOT this — it has no underline at rest, and dark-mode "
+      "`--primary` is 2.59:1 against body text, under G183's 3:1, so colour cannot carry it. The "
+      "3:1 figure is technique G183, not SC 1.4.1 itself; 2.5.8 exempts links inside a sentence"),
     E("Frame (aspect-ratio media)", PRIMITIVE, "documented", "—", [], ["Images"]),
     E("Center / container", PRIMITIVE, "documented", "—", ["application-ui/layout/containers"], []),
 
@@ -341,8 +345,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Skeleton / loading placeholder", COMPONENT, "documented", "—", [], ["Skeleton"],
       "Turbo frame loading states need this; without it agents invent spinners"),
     E("Spinner / busy indicator", COMPONENT, "documented", "—", [], ["Spinner"]),
-    E("Stepper / wizard", COMPONENT, "needs doctrine #95", "—", [], ["Stepper"],
-      "also feeds #91's checkout flow"),
+    E("Stepper / wizard", COMPONENT, "documented", "—", [], ["Stepper"],
+      "a display, not a widget: no tablist, no progressbar, no arrow keys. Move focus on advance and "
+      "then do NOT add a live region — 4.1.3 excludes what a change of context already announced. "
+      "Also feeds #91's checkout flow, which is inside 3.3.4 (AA)"),
     E("Copy to clipboard", COMPONENT, "documented", "new controller", [], ["Clipboard"],
       "the announcement IS the feature; a repeat needs the region cleared or it stays silent"),
     E("Keyboard key (KBD)", PRIMITIVE, "derivable", "—", [], ["KBD"],
@@ -397,8 +403,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Checkout form", COMPOSITION, "derivable", "—", ["ecommerce/components/checkout-forms"], []),
     E("Order summary", COMPOSITION, "derivable", "—", ["ecommerce/components/order-summaries"], []),
     E("Order history", COMPOSITION, "derivable", "—", ["ecommerce/components/order-history"], []),
-    E("Reviews + Rating", COMPONENT, "needs doctrine #91", "—", ["ecommerce/components/reviews"], ["Rating"],
-      "Rating is only needed by commerce, which is why it sits here rather than in #95"),
+    E("Reviews + Rating", COMPONENT, "documented", "—", ["ecommerce/components/reviews"], ["Rating"],
+      "the governing criterion is 1.1.1 (A), NOT 1.4.1 — filled-vs-empty stars differ in shape, so "
+      "1.4.1 bites only where hue alone carries the distinction; read-only average and interactive "
+      "picker are different contracts"),
     E("Incentives block", COMPOSITION, "derivable", "—", ["ecommerce/components/incentives"], []),
     E("Promo section", COMPOSITION, "derivable", "—", ["ecommerce/components/promo-sections"], []),
     E("Storefront page archetype", ARCHETYPE, "documented", "—", ["ecommerce/page-examples/storefront-pages"], []),
@@ -411,17 +419,14 @@ ENTRIES: tuple[Entry, ...] = (
     E("Order history page archetype", ARCHETYPE, "documented", "—",
       ["ecommerce/page-examples/order-history-pages"], []),
 
-    # ---- deferred: revisitable, and each names WHAT WOULD FLIP IT -----------------------
+    # ---- once deferred, now documented --------------------------------------------------
     E("Calendar / Date picker / Time picker", COMPONENT, "documented", "—",
       ["application-ui/data-display/calendars"], ["Datepicker", "Timepicker"],
       note="native first: the `type` fallback to a TEXT input is a spec guarantee, and there is "
-           "NO APG date-picker pattern — two examples, two valid architectures",
-      build="`input[type=date|time]` via simple_form, plus Rails date helpers — styled with the "
-              "shipped field anatomy so it matches everything else"),
+           "NO APG date-picker pattern — two examples, two valid architectures"),
     E("Image gallery / Lightbox", COMPONENT, "documented", "modal + carousel", [], ["Gallery"],
       note="focus trapping, keyboard paging and zoom are a large surface, and no current family "
-           "has a media-heavy surface",
-      build="`grid-auto` of `frame` thumbnails linking to the full image"),
+           "has a media-heavy surface"),
     E("Speed dial / FAB cluster", COMPONENT, "derivable", "—", [], ["Speed Dial"],
       note="a floating action cluster competes with the shipped page-header actions slot, so "
            "adding it now would create two mechanisms for the same job",
@@ -435,13 +440,12 @@ ENTRIES: tuple[Entry, ...] = (
       build="Media object rows in a `divide-y` container — the same shape, without inventing "
               "message semantics"),
 
-    # ---- declined: a design principle, not a threshold. No revisit trigger by design ----
+    # ---- a design principle, not a threshold. Documented so it can be built correctly ----
     E("Carousel / Slider", COMPONENT, "documented", "carousel", [], ["Carousel"],
       note="content behind a timed or manual slide is content most users never see, and the "
            "pattern is a persistent a11y liability. This is a doctrine position, not a backlog "
            "item — if a client insists, build it in the app against the a11y contract rather than "
-           "blessing it as a kit primitive",
-      build="`grid-auto`, or a horizontal scroller with visible affordances and real focus order"),
+           "blessing it as a kit primitive"),
     E("Bottom navigation", COMPONENT, "derivable", "—", [], ["Bottom Navigation"],
       note="not a gap: on native the platform tab bar IS our answer (mobile.md), and a web "
            "imitation would diverge from the OS behaviour users expect",
@@ -450,10 +454,10 @@ ENTRIES: tuple[Entry, ...] = (
       note="generated server-side and rendered as an image — there is no visual contract to "
            "standardise beyond sizing, which the `frame` primitive already covers",
       build="generate in the app and render an `<img>` inside a `frame`"),
-    E("Video player", COMPONENT, "needs doctrine #95", "—", [], ["Video"],
-      note="a custom player is a large surface (captions, keyboard, fullscreen) that duplicates "
-           "what the browser already ships and maintains",
-      build="native `<video controls>` inside a `frame` for ratio"),
+    E("Video player", COMPONENT, "documented", "—", [], ["Video"],
+      note="no APG pattern, so the keyboard model is the UA's and not ours; `kind=captions` is not "
+           "`kind=subtitles`; and an autoplaying video is governed by WCAG 2.2.2 (A), not by "
+           "reduced-motion"),
     E("Phone input", COMPONENT, "derivable", "—", [], ["Phone Input"],
       note="international formatting and validation depend on locale data and the app's own rules; "
            "a kit-level widget would encode assumptions the app has to override",
@@ -635,17 +639,12 @@ BUILD: dict[str, str] = {
     "Category filters": "`<details>`/`<summary>` groups inside a `stack`, until #142 lands",
     "Store navigation": "the documented navbar / sidebar navigation",
     # needs doctrine — the nearest safe thing to do TODAY
-    "Inline link": "the Button `link` variant's classes on an `<a>`, until a token exists",
     # APG has no command-palette pattern (the Patterns index lists 30, none for it), so this is
     # a composition
     # of two documented parts rather than a gap. Keep aria-activedescendant: the input must
     # hold focus for typing to filter, so moving DOM focus into the results breaks it.
     "Command palette": "the documented Modal containing the documented Combobox with a "
         "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
-    "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
-    "Reviews + Rating": "Media object rows; the rating needs an accessible name (\"4 out of 5\"), "
-        "not stars alone",
-    "Video player": "native `<video controls>` inside a `frame`",
 }
 
 BUILD_DEFAULTS: dict[tuple[str, str], str] = {
@@ -725,7 +724,15 @@ def verify_shipped_evidence() -> list[str]:
     # rows print `—` in that column), so nothing surfaces it — the Combobox entry survived its own
     # row's promotion this way, still saying "use the documented Select until the entry lands"
     # after the Combobox entry had shipped (#95).
-    stale = sorted(set(BUILD) & {e.name for e in ENTRIES if e.is_documented})
+    #
+    # BOTH sources of that text are checked. `resolve_build` prefers a row's own `build=` kwarg over
+    # the BUILD dict, so a guard that read only the dict passed a row whose fallback lived inline --
+    # the exact defect it exists to catch, in the half nobody looked at. Found flipping Video player
+    # (#95), which carried its fallback inline.
+    stale = sorted(
+        {e.name for e in ENTRIES if e.is_documented and e.build.strip()}
+        | (set(BUILD) & {e.name for e in ENTRIES if e.is_documented})
+    )
     if stale:
         problems.append(
             f"`documented` rows still carrying a BUILD fallback: {stale} — that text says 'use the "
@@ -900,21 +907,34 @@ def render(tw_found: set[str], fb_found: set[str]) -> str:
         )
     add("")
 
+    # The empty case is rendered DIFFERENTLY, not as a table with no rows. Emitting the header
+    # plus "Build them when a project needs them" above zero rows tells the reader how to handle
+    # rows that do not exist -- a dead declaration, and the section that is supposed to be the
+    # file's one honest gap-marker becomes noise. Reaching zero is also the single most
+    # informative thing this file can say, so it says it.
     add("## Needs doctrine — buildable today, but you are carrying the risk")
     add("")
-    add("These need an a11y or interaction contract the docs do not yet state (a keyboard model, an")
-    add("ARIA pattern, a reduced-motion rule). **Build them when a project needs them** — the")
-    add("**Nearest guidance** column is the safest current approach — and expect the tracked issue to")
-    add("replace that approach with a proper entry.")
-    add("")
-    add("| Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |")
-    add("|---|---|---|---|---|---|---|")
-    for e in sorted(needs, key=lambda x: (x.kind, x.name)):
-        issue = e.status.replace("needs doctrine", "").strip() or "—"
-        add(
-            f"| {e.name} | {e.kind} | {_mark(bool(e.tw))} | {_mark(bool(e.fb))} | {issue} | "
-            f"{resolve_build(e)} | {resolve_use(e)} |"
-        )
+    if needs:
+        add("These need an a11y or interaction contract the docs do not yet state (a keyboard model, an")
+        add("ARIA pattern, a reduced-motion rule). **Build them when a project needs them** — the")
+        add("**Nearest guidance** column is the safest current approach — and expect the tracked issue to")
+        add("replace that approach with a proper entry.")
+        add("")
+        add("| Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |")
+        add("|---|---|---|---|---|---|---|")
+        for e in sorted(needs, key=lambda x: (x.kind, x.name)):
+            issue = e.status.replace("needs doctrine", "").strip() or "—"
+            add(
+                f"| {e.name} | {e.kind} | {_mark(bool(e.tw))} | {_mark(bool(e.fb))} | {issue} | "
+                f"{resolve_build(e)} | {resolve_use(e)} |"
+            )
+    else:
+        add("**None — every row above is `documented` or `derivable`.** No component in either corpus")
+        add("now requires an agent to invent an a11y or interaction contract.")
+        add("")
+        add("This section is not deleted, because the status still exists and the next unclassified")
+        add("upstream component may well land here. An empty table would have been worse than this")
+        add("sentence: it would print guidance for rows that are not there.")
     add("")
 
     add("## Interaction patterns")
@@ -1019,6 +1039,12 @@ def main(argv: list[str] | None = None) -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(rendered, encoding="utf-8")
     print(f"wrote {OUT.relative_to(REPO)} — {len(ENTRIES)} rows from {len(discover_tw())} TW + {len(discover_fb())} FB entries")
+    # `docs/coverage.html` is generated from the SAME data and is committed, so regenerating this
+    # file without it leaves the page stale and fails `coverage artifact drift` for whoever runs the
+    # gates next. Four PRs did exactly that in one afternoon. CLAUDE.md documents the pair, but a
+    # note at the point of use is worth more than a paragraph nobody is reading right now.
+    print("  NEXT: python3 scripts/build_coverage_artifact.py && git add docs/  "
+          "— the committed page is built from this data and goes stale with it")
     return 0
 
 

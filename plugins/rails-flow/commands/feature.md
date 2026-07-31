@@ -75,6 +75,26 @@ cannot fail, moved from the gate to the goal. If you cannot evaluate it, you can
 it unattended. The checker proves each criterion is *traceable* to a spec; it cannot prove the
 spec truly asserts the observable, so that judgement stays yours.
 
+### The work order — write it once the criteria exist
+
+Run `/rails-flow:handoff` (or write `docs/handoff/<slug>.md` in its shape) before Phase 3. It is the
+one file an executor can work from with **no** conversation history: the goal, the criteria ids it is
+graded by, the files in and explicitly out of scope, the guardrails in play, the **stop conditions**,
+how to verify, and what to record on completion.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/handoff/<slug>.md" \
+  --criteria "docs/acceptance/<slug>.md"
+```
+
+Why it comes after the criteria and before the code: the work order **cites** the criteria rather
+than restating them, so writing it first would either duplicate a contract that does not exist yet or
+invent one. And its stop conditions bind Phase 3 and Phase 4 — the attempt cap, the no-progress
+detector, and the four forbidden escapes (weakening a failing spec, reverting a passing unit to
+unblock this one, editing outside the declared scope, disabling a guardrail or hook) govern the loops
+below, and an executor cannot honour a bound nobody wrote down. See `/rails-flow:handoff` for the
+defaults and the reasoning.
+
 Post the plan **and the criteria** to the user, then proceed — the gates below are the control
 points, not a plan-approval pause. If the plan reveals genuine ambiguity about intent, ask
 first: criteria are the place ambiguity surfaces cheapest.
@@ -92,6 +112,12 @@ git checkout -b feature/<kebab-slug>
 ```
 
 ## Phase 3 — Spec-first implementation loop (per unit)
+
+The work order's stop conditions apply from here to the end of Phase 4. On a stop: write the
+diagnosis (what was tried, the exact failure signature, the suspected cause), move to the next
+independent unit, and **say in the final report that the run was partial**. A partial run reported
+as complete is worse than a stop, because it spends the reviewer's trust as well as their time.
+
 
 1. **Write the failing spec first, and cite the criterion it proves.** Put the id in the
    example's description — `it "AC-2 rejects an invoice with no line items" do` — so the
@@ -145,7 +171,9 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
 ## Phase 7 — Close the loop
 
 Run `doc-updater` for the session's changes. Report to the user: plan → commits → gate
-results → PR link → docs touched. If anything was deferred, say so explicitly.
+results → PR link → docs touched. **State the outcome as complete, partial, or stopped** — and if it
+is not complete, list by name what was not attempted. Record on completion what the work order's last
+section asks for; a work order whose completion is never recorded taught nobody anything.
 
 If this feature changed how the product *behaves* for its owner — not merely how it is built —
 run `/rails-flow:explain <area>` so `docs/GUIDE.md` moves with the code. `doc-updater` reports

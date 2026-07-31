@@ -313,6 +313,32 @@ def run() -> int:
         evidence=BUTTON_ONLY,
         build={"Badge": "the nearest safe thing for now"},
     )
+    # The SECOND source of that same text. `resolve_build` prefers a row's own `build=` kwarg
+    # over the BUILD dict, so a guard reading only the dict passed a documented row whose
+    # fallback sat inline -- the defect it exists to catch, in the half nobody looked at.
+    expect_error(
+        "a documented row carrying its fallback inline rather than in BUILD",
+        (
+            COMPLETE[0],
+            bc.E("Badge", bc.COMPONENT, "documented",
+                 tw=["application-ui/elements/badges"], fb=["Badge"],
+                 build="the documented Link until the entry lands"),
+        ),
+        contains="still carrying a BUILD fallback",
+    )
+    # NEAR MISS for that one too: inline `build=` on a row that is still `needs doctrine` is
+    # required, not stale -- the guard must key on STATUS here as well, not on the kwarg's
+    # mere presence.
+    expect_ok(
+        "a needs-doctrine row carrying its fallback inline is correct",
+        (
+            COMPLETE[0],
+            bc.E("Badge", bc.COMPONENT, "needs doctrine #1",
+                 tw=["application-ui/elements/badges"], fb=["Badge"],
+                 build="the nearest safe thing for now"),
+        ),
+        evidence=BUTTON_ONLY,
+    )
     # Near miss: a heading that is a PREFIX of another must not satisfy the longer one. If
     # evidence were "## Button" without the newline, a docs file containing only
     # "## Button group" would wrongly satisfy a Button row.
@@ -321,6 +347,41 @@ def run() -> int:
         FAILURES.append("expected '## Button\\n' in the reference docs — evidence anchoring is wrong")
     if "## Button group\n" not in bc.reference_blob():
         FAILURES.append("expected '## Button group\\n' in the reference docs")
+
+    # ---- the Needs-doctrine section must not print guidance for rows that do not exist --
+    # Reaching zero `needs doctrine` rows (#95/#91) turned that section into a table header,
+    # a column legend and "Build them when a project needs them" above nothing at all. Both
+    # directions are fixtures, because the empty branch is now the live one and a regression
+    # would read as normal output.
+    _tick()
+    empty = bc.render({"application-ui/elements/buttons", "application-ui/elements/badges"},
+                      {"Buttons", "Badge"})
+    if "| Component | Kind | In TW | In FB | Tracked |" in empty:
+        FAILURES.append("no needs-doctrine rows, yet the Tracked table header was still emitted")
+    if "Build them when a project needs them" in empty:
+        FAILURES.append("no needs-doctrine rows, yet the how-to-use-them guidance was still emitted")
+    if "**None — every row above is `documented` or `derivable`.**" not in empty:
+        FAILURES.append("zero needs-doctrine rows must be stated explicitly, not left as a blank section")
+
+    _tick()
+    orig = bc.ENTRIES
+    bc.ENTRIES = (
+        COMPLETE[0],
+        bc.E("Badge", bc.COMPONENT, "needs doctrine #1",
+             tw=["application-ui/elements/badges"], fb=["Badge"],
+             build="the nearest safe thing for now"),
+    )
+    try:
+        nonempty = bc.render({"application-ui/elements/buttons", "application-ui/elements/badges"},
+                             {"Buttons", "Badge"})
+    finally:
+        bc.ENTRIES = orig
+    if "| Component | Kind | In TW | In FB | Tracked |" not in nonempty:
+        FAILURES.append("a needs-doctrine row exists but its table header was suppressed")
+    if "Build them when a project needs them" not in nonempty:
+        FAILURES.append("a needs-doctrine row exists but the how-to-use-them guidance was suppressed")
+    if "**None — every row above is" in nonempty:
+        FAILURES.append("a needs-doctrine row exists, yet the section claimed there were none")
 
     # ---- the real mapping must be complete against the real corpus, when present ------
     # These two checks need the licensed corpora, which most machines will not have. They are

@@ -33,6 +33,13 @@ or reported unreachable, and an error-contract verdict is only permitted on a fo
 actually submitted. An unexercised check must be indistinguishable from nothing, never from a
 pass.
 
+The perf profile (#117) closes the version of that hole where the unexercised check does not leave
+a blank -- it returns a plausible NUMBER. `CLS 0` from Firefox, whose engine implements no
+layout-shift observer at all, and a transfer total summed from an API that reports 0 bytes for
+every cross-origin asset, both read exactly like clean measurements. So this profile's columns are
+tied to what the ENGINE can actually implement, and its severity is capped rather than floored: a
+slow number may never be escalated into an S1, and the timings are never graded at all.
+
 WHAT THIS GUARANTEES
     No row asserting a page was tested/audited can OMIT its HTTP status, requested/final
     URL, or expected-content assertion; none can claim a result on a non-2xx/3xx status or
@@ -67,6 +74,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -320,6 +328,30 @@ def _read_counters(
             continue
         counts[column] = value
     return counts, findings
+
+
+def _check_bounds(
+    counts: dict[str, int], where: str, bounds: tuple[tuple[str, str], ...]
+) -> list[str]:
+    """Every defect counter is bounded by the inventory it was drawn from.
+
+    This is the rule that makes sampling impossible to hide, exactly as in the keyboard profile:
+    you cannot find more unsuppressed animations than animations that were running, and one
+    resource cannot be larger than the page's whole transfer.
+
+    Shared rather than copied, and that is load-bearing beyond taste. `mutation_check.py` anchors a
+    mutation on this comparison, and a second textual copy would make that anchor match twice --
+    which that checker treats as a hard error, deliberately, because an ambiguous anchor cannot be
+    verified applied. The third profile to want this rule is what turned the copy into a helper.
+    """
+    findings: list[str] = []
+    for column, denominator in bounds:
+        if {column, denominator} <= counts.keys() and counts[column] > counts[denominator]:
+            findings.append(
+                f"{where}: {counts[column]} in {column} but only {counts[denominator]} "
+                f"{denominator} -- a count cannot exceed the inventory it was drawn from"
+            )
+    return findings
 
 
 def _check_severity(
@@ -1066,15 +1098,7 @@ def _emulation_extra(row: dict[str, str], where: str, status: str) -> list[str]:
                 "was nothing to examine on this route, the row is Out of Scope"
             )
 
-    # Every defect counter is bounded by the inventory it was drawn from. This is the rule that
-    # makes sampling impossible to hide, exactly as in the keyboard profile: you cannot find more
-    # unsuppressed animations than animations that were running.
-    for column, denominator in spec.bounds:
-        if {column, denominator} <= counts.keys() and counts[column] > counts[denominator]:
-            findings.append(
-                f"{where}: {counts[column]} in {column} but only {counts[denominator]} "
-                f"{denominator} -- a count cannot exceed the inventory it was drawn from"
-            )
+    findings.extend(_check_bounds(counts, where, spec.bounds))
 
     verdicts: dict[str, int] = {}
     for column in spec.verdicts:
@@ -1151,6 +1175,313 @@ EMULATION = Profile(
     result_statuses=frozenset({"emulated"}),
     ident_columns=("Route", "Mode"),
     extra=_emulation_extra,
+)
+
+
+# ---------------------------------------------------------------------------------------
+# Profile: client-side performance capture during the crawl (#117)
+#
+# `perf-tester` measured CAPACITY with k6 -- server throughput -- and nothing measured what a user
+# experiences. The harness already loads every route in a real browser, so LCP, CLS, TTFB, transfer
+# bytes and request count are nearly free. What is NOT free is saying anything trustworthy about
+# them, and this profile is mostly shaped by three verified facts that contradict the obvious
+# implementation.
+#
+# THE HOLE THIS CLOSES IS A NUMBER THAT WAS NEVER MEASURED READING EXACTLY LIKE ONE THAT WAS.
+# Every other profile's blind spot is a check that did not run and left a blank. Here the blind
+# spots return a plausible NUMBER -- `CLS 0` from an engine with no LayoutShift implementation,
+# `Transfer 180 KB` from an API that reports 0 for every cross-origin asset. A blank is honest; a
+# fabricated zero is a gate that cannot fail.
+#
+# 1. ENGINE SUPPORT IS PER-METRIC, AND THE BLANKET RULE WOULD BE STALE. Verified against MDN
+#    browser-compat-data rather than assumed:
+#      largest-contentful-paint  Firefox 122 (Jan 2024), Safari 26.2 (Dec 2025)  -> ALL ENGINES
+#      layout-shift (CLS)        Firefox `version_added: false`, Safari likewise -> CHROMIUM ONLY
+#      renderBlockingStatus      Chromium 107+; Firefox none, Safari none        -> CHROMIUM ONLY
+#    LCP shipped everywhere only recently, so "LCP is Chromium-only" -- true until Dec 2025 -- is
+#    exactly the stale doctrine this check would otherwise enshrine. The consequence runs the same
+#    direction as #116's forced-colors ceiling: on firefox/webkit the CLS observer never fires and
+#    the row records `0`, reporting a perfectly stable page from an API that does not exist. So the
+#    Chromium-only columns must be BLANK off chromium, and `LCP ms` must NOT be -- that carve-out is
+#    what keeps this from degenerating into "webkit is unsupported".
+#
+# 2. THE INTERACTION PROBE CORRUPTS THE METRICS BESIDE IT. Playwright's `locator.click()` goes
+#    through the browser's own input protocol, so `isTrusted` is true (unlike `dispatchEvent`, which
+#    the Event Timing spec excludes outright). A trusted input TERMINATES LCP observation, and
+#    `layout-shift` entries within 500 ms of input carry `hadRecentInput` and are excluded from CLS.
+#    So a click taken before the metrics are read truncates LCP and hides shifts -- the issue
+#    proposed exactly that. The probe gets its own visit, and the row records which.
+#    It is also not called INP: INP is a whole-visit field metric, and Lighthouse reports TBT (30%
+#    of its score) in lab precisely because INP cannot be measured there.
+#
+# 3. `transferSize` CANNOT CARRY A BYTE BUDGET. Per Resource Timing it is 0 for a CORS-cross-origin
+#    resource with no `Timing-Allow-Origin`, 0 for a local cache hit, and the fixed constant 300 for
+#    a 304 revalidation. A page pulling 30 CDN assets reports a plausible small total and passes any
+#    budget, silently. Playwright's `Request.sizes().responseBodySize` is the encoded wire size read
+#    at the network layer on all three engines and is not TAO-gated, so it is the instrument --
+#    and `Opaque Requests` is the column that proves which instrument was actually used.
+#
+# WHAT GATES, AND ON WHOSE AUTHORITY. NO WCAG criterion and no standard of any kind mandates a
+# performance budget; the 2.5s/0.1 numbers are Google guidance, published as revisable. Searched for
+# and not found, exactly as #116 searched for a forced-colors criterion. So every severity here is a
+# MAINTAINER DECISION (recorded on #117), and the decisions are:
+#
+#   Severity is CAPPED AT S2; `S1` is rejected outright. This is the direction the other profiles
+#       leave open -- #114/#115 stop a row grading a defect DOWN, #116 stops it grading an advisory
+#       UP, and this caps the ceiling. No client-side timing taken on an unthrottled dev machine
+#       against localhost establishes that a release is blocked.
+#   Timings NEVER gate. `TTFB ms` / `LCP ms` are recorded and trended, never graded. That is the
+#       issue's own instruction ("trends with thresholds, not hard gates") made arithmetic.
+#   What gates is what is reproducible off the machine's clock: a CLS above the budget the row
+#       itself carries, and a request over the per-resource byte budget. A layout shift observed
+#       locally is a shift the page really performs; an LCP observed locally is mostly a statement
+#       about the laptop. The asymmetry holds ONE WAY -- a clean local CLS is not evidence of
+#       stability, and the doctrine says so rather than letting the column imply it.
+#
+# WHY THE BUDGET LIVES IN THE ARTIFACT. `CLS Budget` is a column, not a config lookup, for the same
+# reason the runtime profile counts `Ignored` even at 0: a threshold quietly relaxed to 10.0 must
+# leave a trace in the evidence, or the gate turns green with nobody deciding to.
+# ---------------------------------------------------------------------------------------
+# Columns whose underlying API exists in Chromium only. Off chromium they must be BLANK: the
+# observer never fires, so any value in them was invented rather than measured.
+PERF_CHROMIUM_ONLY: tuple[str, ...] = ("CLS", "CLS Budget", "Render Blocking")
+# How the interaction probe was sequenced relative to the metric read. `same-visit` is a rejection,
+# not a warning: it means the LCP on this row was truncated by the click and the CLS is missing
+# every shift within 500 ms of it.
+PROBE_MODES = frozenset({"separate-visit", "same-visit", "not run"})
+# Counters every engine can honestly produce.
+PERF_COUNTERS: tuple[str, ...] = (
+    "Samples", "TTFB ms", "LCP ms", "Requests", "Transfer KB", "Opaque Requests",
+    "Largest Resource KB", "Oversized Requests", "Fonts No Swap",
+)
+# 0 here means nothing was measured at all -- a navigation is itself a request, and a route with no
+# samples is Out of Scope rather than a clean result.
+PERF_NONZERO: tuple[str, ...] = ("Samples", "Requests")
+# (counter, the denominator that bounds it). `Largest Resource KB` vs `Transfer KB` is the one that
+# catches an encoded/decoded mix-up: a 900 KB bundle inside a 300 KB page means the two numbers came
+# from different instruments.
+PERF_BOUNDS: tuple[tuple[str, str], ...] = (
+    ("Opaque Requests", "Requests"),
+    ("Largest Resource KB", "Transfer KB"),
+)
+# Counted, reported, and NEVER a severity -- the timings plus the two cause counters that have no
+# upstream at all.
+PERF_ADVISORY: tuple[str, ...] = ("Fonts No Swap", "Render Blocking")
+# `CLS Over Budget` is a DERIVED gating name, not a column: the row carries the measurement and the
+# threshold, and the checker does the comparison so the verdict cannot be typed in by hand.
+CLS_OVER_BUDGET = "CLS Over Budget"
+PERF_GATING: tuple[tuple[str, str], ...] = (
+    (CLS_OVER_BUDGET, S2),
+    ("Oversized Requests", S2),
+)
+
+
+def _ratio(value: str) -> float | None:
+    """A finite, non-negative decimal, or None when the cell records no such number.
+
+    `float()` accepts `nan` and `inf`, both of which would sail through a `>` comparison against a
+    budget and read as a measurement. A layout-shift score is neither.
+    """
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    if not math.isfinite(number) or number < 0:
+        return None
+    return number
+
+
+def _perf_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    """A perf row may only report metrics its engine can measure, and may never grade itself S1."""
+    findings: list[str] = []
+
+    engine = row["Engine"].lower()
+    if not engine:
+        findings.append(
+            f"{where}: no Engine ({'/'.join(sorted(ENGINES))}) -- LCP, CLS and render-blocking "
+            "status are not implemented in the same set of engines, so a metric that does not say "
+            "where it ran cannot be read"
+        )
+    elif engine not in ENGINES:
+        findings.append(
+            f"{where}: Engine {row['Engine']!r} is not one of {'/'.join(sorted(ENGINES))}"
+        )
+
+    # ---- THE ENGINE CAPABILITY CONTRACT -------------------------------------------------
+    # A blank is honest; a zero from an observer that never fired is not. Only enforced once the
+    # engine is known -- guessing which columns apply from an unrecognised engine would report the
+    # same defect twice in two vocabularies.
+    chromium_only_ok = engine == "chromium"
+    if engine in ENGINES and not chromium_only_ok:
+        for column in PERF_CHROMIUM_ONLY:
+            if row[column]:
+                findings.append(
+                    f"{where}: {column} records {row[column]!r} on {row['Engine']} -- neither "
+                    "layout-shift nor renderBlockingStatus is implemented outside Chromium, so "
+                    "that observer never fired and the value was not measured. A `0` here reports "
+                    "a perfectly stable page from an API that does not exist: leave it blank, and "
+                    "run this route on chromium if you need CLS"
+                )
+
+    numeric: tuple[str, ...] = PERF_COUNTERS
+    if chromium_only_ok:
+        numeric = PERF_COUNTERS + ("Render Blocking",)
+    counts, count_findings = _read_counters(
+        row, where, numeric,
+        "the navigation was never timed and no resource entry was ever read",
+    )
+    findings.extend(count_findings)
+
+    for column in PERF_NONZERO:
+        if counts.get(column) == 0:
+            findings.append(
+                f"{where}: 0 {column} -- a route that was never sampled, or whose own document "
+                "request was never counted, is not a measurement; this row is Out of Scope"
+            )
+
+    findings.extend(_check_bounds(counts, where, PERF_BOUNDS))
+
+    # ---- THE FALSE-CLEAN BYTE VERDICT ---------------------------------------------------
+    # `transferSize` is 0 for a CORS-cross-origin asset with no Timing-Allow-Origin and 0 for a
+    # cache hit, so "no request over budget" can mean "no MEASURABLE request over budget" -- and the
+    # two read identically. A positive finding is still a valid finding (incomplete, not false), so
+    # only the clean direction is rejected.
+    if counts.get("Opaque Requests", 0) > 0 and counts.get("Oversized Requests") == 0:
+        findings.append(
+            f"{where}: 0 Oversized Requests while {counts['Opaque Requests']} request(s) reported "
+            "no measurable size -- that is a clean byte verdict over bytes nobody measured. "
+            "transferSize is 0 for a cross-origin asset without Timing-Allow-Origin and 0 for a "
+            "cache hit; re-measure with Playwright's Request.sizes(), which reads the network layer"
+        )
+
+    # A number with no attributable cause is the complaint this issue exists to answer.
+    if "LCP ms" in counts and not row["LCP Element"]:
+        findings.append(
+            f"{where}: LCP {row['LCP ms']} ms with no LCP Element -- a timing nobody can attribute "
+            "to an element is a number, not a finding"
+        )
+
+    # ---- CLS against the budget the row itself carries ----------------------------------
+    cls_over: int | None = None
+    if chromium_only_ok:
+        measured, budget = _ratio(row["CLS"]), _ratio(row["CLS Budget"])
+        for column, value in (("CLS", measured), ("CLS Budget", budget)):
+            if value is None:
+                findings.append(
+                    f"{where}: {column} {row[column]!r} is not a finite, non-negative decimal -- "
+                    "use 0 for a route with no layout shift, and record the threshold this run was "
+                    "held to so a relaxed budget leaves a trace"
+                )
+        if measured is not None and budget is not None:
+            cls_over = 1 if measured > budget else 0
+
+    probe = row["Interaction Probe"].lower()
+    if not probe:
+        findings.append(
+            f"{where}: no Interaction Probe ({'/'.join(sorted(PROBE_MODES))}) -- whether this page "
+            "was clicked before its metrics were read is what decides whether they mean anything"
+        )
+    elif probe not in PROBE_MODES:
+        findings.append(
+            f"{where}: Interaction Probe {row['Interaction Probe']!r} is not one of "
+            f"{'/'.join(sorted(PROBE_MODES))}"
+        )
+    elif probe == "same-visit":
+        findings.append(
+            f"{where}: Interaction Probe same-visit -- Playwright's click is a trusted input, which "
+            "terminates LCP observation and marks every layout shift within 500 ms hadRecentInput. "
+            "The LCP on this row is truncated and the CLS is missing the shifts the click caused: "
+            "probe on a separate visit, or record this row Blocked"
+        )
+
+    # ---- severity: recomputed, and capped ------------------------------------------------
+    severity = row["Severity"].lower()
+    if severity == S1:
+        findings.append(
+            f"{where}: Severity S1 on a perf row -- no WCAG criterion and no standard of any kind "
+            "mandates a performance budget, and a timing taken on an unthrottled dev machine "
+            "against localhost cannot establish that the page is broken, which is what S1 means "
+            "in every other pass. The ceiling here is S2"
+        )
+    else:
+        graded: dict[str, int] = {}
+        every: list[str] = []
+        for name, _floor in PERF_GATING:
+            if name == CLS_OVER_BUDGET:
+                # Off chromium there is no CLS to grade, so it must leave `every` too -- the
+                # all-parsed test in _check_severity is a length comparison between the two.
+                if not chromium_only_ok:
+                    continue
+                every.append(name)
+                if cls_over is not None:
+                    graded[name] = cls_over
+            else:
+                every.append(name)
+                if name in counts:
+                    graded[name] = counts[name]
+        findings.extend(_check_severity(
+            row, where, graded, PERF_GATING, tuple(every),
+            s1_because="",  # unreachable: S1 is rejected above, so nothing can force it
+            inflated_because=(
+                "LCP and TTFB are environment-sensitive and have no normative upstream, so they "
+                "are trended and never graded -- record the numbers and grade the row none"
+            ),
+        ))
+
+    # Every measured row must be re-readable next run: trend comparison is the point of the pass,
+    # and a row with no persisted record cannot be compared to anything.
+    if not row["Evidence"]:
+        findings.append(
+            f"{where}: measured without an Evidence path -- the run JSONL entry that makes this "
+            "row comparable to the next run's; a metric with no history is not a trend"
+        )
+    if severity != NO_SEVERITY and not row["Notes"]:
+        findings.append(
+            f"{where}: {row['Severity']} without Notes naming the resource or element -- a "
+            "performance defect nobody can locate is not actionable"
+        )
+    advisory_hits = [c for c in PERF_ADVISORY if counts.get(c, 0) > 0]
+    if advisory_hits and not row["Notes"]:
+        findings.append(
+            f"{where}: {', '.join(advisory_hits)} above 0 without Notes naming the resource(s) -- "
+            "an advisory finding is still a finding, and this row is its only record"
+        )
+    return findings
+
+
+PERF = Profile(
+    name="perf",
+    written_by="perf-tester (client-side performance capture)",
+    columns=(
+        "Route",
+        "State",
+        "Status",
+        "HTTP",
+        "Requested URL",
+        "Final URL",
+        "Assertion",
+        "Engine",
+        "Samples",
+        "TTFB ms",
+        "LCP ms",
+        "LCP Element",
+        "CLS",
+        "CLS Budget",
+        "Requests",
+        "Transfer KB",
+        "Opaque Requests",
+        "Largest Resource KB",
+        "Oversized Requests",
+        "Fonts No Swap",
+        "Render Blocking",
+        "Interaction Probe",
+        "Severity",
+        "Evidence",
+        "Notes",
+    ),
+    result_statuses=frozenset({"measured"}),
+    ident_columns=("Route", "State"),
+    extra=_perf_extra,
 )
 
 
@@ -1319,7 +1650,9 @@ FINDINGS = Profile(
 )
 
 
-PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, EMULATION, FINDINGS)
+PROFILES: tuple[Profile, ...] = (
+    FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, EMULATION, PERF, FINDINGS,
+)
 
 # Kept as a module-level alias: the functional contract is the one mirrored in
 # functional-tester.md, and external callers/selftests refer to it by this name.

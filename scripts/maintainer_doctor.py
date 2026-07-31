@@ -103,15 +103,34 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("self-consistency selftest", ("python3", "scripts/lint_self_consistency.py", "--selftest")),
     ("coverage matrix drift", ("python3", "scripts/build_coverage.py", "--check")),
     ("coverage matrix selftest", ("python3", "scripts/build_coverage.py", "--selftest")),
+    # The artifact is COMMITTED (docs/coverage.html), so it can go stale exactly as coverage.md
+    # can — same shape, same gate, and the same corpora dependency. An earlier version of this
+    # comment claimed neither gate needed the licensed kits, because `ENTRIES` is declared
+    # statically. That was wrong and was proved wrong by running it: the page also EMBEDS the
+    # upstream corpus totals, so a corpora-less machine renders different bytes and the drift gate
+    # returns 1 on a perfectly good checkout. Hence its place in CORPORA_GATES below.
+    ("coverage artifact drift", ("python3", "scripts/build_coverage_artifact.py", "--check")),
+    # The selftest is a gate too: one that exists but that `--gates` never runs makes a clean sweep a
+    # claim about work nobody did — the coverage-gap class. It was registered TWICE for a while, which
+    # inflates the sweep count; GATE names are asserted unique in the selftest now.
+    ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
     ("rails-flow guide", ("python3", "plugins/rails-flow/scripts/check_guide.py", "--selftest")),
+    # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
+    # also catches an agent's `model:` drifting from the doctrine that documents it (#127).
+    ("rails-flow work order", ("python3", "plugins/rails-flow/scripts/check_handoff.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     ("design-flow setup cross-check", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--quiet")),
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
+    ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
+    # The browser collector is a shipped `.js` FILE, so no markdown linter reads it — the fenced-code
+    # checkers only see markdown. Its syntax check therefore lives with it, and SKIPS loudly when
+    # node is absent instead of failing the sweep for want of a binary (CORPORA_GATES' reasoning).
+    ("design-flow conformance collector", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--check-collector")),
     ("evals gates", ("python3", "evals/selftest.py")),
     # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the
@@ -124,10 +143,20 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
-# FAIL. Only the drift check qualifies: `build_coverage.py --selftest` already reports its two
-# corpora-dependent checks as SKIPPED and still exits 0, so it belongs in the list above.
-# Keyed by gate NAME, and the selftest asserts every name here exists in GATES — otherwise a
-# rename would silently stop the exemption applying.
+# FAIL. Exactly ONE qualifies. `build_coverage.py --check` genuinely enumerates the kits, so without
+# them it cannot rebuild `coverage.md` to compare against.
+#
+# `coverage artifact drift` was briefly in here and has been REMOVED, which is the more instructive
+# half. It was added because the HTML page embedded the upstream corpus totals by walking the kits,
+# so a corpora-less rebuild produced different bytes. But exempting it only stopped the CHECK failing
+# on the machine that lacked them — it could not stop that machine committing a page with
+# `tw: null, fb: null`, which then failed the gate for everyone who HAD them. The exemption moved the
+# damage rather than removing it, and a web session hit exactly that. The page now reads both counts
+# from the committed `coverage.md` Totals table, so its bytes are corpora-independent and the gate
+# runs everywhere. Fix the input; do not widen the carve-out.
+#
+# Keyed by gate NAME, and the selftest asserts the name exists in GATES — otherwise a rename would
+# silently stop the exemption applying — and that the set is exactly this one.
 CORPORA_GATES = frozenset({"coverage matrix drift"})
 
 

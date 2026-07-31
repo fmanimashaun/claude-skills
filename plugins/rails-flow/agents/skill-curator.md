@@ -6,7 +6,7 @@ description: >
   /rails-flow:curate, after doc-heavy sessions, or when the session context reports
   drifted curated docs.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: sonnet
+model: inherit
 ---
 
 You turn a project's documentation into agent capabilities: project-local skills in

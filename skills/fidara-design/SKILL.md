@@ -88,6 +88,16 @@ modal + `modal_controller`) — the Fidara way to do create/edit/delete.
 KPIs, dashboards): the validated `--color-chart-*` palette derived from the `fm-*` tokens, the
 form→color→validate procedure, KPI-tile + chart recipes, and the chart a11y rules. Copy these
 shapes exactly; don't invent new ones.
+[references/visual-assets.md](references/visual-assets.md) is the **visual-asset layer** — what
+actually fills the large visual area of a hero, a feature band, a split sign-in or a 404: the tier
+hierarchy (product screenshot → data-viz → brand-geometric decoration → illustration, last), the
+CSS recipes deriving decoration from the brand's own geometry, the deterministic screenshot capture
+recipe, and the per-surface prescriptions for the pages with nothing to screenshot.
+[references/marketing-copy.md](references/marketing-copy.md) is the **copy layer** for marketing
+surfaces — what each section *says*, not how it is laid out: a per-section contract (the job the
+copy does, its shape, its failure mode), the length caps derived from the shipped measures, and the
+placeholder checks. Read it whenever you build a marketing surface; layout without copy doctrine
+produces a well-composed page with lorem-grade words.
 
 ## Authoring mechanism (what to reach for)
 
@@ -127,6 +137,18 @@ shapes exactly; don't invent new ones.
   never `all`. Under `prefers-reduced-motion` the information still arrives and only the trip is
   skipped — never remove the element or the state change. Full doctrine, including the eight ways a
   gesture can be abandoned, in [references/motion.md](references/motion.md).
+- **Visual assets**: prefer the **most specific** option, not the prettiest — a real product
+  screenshot beats decoration, decoration beats illustration, and illustration is last because it is
+  the hardest class to keep consistent. Decoration is **derived from the brand's own geometry** in
+  CSS (`--decor-*`, role fallbacks), never `fm-*` primitives; it is `aria-hidden`, carries
+  `pointer-events: none`, contains nothing focusable, and is **never load-bearing for meaning**.
+  Never mix two illustration styles on one site. Full doctrine in
+  [visual-assets.md](references/visual-assets.md).
+- **Marketing copy**: the human owns positioning; the agent drafts against a brief and **never
+  invents a fact**. A fabricated metric, customer name, quote or logo is worse than a visible blank —
+  a placeholder gets caught, a plausible fabrication ships. **No placeholder reaches a rendered
+  surface** (lorem, "Feature one", an unfilled `{}`) — that is a defect, not a TODO. Per-section copy
+  contracts in [marketing-copy.md](references/marketing-copy.md).
 - **Charts** use the **chart role tokens** (`--color-chart-*`, sequential/diverging ramps) and the
   [data-viz.md](references/data-viz.md) rules — fixed categorical order, never cycled; **one axis**
   (never dual); identity never color-alone (legend + direct labels); text wears text tokens; status

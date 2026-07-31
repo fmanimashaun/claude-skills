@@ -3,6 +3,7 @@
 
 Run:  python3 scripts/issue_graph.py                     # fetch the tracker via gh, report
       python3 scripts/issue_graph.py --json              # same, machine-readable
+      python3 scripts/issue_graph.py --ready 109 110     # GATE: may this work start now?
       python3 scripts/issue_graph.py --from issues.json  # from a saved `gh issue list --json` dump
       python3 scripts/issue_graph.py --selftest          # prove the rules fire AND stay silent
 
@@ -16,8 +17,23 @@ an edge to an issue that does not exist, a typo'd key, a declaration outside its
 filing error and each exits non-zero. And when the graph is broken the queue is **not printed at
 all**, only the errors. A ranked queue computed from a graph we already know is wrong is worse
 than no queue, because it reads exactly like a correct one. That split — fail closed for gates,
-fail open for advisories — is this tool's own contract, and is the general rule #132 proposes
-recording; CLAUDE.md today states only the narrower "hooks fail open when a dependency is missing".
+fail open for advisories — is the general rule now recorded in `docs/harness-doctrine.md` §5
+(which also gives the scoping this tool relies on: fail closed for what the gate guards, exit 0
+otherwise), restated here as this tool's own contract.
+
+AND THE QUEUE ITSELF IS A GATE, AT THE POINT OF USE (`--ready`). Reporting an order changes
+nothing on its own: `/maintainer-work` said "take the head of the triaged queue" while nothing
+checked that it had, which is the same prose-not-a-queue problem one level up. `--ready 109 110`
+answers one question — may this be started now, as one branch? — and **exits non-zero when the
+answer is no**: an issue waiting on open work, an issue already closed, an issue absent from the
+tracker, or a graph too broken to answer from. Edges *between* the requested issues are satisfied
+by the branch itself, because grouping related issues onto one branch is this repo's default shape
+(CLAUDE.md, *Grouping related issues on one branch*); edges leaving the set are not.
+
+WHY IT STILL SAYS WHAT IT DOES NOT KNOW. A READY verdict on an issue that declares no edges means
+the tracker names no blocker, not that nothing blocks it. With the backfill incomplete that is the
+common case, so every such verdict carries the caveat — reporting "no declared blocker" as "no
+blocker" is the unverified-negative class, and it would be a green light nobody could calibrate.
 
 THE DECLARATION FORMAT. One fenced block in the issue body, tagged `deps`:
 
@@ -46,10 +62,13 @@ Stdlib only, no network beyond `gh`.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -437,6 +456,62 @@ def analyse(graph: Graph) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# The gate at the point of use
+# ---------------------------------------------------------------------------
+
+
+def readiness(graph: Graph, requested: list[int]) -> tuple[list[str], list[str]]:
+    """May `requested` be started now, as ONE unit of work? Returns `(problems, notes)`.
+
+    Everything above reports; this is the half that can fail. That matters because an order
+    nobody consults is an order asserted in prose — the exact defect #133 was filed about,
+    reappearing one level up in a command that said "take the head of the triaged queue" with
+    nothing checking that it had.
+
+    Grouping related issues onto one branch is this repo's default shape (CLAUDE.md, *Grouping
+    related issues on one branch*), so an edge BETWEEN two requested issues is satisfied by the
+    branch itself and only fixes their order along it. An edge leaving the set is not satisfied.
+    That asymmetry is the whole verdict: #110 alone waits on #109, while #109 and #110 together
+    are ready. Gating against the shape the doctrine prefers would get this switched off.
+
+    `notes` carry what the verdict does NOT know. A READY on an issue declaring no edges means
+    the tracker names no blocker, not that none exists.
+    """
+    wanted = sorted(set(requested))
+    inside = set(wanted)
+    problems: list[str] = []
+    notes: list[str] = []
+    for number in wanted:
+        issue = graph.issues.get(number)
+        if issue is None:
+            problems.append(
+                f"#{number} is not in the tracker, so nothing is known about what it waits on"
+            )
+            continue
+        if not issue.is_open:
+            problems.append(f"#{number} is already closed — it is not work to start")
+            continue
+        waiting = _open_predecessors(graph, number)
+        outside = [p for p in waiting if p not in inside]
+        if outside:
+            problems.append(
+                f"#{number} waits on open work: " + ", ".join(f"#{p}" for p in outside)
+                + " — starting it now works the queue out of order"
+            )
+        for predecessor in (p for p in waiting if p in inside):
+            notes.append(
+                f"#{number} waits on #{predecessor}, which is in this group — do #{predecessor} "
+                "first on the branch"
+            )
+        if number not in graph.declared:
+            notes.append(
+                f"#{number} declares no edges of its own, so this says the tracker names no "
+                "blocker for it — not that none exists"
+            )
+    return problems, notes
+
+
+# ---------------------------------------------------------------------------
 # Input
 # ---------------------------------------------------------------------------
 
@@ -548,6 +623,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="read a `gh issue list --json ...` dump instead of calling gh ('-' for stdin)")
     parser.add_argument("--limit", type=int, default=GH_LIMIT,
                         help=f"page bound for the gh query (default {GH_LIMIT})")
+    parser.add_argument("--ready", nargs="+", type=int, metavar="N",
+                        help="gate: exit non-zero unless every named issue can be started now, "
+                             "as one branch (edges between them are satisfied by the branch)")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--selftest", action="store_true",
                         help="prove each rule fires on a real error and stays silent on its near miss")
@@ -572,11 +650,44 @@ def main(argv: list[str] | None = None) -> int:
         for problem in graph.problems:
             print(f"  - {problem}", file=sys.stderr)
         print(
-            "\nNo queue printed. A ranked queue computed from a graph already known to be wrong "
-            "reads exactly like a correct one.",
+            "\nNothing computed from it is printed — no queue, and no READY verdict. A ranked "
+            "queue, or a green light to start work, derived from a graph already known to be "
+            "wrong reads exactly like a correct one.",
             file=sys.stderr,
         )
         return 1
+
+    if args.ready:
+        problems, notes = readiness(graph, args.ready)
+        requested = sorted(set(args.ready))
+        if args.json:
+            print(json.dumps({
+                "requested": requested,
+                "ready": not problems,
+                "problems": problems,
+                "notes": notes,
+            }, indent=2, sort_keys=True))
+            return 1 if problems else 0
+        heading = ", ".join(f"#{n}" for n in requested)
+        # A refusal must not put a verdict on stdout: a caller reading stdout alone would
+        # otherwise see the word READY on the run that was telling it not to start.
+        stream = sys.stderr if problems else sys.stdout
+        if problems:
+            print(f"NOT READY — {heading}:", file=stream)
+            for problem in problems:
+                print(f"  - {problem}", file=stream)
+        else:
+            print(f"READY — {heading} can be started now.", file=stream)
+        for note in notes:
+            print(f"  note: {note}", file=stream)
+        if problems:
+            print(
+                "\nDo not start these until the refusal above is answered — clear the blocker, "
+                "fix the filing, or record in the PR that you are going out of the computed "
+                "order deliberately.",
+                file=stream,
+            )
+        return 1 if problems else 0
 
     report = analyse(graph)
     if args.json:
@@ -601,9 +712,34 @@ def selftest() -> int:
     failures: list[str] = []
     checks = 0
 
+    # -- the selftest itself must not write into the repo ----------------------------
+    # Snapshotted FIRST, so every scenario below is inside the window, and closed at the very
+    # end. The gate runs inside `maintainer_doctor.py`, where a diagnostic that mutates the
+    # working tree is a defect in its own right. Asserted rather than assumed, because the first
+    # version of this selftest did exactly that.
+    checks += 1
+    before = {p.name for p in Path(__file__).resolve().parent.iterdir()}
+
     def issue(number: int, body: str = "", state: str = "OPEN", labels=()) -> Issue:
         return Issue(number=number, title=f"issue {number}", state=state,
                      labels=tuple(labels), body=body)
+
+    def run_main(payload: str, *extra: str) -> tuple[int, str, str]:
+        """`main()` end to end against a tracker dump, from a SYSTEM temp dir — never the repo.
+
+        The first version of this selftest wrote `scripts/.issue_graph_selftest.json` and
+        unlinked it in a `finally` — which mutates the working tree of whoever runs the gate,
+        fails on a read-only checkout, and races two concurrent runs on one fixed filename.
+        `mutation_check.py` already records this exact lesson ("one interrupted process away from
+        leaving a mutated repo"), and `maintainer_doctor.py` runs this selftest as a gate.
+        """
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory(prefix="issue-graph-selftest-") as workdir:
+            fixture = Path(workdir) / "tracker.json"
+            fixture.write_text(payload, encoding="utf-8")
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = main(["--from", str(fixture), *extra])
+        return code, stdout.getvalue(), stderr.getvalue()
 
     def scenario(label: str, issues: list[Issue], *, expect: str | None) -> Graph:
         """`expect` is a substring required in the problems, or None to require silence."""
@@ -864,13 +1000,6 @@ def selftest() -> int:
     except RecursionError:
         failures.append("chain_lengths on a cyclic graph: blew the stack instead of terminating")
 
-    # -- the selftest itself must not write into the repo ----------------------------
-    # The gate runs inside `maintainer_doctor.py`, where a diagnostic that mutates the working
-    # tree is a defect in its own right. Asserted rather than assumed, because the first version
-    # of this selftest did exactly that.
-    checks += 1
-    before = {p.name for p in Path(__file__).resolve().parent.iterdir()}
-
     # -- the truncation guard --------------------------------------------------------
     # #211's whole story. Exercised with an injected runner because `gh` is not present on
     # every machine that runs this selftest, and a check skipped for want of a binary is the
@@ -922,29 +1051,126 @@ def selftest() -> int:
         {"number": 2, "title": "b", "state": "OPEN", "labels": [],
          "body": "```deps\ndepends-on: #1\n```\n"},
     ])
-    import io
-    import contextlib
-    import tempfile
-
-    # A SYSTEM temp dir, never the repo. The first version wrote `scripts/.issue_graph_selftest.json`
-    # and unlinked it in a `finally` — which mutates the working tree of whoever runs the gate, fails
-    # on a read-only checkout, and races two concurrent runs on one fixed filename. `mutation_check.py`
-    # already records this exact lesson ("one interrupted process away from leaving a mutated repo"),
-    # and `maintainer_doctor.py` runs this selftest as a gate, where a diagnostic must never write.
-    stdout, stderr = io.StringIO(), io.StringIO()
-    with tempfile.TemporaryDirectory(prefix="issue-graph-selftest-") as workdir:
-        fixture = Path(workdir) / "broken.json"
-        fixture.write_text(broken, encoding="utf-8")
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = main(["--from", str(fixture)])
+    code, out, err = run_main(broken)
     if code != 1:
         failures.append(f"a cyclic graph exited {code}, expected 1")
-    if "READY NOW" in stdout.getvalue():
+    if "READY NOW" in out:
         failures.append("a queue was printed for a graph known to be cyclic")
-    if "cycle" not in stderr.getvalue():
+    if "cycle" not in err:
         failures.append("the cycle was not reported on stderr")
 
-    # Closes the no-repo-writes check opened above, after every scenario that touches disk.
+    # -- the gate at the point of use: --ready ----------------------------------------
+    # Everything above reports; this decides. The near miss is what keeps it alive: a group
+    # carrying its own internal dependency must come back READY, because grouping related issues
+    # onto one branch is the doctrine's preferred shape — a gate that refuses it would be
+    # switched off inside a week, and then nothing checks the order at all.
+    ready_tracker = [
+        issue(30, deps("blocks: #31"), state="CLOSED"),
+        issue(31, deps("depends-on: #30", "blocks: #32")),
+        issue(32, deps("depends-on: #31")),
+        issue(40),
+    ]
+    ready_graph = scenario("the --ready tracker validates", ready_tracker, expect=None)
+
+    def gate(label: str, on: Graph, requested: list[int], *, expect: str | None,
+             note: str | None = None) -> None:
+        """`expect` is a substring required in the refusal, or None to require READY."""
+        nonlocal checks
+        checks += 1
+        problems, notes = readiness(on, requested)
+        joined = " | ".join(problems)
+        if expect is None:
+            if problems:
+                failures.append(f"{label}: expected READY, got {joined}")
+        elif expect.lower() not in joined.lower():
+            failures.append(
+                f"{label}: expected NOT READY mentioning {expect!r}, got {joined or '(READY)'}"
+            )
+        if note is not None:
+            checks += 1
+            if not any(note.lower() in n.lower() for n in notes):
+                failures.append(
+                    f"{label}: expected a note mentioning {note!r}, got {notes or '(none)'}"
+                )
+
+    gate("an issue waiting on open work is not ready", ready_graph, [32],
+         expect="waits on open work: #31")
+    # The satisfied dependency. #31 waits only on #30, which is CLOSED — that is what a met
+    # prerequisite looks like, and refusing it would make every finished edge a permanent block.
+    gate("an issue whose only blocker is closed is ready", ready_graph, [31], expect=None)
+    gate("a group takes its own internal dependency with it", ready_graph, [31, 32],
+         expect=None, note="in this group")
+    # …but only its OWN. Adding an unrelated issue to the set must not launder #31 out of #32's
+    # way, or "group it with anything" becomes a way to silence the gate.
+    gate("a group is still blocked from outside itself", ready_graph, [32, 40],
+         expect="waits on open work: #31")
+    gate("an issue absent from the tracker", ready_graph, [999], expect="not in the tracker")
+    gate("an already-closed issue is not work to start", ready_graph, [30],
+         expect="already closed")
+    # The honesty half: a green light on an issue that declared nothing must say so.
+    gate("an issue declaring no edges gets the coverage caveat", ready_graph, [40],
+         expect=None, note="declares no edges")
+    # …and an issue that DID declare must not get it. A caveat attached to every verdict is a
+    # caveat nobody reads, which is the same signal-destroying end as no caveat at all.
+    checks += 1
+    _, declared_notes = readiness(ready_graph, [31])
+    if any("declares no edges" in note for note in declared_notes):
+        failures.append(
+            f"the coverage caveat fired on #31, which declares edges: {declared_notes}"
+        )
+
+    checks += 1
+    _, duplicate_notes = readiness(ready_graph, [40, 40])
+    if len(duplicate_notes) != 1:
+        failures.append(
+            f"a repeated request should be deduped, got {len(duplicate_notes)} notes: "
+            f"{duplicate_notes}"
+        )
+
+    # The flag has to be WIRED, not merely implemented — a flag parsed and ignored is the
+    # dead-declaration class, and calling `readiness` directly would never notice.
+    ready_json = json.dumps([
+        {"number": 31, "title": "schema", "state": "OPEN", "labels": [], "body": ""},
+        {"number": 32, "title": "consumer", "state": "OPEN", "labels": [],
+         "body": "```deps\ndepends-on: #31\n```\n"},
+    ])
+    checks += 1
+    code, out, err = run_main(ready_json, "--ready", "32")
+    if code != 1:
+        failures.append(f"--ready on a blocked issue exited {code}, expected 1")
+    if out.strip():
+        # Not merely "no READY": stdout must be EMPTY, because a caller reading stdout alone is
+        # the case the refusal has to survive. `--json` is the deliberate exception below.
+        failures.append(f"--ready wrote to stdout while refusing to start work: {out!r}")
+    if "#31" not in err:
+        failures.append(f"--ready refused without naming the blocker: {err!r}")
+
+    checks += 1
+    code, out, err = run_main(ready_json, "--ready", "31", "32")
+    if code != 0:
+        failures.append(f"--ready on a whole group exited {code}, expected 0: {err}")
+    if "READY" not in out:
+        failures.append(f"--ready cleared the group but printed no verdict on stdout: {out!r}")
+
+    checks += 1
+    code, out, _ = run_main(ready_json, "--ready", "32", "--json")
+    verdict = json.loads(out or "{}")
+    if verdict.get("ready") is not False or verdict.get("requested") != [32] \
+            or not verdict.get("problems"):
+        failures.append(f"--ready --json reported the wrong verdict: {verdict}")
+
+    # Fail closed, same as the queue. A green light derived from a graph already known to be
+    # wrong is worse than a wrong ordering, because it authorises work rather than describing it.
+    checks += 1
+    code, out, err = run_main(broken, "--ready", "1")
+    if code != 1:
+        failures.append(f"--ready on an invalid graph exited {code}, expected 1")
+    if "READY" in out:
+        failures.append("--ready cleared work from a graph known to be cyclic")
+    if "cycle" not in err:
+        failures.append("--ready on an invalid graph did not report the cycle")
+
+    # Closes the no-repo-writes check opened at the top, after every scenario that touches disk.
     stray = {p.name for p in Path(__file__).resolve().parent.iterdir()} - before
     if stray:
         failures.append(

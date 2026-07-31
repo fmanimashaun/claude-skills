@@ -7,6 +7,207 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-31 — a committed coverage page, and bytes that depend only on data
+
+- **FIX — CLAUDE.md claimed all hooks fail open; two fail closed on purpose** (#132). A
+  `doctrine-contradiction` in our own file, flagged by the session that wrote the harness doctrine and
+  **verified here by running the hooks** with `python3` shadowed by a stub that exits 127 — not by
+  reading them. Of the **ten** hook scripts, eight are advisory and degrade to silence, which is
+  correct: an advisory that blocks work when a dependency is missing is an advisory people disable.
+  The two gates fail **closed**: `guard-bash.sh` still exits **2** on `git add -A`, because its
+  fallback passes the raw JSON payload and the command text is still in it; `release-gate.sh` exits
+  **2** when `python3` is absent *and* the command targets `main`, **0** otherwise. That scoping is the
+  load-bearing detail — a gate that failed closed on unrelated work would be switched off within a day.
+- **`docs/harness-doctrine.md` is now referenced from the maintenance guidance** (#132), closing its
+  last open acceptance criterion. It was cited only from a sibling doc, so the doctrine existed and the
+  people who needed it — anyone adding a hook — had no pointer to it. The reference sits at the exact
+  place the decision gets made, next to the fail-open/fail-closed split, with the guarantee-vs-advice
+  test named: *"if a model ignores this, what happens?"*
+
+- **TOOLING — the computed work queue becomes a gate at the point of use** (#133). `issue_graph.py`
+  could already tell you the order; nothing checked that anyone followed it. `/maintainer-work`
+  Phase 0 said *"take the head of the triaged queue"* — a claim with no enforcement, which is the
+  same **prose-is-not-a-queue** defect #133 was filed about, one level up. New
+  `python3 scripts/issue_graph.py --ready 109 110` answers one question — may this be started now,
+  as one branch? — and **exits non-zero with the refusal on stderr and stdout left empty** when any
+  named issue waits on open work, is already closed, is absent from the tracker, or when the graph
+  is too broken to answer from, so a caller reading stdout alone cannot mistake a refusal for a
+  go-ahead (`--json` is the stated exception). Wired into `/maintainer-work` Phase 0, where the
+  standing instruction had been prose. Change type: **maintainer tooling**; no skill
+  doctrine and no external framework claim, so no `doctrine-verifier` verdict applies, and the
+  declaration format it reads remains the maintainer decision recorded on
+  [#133](https://github.com/fmanimashaun/claude-skills/issues/133).
+  - **Edges *between* the requested issues are satisfied by the branch itself**, because grouping
+    related issues onto one branch is this repo's preferred shape (CLAUDE.md, *Grouping related
+    issues on one branch*). `--ready 110` refuses while `--ready 109 110` clears, with a note
+    saying which member goes first. That carve-out has the near-miss test that matters:
+    `--ready 110 42` still refuses, so padding the set cannot launder a blocker away. A gate that
+    refused the doctrine's own branch shape would be switched off inside a week, after which
+    nothing checks the order at all.
+  - **A dependency on a *closed* issue is not a refusal.** That is what a met prerequisite looks
+    like — pinned by a silence fixture, because treating it as a block would make every finished
+    edge permanent.
+  - **A green light says what it does not know.** On an issue declaring no edges the verdict
+    carries a note: the tracker names no blocker, which is not the same as nothing blocking it.
+    Until the epic backfill lands that is the common case, and reporting the first as the second is
+    the `unverified-negative` class from `skills/code-review/SKILL.md`.
+  - **59 selftest checks** (was 43) and **6 new declared mutations** appended to
+    `mutation_check.py`'s `issue_graph` guard — 17 total, all caught, each observed failing on
+    purpose. They cover both directions of the group carve-out, the absent/closed refusals, and
+    both directions of the coverage caveat. The one temp-dir helper every end-to-end fixture goes
+    through is what
+    the pre-existing *"writes its fixture into the repo again"* mutation anchors on, so a future
+    `main()` fixture cannot quietly acquire its own unguarded write path.
+  - **FIX — the documented backfill procedure could destroy an issue body, and exit 0 doing it.**
+    `gh issue view … > /tmp/body.md` truncates the target *before* `gh` runs, so an expired token
+    or a wrong number left an empty file; the next two lines then appended the deps block and
+    handed it to `gh issue edit`, **replacing an entire downstream report with nothing but the
+    edges**. Reproduced against a stubbed `gh` before and after: the old snippet loses the body and
+    returns 0, the new one refuses and returns 1. It now runs under `set -euo pipefail`, uses
+    `mktemp` rather than a shared filename, and greps for an existing `deps` fence first — the
+    parser reads *every* `deps` block in a body, so appending a second is silent and a drifted
+    duplicate contributes edges nobody wrote.
+  - **Still open on #133:** the last acceptance criterion, backfilling epics #89 / #96 / #108 and
+    their phases with edges. That is tracker work rather than a repo change, and every declaration
+    it adds is what makes the coverage caveat above stop firing.
+
+- **NEW `docs/harness-doctrine.md` — the rule we had been following without writing down** (#132):
+  *put your guarantees in the deterministic layer*, with the guarantee-vs-advice test (*"if a model
+  ignores this, what happens?"*), the three tiers (prose / output contract / deterministic), the
+  fail-open-for-advisories vs fail-closed-for-gates rule, and a classification checklist for anyone
+  adding a hook, agent, command or gate. Change type: **design / architecture** — our own placement
+  decision with no upstream, so the authority is the maintainer decision recorded on
+  [#132](https://github.com/fmanimashaun/claude-skills/issues/132), not a `doctrine-verifier` verdict
+  (which would return INCONCLUSIVE for want of a source). No new tooling, as the issue required.
+  - **The document's own claims are cited to files and re-checkable by command, never asserted** —
+    §11 is a table mapping each factual claim to the command that re-verifies it. Where the answer is
+    *nothing enforces this*, it says so: #77's no-disposition clause has no mechanical check
+    (`grep -rn disposition scripts/ plugins/*/scripts/` is empty), nothing cross-checks a skill's
+    non-negotiables against its own reference recipes, and #127 (handoff artefact) and #128 (stop
+    conditions) are **open**, so their principles are recorded as gaps rather than as doctrine.
+    Writing those as rules would have been the `claims-vs-enforcement` defect inside a document about
+    catching it.
+  - **Two claims in the issue body did not survive verification, and the corrections are the
+    document's sharpest content.** (a) *"Every one of those three was an agent ignoring text"* is not
+    true of #56: no agent defied anything at run time — a skill's stated non-negotiables and its own
+    copyable recipes disagreed and nothing had ever compared them. That changes the remedy from
+    *enforcement* to *a cross-check between two things we wrote*, and the general rule is **where a
+    prose rule and a copyable example disagree, the example wins**. (b) *"fail closed for gates"* is
+    imprecise: `release-gate.sh` fails closed **scoped to the command it guards** and exits 0
+    otherwise, because a gate that fails closed on unrelated work is a gate people disable.
+  - **The evidence is extended with the shape the issue did not have: determinism is necessary, not
+    sufficient.** The Stop gate ran every time and still let behavioural code finish with no spec,
+    because plain `--porcelain` collapses a new untracked directory (`stop-gate.sh:24`, found by
+    behaviour-testing #125's gate). Four more instances from 2026-07-31 are cited as one class — a
+    gate that wrote into the working tree, a selftest no gate ran, an interpreter stall reported as a
+    syntax error, and mutation coverage blind to a new rule inside an existing guard. All four are
+    *a check existed, ran, and reported a verdict that was not the truth*, which is why the doc
+    carries the six-rung ladder (mechanical → selftest both directions → mutation per **rule** →
+    reachable from `GATES` → three states with `skip ≠ pass` → does not mutate its subject).
+  - **Found while verifying: `CLAUDE.md:455` states the rule too flatly.** *"Hooks fail open when a
+    dependency is missing"* holds for the four status/advisory hooks and is **false** for
+    `release-gate.sh`, which fails closed on a promotion with no `python3` — deliberately, per its own
+    header comment. A `doctrine-contradiction` against our own code. Recorded in the new doc's §5 and
+    left for the owning lane, since this branch is scoped to `docs/`; for the same reason the issue's
+    other two placements — a pointer from `CLAUDE.md` and a mirror into rails-flow's scaffolded
+    conventions — remain open.
+
+**The coverage page's bytes depend only on its data** (#89). The gate above shipped, and then broke
+twice in one afternoon — both times because something that is *not the data* had leaked into the
+rendered bytes. The rule, arrived at the hard way: **a committed generated artifact may be a function
+of tracked content and nothing else.**
+
+- **FIX — git state, round two: the dirty caveat was a footgun, not a safeguard.** Round one removed
+  the SHA, branch and released/unreleased split. The dirty flag survived, and it was worse:
+  regenerating `coverage.md` *necessarily* dirties the tree, so the very next command wrote a
+  `state: "dirty"` page to the **committed** path, and the gate then failed permanently until someone
+  rebuilt from a clean checkout. `--check` guarded the *comparison* and left the *write* wide open.
+  I did this to myself in the regeneration PR and diagnosed it by extracting both `DATA` blobs and
+  diffing them field by field — only `provenance` differed — rather than theorising. With git state
+  gone the dirty-tree **exit-3 skip goes too**, and that is a strict improvement: mid-edit the honest
+  verdict is a real one (*"the committed page does not match your data"*), which is exactly what
+  `build_coverage.py --check` reports for `coverage.md` with no exemption at all. `EXIT_INCOMPLETE`
+  is deleted as the dead declaration it became. Proven by re-running `--check` from a deliberately
+  dirtied tree: **exit 0**, where it used to be unpassable.
+- **FIX — corpora availability was the second leak, and the carve-out I added for it was the wrong
+  fix.** The page walked the licensed kits for the upstream totals, so a machine without them
+  committed `tw: null, fb: null` and broke the gate for everyone who had them. A web session hit
+  exactly this and flagged it. Earlier the same day I had added `coverage artifact drift` to
+  `CORPORA_GATES` — which only stops the check failing on the machine that is **missing** them and
+  cannot stop that machine committing a stripped page. **The exemption moved the damage rather than
+  removing it.** Both counts now come from the committed `coverage.md` Totals table — which every
+  clone has, and which `build_coverage.py --check` already gates by enumerating the kits — so the
+  authority is unchanged and only the *reader* moved. The exemption is reverted, with the reasoning
+  recorded in both directions so it is not re-added. Verified by hashing the render with the corpora
+  attached and with the root pointed at nothing: **identical**.
+- **Three fixtures had to be rebuilt, each because `mutation_check.py` refused a coincidental catch.**
+  The corpora-independence fixture now stubs the kits **in** at two different sizes rather than
+  stubbing them away — the mutation workdir has no corpora at all, so stubbing away was **vacuous**
+  while the mutant merely **crashed** on the missing directory. It runs **first** and returns
+  immediately, because every later fixture calls `collect()` and a traceback is not a verdict. The
+  totals-parser fixture that pinned the corpus rows as *"not buckets"* was translated rather than
+  deleted: they now parse under keys of their own, and the guarantee that actually mattered — corpus
+  counts must never land in a fidara bucket and inflate a percentage — is asserted structurally.
+
+**The coverage matrix is a committed deliverable now, and its gate reads git** (#89).
+**Change type: repository tooling.** Nothing under `skills/` changed and no framework behaviour is
+claimed, so no `doctrine-verifier` verdict is in scope. The one factual assertion — the row counts —
+is measured by the generator and cross-checked against `coverage.md`'s own Totals table on every run.
+
+- **The coverage matrix now ships as a page other machines can see.** `build_coverage_artifact.py`
+  wrote to a **gitignored** path, so the deliverable existed only on the machine that built it — the
+  defect the maintainer named directly (*"if the build is gitignore, then other maintainer machine
+  can't see it"*). Output moved to **`docs/coverage.html`**, committed, with a `--check` drift mode
+  wired into `maintainer_doctor.py` beside its selftest. All 113 rows classified, cross-checked
+  against the Totals table committed in `coverage.md` on every run, so the two cannot silently
+  diverge. **The per-state split is deliberately not quoted here** — it moved twice while this branch
+  was open (65/44/4 → 66/44/3 → 67/44/2) as parallel sessions landed marketing-copy, visual-asset and
+  Reviews+Rating doctrine. `coverage.md` is the authority on the state of the matrix; this entry is
+  about the tooling. The drift gate caught the stale page both times, which is the whole point of it.
+- **FIX — the drift gate was unpassable by construction.** The page embedded its own short SHA,
+  branch, and released/unreleased state. Committing the page advances `HEAD`, and a promotion flips
+  `unreleased` → `released`, so the committed bytes could only ever match a build made at the one
+  commit that does not yet contain the file. **A file inside a commit cannot name its own commit**;
+  git already knows. `stable_provenance()` now embeds only what is stable and still honest about
+  freshness — the release version, read from a tracked source — plus the dirty caveat. The console
+  keeps logging commit and branch, where volatility costs nothing. Two mutations pin both halves,
+  and a fixture renders the page under two different fake checkouts and requires byte equality.
+- **FIX — the gate trusted the working copy, so it passed a page that was never committed.** It
+  tested `args.out.is_file()` and compared the file on disk. Run against an untracked, *byte-identical*
+  `docs/coverage.html`, it exited **0** — the exact "invisible deliverable" failure above, waved
+  through by the gate built to close it, with the message *"is not committed"* one branch away. This
+  is `claims-vs-enforcement` in new code, the third instance the `code-review` skill's own class has
+  caught. It now compares the blob at `HEAD` via `committed_blob()`, verified against real git rather
+  than a stub. Fixtures pin both directions: an untracked clean build **is** drift; a locally
+  scribbled working copy over a clean commit is **not**.
+- **A dirty tree is INCOMPLETE, not clean and not drift.** The dirty caveat is part of the rendered
+  bytes, so reproducibility genuinely cannot be observed from a dirty checkout. `--check` returns
+  **3**, which `maintainer_doctor.py` maps to **SKIP** — never `ok`. The gate is real exactly where it
+  matters: CI, a fresh clone, the moment before a promotion.
+- **FIX — the new drift gate failed on every machine without the licensed corpora.** The doctor
+  comment registering it asserted *"neither needs the corpora: `build_coverage` declares `ENTRIES`
+  statically"*. The generator does run — but the page **embeds the upstream corpus totals**, so a
+  corpora-less rebuild produces different bytes and `--check` returned **1** on a healthy checkout,
+  telling a contributor to fix failures about **optional private files**. Proved by pointing the
+  corpora root at a nonexistent path, which is also how the false comment was caught: CLAUDE.md
+  promises *"no gate fails for their absence"*, and this one did. `coverage artifact drift` joins
+  `CORPORA_GATES`; the doctor's selftest now pins that set **exactly**, so both too-narrow (a
+  corpora-less machine fails) and too-broad (a gate that needs nothing gets skipped, shrinking the
+  sweep behind a healthy summary) require a deliberate edit with a reason. Verified end-to-end
+  through the real `check_gates()` loop: both drift gates SKIP, both selftests still PASS.
+  CLAUDE.md's *"exactly one file reads them"* is corrected to distinguish one **reader** from one
+  **dependency** — importing `build_coverage` inherits it.
+- **FIX — one gate was registered twice.** `coverage artifact selftest` appeared in `GATES` twice, so
+  `--gates` ran it twice and printed a total larger than the number of distinct checks performed. The
+  only consumer of those names was a set comprehension, which collapses duplicates, so nothing could
+  see it. Names are asserted unique now.
+- **Six mutations guard it, and three of them lied the first time.** They reported *caught — but not
+  by the expected fixture*, because the guard declared no `deps`: the selftest died at import inside
+  the mutation workdir, so every mutation was "caught" by a **traceback**. A crash is not a verdict.
+  The guard now declares `build_coverage.py` and `coverage.md`. Separately, a mutation anchor
+  hand-transcribed as a multi-line string was mangled by `re.sub`'s backslash handling in the
+  authoring step — anchors are read out of the file, never typed.
+
 ### 2026-07-31 — a stall is not a syntax error
 
 
@@ -73,6 +274,87 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     printing a zero that reads like a finding. 40 selftest checks, of which 8 are guards observed
     firing — including `</script>` inside entry prose, which `json.dumps` does **not** neutralise,
     and whose escape must stay value-preserving (the first attempt turned `<!--` into `<--`).
+
+- **FIX — a selftest existed that no gate ran.** `maintainer_doctor.py`'s own selftest flagged
+  `build_coverage_artifact_selftest.py` as having no `GATES` entry — *"`--gates` would report a clean
+  sweep having never executed them"*. Wired; sweep **34 → 35**. The check that caught it exists for
+  exactly this coverage-gap class, and this is the first time it has fired on a real omission rather
+  than a fixture.
+
+- **FIX — an interpreter stall was reported as a syntax error** in the markdown-code gate. This is the
+  unreproducible `30 passed, 1 failed` a parallel session saw and honestly flagged rather than papered
+  over, saying it had truncated the output and could not name the gate. **Not papering over it is why
+  it got found.**
+  - **The mechanism:** `subprocess.TimeoutExpired` is a **subclass** of `SubprocessError`, so the
+    single `except (OSError, subprocess.SubprocessError)` swallowed a stall into the same rc-127 path
+    as *"interpreter missing"*. From there it flowed through the context ladder and came out as
+    **"did not parse in any documented context"** — an environment stall presented as a **code
+    defect**, non-deterministically and only under load. A full sweep here takes ~110 s against a 30 s
+    per-block limit, close enough to fire occasionally. In someone's diff it would have read as a real
+    finding.
+  - A stall now raises `InterpreterStalled`, is reported as **skip** with the offending blocks named,
+    and makes the run **incomplete** (exit 3 → SKIP) — because the honest verdict is that the block was
+    never checked. Real findings still win the exit code, but the stall notice always prints, so it is
+    never silently absorbed.
+  - **Two of my own fixtures were wrong before this landed, both caught by mutation.** The first
+    stubbed `mc._run`, which **bypasses the very except-ordering under test** — so it passed with the
+    code broken. Patching `subprocess.run` one level lower fixed it. The second mutation reverted the
+    `raise` to `pass`, which produces an `UnboundLocalError` rather than the original defect, so it
+    tripped the fixture's catch-all branch instead of the intended one; it now reverts to the **actual
+    pre-fix behaviour**. A mutation that breaks the code differently from how it was broken proves less
+    than it appears to.
+
+- **TOOLING — the coverage matrix gets a filterable HTML rendering, generated from the source rather
+  than from its own output.** `scripts/build_coverage_artifact.py` renders the 113 fidara rows as one
+  filterable table (guidance × kind × corpus, plus search), because the question a maintainer actually
+  asks — *"what needs doctrine, of kind composition, that only Flowbite carries?"* — cuts across the
+  three tables `coverage.md` splits them into, and markdown cannot express a filter. Change type:
+  **maintainer tooling**, no skill doctrine touched and no external framework claim, so no
+  `doctrine-verifier` verdict applies; the licensing boundary is inherited from `build_coverage.py`
+  rather than re-earned (names, statuses and our own prose only — no corpus markup, so a published
+  page cannot leak licensed content).
+  - **It imports `build_coverage.ENTRIES`; it does not parse `coverage.md`.** The first draft parsed
+    the markdown and failed its own count assertion on the first run: the Totals label `documented`
+    also matches `— derivable from documented parts`, so 44 derivable rows were counted as
+    documented. `coverage.md` is *generated English*, and pattern-matching it re-derives — badly —
+    structure the generator already had (three tables whose column order differs, `✓`/`—` standing in
+    for booleans, a tracked issue buried inside a status string). `is_documented` / `is_derivable` /
+    `needs_doctrine` are predicates on a frozen dataclass, so there is no label left to mis-match.
+  - **That moves one bug class rather than removing it, and the new one is guarded.** The predicates
+    are `status.startswith(...)`, so a typo'd status (`"documentd"`) matches none of them and the row
+    would vanish from the page with no error — 112 rendered where 113 exist. `verify_partition`
+    asserts the buckets are total **and** disjoint; the disjoint half is unreachable via real status
+    strings, so a stub matching all three exercises it. A completeness matrix that silently drops a
+    row is worse than no matrix, because the missing row looks like a row that does not exist.
+  - **The count assertion is kept, but against data rather than against our own regex.**
+    `cross_check_committed` compares the counts to the Totals table in the *committed* `coverage.md`
+    — an independently generated artifact of the same source — and reports **three** states, where
+    `skip` (file absent or unparseable) is not a pass. A `fail` aborts the build instead of warning.
+    The one surviving label match is the ordering that caused the original bug, pinned by a fixture
+    whose four numbers are all distinct so a mis-mapping cannot pass by coincidence.
+  - **A shared page stamps what it was built from.** An HTML snapshot outlives its commit, and a
+    stale second source of truth that looks authoritative is the failure mode this repo keeps
+    writing down — so the page carries the commit, the branch, the rails-stack version, and whether
+    that commit is in a published release. An unreleased or dirty build says so on the page itself,
+    in amber. The HTML is deliberately **not committed**: it is a rendering, not a source, and a
+    committed copy would be a second thing to keep in sync — which is why there is no `--check` and
+    therefore no mutation (that requirement attaches to gates).
+  - **Corpora stay optional.** Only the two upstream enumeration totals need `design-corpora/`; the
+    113 rows are ours. Without the corpora the page omits those two numbers and says so, rather than
+    printing a zero that reads like a finding.
+  - **44 selftest checks — 6 guards observed raising, 5 silence fixtures, 33 assertions.** Three of
+    them exist because they caught something during the build, not by anticipation:
+    - `</script>` inside entry prose, which `json.dumps` does **not** neutralise (it is valid JSON
+      and still ends the script element). The escape has to be value-preserving, and the first
+      attempt turned `<!--` into `<--`.
+    - **`git status --porcelain` is fixed-width, and `.strip()` corrupts it.** An unstaged change is
+      `" M path"` — leading space significant — so stripping the output shifted the slice and the
+      stamp reported `cripts/build_coverage_artifact.py`. Invisible for *staged* files, which is
+      why the first run looked right; the fixture therefore covers ` M`, `M `, `MM` and `??`.
+    - **The default output must not be `dist/`.** That directory holds the committed `.skill`
+      artifacts, and the packaging check is "repackage, then confirm `git status` shows only the
+      intended `dist/` change" — an untracked HTML file there sits inside the very signal that
+      check reads. It writes to a new gitignored `/build` instead.
 
 - **FIX — the call-site rule flagged a CORRECT call site** (#95). `ButtonComponent.new(…, data: { action:
   … })` is legal: its initializer ends in **`**attrs`**, which forwards arbitrary keywords — and that is
@@ -852,6 +1134,96 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.14.0 — 2026-07-31
+
+- **FIX — `model-tiers.md` stated the wrong `opus` version for two named providers** (#127). Caught
+  auditing `dev` against source, hours after the doctrine shipped. The paragraph grouped three
+  providers for the `sonnet` alias — correctly, all three resolve to **Sonnet 4.5** — and then
+  attached ***`opus` = Opus 4.6*** to the same group. Per the provider table in
+  [Claude Code model configuration](https://code.claude.com/docs/en/model-config) (read 2026-07-31),
+  `opus` is **Opus 5** on Amazon Bedrock and Google Cloud's Agent Platform, and **Opus 4.6** only on
+  **Microsoft Foundry**. The paragraph also implied `sonnet` has two values when it has **three**:
+  Sonnet 5 on the Anthropic API, **Sonnet 4.6** on Claude Platform on AWS, Sonnet 4.5 on the other
+  three. Read that table **by row, not by group** — a note in the file now says so.
+  - **The argument was right and only the illustration was wrong**, which is the more dangerous
+    shape: the conclusion — *an alias is not a tier, so a shipped plugin cannot know which model its
+    own frontmatter selects* — is fully supported, so nothing about the surrounding reasoning looks
+    off and a reader has no prompt to check the numbers.
+  - Grepped the pattern rather than fixing the one line, per the rule that a contradiction travels in
+    groups. The CHANGELOG's own summary of the same verdict was **already correct** (it says
+    Sonnet 4.5 on Bedrock and Foundry and makes no `opus` claim), so this was the only instance.
+  - Everything else in that verdict re-verified verbatim against the same docs and holds: `model`
+    *"Defaults to `inherit`"*; the four-step resolution order with frontmatter at 3 and *"The main
+    conversation's model"* at 4; an excluded value *"skipped … runs the subagent on the inherited
+    model instead"*; *"As of v2.1.198, Explore inherits the main conversation's model"*; and
+    `effort`'s *"available levels depend on the model"*. So the seven `inherit` pins stand.
+
+- **A unit of work now has a work order, and the model tiers are decided rather than accidental**
+  (#127). New `/rails-flow:handoff` writes `docs/handoff/<slug>.md`: the one file an executor can run
+  from with **no conversation history** — goal, the `AC-n` ids that grade it, files in *and explicitly
+  out of* scope, the guardrails in play, the stop conditions, how to verify, what to record. New
+  `plugins/rails-flow/reference/model-tiers.md` records which agent runs on which model and why. The
+  design half is the maintainer decision recorded on
+  [#127](https://github.com/fmanimashaun/claude-skills/issues/127#issuecomment-5146942862) (an
+  architecture change to our own doctrine, so its authority is that decision, not an upstream
+  citation); every claim about Claude Code's own behaviour is cited below.
+  - **All ten agents' `model:` lines are now decided; seven of them changed, and the old value was
+    backwards.** Verified 2026-07-31:
+    frontmatter *beats* the session model in Claude Code's resolution order, so a pin is a **cap** —
+    the seven agents pinned `sonnet` were **downgrading** every user who had deliberately started an
+    Opus session, which is the opposite of what the issue asked for. Judgement agents (review,
+    security, migrations, implementation, curation, reporting) now say `model: inherit`; the three
+    mechanical ones (`test-runner`, `design-auditor`, `doc-updater`) keep `haiku` and each **names the
+    external proof** that makes a cheap tier safe. The precedent is the platform's own: *"As of
+    v2.1.198, Explore inherits the main conversation's model instead of always running on Haiku"*.
+  - **The issue's three-row table has no mechanism, and that is now written down.** There is no "mid"
+    model to select — the middle row is `effort` (`low`..`max`), a separate field. It is deliberately
+    **not set**: *"available levels depend on the model"* and Claude Code does not publish which,
+    so the value would be unverifiable. Recorded as the next lever rather than left silent.
+  - **`docs/handoff/<slug>.md`, committed — both against the issue body**, which proposed a root
+    `HANDOFF.md` and left committed-vs-gitignored open. Concurrent branches each have a work order, so
+    a root file is overwritten by whichever touched it last: the artefact whose purpose is surviving a
+    context switch would be the one thing that cannot. And a file a fresh clone does not have cannot
+    fix loss of context between machines. The slug rule matches `docs/acceptance/<slug>.md` exactly.
+  - **"Self-contained by construction" is enforced, not asserted** —
+    `plugins/rails-flow/scripts/check_handoff.py` (78-check selftest, 7 declared mutations, **four in
+    the silence direction**). It rejects a work order that points at the conversation, leaves
+    `<placeholders>`/`TBD`, restates criteria instead of citing ids, cites an `AC-n` the acceptance
+    file does not define, or whose stop conditions carry no number. Its second mode reconciles all ten
+    agents against the tier table, so #127's "no agent silently contradicting it" cannot decay back
+    into folklore. The Stop gate validates a work order **when one exists** and never demands one, so
+    branches already in flight are unaffected.
+  - **Verified against upstream, 2026-07-31** ([sub-agents](https://code.claude.com/docs/en/sub-agents),
+    [model-config](https://code.claude.com/docs/en/model-config),
+    [settings](https://code.claude.com/docs/en/settings),
+    [skills](https://code.claude.com/docs/en/skills)): `model:` takes *"`sonnet`, `opus`, `haiku`,
+    `fable`, a full model ID … or `inherit`. Defaults to `inherit`"*; resolution runs
+    `CLAUDE_CODE_SUBAGENT_MODEL` → per-invocation parameter → *"the subagent definition's `model`
+    frontmatter"* → *"the main conversation's model"*; a value outside the org's `availableModels` is
+    skipped and the agent *"runs … on the inherited model instead"*, so pinning up buys nothing;
+    `model` **is** honoured for plugin agents (only *"`hooks`, `mcpServers`, or `permissionMode`"* are
+    ignored); aliases resolve per provider (`sonnet` is Sonnet 5 on the Anthropic API, **Sonnet 4.5**
+    on Bedrock and Foundry) and *"update over time"*; plugin agents are priority *"5 (lowest)"* so a
+    same-named file in `.claude/agents/` overrides ours; and a command's `model` *"applies for the
+    rest of the current turn"*, which is why no command is pinned.
+- **Unattended runs now have stop conditions instead of only guardrails** (#128, rails-flow half —
+  see the decision record on
+  [#128](https://github.com/fmanimashaun/claude-skills/issues/128#issuecomment-5146943177)). The hooks
+  already stopped a run doing damage; nothing said when to **stop and escalate**, and an agent that
+  cannot make progress does not idle, it digs — reverting its own fixes, loosening specs until they
+  pass, widening scope around a blocker, each of which looks like activity in a log. Every work order
+  now carries a numeric **attempt cap** (default 3), a **no-progress detector** (2 identical failure
+  signatures), a **blast-radius cap** (10 files, never outside the declared scope), a **budget** with
+  the remainder reported, and all four **forbidden escapes** enumerated — each individually checked,
+  and each number required to *be* a number, because "stop when you are stuck" cannot be evaluated by
+  the thing that is stuck. `feature.md` (Phase 3, Phase 7) and `fix.md` (*Unattended operation*) now
+  require the final report to say **complete / partial / stopped** and name what was not attempted.
+  Also documents that `maxTurns` is *"Maximum number of agentic turns before the subagent stops"*
+  ([docs](https://code.claude.com/docs/en/sub-agents), 2026-07-31) — a **turn** bound, so it
+  complements the attempt cap rather than replacing it. **The `comp:pipeline` half is not done**: no
+  file under `plugins/pipeline/**` was touched, and each plugin resolves its own
+  `${CLAUDE_PLUGIN_ROOT}`, so pipeline needs its own doctrine and its own checker.
+
 ### 1.13.0 — 2026-07-31
 
 - **The flow can now explain a system back to the human who owns it** (#126). New
@@ -1462,6 +1834,254 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.25.0 — 2026-07-31
+
+- **Inline link is documented, and `coverage.md` reaches ZERO `needs doctrine` rows** (#95). **1 → 0.**
+  Every row in the matrix is now `documented` or `derivable`; no component in either corpus requires an
+  agent to invent an a11y contract. This row had a **real APG pattern** — rare in this file — and two
+  findings that came from measuring rather than reading.
+  - **The 3:1 link figure is a *technique*, not the criterion.** SC 1.4.1 Use of Color (**A**) says only
+    *"Color is not used as the only visual means of conveying information…"* — **no ratio, no mention of
+    links.** The 3:1 lives in **G183, a Sufficient Technique**. Doctrine says "G183 recommends", never
+    "WCAG requires 3:1". And **G183's own test names hover only** (*"Check that hovering over the link
+    causes a visual enhancement"*) — focus is the separate obligation 2.4.7, which G183 cites only by
+    analogy.
+  - **APG's Link pattern says less than it is usually quoted for.** Its keyboard table is exactly two
+    rows — *"Enter: Executes the link…"* and *"Shift + F10 (Optional)"*. It says **nothing about `Space`
+    and nothing about an `<a>` without `href`.* The familiar "Enter activates, Space does not" is real
+    browser behaviour but is **not in the pattern**, so the entry does not cite APG for it. It does carry
+    APG's actual instruction: *"Authors are strongly encouraged to use a native host language link
+    element, such as an HTML `<A>` element with an `href` attribute."*
+  - **Measured against our own tokens, and the numbers decided the rule** (CLAUDE.md: *measure anything
+    measurable*). Light `--primary` `#0077CC` is **3.93:1** against body text — clears G183. Dark
+    `--primary` `#00A3FF` is **2.59:1** — **under 3:1, so in dark mode colour cannot be the
+    distinguisher at all.** An underline at rest is therefore **mandatory, not stylistic**, and since it
+    is required in dark it is used in both: one link recipe, not two. The calculator was validated
+    against the standard controls (`#767676`/`#FFFFFF` = 4.54:1, `#000000`/`#FFFFFF` = 21:1) before any
+    figure was trusted.
+  - **This retires the row's own previous guidance.** It said to use the Button `link` variant's classes
+    — but that variant is `text-primary underline-offset-4 hover:underline`, **no underline at rest**,
+    i.e. precisely the colour-only-plus-hover shape that dark mode's 2.59:1 cannot support. The Button
+    entry gains a one-line scope note pointing at the new one; the variant is still right for a *button*
+    that looks like a link.
+  - **2.5.8 Target Size (Minimum) (AA) does NOT apply to a link in a sentence** — its **Inline**
+    exception, with the Understanding doc's worked example being this exact case: *"Links within
+    paragraphs of text do not need to meet the 24 by 24 CSS pixels requirements."* Worth stating, because
+    padding an inline link to 24 px wrecks the line rhythm to satisfy a criterion that exempts it.
+  - **Three level corrections carried into the entry**: 2.4.4 is **A** and 2.4.9 is **AAA** (the *"click
+    here"* failure **F84** is filed under the AAA one, so it is wrong to say it "fails AA"); **2.4.13
+    Focus Appearance is AAA**, not AA, so its 2 px/3:1 rule is a target and not an obligation; 2.4.11
+    Focus Not Obscured (Minimum) is **AA** and new in 2.2.
+  - **Filed, not fixed: [#304](https://github.com/fmanimashaun/claude-skills/issues/304).** Light-mode
+    `--primary` on `--background` measures **4.42:1**, under 1.4.3's **4.5:1** for normal-size text (it
+    clears on `--card` at 4.66:1). That is a **brand-token** defect, not a component rule, so it is an
+    issue rather than a workaround written into this entry.
+
+- **The empty `Needs doctrine` section stopped printing guidance for rows that do not exist.** Hitting
+  zero left a table header, a column legend and *"Build them when a project needs them"* above **nothing
+  at all** — a dead declaration in the one section that exists to mark honest gaps. The renderer now
+  states the zero explicitly and keeps the section (the status still exists; the next unclassified
+  upstream component may land there). Both directions are fixtures — empty must not emit the table,
+  non-empty must not claim there are none — proven by mutating `if needs:` to `if True:`, which fails 3
+  of them. **37 → 39 checks**, and a fifth `build_coverage` mutation so the gate keeps proving it.
+
+- **Stepper / wizard is documented** (#95). `coverage.md` **2 → 1**. The gate came back **largely
+  INCONCLUSIVE**, which is the correct answer for this row, not a failure — so most of the entry is a
+  **maintainer decision recorded on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95#issuecomment-5147018825)**, and every
+  such line in the entry says so. Only the cited lines are citable.
+  - **What is citable.** `aria-current="step"` is a real ARIA token (*"Represents the current step
+    within a process"*) and *"Authors **SHOULD** only mark one element in a set of elements as current"*.
+    **ARIA itself separates a stepper from a tablist**: *"Authors SHOULD NOT use the `aria-current`
+    attribute as a substitute for `aria-selected` … For example, in a `tablist`, `aria-selected` is used
+    on a `tab`."* And a checkout wizard is inside **3.3.4 Error Prevention (Legal, Financial, Data) at
+    Level AA** — Reversible, Checked or Confirmed. Levels stated because they differ: **3.2.2 is A,
+    3.3.4 is AA, 3.3.6 is AAA.**
+  - **Two absences recorded as absences.** There is **no APG Stepper/Wizard pattern** ("stepper",
+    "wizard", "multi-step" appear nowhere on the index), and — checked deliberately — **APG contains no
+    warning against reusing Tabs for wizard flows.** Our position that a gated, ordered sequence is not
+    *"layered sections of content"* is ours, not APG's.
+  - **The finding worth the whole entry: announce by moving focus, and then do NOT add a live region.**
+    4.1.3 Status Messages (**AA**) has a two-part test — the message must concern *"the progress of a
+    process"* (a step change does) **and** must *"not [be] delivered via a change in context."* Moving
+    focus **is** a change of context, and the Understanding document excludes it by name: *"Changes of
+    context, by their nature, interrupt the user by taking focus … and so have already met the goal to
+    alert the user."* So the two designs are exclusive: move focus to the new step's heading (satisfies
+    2.4.3, and 4.1.3 then does not apply), **or** announce via `role="status"` without moving focus.
+    Doing both double-announces. An implementer would otherwise reach for the live region *and* the
+    focus move, believing both were required.
+  - **Decided as ours:** `<ol>` always but `<nav aria-label="Progress">` only when the steps are really
+    links (Breadcrumb's landmark rule is real but not transferable — a breadcrumb is a trail to
+    ancestors); **no widget keyboard model at all** (it is a display, not a widget — no roving tabindex,
+    no arrow keys); **not a `progressbar`** either, since ARIA scopes that to *"tasks that take a long
+    time"* that are *"always read-only"* and a clickable step list is not read-only; and **never
+    auto-advance on input**, which sidesteps 3.2.2 rather than papering over it with an advisory.
+  - **The Progress bar entry gains a scoping note** rather than a rewrite. It was not wrong — it was
+    unscoped: a continuous bar showing overall completion *is* that component and `aria-valuetext="Step
+    2 of 5"` is right for it; the enumerated named-step list is this one. The two are a paragraph apart
+    and a reader would otherwise pick either.
+
+- **Reviews + Rating is documented** (#91). `coverage.md` **3 → 2**. The verdict's most valuable output
+  was again negative: **the intuitive citation is the wrong one.**
+  - **The governing criterion is 1.1.1 Non-text Content (Level A), not 1.4.1 Use of Color.** A star row
+    that encodes a value is *informational* non-text content and cannot claim the *"pure decoration"*
+    exception, so it owes *"a text alternative that serves the equivalent purpose"*. **1.4.1 applies only
+    where hue alone carries the filled/empty distinction** — filled-vs-empty stars differ in **shape**,
+    and the Understanding document names shape as the *remedy* for 1.4.1, not something it regulates. The
+    row's old "Nearest guidance" text implied the colour framing; the entry now cites 1.1.1 first and
+    1.4.1 conditionally.
+  - **No APG rating pattern** — index lists 30, `w3c/aria-practices` `content/patterns` has no `rating`
+    directory. **`role="img"` + accessible name is the confirmed technique**: ARIA gives `img`
+    **`Children Presentational: True`** and **`Accessible Name Required: True`**, with *"authors MUST
+    provide the element with an accessible name."* That collapses five glyphs into one named unit, which
+    is the point — five separately-announced stars is the failure it prevents.
+  - **`<meter>` is a second spec-honest route for a numeric average** (*"a scalar measurement within a
+    known range"*), carried with the spec's own exclusions (*"should not be used to indicate progress"*;
+    needs a known maximum). We default to `role="img"` so the average and the per-review value share one
+    mechanism.
+  - **Two things have no upstream and are maintainer decisions**, recorded on
+    [#91](https://github.com/fmanimashaun/claude-skills/issues/91#issuecomment-5146974938) where a
+    citation would go: the **interactive picker is a radio group** (no APG pattern covers a 1–5 star
+    picker; Radio Group's *"no more than one of the buttons can be checked at a time"* fits a discrete
+    five-value choice, Slider's continuous thumb does not — and building it as real radios inherits that
+    keyboard model rather than authoring one), and the **accessible-name string** (`"4 out of 5 stars"`;
+    nothing upstream prescribes wording).
+
+- **Visual asset doctrine — what fills the large visual area** (#135). New
+  `fidara-design/references/visual-assets.md`. Every marketing surface has a region that is neither
+  text nor control, and the system said nothing about it — so an agent left it empty, invented
+  something inconsistent, or reached for stock art.
+  - **Change type: MIXED, and split accordingly.** The hierarchy, the per-surface prescriptions and
+    the decision to keep illustration last are **our design decisions** recorded on
+    [#135](https://github.com/fmanimashaun/claude-skills/issues/135) — there is **no APG pattern** for
+    a decorative background or a product screenshot, and none is invented. The Tailwind v4, image
+    format, WCAG and Playwright statements are **external claims** and each carries its citation and
+    version boundary in the file. Shipped separately from #131 (pure architecture) because CLAUDE.md's
+    grouping condition 3 forbids one branch carrying both kinds.
+  - **The gate refuted a claim that would have shipped silently broken.** `bg-gradient-to-*` is not
+    deprecated in Tailwind v4, it is **removed**, with no compatibility alias — it is `bg-linear-to-*`
+    ([v4 release notes](https://tailwindcss.com/blog/tailwindcss-v4)). The v3 name emits **no class at
+    all**, so the failure is invisible.
+  - **Three more version boundaries the verdict pinned.** `mask-*` utilities need **Tailwind ≥ 4.1.0**
+    ([v4.1.0 release](https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.1.0)), not merely
+    "v4" — so the recipes avoid them and say why. Theme custom properties take the **parenthesis**
+    form `from-(--decor-1)`; `from-[--decor-1]` emits the raw token and silently does nothing. A
+    custom `@keyframes` must be **nested inside `@theme`** beside its `--animate-*` variable.
+  - **AVIF is "Newly available", WebP is "Widely available"** (Baseline, checked 2026-07-31) — stated
+    precisely rather than calling both widely available, with `<picture>` source order documented as
+    significant (first match wins) and the LCP rule from
+    [web.dev](https://web.dev/articles/lazy-loading-images): never lazy-load the hero image.
+  - **A deliberate departure from the issue, on a WCAG boundary.** #135 asked for ambient
+    `gradient-drift`; an infinite decorative animation satisfies all three conditions of **WCAG 2.2.2
+    Pause, Stop, Hide** (automatic, over five seconds, parallel with other content), which needs a
+    **pause control** — and `prefers-reduced-motion` is not that control. So we ship a **one-shot
+    1.2s settle** instead and say what taking the loop would cost.
+  - **Both motion patterns the issue named did not exist.** `gradient-drift` and `reveal-on-scroll`
+    appear nowhere in the repo; the issue prescribed them as though shipped. They are defined here
+    from `motion.md`'s existing tokens and renamed `decor-*`. `decor-reveal` applies its hidden state
+    **from JavaScript**, so a page whose observer never runs renders fully visible — the obvious
+    CSS-first implementation hides content permanently on any JS failure.
+  - **Decoration cannot name `fm-*` primitives**, since `brand.md` makes `Ui::Logo` the only component
+    permitted literal colours. It reads four optional `--decor-*` properties with **role fallbacks**,
+    so a pack declaring none still renders on-brand. Verified against
+    `plugins/design-flow/scripts/brand_pack_lint.py`: `ROLES`, `DARK_REQUIRED` and the `-foreground`
+    pairs are fixed lists, so extra `:root` properties pass **with no plugin change** — whereas adding
+    them as required roles would fail every existing pack, and a `brand.json` field would trip the
+    unrecognised-key warning. No new pack field; `brand.md`'s "colours, logo, chart proof" holds.
+  - **Two departures from #135's empty-state recipe, both to avoid contradicting shipped doctrine.**
+    We keep `bg-muted` — the issue is right that `bg-primary/10 text-primary` is an established
+    icon-chip idiom (stat/KPI chip, soft badges, avatars, active pagination), and that is precisely
+    why it is wrong here: in every one of those the tint marks something **active or affirmative**,
+    while an empty state is a neutral absence, and `components.md` already specifies `bg-muted`.
+    We also keep the `size-16` chip, expressing "oversized" through the chip's **font size** — because `lucide_icon`
+    may not take `size:`/`class:`, which the self-consistency lint enforces and the issue's wording
+    would have violated.
+- **Video player is documented** (#95). `coverage.md` **4 → 3**. The verdict refuted three framings
+  before a line was written, and the most useful anchor was one the issue never mentioned.
+  - **No APG pattern for a media player.** The index lists 30 and none is one; `w3c/aria-practices`
+    `content/patterns` has no media directory either. So there is **no upstream keyboard model at
+    all**, and any "video player pattern" keybinding is somebody's convention. The entry says so and
+    inherits the UA's model instead of authoring one.
+  - **`controls` guarantees less than it looks.** The HTML Standard says the UA *"**should** expose a
+    user interface"* with *"features to begin playback, pause playback, seek…"* — a **should**, with
+    **no key bindings specified anywhere in the section**. Space-to-play and arrow-to-seek are browser
+    convention, so they are documented as convention and never as a contract.
+  - **The autoplay rule is WCAG 2.2.2 (Level A), not reduced-motion** — and 2.2.2 is what the issue's
+    framing missed. A hero video is *"moving … information that (1) starts automatically, (2) lasts
+    more than five seconds, and (3) is presented in parallel with other content"* and needs *"a
+    mechanism … to pause, stop, or hide it"*. Understanding 2.2.2 names the case (*"Common examples
+    include motion pictures, synchronized media presentations, animations"*) and scopes it: *"'starts
+    automatically' broadly refers to animations/updates that are not the direct result of a user's
+    intentional activation"*. So a player the visitor presses play on is out of scope; a background
+    loop is not. **1.4.2 Audio Control (A)** stacks on top if sound can start automatically past 3 s.
+  - **Captions ≠ subtitles, and the levels do not merge.** 1.2.2 (**A**) requires captions;
+    `<track kind="captions">` covers *"sound effects, relevant musical cues…"* while `kind="subtitles"`
+    is *"for when the sound is available but not understood"* — shipping the latter where the former is
+    owed fails 1.2.2. 1.2.3 (**A**) accepts *"an alternative for time-based media **or** audio
+    description"*; 1.2.5 (**AA**) removes that escape hatch. Written out per level, because conflating
+    A and AA here is the easy error.
+  - **Two AA criteria are dormant only while the controls are native**, and both carve native chrome
+    out *by name*: 1.4.11 (*"where the appearance of the component is determined by the user agent and
+    not modified by the author"*) and 2.5.8 (*"User Agent Control"*). Author your own and you owe 3:1
+    and 24 × 24 CSS px on every control.
+  - **Three things are ours and say so**: muted-by-default (the HTML Standard offers "allow playback
+    while muted" only as an example of a policy a UA *could* adopt — never a guarantee), reduced-motion
+    suppressing autoplay (Media Queries 5 says nothing about video or autoplay, and the nearest
+    criterion, 2.3.3, is **AAA and about interaction-triggered animation**), and requiring an accessible
+    name on the player.
+- **The stale-fallback guard was checking one of its two inputs** (found flipping the row above).
+  `resolve_build` prefers a row's own `build=` kwarg over the `BUILD` dict, but the guard read only the
+  dict — so a `documented` row whose "use the workaround until the entry lands" text sat **inline**
+  passed silently. That is the exact defect the guard exists to catch, in the half nobody looked at,
+  and the text is invisible in the rendered table. The guard now reads both sources, with a firing
+  fixture and a near-miss (`needs doctrine` + inline `build=` must stay silent) — 35 → 37 checks.
+  Turning it on found **three** rows already carrying it: Calendar / Date picker / Time picker,
+  Image gallery / Lightbox and Carousel / Slider, all promoted with the workaround text still attached.
+
+- **Marketing copy doctrine — what each section *says*** (#131). New
+  `fidara-design/references/marketing-copy.md`. The kits supply layout and visual system; they supply
+  no information architecture and no words, so an agent could compose a structurally perfect landing
+  page and still ship lorem-grade copy.
+  - **Change type: architecture/design decision, no external framework claim.** There is no upstream
+    for what a hero says — no spec, no framework, and the **ARIA APG has no pattern** for a value
+    proposition. Authority is the maintainer decision recorded on
+    [#131](https://github.com/fmanimashaun/claude-skills/issues/131); nothing here is dressed in a
+    borrowed citation. Nothing is copied from `MikeFishbeinAtherial/infinite-headcount` (the repo
+    that prompted the idea) — it carries **no licence**, so it informed the question, never the text.
+  - **The rule that outranks the rest: the human owns positioning, the agent drafts against a brief.**
+    And the sharp corollary — **an invented fact is worse than a visible blank.** `{{customer_count}}`
+    is a defect the auditor catches; "Trusted by 4,000 teams" is a false statement that ships,
+    precisely because it is well-formed. Never synthesise a metric, customer, quote, logo or
+    certification.
+  - **One contract per shipped archetype (job / shape / failure mode).** #90's **16** marketing
+    section archetypes landed as `composition` rows in `coverage.md` rather than as a separate file,
+    which is easy to miss — the first draft of this work asserted they had not landed at all, and the
+    self-review caught it. The table is keyed to **coverage.md's exact names** and the correspondence
+    is made re-checkable by a one-line `grep` printed in the file, so an archetype added there
+    without a contract row shows up as a gap instead of going unnoticed. Also covers the three
+    product surfaces that fail the same way (empty state, error page, auth) and the two page-level
+    blocks (About opener, Landing's how-it-works).
+  - **Commerce is named as out of scope rather than left silent** — storefront/category/product/cart/
+    checkout/order copy is governed by product data and legal disclosure, not positioning, so
+    stretching these contracts over it would be a `coverage-gap` wearing a table.
+  - **The two length caps are derived, not asserted.** `page-anatomies.md` already ships
+    `max-w-[45ch]` on the landing `h1` and `max-w-[60ch]` on the sub-head; at ~5 characters per word
+    and a two-line ceiling that gives **~12 words** and **~30 words**. The derivation is written out
+    so changing the measure changes the cap instead of leaving a stale number behind.
+  - **Voice stays pack *documentation*, not a `brand.json` field** — measured, not assumed:
+    `plugins/design-flow/scripts/brand_pack_lint.py` warns on any manifest key outside the four
+    documented overrides with *"a pack is colours + logo"*. Adding a field our own lint rejects is the
+    claims-vs-enforcement defect, so `brand.md`'s *Voice / meta* section remains the home.
+  - **Scope stated rather than over-claimed.** The seven mechanical checks (placeholder-text,
+    hero-too-long, claim-without-proof, duplicate-hero-cta, numeric-only-pricing-tiers,
+    stat-without-unit, greeting-in-auth) are a **specification**; wiring them into `design-auditor`
+    and `/design-flow:component` is a **design-flow plugin** change and is not in this PR. The file
+    says so, because doctrine claiming enforcement it does not have is `gate-that-cannot-fail`.
+  - **Keyed to the archetypes that exist.** #90's finer-grained marketing *section* archetypes have
+    not landed, so the contracts are keyed to the anatomies `page-anatomies.md` actually ships plus
+    the recurring marketing blocks they call for — and an archetype arriving without a contract row
+    is named as a gap to file rather than a licence to improvise.
 
 ### 1.24.0 — 2026-07-31
 
@@ -2417,6 +3037,71 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.14.0 — 2026-07-31
+
+- **Client-side performance is captured during the crawl, and none of it can reach S1** (#117). `perf-tester` measured server capacity with k6 and nothing measured what a user
+  experiences, though the harness already loads every route in a real browser. The new `perf`
+  evidence profile does — one row per route, LCP / CLS / TTFB / transfer bytes / request count —
+  but every load-bearing decision in it came from verification that contradicted the issue.
+  - **The blind spots here do not leave a blank; they return a plausible number.** That is what
+    separates this profile from the other six. An unexercised keyboard walk leaves an empty cell;
+    an unexercised CLS capture writes **`0`**, and a byte total summed from an API that reports
+    nothing for cross-origin assets writes a small, credible figure. Both read exactly like clean
+    measurements, so the profile's rules are aimed at fabricated numbers rather than missing ones.
+  - **Engine support is per metric, and the obvious blanket rule would have shipped stale.**
+    Verified against MDN browser-compat-data: `largest-contentful-paint` reached **Firefox 122**
+    (Jan 2024) and **Safari 26.2** ([Dec 2025](https://webkit.org/blog/17640/webkit-features-for-safari-26-2/)),
+    so "LCP is Chromium-only" — true until eight months ago, and what this change assumed at the
+    outset — is now wrong. `layout-shift` is still `version_added: false` in both engines
+    ([bug 1651528](https://bugzilla.mozilla.org/show_bug.cgi?id=1651528) open), and
+    `renderBlockingStatus` is [Chromium 107+ only](https://www.w3.org/TR/resource-timing/#dom-performanceresourcetiming-renderblockingstatus).
+    So `LCP ms` is required on **every** engine while `CLS`, `CLS Budget` and `Render Blocking`
+    must be **blank** off chromium — a `0` there reports a perfectly stable page from an API that
+    does not exist. Same direction as #116's forced-colors ceiling: false *confidence*.
+  - **The interaction probe the issue proposed would have corrupted the metrics beside it.**
+    Playwright's `locator.click()` drives the real input pipeline, so `isTrusted` is true — and a
+    trusted input **terminates LCP observation**
+    ([LCP spec](https://w3c.github.io/largest-contentful-paint/)), while shifts within **500 ms**
+    of input carry `hadRecentInput` and are excluded from CLS
+    ([layout-instability](https://github.com/WICG/layout-instability#recent-input-exclusion)). The
+    probe therefore gets its own visit and `same-visit` is rejected. It is also **not** called INP:
+    INP is a whole-visit field metric, and Lighthouse scores **TBT at 30%** in lab precisely
+    because INP cannot be measured there.
+  - **`transferSize` cannot carry a byte budget.** Per
+    [Resource Timing §3.5.1](https://www.w3.org/TR/resource-timing/#dfn-timing-allow-check) it is
+    **0** for a cross-origin resource with no `Timing-Allow-Origin`, **0** for a cache hit, and a
+    fixed constant **300** for a 304 — so a page pulling 30 CDN assets passes any budget by
+    measuring almost nothing. Doctrine moves to Playwright's
+    [`Request.sizes()`](https://playwright.dev/docs/api/class-request#request-sizes)
+    (encoded wire size, network layer, all three engines, not TAO-gated), and `Opaque Requests` is
+    the column that proves which instrument ran: a `0 Oversized Requests` verdict alongside opaque
+    requests is rejected as a clean verdict over bytes nobody measured.
+  - **Severity is capped at S2 — the recompute's third direction.** No WCAG criterion and no
+    standard of any kind mandates a performance budget (searched for, not found; the 2.5 s / 0.1
+    figures are Google guidance published as revisable), so every severity here rests on a
+    [maintainer decision recorded on #117](https://github.com/fmanimashaun/claude-skills/issues/117#issuecomment-5146743363)
+    rather than a citation. #114/#115 stop a row grading a defect *down*, #116 stops it grading an
+    advisory *up*, and this caps the ceiling. `LCP ms` and `TTFB ms` are trended and **never**
+    graded; only a CLS above the budget the row itself carries, and a request over the byte budget,
+    gate at S2. The cap is deliberately narrower than "perf never blocks a release" — an S2 here
+    still counts against `/qa-flow:certify` like any other, and correctly so, because the two
+    things that reach S2 are properties of the *page*. What can never happen is a number from an
+    unthrottled dev machine being escalated into a release-breaking S1.
+  - **Two corrections that silently return nothing** were also verified and written down: a webfont
+    requested by `@font-face` gets `initiatorType` **`"css"`**, not `"font"`
+    ([Resource Timing](https://w3c.github.io/resource-timing/#dom-performanceresourcetiming-initiatortype)),
+    so the obvious filter finds no fonts at all; and `cssRules` throws `SecurityError` on a
+    cross-origin stylesheet ([CSSOM](https://drafts.csswg.org/cssom-1/#dom-cssstylesheet-cssrules)),
+    so font-display must be read from `document.fonts`, which is exactly where a CDN-hosted font
+    stylesheet would otherwise vanish from the count.
+  - Ships with 36 fixtures — 25 that must fire and **11 that must stay silent**, including LCP on
+    webkit being valid so the engine rule cannot degrade into an engine ban, and opaque requests
+    alongside a real oversized finding staying clean because incomplete is not false — plus 9
+    declared mutations and coverage attribution wired in `route_coverage.py`. The bounds rule the emulation profile owned is now the shared
+    `_check_bounds` helper — perf was its third caller, and a third textual copy would have made
+    `mutation_check.py`'s existing anchor for it match twice, which that checker treats as a hard
+    error rather than a pass.
+
 ### 1.13.0 — 2026-07-31
 
 - **Emulated media conditions are tested, and most of what they find is advisory on purpose**
@@ -3000,6 +3685,77 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.7.0 — 2026-07-31
+- **NEW — `/design-flow:audit` gains a browser mode: conformance measured on the RENDERED page,
+  not grepped from source (#107).** A source grep cannot see what the cascade resolves to — a
+  colour injected by a third-party partial, a role token that never resolved, a focus rule that no
+  longer matches the element it was written for. Two new files: `scripts/conformance_collector.js`
+  (runs in the page via Playwright, reusing qa-flow's `app:` launch config rather than inventing a
+  second boot path) and `scripts/rendered_conformance.py` (11 named rules plus two snapshot guards, over the resulting
+  snapshot JSON).
+
+  **The browser measures; Python judges.** Nothing in the collector decides anything, which is
+  what makes a browser-driven check testable offline: `--selftest` carries **86 assertions** and
+  `scripts/mutation_check.py` **55 declared mutations**, every one caught by the intended fixture. It
+  also disposes of the hardest correctness problem for free — the collector resolves each role
+  token through the same browser in the same run, so comparing a rendered colour to a token is set
+  membership, never colour-space arithmetic.
+
+  Rules: `literal-colour`, `numbered-step-binding`, `focus-ring-missing`, `tap-target-small`,
+  `icon-only-unnamed`, `aria-controls-no-expanded`, `horizontal-overflow`, `off-scale-type`,
+  `radius-off-scale` (zero-tolerance) plus `dark-variant-sprawl` and `breakpoint-driven-layout`
+  (count-based trends, thresholds tunable). Facts print even when clean — the `dark:` count, the
+  breakpoint count and the radius-language distribution are the trend #107 asks for.
+
+  **Three of #107's acceptance items are deliberately NOT implemented, because each would fire on
+  doctrine-conformant input** — and a conformance linter that cries wolf is switched off, after
+  which it catches nothing. px-space-off-the-fluid-scale contradicts our own *Control density*
+  table (`px-3 py-2` comes from Tailwind's numeric scale, not `--space-*`); chrome-vs-content type
+  step contradicts `component-implementations.md` in 6 places (filed as #306, with the
+  forced-colors focus-ring gap as #305); and alpha-modified
+  colours are unjudgeable without decomposing a `color-mix`, which the doctrine blesses anyway
+  (`primary/90`, `ring-ring/30`). All three are recorded in the module docstring with the
+  reasoning, not silently dropped.
+
+  Externally verified rather than assumed, each load-bearing for a rule or a carve-out: Tailwind v4
+  opacity modifiers compile to `color-mix(in oklab, … N%, transparent)`
+  ([docs](https://tailwindcss.com/docs/colors), `oklab` per
+  [tailwindlabs/tailwindcss#15201](https://github.com/tailwindlabs/tailwindcss/pull/15201)), so an
+  opacity modifier always lands with alpha < 1; the v4 default palette is authored in `oklch()`;
+  ring utilities are **box-shadow**, not outline ([docs](https://tailwindcss.com/docs/box-shadow)),
+  so a shadow must count as a focus indicator or every conformant `focus-visible:ring-2` would be
+  reported; and `box-shadow` **computes to `none`** in forced-colors mode
+  ([css-color-adjust-1](https://drafts.csswg.org/css-color-adjust-1/)), reported as a counted fact
+  rather than a finding for the same reason.
+
+  **Two defects in this work were found by running it against a real browser, not by any fixture**,
+  which is the argument for having done so. An inline-link target-size exemption written as
+  "display starts with `inline`" silently exempted **every** native `<button>` (Chrome computes
+  them `inline-block`), hiding the whole `tap-target-small` rule; and the radius rule counted the
+  four corners of one element as four elements, so a single `rounded-[7px]` button reported as "4
+  element(s)" and the distribution read four times too high. Both now have a fixture and a
+  mutation. The first also moved a *judgement* out of the collector into Python where a fixture can
+  see it — the collector reports `display`, and `is_inline_link_in_text` decides.
+
+  The mutation check and a self-review against `skills/code-review/SKILL.md` then found nine more,
+  all in this diff. The ones worth naming: `outline: 2px solid var(--ring)` written as the shorthand
+  was read as *no* focus indicator, so the rule flagged the exact fix it recommends — and the fix
+  for the forced-colors gap above; the printed `--schema` contract had already gone stale against
+  the snapshot it documents, and is now compared mechanically against both the fields the rules read
+  and the fields the collector emits, so it cannot drift again; `unreadableSheets` was collected and
+  read by nothing; a guard no real Tailwind class could reach was deleted rather than covered by a
+  fixture for a class nobody writes; two carve-outs were redundant with `is_visible`; two fixtures
+  passed for the wrong reason (a foreign-schema one that would have failed the empty-basis guard
+  instead, an invisible-outline one silenced by a zero width before the style test ran); and a
+  docstring claim about `<sub>`/`<sup>`/`<small>` was wrong in its specifics — now the measured
+  83.33% rather than an asserted 75%/80%.
+
+  A shipped `.js` file is read by no markdown linter — the fenced-code checkers only see markdown —
+  so `rendered_conformance.py --check-collector` `node --check`s it, and both it and the selftest
+  are registered in `maintainer_doctor.py`'s gate sweep. It **skips loudly** when node is absent
+  rather than failing the sweep for want of a binary, and the selftest proves that path is a skip
+  by pointing it at a binary that cannot exist.
 
 ### 1.6.0 — 2026-07-31
 - **FIX — two defects in the cross-check added hours earlier, both found by an external reviewer
@@ -3588,6 +4344,65 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-31 (release v1.44.0)
+
+> ### `needs doctrine` reaches zero, and three gates learned that their own output was not reproducible
+>
+> Every one of the **113** rows in the fidara coverage matrix now carries doctrine — the last four
+> (video player, reviews + rating, stepper/wizard, inline link) landed here, closing a column that
+> stood at 27 a fortnight ago. Plus **`/rails-flow:handoff`** with a decided model-tier policy,
+> **client-side performance capture** in qa-flow, a **rendered-page conformance linter** in
+> design-flow, and marketing-copy + visual-asset doctrine for fidara.
+>
+> The release's most useful material is again what verification **refused**: five reported claims were
+> wrong in their *direction*, not their detail — a `model:` pin turned out to be a downgrade rather
+> than an upgrade, star ratings turned out to engage 1.1.1 rather than 1.4.1, and autoplay turned out
+> to be 2.2.2 at Level A rather than a reduced-motion question.
+>
+> `fidara-design` changed; `rails-8`, `hotwire` and `code-review` are byte-identical. `pipeline` is
+> untouched and stays at 1.1.5.
+
+- **The coverage matrix is browsable, committed, and gated** — `docs/coverage.html`, generated from
+  `build_coverage.py` by import rather than by parsing, cross-checked against `coverage.md`'s own
+  Totals table on every build. It was first written to a **gitignored** path, so the deliverable
+  existed only on the machine that built it.
+  - Its drift gate then failed three times in a day, each time teaching the same lesson: **a committed
+    generated artifact may be a function of tracked content and nothing else.** It embedded its own
+    SHA and branch (so committing it changed the bytes it would next be built with — a file inside a
+    commit cannot name its own commit); then a dirty-tree caveat (so regenerating `coverage.md`, which
+    *necessarily* dirties the tree, wrote a `dirty` page to the committed path and broke the gate
+    permanently); then the upstream corpus totals by walking the **optional licensed kits** (so a
+    machine without them committed `tw: null` and broke the gate for everyone who had them).
+  - The third one is the instructive one, because the first fix was **wrong**: exempting the gate on
+    corpora-less machines only stopped the *check* failing there and could not stop that machine
+    *committing* a stripped page. **Fix the input, don't widen the carve-out.** The counts now come
+    from the committed Totals table and the exemption is reverted.
+  - `--check` also compared the file **on disk**, so a page built and never `git add`ed passed the gate
+    whose own message says *"is not committed"*. It reads the blob at `HEAD` now.
+- **A unit of work has a work order, and the model tiers are decided rather than accidental**
+  (rails-flow 1.14.0). `/rails-flow:handoff` writes the one file an executor can run from with no
+  conversation history, enforced by `check_handoff.py`. The reported model defect was **real with its
+  direction inverted**: frontmatter sits *above* the session model in the resolution order, so seven
+  agents pinned `sonnet` were **downgrading** every user who deliberately started an Opus session.
+  Two tiers now, not three — judgement inherits, mechanical stays on `haiku`.
+- **Client-side performance capture during the crawl** (qa-flow 1.14.0) — one evidence row per route.
+  The engine rule is **per column, not per row**: LCP reached Firefox 122 and Safari 26.2, so it is
+  required everywhere, while `layout-shift` and `renderBlockingStatus` remain Chromium-only. Severity
+  is capped at S2, and `transferSize` is explicitly **not** used for a byte budget — it is 0 for a
+  cross-origin asset without `Timing-Allow-Origin`, 0 for a cache hit, and a flat 300 for a 304.
+- **A rendered-page conformance linter** (design-flow 1.7.0) — the browser measures, Python judges. No
+  rule, count or threshold lives in JS, which is what lets a browser-driven check be gated in a repo
+  with no browser in CI.
+- **Marketing-copy and visual-asset doctrine** for fidara (rails-stack 1.25.0), plus the last four
+  coverage rows and a Mega-menu/Dropdown correction. Verification **removed** a Tailwind claim that
+  would have failed silently: `bg-gradient-to-*` is not deprecated in v4, it is *removed* with no
+  alias, so the v3 name emits no class at all.
+- **Harness doctrine written down** — `docs/harness-doctrine.md`: put your guarantees in the
+  deterministic layer, with the guarantee-vs-advice test and the rule that **determinism is necessary,
+  not sufficient**. A gate ran every time and still let behavioural code finish with no spec.
+- **The computed work queue became a gate at the point of use** — `issue_graph.py --ready` refuses,
+  with the reason on stderr and stdout empty, when an issue waits on open work.
 
 ### 2026-07-31 (release v1.43.0)
 
