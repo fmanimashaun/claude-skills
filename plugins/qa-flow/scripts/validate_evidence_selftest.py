@@ -35,6 +35,8 @@ CHECKS = 0
 HEADER = ve.FUNCTIONAL.header
 A11Y_HEADER = ve.A11Y.header
 RUNTIME_HEADER = ve.RUNTIME.header
+KEYBOARD_HEADER = ve.KEYBOARD.header
+FORMS_HEADER = ve.FORMS.header
 FINDINGS_HEADER = ve.FINDINGS.header
 PROFILE_NAMES = {p.name for p in ve.PROFILES}
 
@@ -582,6 +584,398 @@ def run() -> int:
         **rt,
     )
 
+    # ======================================================================================
+    # keyboard profile -- exhaustive focus/tab-order walk (#114)
+    #
+    # The defect being designed against is SAMPLING, which no per-row field can reveal on its
+    # own: the real probe checked one button per page and produced focus evidence for 25 of 72
+    # pages while reporting nothing missing. So the fixtures attack the DENOMINATOR arithmetic
+    # hardest -- a row that looked at 3 of 40 elements must be indistinguishable from nothing,
+    # never from a clean page.
+    # ======================================================================================
+    kb = {"header": KEYBOARD_HEADER}
+    # Column order: Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Interactive,
+    #               Tab Stops,Unreachable,No Focus Indicator,Positive Tabindex,Backward Jumps,
+    #               Overlays,Trap Failures,Escape Failures,Restore Failures,Skip Link,Severity,
+    #               Evidence,Notes
+    KEYBOARD_CLEAN = (
+        "/,anon,Walked,200,https://a/,https://a/,heading 'Home',chromium,12,12,0,0,0,0,0,0,0,0,"
+        "Present,none,,"
+    )
+
+    expect_clean("keyboard: clean exhaustive walk", f"{KEYBOARD_CLEAN}\n", **kb)
+
+    # -- THE sampling guard: the 25-of-72 defect, made arithmetic --
+    expect_findings(
+        "keyboard: sampled 3 of 40 interactive elements (the 25-of-72 defect)",
+        "/dash,anon,Walked,200,https://a/d,https://a/d,heading 'D',chromium,40,3,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        contains="samples where the contract is exhaustive", count=1, **kb,
+    )
+    # Near miss: fully accounted for -- reached + unreachable == inventory. Must stay silent, or
+    # a genuinely exhaustive page with unreachable elements reads as a sampling defect.
+    expect_clean(
+        "keyboard: 37 reached + 3 unreachable accounts for all 40",
+        "/dash,anon,Walked,200,https://a/d,https://a/d,heading 'D',chromium,40,37,3,0,0,0,0,0,0,0,"
+        "Present,S1,qa/reports/kb/dash.json,3 icon buttons never focusable\n",
+        **kb,
+    )
+    # Near miss the other way: MORE tab stops than inventory is legitimate -- the skip link, an
+    # iframe and the document are tab stops that are not interactive-inventory elements.
+    expect_clean(
+        "keyboard: more tab stops than inventory elements is not a defect",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',chromium,10,13,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        **kb,
+    )
+
+    # -- you cannot report on what you never focused / never opened --
+    expect_findings(
+        "keyboard: more missing indicators than elements focused",
+        "/x,anon,Walked,200,https://a/x,https://a/x,heading 'X',chromium,5,5,0,9,0,0,0,0,0,0,"
+        "Present,S1,e.json,nine unstyled\n",
+        contains="actually focused", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: 3 focus-restore failures across 1 overlay",
+        "/m,anon,Walked,200,https://a/m,https://a/m,heading 'M',chromium,8,8,0,0,0,0,1,0,0,3,"
+        "Present,S1,e.json,restore broken\n",
+        contains="cannot fail one assertion more than once", count=1, **kb,
+    )
+    expect_clean(
+        "keyboard: 3 restore failures across 3 overlays is arithmetic, not a defect",
+        "/m,anon,Walked,200,https://a/m,https://a/m,heading 'M',chromium,8,8,0,0,0,0,3,0,0,3,"
+        "Present,S1,e.json,all three modals drop focus to body on close\n",
+        **kb,
+    )
+
+    # -- the grade cannot be talked down --
+    expect_findings(
+        "keyboard: unreachable elements downgraded to S2",
+        "/y,anon,Walked,200,https://a/y,https://a/y,heading 'Y',chromium,10,8,2,0,0,0,0,0,0,0,"
+        "Present,S2,e.json,two buttons\n",
+        contains="is S1", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: a focus-restore failure called clean",
+        "/z,anon,Walked,200,https://a/z,https://a/z,heading 'Z',chromium,6,6,0,0,0,0,2,0,0,1,"
+        "Present,none,,\n",
+        contains="is S1", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: positive tabindex called clean",
+        "/t,anon,Walked,200,https://a/t,https://a/t,heading 'T',chromium,6,6,0,0,3,0,0,0,0,0,"
+        "Present,none,,\n",
+        contains="is S2", count=1, **kb,
+    )
+    expect_clean(
+        "keyboard: positive tabindex correctly graded S2",
+        "/t,anon,Walked,200,https://a/t,https://a/t,heading 'T',chromium,6,6,0,0,3,0,0,0,0,0,"
+        "Present,S2,,three tabindex=1 in the nav\n",
+        **kb,
+    )
+    expect_findings(
+        "keyboard: severity with every gating counter at 0",
+        "/q,anon,Walked,200,https://a/q,https://a/q,heading 'Q',chromium,4,4,0,0,0,0,0,0,0,0,"
+        "Present,S1,e.json,nothing actually wrong\n",
+        contains="all 0", count=1, **kb,
+    )
+
+    # -- the VERIFIED WebKit caveat: Tab reaches text fields and lists only unless Full Keyboard
+    #    Access is on, so an unreachable count from webkit is a platform default until the row
+    #    says otherwise. Without this, a webkit run files every link as a false S1.
+    expect_findings(
+        "keyboard: unreachable on webkit without confirming Full Keyboard Access",
+        "/w,anon,Walked,200,https://a/w,https://a/w,heading 'W',webkit,20,15,5,0,0,0,0,0,0,0,"
+        "Present,S1,e.json,five links never focused\n",
+        contains="Full Keyboard Access", count=1, **kb,
+    )
+    expect_clean(
+        "keyboard: webkit unreachable IS a finding once Full Keyboard Access is confirmed",
+        "/w,anon,Walked,200,https://a/w,https://a/w,heading 'W',webkit,20,15,5,0,0,0,0,0,0,0,"
+        "Present,S1,e.json,Full Keyboard Access enabled; five links genuinely unreachable\n",
+        **kb,
+    )
+    # Near miss: the carve-out is about UNREACHABLE counts, not about webkit. A webkit row with
+    # nothing unreachable must not be asked to justify itself.
+    expect_clean(
+        "keyboard: webkit with 0 unreachable needs no Full Keyboard Access note",
+        "/w,anon,Walked,200,https://a/w,https://a/w,heading 'W',webkit,20,20,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        **kb,
+    )
+    # ...and the reverse near miss: chromium is not granted the webkit exemption's inverse --
+    # an unreachable count there is a finding on its own merits, no note required.
+    expect_clean(
+        "keyboard: chromium unreachable needs no platform note",
+        "/w,anon,Walked,200,https://a/w,https://a/w,heading 'W',chromium,20,15,5,0,0,0,0,0,0,0,"
+        "Present,S1,e.json,five icon buttons are div-based\n",
+        **kb,
+    )
+
+    expect_findings(
+        "keyboard: no Engine recorded -- reachability is engine-dependent",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',,12,12,0,0,0,0,0,0,0,0,Present,"
+        "none,,\n",
+        contains="no Engine", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: Engine outside the vocabulary",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',safari,12,12,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        contains="is not one of", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: no Skip Link state",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',chromium,12,12,0,0,0,0,0,0,0,0,,"
+        "none,,\n",
+        contains="no Skip Link state", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: invented Skip Link state",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',chromium,12,12,0,0,0,0,0,0,0,0,"
+        "Maybe,none,,\n",
+        contains="is not one of", count=1, **kb,
+    )
+    # `Absent` is a real, reportable state and must not gate: SC 2.4.7 does not mandate a skip
+    # link, and axe's `bypass` rule is satisfied by landmarks or headings too.
+    expect_clean(
+        "keyboard: an absent skip link is reportable, not a failure",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',chromium,12,12,0,0,0,0,0,0,0,0,"
+        "Absent,none,,\n",
+        **kb,
+    )
+
+    # -- a walk that records nothing is not a clean walk --
+    expect_findings(
+        "keyboard: missing the Interactive denominator",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',chromium,,12,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        contains="no Interactive count", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: placeholder instead of a count",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',chromium,none,12,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        contains="records no number", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: negative counter",
+        "/,anon,Walked,200,https://a/,https://a/,heading 'H',chromium,12,-1,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        contains="is negative", **kb,
+    )
+    expect_findings(
+        "keyboard: S1 without evidence a human can re-walk",
+        "/y,anon,Walked,200,https://a/y,https://a/y,heading 'Y',chromium,10,8,2,0,0,0,0,0,0,0,"
+        "Present,S1,,two buttons\n",
+        contains="S1 without an Evidence path", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: graded but no element named",
+        "/y,anon,Walked,200,https://a/y,https://a/y,heading 'Y',chromium,10,8,2,0,0,0,0,0,0,0,"
+        "Present,S1,e.json,\n",
+        contains="without Notes naming the element", count=1, **kb,
+    )
+
+    # -- the SHARED page-identity rules must reach this profile too (#106 on the newest artifact)
+    expect_findings(
+        "keyboard: walked a 404 -- a real focus path on the wrong page",
+        "/gone,anon,Walked,404,https://a/gone,https://a/gone,heading 'G',chromium,12,12,0,0,0,0,"
+        "0,0,0,0,Present,none,,\n",
+        contains="not the page under test", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: walked without an expected-content assertion",
+        "/,anon,Walked,200,https://a/,https://a/,,chromium,12,12,0,0,0,0,0,0,0,0,Present,none,,\n",
+        contains="expected-content assertion", count=1, **kb,
+    )
+    expect_findings(
+        "keyboard: silent login redirect -- walked the login page, filed against /admin",
+        "/admin,signed-in,Walked,200,https://a/admin,https://a/login,heading 'Sign in',chromium,"
+        "12,12,0,0,0,0,0,0,0,0,Present,none,,\n",
+        contains="redirected", count=1, **kb,
+    )
+    expect_clean(
+        "keyboard: Blocked walk records what it saw",
+        "/admin,anon,Blocked,302,https://a/admin,https://a/login,,,,,,,,,,,,,,,,"
+        "Redirected to login; tab order not walked\n",
+        **kb,
+    )
+    expect_clean("keyboard: Out of Scope is exempt", "/billing,anon,Out of Scope,,,,,,,,,,,,,,,,,,,\n", **kb)
+    expect_findings(
+        "keyboard: 'Audited' is an a11y status, not a keyboard one",
+        "/,anon,Audited,200,https://a/,https://a/,heading 'H',chromium,12,12,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        contains="is not one of", count=1, **kb,
+    )
+
+    # ======================================================================================
+    # forms profile -- validation state testing (#115)
+    #
+    # The hole here is not "no checks" but VERDICTS ON STATES NOBODY TRIGGERED: a row can claim
+    # the aria-invalid contract held on a form it never submitted, and that reads exactly like a
+    # real result. So Submit Mode and the error-contract columns are checked against each other
+    # in BOTH directions.
+    # ======================================================================================
+    fm = {"header": FORMS_HEADER}
+    # Column order: Form,Route,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,
+    #               Submit Mode,Invalid Marked,Message Linked,Announced,Values Retained,
+    #               Colour Only,Severity,Evidence,Notes
+    FORMS_CLEAN = (
+        "signup,/signup,Exercised,200,https://a/signup,https://a/signup,heading 'Sign up',6,0,"
+        "dry-run,Not run,Not run,Not run,Not run,Not run,none,,"
+    )
+
+    expect_clean("forms: clean dry-run inspection", f"{FORMS_CLEAN}\n", **fm)
+    expect_clean(
+        "forms: an empty submit whose error contract fully holds",
+        "login,/login,Exercised,200,https://a/login,https://a/login,heading 'Sign in',3,0,empty,"
+        "Pass,Pass,Pass,Pass,Pass,none,qa/reports/forms/login.png,\n",
+        **fm,
+    )
+
+    # -- THE headline rule, in both directions --
+    expect_findings(
+        "forms: verdicts on an error state a dry-run never triggered",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,dry-run,"
+        "Pass,Pass,Pass,Pass,Pass,none,,\n",
+        contains="never submitted an invalid form", count=5, **fm,
+    )
+    expect_findings(
+        "forms: submitted an invalid form but recorded no verdict",
+        "login,/login,Exercised,200,https://a/l,https://a/l,heading 'L',3,0,empty,"
+        "Not run,Not run,Not run,Not run,Not run,none,,\n",
+        contains="the error contract is the reason for submitting", count=5, **fm,
+    )
+    # Near miss: a VALID submit triggers no error state, so `Not run` is the honest answer there
+    # and must not be flagged. Without this the rule would force fabricated verdicts.
+    expect_clean(
+        "forms: 'valid' mode legitimately reports Not run for the error contract",
+        "search,/search,Exercised,200,https://a/s,https://a/s,heading 'S',2,0,valid,"
+        "Not run,Not run,Not run,Not run,Not run,none,,\n",
+        **fm,
+    )
+
+    # -- the destructive carve-out leaves a trace --
+    expect_findings(
+        "forms: destructive form skipped with no trace",
+        "delete-account,/settings,Exercised,200,https://a/set,https://a/set,heading 'Set',4,0,"
+        "skipped-destructive,Not run,Not run,Not run,Not run,Not run,none,,\n",
+        contains="naming the pattern that matched", count=1, **fm,
+    )
+    expect_clean(
+        "forms: destructive skip that names what matched",
+        "delete-account,/settings,Exercised,200,https://a/set,https://a/set,heading 'Set',4,0,"
+        "skipped-destructive,Not run,Not run,Not run,Not run,Not run,none,,"
+        "matched destructive pattern /delete/\n",
+        **fm,
+    )
+
+    # -- label arithmetic --
+    expect_findings(
+        "forms: more unlabelled controls than the form has",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',3,5,dry-run,"
+        "Not run,Not run,Not run,Not run,Not run,S1,e.png,five unlabelled\n",
+        contains="more controls lack a label", count=1, **fm,
+    )
+    expect_findings(
+        "forms: a form with zero controls is not a form under test",
+        "ghost,/g,Exercised,200,https://a/g,https://a/g,heading 'G',0,0,dry-run,"
+        "Not run,Not run,Not run,Not run,Not run,none,,\n",
+        contains="not a form under test", count=1, **fm,
+    )
+    expect_clean(
+        "forms: unlabelled controls correctly graded S1 (3.3.2 / 4.1.2 are Level A)",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,2,dry-run,"
+        "Not run,Not run,Not run,Not run,Not run,S1,e.png,date and tel inputs have no label\n",
+        **fm,
+    )
+
+    # -- the grade cannot be talked down --
+    expect_findings(
+        "forms: aria-invalid failure called clean",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,empty,"
+        "Fail,Pass,Pass,Pass,Pass,none,,\n",
+        contains="is S1", count=1, **fm,
+    )
+    expect_findings(
+        "forms: colour-only error state downgraded to S2 (1.4.1 is Level A)",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,empty,"
+        "Pass,Pass,Pass,Pass,Fail,S2,e.png,error shown in red only\n",
+        contains="is S1", count=1, **fm,
+    )
+    expect_findings(
+        "forms: lost input values called clean",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,invalid,"
+        "Pass,Pass,Pass,Fail,Pass,none,,\n",
+        contains="is S2", count=1, **fm,
+    )
+    expect_clean(
+        "forms: value loss correctly graded S2",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,invalid,"
+        "Pass,Pass,Pass,Fail,Pass,S2,e.png,email cleared on re-render\n",
+        **fm,
+    )
+
+    # -- vocabulary and omission --
+    expect_findings(
+        "forms: no Submit Mode -- nothing decides which verdicts are permitted",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,,"
+        "Not run,Not run,Not run,Not run,Not run,none,,\n",
+        contains="no Submit Mode", count=1, **fm,
+    )
+    expect_findings(
+        "forms: invented Submit Mode",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,poked,"
+        "Not run,Not run,Not run,Not run,Not run,none,,\n",
+        contains="is not one of", count=1, **fm,
+    )
+    expect_findings(
+        "forms: missing a contract verdict",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,empty,"
+        ",Pass,Pass,Pass,Pass,none,,\n",
+        contains="no Invalid Marked verdict", count=1, **fm,
+    )
+    expect_findings(
+        "forms: invented contract verdict",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,empty,"
+        "Mostly,Pass,Pass,Pass,Pass,none,,\n",
+        contains="is not one of Pass / Fail / Not run", count=1, **fm,
+    )
+    expect_findings(
+        "forms: S1 without evidence of the error state",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,empty,"
+        "Fail,Pass,Pass,Pass,Pass,S1,,aria-invalid never set\n",
+        contains="S1 without an Evidence path", count=1, **fm,
+    )
+    expect_findings(
+        "forms: graded but no control named",
+        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,empty,"
+        "Fail,Pass,Pass,Pass,Pass,S1,e.png,\n",
+        contains="without Notes naming the control", count=1, **fm,
+    )
+
+    # -- shared page-identity rules reach this profile too --
+    expect_findings(
+        "forms: exercised a form on a 500",
+        "signup,/signup,Exercised,500,https://a/s,https://a/s,heading 'S',6,0,dry-run,"
+        "Not run,Not run,Not run,Not run,Not run,none,,\n",
+        contains="not the page under test", count=1, **fm,
+    )
+    expect_clean(
+        "forms: Blocked form records what it saw",
+        "signup,/signup,Blocked,404,https://a/s,https://a/s,,,,,,,,,,,,"
+        "Form absent on this build; not exercised\n",
+        **fm,
+    )
+    expect_findings(
+        "forms: 'Walked' is a keyboard status, not a forms one",
+        "signup,/signup,Walked,200,https://a/s,https://a/s,heading 'S',6,0,dry-run,"
+        "Not run,Not run,Not run,Not run,Not run,none,,\n",
+        contains="is not one of", count=1, **fm,
+    )
+
     # ---- findings rollup: dedupe by signature (#118) ---------------------------------
     # The measured case this exists for: 773 "disclosure trigger without aria-expanded" was
     # ~18 distinct defects, one navbar bug across 72 pages. Same arithmetic decides whether
@@ -690,7 +1084,8 @@ def run() -> int:
     _tick()
     detected = []
     for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN),
-                      (ve.RUNTIME, RUNTIME_CLEAN), (ve.FINDINGS, NAVBAR)):
+                      (ve.RUNTIME, RUNTIME_CLEAN), (ve.KEYBOARD, KEYBOARD_CLEAN),
+                      (ve.FORMS, FORMS_CLEAN), (ve.FINDINGS, NAVBAR)):
         got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
         detected.append(got.name)
         if got is not prof:
@@ -751,6 +1146,11 @@ def run() -> int:
         # its canonical contract, and e2e-tester.md points at it rather than restating the
         # header (one copy to drift out of step is enough).
         ("functional-tester.md", ve.RUNTIME),
+        # Both new passes are a11y-auditor's: the keyboard walk and the forms error contract are
+        # accessibility contracts, and the modal-CRUD 422 expectation is referenced to
+        # functional-tester rather than restated, so there stays one copy of it.
+        ("a11y-auditor.md", ve.KEYBOARD),
+        ("a11y-auditor.md", ve.FORMS),
         ("qa-reporter.md", ve.FINDINGS),
     ):
         _tick()

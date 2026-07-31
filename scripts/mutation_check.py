@@ -247,6 +247,50 @@ GUARDS: tuple[Guard, ...] = (
                 "    elif False:",
                 "downgraded to S2",
             ),
+            # #114 -- the sampling guard is the whole profile. Without it a row that walked 3 of
+            # 40 elements reads exactly like a clean page, which is the 25-of-72 defect returning.
+            Mutation(
+                "a keyboard walk may sample instead of covering the inventory (#114)",
+                '        if accounted < counts["Interactive"]:',
+                "        if False:",
+                "sampled 3 of 40 interactive elements",
+            ),
+            Mutation(
+                "a focus-indicator count may exceed the elements actually focused",
+                '        counts["No Focus Indicator"] > counts["Tab Stops"]\n    ):',
+                "        False\n    ):",
+                "more missing indicators than elements focused",
+            ),
+            # The verified WebKit caveat. Removing it turns every link on a WebKit run into a
+            # false S1 -- a platform default reported as an application defect.
+            Mutation(
+                "webkit unreachable counts stop needing Full Keyboard Access confirmed",
+                "        if not any(token in note for token in FKA_TOKENS):",
+                "        if False:",
+                "unreachable on webkit without confirming Full Keyboard Access",
+            ),
+            # #115 -- both directions of the Submit Mode contract, because each alone leaves the
+            # other half of the hole open.
+            Mutation(
+                "a forms row may claim verdicts on an error state it never triggered (#115)",
+                '        elif not exercised and raw != "not run" and mode in FORM_MODES:',
+                "        elif False:",
+                "verdicts on an error state a dry-run never triggered",
+            ),
+            Mutation(
+                "a submitted form may record no error-contract verdict at all",
+                '        if exercised and raw == "not run":',
+                "        if False:",
+                "submitted an invalid form but recorded no verdict",
+            ),
+            # The shared recompute behind both new profiles: `_runtime_extra` spells its own
+            # comparison out, so this mutation covers the keyboard/forms path specifically.
+            Mutation(
+                "keyboard/forms severity is trusted instead of recomputed",
+                "    elif required == S1:",
+                "    elif False:",
+                "unreachable elements downgraded to S2",
+            ),
         ),
     ),
     Guard(
@@ -266,6 +310,20 @@ GUARDS: tuple[Guard, ...] = (
                 "columns = ROUTE_SOURCES.get(profile.name)",
                 'columns = ROUTE_SOURCES.get(profile.name) or ("Example Routes",)',
                 "contributes no coverage",
+            ),
+            # Classifying a new pass and actually READING it are two claims. The
+            # "every profile classified" check proves only the first.
+            Mutation(
+                "the keyboard walk stops earning route coverage (#114)",
+                '    "keyboard": ("Route", "Requested URL", "Final URL"),',
+                "",
+                "keyboard walk was not credited",
+            ),
+            Mutation(
+                "the forms pass stops earning route coverage (#115)",
+                '    "forms": ("Route", "Requested URL", "Final URL"),',
+                "",
+                "forms pass was not credited",
             ),
         ),
     ),
