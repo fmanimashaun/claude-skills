@@ -74,8 +74,15 @@ the Rails helper below):
 
 With `morph`, Turbo diffs the new HTML into the live DOM instead of swapping
 `<body>` — scroll position, focus, and unchanged subtrees survive. Shield
-client-side-mutated regions from morphing with
-`data-turbo-permanent`.
+client-side-mutated regions from morphing with `data-turbo-permanent`.
+
+**The `id` requirement differs between the two things `data-turbo-permanent`
+does, and the difference is useful.** Drive's cross-visit persistence selects
+`[id][data-turbo-permanent]`, so **an `id` is mandatory** there. Morphing's
+skip is a bare `hasAttribute("data-turbo-permanent")` check with **no `id`
+involved** — which is what makes it safe to *add the attribute at runtime*
+to shield a region only while it needs shielding (an edit in progress), and
+remove it after. Worked example in `references/production.md` §2.4.
 
 The payoff is **broadcasted refreshes**: instead of authoring per-change
 streams, the server broadcasts a tiny "reload yourself" signal and every
@@ -98,6 +105,15 @@ Frames marked `<turbo-frame id="..." refresh="morph">` reload themselves as
 part of a morph — use for frame content that a plain morph can't reconcile.
 Choose broadcasted refreshes over hand-written stream actions whenever "just
 re-render the page" is acceptable — it deletes code.
+
+**The tab that caused the change does not refresh itself.** Turbo stamps each
+of its fetches with an `X-Turbo-Request-Id`, the server echoes it onto the
+broadcast as `request-id`, and a tab skips a refresh carrying an id it
+recognises as its own. The recognition set holds only the **last 20**
+requests per page load, so a chatty tab can refresh itself anyway — harmless
+under morphing, which is one more reason `method: :morph` is the right
+default here. Mechanism and its other two conditions:
+`references/production.md` §2.2.
 
 ## 4. Turbo Frames
 
@@ -153,18 +169,46 @@ A stream is HTML that mutates named elements:
 
 | Action | Effect on `target` element |
 |---|---|
-| `append` / `prepend` | Insert template inside, at end / start (existing child with same id is replaced, not duplicated) |
+| `append` / `prepend` | Insert template inside, at end / start — **id-de-duplicated**, see below |
 | `before` / `after` | Insert template as sibling |
-| `replace` | Replace the whole element |
-| `update` | Replace only the element's inner content |
+| `replace` | Replace the whole element — accepts `method="morph"` |
+| `update` | Replace only the element's inner content — accepts `method="morph"` |
 | `remove` | Delete the element (no template needed) |
 | `refresh` | Trigger a page refresh (morphing — §3) |
 
 `target="id"` addresses one element; `targets=".css-selector"` (plural)
-addresses many. Add `[request-id]` de-duplication automatically via
-broadcasts. Streams intentionally have **no client logic** beyond these
+addresses many. Streams intentionally have **no client logic** beyond these
 mutations — if you need behavior, attach a Stimulus controller to the
 arriving HTML.
+
+**`method="morph"` (Turbo ≥ 8.0.5) morphs one stream action** instead of
+swapping outright: `replace` calls `morphElements` on the target, `update`
+calls `morphChildren`. In Rails:
+`turbo_stream.replace(dom_id(x), partial: "…", method: :morph, locals: {…})`.
+**Only `replace` and `update` honour it** — `append`, `prepend`, `before` and
+`after` do not accept `method:` at all. Reach for it when a stream must land
+on a region the user is interacting with (open `<details>`, scroll position,
+focus) and a wholesale swap would reset it.
+
+**How `append`/`prepend` de-duplicate — the precision matters.** Turbo calls
+`removeDuplicateTargetChildren()` first: it collects the **direct children**
+of the target that carry an `id` matching an `id` on any top-level element of
+the incoming `<template>`, and **removes** them. Then it appends (or
+prepends) the new content. So:
+
+- The guarantee is **id uniqueness, not position.** The new element lands at
+  the container's end (`append`) or start (`prepend`) — *not* where the old
+  one sat. Do not read "replaced" as "replaced in place"; for that you want
+  `replace` with `method="morph"`.
+- The scope is **direct children of the target only** — not a document-wide
+  or descendant search.
+- It matches **every** top-level template child with an `id`, not just the
+  first.
+
+This is the mechanism that makes optimistic UI safe: render the pending
+element client-side with the same `id` the server will emit, and the arriving
+broadcast collapses the two instead of doubling them. Worked example in
+`references/production.md` §1.2.
 
 ## 6. Delivering streams: form responses and broadcasts
 
@@ -206,12 +250,27 @@ class Message < ApplicationRecord
 end
 ```
 
-Broadcast rules: prefer the `_later` (job-backed) variants; broadcasts render
-partials with **no controller context** (no `current_user` — design partials
-to take everything as locals); broadcast after commit only; never trust
-user-supplied stream names — `turbo_stream_from` signs them for you.
-First consider §3 refreshes; hand-authored broadcasts are for high-frequency
-or surgical updates where re-rendering the page is too heavy.
+Broadcast rules: broadcasts render partials with **no controller context**
+(no `current_user` — design partials to take everything as locals); broadcast
+after commit only; never trust user-supplied stream names —
+`turbo_stream_from` signs them for you. First consider §3 refreshes;
+hand-authored broadcasts are for high-frequency or surgical updates where
+re-rendering the page is too heavy.
+
+**`_later` by default, with two exceptions — the flat "always prefer
+`_later`" rule was wrong.** turbo-rails recommends `_later` for anything that
+renders, because rendering inline slows the request (and, from an
+`after_create` rather than `after_create_commit`, renders with the
+transaction still open). But:
+
+- **`remove` needs no `_later`** — it renders nothing, only a `dom_id`.
+- **`_later` gives up ordering.** Nothing in ActiveJob, Solid Queue or
+  turbo-rails guarantees that two `_later` broadcasts to the same stream
+  arrive in enqueue order — no priority, no concurrency key, and Solid
+  Queue's own docs disclaim it. With the default multi-threaded worker they
+  routinely won't. **When order is observable — a transcript, a feed, an
+  append-only log — broadcast synchronously.** See
+  `references/production.md` §1.1.
 
 ## 7. Custom stream actions
 
@@ -243,10 +302,18 @@ All bubble to `document`; the most-used, in lifecycle order:
   `turbo:before-render` (cancelable/resumable — custom transitions),
   `turbo:render`, `turbo:load` (fires on first load + every visit — the
   "DOMContentLoaded of Turbo", though Stimulus usually removes the need)
-- `turbo:before-morph-element` / `turbo:morph` (morphing hooks),
-  `turbo:before-frame-render` / `turbo:frame-load` /
+- Morphing hooks, and **the page-level and per-element ones are different
+  events** — don't pair them by name:
+  `turbo:morph` fires **once per morphed page refresh**
+  (`detail: { currentElement, newElement }`); `turbo:before-morph-element`
+  (cancelable) / `turbo:morph-element` fire **per element**, including for a
+  `method="morph"` stream action; `turbo:before-morph-attribute` (cancelable,
+  `detail: { attributeName, mutationType }`) fires per attribute — cancel it
+  to keep morph from touching one attribute (§3)
+- `turbo:before-frame-render` / `turbo:frame-load` /
   `turbo:frame-missing` (handle mismatched frames gracefully),
-  `turbo:before-stream-render` (wrap/intercept stream application)
+  `turbo:before-stream-render` (wrap/intercept stream application — its
+  `detail.render` is **writable**, see `references/production.md` §1.5)
 - `turbo:fetch-request-error`, `turbo:reload`
 
 Idiom: prefer Stimulus `connect()` on the elements themselves over global

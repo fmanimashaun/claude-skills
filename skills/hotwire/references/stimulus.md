@@ -44,6 +44,19 @@ JS.
   bundler: `application.register("clipboard", ClipboardController)`.
 - Inside a controller: `this.element`, `this.identifier`,
   `this.application`, `this.dispatch(...)` (§8).
+- **Two static registration hooks, both easy to miss.**
+  `static get shouldLoad()` (Stimulus 3.0+) returning `false` keeps the
+  controller from being registered at all — the idiomatic way to skip a
+  controller on a platform where it makes no sense, rather than bailing out
+  of `connect()` every time. `static afterLoad(identifier, application)`
+  (Stimulus 3.2+) runs once when the controller *is* registered, before any
+  element connects.
+
+```javascript
+export default class extends Controller {
+  static get shouldLoad() { return !isMobile() }   // never registered on touch
+}
+```
 
 ## 2. Lifecycle callbacks
 

@@ -1185,6 +1185,75 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **NEW `hotwire/references/production.md` — Hotwire under production pressure** (#99, Phase C of
+  #96). Extracted from two 37signals apps, **attributed**: [once-campfire][cf99] (MIT, real-time
+  chat) and [fizzy][fz99] (O'Saasy, drag-and-drop Kanban). Every framework claim carries a
+  version-bounded citation; every design call is labelled **OURS** with its reason. Fifteen claims
+  went through `doctrine-verifier` in three batches — verdicts and the six maintainer decisions are
+  recorded on [the issue][d99].
+  - **The two apps disagree about real-time, and the disagreement is the doctrine.** Fizzy is the
+    *bigger* app and has **zero** Action Cable channels (`broadcasts_refreshes` only); Campfire has
+    six and writes its streams by hand. So app size does not pick the rung — update rate, render
+    cost, and client state do. That escalation test is **ours**; `turbo.md` §3 said "prefer
+    refreshes" without ever saying when not to.
+  - **Optimistic UI is one line of Ruby.** `Message#to_key` returns `[client_message_id]`, so
+    `dom_id` — which derives from `to_key`, verified in `ActionView::RecordIdentifier` — emits the
+    same id the client already rendered its pending element with, and the arriving `append`
+    collapses the pair. No reconciliation pass, no diffing library.
+  - **A catch-up path is now mandatory, not a nicety**, and is added to the skill's definition of
+    done. Streams are fire-and-forget, so a broadcast-only page is **silently stale after every
+    network blip** — the largest gap the audit found in our own doctrine. Campfire's answer is a
+    `?since=` REST resource driven by a bodiless `HeartbeatChannel`, with the high-water mark held
+    in the DOM.
+  - **Action Cable vs Turbo Streams, given a testable edge:** Streams when the server knows what the
+    DOM should become; raw Action Cable when the server has a **fact** and each client decides what
+    it means. All six Campfire channels are on the second side and none carries HTML. Our
+    "Streams first" posture is confirmed by production use, not merely asserted.
+  - **Two morph hazards neither handbook mentions** — morph strips the `open` attribute off a live
+    `<dialog>` (cancel `turbo:before-morph-attribute`), and a broadcast refresh will morph away an
+    edit in progress (set `data-turbo-permanent` from `connect()`, remove it in `disconnect()`).
+  - **`Turbo.offline` is REJECTED, and this is the most valuable finding.** Fizzy pins
+    `turbo-rails` to the `offline-cache` branch and calls `Turbo.offline.start(…)`. Verified: that
+    API ships in **no released** Turbo or turbo-rails — the branch re-exports an **open, unmerged**
+    PR ([hotwired/turbo#1427][t1427]), and the matching turbo-rails PR was closed unmerged by its
+    own author. Reading the Gemfile as licence to copy would have put an unreleasable git-branch
+    dependency into shipped doctrine.
+  - **Verdict on our four-mixin Stimulus doctrine: neither validated nor contradicted**, stated as
+    such. Neither app uses JS mixins at all; both parameterise one generic controller instead
+    (Fizzy's `navigable_list_controller` carries eleven configuration values). Calling that
+    validation would be a citation that does not survive being checked.
+- **Three corrections to shipped hotwire doctrine, all exposed by the gate** (#99). Each was wrong
+  in a way that reads as right, which is why they survived until something checked them.
+  - **`append`/`prepend` de-duplication was described as replacement in place.** It is
+    remove-then-append at the container's **edge**; the scope is **direct children of the target
+    only**; it matches *every* top-level template child carrying an `id`. The guarantee is id
+    uniqueness, **not position** — for in-place you want `replace` with `method="morph"`.
+  - **"Prefer the `_later` broadcast variants" was stated flatly, and it is incomplete.**
+    Verified: **nothing** in ActiveJob, Solid Queue or turbo-rails guarantees the order of two
+    `_later` broadcasts to the same stream — no priority, no concurrency key, and Solid Queue's own
+    README disclaims it. So `remove` never needs `_later` (it renders nothing), and when order is
+    observable — a transcript, a feed — you broadcast **synchronously**. This is why Campfire calls
+    `broadcast_append_to` from its controller.
+  - **`turbo:morph` was paired with `turbo:before-morph-element`; they are different scopes.**
+    `turbo:morph` fires once per morphed *page refresh*; the per-element pair is
+    `turbo:before-morph-element` / `turbo:morph-element`. `turbo:before-morph-attribute` was missing
+    from the events list entirely.
+- **`turbo.md` and `stimulus.md` gain four verified APIs the references omitted** (#99):
+  `<turbo-stream method="morph">` on `replace`/`update` (Turbo ≥ 8.0.5 — and **not** on
+  `append`/`prepend`/`before`/`after`); the **writable** `event.detail.render` on
+  `turbo:before-stream-render`; Stimulus `static get shouldLoad()` (3.0+) and `static afterLoad()`
+  (3.2+); and the fact that `data-turbo-permanent` **requires an `id` for Drive persistence but not
+  for morph exclusion** — the asymmetry that makes a runtime morph-guard sound. Also recorded: a
+  refresh broadcast is suppressed in the tab that caused it via `X-Turbo-Request-Id`, but the
+  recognition set holds only the **last 20** requests per page load.
+
+[cf99]: https://github.com/basecamp/once-campfire
+[fz99]: https://github.com/basecamp/fizzy
+[t1427]: https://github.com/hotwired/turbo/pull/1427
+[d99]: https://github.com/fmanimashaun/claude-skills/issues/99#issuecomment-5140601026
+
 ### 2026-07-30 — the umbrella-Closes rule
 
 - **NEW `references/motion.md` — motion doctrine** (#136). Our entire motion doctrine was **one
