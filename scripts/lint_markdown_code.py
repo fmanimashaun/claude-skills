@@ -57,6 +57,10 @@ import sys
 # truncated to `rb`. The coverage audit is what caught this: the loose control already had a `\b`,
 # the strict regex did not, and the two disagreed by 5 blocks in 4 files. An over-matching extractor
 # is as dishonest as an under-matching one — it reports on input that was never that language.
+# Distinct from 0 (clean) and 1 (findings): the run was INCOMPLETE because an interpreter
+# was missing. maintainer_doctor.py maps this to SKIP, never to ok.
+EXIT_INCOMPLETE = 3
+
 LANGS = ("javascript", "js", "ruby", "rb", "erb")
 _LANG_ALT = "|".join(LANGS)
 FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")\b[^\n]*\n(.*?)^[ \t]*```",
@@ -321,10 +325,15 @@ def main(argv: list[str]) -> int:
         return 0
 
     available, missing = interpreters()
+    # EXIT 3 == "ran, but could not check everything". Exit 0 would make a partial run
+    # indistinguishable from a clean one, and maintainer_doctor.py would print `ok` for a gate
+    # that skipped most of its input — a skip masquerading as a pass, which is the exact failure
+    # this repo's three-state rule exists to prevent. A container without Ruby skips 242 of 276
+    # blocks; that must never read as green.
     if missing and not available:
         print(f"lint_markdown_code: SKIP — none of node/ruby available ({', '.join(missing)}). "
               "This is a skip, NOT a pass: no block was checked.", file=sys.stderr)
-        return 0
+        return EXIT_INCOMPLETE
     if missing:
         print(f"lint_markdown_code: SKIP for {', '.join(missing)} — not installed. Blocks in "
               "that language were NOT checked.", file=sys.stderr)
@@ -380,7 +389,8 @@ def main(argv: list[str]) -> int:
     if not findings:
         if not args.quiet:
             print("no findings.")
-        return 0
+        # Clean, but only over what could be checked — see EXIT_INCOMPLETE.
+        return EXIT_INCOMPLETE if missing else 0
 
     for finding in sorted(findings, key=lambda f: (f.path, f.line)):
         print(f"\n{finding.path}:{finding.line}  [{finding.lang}]")

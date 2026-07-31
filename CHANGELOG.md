@@ -7,6 +7,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **FIX — a skip was masquerading as a pass in the gate added hours earlier.** `lint_markdown_code.py`
+  fails open when `node` or `ruby` is absent, printing a SKIP notice — but it **exited 0**, so
+  `maintainer_doctor.py` printed `[ ok ] gate: markdown code lint` while **242 of 276 blocks went
+  unchecked**. On a cloud container without Ruby — the normal state for a web session — the sweep
+  would have read fully green over a gate that checked 12% of its input. That is precisely the
+  three-state failure the doctor exists to prevent, reintroduced by the newest gate.
+  - The linter now exits **3** for "ran, but could not check everything", distinct from 0 (clean) and
+    1 (findings), and the doctor maps 3 to **SKIP** with the gate's own reason. Its selftest does the
+    same rather than FAILing: a selftest that cannot run is not a broken selftest, and it is not a
+    pass either.
+  - **Found by simulating the container**, not by reading the code — a stub `ruby` on `PATH` was
+    enough to show the green line over an 88%-unchecked run.
+
 ### 1.22.0 — 2026-07-30
 
 - **An umbrella issue was closed by a promotion that shipped one of its groups** — and the rule that

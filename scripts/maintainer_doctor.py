@@ -521,6 +521,15 @@ class Doctor:
             code, out = self.run(*cmd)
             if code == 0:
                 self.add(PASS, f"gate: {name}")
+            elif code == 3:
+                # Exit 3 is a gate's own "I ran but could not check everything" — currently
+                # lint_markdown_code.py with node or ruby absent, which is the normal state of a
+                # cloud container. Reporting `ok` there would let 242 of 276 blocks go unchecked
+                # behind a green line, so it is a SKIP and the reason comes from the gate itself.
+                reason = out.strip().splitlines()[0] if out.strip() else "incomplete run"
+                self.add(SKIP, f"gate: {name}", reason,
+                         "install the missing interpreter, or state in the PR that the gate "
+                         "could not run — a skip is not a pass")
             else:
                 tail = out.splitlines()[-1] if out else f"exit {code}"
                 self.add(FAIL, f"gate: {name}", tail, " ".join(cmd))
