@@ -1134,6 +1134,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.14.1 — 2026-08-01
+
+- **One tier checker now serves every plugin** (#299). `check_handoff.py`'s table markers were
+  hardcoded to `rails-flow:tiers:*` and now match `<!-- <plugin>:tiers:begin -->` for any plugin,
+  so qa-flow, design-flow and pipeline get reconciliation without a copy of the checker — four
+  sources of truth for one contract being the failure this module's own comments warn about. A
+  **half-renamed** block (opens `qa-flow`, closes `rails-flow`) is refused rather than reconciled
+  against the wrong plugin's agents: that failure is created by the parameterisation, so it has
+  its own fixture. Selftest 78 → **80**; rails-flow's own reconciliation is unchanged.
+
 ### 1.14.0 — 2026-07-31
 
 - **FIX — `model-tiers.md` stated the wrong `opus` version for two named providers** (#127). Caught
@@ -1700,6 +1710,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.2.0 — 2026-08-01
+
+- **Agent model pins reconciled with the tier doctrine** (#299). Every agent moved from a
+  `sonnet` pin — which is a **cap**, since frontmatter resolves above the session model — to
+  `inherit`. The full argument, the per-agent table and the reasoning for this plugin's tier
+  split are in its new `reference/model-tiers.md`, reconciled against the shipped agents by a
+  gate in `--gates` so the table cannot drift back into folklore.
+
 ### 1.1.4 — 2026-07-29
 - **Moved the decision out of the markdown entirely.** The fix above still shipped a 12-line,
   three-branch shell guard in a doc — and a doc is the one layer nothing tests. The branching only
@@ -1835,7 +1853,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.26.0 — 2026-08-01
 
 - **FIX — chrome used the content type step in eleven places, not the six reported** (#306).
   **Change type: incorrect doctrine**, and internal rather than external: two of our own files
@@ -1860,34 +1878,6 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     positives would land on exactly the legitimate uses above — which is how a linter gets switched
     off. It belongs in design-flow's browser-driven `rendered_conformance.py`, which resolves real
     elements, and is named there as the home for a `chrome-type-step` rule.
-
-- **Every plugin agent's model pin is now a decision with a named proof** (#299). #127 found that
-  rails-flow's agents pinned `sonnet`, which is a **cap**: frontmatter resolves above the session
-  model, so a user who deliberately started an Opus session got a Sonnet reviewer. That fix stopped
-  at one plugin. The same defect sat in **fifteen more agents** across qa-flow, design-flow and
-  pipeline — the `code-review` skill's own rule that a contradiction travels in groups.
-  - **19 `inherit`, 6 `haiku`, zero `sonnet`, zero expensive aliases** across all 25 plugin agents.
-  - **One checker, four tables.** `check_handoff.py`'s markers were hardcoded to `rails-flow:tiers:*`;
-    they now match `<!-- <plugin>:tiers:begin -->` for any plugin. The issue floated a per-plugin copy
-    instead — that would be four sources of truth for one contract, the second-source-of-truth failure
-    this module's own comments warn against. A **half-renamed** block (opens `qa-flow`, closes
-    `rails-flow`) is refused rather than reconciled against the wrong plugin's agents: that failure is
-    *created* by the parameterisation, so it gets its own fixture. Selftest 78 → **80**.
-  - **qa-flow legitimately keeps more cheap pins**, and this is the interesting decision rather than
-    an oversight. Its outputs are artefacts a script can **reject** — `validate_evidence.py` grades
-    a11y and performance rows, `evidence_manifest.py` grades the report — so the model cannot mark its
-    own homework. Each `haiku` row names that grader, and an empty proof cell is a hard error.
-  - **design-flow keeps none, despite owning three linters** — the distinction the whole table turns
-    on. Those scripts grade the **artefact**, not the agent: `rendered_conformance.py` judges a
-    rendered page against 11 rules and says nothing about whether `design-auditor` weighed a
-    deliberate deviation correctly. Noted there that rails-flow's table lists a *different, narrower*
-    agent of the same name as mechanical — same name, different contract.
-  - **pipeline keeps none**: it ships no deterministic scripts at all, and `kamal-configurator`
-    performs autonomous production deploys — the last agent that should be capped below the model a
-    user chose.
-  - **Four reconciliation gates added to `--gates`**, because a table nothing enforces is the exact
-    state #127 found. Both failure modes proven on purpose: an agent drifting off its row, and an
-    agent pinning `opus`. Each exits 1.
 
 - **FIX (P1) — the focus ring was invisible in forced-colors mode, in nine shipped recipes** (#305).
   **Change type: incorrect doctrine.** Verdict CONFIRMED against two upstreams, both quoted.
@@ -3115,6 +3105,37 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.15.0 — 2026-08-01
+
+- **Every plugin agent's model pin is now a decision with a named proof** (#299). #127 found that
+  rails-flow's agents pinned `sonnet`, which is a **cap**: frontmatter resolves above the session
+  model, so a user who deliberately started an Opus session got a Sonnet reviewer. That fix stopped
+  at one plugin. The same defect sat in **fifteen more agents** across qa-flow, design-flow and
+  pipeline — the `code-review` skill's own rule that a contradiction travels in groups.
+  - **19 `inherit`, 6 `haiku`, zero `sonnet`, zero expensive aliases** across all 25 plugin agents.
+  - **One checker, four tables.** `check_handoff.py`'s markers were hardcoded to `rails-flow:tiers:*`;
+    they now match `<!-- <plugin>:tiers:begin -->` for any plugin. The issue floated a per-plugin copy
+    instead — that would be four sources of truth for one contract, the second-source-of-truth failure
+    this module's own comments warn against. A **half-renamed** block (opens `qa-flow`, closes
+    `rails-flow`) is refused rather than reconciled against the wrong plugin's agents: that failure is
+    *created* by the parameterisation, so it gets its own fixture. Selftest 78 → **80**.
+  - **qa-flow legitimately keeps more cheap pins**, and this is the interesting decision rather than
+    an oversight. Its outputs are artefacts a script can **reject** — `validate_evidence.py` grades
+    a11y and performance rows, `evidence_manifest.py` grades the report — so the model cannot mark its
+    own homework. Each `haiku` row names that grader, and an empty proof cell is a hard error.
+  - **design-flow keeps none, despite owning three linters** — the distinction the whole table turns
+    on. Those scripts grade the **artefact**, not the agent: `rendered_conformance.py` judges a
+    rendered page against 11 rules and says nothing about whether `design-auditor` weighed a
+    deliberate deviation correctly. Noted there that rails-flow's table lists a *different, narrower*
+    agent of the same name as mechanical — same name, different contract.
+  - **pipeline keeps none**: it ships no deterministic scripts at all, and `kamal-configurator`
+    performs autonomous production deploys — the last agent that should be capped below the model a
+    user chose.
+  - **Four reconciliation gates added to `--gates`**, because a table nothing enforces is the exact
+    state #127 found. Both failure modes proven on purpose: an agent drifting off its row, and an
+    agent pinning `opus`. Each exits 1.
+
+
 ### 1.14.0 — 2026-07-31
 
 - **Client-side performance is captured during the crawl, and none of it can reach S1** (#117). `perf-tester` measured server capacity with k6 and nothing measured what a user
@@ -3763,6 +3784,20 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.8.0 — 2026-08-01
+
+- **Agent model pins reconciled with the tier doctrine** (#299). Every agent moved from a
+  `sonnet` pin — which is a **cap**, since frontmatter resolves above the session model — to
+  `inherit`. The full argument, the per-agent table and the reasoning for this plugin's tier
+  split are in its new `reference/model-tiers.md`, reconciled against the shipped agents by a
+  gate in `--gates` so the table cannot drift back into folklore.
+- **Two `NOT COVERED` notes in `rendered_conformance.py` went stale when their blockers were
+  fixed** (#305, #306). A stale *"we cannot check this, our own doctrine contradicts it"* is worse
+  than no note: it tells the next author a blocker still stands. `chrome-vs-content type step` is
+  now **UNBLOCKED** and carries the exception list, because its failure mode inverted; the
+  forced-colors focus item keeps its counted-fact status for a narrower reason and points at the
+  lint rule that holds our own doctrine to it.
 
 ### 1.7.0 — 2026-07-31
 - **NEW — `/design-flow:audit` gains a browser mode: conformance measured on the RENDERED page,
@@ -4422,6 +4457,54 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.45.0)
+
+> ### A focus ring nobody could see, and a type scale our own examples contradicted
+>
+> Three doctrine defects that shipped **because they were correct when written**. The focus ring was
+> right under Tailwind v3 and broke silently at the v4 migration; the model pins were a reasonable
+> default before the resolution order was checked; the type steps drifted inside the very files
+> agents copy from.
+>
+> Two of the three were reported as smaller than they were. Grepping the pattern — the
+> `code-review` skill's own rule — turned **6 sites into 11** and **one plugin into four**.
+>
+> `fidara-design` changed; `rails-8`, `hotwire` and `code-review` are byte-identical.
+
+- **FIX (P1) — the focus ring was invisible in forced-colors mode** (#305). Nine shipped recipes read
+  `focus-visible:outline-none focus-visible:ring-2`. Under **Tailwind v4** that is
+  `outline-style: none` plus a ring that is a **box-shadow**, and *"`box-shadow` and `text-shadow`
+  compute to `none`"* in forced colors ([CSS Color Adjust 1](https://www.w3.org/TR/css-color-adjust-1/))
+  — while `outline-color` is merely force-adjusted. **The outline is the half that survives, and we
+  had switched it off.** WCAG 2.4.7.
+  - The cause is a **rename that kept the old spelling and inverted its meaning**: v3's `outline-none`
+    *"set an invisible outline that would still show up in forced colors mode for accessibility
+    reasons"*; v4 renamed that to `outline-hidden` and gave the old name to one that really removes
+    the outline ([upgrade guide](https://tailwindcss.com/docs/upgrade-guide)). Our strings were
+    correct under v3 and rode through the migration untouched, so nothing looked wrong in any diff.
+  - **Enforced, not just documented** — a new `v4-outline-none` lint rule, because a prose rule about
+    a string is exactly what regressed. Its two *silent* fixtures are the ones that matter: doctrine
+    prose naming the bad utility must not fire, and `outline-hidden` must not trip it.
+- **FIX — chrome used the content type step in eleven places, not the six reported** (#306).
+  `foundations-tokens.md` calls `text-step-0`-on-chrome *"the most common calibration error"*, and the
+  calibration is **measured** — 14px chrome beats 16px body ~2.7:1 in both reference corpora. It had
+  drifted inside the reference implementations, so the error was **propagating**. Grepping found five
+  more than reported, including the button `BASE` in two files and a `<table>` in two. One file
+  contradicted itself two lines apart. Where `text-step-0` stays correct is now recorded, because the
+  failure mode of this rule is over-correction.
+- **Every plugin agent's model pin is a decision with a named proof** (#299). A `model:` pin is a
+  **cap** — frontmatter resolves above the session model — so fifteen agents were downgrading anyone
+  on a better model. Across all 25: **19 `inherit`, 6 `haiku`, zero `sonnet`, zero expensive aliases**.
+  qa-flow keeps three cheap pins because its outputs are artefacts a script can **reject**;
+  design-flow keeps none despite owning three linters, because those grade the *artefact*, not the
+  agent. Four reconciliation gates added, both failure modes proven on purpose.
+- **The coverage page is reproducible** (#89). Its drift gate broke twice after shipping, both times
+  because something that is not the data had leaked into the rendered bytes — git state, then the
+  optional licensed corpora. The rule that came out of it: **a committed generated artifact may be a
+  function of tracked content and nothing else.** Exempting the corpora case was the *wrong* fix and
+  was reverted: it only stopped the check failing on the machine that lacked them, never that machine
+  committing a stripped page.
 
 ### 2026-07-31 (release v1.44.0)
 
