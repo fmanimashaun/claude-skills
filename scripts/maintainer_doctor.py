@@ -95,6 +95,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("markdown code lint", ("python3", "scripts/lint_markdown_code.py")),
     ("markdown code coverage", ("python3", "scripts/lint_markdown_code.py", "--audit-coverage")),
     ("markdown code selftest", ("python3", "scripts/lint_markdown_code.py", "--selftest")),
+    # Only the SELFTEST is a gate. Validating the live tracker needs `gh`, and a gate that fails
+    # for want of a binary teaches people to ignore gates — the reasoning CORPORA_GATES already
+    # encodes. The live check runs in /maintainer-triage, where `gh` is a stated precondition.
+    ("issue graph selftest", ("python3", "scripts/issue_graph.py", "--selftest")),
     ("self-consistency", ("python3", "scripts/lint_self_consistency.py")),
     ("self-consistency selftest", ("python3", "scripts/lint_self_consistency.py", "--selftest")),
     ("coverage matrix drift", ("python3", "scripts/build_coverage.py", "--check")),
@@ -105,6 +109,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
+    ("design-flow setup cross-check", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--quiet")),
+    ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
     # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the
@@ -521,6 +527,15 @@ class Doctor:
             code, out = self.run(*cmd)
             if code == 0:
                 self.add(PASS, f"gate: {name}")
+            elif code == 3:
+                # Exit 3 is a gate's own "I ran but could not check everything" — currently
+                # lint_markdown_code.py with node or ruby absent, which is the normal state of a
+                # cloud container. Reporting `ok` there would let 242 of 276 blocks go unchecked
+                # behind a green line, so it is a SKIP and the reason comes from the gate itself.
+                reason = out.strip().splitlines()[0] if out.strip() else "incomplete run"
+                self.add(SKIP, f"gate: {name}", reason,
+                         "install the missing interpreter, or state in the PR that the gate "
+                         "could not run — a skip is not a pass")
             else:
                 tail = out.splitlines()[-1] if out else f"exit {code}"
                 self.add(FAIL, f"gate: {name}", tail, " ".join(cmd))

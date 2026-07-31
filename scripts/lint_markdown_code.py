@@ -57,6 +57,10 @@ import sys
 # truncated to `rb`. The coverage audit is what caught this: the loose control already had a `\b`,
 # the strict regex did not, and the two disagreed by 5 blocks in 4 files. An over-matching extractor
 # is as dishonest as an under-matching one — it reports on input that was never that language.
+# Distinct from 0 (clean) and 1 (findings): the run was INCOMPLETE because an interpreter
+# was missing. maintainer_doctor.py maps this to SKIP, never to ok.
+EXIT_INCOMPLETE = 3
+
 LANGS = ("javascript", "js", "ruby", "rb", "erb")
 _LANG_ALT = "|".join(LANGS)
 FENCE = re.compile(r"^[ \t]*```[ \t]*(" + _LANG_ALT + r")\b[^\n]*\n(.*?)^[ \t]*```",
@@ -227,10 +231,27 @@ def check_block(code: str, lang: str) -> tuple[str | None, str]:
     return _check_ruby(normalised)
 
 
+# Same roots as lint_markdown_shell.py, and for the same reason: `docs/` and `CLAUDE.md` ship
+# code people copy, and until #133 neither linter looked at them. CHANGELOG.md is excluded on
+# purpose — an append-only history, not instructions anyone runs. Kept in step with the shell
+# linter deliberately; two linters over different halves of the same corpus is a coverage gap
+# waiting to be discovered by whichever file lands in the half nobody scans.
+DEFAULT_ROOTS = ["plugins", "skills", ".claude", "docs", "CLAUDE.md", "README.md"]
+
+# A fenced block inside a blockquote is still shipped code; the `^[ \t]*` fence anchor cannot
+# see past the `>`. Stripped line-by-line so line numbers still point at the real file.
+_BLOCKQUOTE = re.compile(r"^[ \t]*(?:>[ \t]?)+", re.M)
+
+
+def read_source(path: str) -> str:
+    """File contents with blockquote markers removed, line numbering preserved."""
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        return _BLOCKQUOTE.sub("", handle.read())
+
+
 def iter_blocks(path: str):
     """Yield (start_line, lang, code) for every fenced code block in a supported language."""
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        src = handle.read()
+    src = read_source(path)
     for match in FENCE.finditer(src):
         start = src[: match.start()].count("\n") + 2   # +1 for the fence line itself
         yield start, match.group(1).lower(), match.group(2)
@@ -268,8 +289,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="lint_markdown_code.py",
         description="Syntax-check the JS, Ruby and ERB embedded in shipped markdown.")
-    parser.add_argument("paths", nargs="*", default=["plugins", "skills", ".claude"],
-                        help="files or directories (default: plugins skills .claude)")
+    parser.add_argument("paths", nargs="*", default=DEFAULT_ROOTS,
+                        help="files or directories (default: " + " ".join(DEFAULT_ROOTS) + ")")
     parser.add_argument("--quiet", action="store_true", help="only print findings")
     parser.add_argument("--audit-coverage", action="store_true",
                         help="cross-check the fence regex against a looser independent scan; a "
@@ -292,7 +313,7 @@ def main(argv: list[str]) -> int:
         return st.run()
 
     try:
-        files = discover(args.paths or ["plugins", "skills", ".claude"])
+        files = discover(args.paths or DEFAULT_ROOTS)
     except FileNotFoundError as exc:
         print(f"lint_markdown_code: no such path: {exc}", file=sys.stderr)
         return 2
@@ -303,8 +324,7 @@ def main(argv: list[str]) -> int:
     if args.audit_coverage:
         gaps, seen, present_total = [], 0, 0
         for path in files:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                src = handle.read()
+            src = read_source(path)
             a, b = len(list(FENCE.finditer(src))), len(LOOSE.findall(src))
             seen += a
             present_total += b
@@ -321,10 +341,15 @@ def main(argv: list[str]) -> int:
         return 0
 
     available, missing = interpreters()
+    # EXIT 3 == "ran, but could not check everything". Exit 0 would make a partial run
+    # indistinguishable from a clean one, and maintainer_doctor.py would print `ok` for a gate
+    # that skipped most of its input — a skip masquerading as a pass, which is the exact failure
+    # this repo's three-state rule exists to prevent. A container without Ruby skips 242 of 276
+    # blocks; that must never read as green.
     if missing and not available:
         print(f"lint_markdown_code: SKIP — none of node/ruby available ({', '.join(missing)}). "
               "This is a skip, NOT a pass: no block was checked.", file=sys.stderr)
-        return 0
+        return EXIT_INCOMPLETE
     if missing:
         print(f"lint_markdown_code: SKIP for {', '.join(missing)} — not installed. Blocks in "
               "that language were NOT checked.", file=sys.stderr)
@@ -338,8 +363,7 @@ def main(argv: list[str]) -> int:
     blocks = lines = loose_total = 0
 
     for path in files:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            src = handle.read()
+        src = read_source(path)
         parsed, present = len(list(FENCE.finditer(src))), len(LOOSE.findall(src))
         loose_total += present
         if parsed != present:
@@ -380,7 +404,8 @@ def main(argv: list[str]) -> int:
     if not findings:
         if not args.quiet:
             print("no findings.")
-        return 0
+        # Clean, but only over what could be checked — see EXIT_INCOMPLETE.
+        return EXIT_INCOMPLETE if missing else 0
 
     for finding in sorted(findings, key=lambda f: (f.path, f.line)):
         print(f"\n{finding.path}:{finding.line}  [{finding.lang}]")

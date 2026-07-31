@@ -8,6 +8,29 @@ argument-hint: "[path or view/component to audit; default: changed files]"
 Review `$ARGUMENTS` (or the working diff) for drift from the **fidara-design** doctrine.
 Delegate to the **design-auditor** agent. Report findings; don't rewrite in place unless asked.
 
+## First: the mechanical cross-check (run it before reading anything)
+
+The checklist below audits a *project's* UI. This one audits the **toolchain** — it catches
+doctrine that references a runtime artefact `/design-flow:setup` never generates, which is
+invisible to every other check and only surfaces as a `NoMethodError` at a user's first setup
+run. It reads the shipped doctrine and generator, so it is meaningful from any clone:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_doctrine_crosscheck.py"
+```
+
+Read the exit code, because two of them mean opposite things:
+
+- **Exit 1 — a toolchain defect, not a project defect.** Doctrine reads config the generator
+  never produces. Report it with `/rails-flow:report` (component `design-flow`) rather than
+  patching locally.
+- **Exit 2 — the check could not run** (an input missing, unreadable, or not valid UTF-8). That
+  is *your clone*, not the toolchain: fix the input and re-run. Filing it as a doctrine defect
+  sends a maintainer hunting something that does not exist.
+
+Treating any non-zero exit as a defect to report conflates the two. Warnings flag config setup
+generates that no doctrine reads: probably dead scaffolding, worth a look but not a blocker.
+
 ## Checklist (cite file:line for each finding)
 
 **Tokens/color**

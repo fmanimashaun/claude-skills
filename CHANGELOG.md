@@ -7,11 +7,134 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-07-31 — six parallel sessions, and what they caught in each other
+
+- **FIX — a broken plugin pointer, and the reason the new rule could not see it** (#272).
+  `plugins/pipeline/commands/setup-cloud.md` pointed at
+  `${CLAUDE_PLUGIN_ROOT}/../templates/env.example`. `${CLAUDE_PLUGIN_ROOT}` **is** the plugin's root,
+  so the `/..` walked out of it: the path resolved to `plugins/templates/env.example`, which does not
+  exist, while the real file sat at `plugins/pipeline/templates/env.example`. One spurious `/..`.
+  - **The interesting half is why `broken-doc-pointer` — added days earlier for exactly this class —
+    stayed silent.** Its regex required the extension to be one of `md|py|sh|json`, and this pointer
+    ends in `.example`. **An extension allowlist fails open on the first type nobody added**, which is
+    the failure mode CLAUDE.md already records for packaging's binary detection (*"never an extension
+    allowlist"*). The rule now accepts **any** dot-extension, which still keeps globs and bare
+    directories out — all the allowlist was ever doing. Pointers examined: **41 → 46**, still clean.
+  - Three fixtures, both directions, including the exact `/..` shape from this issue; plus a mutation
+    that **reverts the regex to the allowlist**, so the widening cannot silently regress. `mutation_check`
+    **58 → 64**; its selftest **81 → 87**.
+  - Building that mutation took two attempts — hand-escaping a regex-inside-a-regex drifted, and the
+    checker's stale-anchor error caught it rather than letting a mutation pass vacuously. Rebuilt by
+    reading the anchor line out of the file itself.
+
+- **`issue_graph.py`: a gate that wrote into the repo, and a rewrite that could hang** — two review
+  findings on #267 plus a third the fix itself exposed. All three shipped in that promotion, so this
+  is the follow-up.
+  - **The selftest wrote `scripts/.issue_graph_selftest.json` into the working tree** and unlinked it
+    in a `finally`. `maintainer_doctor.py` runs that selftest as a gate, and a diagnostic must never
+    mutate the repo — it also fails on a read-only checkout and races two concurrent runs on one
+    fixed filename. `mutation_check.py`'s own docstring already records this exact lesson ("one
+    interrupted process away from leaving a mutated repo"), which is what makes it worth writing
+    down twice. Now a system temp dir, and the selftest **asserts** it leaves no file behind.
+  - **`chain_lengths` recursed while `_cycle_in`, three functions up, deliberately did not** — the
+    same module inconsistent with itself, so the deep-chain case was handled in exactly one of the
+    two places it matters. Now iterative, pinned by a **1500-issue chain** that raises
+    `RecursionError` on the old code.
+  - **The rewrite then introduced a worse bug than the one it fixed.** Recursion got cycle-safety
+    free by writing a provisional length before recursing; the iterative version dropped that, so a
+    cyclic graph looped **forever**. Nothing in the review found it — `mutation_check` did, by
+    disabling cycle detection and watching the run hang. A hang is a far worse failure than a wrong
+    number on a graph that is already a filing error. Fixed with a `visiting` set and its own
+    fixture. Selftest **40 → 43**, `mutation_check` **53 → 54**.
+- **NEW `.github/pull_request_template.md`** — the maintenance rules a PR is judged against now
+  arrive *in* the PR instead of having to be remembered from CLAUDE.md. It makes the change-type
+  classification an explicit tick (silence is not a claim of exemption), demands the citation or
+  the linked maintainer decision that the chosen type requires, and carries the checks a reviewer
+  would otherwise have to ask for: gates run with every skip justified (**a skip is not a pass**),
+  a new guard shipping with a selftest *and* a declared mutation, near-miss negative tests for
+  carve-outs, repackaging after a `skills/**` edit, one CHANGELOG bullet per issue, and no version
+  bump on `dev`. It also restates the closing-keyword rule below at the point of use. The template
+  deliberately contains **no issue numbers at all** — its text becomes every future PR body, so a
+  literal closing keyword beside a real number in it would reproduce that bug on every PR.
+- **NEW `scripts/issue_graph.py` — the work queue is computed from declared edges, not re-reasoned**
+  (#133). The tracker's dependencies (`#93 → #104 → #94/#90`, `#125 → #127`) lived as prose inside
+  issue bodies, so "what should I work on next?" meant re-deriving the ordering by hand and getting a
+  different answer each time. Issues now declare edges in a ```deps block (`depends-on` / `blocks` /
+  `part-of`); the script reports **ready-now**, **blocked-by-what**, **critical path per epic**, and
+  **priority-vs-graph contradictions in both directions** — including the costlier
+  `low-priority-blocking-P1`. Wired into `/maintainer-triage` and `issue-triager`; format documented
+  in `docs/issue-dependency-graph.md`. Design decision (our own format, no upstream) recorded on #133.
+  - **The graph is a gate, the queue is advice.** A cycle, a dangling edge, a typo'd key or a
+    declaration outside its fence exits non-zero and prints **no queue at all** — a ranked queue
+    computed from a graph already known to be broken reads exactly like a correct one. Blocked work
+    and priority contradictions only advise — fail closed for gates, fail open for advisories,
+    stated as this tool's own contract. CLAUDE.md does **not** yet carry that rule generally (only
+    "hooks fail open when a dependency is missing"), which is exactly what #132 exists to fix; the
+    first draft of this entry cited it as settled doctrine, which was the `doctrine-contradiction`
+    class in a PR about catching it.
+  - **Requiring the `deps` tag is only safe because missing it is an error.** `depends_on: :owner` is
+    a Rails association, so a bare fence cannot be told from a code sample — but silent strictness is
+    the `gate-that-cannot-fail` class, so both near-misses are *reported*: a fence that is nothing but
+    declarations under the wrong tag, and a declaration loose in prose. Both detectors stay narrow
+    enough that "Blocks #94 and #90, but only once the schema lands" is silent; the selftest pins
+    every rule in **both** directions. 40 checks, `mutation_check` **30 → 40**.
+  - A full `gh` page is treated as an **error, not a total**: `--limit` bounds a query but proves
+    nothing about truncation, and a truncated tracker turns real edges into phantom "not in the
+    tracker" errors (#211).
+- **`docs/` and `CLAUDE.md` were never linted, and CLAUDE.md is where the release commands live**
+  (found while adding the doc above). Both markdown linters defaulted to `plugins skills .claude`, so
+  the `release_local.sh`, `package_core.py` and `maintainer_doctor.py` invocations a maintainer copies
+  verbatim had never been syntax-checked — a `coverage-gap` in the tooling whose entire purpose is
+  catching them. Roots extended; **shell blocks checked 71 → 96**. `CHANGELOG.md` stays excluded on
+  purpose (an append-only history, not instructions anyone runs — a gate failing on a command quoted
+  in a 2026-07 entry is one nobody may act on), and that boundary is now stated in the code.
+  - **A fence inside a blockquote was invisible to both linters.** The `^[ \t]*` anchor cannot see
+    past `> `, which surfaced honestly as `parsed 0, present 1` on CHANGELOG.md rather than as a
+    silent skip. Blockquote markers are now stripped line-by-line, so line numbers still point at the
+    real file — and `iter_blocks` reads through the same helper as the coverage reconciliation, since
+    counting a block as parsed while never linting it reports cleaner coverage than it delivers.
+- **The `mutation coverage` gate could not see a new RULE added to an existing guard** — so a rule
+  shipped with no mutation behind it, and only review caught it. The gate asserts every *guard*
+  declares mutations; `lint_self_consistency` already declared twelve, so #100's new
+  `broken-doc-pointer` rule sailed through green. A guard-level count is blind to a rule-level gap.
+  - **Now checked structurally, per rule**: which function does each mutation's anchor live in, and
+    which rules does that function emit? Any rule emitted by a function no mutation touches is a
+    failure. Deliberately *not* done by matching fixture labels — `expects` is matched as a substring
+    of the whole selftest output, so a label comparison both misses real coverage and invents gaps.
+    The first version did exactly that and reported six false gaps.
+  - **It immediately found a genuine pre-existing hole: the two ORIGINAL rules** —
+    `dead-settings-key` and `unenforced-mandatory-flag` — had fixtures but **never had mutations**,
+    from the day `mutation_check.py` was written. Three rules later, nothing had noticed. Both now
+    have one.
+  - `mutation_check` **43 → 47** mutations across 8 guards; its selftest **67 → 69** checks.
+
+- **FIX — a skip was masquerading as a pass in the gate added hours earlier.** `lint_markdown_code.py`
+  fails open when `node` or `ruby` is absent, printing a SKIP notice — but it **exited 0**, so
+  `maintainer_doctor.py` printed `[ ok ] gate: markdown code lint` while **242 of 276 blocks went
+  unchecked**. On a cloud container without Ruby — the normal state for a web session — the sweep
+  would have read fully green over a gate that checked 12% of its input. That is precisely the
+  three-state failure the doctor exists to prevent, reintroduced by the newest gate.
+  - The linter now exits **3** for "ran, but could not check everything", distinct from 0 (clean) and
+    1 (findings), and the doctor maps 3 to **SKIP** with the gate's own reason. Its selftest does the
+    same rather than FAILing: a selftest that cannot run is not a broken selftest, and it is not a
+    pass either.
+  - **Found by simulating the container**, not by reading the code — a stub `ruby` on `PATH` was
+    enough to show the green line over an 88%-unchecked run.
+
+- **A commit message explaining the closing-keyword rule triggered the very bug it described.** The
+  commit said, in prose and inside backticks, that a promotion had wrongly used a closing keyword on
+  issue 95. GitHub parses the pattern **wherever it appears** — context, backticks and intent are
+  irrelevant — so when that commit reached `main` via the v1.41.0 promotion it **closed issue 95 for
+  the second time in one day**, twenty-six minutes after it was reopened. CLAUDE.md now says: never
+  write a closing keyword next to a real issue number in a commit message or PR body, even when
+  quoting a mistake; use a placeholder number or name the issue separately from the keyword. The
+  existing prose in CLAUDE.md was reworded to stop modelling the dangerous shape.
+
 ### 1.22.0 — 2026-07-30
 
 - **An umbrella issue was closed by a promotion that shipped one of its groups** — and the rule that
   allowed it is now written down. #95's body says *"Ship in sub-releases, one group at a time"* and
-  carries a checklist; `Closes #95` on the v1.37.0 promotion retired it with **seven rows still
+  carries a checklist; a closing keyword on it in the v1.37.0 promotion retired it with **seven rows still
   undocumented**, after which **four further slices landed against a closed issue**. CLAUDE.md's
   promotion section now says plainly: an issue that ships incrementally gets `Refs`, never `Closes`,
   until its last increment — and to check the body for unticked boxes before writing `Closes`. #95 is
@@ -650,6 +773,45 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.12.0 — 2026-07-31
+
+- **The scaffold now knows how to brief an agent in a repo that already briefs agents** (#100,
+  Phase D of #96). Compared `/rails-flow:setup-flow`'s generated scaffold against 37signals' own
+  agent instructions — [fizzy](https://github.com/basecamp/fizzy)'s `AGENTS.md` / `STYLE.md` /
+  `.claude/CLAUDE.md` and [writebook](https://github.com/basecamp/writebook)'s `AGENTS.md`, read
+  from `main` on 2026-07-31 — and recorded every adopt / adapt / reject decision with its citation
+  in the new `plugins/rails-flow/reference/agent-instruction-conventions.md`. Four scaffold changes:
+  - **An existing `AGENTS.md` is imported, not duplicated** (new §1b). Claude Code reads
+    `CLAUDE.md`, *not* `AGENTS.md`, and its
+    [memory docs](https://code.claude.com/docs/en/memory) prescribe exactly what both 37signals
+    apps do — a `CLAUDE.md` whose first line is `@AGENTS.md`, with tool-specific content below.
+    The scaffold previously assumed greenfield and would create a **second** orientation file
+    beside an existing one: two entry points that can contradict each other, where "Claude may
+    pick one arbitrarily". We still never *generate* an `AGENTS.md` (Claude-native, #159) — the
+    import is a coexistence tool, not the default layout.
+  - **A constrained `## Architecture Overview`** — fizzy's most useful section (URL-based
+    tenancy via middleware, the entropy system, UUIDv7 base36 PKs, account-scoped jobs) and the
+    one conceptual layer neither `Patterns` (code shapes) nor `docs/architecture/graph.json`
+    (structure) could carry. Capped at **non-derivable** mechanisms and domain vocabulary, because
+    Claude Code's own `/doctor` trims overviews it can derive from the codebase and keeps
+    "conventions that differ from tool defaults" — so an unconstrained overview is worse than none.
+  - **A per-project `STYLE.md` is rejected, and the pointer replaces it.** fizzy's `AGENTS.md`
+    ends with "read STYLE.md"; we already extracted that file into `skills/rails-8/references/style.md`
+    in Phase A (#97). Copying it per project would duplicate shipped doctrine and drift, so the
+    generated `CLAUDE.md` now points at the skill instead. Where a genuine per-project style file
+    is warranted, the Claude-native home is a **path-scoped `.claude/rules/style.md`**
+    (`paths: ["**/*.rb"]`), which loads only when Ruby is being read — not a root `STYLE.md` that
+    costs its full weight every session.
+  - **`.claude/rules/` is documented as the home for area/mode-specific instructions** (new §2b),
+    which is the sanctioned mechanism for what fizzy solves with a conditional `saas/AGENTS.md`.
+    Not scaffolded by default — empty machinery is worse than none — but named, so a project that
+    needs it doesn't invent a bespoke conditional import.
+  - **A claim in the issue was false, and that is the finding worth keeping.** Both #100 and #96
+    assert fizzy's `AGENTS.md` wires "Chrome MCP for local dev", offered as the comparand to
+    qa-flow's Playwright MCP. It appears in **none** of the five source files as of 2026-07-31 —
+    the #142 pattern again: attributed to a specific file, absent from that file today. No MCP
+    tooling was scaffolded on that basis, and qa-flow's choice is untouched.
+
 ### 1.11.0 — 2026-07-29
 
 - **Acceptance criteria are defined BEFORE implementation, and the Stop gate enforces it** (#125).
@@ -1173,6 +1335,134 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.23.0 — 2026-07-31
+
+- **#275's open measurement boundary is now closed by a reading, and it found one more thing.** The
+  entry below deliberately recorded that Ruby 4.0 was *not* measured. It has been now, on 4.0.6, and
+  **`parse.y` itself changed**: the form it rejects on 3.4.7 it **accepts** on 4.0.6.
+
+  | `private def a = foo k: 1` | ruby 3.4.7 | ruby 4.0.6 |
+  |---|---|---|
+  | `--parser=parse.y` | **syntax error** | Syntax OK |
+  | `--parser=prism` | Syntax OK | Syntax OK |
+  | default | Syntax OK | Syntax OK |
+
+  So the failing combination is narrower than first written: **`parse.y` on Ruby 3.2–3.3**, where it is
+  also the default. The advice (parenthesize) and the reason (our floor is 3.2) are unchanged — the
+  table replaces an inference with four readings. Confirmed the flag is still honoured in 4.0.6 rather
+  than silently falling back, since a bogus `--parser` value raises `unknown parser`.
+  - **The whole corpus was re-checked under 4.0.6: 310 fenced blocks — 185 ruby, 89 erb — all parse,
+    and the sweep is 34 passed / 0 failed / 0 skipped.** Worth stating because the markdown-code gate
+    runs whichever `ruby` is on `PATH`, so a toolchain upgrade silently changes what that gate means.
+
+- **FIX — an endless-def `SyntaxError` was asserted unconditionally when it is parser-scoped** (#275).
+  `controllers-routing.md` §7 said `private def m = render x: 1` *"is a `SyntaxError`"* flat. Measured
+  on one binary, ruby 3.4.7, changing only the parser: **`parse.y` errors** (`unexpected label`,
+  which independently confirms the note's own explanation) and **Prism accepts it**. `parse.y` is the
+  default **through 3.3**, Prism **from 3.4**.
+  - **The contradiction that made this worth fixing rather than softening:** the same skill requires
+    **Ruby >= 3.2** while recommending the latest stable release — so the failing form breaks on the
+    floor we support and is silently fine on the version we suggest. That is precisely how a snippet
+    ships broken: it parses on the author's machine and raises on the user's.
+  - The advice is unchanged and now has a reason that survives checking: **parenthesize the body**, so
+    the form is correct on every supported version rather than on some of them. The scope is also
+    narrowed — bare `def m = render x: 1` is fine on either parser; it only breaks when the endless
+    `def` is an argument to another call.
+  - **Measurement boundary recorded**: 3.4.7 under both parsers; Ruby 4.0 not measured, so
+    Prism-by-default there is stated as following from the 3.4 change rather than as a reading taken.
+  - #269 (the code block that actually raised) was verified already fixed on `dev` by #273 and closed
+    — the block was one claim, the explanation of why is another, and splitting them was right.
+
+- **FIX — one rule, two precisions, in two skills.** Found by reviewing `dev` after six parallel
+  sessions merged. `interaction-stimulus.md` said raw ActionCable is "allowed only for genuinely
+  bespoke real-time… document why Streams didn't fit" — a judgement call — while the new
+  `hotwire/references/production.md` derived a **testable** line from Campfire: **Action Cable when
+  the payload is a *fact*, not a *fragment*.** Not a contradiction, which is why no gate saw it, but
+  two statements of one rule at different sharpness is how a reader ends up citing the weaker one.
+  The fidara-design entry now states the sharp rule and defers to the derivation.
+
+- **NEW `hotwire/references/production.md` — Hotwire under production pressure** (#99, Phase C of
+  #96). Extracted from two 37signals apps, **attributed**: [once-campfire][cf99] (MIT, real-time
+  chat) and [fizzy][fz99] (O'Saasy, drag-and-drop Kanban). Every framework claim carries a
+  version-bounded citation; every design call is labelled **OURS** with its reason. Fifteen claims
+  went through `doctrine-verifier` in three batches — verdicts and the six maintainer decisions are
+  recorded on [the issue][d99].
+  - **The two apps disagree about real-time, and the disagreement is the doctrine.** Fizzy is the
+    *bigger* app and has **zero** Action Cable channels (`broadcasts_refreshes` only); Campfire has
+    six and writes its streams by hand. So app size does not pick the rung — update rate, render
+    cost, and client state do. That escalation test is **ours**; `turbo.md` §3 said "prefer
+    refreshes" without ever saying when not to.
+  - **Optimistic UI is one line of Ruby.** `Message#to_key` returns `[client_message_id]`, so
+    `dom_id` — which derives from `to_key`, verified in `ActionView::RecordIdentifier` — emits the
+    same id the client already rendered its pending element with, and the arriving `append`
+    collapses the pair. No reconciliation pass, no diffing library.
+  - **A catch-up path is now mandatory, not a nicety**, and is added to the skill's definition of
+    done. Streams are fire-and-forget, so a broadcast-only page is **silently stale after every
+    network blip** — the largest gap the audit found in our own doctrine. Campfire's answer is a
+    `?since=` REST resource driven by a bodiless `HeartbeatChannel`, with the high-water mark held
+    in the DOM.
+  - **Action Cable vs Turbo Streams, given a testable edge:** Streams when the server knows what the
+    DOM should become; raw Action Cable when the server has a **fact** and each client decides what
+    it means. All six Campfire channels are on the second side and none carries HTML. Our
+    "Streams first" posture is confirmed by production use, not merely asserted.
+  - **Two morph hazards neither handbook mentions** — morph strips the `open` attribute off a live
+    `<dialog>` (cancel `turbo:before-morph-attribute`), and a broadcast refresh will morph away an
+    edit in progress (set `data-turbo-permanent` from `connect()`, remove it in `disconnect()`).
+  - **`Turbo.offline` is REJECTED, and this is the most valuable finding.** Fizzy pins
+    `turbo-rails` to the `offline-cache` branch and calls `Turbo.offline.start(…)`. Verified: that
+    API ships in **no released** Turbo or turbo-rails — the branch re-exports an **open, unmerged**
+    PR ([hotwired/turbo#1427][t1427]), and the matching turbo-rails PR was closed unmerged by its
+    own author. Reading the Gemfile as licence to copy would have put an unreleasable git-branch
+    dependency into shipped doctrine.
+  - **Verdict on our four-mixin Stimulus doctrine: neither validated nor contradicted**, stated as
+    such. Neither app uses JS mixins at all; both parameterise one generic controller instead
+    (Fizzy's `navigable_list_controller` carries eleven configuration values). Calling that
+    validation would be a citation that does not survive being checked.
+- **Three corrections to shipped hotwire doctrine, all exposed by the gate** (#99). Each was wrong
+  in a way that reads as right, which is why they survived until something checked them.
+  - **`append`/`prepend` de-duplication was described as replacement in place.** It is
+    remove-then-append at the container's **edge**; the scope is **direct children of the target
+    only**; it matches *every* top-level template child carrying an `id`. The guarantee is id
+    uniqueness, **not position** — for in-place you want `replace` with `method="morph"`.
+  - **"Prefer the `_later` broadcast variants" was stated flatly, and it is incomplete.**
+    Verified: **nothing** in ActiveJob, Solid Queue or turbo-rails guarantees the order of two
+    `_later` broadcasts to the same stream — no priority, no concurrency key, and Solid Queue's own
+    README disclaims it. So `remove` never needs `_later` (it renders nothing), and when order is
+    observable — a transcript, a feed — you broadcast **synchronously**. This is why Campfire calls
+    `broadcast_append_to` from its controller.
+  - **`turbo:morph` was paired with `turbo:before-morph-element`; they are different scopes.**
+    `turbo:morph` fires once per morphed *page refresh*; the per-element pair is
+    `turbo:before-morph-element` / `turbo:morph-element`. `turbo:before-morph-attribute` was missing
+    from the events list entirely.
+- **`turbo.md` and `stimulus.md` gain four verified APIs the references omitted** (#99):
+  `<turbo-stream method="morph">` on `replace`/`update` (Turbo ≥ 8.0.5 — and **not** on
+  `append`/`prepend`/`before`/`after`); the **writable** `event.detail.render` on
+  `turbo:before-stream-render`; Stimulus `static get shouldLoad()` (3.0+) and `static afterLoad()`
+  (3.2+); and the fact that `data-turbo-permanent` **requires an `id` for Drive persistence but not
+  for morph exclusion** — the asymmetry that makes a runtime morph-guard sound. Also recorded: a
+  refresh broadcast is suppressed in the tab that caused it via `X-Turbo-Request-Id`, but the
+  recognition set holds only the **last 20** requests per page load.
+
+[cf99]: https://github.com/basecamp/once-campfire
+[fz99]: https://github.com/basecamp/fizzy
+[t1427]: https://github.com/hotwired/turbo/pull/1427
+[d99]: https://github.com/fmanimashaun/claude-skills/issues/99#issuecomment-5140601026
+- **`controllers-routing.md` §7 shipped a Ruby block that raises `SyntaxError` on paste** (#269).
+  `private def render_not_found = render file: …` does not parse; parenthesising the body fixes it.
+  Verified against the **reference implementation** (ruby 3.3.6) rather than asserted — `ruby -c`
+  gives `syntax error, unexpected label, expecting 'do' or '{' or '('`, and `Syntax OK` with parens.
+  - **The rule is narrower than it looks, so the corrected block now says why.** It is *not* "endless
+    defs reject bare keyword arguments" — `def a = foo k: 1` is **valid**. It breaks only when the
+    endless `def` is an argument to another call: `private def a = foo` parses first, leaving `k: 1`
+    with nothing to attach to. Version boundary: measured on ruby 3.3.6; the parse rule is not
+    version-specific to 8.1 and the parenthesised form is valid on every Ruby with endless defs (3.0+).
+  - **Present since `38c2091` (initial release, 2026-07-05)** — live on `main` for the skill's whole
+    life and baked into `dist/rails-8.skill`, so it reached the claude.ai upload path too. `dist/`
+    repackaged.
+  - **Grepped for the class, not just the instance** — `private def … = …` occurs exactly once in
+    `skills/`, so this one did not travel in a group. Caught by `lint_markdown_code.py`, which is
+    precisely the copy-paste hazard it was built to find; the gate now reports `no findings`.
 
 ### 2026-07-30 — the umbrella-Closes rule
 
@@ -1895,6 +2185,86 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.12.0 — 2026-07-31
+
+*(Two issues on one branch per CLAUDE.md's grouping rule. The shared mechanism is one sentence:
+both add a per-page evidence profile whose verdict is **recomputed against a denominator**, so a
+pass cannot report a result on surface it never exercised. Same files — `validate_evidence.py`'s
+profile table, `route_coverage.py`'s attribution map, `a11y-auditor.md` — and neither is a
+framework claim needing a doctrine verdict. A bullet each so the promotion closes them
+separately.)*
+
+- **A keyboard pass can no longer sample and look exhaustive** (#114). Doctrine mandates that
+  every interactive element be keyboard-operable with a visible focus ring, and that overlays trap
+  focus and restore it to the trigger; nothing verified any of it. The new `keyboard` evidence
+  profile does, and the design is shaped by *why* the hand-rolled probe failed silently: it checked
+  one button per page and produced focus evidence for **25 of 72 pages while reporting nothing
+  missing**. Sampling is invisible in a per-page log without an inventory count, so the row carries
+  one: every interactive element is either reached by Tab or reported unreachable, and
+  `Tab Stops + Unreachable < Interactive` is a finding. Missing indicators cannot exceed the
+  elements actually focused, and trap/Escape/restore failures cannot exceed the overlays opened.
+  Severity is recomputed from the counters, so a row cannot talk its own grade down.
+  - **`Engine` is part of the contract, because Playwright's WebKit would otherwise fabricate
+    findings.** WebKit inherits the macOS default where Tab reaches text fields and lists only —
+    not links or buttons — unless Full Keyboard Access is enabled (the setting behind Safari's
+    *"Press Tab to highlight each item on a webpage"*). A keyboard pass run there reports every
+    link as unreachable, so a WebKit unreachable count must confirm the setting in `Notes` or it is
+    rejected as a platform default rather than an application defect.
+    ([playwright#2114](https://github.com/microsoft/playwright/issues/2114),
+    [Apple: Full Keyboard Access](https://support.apple.com/guide/mac-help/mchlc06d1059/mac))
+  - **The indicator check gates on AA and no further.** [WCAG 2.2 SC 2.4.7 Focus
+    Visible](https://www.w3.org/TR/WCAG22/#focus-visible) is **Level AA** — an indicator must
+    exist — but [SC 2.4.13 Focus Appearance](https://www.w3.org/TR/WCAG22/#focus-appearance) is
+    **Level AAA**, so its 2-CSS-px and 3:1 requirements are advisory under an AA-targeted audit and
+    must not be counted as defects. (The W3C quickref rendered 2.4.13 as AA; the specification does
+    not. Verified against the specification.)
+  - **Why axe does not already cover this**, recorded because the obvious guess is wrong: axe runs
+    *no* focus rule under the WCAG tags `a11y-auditor` targets. `tabindex` and `skip-link` are
+    tagged **best-practice** and `focus-order-semantics` is best-practice/experimental, and none is
+    pulled in by `wcag2a`/`wcag2aa`/`wcag21a`/`wcag21aa`/`wcag22aa`. Even with `best-practice`
+    added, nothing in axe checks indicator *visibility* or focus *restoration*.
+    ([axe-core rule descriptions](https://github.com/dequelabs/axe-core/blob/develop/doc/rule-descriptions.md))
+  - Doctrine now says **never enumerate focus with `element.focus()`**: `:focus-visible`
+    deliberately may not match programmatically-moved focus, so such a pass reports *every* element
+    as having no indicator. Drive real `Tab` keypresses.
+    ([MDN `:focus-visible`](https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible))
+
+- **A forms row can no longer carry a verdict on an error state nobody triggered** (#115). The
+  audited corpus held 200+ form controls with no systematic validation testing. The new `forms`
+  profile checks label association **and required-exposure** against a `Controls` denominator —
+  neither may exceed it — and ties the five error-contract columns (`aria-invalid`, message link,
+  announcement, value retention, colour-independence) to `Submit Mode` **in both directions**: they
+  must be `Not run` unless the row actually submitted something invalid, and must not be `Not run`
+  when it did. The destructive-form carve-out must name the pattern that matched, so a skipped form
+  is never indistinguishable from a passing one.
+  - **`aria-invalid` is checked by value, not by presence.** Its default is `false`, and an absent
+    attribute, `aria-invalid=""` and `aria-invalid="false"` are all equivalent to not-invalid — so a
+    pass that greps for the attribute name reports a clean contract on a form that marks nothing.
+    ([MDN `aria-invalid`](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/aria-invalid))
+  - A required control that is not *exposed* as required is **S2**, not S1: it still has an
+    accessible name and is still operable, it merely does not announce that it is mandatory. And an
+    over-grade is deliberately tolerated — the gate exists to stop a verdict being talked *down*,
+    and the `runtime` profile that shares this recompute has always behaved that way. A severity
+    with nothing at all behind it is still rejected. A fixture pins the asymmetry so it stays a
+    decision rather than an oversight.
+  - Severities follow the actual WCAG floor, which is mostly **Level A** and is why an unlabelled
+    control or a colour-only error is S1 rather than a style note: 3.3.2 Labels or Instructions (A),
+    4.1.2 Name, Role, Value (A), 3.3.1 Error Identification (A), 1.4.1 Use of Color (A), with 3.3.3
+    Error Suggestion at AA. Whether `aria-errormessage` is exposed independently of
+    `aria-invalid="true"` was **not** verified, so it is not asserted either way — the message link
+    accepts `aria-describedby` or `aria-errormessage`.
+
+Not covered, and deliberately: `fieldset`/`legend` grouping has no clean denominator to be checked
+against, and the modal-CRUD **422 re-render** expectation is `functional-tester`'s contract and is
+referenced there rather than restated, so there stays one copy of it. Both remain open on #115.
+
+Both passes earn route-coverage attribution and file deduplicated findings under the new `keyboard`
+and `forms` sources. Every new rule ships a fixture in both directions plus a declared mutation in
+`scripts/mutation_check.py` (39 mutations, all caught). Also fixed in passing: a dead `csv` import
+in `route_coverage.py`, and a `KeyError` in one of the new attribution fixtures that let an
+unrelated assertion take credit for catching a dropped `ROUTE_SOURCES` entry — found because the
+mutation check reported the catch as coming from the wrong fixture.
+
 ### 1.11.0 — 2026-07-30
 
 *(Two issues on one branch per CLAUDE.md's grouping rule. The mechanism they share is specific:
@@ -2329,6 +2699,53 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.6.0 — 2026-07-31
+- **FIX — two defects in the cross-check added hours earlier, both found by an external reviewer
+  on the already-merged PR rather than by us.**
+  - **A mention was accepted as a generation.** `setup_provides()`'s docstring claimed a key was
+    named *"precisely at the step that generates the initializer setting it"*, while the code did
+    set membership over the whole of `setup.md` — nothing associated a key with an initializer.
+    True today only incidentally (the key occurs once, inside the generating step). Delete that
+    step while leaving a prose mention anywhere, and the check reported clean while the
+    `NoMethodError` it exists to prevent shipped. This is a **claims-vs-enforcement defect inside
+    the guard written to catch that class**. A key now counts as provided only when one step both
+    names `Rails.configuration.x.<key>` and generates `config/initializers/<key>.rb` — the exact
+    filename the error path already prescribes, so tool and message now agree.
+  - **An unreadable input reported as doctrine drift.** Doctrine files were read unguarded, so a
+    non-UTF-8 or unreadable `.md` escaped as a traceback and exited **1** — the code reserved for
+    "a depended-on config key is not generated" — sending a maintainer hunting a defect that does
+    not exist. Reads are now guarded and raise `InputError`, mapping to **2** (environment).
+    It **aborts rather than skips**: with one file unread the comparison is unsound in both
+    directions, and a partial scan has no honest verdict.
+  - `/design-flow:audit` said *"a non-zero exit is a toolchain defect"*, which conflates the two
+    and would have had agents filing their own unreadable clone as a doctrine bug. It now reads
+    the code: 1 = report it, 2 = fix your input.
+  - **Fenced code no longer splits a step.** A shell comment at column 0 inside a ``` block
+    matches the heading pattern exactly, and setup.md's own pack-resolution snippet contains two
+    — so a step showing a code example *between* its initializer and its key read would have been
+    reported as unprovided: a false drift error on correct input. Step splitting is now
+    fence-aware; fence content is still scanned, it just cannot start a chunk.
+  - Four fixtures and four declared mutations, one per defect plus a silent-skip guard. Fixtures
+    G and I are the safe direction — the real multi-line step 7 shape, and a step containing a
+    fenced example, must both stay clean, so the fix cannot over-correct into crying wolf.
+    Fixture I's fence sits at **column 0** deliberately: indented, `^#` cannot match and the
+    fixture would pass whether or not fences were tracked at all. It was caught being vacuous by
+    `mutation_check.py`, which is the failure that tool exists for.
+
+- **NEW `scripts/setup_doctrine_crosscheck.py`** — catches doctrine that references a runtime
+  artefact `/design-flow:setup` never generates. The unit of dependency is a
+  `Rails.configuration.x.<key>` read: doctrine reading a key setup does not generate is an
+  **error** (it raises `NoMethodError` at a user's first setup run, in no test), setup generating
+  config no doctrine reads is a **warning**. Deliberately narrow — a bare `config/initializers/*.rb`
+  named in doctrine is *not* flagged, because `simple_form.rb` belongs to `/design-flow:component`,
+  not setup, and flagging it would be the false positive that gets the check switched off. Proven
+  against real history rather than asserted: exit 1 at `ced38c4` (the #104 defect) and exit 0 at
+  `5902250` (its in-branch fix). A run that scans zero doctrine files exits **2**, not 0 — "no
+  findings" over input it never read is the gate-that-cannot-fail shape, not a pass. Stdlib-only,
+  wired into `/design-flow:audit` and the gate sweep, with 6 fixtures and 5 declared mutations in
+  `scripts/mutation_check.py` — one per fixture, including the out-of-scope-initializer near-miss
+  and the zero-input guard. Refs #150.
 
 ### 1.5.0 — 2026-07-29
 - `/design-flow:component` step 1 previously said a screen should be built by "composing existing
@@ -2870,6 +3287,94 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-07-31 (release v1.42.0)
+
+> ### Six sessions in parallel — and the release note worth reading is what they caught in each other
+>
+> **`hotwire/references/production.md`** (Hotwire under real load, from campfire + fizzy),
+> **rails-flow agent-instruction conventions**, a **computed work queue** from a declared dependency
+> graph, **qa-flow keyboard + forms evidence contracts**, and a **design-flow setup cross-check**.
+> Plus nine fixes, most of them defects one session found in another's merged work — or in its own.
+>
+> `rails-8`, `hotwire` and `fidara-design` skills changed; `code-review.skill` is byte-identical.
+
+- **Hotwire in production** (#99). Doctrine from once-campfire and fizzy under real load — broadcast
+  patterns, morphing, presence, and the catch-up path for when the socket drops, which our doctrine
+  never had: we documented how to broadcast and never what happens when delivery fails.
+  - **The gate refuted the issue's own question.** #99 asked what fizzy's `turbo-rails` offline-cache
+    pin implies. It implies **you cannot use it**: `Turbo.offline` ships in no released Turbo or
+    turbo-rails, the branch re-exports an unmerged PR, and the matching turbo-rails PR was closed by
+    its own author. Reading that Gemfile as licence to copy would have put an unreleasable git-branch
+    dependency into shipped doctrine.
+  - **The two apps disagree, and that is the finding.** fizzy is the larger app with **zero** Action
+    Cable channels; campfire has **six**. Size does not pick the mechanism — update rate, render cost
+    and client state do. Sharpened into a testable rule: **Action Cable when the payload is a *fact*,
+    not a *fragment*.** None of campfire's six channels carries HTML.
+  - **Three corrections to doctrine we had already shipped**, one found by grepping for the pattern
+    after fixing the first: append/prepend de-duplication **removes then appends at the container
+    edge** (id uniqueness, not position); *"prefer the `_later` broadcast variants"* was stated flat
+    when **nothing in ActiveJob or Solid Queue orders two `_later` broadcasts to one stream** — which
+    is why campfire broadcasts synchronously — and the same wrong rule was then found in
+    `rails-8/references/views-hotwire.md`; and `turbo:morph` was paired with a different-scope event
+    while `turbo:before-morph-attribute` was missing entirely.
+  - **On our four-mixin doctrine: neither validated nor contradicted**, recorded as such. Neither app
+    uses mixins; both parameterise one generic controller. The negative first rested on an empty
+    `gh search code` result — **which is not evidence** — and was re-done against repository tarballs:
+    161 JS files, zero mixin compositions, 96 of 104 controllers extending the bare `Controller`.
+- **Agent-instruction conventions** (#100) — how 37signals brief coding agents, against what our
+  scaffold generates. An existing `AGENTS.md` is now **imported, not duplicated** (Claude Code reads
+  `CLAUDE.md`, and both apps use a one-line `@AGENTS.md`); a constrained architecture overview is
+  added; `.claude/rules/` is named as the home for mode-specific instruction but **not scaffolded** —
+  empty machinery is worse than none. A per-project `STYLE.md` is **rejected**: Phase A already
+  extracted it into the skill, and copying it per project would duplicate shipped doctrine and drift.
+- **A computed work queue** (#133) — dependencies declared in a parseable block instead of prose, so
+  "what next?" stops being re-derived by hand and inconsistently.
+- **qa-flow: keyboard and forms evidence contracts** (#114, #115). Both recompute their verdict against
+  a **denominator**, so a pass cannot report a result on surface it never exercised. The keyboard
+  design is shaped by *why* the hand-rolled probe failed silently: it checked one button per page and
+  produced focus evidence for **25 of 72 pages while reporting nothing missing**.
+  - **`Engine` is part of the contract**, because Playwright's WebKit inherits the macOS default where
+    Tab reaches text fields and lists only — so a WebKit run reports every link unreachable unless the
+    platform setting is confirmed. Otherwise the harness fabricates findings.
+- **design-flow: setup cross-checks its own doctrine** (#150). Doctrine referencing a runtime artefact
+  the generator never produces was invisible to every check we had, and surfaced at a user's first
+  `/design-flow:setup` as a `NoMethodError`. Scoped to `Rails.configuration.x.<key>` reads, which is
+  what makes it self-scope to things that actually raise.
+- **FIX — `config.hosts` is EMPTY in production by default** (#98). The security checklist framed Host
+  authorization as a development concern. Where the list is empty the middleware returns immediately
+  and does **nothing**, so anything deriving a redirect target from `request.host` trusts an
+  attacker-controlled header until it is set.
+- **FIX — an endless-def `SyntaxError` was asserted unconditionally when it is parser-scoped** (#275),
+  measured across two Rubies and both parsers. `parse.y` rejects the form on 3.4.7 and **accepts it on
+  4.0.6**; Prism accepts it on both. The failing combination is `parse.y` on **Ruby 3.2–3.3**, where it
+  is also the default — and this skill's floor is 3.2 while it recommends the latest stable, which is
+  exactly how a snippet ships broken: parsing on the author's machine, raising on the user's.
+- **FIX — a pointer that walked out of its own plugin** (#272), and the reason the rule built days
+  earlier for that class stayed silent: its regex **allowlisted extensions**, and the path ended
+  `.example`. CLAUDE.md already records that failure mode for packaging — *"never an extension
+  allowlist, which fails open on the first type nobody added"* — and the rule repeated it anyway.
+- **FIX — a skip was masquerading as a pass.** `lint_markdown_code.py` failed open on a missing
+  interpreter and **exited 0**, so the doctor printed `ok` while **242 of 276 blocks went unchecked**.
+  On a container without Ruby the whole sweep read green over a gate that checked 12% of its input.
+  Exit 3 now maps to **skip**.
+- **FIX — a gate that wrote into the working tree**, and the framing matters more than the fix:
+  `mutation_check.py`'s own docstring already recorded that exact lesson, and it was violated three
+  files away. Now a temp dir, an assertion that nothing is left behind, and a mutation so the
+  assertion cannot go quiet.
+- **FIX — mutation coverage is checked per RULE, not per guard.** A new lint rule shipped with no
+  mutation behind it and the gate reported green, because the guard already declared twelve. The
+  structural check immediately found a **pre-existing** hole: the two *original* rules had fixtures
+  but never had mutations, from the day the checker was written.
+- **FIX — one rule at two precisions across two skills.** Not a contradiction, which is why no gate
+  saw it: `fidara-design` stated the Action Cable rule as a judgement call while `hotwire` derived a
+  testable one. Two statements of one rule at different sharpness is how a reader cites the weaker.
+- **FIX — an umbrella closed by a promotion that shipped one of its groups**, and then a commit message
+  *explaining that rule* closed the same issue a second time, because it contained the literal keyword
+  beside the number. GitHub parses the pattern wherever it appears.
+- **Tooling now covers `docs/`, `CLAUDE.md` and `README.md`**, and strips blockquote markers so fenced
+  code inside a quote is scanned — two coverage gaps in the markdown linters. **310 blocks** checked
+  (185 ruby, 89 erb), verified under **Ruby 4.0.6** as well as 3.4.7.
 
 ### 2026-07-30 (release v1.41.0)
 

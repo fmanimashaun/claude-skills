@@ -32,7 +32,6 @@ Stdlib only, no network.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import re
 import sys
@@ -49,6 +48,8 @@ ROUTE_SOURCES: dict[str, tuple[str, ...]] = {
     "functional": ("Requested URL", "Final URL"),
     "a11y": ("Requested URL", "Final URL"),
     "runtime": ("Route", "Requested URL", "Final URL"),
+    "keyboard": ("Route", "Requested URL", "Final URL"),
+    "forms": ("Route", "Requested URL", "Final URL"),
 }
 
 # Profiles that must NOT contribute coverage, and why. `findings` carries `Example Routes`, but

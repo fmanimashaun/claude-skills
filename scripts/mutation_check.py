@@ -130,6 +130,38 @@ GUARDS: tuple[Guard, ...] = (
                 "    for name in []:",
                 "nothing declares",
             ),
+            # The two ORIGINAL rules had fixtures but never got mutations — the per-rule coverage
+            # check in mutation_check_selftest.py found that, three rules later.
+            Mutation(
+                "a dead settings key stops being reported (the file's first rule)",
+                "        if not keys:\n            continue",
+                "        if True:\n            continue",
+                "settings key no reader reads",
+            ),
+            Mutation(
+                "an unenforced mandatory flag stops being reported (the file's second rule)",
+                "                if any(flag_is_enforced(flag, src) for src in definers.values()):",
+                "                if True:",
+                "docs say always pass, code leaves optional",
+            ),
+            Mutation(
+                "a broken pointer to one of our own files stops being reported (#100)",
+                "                if (owning_plugin / match.group(1)).exists():\n                    continue",
+                "                if True:\n                    continue",
+                "plugin points at a reference file it does not ship",
+            ),
+            Mutation(
+                "the pointer rule goes back to an extension allowlist (#272)",
+                'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]*[A-Za-z0-9_-]\\.[A-Za-z0-9]+)")',
+                'r"\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]+\\.(?:md|py|sh|json))")',
+                "a non-allowlisted extension is still a pointer",
+            ),
+            Mutation(
+                "the skill-pointer half stops being reported (#100)",
+                "            if (ROOT / match.group(1)).exists():\n                continue",
+                "            if True:\n                continue",
+                "command points at a skill doc that was renamed away",
+            ),
             Mutation(
                 "invisible characters stop being reported (#95)",
                 "                if index == -1:\n                    continue",
@@ -247,6 +279,58 @@ GUARDS: tuple[Guard, ...] = (
                 "    elif False:",
                 "downgraded to S2",
             ),
+            # #114 -- the sampling guard is the whole profile. Without it a row that walked 3 of
+            # 40 elements reads exactly like a clean page, which is the 25-of-72 defect returning.
+            Mutation(
+                "a keyboard walk may sample instead of covering the inventory (#114)",
+                '        if accounted < counts["Interactive"]:',
+                "        if False:",
+                "sampled 3 of 40 interactive elements",
+            ),
+            Mutation(
+                "a focus-indicator count may exceed the elements actually focused",
+                '        counts["No Focus Indicator"] > counts["Tab Stops"]\n    ):',
+                "        False\n    ):",
+                "more missing indicators than elements focused",
+            ),
+            # The verified WebKit caveat. Removing it turns every link on a WebKit run into a
+            # false S1 -- a platform default reported as an application defect.
+            Mutation(
+                "webkit unreachable counts stop needing Full Keyboard Access confirmed",
+                "        if not any(token in note for token in FKA_TOKENS):",
+                "        if False:",
+                "unreachable on webkit without confirming Full Keyboard Access",
+            ),
+            # #115 -- both directions of the Submit Mode contract, because each alone leaves the
+            # other half of the hole open.
+            Mutation(
+                "a forms row may claim verdicts on an error state it never triggered (#115)",
+                '        elif not exercised and raw != "not run" and mode in FORM_MODES:',
+                "        elif False:",
+                "verdicts on an error state a dry-run never triggered",
+            ),
+            Mutation(
+                "a submitted form may record no error-contract verdict at all",
+                '        if exercised and raw == "not run":',
+                "        if False:",
+                "submitted an invalid form but recorded no verdict",
+            ),
+            # Both structural counters are bounded by the same denominator, and the loop is what
+            # makes them one rule instead of two copies that can drift.
+            Mutation(
+                "a form may report more unlabelled controls than it has (#115)",
+                '        if {"Controls", column} <= counts.keys() and counts[column] > counts["Controls"]:',
+                "        if False:",
+                "more unlabelled controls than the form has",
+            ),
+            # The shared recompute behind both new profiles: `_runtime_extra` spells its own
+            # comparison out, so this mutation covers the keyboard/forms path specifically.
+            Mutation(
+                "keyboard/forms severity is trusted instead of recomputed",
+                "    elif required == S1:",
+                "    elif False:",
+                "unreachable elements downgraded to S2",
+            ),
         ),
     ),
     Guard(
@@ -266,6 +350,20 @@ GUARDS: tuple[Guard, ...] = (
                 "columns = ROUTE_SOURCES.get(profile.name)",
                 'columns = ROUTE_SOURCES.get(profile.name) or ("Example Routes",)',
                 "contributes no coverage",
+            ),
+            # Classifying a new pass and actually READING it are two claims. The
+            # "every profile classified" check proves only the first.
+            Mutation(
+                "the keyboard walk stops earning route coverage (#114)",
+                '    "keyboard": ("Route", "Requested URL", "Final URL"),',
+                "",
+                "keyboard walk was not credited",
+            ),
+            Mutation(
+                "the forms pass stops earning route coverage (#115)",
+                '    "forms": ("Route", "Requested URL", "Final URL"),',
+                "",
+                "forms pass was not credited",
             ),
         ),
     ),
@@ -291,6 +389,172 @@ GUARDS: tuple[Guard, ...] = (
                 'elif purpose in CLIPPED_PURPOSES and capture != "clipped":',
                 "elif False:",
                 "full-page",
+            ),
+        ),
+    ),
+    Guard(
+        name="setup_doctrine_crosscheck",
+        subject="plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
+        selftest="plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
+        mutations=(
+            Mutation(
+                "the error direction is disabled — #104 instance 1 ships again",
+                "        if key in provided:\n            continue",
+                "        if True:\n            continue",
+                "instance-1 regression fires",
+            ),
+            Mutation(
+                "every config key is treated as ungenerated, so the fixed state fails too",
+                "        if key in provided:\n            continue",
+                "        if False:\n            continue",
+                "fixed state is clean",
+            ),
+            Mutation(
+                "generated-but-unreferenced is escalated from a warning to an error",
+                '        report.warn(\n            f"setup.md sets',
+                '        report.error(\n            f"setup.md sets',
+                "unreferenced config warns without failing",
+            ),
+            # Guards the anti-false-positive control: without the `reads and` conjunct, a
+            # doctrine that names an out-of-scope initializer (simple_form, owned by
+            # /design-flow:component) and reads no config at all would error. That is the
+            # exact false positive #150 would die of.
+            Mutation(
+                "the structural check fires with no config read at all (cries wolf)",
+                "    if reads and not inits:",
+                "    if not inits:",
+                "out-of-scope initializer is not flagged",
+            ),
+            # A run that scanned nothing prints the same clean verdict as a run that scanned
+            # the whole tree. Without this guard the check can be pointed anywhere and still
+            # report a pass — the failure mode build_coverage.py --selftest had.
+            Mutation(
+                "a run that examined zero files reports clean again",
+                "    if not scanned:",
+                "    if False:",
+                "empty doctrine tree is an error, not a pass",
+            ),
+            # `provided` reverts to a whole-file scan, so a key MENTIONED anywhere in setup.md
+            # counts as generated. This was a real defect: the docstring claimed the key was
+            # named "precisely at the step that generates the initializer" while the code did
+            # set membership over the whole file — claims-vs-enforcement inside the guard
+            # written to catch that class.
+            Mutation(
+                "a mention anywhere in setup.md counts as a generation again",
+                "    for chunk in setup_steps(text):\n"
+                "        provided |= set(CONFIG_KEY.findall(chunk)) & set(INITIALIZER.findall(chunk))",
+                "    provided = set(mentioned)",
+                "a stray key mention does not count as generated",
+            ),
+            # The 1/2 exit split collapses: an environment fault reports as doctrine drift and
+            # sends a maintainer hunting a defect that does not exist.
+            Mutation(
+                "an unreadable input exits 1 (drift) instead of 2 (environment)",
+                '        print(f"setup_doctrine_crosscheck: {exc}", file=sys.stderr)\n'
+                "        return 2",
+                '        print(f"setup_doctrine_crosscheck: {exc}", file=sys.stderr)\n'
+                "        return 1",
+                "an undecodable doctrine file exits 2, not 1",
+            ),
+            # The read guard degrades from abort to silent skip. A partial scan then produces a
+            # confident verdict over doctrine it never read — the failure mode the whole
+            # `scanned` counter exists to prevent, reintroduced one level down.
+            Mutation(
+                "an unreadable doctrine file is silently skipped instead of aborting",
+                '                raise InputError(f"cannot read doctrine file {rel}: {exc}") from exc',
+                "                continue",
+                "an undecodable doctrine file exits 2, not 1",
+            ),
+            # Fence tracking is dropped, so a `# ` shell comment inside ``` becomes a step
+            # boundary again — splitting a step between its initializer and its key read, and
+            # reporting correct input as drift. setup.md's own snippet contains two such lines.
+            Mutation(
+                "fenced code splits a step again, so correct input reads as drift",
+                '        if stripped[:3] in ("```", "~~~"):',
+                "        if False:",
+                "a fenced code example does not split a step",
+            ),
+        ),
+    ),
+    Guard(
+        name="issue_graph",
+        subject="scripts/issue_graph.py",
+        selftest="scripts/issue_graph.py",   # --selftest lives in the module itself
+        mutations=(
+            Mutation(
+                "a dependency cycle stops being a filing error",
+                "    cycle = _cycle_in(dependency)",
+                "    cycle = None",
+                "dependency cycle",
+            ),
+            Mutation(
+                "a full page of gh results is accepted as the whole tracker (#211)",
+                "    if len(payload) >= limit:",
+                "    if False:",
+                "truncation guard",
+            ),
+            Mutation(
+                "declarations under the wrong fence tag go silent again",
+                "        if lines and all(_STRICT.match(line) for line in lines):",
+                "        if False:",
+                "declarations under an untagged fence",
+            ),
+            # The near-miss half of the same carve-out. Widening `all` to `any` makes the check
+            # fire on any fence that merely CONTAINS a declaration — the false positive that
+            # would get it switched off. Proves the silence fixtures are load-bearing.
+            Mutation(
+                "the mistag check widens to any fence containing a declaration",
+                "        if lines and all(_STRICT.match(line) for line in lines):",
+                "        if lines and any(_STRICT.match(line) for line in lines):",
+                "a fence mixing prose with a declaration is a sample",
+            ),
+            Mutation(
+                "a declaration loose in prose stops being reported",
+                "        if _STRICT.match(line):",
+                "        if False:",
+                "a declaration outside any fence",
+            ),
+            Mutation(
+                "a typo'd key silently declares nothing",
+                "            if key not in KEYS:",
+                "            if False:",
+                "typo'd key",
+            ),
+            Mutation(
+                "an edge to an issue that does not exist stops being reported",
+                "            if target not in graph.issues:",
+                "            if False:",
+                "edge to an issue not in the tracker",
+            ),
+            Mutation(
+                "a self-referencing declaration is no longer named as such",
+                "                if target == number:",
+                "                if False:",
+                "self reference",
+            ),
+            Mutation(
+                "the critical-path tiebreak stops preferring the higher priority",
+                "    return (lengths.get(number, 1), -PRIORITIES.index(priority) "
+                "if priority else -len(PRIORITIES), -number)",
+                "    return (lengths.get(number, 1), 0, -number)",
+                "critical-path tiebreak",
+            ),
+            # The doctor runs this selftest as a gate, and a diagnostic that writes into the
+            # working tree is a defect however tidy its cleanup looks. Reverting to a repo-local
+            # fixture must be caught, not merely tolerated because the file is unlinked after.
+            Mutation(
+                "the selftest writes its fixture into the repo again",
+                '    with tempfile.TemporaryDirectory(prefix="issue-graph-selftest-") as workdir:',
+                "    for workdir in [str(Path(__file__).resolve().parent)]:",
+                "left files in scripts/",
+            ),
+            # The property that makes this a gate rather than a report: a graph known to be
+            # broken must print NO queue, because a wrong ordering reads exactly like a right one.
+            Mutation(
+                "a queue is printed for a graph already known to be invalid",
+                '    if graph.problems:\n        print(f"ISSUE GRAPH INVALID',
+                '    if False:\n        print(f"ISSUE GRAPH INVALID',
+                "cyclic",
             ),
         ),
     ),
