@@ -275,19 +275,29 @@ echo 'private def a = foo k: 1' | ruby --parser=parse.y -c   # syntax error, une
 echo 'private def a = foo k: 1' | ruby --parser=prism -c      # Syntax OK
 ```
 
-**The version boundary, and why it matters here.** `parse.y` is the default **through Ruby 3.3**;
-Prism is the default **from 3.4**. This skill requires **Ruby >= 3.2** while recommending the latest
-stable release — so the failing form breaks on the floor we support and is silently fine on the
-version we suggest. That is exactly the combination that gets a snippet shipped broken: it parses on
-the author's machine and raises on the user's.
+**The version boundary, measured on both.** `parse.y` is the default **through Ruby 3.3**; Prism is
+the default **from 3.4**. And `parse.y` itself changed: it rejects this form on 3.4.7 and **accepts it
+on 4.0.6**.
+
+| `private def a = foo k: 1` | ruby 3.4.7 | ruby 4.0.6 |
+|---|---|---|
+| `--parser=parse.y` | **syntax error** | Syntax OK |
+| `--parser=prism` | Syntax OK | Syntax OK |
+| default | Syntax OK | Syntax OK |
+
+So the failing combination is narrow: **`parse.y` on Ruby 3.2–3.3**, where it is also the *default*.
+This skill requires **Ruby >= 3.2** while recommending the latest stable, so the form breaks on the
+floor we support and is fine on the version we suggest — exactly the combination that gets a snippet
+shipped broken, parsing on the author's machine and raising on the user's.
 
 Note the scope, which is narrower than "endless defs reject bare keyword arguments": bare
 `def m = render x: 1` is fine on either parser. It only breaks when the endless `def` is itself an
 **argument to another call** — here, to `private`. **Parenthesize the body** and the form is correct
 on every supported version, which is why that is the rule rather than a version check.
 
-*(Measured: 3.4.7 under both parsers. Ruby 4.0 was not measured — Prism-by-default there follows from
-the 3.4 change, not from a reading taken.)*
+*(Measured on ruby 3.4.7 and 4.0.6, both parsers each — the table is readings, not inference.
+`--parser` is still a real option in 4.0.6: a bogus value raises `unknown parser`, so the parse.y
+column there is the parser answering, not a silent fallback to Prism.)*
 
 Unrescued exceptions map to public error pages in production
 (404/422/500 under `public/`). Don't rescue broadly to hide bugs; report
