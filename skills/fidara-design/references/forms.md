@@ -86,6 +86,149 @@ focus-visible:ring-ring/30 focus-visible:border-ring disabled:opacity-50 min-h-t
   (`size-8 rounded-full border-2`, active `border-primary text-primary`).
 - **range** and **date/time** — native, with two specific exceptions each. Full contracts below.
 
+## File upload / Dropzone (#95)
+
+**No APG pattern** — the index lists 30 and there is none for file upload or drag-and-drop. This is a
+**native `<input type="file">` plus an enhancement**, and the split matters because the enhancement is
+the part that can fail.
+
+### What the native control gives you, and the one thing it does not
+
+- **`accept` is a hint, not validation.** MDN is explicit: *"The `accept` attribute doesn't validate the
+  types of the selected files; it provides hints for browsers to guide users… It is still possible (in
+  most cases) for users to toggle an option in the file chooser that makes it possible to override this
+  and select any file they wish."* And therefore: *"you should make sure that the `accept` attribute is
+  backed up by appropriate server-side validation."* **Server-side validation is mandatory, not
+  belt-and-braces.**
+- **`multiple`** allows more than one file; **`capture`** picks a camera, and only applies when `accept`
+  names an image or video type.
+- **You cannot set the value from script.** *"You cannot set the value of a file picker from a script."*
+  That is a security boundary, and it has a design consequence: a dropzone cannot "fill in" the native
+  input, so the two are **parallel paths to the same form submission**, not a wrapper around one.
+
+Style it with the field wrapper's classes plus `file:` variants on the input — Tailwind's `file:`
+modifier targets the button, so no custom pseudo-element is needed.
+
+### The dropzone is an enhancement, and it has one non-negotiable
+
+**`preventDefault()` on `dragover`, or the drop never fires.** This is the single most-missed detail in
+the API: *"Any element can become a drop target by canceling the `dragover` event that fires on it with
+`preventDefault()`."* Minimum viable target is `dragover` (cancelled) + `drop`.
+
+```erb
+<%# The native input is the PRIMARY path. The dropzone decorates it — it does not replace it, %>
+<%# because a script cannot set a file input's value. %>
+<div data-controller="dropzone"
+     data-action="dragover->dropzone#over:prevent dragleave->dropzone#leave drop->dropzone#drop:prevent"
+     class="stack rounded-lg border-2 border-dashed border-border p-6 text-center
+            data-[state=over]:border-primary data-[state=over]:bg-primary/5">
+  <p class="text-muted-foreground">Drag files here, or</p>
+
+  <%# Not hidden, not sr-only: this button IS the 2.5.7 alternative (see below). %>
+  <%= f.input :documents, as: :file, input_html: {
+        multiple: true, accept: "application/pdf,image/*",
+        data: { dropzone_target: "input" },
+        class: "file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5" } %>
+
+  <p role="status" class="text-step--1 text-muted-foreground" data-dropzone-target="status"></p>
+</div>
+```
+
+Note `:prevent` in the Stimulus action — that is how `preventDefault()` is expressed declaratively, so
+the rule above cannot be forgotten in the controller.
+
+### WCAG 2.5.7 Dragging Movements — and the trap in it
+
+**Level AA, and satisfied by the file button — but only because the button is clickable.**
+
+> *"All functionality that uses a dragging movement for operation can be achieved by a single pointer
+> without dragging, unless dragging is essential…"*
+
+The trap, quoted because it is the opposite of the obvious assumption:
+
+> *"achieving keyboard equivalence for a dragging operation does not automatically meet this success
+> criterion, unless that equivalent keyboard operation also provides controls that can be clicked or
+> tapped with a pointer."*
+
+**So a keyboard-only alternative does not satisfy 2.5.7.** The visible, clickable file input is what
+satisfies it — which is another reason never to hide the native input behind the dropzone. A
+`sr-only`-hidden input plus a dropzone is a 2.5.7 failure even though it is keyboard-operable.
+
+### Announcing it
+
+Selection and progress are invisible without a live region. `role="status"` (polite **and** atomic — see
+[interaction-stimulus.md](interaction-stimulus.md#loading-progress-and-busy-state-95)) reporting
+**one aggregate**, not one message per file: *"3 files selected, 12 MB"*, then *"Uploading 2 of 3"*.
+Per-file announcements on a ten-file drop are worse than none.
+
+For the bar itself, use the documented **Progress bar** — `role="progressbar"`, indeterminate means
+**omitting** `aria-valuenow`. Do not invent a second progress mechanism here.
+
+## Copy to clipboard (#95)
+
+**No APG pattern either.** A button, a Clipboard API call, and an announcement — the announcement being
+the part most implementations skip, which makes the feature invisible to anyone not watching the button.
+
+**`navigator.clipboard.writeText()` is the API.** Baseline **widely available since March 2020**,
+**secure context only** (*"This feature is available only in secure contexts (HTTPS)"*). It returns a
+promise and rejects with `NotAllowedError` when writing is refused — so failure is a real branch, not a
+theoretical one, and `localhost`-vs-HTTPS is where you will meet it.
+
+```js
+// clipboard_controller.js — the announcement is the feature, not decoration.
+export default class extends Controller {
+  static targets = ["source", "status"]
+  static values = { label: { type: String, default: "Copied" } }
+
+  async copy() {
+    try {
+      await navigator.clipboard.writeText(this.sourceTarget.value)
+      this.announce(`${this.labelValue} to clipboard`)
+    } catch {
+      // NotAllowedError, or no secure context. Never fail silently: the user
+      // pressed a button and nothing visible happened.
+      this.announce("Couldn't copy — select the text and copy manually")
+      this.sourceTarget.select()
+    }
+  }
+
+  announce(message) {
+    this.statusTarget.textContent = message
+    // Clear it so a second identical copy announces again — an unchanged
+    // textContent is not a change, so the live region would stay silent.
+    setTimeout(() => { this.statusTarget.textContent = "" }, 4000)
+  }
+}
+```
+
+```erb
+<div class="cluster" data-controller="clipboard">
+  <input type="text" readonly value="<%= @account.api_key %>"
+         data-clipboard-target="source" class="font-mono text-step--1">
+  <%= render Ui::ButtonComponent.new(variant: :secondary, size: :sm,
+        data: { action: "clipboard#copy" }) do %>Copy<% end %>
+  <span role="status" class="sr-only" data-clipboard-target="status"></span>
+</div>
+```
+
+**Three rules, in order of how often they are missed:**
+
+1. **Announce it.** A tick that changes colour is invisible to a screen-reader user, and **WCAG 4.1.3
+   Status Messages (AA)** covers exactly this: a status message conveying success that does not receive
+   focus. `role="status"`, not a bare `aria-live`.
+2. **Re-announce a repeat.** Setting the same text twice is not a DOM change, so the region stays
+   silent — clear it, or the second copy is silent.
+3. **Handle the failure path visibly.** `NotAllowedError` and non-secure contexts are real. Falling back
+   to selecting the text gives the user something to act on; a swallowed rejection gives them a button
+   that does nothing.
+
+**Do not reach for `document.execCommand('copy')` as a fallback.** It is deprecated, and the honest
+fallback is the one above: select the text and let the user copy it. A deprecated API as a safety net is
+a second thing to maintain that will itself be removed.
+
+**Never put the value only in the clipboard.** The text must remain visible and selectable — the copy
+button is a convenience over a value the user can already read, not the only way to get it.
+
 ## Range input (#95)
 
 **Native `<input type="range">`, in the field wrapper, and leave the ARIA alone.** ARIA in HTML gives

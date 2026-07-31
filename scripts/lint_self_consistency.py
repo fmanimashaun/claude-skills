@@ -332,6 +332,9 @@ _TOP_LEVEL_COMPONENT = re.compile(
 _NESTED_COMPONENT = re.compile(
     r"^    class\s+(\w+Component)\s*<\s*ViewComponent::Base", re.M
 )
+# `**attrs` / `**options` — an initializer that forwards arbitrary keywords. Its call sites
+# cannot be checked for unknown keywords, so such components are excluded from that check.
+_KW_SPLAT = re.compile(r"\*\*\w+")
 _COMPONENT_CALL = re.compile(r"render\(?\s*(?:\w+::)?(\w+Component)\.new")
 
 
@@ -528,7 +531,16 @@ def check_doctrine_call_sites() -> tuple[list[Finding], dict[str, int]]:
                 slots_by_class[name] = declared
             match = _INIT_KW.search(class_body)
             if match:
-                init_kw[name] = set(_KEYWORD.findall(match.group(1)))
+                # A `**attrs` splat means the initializer accepts ARBITRARY keywords, so the
+                # extra-keyword check below cannot say anything about it. Recording the component
+                # here at all would flag every correct call site that passes `data:`/`aria-*` —
+                # which is most of them, since that is how ViewComponent forwards HTML attributes.
+                # Found when the rule flagged `ButtonComponent.new(..., data: { action: ... })`,
+                # which is legal: its initializer ends in `**attrs`. The ModalComponent flag that
+                # preceded it was correct — that one has no splat — so the fix must key on the
+                # splat, not weaken the check.
+                if not _KW_SPLAT.search(match.group(1)):
+                    init_kw[name] = set(_KEYWORD.findall(match.group(1)))
 
     findings: list[Finding] = []
     for path, body in bodies.items():
@@ -1109,6 +1121,31 @@ def selftest() -> int:
                     # the rule -- a thin space breaks grep exactly like a no-break space does.
                     "A rule — really a guarantee – reads 15\u201320 …\n"
                     "no: \u2192 yes \u2713 \u2717 \u251c\u2500 tree\n"})
+
+    # #95: `**attrs` forwards arbitrary keywords, so unknown-keyword checking is meaningless for
+    # those components — the rule flagged a CORRECT `ButtonComponent.new(..., data: {...})`. Three
+    # fixtures, because a carve-out without a negative test is how a rule quietly stops finding
+    # anything: the splat must silence the keyword check, must NOT silence it for a component
+    # without a splat, and must NOT silence slot checking.
+    SPLAT = ("```ruby\n  class SplatComponent < ViewComponent::Base\n"
+             "    renders_one :title\n"
+             "    def initialize(variant: :primary, **attrs)\n      @variant = variant\n"
+             "    end\n  end\n```\n")
+    NO_SPLAT = ("```ruby\n  class StrictComponent < ViewComponent::Base\n"
+                "    def initialize(variant: :primary)\n      @variant = variant\n"
+                "    end\n  end\n```\n")
+    scenario("a **attrs initializer accepts arbitrary keywords", rule=R, expect_finding=False,
+             files={"skills/x/references/impl.md": SPLAT +
+                    "```erb\n<%= render SplatComponent.new(variant: :primary, "
+                    "data: { action: \"x#y\" }) %>\n```\n"})
+    scenario("...but a component with NO splat still fires", rule=R, expect_finding=True,
+             files={"skills/x/references/impl.md": NO_SPLAT +
+                    "```erb\n<%= render StrictComponent.new(variant: :primary, "
+                    "data: { action: \"x#y\" }) %>\n```\n"})
+    scenario("...and a splat never excuses an undeclared SLOT", rule=R, expect_finding=True,
+             files={"skills/x/references/impl.md": SPLAT +
+                    "```erb\n<%= render SplatComponent.new(variant: :primary) do |c| %>\n"
+                    "  <% c.with_nope do %>x<% end %>\n<% end %>\n```\n"})
 
     scenario("icon call carrying a size class", rule=R, expect_finding=True,
              files={"skills/x/references/i.md":

@@ -1338,6 +1338,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **File upload/Dropzone and Copy to clipboard are documented** (#95). `coverage.md` **7 → 5**. Batched
+  on one mechanism and it held: both are a **native control plus an enhancement**, and in both the
+  enhancement's result is invisible without a `role="status"` announcement. **Neither has an APG
+  pattern** — the index lists 30 and contains no file upload, drag-and-drop or clipboard entry — so both
+  are compositions, and the doctrine says so rather than citing.
+  - **`accept` is a hint, not validation**, quoted from MDN: *"It is still possible (in most cases) for
+    users to toggle an option in the file chooser… and then choose incorrect file types"*, and therefore
+    *"you should make sure that the `accept` attribute is backed up by appropriate server-side
+    validation."* **Server-side validation is mandatory**, not good practice.
+  - **A script cannot set a file input's value**, which has a design consequence rather than just being
+    a security note: a dropzone cannot fill the native input, so the two are **parallel paths to one
+    submission**, not a wrapper.
+  - **`preventDefault()` on `dragover` or the drop never fires** — the most-missed detail in the API.
+    Expressed as Stimulus's `drop->dropzone#drop:prevent` so it cannot be forgotten in the controller.
+  - **The WCAG 2.5.7 trap, which is the opposite of the obvious assumption.** Dragging Movements (AA)
+    is satisfied by the visible file button — but *"achieving keyboard equivalence for a dragging
+    operation does not automatically meet this success criterion, unless that equivalent keyboard
+    operation also provides controls that can be clicked or tapped with a pointer."* **So a
+    `sr-only`-hidden input behind a dropzone is a 2.5.7 failure even though it is keyboard-operable.**
+    That is why the native input stays visible.
+  - **Clipboard: the announcement IS the feature.** `navigator.clipboard.writeText` is Baseline **widely
+    available since March 2020** and **secure-context only**, rejecting with `NotAllowedError` — so
+    failure is a real branch, met first on plain-HTTP staging. Three rules in order of how often they
+    are missed: announce it (**WCAG 4.1.3 Status Messages**, AA — a success message that never receives
+    focus); **clear the region so a repeat re-announces**, because setting identical text is not a DOM
+    change and the second copy would be silent; and handle the failure visibly by selecting the text.
+  - **`document.execCommand('copy')` is not the fallback** — it is deprecated, and a deprecated API as a
+    safety net is a second thing to maintain that will itself be removed. Selecting the text is the
+    honest fallback.
+
 - **Phase B's last two patterns are written — full-text search and bulk transfers** (#98), which
   completes EPIC #96: A, C, D and E were already closed, and these were the only items left in B.
   Placed in their existing homes rather than a new file — search in `advanced-active-record.md` beside
