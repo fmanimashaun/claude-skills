@@ -196,6 +196,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Table (CRUD)": "## Table (CRUD)",
     "Description list": "## Description list\n",
     "Media object": "## Media object\n",
+    "Reviews + Rating": "## Reviews + Rating\n",
     "Pagination": "## Pagination\n",
     "Empty state": "## Empty state\n",
     "Breadcrumbs": "## Breadcrumbs\n",
@@ -398,8 +399,10 @@ ENTRIES: tuple[Entry, ...] = (
     E("Checkout form", COMPOSITION, "derivable", "—", ["ecommerce/components/checkout-forms"], []),
     E("Order summary", COMPOSITION, "derivable", "—", ["ecommerce/components/order-summaries"], []),
     E("Order history", COMPOSITION, "derivable", "—", ["ecommerce/components/order-history"], []),
-    E("Reviews + Rating", COMPONENT, "needs doctrine #91", "—", ["ecommerce/components/reviews"], ["Rating"],
-      "Rating is only needed by commerce, which is why it sits here rather than in #95"),
+    E("Reviews + Rating", COMPONENT, "documented", "—", ["ecommerce/components/reviews"], ["Rating"],
+      "the governing criterion is 1.1.1 (A), NOT 1.4.1 — filled-vs-empty stars differ in shape, so "
+      "1.4.1 bites only where hue alone carries the distinction; read-only average and interactive "
+      "picker are different contracts"),
     E("Incentives block", COMPOSITION, "derivable", "—", ["ecommerce/components/incentives"], []),
     E("Promo section", COMPOSITION, "derivable", "—", ["ecommerce/components/promo-sections"], []),
     E("Storefront page archetype", ARCHETYPE, "documented", "—", ["ecommerce/page-examples/storefront-pages"], []),
@@ -640,8 +643,6 @@ BUILD: dict[str, str] = {
     "Command palette": "the documented Modal containing the documented Combobox with a "
         "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
     "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
-    "Reviews + Rating": "Media object rows; the rating needs an accessible name (\"4 out of 5\"), "
-        "not stars alone",
 }
 
 BUILD_DEFAULTS: dict[tuple[str, str], str] = {
