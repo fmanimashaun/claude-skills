@@ -1506,6 +1506,52 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Marketing copy doctrine — what each section *says*** (#131). New
+  `fidara-design/references/marketing-copy.md`. The kits supply layout and visual system; they supply
+  no information architecture and no words, so an agent could compose a structurally perfect landing
+  page and still ship lorem-grade copy.
+  - **Change type: architecture/design decision, no external framework claim.** There is no upstream
+    for what a hero says — no spec, no framework, and the **ARIA APG has no pattern** for a value
+    proposition. Authority is the maintainer decision recorded on
+    [#131](https://github.com/fmanimashaun/claude-skills/issues/131); nothing here is dressed in a
+    borrowed citation. Nothing is copied from `MikeFishbeinAtherial/infinite-headcount` (the repo
+    that prompted the idea) — it carries **no licence**, so it informed the question, never the text.
+  - **The rule that outranks the rest: the human owns positioning, the agent drafts against a brief.**
+    And the sharp corollary — **an invented fact is worse than a visible blank.** `{{customer_count}}`
+    is a defect the auditor catches; "Trusted by 4,000 teams" is a false statement that ships,
+    precisely because it is well-formed. Never synthesise a metric, customer, quote, logo or
+    certification.
+  - **One contract per shipped archetype (job / shape / failure mode).** #90's **16** marketing
+    section archetypes landed as `composition` rows in `coverage.md` rather than as a separate file,
+    which is easy to miss — the first draft of this work asserted they had not landed at all, and the
+    self-review caught it. The table is keyed to **coverage.md's exact names** and the correspondence
+    is made re-checkable by a one-line `grep` printed in the file, so an archetype added there
+    without a contract row shows up as a gap instead of going unnoticed. Also covers the three
+    product surfaces that fail the same way (empty state, error page, auth) and the two page-level
+    blocks (About opener, Landing's how-it-works).
+  - **Commerce is named as out of scope rather than left silent** — storefront/category/product/cart/
+    checkout/order copy is governed by product data and legal disclosure, not positioning, so
+    stretching these contracts over it would be a `coverage-gap` wearing a table.
+  - **The two length caps are derived, not asserted.** `page-anatomies.md` already ships
+    `max-w-[45ch]` on the landing `h1` and `max-w-[60ch]` on the sub-head; at ~5 characters per word
+    and a two-line ceiling that gives **~12 words** and **~30 words**. The derivation is written out
+    so changing the measure changes the cap instead of leaving a stale number behind.
+  - **Voice stays pack *documentation*, not a `brand.json` field** — measured, not assumed:
+    `plugins/design-flow/scripts/brand_pack_lint.py` warns on any manifest key outside the four
+    documented overrides with *"a pack is colours + logo"*. Adding a field our own lint rejects is the
+    claims-vs-enforcement defect, so `brand.md`'s *Voice / meta* section remains the home.
+  - **Scope stated rather than over-claimed.** The seven mechanical checks (placeholder-text,
+    hero-too-long, claim-without-proof, duplicate-hero-cta, numeric-only-pricing-tiers,
+    stat-without-unit, greeting-in-auth) are a **specification**; wiring them into `design-auditor`
+    and `/design-flow:component` is a **design-flow plugin** change and is not in this PR. The file
+    says so, because doctrine claiming enforcement it does not have is `gate-that-cannot-fail`.
+  - **Keyed to the archetypes that exist.** #90's finer-grained marketing *section* archetypes have
+    not landed, so the contracts are keyed to the anatomies `page-anatomies.md` actually ships plus
+    the recurring marketing blocks they call for — and an archetype arriving without a contract row
+    is named as a gap to file rather than a licence to improvise.
+
 ### 1.24.0 — 2026-07-31
 
 - **Mega menu / Flyout is documented** (#90). `coverage.md` **5 → 4**. **No APG pattern** — the index
