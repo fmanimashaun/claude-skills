@@ -2667,9 +2667,17 @@ boot/validation path — with a bullet each so the promotion could close them se
   - `/design-flow:audit` said *"a non-zero exit is a toolchain defect"*, which conflates the two
     and would have had agents filing their own unreadable clone as a doctrine bug. It now reads
     the code: 1 = report it, 2 = fix your input.
-  - Three fixtures and three declared mutations, one per defect plus a silent-skip guard. Fixture
-    G is the safe direction — the real multi-line step 7 shape must stay clean, so the fix cannot
-    over-correct into crying wolf on correct input.
+  - **Fenced code no longer splits a step.** A shell comment at column 0 inside a ``` block
+    matches the heading pattern exactly, and setup.md's own pack-resolution snippet contains two
+    — so a step showing a code example *between* its initializer and its key read would have been
+    reported as unprovided: a false drift error on correct input. Step splitting is now
+    fence-aware; fence content is still scanned, it just cannot start a chunk.
+  - Four fixtures and four declared mutations, one per defect plus a silent-skip guard. Fixtures
+    G and I are the safe direction — the real multi-line step 7 shape, and a step containing a
+    fenced example, must both stay clean, so the fix cannot over-correct into crying wolf.
+    Fixture I's fence sits at **column 0** deliberately: indented, `^#` cannot match and the
+    fixture would pass whether or not fences were tracked at all. It was caught being vacuous by
+    `mutation_check.py`, which is the failure that tool exists for.
 
 - **NEW `scripts/setup_doctrine_crosscheck.py`** — catches doctrine that references a runtime
   artefact `/design-flow:setup` never generates. The unit of dependency is a

@@ -459,6 +459,15 @@ GUARDS: tuple[Guard, ...] = (
                 "                continue",
                 "an undecodable doctrine file exits 2, not 1",
             ),
+            # Fence tracking is dropped, so a `# ` shell comment inside ``` becomes a step
+            # boundary again — splitting a step between its initializer and its key read, and
+            # reporting correct input as drift. setup.md's own snippet contains two such lines.
+            Mutation(
+                "fenced code splits a step again, so correct input reads as drift",
+                '        if stripped[:3] in ("```", "~~~"):',
+                "        if False:",
+                "a fenced code example does not split a step",
+            ),
         ),
     ),
     Guard(
