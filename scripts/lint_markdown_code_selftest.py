@@ -167,6 +167,41 @@ def run() -> int:
         FAILURES.append(f"extractor sees {strict} block(s) but its coverage control sees {loose} — "
                         "they must agree, or a clean report covers input nobody read")
 
+    # ---- 6b. a STALL is not a syntax error --------------------------------------------
+    # `subprocess.TimeoutExpired` is a subclass of `SubprocessError`, so the original catch turned an
+    # interpreter stall into the same rc-127 path as "missing", which the ladder then reported as
+    # "did not parse in any documented context". An overloaded machine invented a syntax defect —
+    # non-deterministically, which is why a parallel session saw `30 passed, 1 failed` once and could
+    # never reproduce it. check_block must RAISE so the run can end incomplete instead.
+    # Patch `subprocess.run`, NOT `mc._run` — stubbing `_run` bypasses the very except-clause
+    # ordering under test, so the fixture passes with the code broken. The mutation checker caught
+    # exactly that: `raise InterpreterStalled` -> `pass` SURVIVED against the higher stub.
+    _tick()
+    import subprocess as _sp
+
+    _real_sp_run = mc.subprocess.run
+
+    def _timeout(*_a, **_kw):
+        raise _sp.TimeoutExpired(cmd=["ruby", "-c", "-"], timeout=30)
+
+    mc.subprocess.run = _timeout
+    try:
+        mc.check_block("x = 1\n", "ruby")
+        FAILURES.append("a stalled interpreter did not raise — it would be reported as a syntax "
+                        "error, which is an environment problem presented as a code defect")
+    except mc.InterpreterStalled:
+        pass
+    except Exception as exc:  # noqa: BLE001 - any other escape is also wrong
+        FAILURES.append(f"a stall raised the wrong type: {type(exc).__name__}: {exc}")
+    finally:
+        mc.subprocess.run = _real_sp_run
+
+    # NEAR MISS: a genuinely broken block must still be a FINDING, not swallowed as a stall.
+    _tick()
+    problem, _ctx = mc.check_block("class Foo\n  def bar\n", "ruby")
+    if not problem:
+        FAILURES.append("the stall carve-out swallowed a real syntax error")
+
     # ---- 7. a missing interpreter is a SKIP, never a pass ----------------------------
     _tick()
     available, missing = mc.interpreters()
