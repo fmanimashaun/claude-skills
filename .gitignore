@@ -16,13 +16,6 @@ Thumbs.db
 __pycache__/
 *.pyc
 
-# Generated HTML renderings (scripts/build_coverage_artifact.py). NOT `dist/`, deliberately:
-# `dist/` holds the committed `.skill` artifacts, and the packaging check is "run
-# package_core.py, then confirm `git status` shows only the intended dist/ change" — an
-# untracked HTML file there would sit inside the very signal that check reads. These are
-# renderings, not sources: regenerate rather than commit.
-/build
-
 # Paid third-party book screenshots (Every Layout) — reference only, never redistribute.
 # Licensed design references — study locally, NEVER commit (see EPIC #89).
 # They live in a SEPARATE PRIVATE repo, cloned into `design-corpora/` (see CLAUDE.md,
