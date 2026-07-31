@@ -519,8 +519,39 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
         ch.parse_tiers(_write("# Tiers\n\n| a | b | c | d |\n", "model-tiers.md"))
         FAILURES.append("a table with no markers: expected UNUSABLE")
     except ch.Unusable as exc:
-        if "no <!-- rails-flow:tiers:begin" not in str(exc):
+        if "no <!-- <plugin>:tiers:begin" not in str(exc):
             FAILURES.append(f"a table with no markers: unexpected message: {exc}")
+
+    # #299: ANY plugin may own a tier table, so the marker carries the plugin's name and one checker
+    # serves all of them. Three fixtures, because a parameterised marker that accepts anything is
+    # worse than a hardcoded one: it would silently reconcile qa-flow's agents against design-flow's
+    # table.
+    _tick()
+    rows = "| `x` | judgement | `inherit` | — |\n"
+    head = "| Agent | Tier | `model:` | What proves its output |\n|---|---|---|---|\n"
+    for plugin in ("qa-flow", "design-flow", "pipeline"):
+        doc = _write(f"# T\n\n<!-- {plugin}:tiers:begin -->\n{head}{rows}"
+                     f"<!-- {plugin}:tiers:end -->\n", f"{plugin}-tiers.md")
+        try:
+            got = ch.parse_tiers(doc)
+            if [r.agent for r in got] != ["x"]:
+                FAILURES.append(f"{plugin} marker: parsed {[r.agent for r in got]}, expected ['x']")
+        except ch.Unusable as exc:
+            FAILURES.append(f"{plugin} marker rejected, but any plugin may own a table: {exc}")
+
+    # NEAR MISS: a HALF-RENAMED copy must be refused, not reconciled. This is the failure the
+    # parameterisation creates and the hardcoded marker could not have: copy rails-flow's table into
+    # qa-flow, rename the opening marker, forget the closing one, and without this check the rows
+    # between them get reconciled against the wrong plugin's agents.
+    _tick()
+    spliced = _write("# T\n\n<!-- qa-flow:tiers:begin -->\n" + head + rows
+                     + "<!-- rails-flow:tiers:end -->\n", "spliced-tiers.md")
+    try:
+        ch.parse_tiers(spliced)
+        FAILURES.append("a half-renamed tiers block: expected UNUSABLE, got rows")
+    except ch.Unusable as exc:
+        if "half-renamed" not in str(exc):
+            FAILURES.append(f"a half-renamed tiers block: unexpected message: {exc}")
     _tick()
     try:
         ch.parse_tiers(tiers_doc(""))

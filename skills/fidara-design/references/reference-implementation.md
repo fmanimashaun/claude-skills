@@ -19,9 +19,9 @@ classes so intent wins.
 # frozen_string_literal: true
 module Ui
   class ButtonComponent < ViewComponent::Base
-    BASE = "inline-flex items-center justify-center gap-2 rounded-md text-step-0 font-medium " \
+    BASE = "inline-flex items-center justify-center gap-2 rounded-md text-step--1 font-medium " \
            "transition-colors duration-[180ms] ease-out min-h-touch " \
-           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2 " \
+           "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2 " \
            "disabled:opacity-50 disabled:pointer-events-none"
     VARIANT = {
       primary:     "bg-primary text-primary-foreground hover:bg-primary/90",

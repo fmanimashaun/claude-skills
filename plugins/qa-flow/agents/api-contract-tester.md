@@ -4,7 +4,7 @@ description: >
   Independent API testing — Schemathesis contract/fuzz against the running app's
   OpenAPI spec, plus a hand-driven authorization matrix Schemathesis can't infer.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You test the API of the RUNNING app against its published contract.

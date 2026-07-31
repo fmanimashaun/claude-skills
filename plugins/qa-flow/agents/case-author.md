@@ -6,7 +6,7 @@ description: >
   the qa-lead plan, and past defects (docs/brain), assigns stable IDs, and keeps the file in
   sync as the app evolves (add / update / deprecate — never renumber or hard-delete). Free,
   repo-local, Excel-openable. Use via /qa-flow:cases. Feeds /qa-flow:functional.
-model: sonnet
+model: inherit
 tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 

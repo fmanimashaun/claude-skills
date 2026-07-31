@@ -157,6 +157,27 @@ each (Tailwind UI 6494 vs 1575; Flowbite 1100 vs 413). Interface chrome is *smal
 Using `text-step-0` for app chrome makes product UI read oversized and loose — the most common
 calibration error, and the reason this table exists.
 
+**It had drifted inside our own reference implementations** (#306), which is the copy source, so the
+error was propagating rather than sitting still. Eleven sites, not the six first reported: the button
+`BASE` in **two** files, the form-input base in **two**, a `<table>` in **two**, plus the badge `md`
+size, the checkbox label, a menu item and a tab. One file contradicted itself two lines apart — a
+`:label` at `text-step--1` immediately above its `:input` at `text-step-0`.
+
+**Where `text-step-0` is still correct, so this does not get over-corrected on the next pass.** The
+remaining uses were audited one by one and are all content or a deliberate scale:
+
+| Site | Why it stays |
+|---|---|
+| Alert body, card description, page lede | prose — the row above |
+| `<dd>` values in a description list | the value is content; its `<dt>` is chrome at `text-step--1` |
+| `AvatarComponent` `md` | a deliberate `sm`/`md`/`lg` = `--1`/`0`/`1` ramp on the avatar itself, not chrome text |
+
+**Mechanical enforcement belongs in `rendered_conformance.py`, not a grep.** Chrome and content are
+only reliably distinguishable in a *rendered* DOM; a static rule would have to guess from class
+strings, and its false positives would land on the legitimate uses in the table above — which is how
+a linter gets switched off. design-flow's browser-driven linter already resolves real elements, so a
+`chrome-type-step` rule there can decide this correctly.
+
 **Heading ramp — use the middle steps.** Tailwind UI jumps from body straight to hero
 (`text-4xl`/`5xl` heavy, thin mid-range); Flowbite carries a fuller ladder
 (`text-lg`/`xl`/`2xl` well used). Ours follows Flowbite here: reach for **`step-1`/`step-2`** for

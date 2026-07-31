@@ -7,7 +7,7 @@ description: >
   /design-flow:audit and in UI review. Complements rails-flow's general design-auditor with
   design-system-specific rules.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You audit UI for conformance to the **fidara-design** doctrine. You report; you don't rewrite

@@ -168,6 +168,13 @@ GWT_RE = re.compile(r"\bgiven\b.*\bwhen\b.*\bthen\b", re.I)
 
 TIERS_BEGIN = "<!-- rails-flow:tiers:begin -->"
 TIERS_END = "<!-- rails-flow:tiers:end -->"
+# ...but ANY plugin may own a tier table (#299: qa-flow, design-flow and pipeline each need one).
+# The marker carries the plugin's own name so a table cannot be mistaken for another plugin's, and
+# these patterns are what let ONE checker serve all of them. The alternative the issue floated —
+# a per-plugin copy of this file — would be four sources of truth for one contract, which is the
+# second-source-of-truth failure this module's own comments warn about.
+TIERS_BEGIN_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:begin\s*-->")
+TIERS_END_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:end\s*-->")
 TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
 # Aliases that select a MORE expensive model than the session already chose. Shipping one spends a
 # stranger's money on our authority -- or is silently dropped by their availableModels allowlist.
@@ -542,15 +549,26 @@ def parse_tiers(path: Path) -> list[TierRow]:
         raise Unusable(f"no such file: {path}")
     raw = path.read_text(encoding="utf-8").splitlines()
     try:
-        start = next(i for i, line in enumerate(raw) if TIERS_BEGIN in line)
-        stop = next(i for i, line in enumerate(raw) if TIERS_END in line)
+        start, opener = next((i, m.group(1)) for i, line in enumerate(raw)
+                             if (m := TIERS_BEGIN_RE.search(line)))
+        stop, closer = next((i, m.group(1)) for i, line in enumerate(raw)
+                            if (m := TIERS_END_RE.search(line)))
     except StopIteration as exc:
         raise Unusable(
-            f"{path} has no {TIERS_BEGIN} / {TIERS_END} block -- the markers are what makes the "
-            "table machine-checkable instead of folklore, which is the defect #127 reported"
+            f"{path} has no <!-- <plugin>:tiers:begin --> / <!-- <plugin>:tiers:end --> block -- "
+            "the markers are what makes the table machine-checkable instead of folklore, which is "
+            "the defect #127 reported"
         ) from exc
     if stop < start:
         raise Unusable(f"{path}: the tiers end marker precedes its begin marker")
+    # A mismatched pair means two plugins' tables have been spliced together, or one was copied and
+    # half-renamed. Either way the rows between them are not reliably this plugin's, so refuse
+    # rather than reconcile the wrong agents against them.
+    if opener != closer:
+        raise Unusable(
+            f"{path}: the tiers block opens with `{opener}:tiers:begin` but closes with "
+            f"`{closer}:tiers:end` -- a half-renamed copy of another plugin's table"
+        )
 
     rows: list[TierRow] = []
     for offset, line in enumerate(raw[start + 1: stop], start=start + 2):

@@ -52,11 +52,17 @@ with the tool disabled:
     `px-3 py-2` (12px/8px) for every control — values that come from Tailwind's numeric scale,
     **not** from `--space-*`. A rule flagging px padding outside the fluid scale therefore fires
     on our own prescription, and no computed px value can tell the two systems apart.
-  * **chrome-vs-content type step.** foundations-tokens.md mandates `text-step--1` for chrome and
-    calls `text-step-0`-on-chrome "the most common calibration error"; component-implementations.md
-    then uses `text-step-0` on the input base (:202, :292), the badge md size (:118), a checkbox
-    label (:313), a menu item (:410) and a tab (:763). Two doctrine files disagree, so a rule
-    would fire on our own reference implementation. The disagreement is filed, not encoded.
+  * **chrome-vs-content type step — UNBLOCKED as of #306, and now the best-justified rule to add
+    next.** This entry used to read "two doctrine files disagree, so a rule would fire on our own
+    reference implementation". That disagreement is **resolved**: #306 settled it in favour of
+    foundations-tokens.md's measured calibration and moved **eleven** sites to `text-step--1` — the
+    six named here plus the button `BASE` in two files, the form-input base in a third, and a
+    `<table>` in two. The blocker this entry recorded no longer exists.
+    Note the failure mode has inverted, so read the exception list before implementing: a rule must
+    still NOT fire on the legitimate `text-step-0` uses foundations-tokens.md now enumerates — alert
+    body, card description, page lede, `<dd>` values (whose `<dt>` is chrome), and AvatarComponent's
+    deliberate sm/md/lg ramp. Chrome is decidable here precisely because this linter resolves real
+    elements: `button`, `input`, `select`, `textarea`, `label`, `th`, `[role=menuitem]`.
   * **alpha-modified colours.** `bg-primary/90` compiles (Tailwind v4) to
     `color-mix(in oklab, var(--color-primary) 90%, transparent)`, and `/90` shifts are
     doctrine-blessed (components.md hover, `ring-ring/30`). Decomposing a mix back to its base is
@@ -78,11 +84,16 @@ EXTERNALLY VERIFIED CLAIMS (each is load-bearing for a rule or a carve-out):
      doctrine-conformant `focus-visible:ring-2` would be reported.
   4. `box-shadow` and `text-shadow` **compute to `none`** in forced-colors mode
      (css-color-adjust-1 §"Forced Color Palette") — so a shadow-only ring is invisible there.
-     Reported as a FACT with its count, never as a finding: our own doctrine prescribes
-     `focus-visible:outline-none focus-visible:ring-2`, and a rule that fires on 100% of
-     conformant components is disable-bait. (Tailwind v4 compounds it — v3's accessible
-     `outline-none` was renamed `outline-hidden`, and v4's `outline-none` really does set
-     `outline-style: none`; tailwindcss.com/docs/upgrade-guide.) Filed separately.
+     Reported as a FACT with its count, never as a finding — but the REASON changed and the old one
+     should not be restored. It used to be "our own doctrine prescribes
+     `focus-visible:outline-none focus-visible:ring-2`, so a rule would fire on 100% of conformant
+     components". **#305 fixed that.** v3's accessible `outline-none` was renamed `outline-hidden` in
+     v4 while v4's `outline-none` really does set `outline-style: none`
+     (tailwindcss.com/docs/upgrade-guide); our nine sites had been carried through the migration
+     unchanged and now all say `outline-hidden`, so a conformant component keeps a forced-colors
+     indicator. It stays a counted fact for a narrower reason: this linter measures a page an app
+     author wrote, and a shadow-only ring there may be a deliberate choice we do not govern.
+     `lint_self_consistency.py`'s `v4-outline-none` rule is what holds OUR doctrine to it.
 
 WHAT A SKIP MEANS. A rule whose basis the app never provided is **skipped and named**, never
 counted as clean: no `--text-step-*` resolved means `off-scale-type` did not run, and printing a

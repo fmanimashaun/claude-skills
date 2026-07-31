@@ -7,14 +7,41 @@ with a fixed **variant × size × state** vocabulary. Reuse the SAME axes everyw
 responsive rules listed. Class strings below use role tokens only — copy the recipe, don't
 substitute raw colors.
 
+## The focus ring: `outline-hidden`, never `outline-none` (Tailwind v4)
+
+**Every focus recipe in this kit is `focus-visible:outline-hidden focus-visible:ring-2 …`, and the
+first half is not interchangeable with `outline-none`.** Writing `outline-none` in a v4 project
+removes the focus indicator entirely for forced-colors users. The reason is a rename that changed
+behaviour under a stable name:
+
+- Tailwind **v3**'s `outline-none` *"didn't actually set `outline-style: none`, and instead set an
+  invisible outline that would still show up in forced colors mode **for accessibility
+  reasons**"* ([v4 upgrade guide][tw4]). It was the safe utility.
+- Tailwind **v4** renamed that to **`outline-hidden`** and introduced a *new* `outline-none` that
+  *"actually sets `outline-style: none`"* ([v4 upgrade guide][tw4]). Same string, opposite meaning.
+
+The ring cannot cover for it. Tailwind's rings are **box-shadow**, and in forced-colors mode
+*"`box-shadow` and `text-shadow` compute to `none`"* ([CSS Color Adjust 1][cca]) — while
+`outline-color` is force-adjusted to a system color rather than removed. So the outline is the part
+that survives, which is precisely why v3's utility kept an invisible one. `outline-none` + `ring-2`
+in v4 leaves a forced-colors user with **no visible focus indicator at all** — a WCAG **2.4.7**
+failure that is invisible in normal rendering and therefore never caught by eye.
+
+This shipped wrong in nine recipes across four files: the strings were correct under v3 and were
+carried through the v4 migration unchanged. When a framework renames a utility, grep the old name —
+a rename that keeps the old spelling alive with new semantics is the dangerous kind.
+
+[tw4]: https://tailwindcss.com/docs/upgrade-guide
+[cca]: https://www.w3.org/TR/css-color-adjust-1/
+
 Express variants server-side as a Ruby map (base + variants + sizes + defaults), the cva
 pattern without the JS dep:
 
 ```ruby
 # app/components/ui/button_component.rb (shape for every catalog component)
-BASE = "inline-flex items-center justify-center gap-2 rounded-md text-step-0 font-medium " \
+BASE = "inline-flex items-center justify-center gap-2 rounded-md text-step--1 font-medium " \
        "transition-colors duration-[180ms] ease-out " \
-       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2 " \
+       "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-2 " \
        "disabled:opacity-50 disabled:pointer-events-none min-h-touch"
 VARIANT = {
   primary:     "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -410,7 +437,7 @@ DEFAULTS = { variant: :primary, size: :md }
   `dom_id`-addressable so streams can target them. No full-page new/edit forms. Full flow:
   [crud-modal-pattern.md](crud-modal-pattern.md).
 - Keep the proven `shared/_crud_table`, `_crud_header`, `_crud_row_actions` partials, refactored to role
-  tokens + components. `<table class="w-full text-step-0 text-left">`, header `text-step--1 uppercase
+  tokens + components. `<table class="w-full text-step--1 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.
 - **Responsive:** wrap in `overflow-x-auto` (horizontal scroll). For dense data on small screens prefer a
   **card-stack** fallback (`hidden md:table` + a `md:hidden` list of `box`/`stack` rows) — pick per table and
