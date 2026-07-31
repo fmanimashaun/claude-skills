@@ -9,8 +9,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-07-31 — a committed coverage page, and bytes that depend only on data
 
-Version numbers are assigned at the promotion, never here.
-
 - **FIX — CLAUDE.md claimed all hooks fail open; two fail closed on purpose** (#132). A
   `doctrine-contradiction` in our own file, flagged by the session that wrote the harness doctrine and
   **verified here by running the hooks** with `python3` shadowed by a stub that exits 127 — not by
