@@ -40,6 +40,31 @@ import sys
 FENCE = re.compile(r"^[ \t]*```[ \t]*(bash|sh|shell|console|shell-session)[^\n]*\n(.*?)^[ \t]*```",
                    re.S | re.M)
 
+# The markdown we ship that people actually RUN commands out of. `docs/` and `CLAUDE.md` were
+# absent until #133 added a doc to `docs/` and noticed nothing checked it: CLAUDE.md alone carries
+# the `release_local.sh`, `package_core.py` and `maintainer_doctor.py` invocations a maintainer
+# copies verbatim, and none of them had ever been syntax-checked.
+#
+# CHANGELOG.md is EXCLUDED on purpose, and the boundary is a judgement worth recording rather than
+# leaving to look like an oversight. It is an append-only historical record, not instructions
+# anyone executes; a command quoted in a 2026-07 entry describes what was true then, so a syntax
+# error there is not a defect anyone should "fix" by rewriting history. A gate that fails for a
+# reason nobody may act on is a gate people learn to skip.
+DEFAULT_ROOTS = ["plugins", "skills", ".claude", "docs", "CLAUDE.md", "README.md"]
+
+# A fence inside a blockquote (`> ```bash`) is still shipped shell — CHANGELOG.md quotes one, and
+# a doc quoting a command block is ordinary. The `^[ \t]*` anchor above cannot see past the `>`,
+# and the looser coverage scan (which has no anchor) can, so leaving this unhandled shows up
+# honestly as a COVERAGE GAP rather than as a silent skip. Stripping the marker line-by-line
+# preserves the line count, so reported line numbers still point at the real file.
+_BLOCKQUOTE = re.compile(r"^[ \t]*(?:>[ \t]?)+", re.M)
+
+
+def read_source(path: str) -> str:
+    """File contents with blockquote markers removed, line numbering preserved."""
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        return _BLOCKQUOTE.sub("", handle.read())
+
 # Substituted before `bash -n` so a TEMPLATE is not reported as a syntax error. `<pack>` is
 # the important one: bash reads `<` as a redirect, so every placeholder path would fail.
 PLACEHOLDERS = [
@@ -70,8 +95,13 @@ class Finding:
 
 
 def iter_blocks(path: str):
-    """Yield (start_line, code) for each fenced shell block."""
-    src = open(path, encoding="utf-8", errors="replace").read()
+    """Yield (start_line, code) for each fenced shell block.
+
+    Reads through `read_source` like both coverage scans do. Reading raw here while the
+    reconciliation read de-quoted would count a blockquoted block as parsed and then never
+    lint it — a divergence that reports cleaner coverage than it delivers.
+    """
+    src = read_source(path)
     for match in FENCE.finditer(src):
         start = src[: match.start()].count("\n") + 2   # +1 for the fence line itself
         yield start, match.group(2)
@@ -148,8 +178,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="lint_markdown_shell.py",
         description="Syntax-check and pattern-scan the shell embedded in shipped markdown.")
-    parser.add_argument("paths", nargs="*", default=["plugins", "skills", ".claude"],
-                        help="files or directories (default: plugins skills .claude)")
+    parser.add_argument("paths", nargs="*", default=DEFAULT_ROOTS,
+                        help="files or directories (default: " + " ".join(DEFAULT_ROOTS) + ")")
     parser.add_argument("--quiet", action="store_true", help="only print findings")
     parser.add_argument("--audit-coverage", action="store_true",
                         help="cross-check the fence regex against a looser independent scan and "
@@ -169,7 +199,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     try:
-        files = discover(args.paths or ["plugins", "skills", ".claude"])
+        files = discover(args.paths or DEFAULT_ROOTS)
     except FileNotFoundError as exc:
         print(f"lint_markdown_shell: no such path: {exc}", file=sys.stderr)
         return 2
@@ -181,7 +211,7 @@ def main(argv: list[str]) -> int:
         gaps = []
         seen = missed = 0
         for path in files:
-            src = open(path, encoding="utf-8", errors="replace").read()
+            src = read_source(path)
             a, b = len(list(FENCE.finditer(src))), len(loose.findall(src))
             seen += a; missed += b
             if a != b:
@@ -208,7 +238,7 @@ def main(argv: list[str]) -> int:
     findings: list[Finding] = []
     blocks = lines = 0
     for path in files:
-        src = open(path, encoding="utf-8", errors="replace").read()
+        src = read_source(path)
         parsed = len(list(FENCE.finditer(src)))
         present = len(loose_scan.findall(src))
         loose_total += present

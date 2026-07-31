@@ -39,9 +39,42 @@ Trust existing labels; infer and apply where missing. Never adjudicate correctne
 — a report of "wrong doctrine" is routed, not judged (that's the verifier's job in the
 work loop).
 
-## Phase 3 — Post the queue
+## Phase 3 — Compute the order, don't reason it out
 
-Report a single ranked table to the user: P1 first, `type:incorrect-doctrine` ahead of
-peers, oldest-first within a tier — with the skipped set (needs-info / duplicate) and
-why. Do not start fixing. End by naming the head of the queue and inviting
+Priority alone does not give an order: a P1 sitting behind three unstarted issues is not
+the next task. The dependency edges declared in issue bodies do, and they are computed,
+not re-derived by hand each time (#133):
+
+```bash
+python3 scripts/issue_graph.py
+```
+
+**It exits non-zero when the graph is wrong** — a cycle, an edge to an issue that does not
+exist, a typo'd key, a declaration outside its fence — and prints no queue at all in that
+case. Those are filing errors: fix the issue bodies, then re-run. Do not hand-wave past
+them and rank by priority instead, which is the habit the tool replaces.
+
+Feed its four outputs into the table below:
+
+- **Ready now** — the candidates. Everything else is noise until these are done.
+- **Blocked by what** — never rank a blocked issue above its own blocker.
+- **Critical path per epic** — the chain that actually determines when an epic finishes.
+- **Priority vs graph** — `P1-but-blocked` and `low-priority-blocking-P1`. Re-label when
+  the graph disagrees with the hand-assigned priority; the graph is the better evidence.
+
+While triaging, add a `deps` block to any issue whose ordering you had to work out by
+reading prose — that is the reasoning that would otherwise be redone next time. Format:
+`docs/issue-dependency-graph.md`.
+
+## Phase 4 — Post the queue
+
+Report a single ranked table to the user: **ready-now first**, then P1,
+`type:incorrect-doctrine` ahead of peers, oldest-first within a tier — with the skipped set
+(needs-info / duplicate) and why, and blocked issues listed under what blocks them.
+
+Quote the coverage line verbatim (`N/M open issues declare edges`). An ordering computed
+from three declared edges out of forty open issues is worth having, but reporting it
+without saying so implies knowledge the tracker does not contain.
+
+Do not start fixing. End by naming the head of the queue and inviting
 `/maintainer-work <n>`.

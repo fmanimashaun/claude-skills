@@ -51,10 +51,28 @@ and the version they were on.
   ```
   If found, comment linking the original and apply `duplicate`; do not queue it.
 
+## Record the ordering you had to reason out
+
+If working out where an issue belongs meant reading prose in another issue to learn what it
+waits on, that reasoning is worth exactly once. Append a `deps` block to the issue body so
+the next run computes it instead of re-deriving it (#133):
+
+```deps
+depends-on: #93
+part-of: #89
+```
+
+Keys are `depends-on`, `blocks`, `part-of`; `#n` references only; the `deps` tag is
+required. A typo'd key or a block under the wrong tag is a reported error, not a silent
+no-op — so a malformed block gets fixed rather than ignored. Full rules:
+`docs/issue-dependency-graph.md`. You may edit issue **bodies** to add these; you still
+never edit skills, plugins, or code.
+
 ## Order and report
 
-Rank the workable queue: P1 first, `type:incorrect-doctrine` ahead of other same-tier
-types (doctrine correctness is the product), then oldest-first. Report the labeled
+Rank the workable queue: **ready-now before blocked** (`scripts/issue_graph.py` computes
+both), then P1, `type:incorrect-doctrine` ahead of other same-tier types (doctrine
+correctness is the product), then oldest-first. Report the labeled
 queue as a table (number · component · type · priority · one-line summary) and the
 skipped set (needs-info / duplicate) with why. Apply labels with
 `gh issue edit <n> --add-label ...`; create any missing label only if the taxonomy

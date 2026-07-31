@@ -9,6 +9,39 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **NEW `scripts/issue_graph.py` — the work queue is computed from declared edges, not re-reasoned**
+  (#133). The tracker's dependencies (`#93 → #104 → #94/#90`, `#125 → #127`) lived as prose inside
+  issue bodies, so "what should I work on next?" meant re-deriving the ordering by hand and getting a
+  different answer each time. Issues now declare edges in a ```deps block (`depends-on` / `blocks` /
+  `part-of`); the script reports **ready-now**, **blocked-by-what**, **critical path per epic**, and
+  **priority-vs-graph contradictions in both directions** — including the costlier
+  `low-priority-blocking-P1`. Wired into `/maintainer-triage` and `issue-triager`; format documented
+  in `docs/issue-dependency-graph.md`. Design decision (our own format, no upstream) recorded on #133.
+  - **The graph is a gate, the queue is advice.** A cycle, a dangling edge, a typo'd key or a
+    declaration outside its fence exits non-zero and prints **no queue at all** — a ranked queue
+    computed from a graph already known to be broken reads exactly like a correct one. Blocked work
+    and priority contradictions only advise. (CLAUDE.md's fail-closed/fail-open rule, #132.)
+  - **Requiring the `deps` tag is only safe because missing it is an error.** `depends_on: :owner` is
+    a Rails association, so a bare fence cannot be told from a code sample — but silent strictness is
+    the `gate-that-cannot-fail` class, so both near-misses are *reported*: a fence that is nothing but
+    declarations under the wrong tag, and a declaration loose in prose. Both detectors stay narrow
+    enough that "Blocks #94 and #90, but only once the schema lands" is silent; the selftest pins
+    every rule in **both** directions. 40 checks, `mutation_check` **30 → 40**.
+  - A full `gh` page is treated as an **error, not a total**: `--limit` bounds a query but proves
+    nothing about truncation, and a truncated tracker turns real edges into phantom "not in the
+    tracker" errors (#211).
+- **`docs/` and `CLAUDE.md` were never linted, and CLAUDE.md is where the release commands live**
+  (found while adding the doc above). Both markdown linters defaulted to `plugins skills .claude`, so
+  the `release_local.sh`, `package_core.py` and `maintainer_doctor.py` invocations a maintainer copies
+  verbatim had never been syntax-checked — a `coverage-gap` in the tooling whose entire purpose is
+  catching them. Roots extended; **shell blocks checked 71 → 96**. `CHANGELOG.md` stays excluded on
+  purpose (an append-only history, not instructions anyone runs — a gate failing on a command quoted
+  in a 2026-07 entry is one nobody may act on), and that boundary is now stated in the code.
+  - **A fence inside a blockquote was invisible to both linters.** The `^[ \t]*` anchor cannot see
+    past `> `, which surfaced honestly as `parsed 0, present 1` on CHANGELOG.md rather than as a
+    silent skip. Blockquote markers are now stripped line-by-line, so line numbers still point at the
+    real file — and `iter_blocks` reads through the same helper as the coverage reconciliation, since
+    counting a block as parsed while never linting it reports cleaner coverage than it delivers.
 - **FIX — a skip was masquerading as a pass in the gate added hours earlier.** `lint_markdown_code.py`
   fails open when `node` or `ruby` is absent, printing a SKIP notice — but it **exited 0**, so
   `maintainer_doctor.py` printed `[ ok ] gate: markdown code lint` while **242 of 276 blocks went

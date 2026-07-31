@@ -397,6 +397,79 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        name="issue_graph",
+        subject="scripts/issue_graph.py",
+        selftest="scripts/issue_graph.py",   # --selftest lives in the module itself
+        mutations=(
+            Mutation(
+                "a dependency cycle stops being a filing error",
+                "    cycle = _cycle_in(dependency)",
+                "    cycle = None",
+                "dependency cycle",
+            ),
+            Mutation(
+                "a full page of gh results is accepted as the whole tracker (#211)",
+                "    if len(payload) >= limit:",
+                "    if False:",
+                "truncation guard",
+            ),
+            Mutation(
+                "declarations under the wrong fence tag go silent again",
+                "        if lines and all(_STRICT.match(line) for line in lines):",
+                "        if False:",
+                "declarations under an untagged fence",
+            ),
+            # The near-miss half of the same carve-out. Widening `all` to `any` makes the check
+            # fire on any fence that merely CONTAINS a declaration — the false positive that
+            # would get it switched off. Proves the silence fixtures are load-bearing.
+            Mutation(
+                "the mistag check widens to any fence containing a declaration",
+                "        if lines and all(_STRICT.match(line) for line in lines):",
+                "        if lines and any(_STRICT.match(line) for line in lines):",
+                "a fence mixing prose with a declaration is a sample",
+            ),
+            Mutation(
+                "a declaration loose in prose stops being reported",
+                "        if _STRICT.match(line):",
+                "        if False:",
+                "a declaration outside any fence",
+            ),
+            Mutation(
+                "a typo'd key silently declares nothing",
+                "            if key not in KEYS:",
+                "            if False:",
+                "typo'd key",
+            ),
+            Mutation(
+                "an edge to an issue that does not exist stops being reported",
+                "            if target not in graph.issues:",
+                "            if False:",
+                "edge to an issue not in the tracker",
+            ),
+            Mutation(
+                "a self-referencing declaration is no longer named as such",
+                "                if target == number:",
+                "                if False:",
+                "self reference",
+            ),
+            Mutation(
+                "the critical-path tiebreak stops preferring the higher priority",
+                "    return (lengths.get(number, 1), -PRIORITIES.index(priority) "
+                "if priority else -len(PRIORITIES), -number)",
+                "    return (lengths.get(number, 1), 0, -number)",
+                "critical-path tiebreak",
+            ),
+            # The property that makes this a gate rather than a report: a graph known to be
+            # broken must print NO queue, because a wrong ordering reads exactly like a right one.
+            Mutation(
+                "a queue is printed for a graph already known to be invalid",
+                '    if graph.problems:\n        print(f"ISSUE GRAPH INVALID',
+                '    if False:\n        print(f"ISSUE GRAPH INVALID',
+                "cyclic",
+            ),
+        ),
+    ),
+    Guard(
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
         selftest="scripts/maintainer_doctor_selftest.py",
