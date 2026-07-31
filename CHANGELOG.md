@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **An umbrella issue was closed by a promotion that shipped one of its groups** — and the rule that
+  allowed it is now written down. #95's body says *"Ship in sub-releases, one group at a time"* and
+  carries a checklist; `Closes #95` on the v1.37.0 promotion retired it with **seven rows still
+  undocumented**, after which **four further slices landed against a closed issue**. CLAUDE.md's
+  promotion section now says plainly: an issue that ships incrementally gets `Refs`, never `Closes`,
+  until its last increment — and to check the body for unticked boxes before writing `Closes`. #95 is
+  reopened with the remaining seven rows enumerated.
+
 ### 2026-07-30 — the fences are syntax-checked, and invisible characters are caught
 
 - **NEW rule `invisible-character`** (#95) — no invisible or confusable whitespace in anything we
