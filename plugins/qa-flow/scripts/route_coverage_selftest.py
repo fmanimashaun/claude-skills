@@ -131,9 +131,35 @@ def run() -> int:
         "https://x.test/users/42/edit,heading 'Edit',0,0,0,0,0,none,0,,\n",
         encoding="utf-8",
     )
+    # The keyboard (#114) and forms (#115) passes visit real routes, so they must earn coverage
+    # like any other pass. Wiring them into ROUTE_SOURCES is otherwise an untested claim: the
+    # "every profile is classified" check below proves they were not FORGOTTEN, not that
+    # attribution actually reads them.
+    (ev / "2026-07-30-x-keyboard.csv").write_text(
+        ve.KEYBOARD.header + "\n"
+        "/admin/reports,signed-in,Walked,200,https://x.test/admin/reports,"
+        "https://x.test/admin/reports,heading 'Reports',chromium,9,9,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        encoding="utf-8",
+    )
+    (ev / "2026-07-30-x-forms.csv").write_text(
+        ve.FORMS.header + "\n"
+        "new-user,/users,Exercised,200,https://x.test/users,https://x.test/users,"
+        "heading 'Users',4,0,0,dry-run,Not run,Not run,Not run,Not run,Not run,none,,\n",
+        encoding="utf-8",
+    )
     seen = rc.visited_paths([ev])
-    check("attribution: paths collected from both artifacts",
-          sorted(seen), ["/", "/users/42/edit"])
+    check("attribution: paths collected from every per-page artifact",
+          sorted(seen), ["/", "/admin/reports", "/users", "/users/42/edit"])
+    # `.get` rather than `[]` deliberately: when a profile is dropped from ROUTE_SOURCES the path
+    # is absent from `seen` entirely, and indexing would raise KeyError -- reporting a crash
+    # instead of the defect, and letting an unrelated assertion take the credit for catching it.
+    _tick()
+    if not any("keyboard:" in s for s in seen.get("/admin/reports", ())):
+        FAILURES.append("attribution: the keyboard walk was not credited")
+    _tick()
+    if not any("forms:" in s for s in seen.get("/users", ())):
+        FAILURES.append("attribution: the forms pass was not credited")
     _tick()
     if not any("functional:" in s for s in seen["/"]):
         FAILURES.append("attribution: the functional artifact was not credited")

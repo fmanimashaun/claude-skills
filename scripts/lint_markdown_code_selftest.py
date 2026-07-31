@@ -58,6 +58,16 @@ def expect_extracted(label: str, markdown: str, want: list[tuple[str, str]]) -> 
 
 
 def run() -> int:
+    # Its fixtures exercise real interpreters, so without them this cannot prove anything. Report
+    # INCOMPLETE (exit 3 -> SKIP in maintainer_doctor) rather than FAIL: a selftest that cannot run
+    # is not a broken selftest, and it must not read as a pass either. This is the same three-state
+    # rule the linter itself follows.
+    _available, _missing = mc.interpreters()
+    if _missing:
+        print(f"lint_markdown_code selftest: SKIP — {', '.join(_missing)} not installed, so the "
+              "fixtures cannot be exercised. This is a skip, NOT a pass.", file=sys.stderr)
+        return mc.EXIT_INCOMPLETE
+
     # ---- 1. it FIRES on real syntax errors ---------------------------------------------
     expect("js: unclosed brace", "js", "function f() {\n  return 1\n", parses=False)
     expect("js: stray keyword", "javascript", "const x = = 1", parses=False)

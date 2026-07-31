@@ -25,6 +25,14 @@ The runtime profile (#109) closes the inverse hole: a page that IS the page unde
 returns 200, while throwing uncaught exceptions or 404-ing its own script bundle. Validating
 page identity says nothing about whether the page then worked.
 
+The keyboard (#114) and forms (#115) profiles close a third, different hole: a pass that
+reports a verdict on surface it never exercised. Both are per-page passes whose evidence looks
+identical whether the pass was exhaustive or sampled one element and stopped, so both carry a
+DENOMINATOR and the arithmetic is enforced -- an interactive element is either reached by Tab
+or reported unreachable, and an error-contract verdict is only permitted on a form that was
+actually submitted. An unexercised check must be indistinguishable from nothing, never from a
+pass.
+
 WHAT THIS GUARANTEES
     No row asserting a page was tested/audited can OMIT its HTTP status, requested/final
     URL, or expected-content assertion; none can claim a result on a non-2xx/3xx status or
@@ -155,7 +163,11 @@ FUNCTIONAL = Profile(
 # ---------------------------------------------------------------------------------------
 # Profile: a11y-auditor's per-page audit log
 # ---------------------------------------------------------------------------------------
-KEYBOARD_VERDICTS = {"pass", "fail", "not run"}
+# Pass / Fail / Not run. Shared by the a11y `Keyboard` column and every forms error-contract
+# column, so "Not run" means the same honest thing in all of them rather than three vocabularies
+# drifting apart.
+VERDICTS = frozenset({"pass", "fail", "not run"})
+KEYBOARD_VERDICTS = VERDICTS  # the a11y profile's Keyboard column, under its original name
 
 
 def _a11y_extra(row: dict[str, str], where: str, status: str) -> list[str]:
@@ -257,6 +269,105 @@ def _count(value: str) -> int | None:
         return None
 
 
+def _grade(counts: dict[str, int], gating: tuple[tuple[str, str], ...]) -> tuple[str, list[str]]:
+    """The severity these counters FORCE, and the counters that forced it.
+
+    Shared by every profile that recomputes its own verdict. The point of recomputing is that a
+    row cannot talk its own grade down: whether a page is S1 is a function of what the browser
+    counted, not of what the writer typed in the Severity column.
+
+    Only counters that PARSED are graded -- a missing counter is already its own finding, and
+    inferring a severity from it would turn one defect into two and blame the wrong field.
+    """
+    required = NO_SEVERITY
+    drivers: list[str] = []
+    for column, floor in gating:
+        if counts.get(column, 0) > 0:
+            drivers.append(f"{column}={counts[column]}")
+            if floor == S1:
+                required = S1
+            elif required != S1:
+                required = S2
+    return required, drivers
+
+
+def _read_counters(
+    row: dict[str, str], where: str, columns: tuple[str, ...], blind: str
+) -> tuple[dict[str, int], list[str]]:
+    """Parse a profile's integer counters, reporting every one that records no honest number.
+
+    `blind` completes the sentence "a pass that records no counts is indistinguishable from
+    one where ..." -- each profile names its own way of silently doing nothing, because that is
+    the failure the counter exists to make visible.
+    """
+    counts: dict[str, int] = {}
+    findings: list[str] = []
+    for column in columns:
+        raw = row[column]
+        if not raw:
+            findings.append(
+                f"{where}: no {column} count -- a pass that records no counts is "
+                f"indistinguishable from one where {blind}"
+            )
+            continue
+        value = _count(raw)
+        if value is None:
+            # Rejects "none", "n/a", "-", "TBD": placeholder text that reads as a clean result.
+            findings.append(f"{where}: {column} {raw!r} records no number -- use 0 for none")
+            continue
+        if value < 0:
+            findings.append(f"{where}: {column} {raw!r} is negative")
+            continue
+        counts[column] = value
+    return counts, findings
+
+
+def _check_severity(
+    row: dict[str, str], where: str, counts: dict[str, int],
+    gating: tuple[tuple[str, str], ...], every: tuple[str, ...],
+) -> list[str]:
+    """Compare the stated Severity against the one the counters force.
+
+    `every` is the profile's full counter list: an unexplained severity is only reported when
+    every counter parsed, or a single missing counter would be reported twice over.
+    """
+    findings: list[str] = []
+    severity = row["Severity"].lower()
+    if not severity:
+        findings.append(f"{where}: no Severity ({'/'.join(sorted(RUNTIME_SEVERITIES))})")
+        return findings
+    if severity not in RUNTIME_SEVERITIES:
+        findings.append(
+            f"{where}: Severity {row['Severity']!r} is not one of "
+            f"{'/'.join(sorted(RUNTIME_SEVERITIES))}"
+        )
+        return findings
+
+    # Structured as a match on the FORCED grade rather than as `elif required == S1 and
+    # severity != S1`, deliberately: `_runtime_extra` spells that comparison out with its own
+    # prose, and mutation_check.py anchors a mutation on that exact line. Two textual copies
+    # would make the anchor ambiguous, and an anchor that matches twice is a hard error.
+    required, drivers = _grade(counts, gating)
+    if severity == required:
+        return findings
+    if required == NO_SEVERITY:
+        if len(counts) == len(every):
+            findings.append(
+                f"{where}: Severity {row['Severity']} on a row whose gating counters are all "
+                "0 -- either a counter is wrong or this row is clean (Severity none)"
+            )
+    elif required == S1:
+        findings.append(
+            f"{where}: {', '.join(drivers)} is S1 but Severity says {row['Severity']} -- an "
+            "element a keyboard user cannot reach or see focus on is not a lesser defect"
+        )
+    elif severity == NO_SEVERITY:
+        findings.append(
+            f"{where}: {', '.join(drivers)} is S2 but Severity says none -- not clean"
+        )
+    return findings
+
+
 def _runtime_extra(row: dict[str, str], where: str, status: str) -> list[str]:
     """An observed route must report what the browser actually said, and grade it correctly."""
     findings: list[str] = []
@@ -309,15 +420,7 @@ def _runtime_extra(row: dict[str, str], where: str, status: str) -> list[str]:
 
     # Only grade what parsed. A missing counter is already reported above; inferring a
     # severity from it would turn one defect into two and blame the wrong field.
-    required = NO_SEVERITY
-    drivers: list[str] = []
-    for column, floor in GATING_COUNTERS:
-        if counts.get(column, 0) > 0:
-            drivers.append(f"{column}={counts[column]}")
-            if floor == S1:
-                required = S1
-            elif required != S1:
-                required = S2
+    required, drivers = _grade(counts, GATING_COUNTERS)
 
     if required == NO_SEVERITY and severity != NO_SEVERITY:
         if len(counts) == len(RUNTIME_COUNTERS):
@@ -378,6 +481,344 @@ RUNTIME = Profile(
 
 
 # ---------------------------------------------------------------------------------------
+# Profile: keyboard-only navigation and focus-order audit (#114)
+#
+# Doctrine says every interactive element is keyboard-operable with a visible focus ring, and
+# that overlays trap focus and restore it to the trigger on close. Nothing verified any of it,
+# and axe cannot: under the WCAG tag filter `a11y-auditor` targets, axe runs NO focus rule at
+# all. Its `tabindex` (positive tabindex) and `skip-link` rules are tagged **best-practice**,
+# and `focus-order-semantics` is best-practice/experimental and only asks whether a focusable
+# element's ROLE is interactive -- never whether the visual order matches, whether an indicator
+# is visible, or whether focus returns to the trigger. Best-practice rules are not included by
+# wcag2a/wcag2aa/wcag21a/wcag21aa/wcag22aa, so none of the three runs today.
+#
+# THE DEFECT THIS PROFILE IS SHAPED BY. The real probe sampled ONE button per page and produced
+# focus evidence for 25 of 72 pages -- while reporting nothing missing. Sampling is invisible in
+# a per-page log unless the log carries a DENOMINATOR, so the guarantee here is arithmetic:
+# every interactive element is either reached by Tab or reported unreachable, and
+# `Tab Stops + Unreachable < Interactive` means the remainder were never focused. That one rule
+# is what makes "exhaustive, not sampled" checkable rather than promised.
+#
+# WHY THE ENGINE IS PART OF THE CONTRACT. Playwright's WebKit inherits the macOS default where
+# Tab moves focus to text fields and lists only -- not to links and buttons -- unless Full
+# Keyboard Access is on (the same setting behind Safari's "Press Tab to highlight each item on a
+# webpage"). A keyboard pass run in WebKit therefore reports every link as unreachable: a page
+# full of false S1s. So an Unreachable count from WebKit must say in Notes that Full Keyboard
+# Access was enabled, or it is a platform setting rather than a finding about the app.
+#
+# WHAT IS DELIBERATELY NOT GATED. Focus-indicator thickness and contrast (2 CSS px, 3:1) come
+# from WCAG 2.2 SC 2.4.13 Focus Appearance, which is **Level AAA**. a11y-auditor targets AA, so
+# those stay advisory and must not be counted in `No Focus Indicator`. What IS gated is SC 2.4.7
+# Focus Visible (**Level AA**): that an indicator exists at all.
+# ---------------------------------------------------------------------------------------
+ENGINES = frozenset({"chromium", "firefox", "webkit"})
+SKIP_LINK_STATES = frozenset({"present", "absent", "n/a"})
+# Phrases that make a WebKit Unreachable count a claim about the app rather than about macOS.
+FKA_TOKENS = ("full keyboard access", "fka", "tab to highlight")
+
+KEYBOARD_GATING: tuple[tuple[str, str], ...] = (
+    ("Unreachable", S1),
+    ("No Focus Indicator", S1),
+    ("Trap Failures", S1),
+    ("Escape Failures", S1),
+    ("Restore Failures", S1),
+    ("Positive Tabindex", S2),
+    ("Backward Jumps", S2),
+)
+# Interactive / Tab Stops / Overlays are DENOMINATORS, not defects: they never force a severity,
+# and they are what the gating counters are checked against.
+KEYBOARD_COUNTERS = ("Interactive", "Tab Stops", "Overlays") + tuple(
+    name for name, _ in KEYBOARD_GATING
+)
+
+
+def _keyboard_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    """A keyboard pass must prove it looked at everything, and cannot grade itself down."""
+    counts, findings = _read_counters(
+        row, where, KEYBOARD_COUNTERS,
+        "the Tab loop never ran and document.activeElement never moved",
+    )
+
+    engine = row["Engine"].lower()
+    if not engine:
+        findings.append(
+            f"{where}: no Engine -- Tab reachability is engine-dependent, so a focus result that "
+            f"does not say where it ran cannot be read ({'/'.join(sorted(ENGINES))})"
+        )
+    elif engine not in ENGINES:
+        findings.append(
+            f"{where}: Engine {row['Engine']!r} is not one of {'/'.join(sorted(ENGINES))}"
+        )
+
+    # THE SAMPLING GUARD. Every interactive element is either reached or reported unreachable;
+    # anything left over was never examined, which is precisely the 25-of-72 defect.
+    if {"Interactive", "Tab Stops", "Unreachable"} <= counts.keys():
+        accounted = counts["Tab Stops"] + counts["Unreachable"]
+        if accounted < counts["Interactive"]:
+            findings.append(
+                f"{where}: {counts['Interactive']} interactive element(s) but only {accounted} "
+                f"accounted for ({counts['Tab Stops']} reached + {counts['Unreachable']} "
+                "unreachable) -- the remainder were never focused, so this row samples where the "
+                "contract is exhaustive"
+            )
+
+    # You cannot read the focus indicator of an element you never focused.
+    if {"No Focus Indicator", "Tab Stops"} <= counts.keys() and (
+        counts["No Focus Indicator"] > counts["Tab Stops"]
+    ):
+        findings.append(
+            f"{where}: {counts['No Focus Indicator']} element(s) with no focus indicator but "
+            f"only {counts['Tab Stops']} tab stop(s) -- the indicator can only be read from an "
+            "element that was actually focused"
+        )
+
+    # ...nor assert trap / Escape / restore on an overlay you never opened.
+    if "Overlays" in counts:
+        for column in ("Trap Failures", "Escape Failures", "Restore Failures"):
+            if counts.get(column, 0) > counts["Overlays"]:
+                findings.append(
+                    f"{where}: {counts[column]} {column} across {counts['Overlays']} overlay(s) "
+                    "-- an overlay cannot fail one assertion more than once"
+                )
+
+    skip = row["Skip Link"].lower()
+    if not skip:
+        findings.append(
+            f"{where}: no Skip Link state ({'/'.join(sorted(SKIP_LINK_STATES))}) -- whether a "
+            "skip-to-content affordance is the first tab stop is part of the pass"
+        )
+    elif skip not in SKIP_LINK_STATES:
+        findings.append(
+            f"{where}: Skip Link {row['Skip Link']!r} is not one of "
+            f"{'/'.join(sorted(SKIP_LINK_STATES))}"
+        )
+
+    findings.extend(_check_severity(row, where, counts, KEYBOARD_GATING, KEYBOARD_COUNTERS))
+
+    # The verified WebKit caveat, applied where it does damage: as an app defect.
+    if engine == "webkit" and counts.get("Unreachable", 0) > 0:
+        note = row["Notes"].lower()
+        if not any(token in note for token in FKA_TOKENS):
+            findings.append(
+                f"{where}: {counts['Unreachable']} unreachable element(s) on webkit without "
+                "Notes confirming Full Keyboard Access was enabled -- WebKit's default moves Tab "
+                "to text fields and lists only, so this is a platform setting until proven "
+                "otherwise, not a finding about the app"
+            )
+
+    severity = row["Severity"].lower()
+    if severity == S1 and not row["Evidence"]:
+        findings.append(
+            f"{where}: S1 without an Evidence path -- the focus path that lets a human re-walk "
+            "the tab order"
+        )
+    if severity in {S1, S2} and not row["Notes"]:
+        findings.append(
+            f"{where}: {row['Severity']} without Notes naming the element(s) -- a focus defect "
+            "nobody can locate is not actionable"
+        )
+    return findings
+
+
+KEYBOARD = Profile(
+    name="keyboard",
+    written_by="a11y-auditor (keyboard-only navigation pass)",
+    columns=(
+        "Route",
+        "State",
+        "Status",
+        "HTTP",
+        "Requested URL",
+        "Final URL",
+        "Assertion",
+        "Engine",
+        "Interactive",
+        "Tab Stops",
+        "Unreachable",
+        "No Focus Indicator",
+        "Positive Tabindex",
+        "Backward Jumps",
+        "Overlays",
+        "Trap Failures",
+        "Escape Failures",
+        "Restore Failures",
+        "Skip Link",
+        "Severity",
+        "Evidence",
+        "Notes",
+    ),
+    result_statuses=frozenset({"walked"}),
+    ident_columns=("Route", "State"),
+    extra=_keyboard_extra,
+)
+
+
+# ---------------------------------------------------------------------------------------
+# Profile: form validation state testing (#115)
+#
+# The audited corpus carried 200+ form controls and qa-flow had no systematic way to test
+# validation behaviour. Forms doctrine requires a real label association, `aria-invalid` on
+# error, the message referenced from the control, an announced error summary, and values that
+# survive a failed round-trip. The WCAG floor under those is low and mostly **Level A**:
+# 3.3.2 Labels or Instructions (A), 4.1.2 Name Role Value (A), 3.3.1 Error Identification (A),
+# 1.4.1 Use of Color (A), with 3.3.3 Error Suggestion at AA -- which is why an unlabelled
+# control and a colour-only error state are S1 here rather than stylistic notes.
+#
+# THE HOLE THIS CLOSES IS NOT "no checks" -- IT IS "verdicts on states nobody triggered". A
+# forms row can claim `aria-invalid` was correct on a form it never submitted, and that reads
+# exactly like a real result. So the error-contract columns are tied to `Submit Mode`: they MUST
+# be `Not run` unless the row actually submitted something invalid, and they must NOT be
+# `Not run` when it did. Same shape as the keyboard profile's denominator rule, and the same
+# reason -- an unexercised check must be indistinguishable from nothing, never from a pass.
+#
+# `aria-invalid` NEEDS THE VALUE, NOT THE ATTRIBUTE. Its default is `false`, and an absent
+# attribute, `aria-invalid=""` and `aria-invalid="false"` are all equivalent to not-invalid. So
+# "the attribute is present" is not the check; `aria-invalid="true"` on the offending control
+# is. The agent doctrine says this in the same words, because a pass that greps for the
+# attribute name would report a clean contract on a form that marks nothing.
+#
+# The message link is accepted as EITHER `aria-describedby` or `aria-errormessage`: both are in
+# use, and the ARIA spec text on whether `aria-errormessage` is exposed independently of
+# `aria-invalid="true"` was not something this change verified, so it is not asserted either way.
+# ---------------------------------------------------------------------------------------
+FORM_MODES = frozenset({"dry-run", "empty", "invalid", "valid", "skipped-destructive"})
+# The modes that actually submit something invalid, and therefore DO observe the error contract.
+ERROR_EXERCISING_MODES = frozenset({"empty", "invalid"})
+# The error-contract columns, and the severity a Fail in each forces.
+FORM_CONTRACT: tuple[tuple[str, str], ...] = (
+    ("Invalid Marked", S1),
+    ("Message Linked", S1),
+    ("Announced", S1),
+    ("Colour Only", S1),
+    ("Values Retained", S2),
+)
+# `Required Unexposed` is S2 rather than S1: a required control with a label is still
+# operable and announced, it just does not tell an assistive technology that it is mandatory --
+# worse than fine, not as bad as a control with no accessible name at all.
+FORMS_GATING: tuple[tuple[str, str], ...] = (
+    ("Unlabelled", S1),
+    ("Required Unexposed", S2),
+) + FORM_CONTRACT
+FORMS_COUNTERS = ("Controls", "Unlabelled", "Required Unexposed")
+# What can force a severity: the two structural gaps plus each contract Fail. `Controls` is the
+# denominator and never a defect.
+FORMS_GRADED = ("Unlabelled", "Required Unexposed") + tuple(c for c, _ in FORM_CONTRACT)
+
+
+def _forms_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    """A forms row may only carry verdicts on states it actually triggered."""
+    counts, findings = _read_counters(
+        row, where, FORMS_COUNTERS, "the form was never located in the DOM",
+    )
+
+    if counts.get("Controls") == 0:
+        findings.append(
+            f"{where}: 0 Controls -- a form with no controls is not a form under test; if there "
+            "was nothing to exercise, this row is Out of Scope"
+        )
+    # Both structural counters are bounded by the same denominator: a form cannot have more
+    # unlabelled -- or more required-but-unexposed -- controls than it has controls.
+    for column, what in (("Unlabelled", "lack a label"), ("Required Unexposed", "are required")):
+        if {"Controls", column} <= counts.keys() and counts[column] > counts["Controls"]:
+            findings.append(
+                f"{where}: {counts[column]} of {counts['Controls']} control(s) in {column} -- "
+                f"more controls {what} than the form has"
+            )
+
+    mode = row["Submit Mode"].lower()
+    if not mode:
+        findings.append(
+            f"{where}: no Submit Mode ({'/'.join(sorted(FORM_MODES))}) -- what was submitted is "
+            "what decides which error-contract columns may carry a verdict at all"
+        )
+    elif mode not in FORM_MODES:
+        findings.append(
+            f"{where}: Submit Mode {row['Submit Mode']!r} is not one of "
+            f"{'/'.join(sorted(FORM_MODES))}"
+        )
+
+    # The destructive-form carve-out is the widest exemption here, so its suppression stays
+    # visible -- the same doctrine as the runtime profile's Ignored count.
+    if mode == "skipped-destructive" and not row["Notes"]:
+        findings.append(
+            f"{where}: skipped-destructive without Notes naming the pattern that matched -- a "
+            "form skipped without a trace is indistinguishable from one that passed"
+        )
+
+    exercised = mode in ERROR_EXERCISING_MODES
+    verdicts: dict[str, int] = {}
+    for column, _ in FORM_CONTRACT:
+        raw = row[column].lower()
+        if not raw:
+            findings.append(f"{where}: no {column} verdict (Pass / Fail / Not run)")
+            continue
+        if raw not in VERDICTS:
+            findings.append(
+                f"{where}: {column} {row[column]!r} is not one of Pass / Fail / Not run"
+            )
+            continue
+        if exercised and raw == "not run":
+            findings.append(
+                f"{where}: Submit Mode {row['Submit Mode']} submitted an invalid form but "
+                f"{column} is Not run -- the error contract is the reason for submitting"
+            )
+        elif not exercised and raw != "not run" and mode in FORM_MODES:
+            findings.append(
+                f"{where}: {column} claims {row[column]} but Submit Mode {row['Submit Mode']} "
+                "never submitted an invalid form -- that is a verdict on an error state nobody "
+                "triggered"
+            )
+        verdicts[column] = 1 if raw == "fail" else 0
+
+    graded = {column: value for column, value in counts.items() if column != "Controls"}
+    graded.update(verdicts)
+    findings.extend(_check_severity(row, where, graded, FORMS_GATING, FORMS_GRADED))
+
+    severity = row["Severity"].lower()
+    if severity == S1 and not row["Evidence"]:
+        findings.append(
+            f"{where}: S1 without an Evidence path -- the capture of the error state that lets a "
+            "human re-check it"
+        )
+    if severity in {S1, S2} and not row["Notes"]:
+        findings.append(
+            f"{where}: {row['Severity']} without Notes naming the control(s) -- a validation "
+            "defect nobody can locate is not actionable"
+        )
+    return findings
+
+
+FORMS = Profile(
+    name="forms",
+    written_by="a11y-auditor (form validation state pass)",
+    columns=(
+        "Form",
+        "Route",
+        "Status",
+        "HTTP",
+        "Requested URL",
+        "Final URL",
+        "Assertion",
+        "Controls",
+        "Unlabelled",
+        "Required Unexposed",
+        "Submit Mode",
+        "Invalid Marked",
+        "Message Linked",
+        "Announced",
+        "Values Retained",
+        "Colour Only",
+        "Severity",
+        "Evidence",
+        "Notes",
+    ),
+    result_statuses=frozenset({"exercised"}),
+    ident_columns=("Form", "Route"),
+    extra=_forms_extra,
+)
+
+
+# ---------------------------------------------------------------------------------------
 # Profile: qa-reporter's deduplicated findings rollup (#118)
 #
 # Repeated shared UI inflates raw counts enormously. Measured on a real crawl: **773**
@@ -399,7 +840,7 @@ FINDING_SEVERITIES = {"s1", "s2", "s3"}
 # Every finding source must be able to land here -- #118 is explicit that dedupe applies to
 # all of them, not just the a11y pass where the 773 was found.
 FINDING_SOURCES = {"a11y", "links", "runtime", "visual", "interaction", "functional", "api",
-                   "perf", "security"}
+                   "perf", "security", "keyboard", "forms"}
 _SEVERITY_RANK = {"s1": 0, "s2": 1, "s3": 2}
 
 
@@ -542,7 +983,7 @@ FINDINGS = Profile(
 )
 
 
-PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME, FINDINGS)
+PROFILES: tuple[Profile, ...] = (FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, FINDINGS)
 
 # Kept as a module-level alias: the functional contract is the one mirrored in
 # functional-tester.md, and external callers/selftests refer to it by this name.
@@ -723,8 +1164,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "csv_path", nargs="?",
-        help="path to a functional summary, a11y pages, or runtime capture CSV "
-             "(the kind is detected from the header)",
+        help="path to any evidence CSV -- functional summary, a11y pages, runtime capture, "
+             "keyboard walk, forms pass, or findings rollup (the kind is detected from the "
+             "header; run --contracts to list them)",
     )
     parser.add_argument("--selftest", action="store_true", help="prove the rules fire AND stay silent")
     parser.add_argument(
