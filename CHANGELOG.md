@@ -9,6 +9,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **NEW `.github/pull_request_template.md`** — the maintenance rules a PR is judged against now
+  arrive *in* the PR instead of having to be remembered from CLAUDE.md. It makes the change-type
+  classification an explicit tick (silence is not a claim of exemption), demands the citation or
+  the linked maintainer decision that the chosen type requires, and carries the checks a reviewer
+  would otherwise have to ask for: gates run with every skip justified (**a skip is not a pass**),
+  a new guard shipping with a selftest *and* a declared mutation, near-miss negative tests for
+  carve-outs, repackaging after a `skills/**` edit, one CHANGELOG bullet per issue, and no version
+  bump on `dev`. It also restates the closing-keyword rule below at the point of use. The template
+  deliberately contains **no issue numbers at all** — its text becomes every future PR body, so a
+  literal closing keyword beside a real number in it would reproduce that bug on every PR.
 - **NEW `scripts/issue_graph.py` — the work queue is computed from declared edges, not re-reasoned**
   (#133). The tracker's dependencies (`#93 → #104 → #94/#90`, `#125 → #127`) lived as prose inside
   issue bodies, so "what should I work on next?" meant re-deriving the ordering by hand and getting a
@@ -73,6 +83,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     pass either.
   - **Found by simulating the container**, not by reading the code — a stub `ruby` on `PATH` was
     enough to show the green line over an 88%-unchecked run.
+
 - **A commit message explaining the closing-keyword rule triggered the very bug it described.** The
   commit said, in prose and inside backticks, that a promotion had wrongly used a closing keyword on
   issue 95. GitHub parses the pattern **wherever it appears** — context, backticks and intent are
