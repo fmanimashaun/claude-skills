@@ -213,7 +213,10 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "a promoted row keeps its stale BUILD fallback unnoticed (#95)",
-                "    stale = sorted(set(BUILD) & {e.name for e in ENTRIES if e.is_documented})",
+                "    stale = sorted(\n"
+                "        {e.name for e in ENTRIES if e.is_documented and e.build.strip()}\n"
+                "        | (set(BUILD) & {e.name for e in ENTRIES if e.is_documented})\n"
+                "    )",
                 "    stale = []",
                 "still carrying a BUILD fallback",
             ),
@@ -222,6 +225,15 @@ GUARDS: tuple[Guard, ...] = (
                 "{e.name for e in ENTRIES if e.is_documented})",
                 "{e.name for e in ENTRIES})",
                 "a needs-doctrine row carrying a BUILD fallback is correct",
+            ),
+            # The guard reads TWO sources -- `resolve_build` prefers a row's own `build=` kwarg
+            # over the BUILD dict -- so each half needs its own mutation. Covering only the dict
+            # half is how the inline half went unguarded in the first place (#95).
+            Mutation(
+                "the stale-fallback guard stops reading a row's inline `build=` kwarg",
+                "{e.name for e in ENTRIES if e.is_documented and e.build.strip()}\n",
+                "set()\n",
+                "a documented row carrying its fallback inline rather than in BUILD",
             ),
         ),
     ),
