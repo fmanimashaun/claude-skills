@@ -7,6 +7,49 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **NEW `docs/harness-doctrine.md` — the rule we had been following without writing down** (#132):
+  *put your guarantees in the deterministic layer*, with the guarantee-vs-advice test (*"if a model
+  ignores this, what happens?"*), the three tiers (prose / output contract / deterministic), the
+  fail-open-for-advisories vs fail-closed-for-gates rule, and a classification checklist for anyone
+  adding a hook, agent, command or gate. Change type: **design / architecture** — our own placement
+  decision with no upstream, so the authority is the maintainer decision recorded on
+  [#132](https://github.com/fmanimashaun/claude-skills/issues/132), not a `doctrine-verifier` verdict
+  (which would return INCONCLUSIVE for want of a source). No new tooling, as the issue required.
+  - **The document's own claims are cited to files and re-checkable by command, never asserted** —
+    §11 is a table mapping each factual claim to the command that re-verifies it. Where the answer is
+    *nothing enforces this*, it says so: #77's no-disposition clause has no mechanical check
+    (`grep -rn disposition scripts/ plugins/*/scripts/` is empty), nothing cross-checks a skill's
+    non-negotiables against its own reference recipes, and #127 (handoff artefact) and #128 (stop
+    conditions) are **open**, so their principles are recorded as gaps rather than as doctrine.
+    Writing those as rules would have been the `claims-vs-enforcement` defect inside a document about
+    catching it.
+  - **Two claims in the issue body did not survive verification, and the corrections are the
+    document's sharpest content.** (a) *"Every one of those three was an agent ignoring text"* is not
+    true of #56: no agent defied anything at run time — a skill's stated non-negotiables and its own
+    copyable recipes disagreed and nothing had ever compared them. That changes the remedy from
+    *enforcement* to *a cross-check between two things we wrote*, and the general rule is **where a
+    prose rule and a copyable example disagree, the example wins**. (b) *"fail closed for gates"* is
+    imprecise: `release-gate.sh` fails closed **scoped to the command it guards** and exits 0
+    otherwise, because a gate that fails closed on unrelated work is a gate people disable.
+  - **The evidence is extended with the shape the issue did not have: determinism is necessary, not
+    sufficient.** The Stop gate ran every time and still let behavioural code finish with no spec,
+    because plain `--porcelain` collapses a new untracked directory (`stop-gate.sh:24`, found by
+    behaviour-testing #125's gate). Four more instances from 2026-07-31 are cited as one class — a
+    gate that wrote into the working tree, a selftest no gate ran, an interpreter stall reported as a
+    syntax error, and mutation coverage blind to a new rule inside an existing guard. All four are
+    *a check existed, ran, and reported a verdict that was not the truth*, which is why the doc
+    carries the six-rung ladder (mechanical → selftest both directions → mutation per **rule** →
+    reachable from `GATES` → three states with `skip ≠ pass` → does not mutate its subject).
+  - **Found while verifying: `CLAUDE.md:455` states the rule too flatly.** *"Hooks fail open when a
+    dependency is missing"* holds for the four status/advisory hooks and is **false** for
+    `release-gate.sh`, which fails closed on a promotion with no `python3` — deliberately, per its own
+    header comment. A `doctrine-contradiction` against our own code. Recorded in the new doc's §5 and
+    left for the owning lane, since this branch is scoped to `docs/`; for the same reason the issue's
+    other two placements — a pointer from `CLAUDE.md` and a mirror into rails-flow's scaffolded
+    conventions — remain open.
+
 ### 2026-07-31 — a stall is not a syntax error
 
 
@@ -1512,6 +1555,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `size-16` chip, expressing "oversized" through the chip's **font size** — because `lucide_icon`
     may not take `size:`/`class:`, which the self-consistency lint enforces and the issue's wording
     would have violated.
+- **Video player is documented** (#95). `coverage.md` **4 → 3**. The verdict refuted three framings
+  before a line was written, and the most useful anchor was one the issue never mentioned.
+  - **No APG pattern for a media player.** The index lists 30 and none is one; `w3c/aria-practices`
+    `content/patterns` has no media directory either. So there is **no upstream keyboard model at
+    all**, and any "video player pattern" keybinding is somebody's convention. The entry says so and
+    inherits the UA's model instead of authoring one.
+  - **`controls` guarantees less than it looks.** The HTML Standard says the UA *"**should** expose a
+    user interface"* with *"features to begin playback, pause playback, seek…"* — a **should**, with
+    **no key bindings specified anywhere in the section**. Space-to-play and arrow-to-seek are browser
+    convention, so they are documented as convention and never as a contract.
+  - **The autoplay rule is WCAG 2.2.2 (Level A), not reduced-motion** — and 2.2.2 is what the issue's
+    framing missed. A hero video is *"moving … information that (1) starts automatically, (2) lasts
+    more than five seconds, and (3) is presented in parallel with other content"* and needs *"a
+    mechanism … to pause, stop, or hide it"*. Understanding 2.2.2 names the case (*"Common examples
+    include motion pictures, synchronized media presentations, animations"*) and scopes it: *"'starts
+    automatically' broadly refers to animations/updates that are not the direct result of a user's
+    intentional activation"*. So a player the visitor presses play on is out of scope; a background
+    loop is not. **1.4.2 Audio Control (A)** stacks on top if sound can start automatically past 3 s.
+  - **Captions ≠ subtitles, and the levels do not merge.** 1.2.2 (**A**) requires captions;
+    `<track kind="captions">` covers *"sound effects, relevant musical cues…"* while `kind="subtitles"`
+    is *"for when the sound is available but not understood"* — shipping the latter where the former is
+    owed fails 1.2.2. 1.2.3 (**A**) accepts *"an alternative for time-based media **or** audio
+    description"*; 1.2.5 (**AA**) removes that escape hatch. Written out per level, because conflating
+    A and AA here is the easy error.
+  - **Two AA criteria are dormant only while the controls are native**, and both carve native chrome
+    out *by name*: 1.4.11 (*"where the appearance of the component is determined by the user agent and
+    not modified by the author"*) and 2.5.8 (*"User Agent Control"*). Author your own and you owe 3:1
+    and 24 × 24 CSS px on every control.
+  - **Three things are ours and say so**: muted-by-default (the HTML Standard offers "allow playback
+    while muted" only as an example of a policy a UA *could* adopt — never a guarantee), reduced-motion
+    suppressing autoplay (Media Queries 5 says nothing about video or autoplay, and the nearest
+    criterion, 2.3.3, is **AAA and about interaction-triggered animation**), and requiring an accessible
+    name on the player.
+- **The stale-fallback guard was checking one of its two inputs** (found flipping the row above).
+  `resolve_build` prefers a row's own `build=` kwarg over the `BUILD` dict, but the guard read only the
+  dict — so a `documented` row whose "use the workaround until the entry lands" text sat **inline**
+  passed silently. That is the exact defect the guard exists to catch, in the half nobody looked at,
+  and the text is invisible in the rendered table. The guard now reads both sources, with a firing
+  fixture and a near-miss (`needs doctrine` + inline `build=` must stay silent) — 35 → 37 checks.
+  Turning it on found **three** rows already carrying it: Calendar / Date picker / Time picker,
+  Image gallery / Lightbox and Carousel / Slider, all promoted with the workaround text still attached.
 
 - **Marketing copy doctrine — what each section *says*** (#131). New
   `fidara-design/references/marketing-copy.md`. The kits supply layout and visual system; they supply
@@ -2510,6 +2594,71 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **Client-side performance is captured during the crawl, and none of it can reach S1** (#117). `perf-tester` measured server capacity with k6 and nothing measured what a user
+  experiences, though the harness already loads every route in a real browser. The new `perf`
+  evidence profile does — one row per route, LCP / CLS / TTFB / transfer bytes / request count —
+  but every load-bearing decision in it came from verification that contradicted the issue.
+  - **The blind spots here do not leave a blank; they return a plausible number.** That is what
+    separates this profile from the other six. An unexercised keyboard walk leaves an empty cell;
+    an unexercised CLS capture writes **`0`**, and a byte total summed from an API that reports
+    nothing for cross-origin assets writes a small, credible figure. Both read exactly like clean
+    measurements, so the profile's rules are aimed at fabricated numbers rather than missing ones.
+  - **Engine support is per metric, and the obvious blanket rule would have shipped stale.**
+    Verified against MDN browser-compat-data: `largest-contentful-paint` reached **Firefox 122**
+    (Jan 2024) and **Safari 26.2** ([Dec 2025](https://webkit.org/blog/17640/webkit-features-for-safari-26-2/)),
+    so "LCP is Chromium-only" — true until eight months ago, and what this change assumed at the
+    outset — is now wrong. `layout-shift` is still `version_added: false` in both engines
+    ([bug 1651528](https://bugzilla.mozilla.org/show_bug.cgi?id=1651528) open), and
+    `renderBlockingStatus` is [Chromium 107+ only](https://www.w3.org/TR/resource-timing/#dom-performanceresourcetiming-renderblockingstatus).
+    So `LCP ms` is required on **every** engine while `CLS`, `CLS Budget` and `Render Blocking`
+    must be **blank** off chromium — a `0` there reports a perfectly stable page from an API that
+    does not exist. Same direction as #116's forced-colors ceiling: false *confidence*.
+  - **The interaction probe the issue proposed would have corrupted the metrics beside it.**
+    Playwright's `locator.click()` drives the real input pipeline, so `isTrusted` is true — and a
+    trusted input **terminates LCP observation**
+    ([LCP spec](https://w3c.github.io/largest-contentful-paint/)), while shifts within **500 ms**
+    of input carry `hadRecentInput` and are excluded from CLS
+    ([layout-instability](https://github.com/WICG/layout-instability#recent-input-exclusion)). The
+    probe therefore gets its own visit and `same-visit` is rejected. It is also **not** called INP:
+    INP is a whole-visit field metric, and Lighthouse scores **TBT at 30%** in lab precisely
+    because INP cannot be measured there.
+  - **`transferSize` cannot carry a byte budget.** Per
+    [Resource Timing §3.5.1](https://www.w3.org/TR/resource-timing/#dfn-timing-allow-check) it is
+    **0** for a cross-origin resource with no `Timing-Allow-Origin`, **0** for a cache hit, and a
+    fixed constant **300** for a 304 — so a page pulling 30 CDN assets passes any budget by
+    measuring almost nothing. Doctrine moves to Playwright's
+    [`Request.sizes()`](https://playwright.dev/docs/api/class-request#request-sizes)
+    (encoded wire size, network layer, all three engines, not TAO-gated), and `Opaque Requests` is
+    the column that proves which instrument ran: a `0 Oversized Requests` verdict alongside opaque
+    requests is rejected as a clean verdict over bytes nobody measured.
+  - **Severity is capped at S2 — the recompute's third direction.** No WCAG criterion and no
+    standard of any kind mandates a performance budget (searched for, not found; the 2.5 s / 0.1
+    figures are Google guidance published as revisable), so every severity here rests on a
+    [maintainer decision recorded on #117](https://github.com/fmanimashaun/claude-skills/issues/117#issuecomment-5146743363)
+    rather than a citation. #114/#115 stop a row grading a defect *down*, #116 stops it grading an
+    advisory *up*, and this caps the ceiling. `LCP ms` and `TTFB ms` are trended and **never**
+    graded; only a CLS above the budget the row itself carries, and a request over the byte budget,
+    gate at S2. The cap is deliberately narrower than "perf never blocks a release" — an S2 here
+    still counts against `/qa-flow:certify` like any other, and correctly so, because the two
+    things that reach S2 are properties of the *page*. What can never happen is a number from an
+    unthrottled dev machine being escalated into a release-breaking S1.
+  - **Two corrections that silently return nothing** were also verified and written down: a webfont
+    requested by `@font-face` gets `initiatorType` **`"css"`**, not `"font"`
+    ([Resource Timing](https://w3c.github.io/resource-timing/#dom-performanceresourcetiming-initiatortype)),
+    so the obvious filter finds no fonts at all; and `cssRules` throws `SecurityError` on a
+    cross-origin stylesheet ([CSSOM](https://drafts.csswg.org/cssom-1/#dom-cssstylesheet-cssrules)),
+    so font-display must be read from `document.fonts`, which is exactly where a CDN-hosted font
+    stylesheet would otherwise vanish from the count.
+  - Ships with 36 fixtures — 25 that must fire and **11 that must stay silent**, including LCP on
+    webkit being valid so the engine rule cannot degrade into an engine ban, and opaque requests
+    alongside a real oversized finding staying clean because incomplete is not false — plus 9
+    declared mutations and coverage attribution wired in `route_coverage.py`. The bounds rule the emulation profile owned is now the shared
+    `_check_bounds` helper — perf was its third caller, and a third textual copy would have made
+    `mutation_check.py`'s existing anchor for it match twice, which that checker treats as a hard
+    error rather than a pass.
 
 ### 1.13.0 — 2026-07-31
 
