@@ -2003,16 +2003,22 @@ separately.)*
 
 - **A forms row can no longer carry a verdict on an error state nobody triggered** (#115). The
   audited corpus held 200+ form controls with no systematic validation testing. The new `forms`
-  profile checks label association against a `Controls` denominator, and ties the five
-  error-contract columns (`aria-invalid`, message link, announcement, value retention,
-  colour-independence) to `Submit Mode` **in both directions**: they must be `Not run` unless the
-  row actually submitted something invalid, and must not be `Not run` when it did. The
-  destructive-form carve-out must name the pattern that matched, so a skipped form is never
-  indistinguishable from a passing one.
+  profile checks label association **and required-exposure** against a `Controls` denominator —
+  neither may exceed it — and ties the five error-contract columns (`aria-invalid`, message link,
+  announcement, value retention, colour-independence) to `Submit Mode` **in both directions**: they
+  must be `Not run` unless the row actually submitted something invalid, and must not be `Not run`
+  when it did. The destructive-form carve-out must name the pattern that matched, so a skipped form
+  is never indistinguishable from a passing one.
   - **`aria-invalid` is checked by value, not by presence.** Its default is `false`, and an absent
     attribute, `aria-invalid=""` and `aria-invalid="false"` are all equivalent to not-invalid — so a
     pass that greps for the attribute name reports a clean contract on a form that marks nothing.
     ([MDN `aria-invalid`](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/aria-invalid))
+  - A required control that is not *exposed* as required is **S2**, not S1: it still has an
+    accessible name and is still operable, it merely does not announce that it is mandatory. And an
+    over-grade is deliberately tolerated — the gate exists to stop a verdict being talked *down*,
+    and the `runtime` profile that shares this recompute has always behaved that way. A severity
+    with nothing at all behind it is still rejected. A fixture pins the asymmetry so it stays a
+    decision rather than an oversight.
   - Severities follow the actual WCAG floor, which is mostly **Level A** and is why an unlabelled
     control or a colour-only error is S1 rather than a style note: 3.3.2 Labels or Instructions (A),
     4.1.2 Name, Role, Value (A), 3.3.1 Error Identification (A), 1.4.1 Use of Color (A), with 3.3.3
@@ -2020,9 +2026,13 @@ separately.)*
     `aria-invalid="true"` was **not** verified, so it is not asserted either way — the message link
     accepts `aria-describedby` or `aria-errormessage`.
 
+Not covered, and deliberately: `fieldset`/`legend` grouping has no clean denominator to be checked
+against, and the modal-CRUD **422 re-render** expectation is `functional-tester`'s contract and is
+referenced there rather than restated, so there stays one copy of it. Both remain open on #115.
+
 Both passes earn route-coverage attribution and file deduplicated findings under the new `keyboard`
 and `forms` sources. Every new rule ships a fixture in both directions plus a declared mutation in
-`scripts/mutation_check.py` (38 mutations, all caught). Also fixed in passing: a dead `csv` import
+`scripts/mutation_check.py` (39 mutations, all caught). Also fixed in passing: a dead `csv` import
 in `route_coverage.py`, and a `KeyError` in one of the new attribution fixtures that let an
 unrelated assertion take credit for catching a dropped `ROUTE_SOURCES` entry — found because the
 mutation check reported the catch as coming from the wrong fixture.
