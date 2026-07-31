@@ -1508,6 +1508,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Reviews + Rating is documented** (#91). `coverage.md` **3 → 2**. The verdict's most valuable output
+  was again negative: **the intuitive citation is the wrong one.**
+  - **The governing criterion is 1.1.1 Non-text Content (Level A), not 1.4.1 Use of Color.** A star row
+    that encodes a value is *informational* non-text content and cannot claim the *"pure decoration"*
+    exception, so it owes *"a text alternative that serves the equivalent purpose"*. **1.4.1 applies only
+    where hue alone carries the filled/empty distinction** — filled-vs-empty stars differ in **shape**,
+    and the Understanding document names shape as the *remedy* for 1.4.1, not something it regulates. The
+    row's old "Nearest guidance" text implied the colour framing; the entry now cites 1.1.1 first and
+    1.4.1 conditionally.
+  - **No APG rating pattern** — index lists 30, `w3c/aria-practices` `content/patterns` has no `rating`
+    directory. **`role="img"` + accessible name is the confirmed technique**: ARIA gives `img`
+    **`Children Presentational: True`** and **`Accessible Name Required: True`**, with *"authors MUST
+    provide the element with an accessible name."* That collapses five glyphs into one named unit, which
+    is the point — five separately-announced stars is the failure it prevents.
+  - **`<meter>` is a second spec-honest route for a numeric average** (*"a scalar measurement within a
+    known range"*), carried with the spec's own exclusions (*"should not be used to indicate progress"*;
+    needs a known maximum). We default to `role="img"` so the average and the per-review value share one
+    mechanism.
+  - **Two things have no upstream and are maintainer decisions**, recorded on
+    [#91](https://github.com/fmanimashaun/claude-skills/issues/91#issuecomment-5146974938) where a
+    citation would go: the **interactive picker is a radio group** (no APG pattern covers a 1–5 star
+    picker; Radio Group's *"no more than one of the buttons can be checked at a time"* fits a discrete
+    five-value choice, Slider's continuous thumb does not — and building it as real radios inherits that
+    keyboard model rather than authoring one), and the **accessible-name string** (`"4 out of 5 stars"`;
+    nothing upstream prescribes wording).
+
 - **Video player is documented** (#95). `coverage.md` **4 → 3**. The verdict refuted three framings
   before a line was written, and the most useful anchor was one the issue never mentioned.
   - **No APG pattern for a media player.** The index lists 30 and none is one; `w3c/aria-practices`
