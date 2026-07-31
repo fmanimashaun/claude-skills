@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 64 |
+| — `documented` | 65 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 5 |
+| — `needs doctrine` (tracked writing gap) | 4 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -66,6 +66,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Image gallery / Lightbox | component | — | ✓ | media-heavy surfaces: portfolio, product media, docs | focus trapping, keyboard paging and zoom are a large surface, and no current family has a media-heavy surface |
 | Logo / Brand mark | component | — | — | shell headers, auth screens and marketing surfaces | ours, not from either corpus: clear-space 1.5×, min 20px / lockup 140px (brand.md) |
 | Media object | component | ✓ | — | any avatar/icon + text row: list items, feeds, comments, notifications | never stacks — the side-by-side relationship IS the pattern |
+| Mega menu / Flyout | component | ✓ | ✓ | a marketing surface (landing, pricing, about) — not app screens, which use the shell navigation | a DISCLOSURE, not a menu — APG advises against role=menu for site nav, so it shares no ARIA with the Dropdown row |
 | Modal / Dialog | component | ✓ | ✓ | a focused create/edit/confirm step; never for content a page can hold | — |
 | Navigation — header / navbar | component | ✓ | ✓ | the app's top bar in the stacked shell | — |
 | Navigation — sidebar / vertical | component | ✓ | ✓ | the app's primary rail in the sidebar/multi-column shells | — |
@@ -170,7 +171,6 @@ replace that approach with a proper entry.
 
 | Component | Kind | In TW | In FB | Tracked | Nearest guidance | Where / when to use it |
 |---|---|---|---|---|---|---|
-| Mega menu / Flyout | component | ✓ | ✓ | #90 | the documented Dropdown for now; hover-intent is what #90 must specify | a marketing surface (landing, pricing, about) — not app screens, which use the shell navigation |
 | Reviews + Rating | component | ✓ | ✓ | #91 | Media object rows; the rating needs an accessible name ("4 out of 5"), not stars alone | a commerce surface (catalog, product, cart, checkout) |
 | Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
 | Video player | component | — | ✓ | #95 | native `<video controls>` inside a `frame` for ratio | marketing and docs surfaces; inside a `frame` so layout never shifts |
