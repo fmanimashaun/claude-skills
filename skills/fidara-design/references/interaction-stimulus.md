@@ -354,8 +354,15 @@ Reuse the proven controllers already in the apps: `modal`, `dropdown`, `tabs`, `
 
 - Prefer **Turbo Frames** for lazy-loading fragments (tables, sections, combobox results) and
   **Turbo Streams** for server-pushed updates (toasts, live lists). This is the default.
-- Raw ActionCable in a Stimulus controller is allowed only for genuinely bespoke real-time
-  (e.g. high-frequency bid/counter updates) — document why Streams didn't fit. (Auctioneer uses
-  raw ActionCable; fmworkflows uses a Turbo Stream responder — the Stream path is the standard,
-  ActionCable the justified exception.)
+- Raw ActionCable in a Stimulus controller is the **justified exception**, and there is now a
+  testable line rather than a judgement call: **Action Cable when the payload is a *fact*, not a
+  *fragment*.** If the server knows what the DOM should become, it is a Turbo Stream; if the server
+  has a fact and the *client* decides what it means, it is raw Action Cable JSON. Campfire's six
+  channels are all on the second side — unread ids, read receipts, typing, presence, heartbeat —
+  and none carries HTML. Full derivation, and the measurement behind it, in
+  [hotwire's production.md](../../hotwire/references/production.md).
+  - This entry used to read "allowed only for genuinely bespoke real-time… document why Streams
+    didn't fit", which is the same rule at a vaguer precision. Superseded rather than duplicated:
+    two statements of one rule at different sharpness is how a reader ends up citing the weaker.
+    (Auctioneer uses raw ActionCable; fmworkflows uses a Turbo Stream responder.)
 - `prefers-reduced-motion`: gate all transitions/animations; provide a no-motion path.
