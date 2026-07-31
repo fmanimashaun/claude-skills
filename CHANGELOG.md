@@ -7,6 +7,49 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **NEW `docs/harness-doctrine.md` — the rule we had been following without writing down** (#132):
+  *put your guarantees in the deterministic layer*, with the guarantee-vs-advice test (*"if a model
+  ignores this, what happens?"*), the three tiers (prose / output contract / deterministic), the
+  fail-open-for-advisories vs fail-closed-for-gates rule, and a classification checklist for anyone
+  adding a hook, agent, command or gate. Change type: **design / architecture** — our own placement
+  decision with no upstream, so the authority is the maintainer decision recorded on
+  [#132](https://github.com/fmanimashaun/claude-skills/issues/132), not a `doctrine-verifier` verdict
+  (which would return INCONCLUSIVE for want of a source). No new tooling, as the issue required.
+  - **The document's own claims are cited to files and re-checkable by command, never asserted** —
+    §11 is a table mapping each factual claim to the command that re-verifies it. Where the answer is
+    *nothing enforces this*, it says so: #77's no-disposition clause has no mechanical check
+    (`grep -rn disposition scripts/ plugins/*/scripts/` is empty), nothing cross-checks a skill's
+    non-negotiables against its own reference recipes, and #127 (handoff artefact) and #128 (stop
+    conditions) are **open**, so their principles are recorded as gaps rather than as doctrine.
+    Writing those as rules would have been the `claims-vs-enforcement` defect inside a document about
+    catching it.
+  - **Two claims in the issue body did not survive verification, and the corrections are the
+    document's sharpest content.** (a) *"Every one of those three was an agent ignoring text"* is not
+    true of #56: no agent defied anything at run time — a skill's stated non-negotiables and its own
+    copyable recipes disagreed and nothing had ever compared them. That changes the remedy from
+    *enforcement* to *a cross-check between two things we wrote*, and the general rule is **where a
+    prose rule and a copyable example disagree, the example wins**. (b) *"fail closed for gates"* is
+    imprecise: `release-gate.sh` fails closed **scoped to the command it guards** and exits 0
+    otherwise, because a gate that fails closed on unrelated work is a gate people disable.
+  - **The evidence is extended with the shape the issue did not have: determinism is necessary, not
+    sufficient.** The Stop gate ran every time and still let behavioural code finish with no spec,
+    because plain `--porcelain` collapses a new untracked directory (`stop-gate.sh:24`, found by
+    behaviour-testing #125's gate). Four more instances from 2026-07-31 are cited as one class — a
+    gate that wrote into the working tree, a selftest no gate ran, an interpreter stall reported as a
+    syntax error, and mutation coverage blind to a new rule inside an existing guard. All four are
+    *a check existed, ran, and reported a verdict that was not the truth*, which is why the doc
+    carries the six-rung ladder (mechanical → selftest both directions → mutation per **rule** →
+    reachable from `GATES` → three states with `skip ≠ pass` → does not mutate its subject).
+  - **Found while verifying: `CLAUDE.md:455` states the rule too flatly.** *"Hooks fail open when a
+    dependency is missing"* holds for the four status/advisory hooks and is **false** for
+    `release-gate.sh`, which fails closed on a promotion with no `python3` — deliberately, per its own
+    header comment. A `doctrine-contradiction` against our own code. Recorded in the new doc's §5 and
+    left for the owning lane, since this branch is scoped to `docs/`; for the same reason the issue's
+    other two placements — a pointer from `CLAUDE.md` and a mirror into rails-flow's scaffolded
+    conventions — remain open.
+
 ### 2026-07-31 — a stall is not a syntax error
 
 
