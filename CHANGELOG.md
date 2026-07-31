@@ -1320,6 +1320,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **FIX — an endless-def `SyntaxError` was asserted unconditionally when it is parser-scoped** (#275).
+  `controllers-routing.md` §7 said `private def m = render x: 1` *"is a `SyntaxError`"* flat. Measured
+  on one binary, ruby 3.4.7, changing only the parser: **`parse.y` errors** (`unexpected label`,
+  which independently confirms the note's own explanation) and **Prism accepts it**. `parse.y` is the
+  default **through 3.3**, Prism **from 3.4**.
+  - **The contradiction that made this worth fixing rather than softening:** the same skill requires
+    **Ruby >= 3.2** while recommending the latest stable release — so the failing form breaks on the
+    floor we support and is silently fine on the version we suggest. That is precisely how a snippet
+    ships broken: it parses on the author's machine and raises on the user's.
+  - The advice is unchanged and now has a reason that survives checking: **parenthesize the body**, so
+    the form is correct on every supported version rather than on some of them. The scope is also
+    narrowed — bare `def m = render x: 1` is fine on either parser; it only breaks when the endless
+    `def` is an argument to another call.
+  - **Measurement boundary recorded**: 3.4.7 under both parsers; Ruby 4.0 not measured, so
+    Prism-by-default there is stated as following from the 3.4 change rather than as a reading taken.
+  - #269 (the code block that actually raised) was verified already fixed on `dev` by #273 and closed
+    — the block was one claim, the explanation of why is another, and splitting them was right.
+
 - **FIX — one rule, two precisions, in two skills.** Found by reviewing `dev` after six parallel
   sessions merged. `interaction-stimulus.md` said raw ActionCable is "allowed only for genuinely
   bespoke real-time… document why Streams didn't fit" — a judgement call — while the new
