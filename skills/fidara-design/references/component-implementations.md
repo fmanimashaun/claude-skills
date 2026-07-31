@@ -115,7 +115,7 @@ module Ui
       muted:       "bg-muted text-muted-foreground",
       outline:     "border border-border text-foreground",
     }.freeze
-    SIZE = { sm: "px-2 py-0.5 text-step--1", md: "px-2.5 py-0.5 text-step-0" }.freeze
+    SIZE = { sm: "px-2 py-0.5 text-step--1", md: "px-2.5 py-0.5 text-step--1" }.freeze
     def initialize(variant: :primary, size: :sm, dot: false, **attrs)
       @variant, @size, @dot, @attrs = variant.to_sym, size.to_sym, dot, attrs
     end
@@ -199,7 +199,7 @@ SimpleForm.setup do |config|
     b.use :html5
     b.use :label, class: "text-step--1 font-medium text-foreground"
     b.use :input, class: "block w-full rounded-md border border-input bg-background " \
-                         "text-step-0 text-foreground px-3 h-9 min-h-touch " \
+                         "text-step--1 text-foreground px-3 h-9 min-h-touch " \
                          "placeholder:text-muted-foreground transition-colors " \
                          "focus-visible:outline-hidden focus-visible:ring-2 " \
                          "focus-visible:ring-ring/30 focus-visible:border-ring " \
@@ -289,7 +289,7 @@ wrapper definition, never a per-field class override, so the set of field shapes
 
 ```ruby
 module UiHelper
-  INPUT_BASE = "block w-full rounded-md border bg-background text-step-0 text-foreground px-3 " \
+  INPUT_BASE = "block w-full rounded-md border bg-background text-step--1 text-foreground px-3 " \
                "placeholder:text-muted-foreground min-h-touch transition-colors " \
                "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:border-ring " \
                "disabled:opacity-50 disabled:cursor-not-allowed"
@@ -310,7 +310,7 @@ same recipe + a trailing chevron.
 <%# checkbox / radio — wrap in a cluster so control + label align %>
 <label class="cluster min-h-touch" style="--space: var(--space-2xs)">
   <%= check_box_tag name, "1", checked, class: "size-4 rounded border-input text-primary focus-visible:ring-ring/30" %>
-  <span class="text-step-0"><%= label %></span>
+  <span class="text-step--1"><%= label %></span>
 </label>
 ```
 ```erb
@@ -407,7 +407,7 @@ end
               rounded-md border border-border shadow-md divide-y divide-border p-1">
     <% items.each do |it| %>
       <a href="<%= it[:href] %>" role="menuitem" data-dropdown-target="item" tabindex="-1"
-         class="block rounded-sm px-3 py-2 text-step-0 hover:bg-accent hover:text-accent-foreground min-h-touch"><%= it[:label] %></a>
+         class="block rounded-sm px-3 py-2 text-step--1 hover:bg-accent hover:text-accent-foreground min-h-touch"><%= it[:label] %></a>
     <% end %>
   </div>
 </div>
@@ -760,7 +760,7 @@ landmark noise outweighs the structure.
     <% tabs.each_with_index do |t, i| %>
       <button role="tab" data-tabs-target="tab" data-action="tabs#select" tabindex="<%= i.zero? ? 0 : -1 %>"
               aria-selected="<%= i.zero? %>" aria-controls="panel-<%= i %>"
-              class="px-4 py-2 text-step-0 border-b-2 border-transparent -mb-px min-h-touch
+              class="px-4 py-2 text-step--1 border-b-2 border-transparent -mb-px min-h-touch
                      aria-[selected=true]:border-primary aria-[selected=true]:text-primary"><%= t[:label] %></button>
     <% end %>
   </div>
