@@ -31,9 +31,9 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 65 |
+| — `documented` | 66 |
 | — `derivable` from documented parts | 44 |
-| — `needs doctrine` (tracked writing gap) | 4 |
+| — `needs doctrine` (tracked writing gap) | 3 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
 show which corpus carries the pattern — useful because the two are good at different things:
@@ -84,6 +84,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Toast / Notification | component | ✓ | ✓ | transient confirmation of a completed action; never for errors requiring a decision | — |
 | Toggle / Switch | component | ✓ | ✓ | a setting that applies immediately; if it needs Save, use a Checkbox | — |
 | Tooltip / Popover | component | — | ✓ | a supplementary label (Tooltip) or a small rich panel (Popover); never the only place information appears | — |
+| Video player | component | — | ✓ | marketing and docs surfaces; inside a `frame` so layout never shifts | no APG pattern, so the keyboard model is the UA's and not ours; `kind=captions` is not `kind=subtitles`; and an autoplaying video is governed by WCAG 2.2.2 (A), not by reduced-motion |
 | Stat tile | composition | ✓ | — | the metric row at the top of a dashboard, one metric per Card | page-anatomies composes these from Card, one metric each — deliberately not a new component |
 | About page archetype | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | — |
 | Auth page archetype (sign-in / sign-up / reset) | page archetype | ✓ | — | a whole app screen | uses the cover > center > stack recipe for true vertical centering, not bare center |
@@ -173,7 +174,6 @@ replace that approach with a proper entry.
 |---|---|---|---|---|---|---|
 | Reviews + Rating | component | ✓ | ✓ | #91 | Media object rows; the rating needs an accessible name ("4 out of 5"), not stars alone | a commerce surface (catalog, product, cart, checkout) |
 | Stepper / wizard | component | — | ✓ | #95 | a `cluster` of Badges with `aria-current=step` | a multi-step flow: checkout, onboarding, long forms |
-| Video player | component | — | ✓ | #95 | native `<video controls>` inside a `frame` for ratio | marketing and docs surfaces; inside a `frame` so layout never shifts |
 | Inline link | primitive | — | ✓ | #95 | the Button `link` variant's classes on an `<a>`, until a token exists | body copy and prose; for actions use the Button `link` variant |
 
 ## Interaction patterns

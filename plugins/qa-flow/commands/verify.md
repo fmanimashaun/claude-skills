@@ -57,9 +57,11 @@ A gap is **not** a failure of the run: it is the deliverable, and `report` exits
 
 Per the plan, dispatch: `e2e-tester` (sanity + selected `@regression` charters,
 chromium), `api-contract-tester` (touched endpoints + authz matrix) if the API
-changed, `a11y-auditor` if views changed, `perf-tester` (smoke thresholds) if
-hot paths changed, `exploratory-tester` (1-2 light charters). Skip layers the change
-can't affect and say so.
+changed, `a11y-auditor` if views changed, `perf-tester` (k6 smoke thresholds if hot
+paths changed; the client-side capture over the same touched routes whenever views
+changed — on chromium, and in its own fresh context per route, since a warm cache
+makes the byte totals fiction), `exploratory-tester` (1-2 light charters). Skip layers
+the change can't affect and say so.
 
 ## Phase 4 — Report & defects
 

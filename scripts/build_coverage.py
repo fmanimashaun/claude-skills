@@ -181,6 +181,7 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Drawer / off-canvas": "## Drawer / off-canvas\n",
     "Carousel / Slider": "## Carousel\n",
     "Image gallery / Lightbox": "## Image gallery / Lightbox\n",
+    "Video player": "## Video player\n",
     "Skeleton / loading placeholder": "## Skeleton / loading placeholder\n",
     "Spinner / busy indicator": "## Spinner / busy indicator\n",
     "Badge / Tag / Chip": "## Badge / Tag / Chip",
@@ -411,17 +412,14 @@ ENTRIES: tuple[Entry, ...] = (
     E("Order history page archetype", ARCHETYPE, "documented", "—",
       ["ecommerce/page-examples/order-history-pages"], []),
 
-    # ---- deferred: revisitable, and each names WHAT WOULD FLIP IT -----------------------
+    # ---- once deferred, now documented --------------------------------------------------
     E("Calendar / Date picker / Time picker", COMPONENT, "documented", "—",
       ["application-ui/data-display/calendars"], ["Datepicker", "Timepicker"],
       note="native first: the `type` fallback to a TEXT input is a spec guarantee, and there is "
-           "NO APG date-picker pattern — two examples, two valid architectures",
-      build="`input[type=date|time]` via simple_form, plus Rails date helpers — styled with the "
-              "shipped field anatomy so it matches everything else"),
+           "NO APG date-picker pattern — two examples, two valid architectures"),
     E("Image gallery / Lightbox", COMPONENT, "documented", "modal + carousel", [], ["Gallery"],
       note="focus trapping, keyboard paging and zoom are a large surface, and no current family "
-           "has a media-heavy surface",
-      build="`grid-auto` of `frame` thumbnails linking to the full image"),
+           "has a media-heavy surface"),
     E("Speed dial / FAB cluster", COMPONENT, "derivable", "—", [], ["Speed Dial"],
       note="a floating action cluster competes with the shipped page-header actions slot, so "
            "adding it now would create two mechanisms for the same job",
@@ -435,13 +433,12 @@ ENTRIES: tuple[Entry, ...] = (
       build="Media object rows in a `divide-y` container — the same shape, without inventing "
               "message semantics"),
 
-    # ---- declined: a design principle, not a threshold. No revisit trigger by design ----
+    # ---- a design principle, not a threshold. Documented so it can be built correctly ----
     E("Carousel / Slider", COMPONENT, "documented", "carousel", [], ["Carousel"],
       note="content behind a timed or manual slide is content most users never see, and the "
            "pattern is a persistent a11y liability. This is a doctrine position, not a backlog "
            "item — if a client insists, build it in the app against the a11y contract rather than "
-           "blessing it as a kit primitive",
-      build="`grid-auto`, or a horizontal scroller with visible affordances and real focus order"),
+           "blessing it as a kit primitive"),
     E("Bottom navigation", COMPONENT, "derivable", "—", [], ["Bottom Navigation"],
       note="not a gap: on native the platform tab bar IS our answer (mobile.md), and a web "
            "imitation would diverge from the OS behaviour users expect",
@@ -450,10 +447,10 @@ ENTRIES: tuple[Entry, ...] = (
       note="generated server-side and rendered as an image — there is no visual contract to "
            "standardise beyond sizing, which the `frame` primitive already covers",
       build="generate in the app and render an `<img>` inside a `frame`"),
-    E("Video player", COMPONENT, "needs doctrine #95", "—", [], ["Video"],
-      note="a custom player is a large surface (captions, keyboard, fullscreen) that duplicates "
-           "what the browser already ships and maintains",
-      build="native `<video controls>` inside a `frame` for ratio"),
+    E("Video player", COMPONENT, "documented", "—", [], ["Video"],
+      note="no APG pattern, so the keyboard model is the UA's and not ours; `kind=captions` is not "
+           "`kind=subtitles`; and an autoplaying video is governed by WCAG 2.2.2 (A), not by "
+           "reduced-motion"),
     E("Phone input", COMPONENT, "derivable", "—", [], ["Phone Input"],
       note="international formatting and validation depend on locale data and the app's own rules; "
            "a kit-level widget would encode assumptions the app has to override",
@@ -645,7 +642,6 @@ BUILD: dict[str, str] = {
     "Stepper / wizard": "a `cluster` of Badges with `aria-current=step`",
     "Reviews + Rating": "Media object rows; the rating needs an accessible name (\"4 out of 5\"), "
         "not stars alone",
-    "Video player": "native `<video controls>` inside a `frame`",
 }
 
 BUILD_DEFAULTS: dict[tuple[str, str], str] = {
@@ -725,7 +721,15 @@ def verify_shipped_evidence() -> list[str]:
     # rows print `—` in that column), so nothing surfaces it — the Combobox entry survived its own
     # row's promotion this way, still saying "use the documented Select until the entry lands"
     # after the Combobox entry had shipped (#95).
-    stale = sorted(set(BUILD) & {e.name for e in ENTRIES if e.is_documented})
+    #
+    # BOTH sources of that text are checked. `resolve_build` prefers a row's own `build=` kwarg over
+    # the BUILD dict, so a guard that read only the dict passed a row whose fallback lived inline --
+    # the exact defect it exists to catch, in the half nobody looked at. Found flipping Video player
+    # (#95), which carried its fallback inline.
+    stale = sorted(
+        {e.name for e in ENTRIES if e.is_documented and e.build.strip()}
+        | (set(BUILD) & {e.name for e in ENTRIES if e.is_documented})
+    )
     if stale:
         problems.append(
             f"`documented` rows still carrying a BUILD fallback: {stale} — that text says 'use the "

@@ -51,6 +51,7 @@ ROUTE_SOURCES: dict[str, tuple[str, ...]] = {
     "keyboard": ("Route", "Requested URL", "Final URL"),
     "forms": ("Route", "Requested URL", "Final URL"),
     "emulation": ("Route", "Requested URL", "Final URL"),
+    "perf": ("Route", "Requested URL", "Final URL"),
 }
 
 # Profiles that must NOT contribute coverage, and why. `findings` carries `Example Routes`, but
