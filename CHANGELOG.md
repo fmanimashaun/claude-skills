@@ -1301,6 +1301,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **FIX — one rule, two precisions, in two skills.** Found by reviewing `dev` after six parallel
+  sessions merged. `interaction-stimulus.md` said raw ActionCable is "allowed only for genuinely
+  bespoke real-time… document why Streams didn't fit" — a judgement call — while the new
+  `hotwire/references/production.md` derived a **testable** line from Campfire: **Action Cable when
+  the payload is a *fact*, not a *fragment*.** Not a contradiction, which is why no gate saw it, but
+  two statements of one rule at different sharpness is how a reader ends up citing the weaker one.
+  The fidara-design entry now states the sharp rule and defers to the derivation.
+
 - **NEW `hotwire/references/production.md` — Hotwire under production pressure** (#99, Phase C of
   #96). Extracted from two 37signals apps, **attributed**: [once-campfire][cf99] (MIT, real-time
   chat) and [fizzy][fz99] (O'Saasy, drag-and-drop Kanban). Every framework claim carries a
