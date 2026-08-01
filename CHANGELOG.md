@@ -7,6 +7,31 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **NEW gate `shared shapes`** (`scripts/check_shared_shapes.py`, #360). The `quality-pass` worked
+  example states how many files carry each duplicated shape and rests an extraction decision on
+  those numbers. A count written in prose rots the first time someone adds a copy, and it rots
+  **silently** — the `claims-vs-enforcement` class, one directory along from the skill that names
+  it. The checker re-derives all five counts from `plugins/**/*.py` + `scripts/**/*.py` and fails
+  when the table disagrees, in **both** directions (a shape with no row, and a row nothing
+  measures). Same shape as `check_handoff.py` reconciling a tier table against the agents it
+  describes.
+  - **It is explicitly NOT a duplication gate**, and that is written into the module docstring, the
+    `GATES` entry and CLAUDE.md. Nothing here refuses a copy: the quality pass is advisory by
+    design, so a gate that blocked on it would contradict the doctrine it guards. The only failure
+    it can produce is a stale number.
+  - **10 selftest checks, 6 declared mutations**, all caught by the fixture named for them. One
+    mutation is a `continue` rather than the usual `if False:` because disabling that branch would
+    raise a `KeyError` before any labelled assertion ran — a crash is not a verdict.
+  - **The gate found a defect in itself on its first real run.** Its synthetic corpus was written
+    as literal Python, and `scripts/` is inside the measured roots — so `class Unusable(RuntimeError)`
+    and the luminance coefficient existed as *strings* in the measuring file and the counts moved
+    4→5 and 2→3. Fixed by placeholder-substituting the fixture at write time (the trick
+    `lint_markdown_shell.py` already uses), **not** by exempting the file from its own walk: a
+    self-exemption is the carve-out class, and it would hide a genuine copy landing there later.
+  - Gate sweep 43 → **45**.
+
 ### 2026-08-01 — the install block, and a rule that can see it
 
 - **FIX — `design-flow` was missing from the README's install block** (#203, second occurrence).
@@ -1198,7 +1223,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
 
+- **`code-reviewer` now runs the quality pass as an explicitly second, explicitly non-blocking
+  section** (#360). Without a call site the new `quality-pass` skill would be doctrine nothing
+  points at. The wiring states both halves of its contract: it runs **after** the correctness
+  review, and every finding it produces is a **Suggestion** — it can never reach a BLOCKING
+  verdict. Deliberately **not** wired into `pr-reviewer`, which is the merge gate: a quality
+  finding must not be able to refuse a merge, and the surest way to guarantee that is to keep it
+  out of the agent that can.
 
 ### 1.16.0 — 2026-08-01
 
@@ -2030,6 +2063,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **NEW skill `quality-pass` — the review dimension `code-review` deliberately does not have**
+  (#360). `code-review` hunts correctness and enforcement: `claims-vs-enforcement`,
+  `gate-that-cannot-fail`, `doctrine-contradiction`. Nothing in it asks *is this duplicating
+  something that already exists?* — so nothing did, through four files written in one week.
+  **Change type: design/architecture decision, no upstream.** The four dimensions (reuse,
+  simplification, efficiency, altitude) are borrowed from
+  [`simplify` in fcakyon/claude-codex-settings](https://github.com/fcakyon/claude-codex-settings);
+  the near-misses, the advisory rule and the measurement discipline are ours, and the authority is
+  the decision recorded on [#360](https://github.com/fmanimashaun/claude-skills/issues/360).
+  - **Every dimension carries a near-miss** — the case where the pattern is *correct* — because a
+    quality pass that fires on legitimate code is a pass people stop reading. Duplication across an
+    uncrossable distribution boundary; derivable state with a stated invalidation rule; a loop too
+    small to hoist; a bandaid whose root cause is genuinely out of reach; *two cases is not a
+    pattern*.
+  - **Advisory, stated as a rule and not as a tone.** It never blocks a merge. A gate on taste gets
+    switched off, and then nothing checks quality at all.
+  - **Scoped away from bugs in both directions.** `code-review` gained a paragraph and a
+    description clause pointing at it, so the two skills each say where the other starts and a
+    quality finding that turns out to be a bug has a named way back.
+  - **The worked example is the deliverable, not decoration.** `references/worked-example.md`
+    records the pass's first real run against this repo's own toolchain, and the outcome was a
+    decision **not to extract** — 29% of 1,189 lines matched textually, ~6% was mechanism a shared
+    module could hold, and the one unit big enough to justify a module spans two independently
+    installed plugins. Its counts are re-derived by `scripts/check_shared_shapes.py` rather than
+    asserted.
 
 ### 1.29.1 — 2026-08-01
 
@@ -3406,6 +3467,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **`theme_parity.compare()` walked the whole light-side element list once per dark element**
+  (#360). The membership test was a set comprehension written *inside* the loop, and it does not
+  depend on the loop variable — so a page's elements were re-scanned for every one of a page's
+  elements, on a rule whose entire input is a page of elements. Hoisted; behaviour identical, and
+  the existing `an element present only in dark fires` fixture covers the branch unchanged.
+  - It survived a correctness review because it is **not incorrect**, which is precisely the
+    argument for having an `efficiency` dimension at all. Found by the new `quality-pass` skill's
+    detection rule for it: *read every loop body for expressions containing no loop variable.*
 
 ### 1.19.1 — 2026-08-01
 

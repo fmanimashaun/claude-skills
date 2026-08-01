@@ -1044,6 +1044,63 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #360. Every mutation here makes a STALE NUMBER read as a fresh one, which is the only thing
+    # this checker can fail on. Note what is deliberately absent: no mutation asks whether a copy
+    # of a shape is justified, because the quality pass is advisory and a gate on taste would
+    # contradict the doctrine this guards.
+    Guard(
+        name="check_shared_shapes",
+        subject="scripts/check_shared_shapes.py",
+        selftest="scripts/check_shared_shapes.py",   # --selftest lives in the module itself
+        mutations=(
+            Mutation(
+                "the count comparison stops comparing, so a stale number passes",
+                "        if rows[shape.label] != len(hits):",
+                "        if False:",
+                "a wrong count in the table is DRIFT",
+            ),
+            # A `continue` rather than `if False:`: disabling the membership test would index a
+            # missing key and die with a KeyError, and a mutation that crashes before a labelled
+            # assertion is caught by a traceback rather than by the fixture written for it.
+            Mutation(
+                "a measured shape with no row in the table goes unreported",
+                '        if shape.label not in rows:\n'
+                '            findings.append(\n'
+                '                f"{shape.label}: measured in {len(hits)} file(s) and has NO row in'
+                ' the table. A "\n'
+                '                f"count nobody reads is not doctrine.")\n'
+                "            continue\n",
+                "        if shape.label not in rows:\n            continue\n",
+                "a shape with no row is reported",
+            ),
+            Mutation(
+                "the other direction of the join goes, so prose nothing measures passes",
+                "    for label in rows:",
+                "    for label in []:",
+                "a table row nothing measures is reported",
+            ),
+            Mutation(
+                "a pattern that matches nothing is accepted, so a rotted regex reads as a pass",
+                "        if not hits:",
+                "        if False:",
+                "a pattern that matches nothing is reported",
+            ),
+            Mutation(
+                "an empty marked table parses instead of raising",
+                "    if not rows:",
+                "    if False:",
+                "an empty marked table parsed instead of raising",
+            ),
+            # The corpus guard. With no roots every count is 0, every comparison is vacuous, and a
+            # gate over zero files reports exactly like a gate over a clean repo.
+            Mutation(
+                "the measured roots go empty, so every count is taken over no files",
+                'ROOTS = ("plugins", "scripts")',
+                "ROOTS = ()",
+                "the source walk finds the corpus files",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
