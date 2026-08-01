@@ -3840,6 +3840,24 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **FIX — two pointers added in v1.9.0 named a directory that does not exist.** `design-auditor`'s
+  new Marketing-copy and Visual-assets checklist rows pointed at `references/marketing-copy.md` and
+  `references/visual-assets.md`. There is no `plugins/design-flow/references/`; the files live under
+  `skills/fidara-design/references/`. An agent following either found nothing.
+  - **The same commit got this right three times and wrong twice**, which is the part worth
+    recording. `/design-flow:component`'s three pointers were written as full paths *specifically*
+    so the doc-pointer lint would validate them — and the auditor's two were not, so the lint could
+    not see them. The rule only protects what is written in the form it recognises, so a
+    half-applied convention reads as covered while leaving a real broken pointer behind.
+  - Found by re-reading the shipped tag when asked whether the wiring was actually in place, rather
+    than by any gate. Grepping the pattern then found two more bare pointers in other plugins
+    (`a11y-auditor`, `setup-flow`) — not broken, since each names its skill, but invisible to the
+    lint for the same reason. All four are full paths now: **65 → 70** pointers validated.
+  - `skill-curator`'s `references/` is deliberately left alone: it names a *directory convention*,
+    not a file, so there is nothing to resolve.
+
 ### 1.9.0 — 2026-08-01
 
 - **`design-auditor` counts the per-page motion cap** (#136) — one entrance pattern per
