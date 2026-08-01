@@ -137,9 +137,15 @@ GUARDS: tuple[Guard, ...] = (
                 "bleed into each other",
             ),
             Mutation(
-                "corpora no longer pruned from the walk",
+                "agent worktrees are no longer pruned, so a sweep reads other agents' copies",
+                ', "design-corpora", "worktrees"}',
                 ', "design-corpora"}',
-                "}",
+                "another agent's copy",
+            ),
+            Mutation(
+                "corpora no longer pruned from the walk",
+                '"design-corpora", "worktrees"}',
+                '"worktrees"}',
                 "not ours to enforce",
             ),
             Mutation(

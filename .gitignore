@@ -28,6 +28,13 @@ __pycache__/
 # the `ln -s` the setup instructions prescribed, and all three corpora sat UNTRACKED in the
 # very guard written to hide them. Slash-free also matches a path that does not exist yet,
 # which is what lets `maintainer_doctor.py` prove these patterns still work.
+# Agent worktrees. Claude Code creates these INSIDE the repo, one full copy per background
+# agent, and `git status --porcelain` collapses the whole tree to a single `?? ` line — so
+# sixteen repo copies can look like nothing at all. Root-anchored and slash-free, per #197:
+# a trailing slash matches only a real directory, and the point of that lesson was a pattern
+# that was written, believed, and matched nothing.
+/.claude/worktrees
+
 /design-corpora
 
 # The pre-#197 root-level layout. Kept ignored — a machine still holding it must not be one

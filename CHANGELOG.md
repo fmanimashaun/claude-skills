@@ -7,6 +7,24 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Agent worktrees are ignored and pruned from every linter.** Claude Code puts background-agent
+  worktrees at `.claude/worktrees/` — **inside the repo**, one full copy each — and
+  `git status --porcelain` collapses the whole tree to a single `?? ` line, so sixteen repo copies
+  looked like nothing at all. That is the untracked-directory trap `CLAUDE.md` already warns about,
+  now sitting one careless `git add` away from committing sixteen copies of the repo.
+- **The linters were reading them.** `.claude` is one of `DEFAULT_ROOTS`, so a sweep went from **129
+  files to 1526** — and the failure mode is worse than slowness: another agent's half-finished edit
+  fails the *maintainer's* gate run, over a file that is not in the maintainer's tree. Pruned by
+  exact name in all three linters, with a `worktrees-notes/` near-miss fixture so the prune cannot
+  widen and go quiet.
+- The ignore pattern is **root-anchored and slash-free**, per #197 — the lesson there being a
+  pattern that was written, believed, and matched nothing.
+- Adding to `SKIP_DIRS` broke the existing `corpora no longer pruned` mutation's anchor, and the
+  mutation checker **hard-errored** rather than passing quietly. Both anchors updated; that stale-
+  anchor rule is the reason the drift was visible at all.
+
 ### 2026-08-01 — the install block, and a rule that can see it
 
 - **FIX — `design-flow` was missing from the README's install block** (#203, second occurrence).

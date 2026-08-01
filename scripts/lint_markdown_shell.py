@@ -167,7 +167,8 @@ def discover(roots: list[str]) -> list[str]:
             found.append(root)
             continue
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            dirnames[:] = sorted(d for d in dirnames
+                                 if not d.startswith(".") and d != "worktrees")
             for name in sorted(filenames):
                 if name.endswith(".md"):
                     found.append(os.path.join(dirpath, name))

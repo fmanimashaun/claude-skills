@@ -77,7 +77,11 @@ ROOT = REPO_ROOT
 # licensed corpora. Before #197 the kits were symlinked in and os.walk skipped them for free;
 # a real subdirectory has to be pruned deliberately. Pruned by EXACT name, so a
 # `design-corpora-notes/` of ours is still scanned — proved by --selftest.
-SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", ".venv", "venv", "design-corpora"}
+# `worktrees` is where Claude Code puts background-agent worktrees — a FULL repo copy each,
+# inside `.claude/`, which is one of our roots. Unpruned, a sweep scans every copy: sixteen
+# agents took this linter from 129 files to 1526, and an agent's half-finished edit would
+# fail the maintainer's own gate run with a finding that is not in the maintainer's tree.
+SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", ".venv", "venv", "design-corpora", "worktrees"}
 
 # Object names that conventionally mean "settings". A key here is a promise that
 # something honours it. Data-bearing objects are excluded on purpose: `cases[]`
@@ -1285,6 +1289,22 @@ def selftest() -> int:
         "near miss: design-corpora-notes/ is ours and stays scanned",
         rule="unenforced-mandatory-flag", expect_finding=True,
         files={"design-corpora-notes/README.md": CORPORA_CLAIM, "tool.py": OPTIONAL_FLAG},
+    )
+    # Same shape for the agent-worktree prune: a full repo copy per background agent lives under
+    # `.claude/worktrees/`, and scanning it means an agent's half-finished edit fails the
+    # MAINTAINER's gate run over a file that is not in the maintainer's tree.
+    scenario(
+        "a claim inside .claude/worktrees/ is another agent's copy, not ours",
+        rule="unenforced-mandatory-flag", expect_finding=False,
+        files={".claude/worktrees/agent-x/README.md": CORPORA_CLAIM,
+               ".claude/worktrees/agent-x/tool.py": OPTIONAL_FLAG},
+    )
+    # The prune is by EXACT name, so a directory of ours that merely starts the same way is still
+    # scanned. Without this the prune could widen to anything containing "worktree" and go quiet.
+    scenario(
+        "near miss: a worktrees-notes/ of ours stays scanned",
+        rule="unenforced-mandatory-flag", expect_finding=True,
+        files={"worktrees-notes/README.md": CORPORA_CLAIM, "tool.py": OPTIONAL_FLAG},
     )
 
     # -- doctrine-call-site-mismatch --------------------------------------
