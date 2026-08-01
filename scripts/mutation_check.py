@@ -878,6 +878,33 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #105. The first mutation is the whole point of the file: a 200 that renders an error is the
+    # page every status check calls healthy, so the rule that catches it must be proven to fire.
+    Guard(
+        name="crawl_report",
+        subject="plugins/qa-flow/scripts/crawl_report.py",
+        selftest="plugins/qa-flow/scripts/crawl_report.py",
+        mutations=(
+            Mutation(
+                "the 200-but-error rule stops firing",
+                '    for pattern in ERROR_PAGE_MARKERS:',
+                '    for pattern in []:',
+                "200 rendering 'Internal Server Error' fires",
+            ),
+            Mutation(
+                "an unreachable route is judged instead of named",
+                '            result.skipped.append(f"{page.get(\'route\', \'?\')}: {page.get(\'skipped\')}")',
+                '            pass',
+                "a skipped route is named",
+            ),
+            Mutation(
+                "console warnings become findings, so the rule fires on every real app",
+                'CONSOLE_FATAL = ("error",)',
+                'CONSOLE_FATAL = ("error", "warning")',
+                "a console WARNING stays silent",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
