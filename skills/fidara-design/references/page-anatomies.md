@@ -15,10 +15,11 @@ Nothing on this page introduces a new `@utility`.
 
 ## The contract every shell keeps
 
-The base layout owns two things. A shell may not drop them:
+The base layout owns three things. A shell may not drop them:
 
 ```erb
 <%# app/views/layouts/application.html.erb %>
+<a href="#main" class="fixed left-2 -top-16 focus-visible:top-2 …">Skip to main content</a>
 <turbo-frame id="modal"></turbo-frame>   <%# CRUD is modal-driven — crud-modal-pattern.md %>
 <div id="toasts" aria-live="polite" class="…"></div>
 ```
@@ -27,6 +28,13 @@ The base layout owns two things. A shell may not drop them:
 page load, and `#toasts` is the only place flash output belongs. A shell that omits
 either breaks flows that live outside its own template — the failure shows up in an
 unrelated screen, which is the worst kind.
+
+The skip link is **first in `<body>`, before the header**, and it is a **Level A**
+obligation (WCAG 2.4.1 Bypass Blocks), not a nicety. Every `<main>` below therefore
+carries `id="main"` **and `tabindex="-1"`** — without the latter the fragment's focusing
+steps fall back to the viewport and focus never reaches the region. Full recipe, including
+why the usual `sr-only` + `focus-visible:not-sr-only` construction is a coin flip, in
+`components.md` → Skip link and `component-implementations.md`.
 
 ## Type, once, so no screen re-derives it
 
@@ -68,7 +76,7 @@ stay visible while working. This is the default for authenticated app UI.
     <% end %>
 
     <% sidebar.with_main do %>
-      <main id="main" class="min-h-0 overflow-y-auto">…</main>
+      <main id="main" tabindex="-1" class="min-h-0 overflow-y-auto">…</main>
     <% end %>
   <% end %>
 </div>
@@ -78,7 +86,7 @@ stay visible while working. This is the default for authenticated app UI.
   Nav items are `text-step--1` with `min-h-touch`.
 - **Mobile** — the rail becomes a drawer. `Layout::SidebarComponent` owns the
   disclosure; do not hand-roll a second one. The trigger lives in the mobile top bar,
-  is icon-only, and therefore needs `sr-only` text (`components.md` → Navigation).
+  is icon-only, and therefore needs `sr-only` text (`components.md` → Navigation — sidebar / vertical).
 - **Brand mark** — rail top on desktop, mobile top bar centre or left. Never both at once.
 - **Scroll containment** — the rail and `<main>` scroll independently. Both need
   `min-h-0` alongside `overflow-y-auto`; a flex/grid child will not scroll without it
@@ -102,7 +110,7 @@ marketing-adjacent app pages, onboarding, single-purpose tools, reading views.
     </div>
   </header>
 
-  <main id="main" class="shell section-y-compact">…</main>
+  <main id="main" tabindex="-1" class="shell section-y-compact">…</main>
 </div>
 ```
 
@@ -123,7 +131,7 @@ inbox + reading pane, record + activity feed, editor + inspector.
   <% sidebar.with_sidebar do %>…<% end %>
   <% sidebar.with_main do %>
     <div class="grid-auto items-start" style="--min: 28rem">
-      <main id="main" class="min-h-0 overflow-y-auto">…</main>
+      <main id="main" tabindex="-1" class="min-h-0 overflow-y-auto">…</main>
       <aside class="min-h-0 overflow-y-auto" aria-label="Details">…</aside>
     </div>
   <% end %>
@@ -584,23 +592,37 @@ a11y, and the one with a direct revenue cost.
 
 **An empty basket is a page, not a blank.** Say it is empty and give one route back to browsing.
 
-## Checkout
+## Checkout — the purchase flow
 
 A form under pressure. Answers *"how do I pay?"* — and nothing else, because every other element on
 this page is a chance to abandon.
 
+**This is the one full-page, multi-step flow in a Fidara UI, and it is a deliberate exception to
+[crud-modal-pattern.md](crud-modal-pattern.md#the-one-exception-the-purchase-flow-is-full-page).**
+Everything else that creates a record opens a modal on the page behind it. A purchase does not,
+because the page behind it is the thing being abandoned: a modal keeps the shop in view and gives the
+user a dismiss affordance — Esc, a backdrop click, a close button — over a financial commitment, and
+its focus trap fights with a payment provider's iframe. Read the exception's four conditions before
+claiming another flow qualifies; almost none do.
+
 ```erb
 <div class="center stack" style="--measure: 34rem">
   <%# brand mark only. No nav, no promotions, no newsletter — the shell is deliberately stripped %>
-  <h1 class="text-step-2">Checkout</h1>
+  <ol class="cluster text-step--1" aria-label="Checkout progress">
+    <%# Contact → Delivery → Payment → Review. The Stepper contract, not a tablist — components.md %>
+  </ol>
+
+  <%# the h1 is the CURRENT STEP, and focus moves here on advancing. tabindex="-1" makes it a target %>
+  <h1 id="step-heading" tabindex="-1" class="text-step-2"><%# "Delivery" %></h1>
 
   <%# error summary: Ui::Alert intent: :error, ABOVE the form, focus moved to it on failure, %>
   <%# each message a link to the field it concerns %>
 
   <%= simple_form_for(...) do |f| %>
     <%# contact: email, autocomplete="email" %>
-    <%= render Ui::AddressFieldsComponent.new(form: f) %>
+    <%= render Ui::AddressFieldsComponent.new(form: f, mode: :shipping) %>
     <%# delivery choice: fieldset + legend, radios, price and ETA in the label text %>
+    <%# "Billing address is the same" — a real checkbox that populates, see 3.3.7 below %>
     <%# payment: the provider's iframe/element — never a hand-rolled card field %>
     <%# submit: full width, disabled-with-label in flight, and idempotent on double-submit %>
   <% end %>
@@ -616,8 +638,49 @@ address is the most common abandonment cause that is entirely the implementation
 **One column.** Multi-column forms produce ambiguous tab order and unreadable error association; the
 summary belongs above or below, not beside.
 
-**A double-submitted payment must not double-charge.** Disable on submit *and* make the server action
-idempotent — the client-side half alone loses to a slow network and an impatient user.
+**A double-submitted payment must not double-charge.** Turbo already *"set[s] the 'submitter' element's
+disabled attribute when the submission begins, then remove[s] the attribute after the submission
+ends"*, so the client-side half costs you nothing — which is precisely why it is not the guard. It
+loses to a reloaded tab. **The server action must be idempotent**; the button state is feedback. Full
+rule in `components.md` → Payment / card entry.
+
+**A final review step is how a checkout meets 3.3.4, and it is AA.** Error Prevention (Legal,
+Financial, Data) covers *"web pages that cause legal commitments or financial transactions for the user
+to occur"* and requires at least one of **Reversible**, **Checked**, or **Confirmed** — *"a mechanism is
+available for reviewing, confirming, and correcting information before final submission."* A review
+step gives you Confirmed outright, which is why the flow has four steps and not three. The level
+distinction against 3.3.6 lives once, in `components.md` → Stepper / wizard; do not restate it here
+and let the two drift.
+
+**"Billing address is the same" is not a convenience, it is 3.3.7 Redundant Entry at Level A.**
+*"Information previously entered by or provided to the user that is required to be entered again in
+the same process is either: auto-populated, or available for the user to select."* The Understanding
+document's own example is *"a form on an e-commerce website allows the user to confirm that the
+billing address and delivery address are the same address."* Its exceptions — essential re-entry,
+security, or information no longer valid — do not cover an address. Carry the same rule across steps:
+anything the user typed on step 1 is pre-filled on step 4, never asked twice.
+
+**A cart or stock hold with a countdown is a time limit under 2.2.1 (Level A).** The practical route
+is **Extend**: *"the user is warned before time expires and given at least 20 seconds to extend the
+time limit with a simple action … and the user is allowed to extend the time limit at least ten
+times."* Do not reach for the **Real-time Exception** — its example is an auction, *"and no alternative
+to the time limit is possible"*, which a reservation timer you chose the length of is not.
+
+**Money is `tabular-nums`; the order reference is `font-mono`.** They are different jobs and
+[brand.md](brand.md) scopes `--font-mono` to *reference numbers, SLA timers, code, timestamps* — not
+to money. `tabular-nums` is what makes a column of totals align in the interface face. Storage is the
+rails-8 skill's call, not this one: `ecosystem-gems.md` says store integer minor units
+(`price_cents`), so never round a float into a total you display.
+
+**The confirmation is the last step of this flow, not a toast.** Land on a real page with the order
+reference as text (`font-mono`), what was bought, what was charged, where it is going, and what
+happens next. Offer account creation here, from data already captured. The receipt is the same content
+rendered for print or PDF — one template, not a second design. **Never show a full payment number**:
+the last four digits and a brand, from the provider's token.
+
+**A redirect-based provider needs the form out of Turbo's hands.** `data-turbo="false"` *"disables
+Turbo Drive on links and forms including descendants"*. Without it Turbo fetches the cross-origin
+payment page, cannot render it, and the press appears to do nothing.
 
 ## Order detail
 
