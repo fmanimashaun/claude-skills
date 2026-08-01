@@ -9,6 +9,67 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **DECISION — the selftest harness stays one copy per install root; it is not extracted and not
+  vendored** (#398). This is an **architecture/distribution decision**, not a framework claim, so
+  the authority is the maintainer decision recorded on
+  [#398](https://github.com/fmanimashaun/claude-skills/issues/398) rather than a `doctrine-verifier`
+  citation — and the numbers behind it are measured against the repo, not asserted. The reasoning
+  now lives in `skills/quality-pass/references/worked-example.md` so the next reader inherits it
+  instead of re-measuring, which was the issue's own acceptance criterion.
+  - **The boundary is `${CLAUDE_PLUGIN_ROOT}`, not file absence.** The marketplace is one git repo,
+    so an install may hold every plugin tree on disk; what a plugin is *given* is its own root. No
+    `.py` under `plugins/` resolves a path above its own plugin (`parents[2]` and higher: zero
+    occurrences), so the harness copies partition into four disjoint install roots and no module
+    reaches past the largest.
+  - **The arithmetic.** A shared harness must be an object (`check()` mutates closure state, the
+    reporter reads it): ~16 lines, and each caller nets 10. Across all four roots that is ~44 lines
+    out of 6,016 — under 1% — against 298 call sites to rewrite and 10 `mutation_check.py` guards
+    gaining a `deps=` entry over 81 declared mutations. Vendoring is worse still: a build step plus
+    a drift gate larger than the duplication it polices, turning twelve honest copies into four
+    that *claim* to be one.
+  - **What makes the copies acceptable is a shared control, not a shared module** —
+    `scripts/mutation_check.py` proves these selftests can fail. It covers ten of twelve;
+    `extract_claims.py` and `findings.py` ship a `--selftest` no guard mutates, named in the
+    write-up as a mutation-coverage gap rather than rounded away.
+- **NEW `reach` column in the gated shared-shapes table**, and it is the point of the change:
+  `files` says how much duplication exists, `reach` says how much of it a module could ever remove.
+  `check_shared_shapes.py` derives it as the largest single install root holding the shape, and
+  cross-checks that grouping against `marketplace.json` — if `plugins/<name>` ever stops being where
+  a plugin is installed from, the column would be counting a boundary nobody ships, and that now
+  fails rather than rots. Four new fixtures (a wrong reach with a right file count; a copy under an
+  undeclared plugin; two silence controls) and four new declared mutations, including one that
+  collapses the grouping without changing any file count. The corpus gained a second plugin so that
+  mutation is *distinguishable* — with one plugin, "grouped by plugin" and "all of `plugins/` as one
+  lump" give the same answer and the break would have been caught by a coincidental fixture.
+- **FIX — `run_baseline` was reporting five INERT guards and the sweep had been red since it
+  landed; 44 mutations were passing vacuously** (found while working #398, follows #422). #422 added
+  the control and fixed the one instance it was written for. The control immediately found four
+  more, plus a sixth defect that made its own selftest unpassable — *"when you find one instance,
+  grep for the pattern"*, from `code-review`, and nobody did.
+  - `check_handoff` — its `needs` **enumerated** ten agent files, and an eleventh (`claim-verifier`)
+    had shipped. Now the `agents` directory, exactly as #422 did for `references`.
+  - `validate_evidence` (24 mutations) — cross-checks every evidence contract against the agent
+    documenting it; `needs=("plugins/qa-flow/agents",)`.
+  - `maintainer_doctor` (7) — a fixture asserts every gate in `GATES` names a real script, and
+    `GATES` spans the whole toolchain, so the mutant needs it. Directories, not the ~50 paths
+    `GATES` names today. `dist` too, or the packaged-skill check SKIPs, and a skip in a staged
+    tempdir is indistinguishable from a pass.
+  - `project_gates` (3) — the scripts its three `checks.json` manifests name.
+  - `crawl_report` (3) — `crawl_collector.js`, which its three sibling qa-flow judges all declared
+    and it did not.
+  - `mutation_check --selftest` itself asserted every declared path `is_file()`, which **#422's own
+    directory-valued `needs` made false** — a gate that could not be satisfied by the feature it was
+    checking. Split: modules keep `is_file()`, `needs` gets `exists()`, and both directions are now
+    fixtures (a directory is accepted; an absent path is still reported), because relaxing an
+    assertion is how one stops asserting.
+- **FIX — the same stale-restated-number defect the 1.55.0 entry below claims to have fixed was
+  still live 70 lines further down the same file** (#398). The decision section said the harness had
+  "**nine** copies spanning **two** plugins" and that a module "reaches **four** of the nine"; the
+  gated table said twelve across three plugins plus tooling, with a reach of five. Three wrong
+  numbers in one sentence — and it is the sentence #398 was filed from, so the question was framed
+  against figures that had already moved. The 1.55.0 fix patched the instance three lines under the
+  table and did not grep for the pattern, which is the failure mode `code-review` names. Digits
+  gone; the sentence points at the table.
 - **FIX — `mutation_check`'s own selftest rejected the declaration #422 had just added.** Rule 6 asserts
   every guard names paths that exist, and tested all four fields with `is_file()`. #422 deliberately gave
   the `build_coverage` guard a **directory** (*"a directory, so a new reference doc is picked up rather
