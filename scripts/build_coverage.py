@@ -203,8 +203,11 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Pagination": "## Pagination\n",
     "Empty state": "## Empty state\n",
     "Breadcrumbs": "## Breadcrumbs\n",
-    "Navigation — header / navbar": "## Navigation (header + sidebar + tabs)",
-    "Navigation — sidebar / vertical": "## Navigation (header + sidebar + tabs)",
+    # #95 shipped these as two SEPARATE sections rather than the one combined heading this
+    # table assumed, so each row now points at its own real heading. Sharing one evidence
+    # string across two rows also meant either row could be credited by the other's doc.
+    "Navigation — header / navbar": "## Navigation — app header / navbar",
+    "Navigation — sidebar / vertical": "## Navigation — sidebar / vertical",
     "Tabs": "## Tabs",
     "Logo / Brand mark": "## Logo / Brand mark",
     "Divider": "## Divider\n",
