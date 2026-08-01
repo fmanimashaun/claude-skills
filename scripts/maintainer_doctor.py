@@ -124,6 +124,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
     # also catches an agent's `model:` drifting from the doctrine that documents it (#127).
     ("rails-flow work order", ("python3", "plugins/rails-flow/scripts/check_handoff.py", "--selftest")),
+    ("rails-flow claim extraction", ("python3", "plugins/rails-flow/scripts/extract_claims.py", "--selftest")),
     # #334. Its selftest also validates every SHIPPED checks.json -- that each names a real
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.

@@ -29,6 +29,17 @@ sentence describing it.**
 
 ## What you do
 
+**0. Get the list mechanically first.**
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/extract_claims.py" pr-body.md
+```
+
+That script pulls out the four kinds below and drops hedged or unfalsifiable sentences, so you start
+from a list rather than a mood. It **over-extracts on purpose** — it cannot tell a claim the change is
+*making* from one it is *quoting*, and dropping a real claim silently is the failure this whole agent
+exists to stop. Discard the quotes yourself; that judgement is why you are here and it is not.
+
 **1. Extract the load-bearing claims.** A load-bearing claim is one a reader would act on:
 
 - enforcement — *"this is gated", "CI blocks this", "the selftest covers it"*
