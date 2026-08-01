@@ -5011,7 +5011,41 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
-### Unreleased
+### 2026-08-01 (release v1.54.0)
+
+> ### Three things that were judgement are now arithmetic
+>
+> `/rails-flow:review` fanned out seven passes and merged seven prose blobs by judgement. Dedupe
+> depended on whether a reader thought two findings looked alike; "no pass may drop a finding" was a
+> contract nothing checked; and *"A is caused by B"* was recorded nowhere, so fix order was a guess.
+
+- **NEW — typed findings records** (#138, rails-flow 1.17.0 · qa-flow 1.20.1). Each pass appends
+  JSONL; synthesis reads the data. **Dedupe** groups by `signature` and reports
+  `distinct (N instances)`. **Completeness** asserts every input id appears in the output as
+  reported or `duplicate_of` — reorder yes, collapse yes, **drop no** (#77). **Fix order** is a
+  topological sort on `caused_by`/`blocks` (#118 for the counting half).
+- **An edge outranks severity, and that is the point of the graph.** A P1 symptom waits for its P3
+  cause; severity only breaks ties the graph leaves free. `/fix` is told explicitly not to "correct"
+  that back — the inversion looks like a mistake and is the whole value. Pinned by a fixture,
+  because a severity sort that quietly overrode edges looks right in every case where they agree.
+- **`/issues` files one issue per distinct signature, not per record.** A real crawl produced **773**
+  occurrences of one a11y defect whose distinct count was about **18**. A developer told "773
+  defects" stops reading; told "18, one on every page", they fix the navbar. Same arithmetic,
+  applied where it decides how many issues exist.
+- **Parity between the two plugins is gated, not claimed.** qa-flow is independent and does not
+  import rails-flow, so the schema *is* the contract — and `findings-schema-drift` compares the
+  field tuples in `findings.py` against the fields documented in `qa-reporter.md`. It also fails
+  when its own anchor is renamed, rather than comparing nothing and passing.
+- **Plain JSONL in git** — no graph database, no orchestration runtime, per `harness-doctrine.md`
+  §9. A record you can `git diff` and `grep` without a running service.
+- **What the script deliberately will not do:** derive `signature`. It is a stable identity for the
+  *defect*, not the occurrence, and `file:line` is wrong in both directions — the same defect moves
+  when a line is inserted, two different defects share a line. The agent judges, the script counts.
+- Findings selftest **29 checks**; self-consistency 93 → **98**; mutations 25 → **27**; sweep
+  43 → **44**. One mutation was rewritten after the first version broke syntax and every mutation
+  read as "caught" by a traceback rather than by a fixture — a crash is not a verdict.
+
+### 1.54.0 — 2026-08-01
 
 - **NEW `findings.py` — typed findings records, so multi-agent output is queryable and dedupe is
   mechanical** (#138). Plain JSONL in git; no graph database, no orchestration runtime (criterion 8,
