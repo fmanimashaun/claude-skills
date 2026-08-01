@@ -1203,6 +1203,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`extract_claims.py` — the half of `claim-verifier` that can actually be proven** (#359). Its
+  acceptance criterion asked for fixtures showing the agent fires on a false claim and stays silent
+  on a true one. **An agent is a prompt and has no fixtures**, so that criterion cannot be met by the
+  agent alone — stating that is better than faking it.
+  - Split the way everything else here is split: **the script extracts, the agent judges.** Pulling
+    the claims out is mechanical and testable; deciding whether each is *true* is judgement.
+  - **The silence half is what makes it usable.** It drops hedged and unfalsifiable sentences —
+    "cleaner", "more idiomatic", "should be faster", "probably fixes" — because a verifier handed
+    those has nothing to run, and a list of them trains everyone to skim the output. A hedge beats a
+    keyword: *"this probably fixes the leak"* is not a causation claim.
+  - Fenced code and inline code are skipped: a block full of `gate`, `fails` and `blocks` is
+    identifiers, not assertions.
+  - **A fixture was wrong, not the code.** *"Selftest 33 checks passed"* was asserted to be a
+    *measurement*; it classifies as **enforcement**, correctly, because `selftest` is an enforcement
+    keyword and the documented ordering says enforcement wins. Both readings are now pinned.
+  - **A limitation found by running it on a real PR body, recorded rather than hidden.** It cannot
+    tell a claim the change is *making* from one it is *quoting* — run against #361 it extracted two
+    sentences from a table of previously **refuted** claims. Left unhandled deliberately: every
+    available heuristic for "is this quoted?" also fires on real assertions, and dropping a genuine
+    claim silently is the failure this tool exists to stop. **When in doubt it extracts**, and the
+    agent is told to discard the quotes itself.
+
 - **NEW `claim-verifier` — it verifies what a change says about itself, not the code** (#359).
   Borrowed from `fable-advisor` in `fcakyon/claude-codex-settings`: *"a second opinion **without
   substituting the host tool's model**… the reviewer checks load-bearing claims itself."*
