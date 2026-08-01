@@ -31,6 +31,21 @@ one-off colors.
 6. **Responsive** — fluid + intrinsic first; a `@media`/`@container` breakpoint only for a true
    structural swap; `min-h-touch` on tap targets; keep the measure.
 
+## Variant mode (`/design-flow:variants`)
+
+Dispatched once per variant on the same brief, each with one **composition axis** to move along
+(structure · order · density · emphasis · motion presence). Two things change and nothing else:
+
+- **Move only your axis.** Same role tokens, same components, same component API as every other
+  variant. A variant that reaches for its own colours, its own CSS or a bespoke component has
+  become a fork of the design system, not an alternative composition — and it is a *finding*,
+  checked by `variant_conformance.py`, not a judgement call.
+- **Write the rationale as you compose**, one line, specific enough to choose *against*
+  ("denser; leads with the comparison table"). "Modern and clean" is not a rationale.
+
+You are not competing to be picked, and you never see the other variants. A set of three
+renderings of one idea is a failed run even when each is individually good.
+
 ## Guardrails
 
 - Prefer editing/extending existing components over new ones; keep the shared `shared/*` CRUD

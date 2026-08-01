@@ -96,6 +96,37 @@ version-assignment PR as **`chore/arm-vX.Y.Z` → `dev`**, titled
 publishes releases; it does not, and cannot — the workflow triggers only on a push to `main`.
 The naming confusion is worth avoiding precisely because the mechanism is invisible.
 
+### Before you open the promotion PR: verify what its body claims
+
+A promotion body is the most-read and least-checked document this repo produces. It is what the
+published release notes are extracted from, so a false sentence here outlives every other kind —
+and three defects shipped from this repo in a single day whose diffs were internally consistent and
+whose **descriptions** were wrong (#359). Reviewing the diff would not have caught any of them.
+
+So, with the body drafted and **before** opening the PR:
+
+```bash
+python3 plugins/rails-flow/scripts/extract_claims.py /tmp/promotion-body.md
+```
+
+That pulls out the load-bearing assertions mechanically — enforcement, exhaustiveness, causation,
+measurement — and drops hedged or unfalsifiable ones, so you start from a list rather than a mood.
+It **over-extracts on purpose**: it cannot tell a claim the promotion is *making* from one it is
+*quoting*, and dropping a real claim silently is the failure it exists to prevent. Discard the
+quotes yourself.
+
+Then hand the list and the body to the **`claim-verifier`** agent, which checks each by **running or
+grepping** — reading the code is explicitly not checking, because the claims are about behaviour.
+A claim that cannot be checked as written is a **finding**, not a pass: delete it or make it
+checkable. Fix the body before opening the PR; do not open it and amend after.
+
+**Get a second opinion where you can.** `claim-verifier` is `model: inherit` by deliberate decision
+(pinning a shipped agent spends a stranger's money, and a value outside their allowlist is skipped
+anyway — see `plugins/rails-flow/reference/model-tiers.md`). That makes a genuine second opinion the
+**caller's** act: invoke it with a per-invocation model, or set `CLAUDE_CODE_SUBAGENT_MODEL`. It is
+required to state which model it ran as, so its report says plainly whether the review was actually
+independent or just a slower version of the author.
+
 Then the promotion:
 
 Open **one** PR `dev → main` containing the bumps + CHANGELOG conversion (+ repackaged
