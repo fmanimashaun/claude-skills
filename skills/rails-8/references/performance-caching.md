@@ -87,6 +87,14 @@ Better — collection caching fetches all fragments in one read:
 Keys include the template tree digest, so editing the partial busts the cache
 automatically. Deploys therefore invalidate cleanly with no manual sweeping.
 
+**How that tree is discovered changed in 8.1.** `load_defaults 8.1` sets
+`config.action_view.render_tracker = :ruby`, so `render` calls are found by a real
+Ruby parser (prism, falling back to ripper) instead of the old `:regex` strategy.
+More accurate, but it means digests can shift on the upgrade — a one-off cache miss,
+not a bug. Dependencies the parser still cannot see (a partial chosen at runtime)
+need the explicit `<%# Template Dependency: products/product %>` annotation, exactly
+as before.
+
 ### Russian-doll nesting
 
 ```erb
@@ -200,9 +208,13 @@ end
 
 The generated Dockerfile already does the right things — keep them:
 
-- **YJIT** enabled by default under `load_defaults 8.1` on Ruby 3.3+ (and via
-  the Dockerfile env). 15–25% faster request processing for free. ZJIT
-  (Ruby 4.0) remains experimental — do not enable in production.
+- **YJIT** on by default on Ruby 3.3+ (and via the Dockerfile env). 15–25%
+  faster request processing for free. Note the 8.1 narrowing: `load_defaults`
+  7.2–8.0 set `config.yjit = true` everywhere, **8.1 sets
+  `!Rails.env.local?`** — so it is on in production and **off in development
+  and test**. Export `RUBY_YJIT_ENABLE=1` when you need local parity for a
+  benchmark. ZJIT (Ruby 4.0) remains experimental — do not enable in
+  production.
 - **jemalloc** preloaded via `LD_PRELOAD` in the Dockerfile — dramatically
   reduces memory fragmentation in multithreaded Puma. Keep it.
 - **Puma sizing** — `WEB_CONCURRENCY` (processes) × `RAILS_MAX_THREADS`
