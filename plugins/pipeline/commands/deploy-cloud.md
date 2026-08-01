@@ -37,9 +37,38 @@ then deploys.
    and the NAMES routed to each bucket (never values) — get explicit approval, then
    `kamal setup` (first time) or `kamal deploy` (with `RAILS_FLOW_ALLOW_DEPLOY=1`).
 
+## Bound the run before it starts (#128)
+
+This is the most autonomous command in the marketplace and its blast radius is a live
+host, so *"self-troubleshoot and re-run"* below is bounded rather than open-ended.
+Open a ledger first; the doctrine, the numbers and the four forbidden escapes are in
+`${CLAUDE_PLUGIN_ROOT}/reference/stop-conditions.md`.
+
+```bash
+BREAKER="${CLAUDE_PLUGIN_ROOT}/scripts/breaker.py"
+python3 "$BREAKER" start --stages configure,deploy,health
+python3 "$BREAKER" check deploy
+python3 "$BREAKER" record deploy --outcome fail --signature "kamal: unauthorized on ghcr.io push"
+python3 "$BREAKER" report
+```
+
+Exit `0` proceed · `1` STOP · `2` unusable — never `|| true`, never `|| echo`. The
+`out-of-order` refusal is the useful one here: `deploy` cannot be attempted until
+`configure` (routing + the blocking safety pass) has passed, so a half-configured
+deploy is refused by the ledger and not only by the prose above.
+
 ## Post-deploy
 
 Report each destination written (names only), deploy result, live-URL `/up` check.
-Self-troubleshoot failures against `.env` + `kamal app logs` and re-run idempotently.
+Self-troubleshoot failures against `.env` + `kamal app logs` and re-run idempotently
+— **within the attempt cap**: `breaker.py check deploy` before each retry, and
+`breaker.py record` after it with the exact failure signature. Three attempts, or two
+identical signatures, ends it: write the diagnosis with `breaker.py stop` and hand back
+rather than deploying again. A fourth attempt at an unchanged auth failure has never
+been the one that works, and each one is a real push to a real registry.
 Cloud reminders: DB/internal ports to loopback (Docker bypasses UFW); migrations via
 `bin/docker-entrypoint` (`db:prepare`) or `kamal app exec`. Never print secret values.
+
+Close with `breaker.py report` and relay its verdict verbatim — `complete`, `partial`
+or `stopped`. A deploy reported as done when the `/up` check never passed is the
+worst available outcome here: the next person believes production is serving.

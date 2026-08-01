@@ -270,19 +270,38 @@ re-implementing the anatomy:
 ```ruby
 module Ui
   class AddressFieldsComponent < ViewComponent::Base
-    def initialize(form:) = @form = form
+    # `mode:` is the HTML autofill mode token, and it is not decoration: the same component
+    # renders a shipping and a billing block on one checkout page, and without the prefix the
+    # browser fills both from one saved address. :none omits it (a single-address form).
+    MODES = { none: nil, shipping: "shipping", billing: "billing" }.freeze
+
+    def initialize(form:, mode: :none)
+      @form, @mode = form, mode.to_sym
+    end
     attr_reader :form
+
+    # Token ORDER is fixed by the HTML Standard: optional section-*, then shipping/billing,
+    # then home/work/..., then the field name. "billing postal-code", never the reverse.
+    def autofill(field) = [MODES.fetch(@mode), field].compact.join(" ")
   end
 end
 ```
 ```erb
 <%# address_fields_component.html.erb — composition, not re-implementation %>
+<%# The postcode is type="text": the HTML spec names postal codes as inappropriate for %>
+<%# type=number, alongside credit card numbers — a spinbox makes no sense for either. %>
 <div class="stack">
-  <%= form.input :line1 %>
-  <%= form.input :city %>
-  <%= form.input :postcode %>
+  <%= form.input :line1, input_html: { autocomplete: autofill("address-line1") } %>
+  <%= form.input :city, input_html: { autocomplete: autofill("address-level2") } %>
+  <%= form.input :postcode, input_html: { autocomplete: autofill("postal-code") } %>
 </div>
 ```
+
+**The `autocomplete` tokens are the a11y contract, not a convenience.** 1.3.5 Identify Input Purpose
+(**AA**) requires the purpose of each field *collecting information about the user* to be
+programmatically determinable, and `address-line1` / `address-level2` / `postal-code` are all in
+WCAG's *Input Purposes* list. A field component that omits them fails the SC everywhere it is used,
+which is the multiplier that makes this worth stating here rather than per screen.
 
 Sizes (`sm h-8 · md h-9 · lg h-10`, matching Button) come from additional named wrappers
 (`config.wrappers :compact`) selected per form with `f.input :x, wrapper: :compact` — a second
@@ -757,21 +776,44 @@ landmark noise outweighs the structure.
 ## Tabs — `app/components/ui/tabs_component.rb`
 
 ```erb
-<%# tabs_controller uses list-navigation; panels toggle by data-[state=active] %>
-<div data-controller="tabs">
-  <div role="tablist" class="cluster border-b border-border" style="--space: 0">
+<%# tabs_controller uses list-navigation. `aria-selected` IS the state — the attribute APG already %>
+<%# requires — so nothing toggles a second data-state beside it. Four things here are required by  %>
+<%# the pattern and are the ones that go missing: the tablist's NAME, each tab's `id`, each panel's %>
+<%# `aria-labelledby` pointing back at that id, and `aria-orientation` on a vertical list.          %>
+<div data-controller="tabs" data-tabs-activation-value="<%= activation %>">
+  <div role="tablist" aria-label="<%= label %>" aria-orientation="<%= orientation %>"
+       class="cluster border-b border-border overflow-x-auto" style="--space: 0">
     <% tabs.each_with_index do |t, i| %>
-      <button role="tab" data-tabs-target="tab" data-action="tabs#select" tabindex="<%= i.zero? ? 0 : -1 %>"
-              aria-selected="<%= i.zero? %>" aria-controls="panel-<%= i %>"
+      <button role="tab" id="<%= id %>-tab-<%= i %>" data-tabs-target="tab" data-action="tabs#select"
+              tabindex="<%= i.zero? ? 0 : -1 %>" aria-selected="<%= i.zero? %>"
+              aria-controls="<%= id %>-panel-<%= i %>"
               class="px-4 py-2 text-step--1 border-b-2 border-transparent -mb-px min-h-touch
                      aria-[selected=true]:border-primary aria-[selected=true]:text-primary"><%= t[:label] %></button>
     <% end %>
   </div>
   <% tabs.each_with_index do |t, i| %>
-    <div id="panel-<%= i %>" role="tabpanel" data-tabs-target="panel" class="pt-4 <%= 'hidden' unless i.zero? %>"><%= t[:content] %></div>
+    <div id="<%= id %>-panel-<%= i %>" role="tabpanel" aria-labelledby="<%= id %>-tab-<%= i %>"
+         tabindex="0" data-tabs-target="panel"
+         class="pt-4 <%= 'hidden' unless i.zero? %>"><%= t[:content] %></div>
   <% end %>
 </div>
 ```
+
+- **`label:` is not optional and there is no sensible default** — APG names the tablist via
+  `aria-labelledby` when a visible heading exists, `aria-label` otherwise. Pass the heading's id as
+  `labelledby:` when there is one; an unnamed tablist is an unnamed group of buttons.
+- **`orientation:` is computed from the variant, not hardcoded** — `horizontal` unless the tabs are
+  stacked, and it changes which arrow keys the controller binds. A horizontal list must leave ↑/↓ to
+  the browser's scrolling.
+- **`activation:` is `:automatic` for inline panels and `:manual` when a panel is a lazy
+  `<turbo-frame>`** — the frame is not preloaded, which is precisely the condition APG's
+  automatic-activation recommendation excludes. See
+  [interaction-stimulus.md](interaction-stimulus.md#tabs--the-optional-rows-the-forbidden-one-and-manual-activation-95).
+- **`tabindex="0"` on every panel is a deliberate superset of APG's rule**, which asks for it only
+  *"When the tabpanel does not contain any focusable elements or the first element with content is not
+  focusable"*. A panel here holds arbitrary slot content, so the condition cannot be evaluated at
+  render time; the cost of always emitting it is one tab stop, and the cost of getting it wrong is an
+  unreachable panel. Ours, and stated so it is not mistaken for the pattern's wording.
 
 ## Toast — `app/components/ui/toast_component.rb`
 
@@ -1018,6 +1060,101 @@ end
 </div>
 ```
 
+## Payment container and promo code — recipes, not components
+
+Neither is a ViewComponent, and for opposite reasons. The **payment container** has no content of its
+own to encapsulate — the field inside it belongs to the provider, so a component would wrap a `div`
+around someone else's iframe and imply an ownership we deliberately do not have. The **promo code** is
+a whole `<form>`, and a component that renders a form element invites being nested inside another one,
+which is exactly the invalid markup the catalog entry warns about.
+
+```erb
+<%# PAYMENT CONTAINER -- the label, the height and the error region are yours; the field is not. %>
+<%# h-9 is the `md` input size from the input recipe above, so the provider's iframe lines up with %>
+<%# the fields either side of it. Hand the provider your ring tokens rather than letting it ship %>
+<%# a focus style that belongs to no design system. %>
+<%# NOT <label for="card-element"> -- `for` needs "the ID of a labelable element in the SAME TREE", %>
+<%# and a mount div is not labelable while the real input is in another document. The caption below %>
+<%# is plain text, and the ACCESSIBLE NAME is set inside the frame via the provider's own label %>
+<%# option, with the injected iframe carrying a title. Do NOT aria-hidden the caption to avoid %>
+<%# hearing it twice: hiding it is what leaves the field nameless the day the provider option is %>
+<%# missed, and hearing a caption then a field name is the ordinary way a form reads anyway. %>
+<div class="stack" style="--space: var(--space-3xs)">
+  <span class="text-step--2 text-muted-foreground">Card details</span>
+  <div id="card-element" class="h-9 rounded-md border border-input bg-background px-3"
+       data-controller="payment-element"
+       data-payment-element-label-value="Card details"
+       data-payment-element-ring-value="var(--color-ring)"></div>
+  <%# The provider's failure text lands HERE, in text (3.3.1) -- not as a red border alone. %>
+  <%# role="alert" and not role="status" because severity picks the role (Toast, above) and a %>
+  <%# declined payment arrives asynchronously with no navigation to announce it. %>
+  <p id="card-error" role="alert" class="text-step--2 text-destructive"></p>
+</div>
+
+<%# The REDIRECT integration instead: a POST that hands off to the provider's own hosted page. %>
+<%# It must opt out of Turbo, or Turbo fetches a cross-origin document it cannot render and the %>
+<%# press appears to do nothing. button_to, not a form: there are no fields to collect here. %>
+<%= button_to "Continue to payment", provider_redirect_path, data: { turbo: false } %>
+```
+
+**Never put a card value anywhere you own.** No mirror input "just for validation", no Stimulus value
+holding the number, no analytics listener on the container. The reason the fields are the provider's
+is that nothing card-shaped reaches your DOM, params or logs; each of those undoes it.
+
+```erb
+<%# PROMO CODE -- a SIBLING form, never nested. A <form> may not contain a <form>, and an "Apply" %>
+<%# submit inside the checkout form would become that form's default button, so Enter in the email %>
+<%# field would apply an empty code. Two forms, two default buttons, no interference. %>
+<%# simple_form, like every other field in the app -- the wrapper is what makes the label, hint and %>
+<%# error markup identical everywhere, so a bare form_with here would be the one field that drifts. %>
+<%# HTML attributes ride in `html:` (form_for conventions), never as top-level options. %>
+<aside class="box stack" aria-label="Order summary">
+  <%= simple_form_for :promo_code, url: cart_promo_code_path do |f| %>
+    <div class="cluster" style="--space: var(--space-2xs)">
+      <%= f.input :code, label: "Promo code", input_html: { autocomplete: "off", class: "uppercase" } %>
+      <%= f.submit "Apply" %>   <%# Ui::ButtonComponent variant: :secondary in real code %>
+    </div>
+  <% end %>
+
+  <%# The TOTAL carries role="status" -- polite AND atomic, so the announcement is "Total 42.00" %>
+  <%# and not a bare "42.00". One live region for the money, not a second one on the code field. %>
+  <p role="status" class="cluster justify-between text-step-0">
+    <span>Total</span><span class="tabular-nums">£42.00</span>
+  </p>
+</aside>
+```
+
+**Money is `tabular-nums`; a reference is `font-mono`.** `--font-mono` is scoped by `brand.md` to
+reference numbers, timers, code and timestamps — an order number is one, a total is not. What a
+column of totals needs is figures of equal width, which is what `tabular-nums` gives in the interface
+face.
+
+**The double-submit guard is server-side, and the button state is not it.** Turbo already disables the
+submitter for the duration of the submission, so you get that for free and it protects nothing a
+reloaded tab cannot defeat:
+
+```ruby
+# The key is minted with the FORM, not at submit time -- a key generated on click is regenerated
+# by a second click, which is the case it exists to stop.
+#
+# `find_or_create_by!` alone is a check-then-act race: two concurrent submits can both miss and
+# both insert. The UNIQUE INDEX is what makes this safe, and the rescue is what makes it quiet --
+# without both, this recipe would claim a guarantee it does not provide.
+#   add_index :orders, :idempotency_key, unique: true
+def create
+  order = Order.create_with(order_params).find_or_create_by!(
+    idempotency_key: params.require(:idempotency_key)
+  )
+  redirect_to order_path(order), status: :see_other
+rescue ActiveRecord::RecordNotUnique
+  redirect_to order_path(Order.find_by!(idempotency_key: params[:idempotency_key])),
+              status: :see_other
+end
+```
+
+`status: :see_other` because Turbo *"expects the server to return an HTTP 303 redirect response"*
+after a form submission; a validation failure re-renders at **422** instead.
+
 ## Call sites — the invocation for every documented component
 
 A class definition shows what a component *accepts*; it does not show how to *call* it, and inferring
@@ -1094,9 +1231,10 @@ Note the slot-setter names — `renders_many :items` gives the **singular** `wit
   <% s.with_item { render Ui::CardComponent.new { "Right" } } %>
 <% end %>
 
-<%# Address fields — takes the form builder, so it composes inside simple_form %>
+<%# Address fields — takes the form builder, so it composes inside simple_form. `mode:` prefixes
+    the autofill tokens; omit it for a form with only one address. %>
 <%= simple_form_for @account do |f| %>
-  <%= render Ui::AddressFieldsComponent.new(form: f) %>
+  <%= render Ui::AddressFieldsComponent.new(form: f, mode: :shipping) %>
 <% end %>
 
 <%# Stat tile — `spark` takes a bare inline <svg>, not a component: data-viz.md declares the slot
@@ -1207,6 +1345,120 @@ end
   <% end %>
 </div>
 ```
+
+### Skip link — `app/views/layouts/application.html.erb`
+
+WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` renders the target
+(`<main id="main" tabindex="-1">`). Two lines complete it, and both are load-bearing.
+
+```erb
+<%# FIRST element in <body>, before the header. ONE position utility — `fixed` — and `top` does %>
+<%# the reveal. `sr-only` + `focus-visible:not-sr-only` + `fixed` would put two `position` rules  %>
+<%# in conflict, and Tailwind resolves that by generated-stylesheet order, not class order.       %>
+<a href="#main"
+   class="fixed left-2 -top-16 z-[100] focus-visible:top-2 rounded-md bg-primary px-4 py-2
+          text-step--1 font-medium text-primary-foreground
+          focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30
+          focus-visible:ring-offset-2">Skip to main content</a>
+
+<%# …and the target must be a focusable area, or the FALLBACK takes focus instead of the region: %>
+<%# HTML's scroll-to-the-fragment steps run the focusing steps "with the Document's viewport as   %>
+<%# the fallback target", and a plain <main> is not focusable. tabindex="-1" is the mechanism.    %>
+<main id="main" tabindex="-1" class="shell section-y-compact">…</main>
+```
+
+### Navigation — `app/components/layout/navbar_component.rb` and the rail's list
+
+```erb
+<%# ---- APP BAR (stacked shell). `sticky` puts it inside 2.4.11 Focus Not Obscured (AA): a ---- %>
+<%# focused control must never be ENTIRELY covered, so give focusable content scroll-margin-top. %>
+<header class="sticky top-0 z-40 h-14 border-b border-border bg-card pt-safe">
+  <div class="shell cluster h-full" style="--justify: space-between">
+    <%= render(Ui::LogoComponent.new(brand_variant: :fmworkflows)) %>
+
+    <%# ONE label per navigation landmark, and the word "navigation" is not in it — a screen %>
+    <%# reader already says the role, so aria-label="Main navigation" reads twice.           %>
+    <nav aria-label="Main" class="hidden md:block">
+      <ul class="cluster" style="--space: var(--space-3xs)">
+        <% items.each do |item| %>
+          <li><%= link_to item[:label], item[:path],
+                    "aria-current": ("page" if current_page?(item[:path])),
+                    class: "block min-h-touch rounded-md px-3 py-2 text-step--1 text-muted-foreground
+                            hover:bg-accent hover:text-foreground
+                            aria-[current=page]:bg-accent aria-[current=page]:text-primary
+                            focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30" %></li>
+        <% end %>
+      </ul>
+    </nav>
+
+    <%# Mobile collapse: a DISCLOSURE. A real <button> (4.1.2), aria-expanded reflecting state, %>
+    <%# and Enter/Space as the entire keyboard contract. No role="menu", no arrow keys.         %>
+    <button type="button" data-controller="disclosure" data-action="disclosure#toggle"
+            aria-expanded="false" aria-controls="nav-mobile"
+            class="md:hidden with-icon min-h-touch px-3 rounded-md hover:bg-accent
+                   focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30">
+      <%= helpers.lucide_icon("menu") %><span class="sr-only">Main menu</span>
+    </button>
+  </div>
+
+  <%# The panel `aria-controls` points at — write it and it must EXIST. `hidden` when collapsed: %>
+  <%# aria-expanded="false" on its own leaves these links in the tab order and the a11y tree.    %>
+  <%# Same label as the desktop nav on purpose — `hidden`/`md:hidden` means only one of the two  %>
+  <%# is ever in the accessibility tree, so the page never has two navigation landmarks at once. %>
+  <nav id="nav-mobile" aria-label="Main" class="md:hidden border-t border-border" hidden>
+    <ul class="stack shell py-2" style="--space: var(--space-3xs)">…</ul>
+  </nav>
+</header>
+```
+
+```erb
+<%# ---- RAIL (sidebar shell). Same landmark rules; the list is ours, so the rail announces ---- %>
+<%# its size. Only the DEEPEST active item carries aria-current — ARIA says to mark one element  %>
+<%# in a set, and says nothing about an ancestor section, so marking both is our call to decline. %>
+<nav aria-label="Main" class="stack" style="--space: var(--space-3xs)">
+  <ul class="stack" style="--space: var(--space-3xs)">
+    <% sections.each do |section| %>
+      <li>
+        <% if section[:children].present? %>
+          <%# A nested section is a Disclosure, never a menu — no role="menu", no aria-haspopup. %>
+          <button type="button" data-controller="disclosure" data-action="disclosure#toggle"
+                  aria-expanded="<%= section[:open] %>" aria-controls="nav-<%= section[:id] %>"
+                  class="cluster w-full min-h-touch rounded-md px-3 text-step--1 text-muted-foreground
+                         hover:bg-accent hover:text-foreground focus-visible:outline-hidden
+                         focus-visible:ring-2 focus-visible:ring-ring/30" style="--justify: space-between">
+            <span class="with-icon"><%= helpers.lucide_icon(section[:icon]) %></span>
+            <%# The label is what disappears when the rail collapses to 4rem — and an icon-only %>
+            <%# link with no accessible name is an unnamed link, so it becomes sr-only, not gone. %>
+            <span class="flex-1 text-left <%= "sr-only" if collapsed? %>"><%= section[:label] %></span>
+          </button>
+          <ul id="nav-<%= section[:id] %>" class="stack ps-6" <%= "hidden" unless section[:open] %>>…</ul>
+        <% else %>
+          <%= link_to section[:path],
+                "aria-current": ("page" if current_page?(section[:path])),
+                class: "cluster min-h-touch rounded-md px-3 text-step--1 text-muted-foreground
+                        hover:bg-accent hover:text-foreground
+                        aria-[current=page]:bg-accent aria-[current=page]:text-primary
+                        focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30" do %>
+            <span class="with-icon"><%= helpers.lucide_icon(section[:icon]) %></span>
+            <span class="<%= "sr-only" if collapsed? %>"><%= section[:label] %></span>
+          <% end %>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+</nav>
+```
+
+- **`aria-current` is emitted as a Ruby value, not a class.** `link_to` drops an attribute whose
+  value is `nil`, so `("page" if current_page?(…))` renders the attribute on exactly one link and
+  nothing on the others — which is what makes `aria-[current=page]:` a safe styling hook and keeps
+  the active state off a colour-only cue.
+- **The rail's `min-h-touch` is 2.5.8 Target Size (Minimum) (AA), not padding taste.** Its *Inline*
+  exception covers targets *in a sentence*; a stacked rail link is a discrete block target and gets
+  no exception. The same reason the hamburger is `min-h-touch px-3` rather than a bare icon.
+- **Below `lg` the rail is not this markup** — it is the overlay drawer, which *is* a modal dialog
+  (`components.md` → Drawer / off-canvas). Render both and switch by breakpoint; never toggle
+  `aria-modal` and a focus trap on one element by media query.
 
 ### Breadcrumbs — `app/components/ui/breadcrumbs_component.rb`
 

@@ -9,6 +9,48 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **FIX — `docs/harness-doctrine.md` carried three stale gap-claims, and one of them told the reader
+  to trust it** (found while working #128). §8 said a grep for
+  `circuit.?breaker|stop condition|max attempts|bail out` across `plugins/` and `skills/` *"still
+  returns none"* — it returns **26 hits in five files**, and has since the rails-flow half shipped.
+  §7 said *"#127 is open. Nothing in the repo assembles that today"* — #127 is **closed** and
+  `/rails-flow:handoff` assembles exactly that. §11's table row asserted both issues unshipped.
+  - **A stale gap-claim is as misleading as a stale guarantee, and it survives longer, because
+    nobody re-checks good news.** The three replacement rows in §11 are re-checkable commands rather
+    than sentences, which is what the rest of that table already does and what these three had
+    stopped doing.
+  - §8 now records what shipped and, more usefully, the two places the halves deliberately
+    **differ**: which of the four escapes became mechanical in pipeline and which stayed doctrine,
+    and why escalate-and-continue was not copied into a gated chain.
+  - §8a's deferral of loop breakers to #128 has **expired**, so the decision is re-grounded rather
+    than left resting on a reason that no longer holds: the `topology: loop` marker still owes only
+    `exit:`, because a number in an HTML comment beside an enforced mechanism is a claim nothing
+    makes true.
+- **The gate sweep gains `pipeline stop conditions`** and `mutation_check.py` gains the `breaker`
+  guard (14 mutations). A selftest the sweep never runs makes a clean sweep a claim about work
+  nobody did.
+- **NEW gate `shared shapes`** (`scripts/check_shared_shapes.py`, #360). The `quality-pass` worked
+  example states how many files carry each duplicated shape and rests an extraction decision on
+  those numbers. A count written in prose rots the first time someone adds a copy, and it rots
+  **silently** — the `claims-vs-enforcement` class, one directory along from the skill that names
+  it. The checker re-derives all five counts from `plugins/**/*.py` + `scripts/**/*.py` and fails
+  when the table disagrees, in **both** directions (a shape with no row, and a row nothing
+  measures). Same shape as `check_handoff.py` reconciling a tier table against the agents it
+  describes.
+  - **It is explicitly NOT a duplication gate**, and that is written into the module docstring, the
+    `GATES` entry and CLAUDE.md. Nothing here refuses a copy: the quality pass is advisory by
+    design, so a gate that blocked on it would contradict the doctrine it guards. The only failure
+    it can produce is a stale number.
+  - **10 selftest checks, 6 declared mutations**, all caught by the fixture named for them. One
+    mutation is a `continue` rather than the usual `if False:` because disabling that branch would
+    raise a `KeyError` before any labelled assertion ran — a crash is not a verdict.
+  - **The gate found a defect in itself on its first real run.** Its synthetic corpus was written
+    as literal Python, and `scripts/` is inside the measured roots — so `class Unusable(RuntimeError)`
+    and the luminance coefficient existed as *strings* in the measuring file and the counts moved
+    4→5 and 2→3. Fixed by placeholder-substituting the fixture at write time (the trick
+    `lint_markdown_shell.py` already uses), **not** by exempting the file from its own walk: a
+    self-exemption is the carve-out class, and it would hide a genuine copy landing there later.
+  - Gate sweep 43 → **45**.
 - **NEW `verify_interaction_claims` in `build_coverage.py` — the half of the matrix with no guard
   is the half that rotted** (#89). `verify_shipped_evidence` has checked every `documented`
   component row against the reference docs since #124. `INTERACTION_PATTERNS` had nothing, and four
@@ -1269,7 +1311,75 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
 
+- **A vague ask now becomes a buildable brief, and the brief is an index over its sources rather
+  than a copy of them** (#130). New `/rails-flow:brief` writes `docs/brain/BRIEF.md`: the intake
+  artefact that gates a client engagement, run **before** `/rails-flow:setup-flow`. It detects
+  which of three situations it is in — documents exist, code exists, or greenfield — **ingests
+  first**, reports a coverage map of what the sources already answer, and interviews only the
+  genuine gaps. **Change type: design / architecture.** The brief's shape, the coverage vocabulary,
+  the citation syntax and the duplication rule are our own decisions about our own toolchain; no
+  upstream exists to cite, so the authority is the maintainer decision recorded on
+  [#130](https://github.com/fmanimashaun/claude-skills/issues/130#issuecomment-5152551963). **No
+  framework claim rides along** — nothing here asserts how Rails, Hotwire, Claude Code or any gem
+  behaves.
+  - **The issue's citation format does not exist and could never have resolved.** #130 specified
+    `PRD S7.2`-style references *"matching the citation convention already used in `docs/brain/`"*.
+    `grep -rn "PRD S"` over this repo returns **nothing**: the brain uses `D-nnn` ids and the four
+    provenance tags, and `PRD S7.2` names no file, so an agent following the issue verbatim would
+    have shipped a citation style the toolchain does not use and that nothing could check. The
+    syntax is therefore ours — `` `docs/prd.md` § "Pricing tiers" `` — a real path plus a string
+    that literally occurs in that file, **and the checker opens the file and looks**. It carries
+    code unchanged (`` `app/models/booking.rb` § "class Booking" ``), which is what lets one
+    mechanism serve document intake and codebase intake instead of two.
+  - **A fourth coverage state, because three could not describe greenfield.** The issue gives
+    answered-with-source / thin / missing; a greenfield brief has no document to cite, so every row
+    would have had to lie in the `answered` cell. A `decided` row cites a `D-nnn` that must exist in
+    `docs/brain/DECISIONS.md` — which is what turns the issue's *"decisions … are written to
+    DECISIONS.md"* from a hope into a checkable claim, reusing the `[decided]` provenance tag the
+    brain already defines rather than inventing a fifth vocabulary.
+  - **"Never duplicates an existing PRD" is measured, not requested** —
+    `plugins/rails-flow/scripts/check_brief.py` (61-check selftest, 11 declared mutations, **five in
+    the silence direction**), registered as the `rails-flow product brief` gate and in the plugin's
+    `checks.json` so a user's own `project_gates.py` runs it. A 12-word contiguous run reproduced
+    from a cited source is a finding. **Its whole risk is false positives**, because a brief and its
+    PRD describe the same product in the same words: blockquotes, fenced code, table rows and
+    headings are exempt, each with a near-miss fixture, since attributed quotation is the one place
+    the brief is *supposed* to borrow and the coverage map's Source cell quotes the source's own
+    heading by design. The checker also rejects a citation that resolves to nothing, an `answered`
+    row with no source, a `decided` row with no `D-nnn`, non-goals that say "none", an open question
+    with no owner, and a coverage gap recorded nowhere.
+  - **Two rules shipped broken and the fixtures caught both**, which is the reason for the silent
+    half. `\bnon-goal\b` does **not** match "Non-goals" — the `\b` fails against the trailing `s` —
+    so `## Non-goals (out of scope)` was collected as the *scope* section and a brief with no scope
+    section at all reported clean. And the mode cross-check read first the whole section and then
+    the whole line, both of which always contained the expected word (`"**Mode: A — documents.**
+    Intake read the documents first"`), so it could not fire; it now reads only the declaration
+    clause. Neither was visible by reading.
+  - **What is deliberately NOT enforced, said out loud rather than implied.** One-question-at-a-
+    time, every question carrying a recommendation, and stopping when the first slice is decidable
+    are runtime interview behaviour that leaves no trace in the artifact — tier 1 prose per
+    [`docs/harness-doctrine.md`](docs/harness-doctrine.md) §1, and labelled as tier 1 in the command
+    so nobody reads enforcement that does not exist. Success criteria are **not** graded for
+    falsifiability here either: that is `check_criteria.py`'s job on `docs/acceptance/<slug>.md`, and
+    enforcing one property twice at two fidelities is the second-source-of-truth failure this whole
+    command exists to prevent.
+  - **The self-containment rules are imported from `check_handoff.py`, not copied.** "What counts as
+    a reference to the conversation" is one decision, and two copies of it would be exactly the
+    doc-drift the checker polices, committed inside the checker. The import is a seam: with the
+    module absent the rules report **UNVERIFIED**, never clean — a skip masquerading as a pass is
+    the failure this repo has shipped twice. `TBD` is carved out of `## Open questions` and only
+    there, because a recorded unknown with an owner is that section's job and an unrecorded one
+    anywhere else is the defect.
+  - Hands document distillation to `/rails-flow:curate` rather than reimplementing it.
+- **`code-reviewer` now runs the quality pass as an explicitly second, explicitly non-blocking
+  section** (#360). Without a call site the new `quality-pass` skill would be doctrine nothing
+  points at. The wiring states both halves of its contract: it runs **after** the correctness
+  review, and every finding it produces is a **Suggestion** — it can never reach a BLOCKING
+  verdict. Deliberately **not** wired into `pr-reviewer`, which is the merge gate: a quality
+  finding must not be able to refuse a merge, and the surest way to guarantee that is to keep it
+  out of the agent that can.
 
 ### 1.16.0 — 2026-08-01
 
@@ -1959,6 +2069,65 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### Unreleased
+
+- **Unattended pipeline runs are bounded by a circuit breaker instead of by hope** (#128, the
+  `comp:pipeline` half; the rails-flow half shipped in rails-flow 1.14.0). The gates said when a
+  stage may *advance*; nothing said when to stop **retrying** one — and this plugin's most
+  autonomous agent, `kamal-configurator`, was told to *"troubleshoot autonomously"* and *"re-run
+  idempotently"* against a **production host** with no bound of any kind. An agent that cannot make
+  progress does not idle here, it re-pushes an image and redeploys, and every attempt looks like
+  activity in a log.
+  - **Change type: architecture / design decision**, per CLAUDE.md's carve-out — the ledger shape,
+    the numbers, and which of #128's escapes become mechanical have no upstream to cite. The one
+    external claim reused (`maxTurns` bounds *turns, not attempts*,
+    [docs](https://code.claude.com/docs/en/sub-agents)) was verified for the rails-flow half and is
+    repeated with its citation, not re-derived. Decision recorded on
+    [#128](https://github.com/fmanimashaun/claude-skills/issues/128#issuecomment-5146943177).
+  - **New `scripts/breaker.py`** over `pipeline/run-ledger.jsonl` — append-only JSONL, committed, so
+    a run is a `git diff` rather than a memory. `start` declares the stages and the limits **once**;
+    `check` reads them back and takes **no threshold flags**, so a run cannot widen its own cap
+    halfway through, and a second `start` over a run that did not end `complete` is refused rather
+    than silently resetting every counter.
+  - **Five refusals, all decidable from the ledger:** `already-passed`, `out-of-order` (gate-skipping
+    made mechanical — `release` cannot be attempted until `certify` passed), `attempt-cap` (3),
+    `no-progress` (2 identical failure signatures), `budget` (120 minutes). Overridable within
+    `1..10` / `2..10` / `1..480`, because **an override that can be set to infinity is not a
+    breaker**. Digits survive signature normalisation on purpose: "3 failures" becoming "1" is
+    progress, and erasing it would stop a converging run.
+  - **A failure cannot be recorded without a signature and a stop cannot be recorded without a
+    diagnosis** — both exit 2. A no-progress detector fed unsigned failures can never fire, which is
+    an unfalsifiable breaker wearing a breaker's clothes.
+  - **`report` derives complete / partial / stopped from the ledger and exits `0` only for
+    `complete`**, so "partial presented as success" is not available to anything that reads the exit
+    code. Exceeding a cap makes a run `stopped` **even if every stage later passed**: crediting the
+    outcome would make the cap advisory.
+  - **Two of #128's four escapes are enforced, two are doctrine, and the file says which.** Test
+    weakening and guardrail disabling involve file edits the ledger cannot see, so they live in the
+    new `reference/stop-conditions.md` — and the selftest asserts that file still carries all four
+    escape strings, all three defaults, and all three allowed ranges the script declares, so doctrine
+    and code cannot drift apart.
+  - **Escalate-and-continue was deliberately NOT copied from the rails-flow half.** Criteria are
+    independent; a gated chain is not. Nothing downstream of a stopped stage is independent of it, so
+    "continuing" is the out-of-order escape under a friendlier name. A stop ends a pipeline run.
+  - **Wired into all four unattended surfaces** — `/pipeline`, `/pipeline:deploy-cloud`,
+    `pipeline-coordinator`, `kamal-configurator` — and the selftest **fails** if a pipeline command or
+    agent describes an unattended re-run without naming the breaker. That rule found its own four
+    subjects on its first run, and a line-based version silently missed `pipeline.md`, where "run the
+    whole pipeline" wraps across two lines; it matches whitespace-normalised text now.
+  - Registered as the gate **`pipeline stop conditions`**. **59 selftest checks** (fires-and-silent
+    per breaker, including the near misses that decide whether it survives: the last attempt before
+    the cap, one minute short of the budget, a shrinking failure count) and **14 declared mutations**,
+    all caught. One fail-open was found by writing them: a ledger with no `started` made the budget
+    rule return silently instead of refusing, on exactly the hand-edited input where it matters most.
+    It is `UNUSABLE` now, with its own fixture and mutation.
+- **FIX — `reference/model-tiers.md` justified both tiers with a premise this release makes false.**
+  It rested on *"this plugin ships no deterministic scripts at all"*; it now ships one. The
+  conclusion is unchanged and the reason is now the honest one — `breaker.py` grades a **run**
+  (attempts, signatures, ordering, budget), never a **judgement**, so it cannot tell that the
+  coordinator picked the wrong stage or that a deploy succeeded against the wrong host. A tier table
+  justified by a false premise is the `doctrine-contradiction` class whatever its conclusion.
+
 ### 1.2.0 — 2026-08-01
 
 - **Agent model pins reconciled with the tier doctrine** (#299). Every agent moved from a
@@ -2152,6 +2321,383 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   both 1.0.0 and both stated correctly, and `SimpleCov.start`, `enable_coverage` and
   `minimum_coverage` were not renamed by the same redesign. Version boundary: `group` / `skip` /
   `cover` are **SimpleCov >= 1.0.0**.
+- **`hotwire/references/native.md` documented a `RouteDecisionHandler` signature that 1.3.0 broke on
+  both platforms** (#384). §4 told agents to implement `matches(location:…)` / `handle(location:…)`;
+  since **iOS 1.3.0** and **Android 1.3.0** both functions receive the whole `VisitProposal`, so code
+  written from the old paragraph does not compile. **Version boundary:** the documented shape is
+  correct through **iOS ≤1.2.2 / Android ≤1.2.8** and wrong from 1.3.0 on both — §4 now states that
+  inline, the way it already does for `recede_or_redirect_to` at ≥1.2.0. Verified against the release
+  notes ([iOS 1.3.0](https://github.com/hotwired/hotwire-native-ios/releases/tag/1.3.0),
+  [Android 1.3.0](https://github.com/hotwired/hotwire-native-android/releases/tag/1.3.0)) **and the
+  tagged source**, because the notes give prose and this file ships signatures:
+  `RouteDecisionHandler.swift` at `1.3.0` (`matches(proposal:configuration:)`,
+  `handle(proposal:configuration:navigator: Navigating)`, read `proposal.url`) and
+  `Router.kt` at `1.3.1` (`matches(proposal, configuration)`,
+  `handle(proposal, configuration, activity: HotwireActivity)`, read `proposal.location`).
+  Version facts bumped to **iOS 1.3.0 / Android 1.3.1** in `hotwire/SKILL.md` and `README.md`
+  (releases dated 2026-07-07 and 2026-07-27; Android 1.2.6/1.2.7/1.2.8 had also shipped unrecorded).
+- **Reading the same source refuted the two smaller claims in #384 and found a third error the report
+  did not make.** (a) It asked to drop debug logging from "§2's Android knob list" — §2 is the *iOS*
+  section, and `Hotwire.config.debugLoggingEnabled` **still exists on iOS at 1.3.0**
+  (`HotwireConfig.swift:37`), so removing it would have introduced the error it meant to fix. The
+  removal is Android-only, so the note went to §3 instead, where Android's config block previously
+  listed no knobs at all: `Hotwire.config.logger` replaces it, with
+  `logger.logLevel = HotwireLogLevel.DEBUG` for debug output. (b) The file said a custom handler is
+  made by "subclassing" and that registration has "the same shape in Kotlin". Both are wrong at every
+  version: it is a `protocol` (iOS) / nested `interface` (Android), and Kotlin's
+  `Hotwire.registerRouteDecisionHandlers` is **`vararg`**, not the bracketed array iOS takes
+  (`HotwireNavigation.kt`). Android's third `handle` parameter has also always been
+  `activity: HotwireActivity`, never a navigator — the platforms were never the same shape.
+- **Verifying #384 found §2's iOS setup block does not compile — and never did, at any version.**
+  `private let navigator = Navigator()` calls an initializer that does not exist: `Navigator`'s only
+  public initializer is `init(configuration:delegate:)`, and `Navigator.Configuration` requires both
+  `name` and `startLocation` with no defaults (`Navigator.swift` / `Navigator+Configuration.swift`,
+  identical at tags **1.2.2 and 1.3.0**). The block also called `navigator.route(rootURL)` where
+  upstream calls `navigator.start()`. Now matches the official
+  [iOS getting-started](https://native.hotwired.dev/ios/getting-started) verbatim in shape. This is
+  the whole point of *"an issue body is a hypothesis"* cutting both ways: #384 reported a **1.3.0
+  regression** in §4 and re-verified §2 as sound, but the first snippet an agent copies was broken
+  independently of the version bump — a staleness audit is not a correctness audit.
+- **§4's manual-navigation aside over-generalised `animated:`.** It said iOS `route`/`pop`/`clearAll`
+  "each takes `animated: false`"; `route(_:options:parameters:)` has no `animated:` argument at
+  1.2.2 or 1.3.0 — only `pop(animated: true)` and `clearAll(animated: false)` do, with the two
+  differing defaults now stated.
+- **Kamal's local registry is opt-in, not the default — `deployment-kamal.md` told agents to skip
+  registry setup and broke the first deploy** (#389). §4 claimed Kamal 2.8 "by default … spins up a
+  local registry" and that you can therefore "skip registry setup entirely"; `:72` marked the whole
+  `registry:` block "optional since Kamal 2.8". All false. Kamal's default registry is Docker Hub —
+  *"The default registry is Docker Hub, but you can change it using `registry/server`"* — and the
+  local registry is opted into with a `server` that starts with `localhost`: *"If the registry server
+  starts with `localhost`, Kamal will start a local Docker registry on that port and push the app
+  image to it"*
+  ([docs/configuration/docker-registry](https://kamal-deploy.org/docs/configuration/docker-registry/),
+  generated from
+  [`lib/kamal/configuration/docs/registry.yml`](https://github.com/basecamp/kamal/blob/main/lib/kamal/configuration/docs/registry.yml),
+  fetched 2026-08-01). The opt-in test is
+  [`Registry#local?`](https://github.com/basecamp/kamal/blob/v2.8.0/lib/kamal/configuration/registry.rb)
+  — `server.to_s.match?("^localhost[:$]")` — and
+  [`Validator::Registry`](https://github.com/basecamp/kamal/blob/v2.8.0/lib/kamal/configuration/validator/registry.rb)
+  waives the mandatory `username`/`password` **only** for such a server.
+  - **Reproduced, not reasoned about.** Against a real `kamal` 2.8.0 gem, the exact config the old
+    §4 prescribed (no `registry:` block) fails before anything is built:
+    `ERROR (Kamal::ConfigurationError): registry/username: is required`. The replacement config was
+    run the same way and resolves `repository: localhost:5555/myapp`.
+  - **What the issue got wrong, and it changed the fix.** #389 implied a fresh Rails 8.1 app hits
+    the auth failure. It does not: Rails 8.1 *generates* `registry: server: localhost:5555`
+    ([`deploy.yml.tt` at v8.1.0](https://github.com/rails/rails/blob/v8.1.0/railties/lib/rails/generators/rails/app/templates/config/deploy.yml.tt)).
+    The failure path was **our own §2 annotated `deploy.yml`**, which still showed the pre-2.8
+    Docker-Hub shape (`username`/`password`, no `server:`) under a comment calling it optional — an
+    agent copying our example wrote a config needing credentials it was told it did not need. So the
+    fix is a re-attribution (the *generator* opts in, not Kamal) plus repairing the §2-vs-§4
+    contradiction, not a deletion of the section.
+  - **Downstream claims resting on the same premise, all corrected**: the §2 image name
+    (`your-user/myapp` is the remote-registry form; a bare name is right for the local one, and
+    `repository` is `[server, image].compact.join("/")`); §3's `.kamal/secrets`, which presented
+    `KAMAL_REGISTRY_PASSWORD` as the live default when 8.1 generates it commented out and a local
+    registry authenticates nothing; the "Registry-free deploys (Kamal 2.8, new in 8.1)" heading and
+    contents entry; and `rails-8/SKILL.md:162`, which carried the same "by default" wording.
+  - Also corrected an over-claim inherited from the old text: the enumerated minimum omitted
+    `builder.arch`, which is required and whose error surfaces only *after* the registry validates
+    (observed in the same reproduction). §9's checklist gained a `registry:` row so the first-deploy
+    gate can catch this class instead of prose promising it.
+  - **Version boundary**: Kamal **2.8.0** (released 2025-10-19) added the local registry; before it
+    there is no local registry at all. Rails **8.1.0** (2025-10-22) generates the opt-in. Rails does
+    not pin Kamal (`gem "kamal", require: false`), and the behaviour is unchanged through the current
+    2.12.0. Nothing here is Rails-version-dependent — it is a Kamal release, so the old "new in 8.1"
+    framing was loose as well.
+- **fidara-design: the Navigation family is documented — app header / navbar, sidebar / vertical, and
+  Tabs** (Refs #95, the Phase-2 umbrella's *Navigation* group, which asks to add `vertical-navigation`
+  and *"refine existing navbars/tabs/pagination/sidebar-nav"*). Three `documented` rows in
+  `coverage.md` — *Navigation — header / navbar*, *Navigation — sidebar / vertical*, *Tabs* — rested
+  on **eight lines** carrying no variant × size × state axis, no responsive rules, and one a11y
+  attribute between them, while the matrix told agents to *"build it straight from that entry"*.
+  Verified against [ARIA in HTML](https://www.w3.org/TR/html-aria/#el-nav),
+  [HTML §4.3.4 `nav`](https://html.spec.whatwg.org/multipage/sections.html#the-nav-element),
+  [APG Landmark Regions](https://www.w3.org/WAI/ARIA/apg/practices/landmark-regions/#aria_lh_step3),
+  [ARIA 1.2 `aria-current`](https://www.w3.org/TR/wai-aria-1.2/#aria-current), and WCAG 2.2
+  [2.4.5](https://www.w3.org/WAI/WCAG22/Understanding/multiple-ways) (AA),
+  [2.4.11](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum) (AA, new in 2.2),
+  [2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum) (AA),
+  [3.2.3](https://www.w3.org/WAI/WCAG22/Understanding/consistent-navigation) (AA).
+- **The landmark-naming rules are written once, not per row** — Breadcrumbs, Pagination, the rail and
+  the bar all land on them. Three carry a boundary that is easy to overstate and is now stated at its
+  real strength: unique labels for multiple `navigation` landmarks are an **APG "should", not a spec
+  MUST**; *"If a landmark is only used once on the page it may not require a label"*; and identical
+  repeated instances (pagination above and below one table) may **share** a label — which is exactly
+  the shape the Pagination row already ships.
+- **A Level A criterion had no mention anywhere in the design skill: WCAG 2.4.1 Bypass Blocks.** No
+  skip link in `components.md`, `page-anatomies.md` or `component-implementations.md`, while
+  `qa-flow`'s `a11y-auditor` already *reports* a `Skip Link` column — we audited for a thing we never
+  told anyone to build. Now in the base-layout contract, with two corrections to the recipe everyone
+  writes: (1) `tabindex="-1"` on `<main>` is load-bearing, because HTML's
+  [scroll-to-the-fragment](https://html.spec.whatwg.org/multipage/browsing-the-web.html#scrolling-to-a-fragment)
+  steps run the focusing steps *"with the Document's viewport as the fallback target"* and a plain
+  `<main>` is not a focusable area, so the **viewport** takes focus — while
+  [G1](https://www.w3.org/WAI/WCAG22/Techniques/general/G1) tests only the outcome and never names the
+  attribute; and (2) `sr-only` + `focus-visible:not-sr-only` + `fixed`/`absolute` is a **coin flip**,
+  because both set `position` and Tailwind resolves same-property collisions by generated-stylesheet
+  order, not class order — *"you should just never add two conflicting classes to the same element"*
+  ([Tailwind v4](https://tailwindcss.com/docs/styling-with-utility-classes#conflicting-utility-classes)).
+  One `position` utility, `top` does the reveal.
+- **Tabs: the shipped catalog row contradicted its own worked implementation, and the implementation
+  was right.** The row prescribed `data-[state=active]:border-primary` while
+  `component-implementations.md` used `aria-[selected=true]:border-primary` — and
+  [APG](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/) already requires `aria-selected`, so a second
+  state source was never needed. Row corrected to the attribute the pattern mandates.
+- **Tabs: four required wirings were missing from the worked markup** — no `id` on any tab, therefore
+  no `aria-labelledby` on any panel (*"Each element with role tabpanel has the property
+  aria-labelledby referring to its associated tab element"*, stated unconditionally), no accessible
+  name on the `tablist`, and no `aria-orientation`. All four now emitted; the panel's
+  `aria-labelledby` is called out because it is the one routinely dropped.
+- **Tabs: three keyboard rows are marked `(Optional)` by APG and were being carried as required**;
+  `Home`/`End` in `interaction-stimulus.md`'s contract table now say so. Two omissions filled from the
+  same pattern: a **horizontal tablist must not listen for ↑/↓** (*"so those keys can provide their
+  normal browser scrolling functions even when focus is inside the tab list"*), and `Shift + F10` /
+  `aria-haspopup` exist only when a tab owns a popup menu. Checked for a phantom the #142 way — **no
+  APG revision, current or the 2017 1.1 snapshot, contains `Ctrl+Delete`**, so it is not written down.
+- **Three claims are OURS and say so, because the gate came back with no upstream** (design decisions
+  under CLAUDE.md's *What the gate covers* carve-out, recorded on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95)): (1) **"tabs are not page
+  navigation"** — the Tabs pattern has no "when not to use" section and APG nowhere warns against it,
+  so the previous unattributed phrasing is now labelled as our position with our reasoning; (2)
+  **marking only the deepest active nav item with `aria-current`** — ARIA's *"SHOULD only mark one
+  element in a set"* governs peers and says nothing about an ancestor section and its child; (3)
+  **manual activation when a tab panel is a lazy `<turbo-frame>`** — inferred from APG's own
+  precondition (*"as long as their associated tab panels are displayed without noticeable latency.
+  This typically requires tab panel content to be preloaded"*), which a lazy frame cannot meet.
+- **`2.4.8 Location` is AAA and is now labelled AAA.** The "you are here" rail cue reads like an AA
+  obligation and is not one; what is AA is that the active state must not be colour alone (1.4.1).
+- **`rails-8/references/ecosystem-gems.md` §6 documented a pagy API that no longer exists** (#390).
+  The snippet's `include Pagy::Backend` / `include Pagy::Frontend` and `pagy_nav(@pagy)` were
+  removed wholesale in the version-43 redesign, with **no shims** — and since the skill wrote
+  `gem "pagy"` unpinned, a downstream agent installed the current gem and got
+  `NameError: uninitialized constant Pagy::Backend` on boot. On the golden path, too: line 33 marks
+  pagy as the answer for *"any real list"*. Rewritten to `include Pagy::Method`,
+  `pagy(:offset, collection, limit: 25)` and `@pagy.series_nav`, and the Gemfile line now pins
+  `"~> 43.6"` so the doctrine says what it was checked against.
+  **Version boundary is exact, not observational** — the audit left this INCONCLUSIVE because the
+  43.0.0 changelog says only *"a complete redesign"*, but the gem's own git tree settles it without
+  needing the prose. `gem/lib/pagy/backend.rb` and `gem/lib/pagy/frontend.rb` are **present in tag
+  `9.4.0` and absent in tag `43.0.0`** (replaced by `toolbox/paginators/method.rb`), and pagy
+  published **no stable release between the two**. So: **≤ 9.4.0 (2025-08-13) the old snippet is
+  correct; ≥ 43.0.0 (2025-11-03) it raises.** Checked against **43.6.1** (2026-07-21). For the
+  record, the removal actually landed in the prerelease `43.0.0.rc1` (2025-07-05), whose tree
+  already has `method.rb` and neither of the two removed files.
+  Citation: pagy's own search-and-replace table in
+  [Upgrade to 43](https://ddnexus.github.io/pagy/guides/upgrade-guide/) — `include Pagy::Backend` →
+  `include Pagy::Method`, `include Pagy::Frontend` → *"(remove: integrated)"*, `pagy_nav(@pagy, ...)`
+  → `@pagy.series_nav(...)`; and the current API in
+  [Quick Start](https://ddnexus.github.io/pagy/guides/quick-start) /
+  [README](https://github.com/ddnexus/pagy/blob/master/README.md). Release dates from
+  [the rubygems API](https://rubygems.org/api/v1/versions/pagy.json).
+- **Two claims in #390 were wrong, and the fix does not carry them** (#142's lesson, again). The
+  report said the paginator symbol is *"a required first argument"*; it is not —
+  `Pagy::Method` defines `pagy` as `|paginator = :offset, collection, **options|`, so
+  `pagy(collection)` still works. The skill therefore tells you to pass `:offset` **because the
+  choice is worth seeing**, not because omitting it raises — a rule stated with a false reason is
+  the next reader's bug. The report also dated 43.0.0 to *2025-07-05*, which is **before** the 9.4.0
+  it calls the last 9.x — an ordering that cannot be true. That date belongs to the prerelease
+  `43.0.0.rc1`; stable 43.0.0 is 2025-11-03. Neither error changes the verdict, which is why they
+  are recorded rather than argued: the report was right that the API is gone and right about what
+  replaced it.
+- **Executing the new snippet caught a trap the linters structurally cannot.**
+  `python3 scripts/lint_markdown_code.py` is `ruby -c` — it accepts anything syntactically valid, and
+  a `NameError` is exactly the failure #390 is about. So the rewrite was **run** against a real
+  install of pagy 43.6.1: the old two `include`s raise `NameError`, the new snippet paginates
+  (page 2, limit 25, records 26–50 of 300), and `@pagy.limit_tag_js` — which the first draft listed
+  as a plain helper — **raises `Pagy::OptionError` unless the `pagy` call passes `max_limit:`**. That
+  caveat is now in the doctrine. Verified, not asserted.
+- **NEW skill `quality-pass` — the review dimension `code-review` deliberately does not have**
+  (#360). `code-review` hunts correctness and enforcement: `claims-vs-enforcement`,
+  `gate-that-cannot-fail`, `doctrine-contradiction`. Nothing in it asks *is this duplicating
+  something that already exists?* — so nothing did, through four files written in one week.
+  **Change type: design/architecture decision, no upstream.** The four dimensions (reuse,
+  simplification, efficiency, altitude) are borrowed from
+  [`simplify` in fcakyon/claude-codex-settings](https://github.com/fcakyon/claude-codex-settings);
+  the near-misses, the advisory rule and the measurement discipline are ours, and the authority is
+  the decision recorded on [#360](https://github.com/fmanimashaun/claude-skills/issues/360).
+  - **Every dimension carries a near-miss** — the case where the pattern is *correct* — because a
+    quality pass that fires on legitimate code is a pass people stop reading. Duplication across an
+    uncrossable distribution boundary; derivable state with a stated invalidation rule; a loop too
+    small to hoist; a bandaid whose root cause is genuinely out of reach; *two cases is not a
+    pattern*.
+  - **Advisory, stated as a rule and not as a tone.** It never blocks a merge. A gate on taste gets
+    switched off, and then nothing checks quality at all.
+  - **Scoped away from bugs in both directions.** `code-review` gained a paragraph and a
+    description clause pointing at it, so the two skills each say where the other starts and a
+    quality finding that turns out to be a bug has a named way back.
+  - **The worked example is the deliverable, not decoration.** `references/worked-example.md`
+    records the pass's first real run against this repo's own toolchain, and the outcome was a
+    decision **not to extract** — 29% of 1,189 lines matched textually, ~6% was mechanism a shared
+    module could hold, and the one unit big enough to justify a module spans two independently
+    installed plugins. Its counts are re-derived by `scripts/check_shared_shapes.py` rather than
+    asserted.
+- **`rails-8` named a vulnerable Rails as "current stable"** (#388). `SKILL.md` said **8.1.3**
+  (2026-03-24); the current stable is **8.1.3.1** (2026-07-29), a **security** release fixing
+  **CVE-2026-66066** / [GHSA-xr9x-r78c-5hrm](https://github.com/rails/rails/security/advisories/GHSA-xr9x-r78c-5hrm)
+  — critical, CVSS v4 9.5, arbitrary file read and RCE in Active Storage variant processing. Every
+  8.1 below 8.1.3.1 is affected (`>= 8.1.0.beta1, < 8.1.3.1`; backports 8.0.5.1 and 7.2.3.2), so the
+  skill was pointing every new app at a known RCE while `auth-security.md:212` told the same agent to
+  *"keep Rails patched … stay current"* — a rule its own version block made unsatisfiable.
+  The block now carries the CVE, the pin, and **two things the report omitted that make the upgrade
+  actually safe** — the fix needs **libvips >= 8.13** at runtime, and a possibly-exploited app must
+  rotate `secret_key_base`. Support dates restated as absolutes (8.1 bug fixes to 2026-10-10,
+  security to 2027-10-10; 8.0 bug-fix support ended 2026-05-07) and cited to the
+  [end-of-support announcement](https://rubyonrails.org/2025/10/29/new-rails-releases-and-end-of-support-announcement),
+  because `maintenance_policy.html` states only the *relative* rule and is where a reader would
+  wrongly look. **Version boundary: Rails 8.1.3 → 8.1.3.1.** Verified against rubygems.org, the
+  GitHub Security Advisory API and the [release post](https://rubyonrails.org/2026/7/29/Rails-Versions-7-2-3-2-8-0-5-1-and-8-1-3-1-have-been-released),
+  2026-08-01.
+- **The skill stated two different Ruby floors, and the lower one was end-of-life** (#394).
+  `testing.md:87` claimed a "3.4+ floor" while `SKILL.md:64` and `controllers-routing.md:289` said
+  `>= 3.2` — a `doctrine-contradiction`, and load-bearing, since §7's whole `parse.y` analysis exists
+  *because* 3.2–3.3 is in scope. **External half (CONFIRMED):** `required_ruby_version = ">= 3.2.0"`
+  in the `actionpack`/`activesupport`/`railties` gemspecs at tag `v8.1.3.1`; Ruby 3.2 is `eol` since
+  **2026-04-01** and **Ruby 3.3 has been `security maintenance` since the same date** — the latter
+  absent from the report, and it means the entire 3.2–3.3 band is out of normal maintenance
+  ([ruby-lang.org/en/downloads/branches](https://www.ruby-lang.org/en/downloads/branches/)).
+  **Design half — no upstream, so the authority is the maintainer decision recorded at
+  [#394 (comment)](https://github.com/fmanimashaun/claude-skills/issues/394#issuecomment-5152697344)**,
+  flagged there for sign-off before promotion: the skill's supported floor is **Ruby 3.4** — the
+  oldest branch still in normal maintenance, so it is a re-checkable rule rather than a number that
+  goes stale — while Rails' `>= 3.2.0` stays stated and is now explicitly labelled a *compatibility
+  minimum, not a support statement*. All three sites now name which of the two numbers they mean, and
+  §7 keeps its premise: Rails permits 3.2, so an existing app may sit below our floor, and
+  `--parser=parse.y` rejects the form even on 3.4.7. **Version boundary: Rails 8.1.3.1 requires Ruby
+  >= 3.2.0; this skill supports >= 3.4.**
+- **The pin was stale in `README.md` too, which #388 did not mention** (#388, collateral —
+  found by grepping every version site rather than only the two lines the report cited). Its
+  Versioning section said "pinned to **Rails 8.1.3**" — the same claim, one directory up, where a user reads it
+  before installing anything. A version fresh in the skill and stale in the README is worse than both
+  being stale, so it moves with them; `SKILL.md`'s provenance line (Rails Guides `v8.1.3` → `v8.1.3.1`,
+  both editions live) moves for the same reason. Also recorded in-line, in the skill, where a
+  downstream agent will read it: **there is no Rails 8.2 or 9.0** — no gem, no tag, no `8-2-stable`
+  branch — because a third-party post dated 2026-04-20 claims otherwise and keeps resurfacing.
+- **Rails 8.1 stopped HTML-escaping `render json:`, and our security checklist never said so**
+  (#393). `load_defaults 8.1` sets `config.action_controller.escape_json_responses = false`, so the
+  JSON renderer no longer escapes `<`, `>`, `&`, U+2028 or U+2029. Rails' own changelog names the
+  consequence — *"vulnerabilities when the resulting JSON is embedded in HTML"*
+  ([actionpack/CHANGELOG.md @ 8-1-stable, under 8.1.0](https://github.com/rails/rails/blob/8-1-stable/actionpack/CHANGELOG.md);
+  the flip itself is `railties/lib/rails/application/configuration.rb` `when "8.1"`, and
+  [Configuring §3.1.1](https://guides.rubyonrails.org/configuring.html) lists it). Now in
+  `auth-security.md` §4 **Injection & escaping** — the checklist a reader actually consults — with
+  the per-response `escape: true`. **The JSONP carve-out is documented as partial, not absolute**,
+  which neither the issue nor Rails' changelog sentence says: `renderers.rb:171` skips the flip when
+  `:callback` is present, but `escape_js_separators_in_json = false` is global with no callback
+  branch, so `json/encoding.rb:203-208` takes the `HTML_ENTITIES_REGEX` arm — `<`, `>`, `&` escaped,
+  U+2028/9 **not**. **The issue's other remedy is a trap and is documented as one:** setting
+  `config.action_controller.escape_json_responses = true` back is *"deprecated and will have no
+  effect in Rails 8.2"* — the deprecation shipped in **v8.1.0 itself**
+  (`renderers.rb:30-40`, `DeprecatedEscapeJsonResponses`), so doctrine points at `escape: true` and
+  `json_escape` instead. *Version boundary:* Rails ≤ 8.0 or `load_defaults` ≤ 8.0 still escape.
+- **`load_defaults 8.1` promotes path-relative redirects from `:log` to `:raise`, undocumented**
+  (#392). `mattr_accessor :action_on_path_relative_redirect, default: :log`
+  ([actionpack redirecting.rb:31 @ 8-1-stable](https://github.com/rails/rails/blob/8-1-stable/actionpack/lib/action_controller/metal/redirecting.rb)),
+  set to `:raise` by the `when "8.1"` block. Verified the trigger against
+  `_compute_redirect_to_location` rather than the issue's wording: it fires on a `String` starting
+  with neither `/`, `?`, a scheme, nor `//`, and the payload is real — Rails' own docs give
+  `redirect_to "@attacker.com"` → `http://yourdomain.com@attacker.com`, read by browsers as
+  `userinfo@host`. Documented in `auth-security.md` §4 and `controllers-routing.md` §6 with the
+  error class (`ActionController::Redirecting::PathRelativeRedirectError`) and all three modes.
+  Also corrected the nit the same issue raised: 8.1 **added** `action_on_open_redirect`, it did not
+  *"replace"* `raise_on_open_redirects`.
+  [8-0-stable redirecting.rb](https://github.com/rails/rails/blob/8-0-stable/actionpack/lib/action_controller/metal/redirecting.rb)
+  declares exactly one mattr, `raise_on_open_redirects` — so the new setting is an addition — and at
+  8.1 the old one is still declared and still short-circuits (`redirecting.rb:262`,
+  `return false if raise_on_open_redirects`). Verification then turned up a **second precedence rule
+  nobody had reported, and it loses protection rather than adding it**: `actionpack railtie.rb:114-128`
+  downgrades `action_on_open_redirect` to `:log` when an app *explicitly* carries
+  `raise_on_open_redirects = false` forward, so an upgraded app can keep the old opt-out and silently
+  stop raising on open redirects. Now a watch item in `project-setup.md` §7 and a sub-bullet in
+  `auth-security.md` §4. *Version boundary:* `load_defaults` ≤ 8.0 keeps `:log`.
+- **Both issues came from diffing `load_defaults 8.1` against our doctrine, so the diff was finished
+  rather than sampled.** The `when "8.1"` block sets **seven** things; the two above were the two
+  nobody had written down, but three more were undocumented and two documented claims were wrong.
+  `project-setup.md` §7 now carries the complete seven-row table — old value, 8.1 value, and the
+  observable change — because the 8.0 → 8.1 watch list is the one place a reader is entitled to
+  assume completeness. Enumeration cross-checked two ways: the `when "8.1"` branch of
+  `railties/lib/rails/application/configuration.rb` @ 8-1-stable, and the guides'
+  ["Default Values for Target Version 8.1"](https://guides.rubyonrails.org/configuring.html), which
+  agree exactly.
+- **The three further gaps that diff found**, all now documented: `active_support.escape_js_separators_in_json`
+  `true → false` (U+2028/9 unescaped **everywhere** `to_json` runs, views included — wider than the
+  controller flip, and recorded with Rails' stated reasoning that ECMAScript 2019 legalised them in
+  string literals); `action_view.remove_hidden_field_autocomplete` `false → true` (`autocomplete="off"`
+  dropped from `form_tag`/`token_tag`/`method_tag` and the hidden params in `button_to`, `check_box`,
+  `select` multiple, `file_field`, extended to the form builder's `hidden_field` in **8.1.1**);
+  `action_view.render_tracker` `:regex → :ruby` (template dependencies parsed by prism/ripper instead
+  of a regex, so fragment-cache digest trees can shift on upgrade — now in `performance-caching.md`
+  §2, with the verified note that `<%# Template Dependency: … %>` still works, `ruby_tracker.rb`
+  keeping the same `EXPLICIT_DEPENDENCY` scan).
+- **And two claims we already shipped that the diff proved wrong.** `SKILL.md` and `project-setup.md`
+  called order-dependent finders a **deprecation**; under `load_defaults 8.1`
+  `raise_on_missing_required_finder_order_columns` is `true` and `.first`/`.last` on an unordered
+  relation **raises `ActiveRecord::MissingRequiredOrderError`**
+  ([activerecord/CHANGELOG.md @ 8-1-stable](https://github.com/rails/rails/blob/8-1-stable/activerecord/CHANGELOG.md)) —
+  so the advice was right and the severity was understated. And `performance-caching.md` read as
+  though 8.1 turned YJIT on; 7.2 did that (`config.yjit = true`), while **8.1 narrows it to
+  `!Rails.env.local?`** — off in development and test. Both corrected.
+- **`hotwire/references/turbo.md` §2 documented `data-turbo-disable-submitter`, an attribute Turbo
+  has never had** (#380) — and it sat inside the fenced Drive cheat sheet, so an agent wrote a no-op
+  onto a user's form and believed it had configured something. Grepping `src/` of the shipped tag
+  returns zero matches and the official reference does not list it. The behaviour the comment
+  described is real and *is* the default, but it is **global config, not markup**:
+  `Turbo.config.forms.submitter` takes `"disabled"` (sets `submitter.disabled` for the submit,
+  clears it after) or `"aria-disabled"` (sets the attribute and cancels clicks, so the button stays
+  focusable) —
+  [`src/core/config/forms.js`](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/config/forms.js).
+  The block line is replaced by `data-turbo-submits-with`, the per-element knob that does exist
+  ([`form_submission.js` L183–215](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/drive/form_submission.js),
+  [attributes reference](https://turbo.hotwired.dev/reference/attributes)). **Version boundary:**
+  verified against **Turbo 8.0.23**, the version `hotwire/SKILL.md` targets; the attribute exists in
+  no Turbo 8 release.
+- **`turbo.md` §2 described `data-turbo-track="dynamic"` as updating the element in place without a
+  reload** (#383) — it *removes* the element, and both halves of the sentence were wrong: the
+  mechanism (remove, not update) and the trigger (absent from the new `<head>`, not "the fingerprint
+  changed"). `unusedDynamicStylesheetElements` filters the current head's stylesheets that the new
+  head lacks, and `removeUnusedDynamicStylesheetElements()` deletes them
+  ([`page_renderer.js` L86, L119–122, L197–205](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/drive/page_renderer.js));
+  the official reference says the same in one line. It exists because Turbo's head merge is additive,
+  so page-specific CSS otherwise piles up forever. Two precisions the issue did not carry, both from
+  source: `"dynamic"` appears **once** in the whole tree, on that stylesheet filter, so it applies to
+  `<style>` / `<link rel="stylesheet">` and nothing else despite the reference's generic wording; and
+  the `reload` half of the sentence was correct and is unchanged. **Version boundary:** verified
+  against **Turbo 8.0.23**; behaviour unchanged across Turbo 8.
+- **`turbo.md` §5 scoped stream id-de-duplication to `append`/`prepend`** (#385) — since **Turbo
+  8.0.21** all four insertion actions de-duplicate, so the reference told agents an element-removal
+  would not happen when it does. `before`/`after` call `removeDuplicateTargetSiblings()`
+  ([`stream_actions.js`](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/streams/stream_actions.js),
+  [`stream_element.js` L78–93](https://github.com/hotwired/turbo/blob/v8.0.23/src/elements/stream_element.js));
+  added by [hotwired/turbo#1290](https://github.com/hotwired/turbo/pull/1290), shipped in
+  [v8.0.21](https://github.com/hotwired/turbo/releases/tag/v8.0.21). **Version boundary confirmed by
+  reading both tags**: `removeDuplicateTargetSiblings` is absent at v8.0.20 and present at v8.0.21 —
+  doctrine was correct for ≤ 8.0.20 and wrong from 8.0.21, the dangerous shape where a claim stays
+  true-looking inside one major version. The section is retitled to cover all four and states the
+  scope difference: `append`/`prepend` scan the target's **direct children**, `before`/`after` scan
+  the target's **siblings**, which is its parent's children *including the target itself*. That last
+  clause is not pedantry — a `before`/`after` whose template carries the target's own `id` removes
+  the target, loses the insertion point (`e.parentElement?.insertBefore`, and `targetElements`
+  re-queries by id) and **inserts nothing, silently**. Reproduced against a real DOM, not inferred.
+- **`turbo.md`'s §4, §5 and §8 lookup tables omitted real Turbo 8 API** (#386) — agents read absence
+  from a table as "no such thing". Added: `data-turbo-frame="_parent"`, which navigates the
+  *immediate* enclosing frame via `parentElement.closest("turbo-frame")` and falls back to a full page
+  visit when there is no enclosing frame or it is `disabled`
+  ([`frame_controller.js` L482–511 and L585–594](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/frames/frame_controller.js),
+  behaviour pinned by five functional tests; **Turbo ≥ 8.0.21**,
+  [hotwired/turbo#1446](https://github.com/hotwired/turbo/pull/1446));
+  the `refresh` action's `method` / `scroll`, which override the page's meta tags for that one
+  refresh (`page_view.js` L19, L63; **Turbo ≥ 8.0.21**,
+  [hotwired/turbo#1208](https://github.com/hotwired/turbo/pull/1208));
+  and `turbo:before-prefetch`, `turbo:frame-render` and `turbo:before-frame-morph`. Enumerating every
+  `turbo:*` dispatch in v8.0.23 gives **24** events against §8's 21 — exactly those three, so the
+  issue's list was complete. Two things it got only half right, corrected here: its enumeration
+  missed `src/http/`, which is where `turbo:fetch-request-error` is dispatched (§8 already listed it,
+  so nothing was wrong — but the method would not have caught it); and `turbo:before-frame-morph` is
+  dispatched **without** `cancelable`, unlike the element and attribute morph hooks beside it, so the
+  reference now says so. §5's `refresh` row also loses its "(morphing — §3)" gloss: the action honours
+  whatever is configured, and the meta-tag default is `replace`. **Version boundary:** `_parent` and
+  the refresh attributes are absent at v8.0.20 and present at v8.0.21 (both tags read); the three
+  events predate 8.0.21 and had simply never been listed.
 - **FIX — `coverage.md`'s Interaction-patterns table had outlived the work it tracked, in four of
   its nine rows** (#89). The component half of that matrix has been evidence-checked since #124;
   this half was hand-maintained prose, and it rotted quietly while the phases under this epic
@@ -2196,7 +2742,68 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   block, and held there by the new `skill routing` gate rather than by review.
 - The other three shipped skills were already clean: 42 reference files across four skills, all
   routed one level deep, every `SKILL.md` well inside the 500-line Level-2 budget (largest is
-  rails-8 at 227). Verified by running the gate, not by reading.
+  rails-8, 227 lines when this was measured and 240 after the 8.1 defaults work below).
+  Verified by running the gate, not by reading.
+- **The purchase flow is documented, and the checkout exception is now stated rather than implied**
+  (Refs #91 — the commerce family, shipped in slices; this is the purchase/checkout slice).
+  `crud-modal-pattern.md` said flatly *"treat full-page CRUD forms as a defect"* while
+  `page-anatomies.md` already shipped a full-page Checkout: two shipped rules contradicting each
+  other, which is the `doctrine-contradiction` class our own `code-review` skill names. The
+  exception is now named, scoped to four conditions that are properties of the Modal component
+  (dismiss affordances over a financial commitment, the page behind being the thing abandoned, the
+  focus trap vs a provider iframe, one address for a multi-step flow), and explicitly non-general.
+  **Architecture decision, not a framework claim** — the authority is the maintainer's own wording
+  in [#91](https://github.com/fmanimashaun/claude-skills/issues/91) (*"checkout is the one legitimate
+  multi-step, full-page flow … state it explicitly so agents don't force it into a modal"*), linked
+  where a citation would go. New `Checkout — the purchase flow` anatomy, new `Payment / card entry`
+  and `Promo / discount code` catalog entries, worked recipes for both.
+  - **The PCI framing in scope changed on 2025-03-31, and the intuitive version is the wrong one.**
+    PCI DSS v4.0.1's January 2025 SAQ A **removed** Requirements 6.4.3 and 11.6.1 (and 12.3.1) as SAQ
+    A line items and replaced them with an eligibility criterion — *"the merchant has confirmed that
+    their site is not susceptible to attacks from scripts that could affect the merchant's e-commerce
+    system(s)"* — which per PCI SSC **FAQ 1588** applies **only** to merchants embedding the
+    provider's payment form in iframe(s) and *"does not apply to … a webpage that redirects
+    customers"*. Writing "your iframe checkout must satisfy 6.4.3 and 11.6.1 under SAQ A" would have
+    been #142's shape exactly: traceable to a real source, wrong today. Sources: PCI SSC blog,
+    [SAQ A updates](https://blog.pcisecuritystandards.org/important-updates-announced-for-merchants-validating-to-self-assessment-questionnaire-a)
+    and [FAQ 1588](https://blog.pcisecuritystandards.org/faq-clarifies-new-saq-a-eligibility-criteria-for-e-commerce-merchants).
+    Version boundary: PCI DSS **v4.0.1**, SAQ A January 2025 revision, effective **31 March 2025**.
+  - **Cited, with the version each claim is true at.** WCAG 2.2 —
+    [3.3.7 Redundant Entry (**A**)](https://www.w3.org/WAI/WCAG22/Understanding/redundant-entry.html),
+    whose Understanding doc's own example is the billing/delivery address checkbox;
+    [3.3.4 Error Prevention (Legal, Financial, Data) (**AA**)](https://www.w3.org/TR/WCAG22/#error-prevention-legal-financial-data),
+    which the review step answers via *Confirmed*;
+    [2.2.1 Timing Adjustable (**A**)](https://www.w3.org/TR/WCAG22/#timing-adjustable) for a cart
+    hold, with a note not to stretch its Real-time Exception (an auction) to a reservation timer;
+    [1.3.5 Identify Input Purpose (**AA**)](https://www.w3.org/WAI/WCAG22/Understanding/identify-input-purpose.html)
+    plus [H98](https://www.w3.org/WAI/WCAG22/Techniques/html/H98)'s scope limit (*"only place
+    requirements on input fields collecting information about the user"*).
+    WHATWG HTML — the `cc-*` autofill names, the fixed token order (`section-*` → `shipping`/`billing`
+    → `home`/`work`/… → field name), and the `type=number` note that names **credit card numbers and
+    US postal codes** as inappropriate. Turbo **8.0.23** — the submitter is auto-disabled for the
+    duration of a submission, `data-turbo-submits-with` supplies the in-flight label,
+    `data-turbo="false"` opts a provider redirect out, and a submission expects **303** / **422**.
+    Tailwind **v4** — `tabular-nums`.
+  - **Two claims in the issue body were verified false and are not implemented** (#142's rule, again).
+    It required money at *"`decimal(15,2)` per the rails-8 doctrine"*: rails-8's actual money doctrine
+    is `ecosystem-gems.md` — *"store integer minor units (`price_cents`) always"* — and the string
+    `decimal(15,2)` appears nowhere in this repo (`models.md` shows `decimal{10,2}` for a generic
+    price). Writing it would have put a storage rule into a **design** skill that contradicts our own
+    **framework** skill. It also required money in `font-mono`, which `brand.md` scopes to *reference
+    numbers, SLA timers, code, timestamps*. Doctrine now says money is `tabular-nums`, an order
+    reference is `font-mono`, and storage is rails-8's call — the discrepancy is flagged on the issue
+    rather than decided silently.
+  - **`Ui::AddressFieldsComponent` was referenced by the Checkout anatomy with no `autocomplete`
+    tokens at all** — a 1.3.5 gap in shipped doctrine, multiplied by every screen that renders an
+    address. It now takes `mode: :shipping | :billing | :none` and emits `billing postal-code`-shaped
+    tokens in the spec's required order. Its call site is updated with it.
+  - **APG has no pattern for a wizard, a checkout or a coupon field** — re-confirmed against the
+    current index, so the multi-step shape reuses the existing `Stepper / wizard` contract (already
+    ours, from #95) instead of a second mechanism, and the promo-code shape is decided as ours. The
+    two HTML-spec rules that settle it: a `<form>`'s content model is *"Flow content, but with no
+    `form` element descendants"*, and *"a form element's default button is the first submit button in
+    tree order"* — so the code entry is a **sibling** form, never nested and never the checkout
+    form's default button.
 
 ### 1.29.1 — 2026-08-01
 
@@ -3576,6 +4183,182 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Broken links and missing assets are caught now** (#108, epic item E — *"classic, cheap,
+  currently absent"*). Everything the crawl added in 1.17.0–1.18.0 judges the routes **you listed**.
+  Nothing looked at what those pages link **to**, so a footer link to `/pricng` was invisible by
+  construction: the typo is not in `qa/routes.json`, so it is never crawled, never judged, never
+  reported. `crawl_collector.js --links` inventories every `href`, every fragment target and every
+  4xx/5xx sub-resource, then probes each distinct same-origin target **once** — and
+  `link_audit.py` judges it.
+  - **This pays for a carve-out that had no owner.** `interaction_report.py` exempts `a[href]` from
+    `dead-control` because "navigation IS its effect; a crawl that stays on the page cannot observe
+    it" — correct, and it left every link on the site judged by *nothing*. The exclusion is only
+    safe once something else owns link targets.
+  - **A 404 sub-resource is not a failed request**, which is why `crawl.json`'s `failedRequests` did
+    not already cover it: Playwright fires `requestfailed` for network-level failures only — *"HTTP
+    error responses, such as 404 or 503, are still successful responses from HTTP standpoint, so
+    request will complete with `requestfinished`"*
+    ([playwright.dev/docs/api/class-request](https://playwright.dev/docs/api/class-request)). A
+    `<img>` returning a well-formed 404 passes every status check written. Responses are therefore
+    recorded by status, a different mechanism rather than a duplicate one.
+  - **401 and 403 are `unverified`, not broken.** The crawl is unauthenticated, so an auth-gated
+    target is *unknown*; reporting every one as a dead link is how the rule gets switched off within
+    a day, taking every genuine 404 with it. Same for a target no probe reached. Neither is a
+    finding and neither is a pass — both are named on every run. The carve-out is pinned to exactly
+    `{401, 403}` by a near-miss: a 410 is still a broken link.
+  - **`#` and `#top` are silent; `#topic` is not.** Both of the first two are the top of the
+    document with no matching element required, per the HTML Standard's *scroll to the fragment*
+    ([html.spec.whatwg.org](https://html.spec.whatwg.org/multipage/browsing-the-web.html)) — matched
+    case-insensitively and **in full**, so a carve-out on three letters cannot swallow every dead
+    fragment beginning with them. `id` and `a[name]` both count as targets, also per the spec.
+  - **The scheme is read from the start of the `href`, never as a substring** — so
+    `/contact?to=mailto:x@y` is an ordinary internal link and is still judged. That near-miss caught
+    a real case on the first live run.
+  - **One broken target is one finding** (#118), with a page count and up to three example routes.
+    The count is **distinct pages, not occurrences**: a real run recorded the same missing image
+    eight times for one page, because the interaction sweep navigates away and back and each return
+    re-requests it. "8×" for a one-page defect is #118's inflated arithmetic in miniature.
+  - **An inventory with no `base` origin is refused, not judged.** Without it nothing can tell an
+    internal link from a third-party one, and the failure would be *silent*: every external link
+    degrades to "unverified" and the report fills with noise. Same for an inventory with no pages
+    or with no link recorded at all — a collector that inventoried nothing reports zero broken links
+    for the same reason a healthy site does.
+  - 69 fixtures, 8 declared mutations all caught, registered in `GATES` and in `checks.json` so it
+    runs at a project's `dev → main`.
+
+- **FIX — the crawl collector could not launch a browser at all, and `--links` found it** (#356
+  regressed). The fix for #356 resolved Playwright's path from the project correctly and then
+  `await import()`ed it as ESM. `playwright/index.js` is CommonJS, so Node infers its named exports
+  with cjs-module-lexer, and for this package that inference is wrong: the namespace it produces is
+  `clientEventEmitter, default, getPlaywrightVersion, … utils` — **no `chromium`**, which lives on
+  `.default`. The destructure bound `undefined`, the `try` caught nothing because the import
+  *succeeded*, and the script died 60 lines later on `chromium.launch()`. It is now the synchronous
+  `projectRequire('playwright')`, with an explicit exit-2 if the browser is still absent so the
+  symptom is never again an unrelated `TypeError`.
+  - **The documented invocation was unrunnable for the second release running**, and the reason is
+    the one 1.19.1 already wrote down: the collector holds no rule, so nothing tests it, so nobody
+    ran it. Found in ten seconds by pointing it at a real server, which is the only thing that ever
+    finds this.
+  - Also fixed while there: `responses` was attributed to the wrong routes. The listener stayed
+    attached through the interaction sweep, whose force-clicks navigate away and back, so one page's
+    missing image was reported against three routes — our own driving reported as the app's defect.
+    It is detached before the sweep, and `responses` now means "what the page load asked for".
+- **`theme_parity.compare()` walked the whole light-side element list once per dark element**
+  (#360). The membership test was a set comprehension written *inside* the loop, and it does not
+  depend on the loop variable — so a page's elements were re-scanned for every one of a page's
+  elements, on a rule whose entire input is a page of elements. Hoisted; behaviour identical, and
+  the existing `an element present only in dark fires` fixture covers the branch unchanged.
+  - It survived a correctness review because it is **not incorrect**, which is precisely the
+    argument for having an `efficiency` dimension at all. Found by the new `quality-pass` skill's
+    detection rule for it: *read every loop body for expressions containing no loop variable.*
+- **Computed blast radius** (#134): `plugins/qa-flow/scripts/blast_radius.py` derives the
+  regression scope from the change instead of reasoning it out. `/qa-flow:verify` Phase 2 and
+  `qa-lead` now take its output as the mechanical floor, and every inclusion prints **the edge that
+  justified it** — an unexplained scope list is a different guess, not a derivation.
+  - **Tier 3, deterministic** (`docs/harness-doctrine.md` §1/§10): a script with an exit code, not
+    an instruction an agent may reinterpret. It is a **check, not a hook**, so the advisory-vs-gate
+    question does not arise; the ladder in §4 is walked in full — both-direction selftest, a
+    declared mutation per rule, registered in `GATES`, and three states where a skip is not a pass.
+  - **Change type: architecture (our own design), not a framework claim.** No `doctrine-verifier`
+    verdict was sought and none applies: the artefact shapes it consumes (`{nodes, edges, flows}`,
+    `routes.json`) are ours, and the risk axes it enforces are quoted verbatim from
+    `/qa-flow:verify`'s existing rule rather than invented. The one external claim it leans on —
+    Rails' `app/…` layout and `spec/…`/`test/…` naming — is *reused*, not extended.
+  - **A consumer, not a second extractor** (issue thread, maintainer decision). It reverse-walks
+    the graph `/rails-flow:graph` already emits: `radius(node) = { e.from : e.to == node }`,
+    transitively to `--depth`. One uniform edge direction (subject → object) is what makes an
+    incoming edge mean exactly "who depends on this".
+  - **Not `findings.py`'s graph, deliberately.** v1.54.0's records form a graph over *defects*
+    (`caused_by`/`blocks` between findings, for fix order). Blast radius is a graph over *code*
+    (files/nodes/edges, for test scope). Same idea, disjoint node types — folding one into the
+    other would have meant inventing a synthetic finding per source file, which is a category
+    error, not reuse.
+  - **The convention fallback ships and works with no graph tool installed**, on any Rails
+    project: model → its specs and its conventional controller, controller → its routes and
+    request/system specs, view → its action, migration → its table. When the graph is present but
+    has never heard of a changed file, conventions still cover it and the report says which
+    derivation accounted for each file — a graph that never indexed a file must not make it
+    invisible.
+  - **Integrates with the route table (#119) rather than re-deriving routes.** Route names come
+    from `qa/reports/routes.json` in both modes; a route the graph names and the table does not is
+    **flagged** rather than silently accepted.
+  - **The five risk axes are enforced, not advised.** auth · tenancy · money · migration ·
+    shared-concern force the wide selection and exit 1 ("present for approval"), which is what
+    `/qa-flow:verify` already promised in prose and nothing made true. `qa.config.yml`'s
+    `blast_radius.high_risk` is **additive only** — a key that could empty an axis would make a
+    non-negotiable configurable, and a fixture pins that declaring `migration: []` changes nothing.
+  - **Why this guesses at risk where `route_coverage.py` refuses to guess at auth.** The direction
+    of the error differs: over-crediting coverage fails unsafe (it retires the question),
+    over-including a risk axis fails safe (it widens scope and asks). Every hit prints the pattern
+    that fired it. The `authenticated` graph tag is deliberately *not* a signal — Rails 8's
+    generated auth is opt-out, so it is the default state of every controller, and a classifier
+    that always fires is one a team switches off.
+  - **A floor, never a ceiling.** The extractor is regex-based, so metaprogrammed structure is
+    invisible to it; the graph's own `notes` are reprinted in the report and the rule is printed on
+    every run. Enrichment edges from `graphify`/`code-review-graph` are included and **labelled
+    with the tool**, `--no-enrichment` reproduces a bare-runner walk, and a fixture pins that the
+    **verdict is identical either way** — so a machine-local tool can never make CI and a laptop
+    disagree about whether to stop.
+  - **Nothing narrows silently.** Depth-cutoff drops, non-app files, declared exclusions,
+    conventional spec paths that do not exist, and the Minitest-vs-RSpec narrowing (observed from
+    which directory exists, not guessed) are each printed with a reason — including when the list
+    is empty.
+  - Exit codes 0 clean · 1 findings · 2 unusable, **72 selftest checks** across both directions and
+    **20 declared mutations** in `scripts/mutation_check.py`, all caught. Registered as the
+    `qa-flow blast radius` gate. Deliberately **not** in `plugins/qa-flow/checks.json`: its input is
+    a per-run diff, not a committed artefact, and a project gate that goes red because a PR touched
+    a migration is a gate a team turns off.
+- **Focus restore is measured now, not claimed** (#105, criterion 4's second half). Criterion 4 reads
+  *"flags dead controls **+ missing focus restore**"*; only the first half shipped in 1.17.0, and the
+  omission was not noted anywhere. `crawl_collector.js` now presses **Escape** on a layer it just
+  opened and records whether the layer closed and whether `document.activeElement` **is** the trigger
+  element — identity, not a selector match. `interaction_report.py` judges it as
+  `focus-restore-missing`.
+  - **It is the measured half of something already reported.** `a11y-auditor` counts
+    `Restore Failures` per overlay in its CSV and `validate_evidence.py`'s keyboard profile gates that
+    CSV's *arithmetic* — but the number in the column is the agent's own claim and nothing compares it
+    to a browser. That is the claims-vs-enforcement shape this repo warns about, sitting inside the
+    a11y pass. This asks the DOM.
+  - **The narrow scope is the whole design, and it contradicts the issue text.** #105 asked for a rule
+    on anything whose trigger flips `aria-expanded`. Verified against the live WAI-ARIA APG
+    (2026-08-01), that is wrong: focus-return-on-Escape is mandated for
+    [Dialog (Modal)](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) (*"When a dialog closes,
+    focus returns to the element that invoked the dialog"*),
+    [Menu/Menubar](https://www.w3.org/WAI/ARIA/apg/patterns/menu/) (*"Escape: Close the menu that
+    contains focus and return focus to the element or context … from which the menu was opened"*) and
+    [Combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) (*"Escape: Closes the popup and
+    returns focus to the combobox"*) — and is **absent entirely** from the base
+    [Disclosure](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) pattern, whose Keyboard
+    Interaction table has no `Escape` row, and from
+    [Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/), which never mentions Escape. So the
+    rule as the issue described it would have flagged **every FAQ accordion and every listbox** against
+    APG's own spec. Those are measured, printed *out of scope* by name, and never counted — with the
+    negative fixtures and a declared mutation that removes the scope guard.
+  - **The trigger's role is the discriminator, not the popup's.** A plain button controlling a listbox
+    is a standalone listbox (exempt); the same popup under `role="combobox"` is in scope. Fixtured as a
+    near-miss pair, because keying off the popup alone silently loses the combobox case.
+  - `closedOnEscape`/`focusRestored` are **`null` when the probe did not complete**, never `false` — an
+    overlay whose dismissal could not be observed is named, exactly like a control that was never
+    clicked, and is not a pass.
+  - The dismissal is judged **before** the `dead-control` exclusions: a link's *navigation* is
+    unobservable from a sweep that stays on the page, but the dialog it opened is entirely observable.
+    A declared mutation reorders the two.
+- **FIX — `a11y-auditor` told agents to demand `Escape` of every "overlay", undefined** (#105). The
+  same over-broad claim the rule above refuses, sitting in shipped doctrine an agent follows verbatim:
+  *"per overlay, assert the three individually … `Escape` closes it, focus returns to the trigger"*
+  with no definition of *overlay*, so an FAQ accordion counts, inflating the `Overlays` denominator and
+  filing `S1`s against behaviour APG does not require. Found by grepping for the pattern after the
+  judge's scope was settled — one instance of a contradiction travels in groups. The column is now
+  scoped to the same three patterns, with the same citations, and says so.
+- **FIX — the qa-flow browser collector had no syntax gate, and the obvious one cannot fail.**
+  `crawl_collector.js` is a shipped `.js` file an agent runs in a user's project;
+  `lint_markdown_code.py` only reads fenced blocks, so nothing checked it. Worse, **`node --check
+  <file>` exits 0 on an ES module with a blatant syntax error** (verified on Node 24:
+  `import x from "y"; const = ;` passes) — it is detected as ESM and the check silently does nothing,
+  so a gate written the obvious way would have passed on anything. `interaction_report.py
+  --check-collector` feeds the source in on **stdin with `--input-type=module`**, is registered in
+  `GATES`, SKIPs loudly when `node` is absent, and carries its own negative test plus a mutation that
+  makes it always-succeed.
 - **Visual regression: the two acceptance criteria 1.19.0 did not actually meet** (#112). The issue
   asked for five things and shipped three. Re-verified by running each, not by reading the code.
   - **Ignore regions were decoration, not a feature.** `ignored` was in the schema from day one,

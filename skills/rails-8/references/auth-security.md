@@ -153,6 +153,33 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
 - XSS: ERB escapes by default. `raw`/`html_safe` only for content you
   control; user HTML goes through `sanitize` (allowlist). Never interpolate
   user input into JS in templates without `j`/`json_escape`.
+- **`render json:` no longer HTML-escapes** — `load_defaults 8.1` sets
+  `config.action_controller.escape_json_responses = false`, so the JSON renderer stops
+  escaping `<`, `>`, `&`, U+2028 and U+2029. Rails' own changelog names the risk:
+  *"vulnerabilities when the resulting JSON is embedded in HTML"*. The payload is fine
+  while it is **consumed** as `application/json`; it is dangerous the moment a JSON body
+  is inlined into a document. So:
+  - **Never inline JSON into HTML raw.** In a template the Rails idiom is
+    `<%= raw json_escape(@user.to_json) %>` inside a `<script>` — `json_escape` escapes
+    all five characters itself and is untouched by the 8.1 flips. Better still, ship it
+    as `<script type="application/json">…</script>` and `JSON.parse` it client-side.
+  - Per-response restore: `render json: @posts, escape: true`.
+  - **Do not** restore it globally with
+    `config.action_controller.escape_json_responses = true` — 8.1 deprecates that
+    assignment (*"is deprecated and will have no effect in Rails 8.2"*).
+  - JSONP is **only partly** exempt. With `:callback` present the renderer skips the flip, so
+    `<`, `>` and `&` are still escaped — but U+2028/U+2029 are not, because those are
+    governed by the separate global flip below, which has no `:callback` carve-out. Read
+    Rails' *"escaping will still occur when the `:callback` option is set"* as covering the
+    HTML entities only.
+- **`to_json` no longer escapes the JS line separators either** —
+  `load_defaults 8.1` sets `config.active_support.escape_js_separators_in_json = false`,
+  so U+2028/U+2029 pass through **everywhere** `ActiveSupport::JSON` encodes, views
+  included — a wider blast radius than the controller flip above. `<`, `>` and `&` are
+  still escaped there (`escape_html_entities_in_json` is untouched). Rails' stated
+  reasoning is that ECMAScript 2019 made both characters legal inside JS string literals,
+  so this is a behaviour change rather than a hole; `j`/`escape_javascript` and
+  `json_escape` still escape them, which is one more reason the bullet above is the rule.
 - Command injection: no backticks/`system` with interpolated input —
   `system("cmd", arg1, arg2)` array form if shelling out is unavoidable.
 
@@ -166,14 +193,31 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
   true`, `same_site: :lax` (default).
 - Open redirects: never pass params to `redirect_to` without `allow_other_host`
   awareness. Rails raises by default — arrived in **7.0** as
-  `raise_on_open_redirects`, and **8.1 replaced that with
-  `action_on_open_redirect`** (`:log` / `:notify` / `:raise`). The mattr default is
-  `:log`, but framework defaults set `:raise`, so a fresh 8.1 app still raises.
-  **"Another host" is an exact host match — subdomains count**, so `app.` → `admin.`
-  is a cross-host redirect.
+  `raise_on_open_redirects`; **8.1 *added* `action_on_open_redirect`**
+  (`:log` / `:notify` / `:raise`) and the `load_defaults "7.0"` block sets it to
+  `:raise`, so a fresh 8.1 app still raises. It did **not replace** the older flag:
+  `raise_on_open_redirects` is still a live mattr (default `false`) and still takes
+  precedence — the moment it is true the redirect raises whatever
+  `action_on_open_redirect` says. **"Another host" is an exact host match — subdomains
+  count**, so `app.` → `admin.` is a cross-host redirect.
+  - **The reverse precedence is the trap on an upgrade.** An app that *explicitly* sets
+    `config.action_controller.raise_on_open_redirects = false` has its framework-default
+    `action_on_open_redirect = :raise` **silently downgraded to `:log`** — open redirects
+    then warn and proceed. Rails does emit the "deprecated" warning, but only for apps
+    that set the old key at all. Delete the old setting rather than carrying it forward.
   - **Prefer `config.action_controller.allowed_redirect_hosts` (new in 8.1) over
     `allow_other_host: true`.** The flag disables the check for that *entire call*;
     the allowlist permits only the hosts you name and keeps every other host blocked.
+- **Path-relative redirects raise under `load_defaults 8.1`** — the sibling protection
+  in the same area, and the one that catches new code. A `String` target starting with
+  neither `/`, `?`, a scheme, nor `//` has the current protocol and host prepended
+  **with no separator**, so `redirect_to "example.com"` sends the browser to
+  `http://yourdomain.comexample.com` and `redirect_to "@attacker.com"` sends it to
+  `http://yourdomain.com@attacker.com` — which browsers read as `userinfo@host`, i.e. a
+  redirect to the attacker's site. `config.action_controller.action_on_path_relative_redirect`
+  takes `:log` (the mattr default) / `:notify` / `:raise`, and **`load_defaults 8.1` sets
+  `:raise`**, raising `ActionController::Redirecting::PathRelativeRedirectError`. Fix the
+  target — a path helper, or a leading slash — rather than lowering the setting.
 - **Host authorization (`config.hosts`) is enabled in development and EMPTY in
   production** — where the list is empty the middleware returns immediately and does
   **nothing**. The Rails security guide says it plainly: *"It is enabled by default in

@@ -84,8 +84,8 @@ end
 SimpleCov 1.0 notes: `add_group` → `group` (renamed in **1.0.0**, alongside `add_filter` →
 `skip` and `track_files` → `cover`; the old names keep working and each warns).
 String filters now match at path-segment boundaries — `"lib"` matches `/lib/` but no
-longer `/library/`; use a Regexp for substring matching. Requires Ruby >= 3.2 (already
-inside this skill's 3.4+ floor).
+longer `/library/`; use a Regexp for substring matching. Requires Ruby >= 3.2, which
+this skill's **Ruby 3.4** floor already satisfies.
 
 `spec/rails_helper.rb` — the important settings:
 
