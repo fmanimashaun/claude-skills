@@ -2316,6 +2316,68 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     not pin Kamal (`gem "kamal", require: false`), and the behaviour is unchanged through the current
     2.12.0. Nothing here is Rails-version-dependent — it is a Kamal release, so the old "new in 8.1"
     framing was loose as well.
+- **fidara-design: the Navigation family is documented — app header / navbar, sidebar / vertical, and
+  Tabs** (Refs #95, the Phase-2 umbrella's *Navigation* group, which asks to add `vertical-navigation`
+  and *"refine existing navbars/tabs/pagination/sidebar-nav"*). Three `documented` rows in
+  `coverage.md` — *Navigation — header / navbar*, *Navigation — sidebar / vertical*, *Tabs* — rested
+  on **eight lines** carrying no variant × size × state axis, no responsive rules, and one a11y
+  attribute between them, while the matrix told agents to *"build it straight from that entry"*.
+  Verified against [ARIA in HTML](https://www.w3.org/TR/html-aria/#el-nav),
+  [HTML §4.3.4 `nav`](https://html.spec.whatwg.org/multipage/sections.html#the-nav-element),
+  [APG Landmark Regions](https://www.w3.org/WAI/ARIA/apg/practices/landmark-regions/#aria_lh_step3),
+  [ARIA 1.2 `aria-current`](https://www.w3.org/TR/wai-aria-1.2/#aria-current), and WCAG 2.2
+  [2.4.5](https://www.w3.org/WAI/WCAG22/Understanding/multiple-ways) (AA),
+  [2.4.11](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum) (AA, new in 2.2),
+  [2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum) (AA),
+  [3.2.3](https://www.w3.org/WAI/WCAG22/Understanding/consistent-navigation) (AA).
+- **The landmark-naming rules are written once, not per row** — Breadcrumbs, Pagination, the rail and
+  the bar all land on them. Three carry a boundary that is easy to overstate and is now stated at its
+  real strength: unique labels for multiple `navigation` landmarks are an **APG "should", not a spec
+  MUST**; *"If a landmark is only used once on the page it may not require a label"*; and identical
+  repeated instances (pagination above and below one table) may **share** a label — which is exactly
+  the shape the Pagination row already ships.
+- **A Level A criterion had no mention anywhere in the design skill: WCAG 2.4.1 Bypass Blocks.** No
+  skip link in `components.md`, `page-anatomies.md` or `component-implementations.md`, while
+  `qa-flow`'s `a11y-auditor` already *reports* a `Skip Link` column — we audited for a thing we never
+  told anyone to build. Now in the base-layout contract, with two corrections to the recipe everyone
+  writes: (1) `tabindex="-1"` on `<main>` is load-bearing, because HTML's
+  [scroll-to-the-fragment](https://html.spec.whatwg.org/multipage/browsing-the-web.html#scrolling-to-a-fragment)
+  steps run the focusing steps *"with the Document's viewport as the fallback target"* and a plain
+  `<main>` is not a focusable area, so the **viewport** takes focus — while
+  [G1](https://www.w3.org/WAI/WCAG22/Techniques/general/G1) tests only the outcome and never names the
+  attribute; and (2) `sr-only` + `focus-visible:not-sr-only` + `fixed`/`absolute` is a **coin flip**,
+  because both set `position` and Tailwind resolves same-property collisions by generated-stylesheet
+  order, not class order — *"you should just never add two conflicting classes to the same element"*
+  ([Tailwind v4](https://tailwindcss.com/docs/styling-with-utility-classes#conflicting-utility-classes)).
+  One `position` utility, `top` does the reveal.
+- **Tabs: the shipped catalog row contradicted its own worked implementation, and the implementation
+  was right.** The row prescribed `data-[state=active]:border-primary` while
+  `component-implementations.md` used `aria-[selected=true]:border-primary` — and
+  [APG](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/) already requires `aria-selected`, so a second
+  state source was never needed. Row corrected to the attribute the pattern mandates.
+- **Tabs: four required wirings were missing from the worked markup** — no `id` on any tab, therefore
+  no `aria-labelledby` on any panel (*"Each element with role tabpanel has the property
+  aria-labelledby referring to its associated tab element"*, stated unconditionally), no accessible
+  name on the `tablist`, and no `aria-orientation`. All four now emitted; the panel's
+  `aria-labelledby` is called out because it is the one routinely dropped.
+- **Tabs: three keyboard rows are marked `(Optional)` by APG and were being carried as required**;
+  `Home`/`End` in `interaction-stimulus.md`'s contract table now say so. Two omissions filled from the
+  same pattern: a **horizontal tablist must not listen for ↑/↓** (*"so those keys can provide their
+  normal browser scrolling functions even when focus is inside the tab list"*), and `Shift + F10` /
+  `aria-haspopup` exist only when a tab owns a popup menu. Checked for a phantom the #142 way — **no
+  APG revision, current or the 2017 1.1 snapshot, contains `Ctrl+Delete`**, so it is not written down.
+- **Three claims are OURS and say so, because the gate came back with no upstream** (design decisions
+  under CLAUDE.md's *What the gate covers* carve-out, recorded on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95)): (1) **"tabs are not page
+  navigation"** — the Tabs pattern has no "when not to use" section and APG nowhere warns against it,
+  so the previous unattributed phrasing is now labelled as our position with our reasoning; (2)
+  **marking only the deepest active nav item with `aria-current`** — ARIA's *"SHOULD only mark one
+  element in a set"* governs peers and says nothing about an ancestor section and its child; (3)
+  **manual activation when a tab panel is a lazy `<turbo-frame>`** — inferred from APG's own
+  precondition (*"as long as their associated tab panels are displayed without noticeable latency.
+  This typically requires tab panel content to be preloaded"*), which a lazy frame cannot meet.
+- **`2.4.8 Location` is AAA and is now labelled AAA.** The "you are here" rail cue reads like an AA
+  obligation and is not one; what is AA is that the active state must not be colour alone (1.4.1).
 - **`rails-8/references/ecosystem-gems.md` §6 documented a pagy API that no longer exists** (#390).
   The snippet's `include Pagy::Backend` / `include Pagy::Frontend` and `pagy_nav(@pagy)` were
   removed wholesale in the version-43 redesign, with **no shims** — and since the skill wrote
