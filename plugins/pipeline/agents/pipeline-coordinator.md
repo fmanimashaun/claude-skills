@@ -38,6 +38,28 @@ both still fire — you run inside them, not around them). One stage per invocat
 unless the user says "run the whole pipeline", in which case chain until the next
 gate that needs a human (QA failure, production approval).
 
+## Stop conditions on a chained run (#128)
+
+A gate says when a stage may advance. It says nothing about when to stop **retrying** one,
+and that is the whole failure mode of an unattended chain. So a chained run is bounded by
+`${CLAUDE_PLUGIN_ROOT}/scripts/breaker.py` against `pipeline/run-ledger.jsonl`, and the
+doctrine behind the numbers is `${CLAUDE_PLUGIN_ROOT}/reference/stop-conditions.md`.
+
+- `breaker.py start --stages verify,certify,release` once, before the first stage. The limits
+  (3 attempts, 2 identical failure signatures, 120 minutes) are recorded there and **cannot be
+  widened later** — `check` reads them back and takes no threshold flags.
+- `breaker.py check <stage>` before spending on a stage. Exit `1` means STOP: do not attempt it.
+- `breaker.py record <stage> --outcome pass|fail --signature "<exact failure>"` after each.
+- On a STOP: `breaker.py stop <stage> --breaker <reason> --diagnosis "<what was tried, the exact
+  failure signature, the suspected cause>"`, then **end the run**. Nothing downstream of a
+  stopped stage is independent of it, so there is no unrelated work to continue with.
+- Close with `breaker.py report` and relay its word — `complete`, `partial` or `stopped` —
+  naming every stage not attempted. Never present a partial run as a finished one.
+
+The breaker never overrides a gate; it only decides whether you may try again. A refusal is not
+a licence to reach for `RAILS_FLOW_ALLOW_DEPLOY=1` — that override exists for a human's
+deliberate say-so on a working deploy, never as a way past a failing one.
+
 ## Token discipline
 
 Each stage spends tokens. State which stage you're about to run and its rough cost

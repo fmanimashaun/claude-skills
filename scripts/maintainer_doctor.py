@@ -117,6 +117,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
     ("token contrast", ("python3", "scripts/check_token_contrast.py")),
     ("token contrast selftest", ("python3", "scripts/check_token_contrast.py", "--selftest")),
+    # #360, and the same argument one skill along: the quality-pass worked example states how many
+    # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
+    # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
+    # disagreeing with the repo, exactly as the tier gates below reconcile a table against agents.
+    ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
+    ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
@@ -124,6 +130,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
     # also catches an agent's `model:` drifting from the doctrine that documents it (#127).
     ("rails-flow work order", ("python3", "plugins/rails-flow/scripts/check_handoff.py", "--selftest")),
+    # #130. Its riskiest rule is a SIMILARITY rule (no long run of a cited source reproduced in the
+    # brief), so most of its selftest is the silence direction — a blockquote, a fence, a table
+    # cell and a run one word under the threshold are all shapes that look like duplication.
+    ("rails-flow product brief", ("python3", "plugins/rails-flow/scripts/check_brief.py", "--selftest")),
     ("rails-flow claim extraction", ("python3", "plugins/rails-flow/scripts/extract_claims.py", "--selftest")),
     # #334. Its selftest also validates every SHIPPED checks.json -- that each names a real
     # script and supplies a required subcommand -- so a manifest defect fails here rather
@@ -145,6 +155,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                         "--agents", "plugins/pipeline/agents",
                         "--tiers", "plugins/pipeline/reference/model-tiers.md")),
+    # #128, the pipeline half. Its last checks run against the SHIPPED doctrine and the SHIPPED
+    # commands: that reference/stop-conditions.md still states the numbers and the four escapes the
+    # script declares, and that every pipeline surface describing an unattended re-run names the
+    # breaker. Fixtures prove the breakers fire; only those can see the doctrine drifting away from
+    # the code, which is the same defect one level up.
+    ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     ("qa-flow blast radius", ("python3", "plugins/qa-flow/scripts/blast_radius.py", "--selftest")),
@@ -153,6 +169,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     ("qa-flow interaction sweep", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--selftest")),
     ("qa-flow visual baselines", ("python3", "plugins/qa-flow/scripts/visual_baseline.py", "--selftest")),
+    ("qa-flow link audit", ("python3", "plugins/qa-flow/scripts/link_audit.py", "--selftest")),
     ("design-flow setup cross-check", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--quiet")),
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),

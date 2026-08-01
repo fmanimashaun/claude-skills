@@ -1290,6 +1290,122 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #360. Every mutation here makes a STALE NUMBER read as a fresh one, which is the only thing
+    # this checker can fail on. Note what is deliberately absent: no mutation asks whether a copy
+    # of a shape is justified, because the quality pass is advisory and a gate on taste would
+    # contradict the doctrine this guards.
+    Guard(
+        name="check_shared_shapes",
+        subject="scripts/check_shared_shapes.py",
+        selftest="scripts/check_shared_shapes.py",   # --selftest lives in the module itself
+        mutations=(
+            Mutation(
+                "the count comparison stops comparing, so a stale number passes",
+                "        if rows[shape.label] != len(hits):",
+                "        if False:",
+                "a wrong count in the table is DRIFT",
+            ),
+            # A `continue` rather than `if False:`: disabling the membership test would index a
+            # missing key and die with a KeyError, and a mutation that crashes before a labelled
+            # assertion is caught by a traceback rather than by the fixture written for it.
+            Mutation(
+                "a measured shape with no row in the table goes unreported",
+                '        if shape.label not in rows:\n'
+                '            findings.append(\n'
+                '                f"{shape.label}: measured in {len(hits)} file(s) and has NO row in'
+                ' the table. A "\n'
+                '                f"count nobody reads is not doctrine.")\n'
+                "            continue\n",
+                "        if shape.label not in rows:\n            continue\n",
+                "a shape with no row is reported",
+            ),
+            Mutation(
+                "the other direction of the join goes, so prose nothing measures passes",
+                "    for label in rows:",
+                "    for label in []:",
+                "a table row nothing measures is reported",
+            ),
+            Mutation(
+                "a pattern that matches nothing is accepted, so a rotted regex reads as a pass",
+                "        if not hits:",
+                "        if False:",
+                "a pattern that matches nothing is reported",
+            ),
+            Mutation(
+                "an empty marked table parses instead of raising",
+                "    if not rows:",
+                "    if False:",
+                "an empty marked table parsed instead of raising",
+            ),
+            # The corpus guard. With no roots every count is 0, every comparison is vacuous, and a
+            # gate over zero files reports exactly like a gate over a clean repo.
+            Mutation(
+                "the measured roots go empty, so every count is taken over no files",
+                'ROOTS = ("plugins", "scripts")',
+                "ROOTS = ()",
+                "the source walk finds the corpus files",
+            ),
+        ),
+    ),
+    # #108 item E. Five of these seven break a rule by making it fire MORE — the direction that gets
+    # a rule switched off. A link audit that reports every auth-gated page and every `mailto:` as a
+    # dead link is deleted within a day, taking every genuine 404 with it.
+    Guard(
+        name="link_audit",
+        subject="plugins/qa-flow/scripts/link_audit.py",
+        selftest="plugins/qa-flow/scripts/link_audit.py",
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
+        mutations=(
+            Mutation(
+                "the broken-link boundary moves to 500, so every 404 goes quiet",
+                "                elif isinstance(status, int) and status >= 400:",
+                "                elif isinstance(status, int) and status >= 500:",
+                "a 404 target is a broken link",
+            ),
+            Mutation(
+                "the unauthenticated carve-out widens past 401/403 and swallows a dead link",
+                "UNAUTHENTICATED_STATUSES = frozenset({401, 403})",
+                "UNAUTHENTICATED_STATUSES = frozenset({401, 403, 410})",
+                "a 410 is still a broken link",
+            ),
+            Mutation(
+                "the scheme test becomes a substring match, exempting any href containing 'mailto:'",
+                "    match = SCHEME.match(href.strip())",
+                '    match = re.search(r"([a-zA-Z][a-zA-Z0-9+.\\-]*):", href.strip())',
+                "an href CONTAINING 'mailto:' in a query is still judged",
+            ),
+            Mutation(
+                "the top-of-document carve-out goes, so every `#` and `#top` reports dead",
+                "            if fragment.lower() in TOP_FRAGMENTS:",
+                "            if False:",
+                "is the top of the document, not a dead fragment",
+            ),
+            Mutation(
+                "an un-inventoried anchor list stops being distinguished from an empty one",
+                "            if anchors is None:",
+                "            if anchors is None or not anchors:",
+                "a page with an EMPTY anchor list is still judged",
+            ),
+            Mutation(
+                "the document carve-out widens to every response, so no missing asset is reported",
+                '            if str(response.get("resourceType", "")) == DOCUMENT_RESOURCE:',
+                "            if True:",
+                "a 404 sub-resource is a missing asset",
+            ),
+            Mutation(
+                "findings group by rule alone, collapsing unrelated defects into one",
+                "        key = (rule, target)",
+                '        key = (rule, "")',
+                "two DIFFERENT broken targets are two findings",
+            ),
+            Mutation(
+                "an inventory with no base origin is judged instead of refused",
+                '    if not origin_of(str(data.get("base") or "")):',
+                "    if False:",
+                "no base origin, so internal cannot be told from external",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
@@ -1893,6 +2009,119 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #128, the pipeline half. Two of these break a fixture whose job is to stay SILENT -- a
+    # breaker that refuses a run which was progressing does not get tuned, it gets bypassed, and
+    # then nothing is bounded at all. The last one breaks neither: it drifts the CODE away from the
+    # shipped DOCTRINE, which only the real-file checks can see.
+    Guard(
+        name="breaker",
+        subject="plugins/pipeline/scripts/breaker.py",
+        selftest="plugins/pipeline/scripts/breaker_selftest.py",
+        # Read, not imported. The selftest's last checks run against the SHIPPED doctrine and the
+        # SHIPPED surfaces, and FAIL rather than skip when absent -- so the mutant needs them, or
+        # every mutation reports as "caught by the wrong fixture" and the real signal is buried.
+        needs=(
+            "plugins/pipeline/reference/stop-conditions.md",
+            "plugins/pipeline/commands/ack.md",
+            "plugins/pipeline/commands/deploy-cloud.md",
+            "plugins/pipeline/commands/install-hooks.md",
+            "plugins/pipeline/commands/pipeline.md",
+            "plugins/pipeline/commands/release.md",
+            "plugins/pipeline/commands/setup-cloud.md",
+            "plugins/pipeline/commands/setup-pipeline.md",
+            "plugins/pipeline/commands/status.md",
+            "plugins/pipeline/agents/kamal-configurator.md",
+            "plugins/pipeline/agents/pipeline-coordinator.md",
+        ),
+        mutations=(
+            Mutation(
+                "the attempt cap stops firing",
+                "    if len(failures) >= cap:",
+                "    if False:",
+                "three failures against a cap of three",
+            ),
+            Mutation(
+                "the no-progress detector stops firing",
+                "        if len(set(recent)) == 1:",
+                "        if False:",
+                "two identical failure signatures",
+            ),
+            Mutation(
+                "the signature normaliser strips digits, so a converging run reads as stuck",
+                '    return _WS.sub(" ", text).strip().lower()',
+                '    return _WS.sub(" ", re.sub(r"\\d+", "", text)).strip().lower()',
+                "a changing failure count is progress, not a stall",
+            ),
+            Mutation(
+                "the ordering rule stops firing, and gate-skipping returns",
+                "        if not _passed(records, earlier):",
+                "        if False:",
+                "release reached before certify passed",
+            ),
+            Mutation(
+                "the budget breaker stops firing",
+                "    if spent >= budget:",
+                "    if False:",
+                "the wall-clock budget is spent",
+            ),
+            Mutation(
+                "a passed stage may be re-attempted",
+                '    if _passed(records, stage):\n        return "already-passed", (',
+                '    if False:\n        return "already-passed", (',
+                "a passed stage is not re-attempted",
+            ),
+            Mutation(
+                "an override outside its bounds is accepted, so a cap becomes unbounded",
+                "        if not low <= value <= high:",
+                "        if False:",
+                "an attempt cap of 99",
+            ),
+            Mutation(
+                "a failure is recorded with no signature, making no-progress unfalsifiable",
+                '    if args.outcome == "fail" and not (args.signature or "").strip():',
+                "    if False:",
+                "a fail recorded with no signature",
+            ),
+            Mutation(
+                "`report` exits 0 on a partial run -- partial presented as complete",
+                '    if state == "complete":\n        return 0',
+                "    if True:\n        return 0",
+                "reporting an unfinished run",
+            ),
+            Mutation(
+                "exceeding the cap stops spoiling the verdict, so the breaker becomes advisory",
+                '        if len(failures) > limits["attempts"]:',
+                "        if False:",
+                "a cap exceeded then passed is still stopped",
+            ),
+            Mutation(
+                "a second `start` silently resets every attempt counter",
+                '            if state != "complete":',
+                "            if False:",
+                "restarting over an unfinished run",
+            ),
+            Mutation(
+                "an undiagnosed stop stops being named in the report",
+                '        if not str(stop.get("diagnosis", "")).strip():',
+                "        if False:",
+                "a stop with no diagnosis is named in the report",
+            ),
+            Mutation(
+                "a missing `started` disables the budget rule instead of being unusable",
+                '        raise Unusable(\n            "the `run` record carries no `started` '
+                "timestamp, so the budget cannot be measured. \"\n            \"That is unusable "
+                'input, not an unlimited budget."\n        )',
+                "        return float(0)",
+                "a run record with no started timestamp",
+            ),
+            Mutation(
+                "the bound widens in the code while the doctrine still states the old one",
+                '    "attempts": (1, 10),',
+                '    "attempts": (1, 99),',
+                "allowed range 1..99",
+            ),
+        ),
+    ),
     # #158. The routing regex is the mutation that matters here. Its whole job is telling a real
     # dispatch entry apart from prose that happens to name the file, and getting that wrong in the
     # LOOSE direction is silent: every reference looks routed and the gate reports clean forever.
@@ -1935,6 +2164,115 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+   # rails-flow #130. FIVE of these eleven break a fixture whose job is to stay SILENT, because the
+   # centrepiece is a SIMILARITY rule and similarity rules are false-positive machines: a brief and
+   # the PRD it indexes describe the same product in the same words to the same reader. A
+   # blockquote is quotation, a fenced block is quoted code, a coverage-map cell quotes the
+   # source's own heading BY DESIGN, and shared product nouns are not a copy. Two more guard the
+   # carve-outs that keep the prose rules usable at all.
+   Guard(
+       name="check_brief",
+       subject="plugins/rails-flow/scripts/check_brief.py",
+       selftest="plugins/rails-flow/scripts/check_brief_selftest.py",
+       # The self-containment rules are IMPORTED from check_handoff rather than copied -- "what
+       # counts as a reference to the conversation" is one decision, and two copies of it would be
+       # the second-source-of-truth failure this checker exists to police. check_criteria comes
+       # along because check_handoff imports it.
+       deps=(
+           "plugins/rails-flow/scripts/check_handoff.py",
+           "plugins/rails-flow/scripts/check_criteria.py",
+       ),
+       # Read, not imported. The selftest's last checks run the REAL command against this
+       # checker's section contract and FAIL rather than skip when absent.
+       needs=("plugins/rails-flow/commands/brief.md",),
+       mutations=(
+           Mutation(
+               "the duplication threshold collapses and shared vocabulary reads as a copy",
+               "DUP_WINDOW = 12",
+               "DUP_WINDOW = 4",
+               "eleven shared words is shared vocabulary",
+           ),
+           Mutation(
+               "blockquotes stop being exempt, so quoting the user is duplication",
+               '                and not stripped.startswith(">")',
+               "                and True",
+               "a blockquote of the same words is attributed quotation",
+           ),
+           Mutation(
+               "table rows stop being exempt, so the citation mechanism flags itself",
+               '                and not stripped.startswith("|")',
+               "                and True",
+               "a table row quoting the source's own heading",
+           ),
+           Mutation(
+               "fenced blocks stop being exempt from the duplication rule",
+               "                not fenced and bool(stripped)",
+               "                bool(stripped)",
+               "a fenced block of the same words is quoted code",
+           ),
+           Mutation(
+               "the heading disqualifier loses its plural (the real bug a fixture found)",
+               'rf"\\b{re.escape(d)}s?\\b"',
+               'rf"\\b{re.escape(d)}\\b"',
+               "is not the scope section",
+           ),
+           Mutation(
+               "the mode cross-check widens back to the whole line and can never fire",
+               'clause = re.split(r"[.|]", line[found.end():], maxsplit=1)[0][:60]',
+               "clause = line",
+               "the mode letter and the mode word disagree",
+           ),
+           Mutation(
+               "a locator stops being resolved, so a citation only has to name a real file",
+               "                if _collapse(locator) not in _collapse(body):",
+               "                if False:",
+               "a reference whose locator is not in the file",
+           ),
+           Mutation(
+               "an `answered` row stops needing a source",
+               '        if row.state == "answered" and not SOURCE_REF_RE.search(row.source):',
+               "        if False:",
+               "an `answered` row citing no source",
+           ),
+           Mutation(
+               "an open question stops needing an owner",
+               "        if not OWNER_RE.search(_strip_code(text)):",
+               "        if False:",
+               "an open question with no owner",
+           ),
+           Mutation(
+               "TBD stops being carved out of Open questions (the false-positive direction)",
+               "            if section is open_questions:",
+               "            if False:",
+               "TBD inside the open questions is that section's job",
+           ),
+           Mutation(
+               "the `- None.` carve-out stops covering an explicitly empty open-questions section",
+               "    if body and all(NONE_ONLY_RE.match(line) for line in body.splitlines()):",
+               "    if False:",
+               "an explicitly empty open-questions section is a real answer",
+           ),
+           Mutation(
+               "a coverage gap stops needing to be recorded anywhere",
+               "    if open_questions.bullets():",
+               "    if True:",
+               "a gap in the map and no open question recorded",
+           ),
+           Mutation(
+               "a cited `D-nnn` stops being resolved against the decisions file",
+               "        if num not in defined:",
+               "        if False:",
+               "a cited `D-nnn` the decisions file does not define",
+           ),
+           Mutation(
+               "the non-goals hedge list stops applying, so `- None.` is a non-goal",
+               '            if _collapse(_strip_code(text)).strip(".") not in HEDGES '
+               "and len(_tokens(text)) >= 3]",
+               "            if True]",
+               "non-goals that say nothing",
+           ),
+       ),
+   ),
 )
 
 

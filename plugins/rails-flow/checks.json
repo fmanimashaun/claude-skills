@@ -26,6 +26,13 @@
       "requires": ["python3"]
     },
     {
+      "id": "product-brief",
+      "why": "A brief that copies its own PRD is a second source of truth, and a citation that resolves to nothing reads as traceable while carrying nothing.",
+      "command": ["python3", "{plugin}/scripts/check_brief.py", "{match:docs/brain/BRIEF.md}", "--decisions", "docs/brain/DECISIONS.md"],
+      "applies_when": ["docs/brain/BRIEF.md"],
+      "requires": ["python3"]
+    },
+    {
       "id": "human-guide",
       "why": "A guide whose steps nobody can re-run is a sentiment.",
       "command": ["python3", "{plugin}/scripts/check_guide.py", "{match:docs/guides/*.md}"],

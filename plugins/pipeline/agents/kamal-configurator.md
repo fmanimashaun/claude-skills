@@ -73,3 +73,30 @@ failures → `kamal app logs`; missing env in-container → confirm the key was 
 the right bucket. Re-run idempotently; `.env` is your re-readable reference. Report
 what was written to each destination (names only for secrets), the deploy result, and
 a `/up` health check against the live URL.
+
+## The autonomy is bounded — stop conditions (#128)
+
+"Troubleshoot autonomously and re-run" against a **production host** is the highest
+blast radius in this marketplace, and until now it carried no bound at all. Every cycle
+goes through `${CLAUDE_PLUGIN_ROOT}/scripts/breaker.py`; the doctrine is
+`${CLAUDE_PLUGIN_ROOT}/reference/stop-conditions.md`.
+
+```bash
+BREAKER="${CLAUDE_PLUGIN_ROOT}/scripts/breaker.py"
+python3 "$BREAKER" check deploy
+python3 "$BREAKER" record deploy --outcome fail --signature "kamal: Error response from daemon"
+```
+
+- **3 attempts per stage**, and **2 identical failure signatures** ends it sooner. The
+  signature is the exact Kamal error line, not your summary of it — that is what makes
+  "same failure again" decidable by something other than your own memory of it.
+- **Never** loosen the safety pass, skip the credentials round-trip, or reach for
+  `RAILS_FLOW_ALLOW_DEPLOY=1` to get past a failing deploy. That override is a human's
+  say-so on a *working* deploy. Using it to route around a failure is a forbidden escape
+  and ends the run.
+- On a stop: `breaker.py stop deploy --breaker <reason> --diagnosis "…"` with what you
+  tried, the exact failure signature and the suspected cause — then hand back. A stopped
+  deploy with a diagnosis is a good outcome; a fourth push at an unchanged auth error is
+  not.
+- Report `complete`, `partial` or `stopped` from `breaker.py report`, verbatim. Never
+  report a deploy as done when the `/up` check did not pass.

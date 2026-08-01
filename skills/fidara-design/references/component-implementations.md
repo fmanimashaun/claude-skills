@@ -270,19 +270,38 @@ re-implementing the anatomy:
 ```ruby
 module Ui
   class AddressFieldsComponent < ViewComponent::Base
-    def initialize(form:) = @form = form
+    # `mode:` is the HTML autofill mode token, and it is not decoration: the same component
+    # renders a shipping and a billing block on one checkout page, and without the prefix the
+    # browser fills both from one saved address. :none omits it (a single-address form).
+    MODES = { none: nil, shipping: "shipping", billing: "billing" }.freeze
+
+    def initialize(form:, mode: :none)
+      @form, @mode = form, mode.to_sym
+    end
     attr_reader :form
+
+    # Token ORDER is fixed by the HTML Standard: optional section-*, then shipping/billing,
+    # then home/work/..., then the field name. "billing postal-code", never the reverse.
+    def autofill(field) = [MODES.fetch(@mode), field].compact.join(" ")
   end
 end
 ```
 ```erb
 <%# address_fields_component.html.erb — composition, not re-implementation %>
+<%# The postcode is type="text": the HTML spec names postal codes as inappropriate for %>
+<%# type=number, alongside credit card numbers — a spinbox makes no sense for either. %>
 <div class="stack">
-  <%= form.input :line1 %>
-  <%= form.input :city %>
-  <%= form.input :postcode %>
+  <%= form.input :line1, input_html: { autocomplete: autofill("address-line1") } %>
+  <%= form.input :city, input_html: { autocomplete: autofill("address-level2") } %>
+  <%= form.input :postcode, input_html: { autocomplete: autofill("postal-code") } %>
 </div>
 ```
+
+**The `autocomplete` tokens are the a11y contract, not a convenience.** 1.3.5 Identify Input Purpose
+(**AA**) requires the purpose of each field *collecting information about the user* to be
+programmatically determinable, and `address-line1` / `address-level2` / `postal-code` are all in
+WCAG's *Input Purposes* list. A field component that omits them fails the SC everywhere it is used,
+which is the multiplier that makes this worth stating here rather than per screen.
 
 Sizes (`sm h-8 · md h-9 · lg h-10`, matching Button) come from additional named wrappers
 (`config.wrappers :compact`) selected per form with `f.input :x, wrapper: :compact` — a second
@@ -1041,6 +1060,101 @@ end
 </div>
 ```
 
+## Payment container and promo code — recipes, not components
+
+Neither is a ViewComponent, and for opposite reasons. The **payment container** has no content of its
+own to encapsulate — the field inside it belongs to the provider, so a component would wrap a `div`
+around someone else's iframe and imply an ownership we deliberately do not have. The **promo code** is
+a whole `<form>`, and a component that renders a form element invites being nested inside another one,
+which is exactly the invalid markup the catalog entry warns about.
+
+```erb
+<%# PAYMENT CONTAINER -- the label, the height and the error region are yours; the field is not. %>
+<%# h-9 is the `md` input size from the input recipe above, so the provider's iframe lines up with %>
+<%# the fields either side of it. Hand the provider your ring tokens rather than letting it ship %>
+<%# a focus style that belongs to no design system. %>
+<%# NOT <label for="card-element"> -- `for` needs "the ID of a labelable element in the SAME TREE", %>
+<%# and a mount div is not labelable while the real input is in another document. The caption below %>
+<%# is plain text, and the ACCESSIBLE NAME is set inside the frame via the provider's own label %>
+<%# option, with the injected iframe carrying a title. Do NOT aria-hidden the caption to avoid %>
+<%# hearing it twice: hiding it is what leaves the field nameless the day the provider option is %>
+<%# missed, and hearing a caption then a field name is the ordinary way a form reads anyway. %>
+<div class="stack" style="--space: var(--space-3xs)">
+  <span class="text-step--2 text-muted-foreground">Card details</span>
+  <div id="card-element" class="h-9 rounded-md border border-input bg-background px-3"
+       data-controller="payment-element"
+       data-payment-element-label-value="Card details"
+       data-payment-element-ring-value="var(--color-ring)"></div>
+  <%# The provider's failure text lands HERE, in text (3.3.1) -- not as a red border alone. %>
+  <%# role="alert" and not role="status" because severity picks the role (Toast, above) and a %>
+  <%# declined payment arrives asynchronously with no navigation to announce it. %>
+  <p id="card-error" role="alert" class="text-step--2 text-destructive"></p>
+</div>
+
+<%# The REDIRECT integration instead: a POST that hands off to the provider's own hosted page. %>
+<%# It must opt out of Turbo, or Turbo fetches a cross-origin document it cannot render and the %>
+<%# press appears to do nothing. button_to, not a form: there are no fields to collect here. %>
+<%= button_to "Continue to payment", provider_redirect_path, data: { turbo: false } %>
+```
+
+**Never put a card value anywhere you own.** No mirror input "just for validation", no Stimulus value
+holding the number, no analytics listener on the container. The reason the fields are the provider's
+is that nothing card-shaped reaches your DOM, params or logs; each of those undoes it.
+
+```erb
+<%# PROMO CODE -- a SIBLING form, never nested. A <form> may not contain a <form>, and an "Apply" %>
+<%# submit inside the checkout form would become that form's default button, so Enter in the email %>
+<%# field would apply an empty code. Two forms, two default buttons, no interference. %>
+<%# simple_form, like every other field in the app -- the wrapper is what makes the label, hint and %>
+<%# error markup identical everywhere, so a bare form_with here would be the one field that drifts. %>
+<%# HTML attributes ride in `html:` (form_for conventions), never as top-level options. %>
+<aside class="box stack" aria-label="Order summary">
+  <%= simple_form_for :promo_code, url: cart_promo_code_path do |f| %>
+    <div class="cluster" style="--space: var(--space-2xs)">
+      <%= f.input :code, label: "Promo code", input_html: { autocomplete: "off", class: "uppercase" } %>
+      <%= f.submit "Apply" %>   <%# Ui::ButtonComponent variant: :secondary in real code %>
+    </div>
+  <% end %>
+
+  <%# The TOTAL carries role="status" -- polite AND atomic, so the announcement is "Total 42.00" %>
+  <%# and not a bare "42.00". One live region for the money, not a second one on the code field. %>
+  <p role="status" class="cluster justify-between text-step-0">
+    <span>Total</span><span class="tabular-nums">£42.00</span>
+  </p>
+</aside>
+```
+
+**Money is `tabular-nums`; a reference is `font-mono`.** `--font-mono` is scoped by `brand.md` to
+reference numbers, timers, code and timestamps — an order number is one, a total is not. What a
+column of totals needs is figures of equal width, which is what `tabular-nums` gives in the interface
+face.
+
+**The double-submit guard is server-side, and the button state is not it.** Turbo already disables the
+submitter for the duration of the submission, so you get that for free and it protects nothing a
+reloaded tab cannot defeat:
+
+```ruby
+# The key is minted with the FORM, not at submit time -- a key generated on click is regenerated
+# by a second click, which is the case it exists to stop.
+#
+# `find_or_create_by!` alone is a check-then-act race: two concurrent submits can both miss and
+# both insert. The UNIQUE INDEX is what makes this safe, and the rescue is what makes it quiet --
+# without both, this recipe would claim a guarantee it does not provide.
+#   add_index :orders, :idempotency_key, unique: true
+def create
+  order = Order.create_with(order_params).find_or_create_by!(
+    idempotency_key: params.require(:idempotency_key)
+  )
+  redirect_to order_path(order), status: :see_other
+rescue ActiveRecord::RecordNotUnique
+  redirect_to order_path(Order.find_by!(idempotency_key: params[:idempotency_key])),
+              status: :see_other
+end
+```
+
+`status: :see_other` because Turbo *"expects the server to return an HTTP 303 redirect response"*
+after a form submission; a validation failure re-renders at **422** instead.
+
 ## Call sites — the invocation for every documented component
 
 A class definition shows what a component *accepts*; it does not show how to *call* it, and inferring
@@ -1117,9 +1231,10 @@ Note the slot-setter names — `renders_many :items` gives the **singular** `wit
   <% s.with_item { render Ui::CardComponent.new { "Right" } } %>
 <% end %>
 
-<%# Address fields — takes the form builder, so it composes inside simple_form %>
+<%# Address fields — takes the form builder, so it composes inside simple_form. `mode:` prefixes
+    the autofill tokens; omit it for a form with only one address. %>
 <%= simple_form_for @account do |f| %>
-  <%= render Ui::AddressFieldsComponent.new(form: f) %>
+  <%= render Ui::AddressFieldsComponent.new(form: f, mode: :shipping) %>
 <% end %>
 
 <%# Stat tile — `spark` takes a bare inline <svg>, not a component: data-viz.md declares the slot

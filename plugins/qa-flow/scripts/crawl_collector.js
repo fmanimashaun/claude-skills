@@ -9,6 +9,7 @@
 //   qa/manual-tests/crawl.json          -> crawl_report.py
 //   qa/manual-tests/interactions.json   -> interaction_report.py
 //   qa/manual-tests/visual.json         -> visual_baseline.py   (with --visual)
+//   qa/manual-tests/links.json          -> link_audit.py        (with --links)
 //
 //   node crawl_collector.js --routes / /dashboard --base http://localhost:3000 --out qa/manual-tests
 //   node crawl_collector.js --visual --seeded --masks qa/manual-tests/masks.json --routes /
@@ -40,16 +41,38 @@ import { createRequire } from 'node:module';
 // `createRequire` anchored at the working directory resolves the way the user expects: from their
 // project. The failure message names both the cwd and the fix, because "cannot find package" with
 // Playwright plainly installed is a bewildering thing to be told.
+//
+// AND IT MUST BE THE SYNCHRONOUS `require`, NOT `await import()` OF THE RESOLVED PATH. The first
+// fix for #356 resolved the path correctly and then imported it as ESM, which fails differently
+// and worse: `playwright/index.js` is CommonJS, so Node infers its named exports with
+// cjs-module-lexer, and for this package that inference is wrong. The namespace it produces is
+//
+//     clientEventEmitter, default, getPlaywrightVersion, getUserAgent, inprocess, iso, libCli,
+//     libCliTestStub, "module.exports", oop, registry, remote, server, tools, utils
+//
+// -- no `chromium`, no `firefox`, no `webkit`; those live on `.default`. So the destructure bound
+// `chromium` to undefined, the `try` caught nothing because importing SUCCEEDED, and the script
+// died 60 lines later on `chromium.launch()` with "Cannot read properties of undefined". The
+// documented invocation still could not run, which was the entire complaint in #356. Found by
+// running it against a real app rather than reading it.
 const projectRequire = createRequire(`${process.cwd()}/`);
 let chromium;
 try {
-  ({ chromium } = await import(pathToFileURL(projectRequire.resolve('playwright')).href));
+  ({ chromium } = projectRequire('playwright'));
 } catch (error) {
   console.error(
     `Cannot load Playwright from ${process.cwd()}.\n` +
     `  This script resolves it from your PROJECT, not from the plugin, so run it from the repo\n` +
     `  root where Playwright is installed:  npm i -D playwright && npx playwright install chromium\n` +
     `  Original error: ${error.message}`);
+  process.exit(2);
+}
+if (!chromium) {
+  // A successful import that yields no browser is the #356 regression above. Named explicitly,
+  // because the symptom otherwise surfaces as an unrelated TypeError much further down.
+  console.error(
+    `Loaded Playwright from ${process.cwd()} but it exposed no \`chromium\`.\n` +
+    "  Check the install:  npm i -D playwright && npx playwright install chromium");
   process.exit(2);
 }
 
@@ -69,6 +92,19 @@ const routes = [].concat(arg('routes', '/'));
 // "not exercised" for a reason that is our fault rather than the app's.
 const MAX_CONTROLS = Number(arg('max-controls', 40));
 const VISUAL = process.argv.includes('--visual');
+// LINK AUDIT (#108 item E). Inventories every href, every fragment target on the page, and every
+// sub-resource that answered 4xx/5xx -- then probes each distinct same-origin link target once.
+//
+// A 404 SUB-RESOURCE IS NOT A FAILED REQUEST, which is why `failedRequests` above does not already
+// cover it: Playwright fires `requestfailed` on network-level failures only, and "HTTP error
+// responses, such as 404 or 503, are still successful responses from HTTP standpoint, so request
+// will complete with 'requestfinished' event" (playwright.dev/docs/api/class-request). So responses
+// are recorded separately, by status.
+//
+// SAME-ORIGIN TARGETS ONLY is a scope decision about what to MEASURE, not a verdict: a QA gate that
+// fails when the internet is down is a gate people switch off. link_audit.py independently
+// classifies another origin as external and counts it, so nothing here decides anything.
+const LINKS = process.argv.includes('--links');
 const BASELINES = arg('baselines', 'qa/baselines');
 const VIEWPORT = { width: 1280, height: 900 };
 // A baseline shot at deviceScaleFactor 2 shares not one pixel with the same page shot at 1, so the
@@ -116,6 +152,7 @@ const determinism = {
 
 const pages = [];
 const controls = [];
+const linkPages = [];
 
 mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch();
@@ -143,9 +180,24 @@ for (const route of routes) {
   }
   const console_ = [];
   const failed = [];
+  const errorResponses = [];
   page.on('console', (m) => console_.push({ level: m.type(), text: m.text() }));
   page.on('requestfailed', (r) =>
     failed.push({ method: r.method(), url: r.url(), failure: r.failure()?.errorText || 'failed' }));
+  // Registered BEFORE `goto`, or the document's own response is missed, and DETACHED before the
+  // interaction sweep -- see where it is removed for why. Recorded by status with no threshold
+  // applied beyond "not a success": link_audit.py decides what each means, including that a
+  // `document` response belongs to crawl_report.py rather than to it.
+  const onResponse = (r) => {
+    const status = r.status();
+    if (status < 400) return;
+    errorResponses.push({
+      url: r.url(),
+      status,
+      resourceType: r.request().resourceType(),
+    });
+  };
+  if (LINKS) page.on('response', onResponse);
 
   let record;
   try {
@@ -169,6 +221,38 @@ for (const route of routes) {
   pages.push(record);
 
   if (record.skipped) { await page.close(); continue; }
+
+  if (LINKS) {
+    // DETACHED HERE, before the interaction sweep below. The sweep force-clicks links, navigates
+    // away, and navigates back — and every one of those loads fires responses on THIS page object,
+    // which would be filed under THIS route. A real run reported one page's missing image against
+    // three routes for exactly that reason: an artefact of how we drive the browser, reported as
+    // the app's defect on pages that never request the file. `responses` therefore means "what the
+    // page load asked for", which is the only attribution that is true.
+    page.off('response', onResponse);
+    const inventory = await page.evaluate(() => ({
+      // Both are fragment targets per the HTML Standard's "find a potential indicated element":
+      // an element with a matching id, else an `a` element with a matching name.
+      anchors: Array.from(new Set([
+        ...Array.from(document.querySelectorAll('[id]'), (el) => el.id),
+        ...Array.from(document.querySelectorAll('a[name]'), (el) => el.getAttribute('name')),
+      ].filter(Boolean))),
+      // `href` is the RAW attribute and `resolved` is the IDL property the browser resolved
+      // against the document base URL. Both, because the judge needs the raw one to read the
+      // scheme and to know whether a fragment was written at all.
+      links: Array.from(document.querySelectorAll('a[href], area[href]'), (el) => ({
+        href: el.getAttribute('href'),
+        resolved: el.href,
+        text: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 60),
+      })),
+    }));
+    linkPages.push({
+      route,
+      anchors: inventory.anchors,
+      links: inventory.links,
+      responses: errorResponses,
+    });
+  }
 
   if (VISUAL) {
     const slug = route.replace(/^\//, '').replace(/\W+/g, '-') || 'root';
@@ -434,6 +518,34 @@ for (const route of routes) {
   await page.close();
 }
 
+// ---- probe each distinct same-origin link target ONCE ----------------------------------------
+// Once, not once per page: a footer link on 72 pages is one target. The status is recorded as-is,
+// including 401/403 — link_audit.py decides that an unauthenticated crawl cannot call those broken.
+const linkTargets = [];
+if (LINKS) {
+  const baseOrigin = new URL(base).origin;
+  const wanted = [...new Set(
+    linkPages.flatMap((p) => p.links)
+      .map((l) => l.resolved)
+      .filter(Boolean)
+      .map((u) => { try { const x = new URL(u); x.hash = ''; return x.toString(); } catch { return null; } })
+      .filter((u) => u !== null && new URL(u).origin === baseOrigin),
+  )];
+  const probe = await browser.newContext();
+  for (const url of wanted) {
+    let status = null;
+    try {
+      status = (await probe.request.get(url, { timeout: 15000 })).status();
+    } catch {
+      // A probe that threw recorded nothing. Left NULL rather than guessed: the judge reports an
+      // unprobed target as unverified, and inventing a 200 here would launder it into a pass.
+      status = null;
+    }
+    linkTargets.push({ url, status });
+  }
+  await probe.close();
+}
+
 await browser.close();
 
 writeFileSync(`${outDir}/crawl.json`,
@@ -446,5 +558,15 @@ if (VISUAL) {
     JSON.stringify({ schema: 'qa-flow/visual-run/1', determinism, shots }, null, 2));
 }
 
+if (LINKS) {
+  writeFileSync(`${outDir}/links.json`, JSON.stringify({
+    schema: 'qa-flow/link-audit/1',
+    base,
+    pages: linkPages,
+    targets: linkTargets,
+  }, null, 2));
+}
+
 console.log(`wrote ${outDir}/crawl.json (${pages.length} route(s)) and ` +
-            `${outDir}/interactions.json (${controls.length} control(s))`);
+            `${outDir}/interactions.json (${controls.length} control(s))` +
+            (LINKS ? ` and ${outDir}/links.json (${linkTargets.length} distinct target(s))` : ''));

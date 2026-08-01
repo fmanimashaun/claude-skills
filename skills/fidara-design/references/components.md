@@ -705,6 +705,109 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **Responsive:** the rating is a `cluster` and never wraps mid-row — set `flex-none` on it so a long
   author name cannot break the stars across two lines.
 
+## Payment / card entry
+- **The card fields are not yours to build.** Card number, expiry and security code are rendered by
+  the payment provider — a hosted page you redirect to, or provider-owned iframe(s) you embed. What
+  this entry specifies is the **container**: the label, the error region, the `md` field height
+  (`h-9`, matching the input recipe) so a provider iframe lines up with the fields above and below it,
+  and the ring tokens you hand the provider's stylesheet so a focused iframe field does not look
+  foreign. There is no `Ui::CardNumberComponent`, and writing one is the defect.
+- **Which integration you choose has a compliance consequence, and the intuitive answer is out of
+  date.** PCI DSS v4.0.1's SAQ A — the January 2025 revision, in effect since **31 March 2025** —
+  **removed** Requirements 6.4.3 and 11.6.1 (and 12.3.1) as SAQ A line items and replaced them with an
+  eligibility criterion: *"The merchant has confirmed that their site is not susceptible to attacks
+  from scripts that could affect the merchant's e-commerce system(s)."* Per PCI SSC **FAQ 1588** that
+  criterion applies **only** to *"e-commerce merchants with a webpage that includes a TPSP's/payment
+  processor's embedded payment page/form (for example, one or more inline frame(s) (iframes))"* and
+  *"does not apply to e-commerce merchants with a webpage that redirects customers from the merchant's
+  webpage to a TPSP/payment processor … or e-commerce merchants that fully outsource payment
+  functions."* So **embed vs redirect is a UI decision that moves an obligation**, and an embedding
+  merchant discharges it either by deploying the 6.4.3/11.6.1 techniques or by written confirmation
+  from the provider. Quoting the current wording is the point: citing 6.4.3/11.6.1 *as SAQ A line
+  items* has been wrong since 2025-03-31. **This is framing, not a compliance determination** — which
+  SAQ you validate to is your acquirer's and QSA's call, not a design skill's.
+- **Nothing card-shaped may touch your DOM, your params or your logs.** That is the whole reason the
+  fields are the provider's. A "just for validation" mirror input, a Stimulus value holding the PAN,
+  or an analytics listener on the payment container each undo the integration you chose.
+- **`type="number"` is wrong for a card number, and the spec says why.** *"The type=number state is
+  not appropriate for input that happens to only consist of numbers but isn't strictly speaking a
+  number. For example, it would be inappropriate for credit card numbers or US postal codes."* Its
+  test is whether a spinbox would make sense: *"Getting a credit card number wrong by 1 in the last
+  digit isn't a minor mistake, it's as wrong as getting every digit incorrect."* `type="text"`, with
+  `inputmode="numeric"` where the value really is all digits. The note names **postal codes** too, so
+  it binds the address block you *do* own — but a postcode is alphanumeric in much of the world, so
+  that one gets `type="text"` and **no** numeric `inputmode`.
+- **The fields that ARE yours take autofill tokens.** Cardholder name is `cc-name`; your own billing
+  block is `billing`-prefixed (`autocomplete="billing postal-code"`). The order is fixed by the HTML
+  Standard and is not free-form: optionally a `section-*` token, then optionally `shipping` or
+  `billing`, then optionally `home`/`work`/`mobile`/`fax`/`pager`, then the field name — in that
+  order. `billing postal-code` is valid; `postal-code billing` is not.
+- **1.3.5 Identify Input Purpose (AA) covers these, with two boundaries worth knowing.** The `cc-*`
+  tokens (`cc-name`, `cc-number`, `cc-exp`, `cc-csc`, `cc-type`, …) *are* in WCAG's *Input Purposes
+  for User Interface Components* list, so a cardholder-name field is in scope. But the SC is *"scoped
+  to inputs collecting information about the user"* — H98 states it directly, and Understanding 1.3.5
+  adds that *"an input field for information that is not about the user does not need to
+  programmatically expose its purpose, even if that purpose is included in the Input Purposes
+  list"*, naming `transaction-amount`. And **`one-time-code` is a valid HTML autofill token but is
+  absent from WCAG's list** — put it on a 3-D Secure step because it makes the OS offer the SMS code,
+  not because 1.3.5 asks for it.
+- **The disable-on-submit half is already done, which is exactly why it is not the protection.** Turbo
+  *"will set the 'submitter' element's disabled attribute when the submission begins, then remove the
+  attribute after the submission ends"*; `data-turbo-submits-with` *"specifies text to display when
+  submitting a form"* and is the labelled in-flight state, never a bare spinner. Both are client-side
+  and both lose to a reloaded tab. **Only a server-side idempotency key makes a double-submit safe**,
+  and that is the rule — the button state is feedback, not a guard.
+- **A form that posts to the provider's hosted page must opt out of Turbo.** `data-turbo="false"`
+  *"disables Turbo Drive on links and forms including descendants"*. Otherwise Turbo fetches the
+  cross-origin payment page and cannot render it, and the user sees nothing happen.
+- **a11y — you cannot label the provider's field from your page, and this is the part everyone gets
+  wrong.** `<label for>` requires *"the ID of a labelable element **in the same tree** as the label
+  element"*: a mount-point `<div>` is not labelable, and a control inside an `<iframe>` is a different
+  tree, so neither `for` nor `aria-labelledby` reaches it. **The accessible name must be set inside
+  the frame, through the provider's own label/placeholder option**; the visible caption in your page
+  is then for sighted users and the `<iframe>` carries a `title`. A `<label for="card-element">`
+  pointing at the mount div looks right, validates as nothing, and names no control. Errors from the
+  provider go into **your** error region for the field, in text (3.3.1), never a colour change on the
+  border alone.
+- **Responsive:** one column, always — see the Checkout anatomy in
+  [page-anatomies.md](page-anatomies.md#checkout--the-purchase-flow). A two-column payment block
+  produces an ambiguous tab order across a boundary you do not control.
+
+## Promo / discount code
+- **No upstream at all.** APG has no coupon, promo or "apply code" pattern, so everything here is
+  **ours** except the two HTML-spec lines, which say so.
+- **It is a second submission next to one you already have, and that is the whole difficulty.** Two
+  rules from the HTML Standard settle the shape. A nested `<form>` is invalid — the `form` element's
+  content model is *"Flow content, but with no `form` element descendants"* — so the code field cannot
+  simply get its own form inside the checkout form. And *"a form element's default button is the first
+  submit button in tree order whose form owner is that form element"*, so an "Apply" button dropped
+  into the checkout form **becomes its default button**: Enter in the email field then applies an
+  empty code. Both failure modes are silent. **Ours: the code entry is its own `<form>`, a sibling of
+  the checkout form, never a descendant** — the order summary is a separate region, so this costs
+  nothing in layout and gives each form its own default button. Better still, put it on the **cart**,
+  before a checkout form exists at all. What you must not do is make it a `type="button"` driven by
+  Stimulus: that removes it as the default button and leaves Enter in the code field *placing the
+  order*, which is the worst of the three.
+- **The result must be announced, and the amount is the announcement.** A code that applies changes a
+  total elsewhere on the page. Put `role="status"` on the summary total, not on the code field — the
+  role carries polite **and** atomic, so the user hears "Total £42.00" rather than "42.00". Same
+  mechanism as the cart total; do not add a second live region for the code field.
+- **A rejected code is an input error, not a toast.** 3.3.1 Error Identification (A): *"If an input
+  error is automatically detected, the item that is in error is identified and the error is described
+  to the user in text."* The message belongs beside the field via the simple_form error slot. A toast
+  is dismissible and unassociated, so it satisfies neither half.
+- **Never clear the field on failure**, and never make the user retype a code that worked — 3.3.7
+  Redundant Entry (A) is about the same information *"required to be entered again in the same
+  process"*, and a code silently dropped between steps is exactly that.
+- **Ours: no auto-apply on blur or on keystroke.** Applying a discount changes a financial total, so
+  it is an explicit press. This is the same reasoning the Stepper entry gives for not auto-advancing,
+  and it avoids 3.2.2 On Input rather than papering over it with an advisory.
+- `cluster` of a labelled `text` input (`uppercase` styling only — never `text-transform` on the
+  value you send) and a `secondary` Button. The label is visible; "Promo code" as a placeholder is the
+  usual failure and disappears the moment anyone types.
+- **Responsive:** the cluster wraps to two rows on a narrow viewport rather than shrinking the input
+  below its `min-h-touch` height.
+
 ## Toast / Notification
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
   `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
