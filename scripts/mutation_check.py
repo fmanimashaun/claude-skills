@@ -89,6 +89,12 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the wiring rule stops noticing a flow that never calls claim-verifier",
+                '        if "claim-verifier" not in body:',
+                "        if False:",
+                "a flow that never names claim-verifier",
+            ),
+            Mutation(
                 "the schema-parity rule stops noticing an undocumented field",
                 "        missing = sorted(f for f in fields if f not in documented)",
                 "        missing = []",
@@ -137,9 +143,15 @@ GUARDS: tuple[Guard, ...] = (
                 "bleed into each other",
             ),
             Mutation(
-                "corpora no longer pruned from the walk",
+                "agent worktrees are no longer pruned, so a sweep reads other agents' copies",
+                ', "design-corpora", "worktrees"}',
                 ', "design-corpora"}',
-                "}",
+                "another agent's copy",
+            ),
+            Mutation(
+                "corpora no longer pruned from the walk",
+                '"design-corpora", "worktrees"}',
+                '"worktrees"}',
                 "not ours to enforce",
             ),
             Mutation(

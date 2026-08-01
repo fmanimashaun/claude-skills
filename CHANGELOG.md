@@ -40,6 +40,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     directions, so a fifth skill fails the sweep until added deliberately. It is not pinned in the
     selftest: a scope asserted only over fixtures is a claim about fixtures, and keeping
     `--selftest` hermetic is what lets the mutation harness run it against a mutated copy.
+- **Agent worktrees are ignored and pruned from every linter.** Claude Code puts background-agent
+  worktrees at `.claude/worktrees/` — **inside the repo**, one full copy each — and
+  `git status --porcelain` collapses the whole tree to a single `?? ` line, so sixteen repo copies
+  looked like nothing at all. That is the untracked-directory trap `CLAUDE.md` already warns about,
+  now sitting one careless `git add` away from committing sixteen copies of the repo.
+- **The linters were reading them.** `.claude` is one of `DEFAULT_ROOTS`, so a sweep went from **129
+  files to 1526** — and the failure mode is worse than slowness: another agent's half-finished edit
+  fails the *maintainer's* gate run, over a file that is not in the maintainer's tree. Pruned by
+  exact name in all three linters, with a `worktrees-notes/` near-miss fixture so the prune cannot
+  widen and go quiet.
+- The ignore pattern is **root-anchored and slash-free**, per #197 — the lesson there being a
+  pattern that was written, believed, and matched nothing.
+- Adding to `SKIP_DIRS` broke the existing `corpora no longer pruned` mutation's anchor, and the
+  mutation checker **hard-errored** rather than passing quietly. Both anchors updated; that stale-
+  anchor rule is the reason the drift was visible at all.
 
 ### 2026-08-01 — the install block, and a rule that can see it
 
@@ -5061,6 +5076,30 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### Unreleased
+
+- **`claim-verifier` is now actually wired into the flows that claim to use it** (#359). It shipped
+  in v1.52.0 and was referenced from **nowhere** — an agent built because descriptions go unchecked,
+  itself described as wired and never called. `release-manager` runs `extract_claims.py` over the
+  promotion body and hands the list to `claim-verifier` **before** opening the PR, because that body
+  becomes the published release notes and a false sentence there outlives every other kind.
+  `/maintainer-work` does the same, more cheaply, at the `dev` PR.
+- **New `unwired-claim-verifier` rule** makes criterion 5 checkable rather than prose. It is
+  deliberately narrow: it verifies the wiring exists, not that anyone reads the verdict — whether a
+  maintainer obeys it is not mechanically knowable, and pretending otherwise would be the same
+  defect one level up. It also fails a flow that names the agent **without** `extract_claims.py`,
+  since gathering the claim list by judgement is the half #359 proved cannot be relied on.
+- **Criterion 3 was declined, not skipped, and the reversal is already recorded.** It asked for
+  `claim-verifier` to be pinned to a model different from the session. `reference/model-tiers.md`
+  argues the opposite for a *shipped* agent: a pin spends a stranger's money on our authority, and a
+  value outside their `availableModels` is skipped anyway. A pin cannot buy a second opinion, only a
+  cost. So it stays `inherit`, the caller obtains independence via a per-invocation model or
+  `CLAUDE_CODE_SUBAGENT_MODEL`, and the agent must state which model it ran as.
+- **A fixture here was vacuous and a mutation caught it.** The wiring rule has two branches; asserting
+  only that *something* fired could not tell them apart, so disabling the first branch left the
+  `elif` to fire and the mutant survived. Fixtures now assert the message, not the boolean.
+- Self-consistency selftest 98 → **103** assertions; mutations 27 → **28**.
 
 ### 2026-08-01 (release v1.54.0)
 
