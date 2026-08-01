@@ -426,6 +426,129 @@ def run() -> int:
     finally:
         bc.OUT = real_out
 
+    # ---- the interaction table's status column is checkable, in BOTH directions -------
+    # The component half of the matrix has had an evidence guard since #124; this half had
+    # none, and it is the half that rotted -- four of nine rows outlived the work they
+    # tracked. A one-way "shipped rows cite a doc" rule would have caught none of them,
+    # because none of them said `shipped`. So the stale-`planned` direction is fixtured
+    # first: it is the direction that actually failed in production.
+    DISCLOSURE_PROBE = "### Disclosure — the full contract (#142)"
+    ABSENT_PROBE = "## Telepathy — the full contract (#99999)"
+
+    def _interaction(rows):
+        original = bc.INTERACTION_PATTERNS
+        bc.INTERACTION_PATTERNS = rows
+        try:
+            return bc.verify_interaction_claims()
+        finally:
+            bc.INTERACTION_PATTERNS = original
+
+    def _expect_interaction(label, rows, contains):
+        _tick()
+        problems = _interaction(rows)
+        if not any(contains.lower() in p.lower() for p in problems):
+            FAILURES.append(
+                f"interaction guard/{label}: expected a problem mentioning {contains!r}, got "
+                f"{problems or 'silence'}"
+            )
+
+    # SILENCE, on the real shipped table -- not a synthetic one. This is the fixture that
+    # fails if a future pattern ships (or is de-scoped) without its status being flipped.
+    _tick()
+    live = bc.verify_interaction_claims()
+    if live:
+        FAILURES.append(
+            "the shipped INTERACTION_PATTERNS table does not verify against the reference docs:\n"
+            + "\n".join(f"    - {p}" for p in live)
+        )
+
+    _expect_interaction(
+        "a `planned` row whose contract HAS landed",
+        (("disclosure (collapse / accordion)", "planned #142", "n/a", DISCLOSURE_PROBE),),
+        contains="the contract landed and the status was never flipped",
+    )
+    _expect_interaction(
+        "`declined` said of a mechanism the docs prescribe",
+        (("carousel / slide", "declined", "n/a", "Behavior: the `carousel` controller."),),
+        contains="the contract landed and the status was never flipped",
+    )
+    _expect_interaction(
+        "a `shipped` row citing a doc that does not exist",
+        (("telepathy", "shipped", "n/a", ABSENT_PROBE),),
+        contains="does not appear in any reference doc",
+    )
+    _expect_interaction(
+        "a row with no probe at all",
+        (("telepathy", "shipped", "n/a", "   "),),
+        contains="has no probe",
+    )
+    _expect_interaction(
+        "two rows leaning on one document",
+        (
+            ("disclosure (collapse / accordion)", "shipped", "n/a", DISCLOSURE_PROBE),
+            ("telepathy", "shipped", "n/a", DISCLOSURE_PROBE),
+        ),
+        contains="share the probe",
+    )
+    # NEAR MISS: a genuinely-unwritten pattern must stay silent. Without this the guard could
+    # be satisfied by banning the word `planned`, which would be a rule about vocabulary
+    # rather than about whether the doctrine exists.
+    _tick()
+    quiet = _interaction((("telepathy", "planned #99999", "n/a", ABSENT_PROBE),))
+    if quiet:
+        FAILURES.append(
+            f"a genuinely-planned pattern must not be flagged, got {quiet}"
+        )
+
+    # Fail CLOSED when the docs cannot be read, exactly like the evidence guard above --
+    # otherwise every status claim passes unverified the moment the reference folder moves.
+    _tick()
+    real_out = bc.OUT
+    bc.OUT = Path(tempfile.mkdtemp(prefix="coverage-nodocs-int-")) / "gone" / "coverage.md"
+    try:
+        problems = bc.verify_interaction_claims()
+        if not any("cannot read the reference docs" in p for p in problems):
+            FAILURES.append(
+                "unreadable docs: the interaction guard must fail closed, got "
+                f"{problems or 'silence'}"
+            )
+    finally:
+        bc.OUT = real_out
+
+    # ---- a `|` in any cell silently splits the row into an extra column --------------
+    # Found by nearly shipping one: the `filter / typeahead` note was first written as
+    # ``aria-autocomplete=list|both``, which generated, committed and drift-checked without a
+    # murmur while rendering a four-column row under a three-column header.
+    _tick()
+    if bc.verify_cell_text():
+        FAILURES.append(
+            "the shipped tables contain a raw `|` in a cell:\n"
+            + "\n".join(f"    - {p}" for p in bc.verify_cell_text())
+        )
+
+    _tick()
+    orig_patterns = bc.INTERACTION_PATTERNS
+    bc.INTERACTION_PATTERNS = (
+        ("telepathy", "shipped", "reads `list|both` straight off the wire", "n/a"),
+    )
+    try:
+        if not any("column break" in p for p in bc.verify_cell_text()):
+            FAILURES.append("a `|` inside an interaction note was not flagged")
+    finally:
+        bc.INTERACTION_PATTERNS = orig_patterns
+
+    _tick()
+    orig_entries = bc.ENTRIES
+    bc.ENTRIES = (
+        bc.E("Button", bc.COMPONENT, "documented", tw=["application-ui/elements/buttons"],
+             fb=["Buttons"], note="use `sm|md|lg`"),
+    )
+    try:
+        if not any("column break" in p for p in bc.verify_cell_text()):
+            FAILURES.append("a `|` inside a component note was not flagged")
+    finally:
+        bc.ENTRIES = orig_entries
+
     # ---- the builder refuses to emit a hollow file when the corpus is missing --------
     _tick()
     real_root = bc.TW_ROOT
