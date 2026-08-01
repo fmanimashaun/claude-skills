@@ -8,7 +8,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 ## Repository hygiene
 
 
-### Unreleased
+### 2026-08-01 — the gates finally run somewhere
 
 - **FIX — the publish was not gated, which is the branch that matters.** `gates.yml` shipped hours
   earlier watching pull requests and pushes to `dev`. It did **not** watch `main`, and `release.yml`
@@ -1178,7 +1178,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.15.0 — 2026-08-01
 
 - **One CI entry point a Rails project can actually run** (#334). The plugins shipped **eleven**
   checks that run against a *user's* repo and **no way to run them together** — a user had to know
@@ -1932,7 +1932,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.28.1 — 2026-08-01
 
 - **FIX — five catalog entries carried no accessibility contract, and two contradicted our own rule**
   (#95). Found doing Phase 2's audit criterion by **measuring** the catalog rather than reading it:
@@ -3260,6 +3260,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+
+### 1.16.0 — 2026-08-01
+
+- **qa-flow's checks are runnable as a gate in a user's CI** (#334). A `checks.json` registers
+  evidence validation, the manifest check and route coverage with `project_gates.py`, so they run
+  at the project's `dev → main` instead of when an agent remembers. `route-coverage` declares
+  `--fail-on-untested`, without which it reports and exits 0 — a gate that cannot fail.
+  `rendered_conformance` is deliberately **not** registered: it needs Playwright, and a gate that
+  quietly skips for a missing browser is worse than no gate.
+
 ### 1.15.1 — 2026-08-01
 
 - **FIX — a bare doc pointer is invisible to the lint.** `a11y-auditor` cited `fidara-design`'s
@@ -3945,6 +3955,14 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+
+### 1.10.0 — 2026-08-01
+
+- **design-flow's brand-pack lint is runnable as a gate in a user's CI** (#334). A `checks.json`
+  registers it with `project_gates.py`, applying only where `app/assets/stylesheets/brand` exists
+  — reported as **not applicable** elsewhere, never as a pass. The rendered-conformance linter is
+  deliberately excluded for the browser-dependency reason above.
 
 ### 1.9.1 — 2026-08-01
 
@@ -4662,6 +4680,43 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.48.0)
+
+> ### The gates existed. Nothing ran them.
+>
+> This repo builds 36 gates, documents them at length, and treats them as its safety net. Until
+> today **every automated check on a pull request here belonged to a third party** — our own workflow
+> fired only at release time, on `main`, after merge, and checked one thing. The gates ran when a
+> maintainer remembered to type the command.
+>
+> Then the fix had the same hole: `gates.yml` watched pull requests and `dev`, but **not the publish**
+> — so the merge commit that ships a release ran none of them.
+>
+> Both were found by being asked to justify a claim, not by any check. The gates catch content; they
+> do not catch *"the gate is not wired to the thing that matters"*.
+>
+> The same defect is now fixed **for users**: the eleven checks we ship for their repos had no runner.
+
+- **`gates.yml` runs the sweep on every PR and every push to `dev`**, and `release.yml` declares
+  `needs: gates`, so the publish cannot happen on unproven content. A parallel job would have been
+  advisory — it can go red after the release is out. The sweep is **called, not copied**; two copies
+  drift and the drifted one would be the copy guarding production.
+- **`project_gates.py`** (#334) gives a Rails project **one command** for the eleven checks we ship
+  it, discovered from a per-plugin `checks.json` so a check registers itself. Four states —
+  **pass / FAIL / not-applicable / ERROR** — and *not applicable is printed loudly every run*,
+  because a repo with zero QA evidence must not go the same green as one with complete evidence. A
+  missing dependency **FAILS** rather than skipping, since in CI a skip reads as a pass.
+- **`setup-flow` scaffolds it into the project's own `dev → main` CI** as an approved diff, insisting
+  the deploy job declares `needs: doctrine`. Its old rationale — *"local hooks + qa-flow already
+  proved it"* — was an assumption, not a guarantee, and is corrected; the Actions-minutes argument
+  stands alone.
+- **Five catalog entries gained the accessibility contract they never had** (#95), two of which
+  contradicted our own *no colour-only state* rule: Pagination's active page and Avatar's status dot
+  were colour alone. Both now carry a text equivalent.
+- Three defects in this release's own work were caught by **mutating rather than reading**: a
+  manifest command that could not run, an assertion for it that was vacuous, and a subparser detector
+  that could not be caught at all because its only assertion lived inside the loop it guarded.
 
 ### 2026-08-01 (release v1.47.1)
 
