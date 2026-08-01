@@ -286,9 +286,11 @@ on 4.0.6**.
 | default | Syntax OK | Syntax OK |
 
 So the failing combination is narrow: **`parse.y` on Ruby 3.2–3.3**, where it is also the *default*.
-This skill requires **Ruby >= 3.2** while recommending the latest stable, so the form breaks on the
-floor we support and is fine on the version we suggest — exactly the combination that gets a snippet
-shipped broken, parsing on the author's machine and raising on the user's.
+This skill's floor is **Ruby 3.4** (SKILL.md, *Version facts*), where Prism is the default and the
+form parses — but **Rails itself only requires 3.2.0**, so an existing app you are dropped into may
+sit below that floor, and even on 3.4.7 `--parser=parse.y` still rejects it. The snippet therefore
+parses on the author's machine and raises on the user's — exactly the combination that gets a
+snippet shipped broken.
 
 Note the scope, which is narrower than "endless defs reject bare keyword arguments": bare
 `def m = render x: 1` is fine on either parser. It only breaks when the endless `def` is itself an

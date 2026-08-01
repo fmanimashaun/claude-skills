@@ -19,7 +19,7 @@ description: >-
 # Rails 8 Full-Stack Development — The Rails Way
 
 This skill encodes the officially recommended way to build Rails 8.1.x
-applications, distilled from the Rails Guides (v8.1.3) and the framework's own
+applications, distilled from the Rails Guides (v8.1.3.1) and the framework's own
 generated defaults. Follow it to produce code a Rails core contributor would
 recognize as idiomatic: the *omakase* menu, the one-person-framework, the
 majestic monolith.
@@ -56,19 +56,44 @@ majestic monolith.
    `bin/setup`, `bin/dev`, `bin/ci`, `bin/rails db:prepare`, `kamal deploy`.
    Keep those commands working.
 
-## Version facts (as of this skill's writing)
+## Version facts (verified 2026-08-01)
 
-- Current stable: **Rails 8.1.3** (2026-03-24). The 8.1 series receives bug
-  fixes until October 2026, security fixes beyond. Rails 8.0 is
-  security-fixes-only from May 2026.
-- Requires **Ruby >= 3.2**. Prefer the latest stable Ruby (4.0.x, released
-  Dec 2025; 3.4.x also fully supported). Keep YJIT for production; ZJIT is
-  still experimental.
+- Current stable: **Rails 8.1.3.1** (2026-07-29) — a **security** release, not
+  a routine one. It fixes **CVE-2026-66066** (GHSA-xr9x-r78c-5hrm, *critical*,
+  CVSS v4 9.5): possible arbitrary file read and remote code execution in
+  Active Storage variant processing, via libvips loaders Rails did not block.
+  **Every 8.1 below 8.1.3.1 is affected**, so pin `>= 8.1.3.1` and never leave
+  an app on 8.1.3. Backports: **8.0.5.1** and **7.2.3.2**. The fix also needs
+  **libvips >= 8.13** at runtime, and an app that may already have been
+  exploited must rotate `secret_key_base` and its other secrets.
+  ([release post](https://rubyonrails.org/2026/7/29/Rails-Versions-7-2-3-2-8-0-5-1-and-8-1-3-1-have-been-released),
+  [advisory](https://github.com/rails/rails/security/advisories/GHSA-xr9x-r78c-5hrm))
+- The 8.1 series gets bug fixes until **2026-10-10**, security fixes until
+  **2027-10-10**. Rails **8.0 left bug-fix support on 2026-05-07** and is
+  security-only until 2026-11-07; 7.2 security support ends 2026-08-09.
+  ([support dates](https://rubyonrails.org/2025/10/29/new-rails-releases-and-end-of-support-announcement)
+  — the maintenance policy page states only the relative rule, never these dates.)
+- **Rails 8.1 requires Ruby >= 3.2.0** (`required_ruby_version` in the 8.1.3.1
+  gemspecs). That is a compatibility minimum, not a support statement — **this
+  skill's floor is Ruby 3.4**, because 3.4 and 4.0 are the only branches still
+  in normal maintenance: **Ruby 3.2 is end-of-life since 2026-04-01** and
+  **3.3 has been security-fixes-only since the same date**
+  ([branches](https://www.ruby-lang.org/en/downloads/branches/)). Prefer the
+  current stable **4.0.x** (4.0.6 on 2026-08-01; check, don't assume). 3.4.x is
+  the supported alternative. Keep YJIT for production; ZJIT is still
+  experimental. Dropped into an app already on 3.2/3.3, follow the project —
+  Rails permits it — but say the interpreter is unsupported, and note that the
+  parser hazard in `references/controllers-routing.md` §7 applies there.
+- **There is no Rails 8.2 or 9.0** as of 2026-08-01 — no gem, no tag, no
+  announcement. Third-party posts claiming an 8.2 release have circulated and
+  are wrong; check rubygems.org or the Rails blog before believing a number.
 - New apps get `config.load_defaults 8.1` in `config/application.rb`.
 - If the user's app is on an older Rails, upgrade one minor version at a time
   (7.2 → 8.0 → 8.1) with `bin/rails app:update` and the framework-defaults
   file. Verify current versions with a web search if the date is well past
-  March 2026.
+  **August 2026** — and look for a newer *security* patch specifically, since
+  those ship as a fourth version segment (8.1.3 → 8.1.3.1) that a `~> 8.1.3`
+  pin will pick up but a `= 8.1.3` pin will not.
 
 ## What `rails new` gives you (the default stack)
 
