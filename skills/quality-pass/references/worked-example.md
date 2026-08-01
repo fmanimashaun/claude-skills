@@ -62,10 +62,10 @@ and half of what follows turns on that boundary.
 
 | shape | files | where |
 |---|---|---|
-| `class Unusable(RuntimeError)` | 4 | one plugin |
-| the `json.loads` -> `Unusable` prologue | 4 | one plugin |
-| the `check(label, ok, detail)` selftest harness | 9 | two plugins + non-shipped tooling |
-| the `SELFTEST FAILED --` reporter | 8 | two plugins + non-shipped tooling |
+| `class Unusable(RuntimeError)` | 5 | one plugin |
+| the `json.loads` -> `Unusable` prologue | 5 | one plugin |
+| the `check(label, ok, detail)` selftest harness | 11 | two plugins + non-shipped tooling |
+| the `SELFTEST FAILED --` reporter | 10 | two plugins + non-shipped tooling |
 | WCAG relative luminance | 2 | one plugin + non-shipped tooling |
 
 <!-- shared-shapes:end -->

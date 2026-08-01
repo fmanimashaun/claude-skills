@@ -87,7 +87,13 @@ MAX_SKILL_LINES = 500
 
 # The skills we DISTRIBUTE (marketplace.json's rails-stack `skills` array). Asserted exactly, in
 # both directions, against the real tree — see "SCOPE" in the docstring.
-SHIPPED_SKILLS: frozenset[str] = frozenset({"code-review", "fidara-design", "hotwire", "rails-8"})
+SHIPPED_SKILLS: frozenset[str] = frozenset({
+    "code-review", "fidara-design", "hotwire", "rails-8",
+    # Added deliberately when #360 shipped it. `quality-pass` is bundled in the rails-stack
+    # plugin like the other four, so it is installed by users and its references must be
+    # reachable from its own SKILL.md on the same terms.
+    "quality-pass",
+})
 
 # A path mention of a reference file, in either the code-span form (`references/x.md`) or as a
 # markdown link target ([...](references/x.md)). Deliberately anchored on `references/` -- see
@@ -301,7 +307,13 @@ def selftest() -> int:
               f"got {sorted(rules(d))}")
 
     # ---- the scope pin itself (its enforcement against the real tree is in run(), by design) ---
-    check("SHIPPED_SKILLS is populated", len(SHIPPED_SKILLS) == 4, f"got {sorted(SHIPPED_SKILLS)}")
+    # NOT an exact count. The first version asserted `== 4`, which made the number a second
+    # source of truth for the frozenset ten lines above it — so shipping a fifth skill
+    # (`quality-pass`, #360) failed this selftest even though the pin had been updated
+    # correctly and the gate itself was green. What this fixture is actually for is catching
+    # an EMPTIED scope, which would make the gate examine nothing while reporting clean; the
+    # real-tree reconciliation lives in run(), by design.
+    check("SHIPPED_SKILLS is populated", len(SHIPPED_SKILLS) > 0, f"got {sorted(SHIPPED_SKILLS)}")
     check("the eval control is not in scope", "rails-generic" not in SHIPPED_SKILLS)
 
     if failures:
