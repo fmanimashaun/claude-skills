@@ -1200,6 +1200,35 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 
+
+### Unreleased
+
+- **NEW `claim-verifier` — it verifies what a change says about itself, not the code** (#359).
+  Borrowed from `fable-advisor` in `fcakyon/claude-codex-settings`: *"a second opinion **without
+  substituting the host tool's model**… the reviewer checks load-bearing claims itself."*
+  - **The failure it exists for is measured, not hypothetical.** Three defects shipped from this
+    repository in one day — the gates ran nowhere automatically, the publish had no dependency on the
+    sweep, and a scaffolded CI job referenced a variable that does not exist in Actions. **Every one
+    was found by a human asking whether a claim was true**, and none by the forty gates. Twice the
+    correct knowledge was already in the same file. Reviewing the diff would not have caught any of
+    them, because each diff was internally consistent: **the defect was in the sentence describing
+    it.**
+  - It extracts enforcement, exhaustiveness, causation and measurement claims, then checks each by
+    **running or grepping** — reading the code is explicitly not checking, because the claims are
+    about behaviour. Three verdicts, and **UNVERIFIABLE is a finding**: a claim nobody can check
+    should not be in a description.
+  - **The issue asked for a third tier, and building it showed that was the wrong answer.** #359
+    assumed the agent must be pinned to a different model, which `check_handoff.py` rejects twice —
+    no tier maps to it, and `fable` is in `EXPENSIVE_ALIASES`. That second objection is
+    **substantively correct**: pinning a *shipped* agent to an expensive alias spends a stranger's
+    money on our authority, and a value outside their `availableModels` is skipped anyway. A pin
+    cannot buy a second opinion; it can only impose a cost.
+  - So it is `inherit` like every other judgement agent, and the mechanism moves where it belongs:
+    getting a genuine second opinion is the **caller's** act, and the agent must **state which model
+    it ran as** and say plainly when that matches the session. The tier vocabulary needed no third
+    value — the mechanism was never the frontmatter. Recorded beside the table, because the row
+    otherwise looks like an oversight.
+
 ### 1.15.1 — 2026-08-01
 
 - **FIX — the CI job we scaffold into a user's repo could never run** (#334). `setup-flow` §8

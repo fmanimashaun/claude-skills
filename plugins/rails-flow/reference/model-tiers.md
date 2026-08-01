@@ -87,6 +87,7 @@ not a nicety — and why the mechanical column below has to name the proof for e
 | `rails-developer` | judgement | `inherit` | — |
 | `skill-curator` | judgement | `inherit` | — |
 | `claude-skills-reporter` | judgement | `inherit` | — |
+| `claim-verifier` | judgement | `inherit` | — |
 | `test-runner` | mechanical | `haiku` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 | `design-auditor` | mechanical | `haiku` | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `haiku` | `architecture_graph.py` regenerates and its digest guard fails on drift |
@@ -95,6 +96,20 @@ not a nicety — and why the mechanical column below has to name the proof for e
 The markers are load-bearing: `check_handoff.py --agents <dir> --tiers <this file>` parses **that**
 table and fails when an agent's frontmatter disagrees with it, so this document cannot quietly
 become folklore again. A stale row naming an agent that no longer exists fails too.
+
+**`claim-verifier` is `inherit`, and that deserves a sentence because it looks wrong.** Its whole
+value is being a *different* model from the one that wrote the change — a second opinion that shares
+the author's blind spot is just a slower review. So the obvious move is to pin it to something else.
+
+We do not, for the reason in fact 4 above: pinning a **shipped** agent to an expensive alias spends a
+stranger's money on our authority, and a value outside their `availableModels` is skipped anyway. A
+pin cannot buy a second opinion here; it can only impose a cost.
+
+So getting one is the **caller's** act — a per-invocation `model`, or `CLAUDE_CODE_SUBAGENT_MODEL` —
+and the agent is required to **say which model it ran as**, and to state plainly when that matches the
+session, so a reader can tell whether the second opinion was actually second. That is the honest
+alternative to a pin that pretends to be free, and it is why the tier vocabulary did **not** need a
+third value: the mechanism was never the frontmatter.
 
 **Why the three mechanical agents are the only three.** `test-runner` reports a suite it did not
 write; `design-auditor` runs greps whose expected result is "empty"; `doc-updater` syncs prose to a
