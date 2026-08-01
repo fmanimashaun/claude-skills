@@ -11,7 +11,7 @@
 ## 1. Action Mailer
 
 ```bash
-bin/rails g mailer Order receipt   # mailer class + views + preview + test
+bin/rails g mailer Order receipt   # mailer class + views + spec + preview (specs and preview under spec/)
 ```
 
 ```ruby
@@ -36,9 +36,37 @@ OrderMailer.with(order: order).receipt.deliver_later   # ALWAYS deliver_later in
   environment, and use `*_url` helpers (never `*_path`) in mailer views.
 - Inline images: `attachments.inline["logo.png"] = File.read(...)` then
   `image_tag attachments["logo.png"].url`.
-- **Previews** — `test/mailers/previews/order_mailer_preview.rb` classes
-  render at `http://localhost:3000/rails/mailers`; keep every mailer action
-  previewable (build or fetch representative data inside the preview).
+- **Previews live in `spec/mailers/previews/`, not `test/mailers/previews/`.**
+  `spec/mailers/previews/order_mailer_preview.rb` classes render at
+  `http://localhost:3000/rails/mailers` (development only —
+  `show_previews` defaults to `Rails.env.development?`). Keep every mailer
+  action previewable (build or fetch representative data inside the preview).
+  `bin/rails g mailer` writes the file there for you; it is where rspec-rails
+  looks, and this skill's apps have no `test/` directory at all
+  (`project-setup.md` §2). Do not hand-create one for a preview.
+
+  **Why, and the one thing that breaks it.** Rails' own default is
+  `#{Rails.root}/test/mailers/previews`, added by the Action Mailer railtie as a
+  **union** — `options.preview_paths |= [...]` — so it is always in the search
+  path whether or not the directory exists
+  ([`railtie.rb`](https://github.com/rails/rails/blob/8-1-stable/actionmailer/lib/action_mailer/railtie.rb)).
+  rspec-rails adds `spec/mailers/previews` ahead of it from its own
+  `rspec_rails.action_mailer` initializer, which runs `before:
+  "action_mailer.set_configs"` — **but only while `preview_paths` is still
+  empty** ([`rspec-rails.rb`](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec-rails.rb),
+  `config_default_preview_path`). So *any* app-level touch of the setting —
+  append included, because the guard is `.empty?` and not "already contains" —
+  silently drops the `spec/` default. If you need an extra location, name both:
+
+  ```ruby
+  # config/application.rb — only if you need a location beyond the default
+  config.action_mailer.preview_paths << Rails.root.join("spec/mailers/previews").to_s
+  config.action_mailer.preview_paths << Rails.root.join("lib/mailer_previews").to_s
+  ```
+
+  Append, never assign: assignment cannot remove Rails' `test/` entry anyway (the
+  railtie unions it back in afterwards). `preview_path` **singular** is not a
+  Rails 8 setting — deprecated in 7.1, removed in 7.2.
 - Delivery config: development doesn't send
   (`perform_deliveries`/preview instead); test collects into
   `ActionMailer::Base.deliveries`; production sets

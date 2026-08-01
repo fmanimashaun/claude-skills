@@ -26,37 +26,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   shape as `check_shared_shapes.py` and `check_handoff.py`. `unknown-tone` resolves the vocabulary
   through the token file rather than a hardcoded `{card, background}`, so the section's *"no new
   token"* promise is enforced in the file that makes it instead of being another prose guarantee.
-- **Five more mutation guards were INERT — 44 mutations that proved nothing — plus the rule that
-  should have said so.** [#422](https://github.com/fmanimashaun/claude-skills/issues/422) fixed one
-  instance of this a day earlier; these are the rest, found by running the sweep for the work above
-  and fixed here rather than filed, because they are one mechanism and between them they made this
-  branch's own verification unreadable. They surfaced **one at a time**: each repair unmasked the
-  next, since the sweep reports the first failing guard. In every case the **unmutated** selftest
-  already exited 1 in the staged tempdir, so each mutation read as "caught" by a missing file
-  rather than by the fixture named against it. The checker's own INERT control is what says so —
-  it is the reason these were found rather than trusted, and it is worth noticing that the control
-  had been reporting all five since the day it was written.
-  - `check_handoff` (7): `claim-verifier` was added to the tier table and to
-    `plugins/rails-flow/agents/` and never to the guard's `needs`.
-  - `crawl_report` (3): its *"ships beside its judge"* fixture reads `crawl_collector.js`, which
-    three sibling guards already declare and this one did not.
-  - `project_gates` (3): its last checks assert every shipped `checks.json` names a real script.
-  - `maintainer_doctor` (7): its selftest asserts every gate command names a file that exists, and
-    in the staged mutant reported **all but one of them** missing — the one being the subject
-    itself. The guard on the gate sweep was the one proving nothing.
-  - `validate_evidence` (24, the largest): its profile-header checks glob `plugins/qa-flow/agents/`
-    to prove no CSV contract is dead.
-  - **`mutation_check_selftest`'s completeness rule contradicted the stager it audits.** #422 taught
-    `stage()` to `copytree` a directory and left the rule on `is_file()`, so the very `needs` that
-    fixed an inert guard failed the rule asserting its paths are real — a half-taught invariant.
-    `needs` is now checked with `exists()`; `subject`/`selftest`/`deps` stay `is_file()`, because
-    those are modules and a directory there is a different defect.
-
-  Four of the five are declared as **directories**, following the reasoning `build_coverage`'s guard
-  already records: a hand-listed set of files goes quiet the day a fifty-eighth gate, a sixteenth
-  check or a new agent is added, which is the coverage-gap class inside the harness built to catch
-  it. Result: **324 mutations across 29 guards, all caught**, where 44 of them previously could not
-  fail.
+- **FIX — `mutation_check`'s own selftest rejected the declaration #422 had just added.** Rule 6 asserts
+  every guard names paths that exist, and tested all four fields with `is_file()`. #422 deliberately gave
+  the `build_coverage` guard a **directory** (*"a directory, so a new reference doc is picked up rather
+  than quietly missing"*), so the commit that removed one vacuous guard left `dev`'s `mutation check` gate
+  failing. `subject` and `selftest` are scripts and still must be files; `deps` and `needs` are staged by
+  copying, so existence is the real rule for them — which still catches the typo the check exists for.
+  Found running the sweep on a clean `origin/dev`, not on a change.
 
 ### 1.55.0 — 2026-08-01
 
@@ -2396,13 +2372,131 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   claim that *does* have a source is cited to the file carrying it (`foundations-tokens.md`
   → *Elevation idiom*, `visual-assets.md` §8, `motion.md` §14, the *Settings* nested-card rule), and
   the one number asserted about ourselves is **measured, not asserted** — see the gate below.
-- **The proposal's "exactly one axis moves per boundary" was weakened deliberately, and it is
-  recorded in the section.** With tone alternating and card grids barred from `card`-tone bands it
-  has no solution at seven bands, and a rule the shipped worked example cannot satisfy is the
-  `gate-that-cannot-fail` class in prose form. The shipped rule — *never share **both** Columns and
-  Width* — is satisfiable, is what the 14 identical rows actually break, and is mechanical.
+- **The proposal's "exactly one axis moves per boundary" was rejected, and the reason is in the
+  section.** It **contradicts the tone rule outright**: if tone must change at every boundary and
+  only one axis may change, tone is the axis that changes every time, so Columns and Width never
+  change at all — the stricter-sounding rule *is* the flat page. The shipped rule is a floor rather
+  than an equality: never share **both** Columns and Width, which is exactly what the 14 identical
+  rows break, and which a script can decide.
 - **`Landing` now says it is the spine of that sequence, not a second answer.** Its four sections
   are bands 1, 2, 5 and 7, so the two are one doctrine rather than two that drift.
+- **The generated-layout tree listed `test/` in the file that mandates `--skip-test` fifty lines
+  above it** (#395). §1 of `project-setup.md` says the framework's test scaffolding "must never be
+  generated"; §2's tree then listed `test/` as part of what a generated app contains, so an agent
+  reading the tree as the map of a scaffolded app believed a directory §1 guarantees is absent.
+  Verified: `--skip-test` skips `build(:test)` outright, so none of `test/test_helper.rb`,
+  `test/fixtures/files/`, `test/controllers/`, `test/mailers/`, `test/models/`, `test/helpers/` or
+  `test/integration/` is written, and `capybara`/`selenium-webdriver` leave the `Gemfile` with it
+  ([`app_generator.rb`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/app_generator.rb)
+  `create_test_files`,
+  [`Gemfile.tt`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/templates/Gemfile.tt),
+  both gated on `depends_on_system_test?`; fetched 2026-08-01). **The row was also wrong on its own
+  terms, before `--skip-test` is considered**: `def test` creates no `test/jobs/`, and `test/system/`
+  + `test/application_system_test_case.rb` are written only when `--devcontainer` is *also* passed
+  (`build(:system_test)` is called unconditionally but its body is `if devcontainer? &&
+  depends_on_system_test?`). So the row is gone rather than corrected, and the note replacing it says
+  what is absent, what takes its place (`spec/`, from `rspec:install`), the two consequences already
+  documented elsewhere, and — because a deletion invites a restoration — not to add it back from
+  memory. Version boundary: Rails **8.1** (`8-1-stable`, = 8.1.3.1); the flag's behaviour is not new
+  in 8.1, the contradiction was with our own doctrine.
+- **The issue's stated consequence for mailer previews was REFUTED, and the real defect is a
+  different one** (#395). The report reasoned that previews at `test/mailers/previews/` would leave
+  `/rails/mailers` "silently empty" because rspec-rails does not change `preview_paths`. Both halves
+  are wrong, and the corrected doctrine had to be written from the sources rather than from the
+  issue. (a) Rails' railtie adds its default as a **union** — `options.preview_paths |=
+  ["#{Rails.root}/test/mailers/previews"]` — so that path is in the search list whether or not the
+  directory exists, and a preview hand-written there *does* render
+  ([`railtie.rb`](https://github.com/rails/rails/blob/8-1-stable/actionmailer/lib/action_mailer/railtie.rb)).
+  (b) rspec-rails **does** set the path: its `rspec_rails.action_mailer` initializer runs `before:
+  "action_mailer.set_configs"` and appends `"#{Rails.root}/spec/mailers/previews"`, and
+  `rails g mailer` writes the preview file there
+  ([`rspec-rails.rb`](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec-rails.rb),
+  [`mailer_generator.rb`](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/generators/rspec/mailer/mailer_generator.rb)).
+  So the harm was not an empty page but doctrine naming a directory the mandated scaffold does not
+  create — telling an agent to hand-build the `test/` tree §1 promises will not exist, in a second
+  location from where the generator on line 14 of the same file actually writes. `mail-storage-richtext.md`
+  §1 now states `spec/mailers/previews/` with the mechanism behind it.
+- **`config_default_preview_path` guards on `.empty?`, so *appending* a preview path also drops the
+  `spec/` default** (found while verifying #395). Not in the report, and the non-obvious half: because
+  rspec-rails only supplies its default *"unless `options.preview_paths.empty?`"*, any app-level touch
+  of the setting — `<<` included, not just assignment — suppresses `spec/mailers/previews` silently.
+  The guidance therefore names both paths in the worked example rather than showing the guides' bare
+  append. Assignment is called out separately as unable to *remove* Rails' `test/` entry, since the
+  railtie unions it back afterwards. Also recorded: `show_previews` defaults to
+  `Rails.env.development?`, and `preview_path` **singular** is not a Rails 8 setting — deprecated in
+  **7.1**, removed in **7.2**
+  ([Action Mailer CHANGELOG](https://github.com/rails/rails/blob/v7.2.0/actionmailer/CHANGELOG.md)).
+  Change type: framework claim, CONFIRMED verdict; sources above fetched 2026-08-01.
+- **fidara-design: the list family is documented — Stacked list, Grid list, Activity feed / Timeline**
+  (Refs #95, the Phase-2 umbrella's *Lists + data display* group). All three were `derivable` rows whose
+  entire guidance was one **Build from** cell (*"Media object rows inside a `divide-y` container"*), while
+  the group's acceptance criterion asks for variant × size × state, an a11y contract and responsive rules.
+  `coverage.md` **69 → 72 `documented`**, 44 → 41 derivable. Verified against
+  [APG Patterns index](https://www.w3.org/WAI/ARIA/apg/patterns/) (still **30**, re-counted),
+  [Feed](https://www.w3.org/WAI/ARIA/apg/patterns/feed/), [`feed`](https://www.w3.org/TR/wai-aria-1.2/#feed),
+  [Grid](https://www.w3.org/WAI/ARIA/apg/patterns/grid/), [Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/),
+  ARIA 1.2 [`list`](https://www.w3.org/TR/wai-aria-1.2/#list) / [`listitem`](https://www.w3.org/TR/wai-aria-1.2/#listitem),
+  and WCAG 2.2 [1.3.1](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html) (A) and
+  [2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) (AA).
+- **Three ARIA patterns are near-misses for a list of records and every one of them is wrong — stated
+  with the quote that rules it out.** **Listbox**: *"it does not provide an accessible way to present a
+  list of interactive elements, such as links, buttons, or checkboxes"*, which is what a record row is.
+  **Grid**: *"A grid is a composite widget so it: Always contains multiple focusable elements … Requires
+  the author to provide code that manages focus movement inside it"* — a wall of cards has no roving
+  tabindex, so `role="grid"` announces a keyboard model that does not exist. **Feed**: scoped to
+  *"a dynamic list of articles that often appears to scroll infinitely"*, so a fixed-length history is
+  not one. Plain `list`/`listitem` is the answer, and *"Authors **MUST** ensure elements whose role is
+  listitem are contained in, or owned by, an element whose role is list"*.
+- **FIX — every list this kit ships loses its list semantics in Safari, and two things we already
+  ship are what cause it.** Tailwind v4's Preflight sets `ol, ul, menu { list-style: none }`
+  ([Preflight](https://tailwindcss.com/docs/preflight)), and WebKit then drops the role **on purpose** —
+  *"This was a purposeful change due to rampant 'list'-itis by web developers… If you want to override
+  the heuristic, you can add `role=list`"* ([WebKit 170179](https://bugs.webkit.org/show_bug.cgi?id=170179),
+  resolved as a duplicate of 134187, unretracted through the tracker's last activity in January 2023 and
+  still reproducing in independent testing on Safari 15.6–17). Tailwind's **own** docs carry the fix
+  verbatim — *"Unstyled lists are not announced as lists by VoiceOver… add a `list` role to the element"* —
+  which is the citation used, because it is first-party to the framework we ship. The criterion is
+  **1.3.1 Info and Relationships (Level A)**, and the markup passes its technique **H48** while the
+  accessibility tree does not, so nothing in the HTML looks wrong.
+  - **Nine shipped markup sites and six prose rules were emitting bare lists** and now carry
+    `role="list"`: the cart lines, the checkout and order-progress `<ol>`s, the mobile card-stack
+    fallback, the navbar / mobile-nav / rail / nested-section lists, the Breadcrumbs `<ol>`, and the prose
+    prescribing a bare `<ul>` or `<ol>` for the rail, the Stepper, the avatar group, the Breadcrumbs row
+    and the mega-menu columns (twice). Found by grepping the pattern rather than fixing the one
+    instance, per CLAUDE.md.
+  - **A claim I expected to make was REFUTED, and shipping it would have misdirected people.**
+    `display: flex` / `display: grid` **on the list element itself** does *not* break list semantics in
+    current Safari, Chrome or Firefox — so `stack`, `cluster` and `grid-auto` on a `<ul>` are all safe.
+    The real hazard is `display: contents` used to flatten a `<ul>` wrapper so its `<li>`s become grid
+    items, which resets the accessible role; MDN's answer is `subgrid`
+    ([Grid layout and accessibility](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout/Accessibility)).
+    The broader claim is written down as the thing *not* to believe.
+- **The feed entry states which document binds, because APG and core ARIA disagree in strength.** APG
+  states `aria-posinset`/`aria-setsize` flatly; ARIA 1.2 says authors **MAY**. We bind to the APG pattern
+  and say so. Two negatives are recorded the #142 way: **`aria-level` is not part of the Feed pattern**
+  (it is a `listitem` property, and it appears nowhere in the pattern), and **`role="feed"` takes no
+  `role="list"`** — `feed` is a subclass of `list` whose required owned elements are `article`.
+- **Three claims are OURS and say so, because the gate found no upstream** (design decisions under
+  CLAUDE.md's *What the gate covers* carve-out, recorded on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95)): (1) applying Tailwind's `<ul>`-shaped
+  callout to `<ol>` as well; (2) the one-stretched-link-per-row rule, and the corollary that a row with a
+  second control must not use it, because the overlay covers its siblings; (3) `<time datetime>` with a
+  relative label — **no WCAG criterion governs relative versus absolute time, and none mandates `<time>`**.
+  Likewise **no success criterion requires `aria-posinset`/`aria-setsize`** outside the feed pattern, so
+  the entry scopes them to virtualised lists rather than implying an obligation.
+- **FIX — the Media object entry carried its `a11y` bullet twice**, with the decorative-`alt` rule stated
+  in both and the responsive rule buried inside the first. Merged; the `Responsive:` bullet now holds the
+  responsive rule, like every other entry in the file.
+- **FIX — `coverage.md`'s derivable section said something stronger than it meant, and was already false.**
+  *"No dedicated catalogue entry, and none needed"* — while Command palette, a derivable row, has had a
+  `components.md` section since #229. The distinction the file actually draws is **anatomy**, not the
+  existence of a section, so it now says that and names the exception instead of contradicting it.
+- **FIX — `Chat bubble`'s `Build from` re-spelled the Stacked list's composition** instead of pointing at
+  it, so it went stale the moment that row was promoted. Same defect the promoted-row guard exists for,
+  in the half it does not cover (`derivable` rows).
+- **FIX — `fidara-design/SKILL.md` advertised "~16 catalog components"; the catalog holds well over twice
+  that.** Replaced with a pointer to `coverage.md`, which a script regenerates — a count restated in prose
+  beside a generated one is a second copy with no arbiter, which is how it drifted.
 
 ### 1.30.0 — 2026-08-01
 

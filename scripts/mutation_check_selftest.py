@@ -186,21 +186,27 @@ def run() -> int:
                 )
 
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
-    # `subject`/`selftest`/`deps` are modules, so they must be FILES. `needs` may be a whole
-    # directory -- `stage()` copytree's one -- so it is checked with `exists()`. #422 taught the
-    # stager about directories and left this rule on `is_file()`, so the very `needs` that fixed an
-    # inert guard failed the rule asserting its paths are real. A half-taught invariant.
-    def _absent(rel: str, files_only: bool) -> bool:
-        target = original_repo / rel
-        return not (target.is_file() if files_only else target.exists())
-
+    # `subject` and `selftest` are scripts, so they must be FILES. `deps` and `needs` are staged
+    # by copying, and #422 deliberately declared a DIRECTORY there ("a directory, so a new
+    # reference doc is picked up rather than quietly missing") -- which `is_file()` then rejected,
+    # leaving the fix that removed one vacuous guard failing this selftest. Existence is the real
+    # rule for those two, and it still catches the typo this check exists for.
     for real_guard in mc.GUARDS:
         _tick()
+        # `subject`, `selftest` and `deps` are Python modules that get IMPORTED, so they must be
+        # files. `needs` is different: it means "stage this beside the mutant", and a guard whose
+        # selftest reads a whole directory of fixtures must be able to declare the directory —
+        # `build_coverage` needs all of `skills/fidara-design/references`, and naming files would
+        # silently miss the next one added, which is the rot that made five guards inert.
+        #
+        # `dev` fixed this concurrently and let `deps` be a directory too. Kept the stricter form:
+        # no guard declares a directory dep, so the two behave identically today, and a dep that
+        # resolves to a directory could never be imported — it is a typo worth catching.
         missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
-                   if _absent(p, files_only=True)]
-        missing += [p for p in real_guard.needs if _absent(p, files_only=False)]
+                   if not (original_repo / p).is_file()]
+        missing += [p for p in real_guard.needs if not (original_repo / p).exists()]
         if missing:
-            FAILURES.append(f"{real_guard.name}: declares files that do not exist: {missing}")
+            FAILURES.append(f"{real_guard.name}: declares paths that do not exist: {missing}")
         if not real_guard.mutations:
             FAILURES.append(
                 f"{real_guard.name}: declares no mutations — a guard with an empty list passes "
