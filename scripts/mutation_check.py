@@ -423,6 +423,10 @@ GUARDS: tuple[Guard, ...] = (
         name="validate_evidence",
         subject="plugins/qa-flow/scripts/validate_evidence.py",
         selftest="plugins/qa-flow/scripts/validate_evidence_selftest.py",
+        # The profile-header fixtures cross-check every evidence contract against the agent that
+        # documents it, and FAIL rather than skip when the agent is absent. A directory, so a new
+        # qa-flow agent is picked up instead of quietly missing.
+        needs=("plugins/qa-flow/agents",),
         mutations=(
             Mutation(
                 "a Pass on a non-2xx/3xx page is accepted (the #106 defect)",
@@ -1211,7 +1215,12 @@ GUARDS: tuple[Guard, ...] = (
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
         selftest="scripts/maintainer_doctor_selftest.py",
-        needs=(".gitignore",),
+        # A fixture asserts every gate in GATES names a script that exists, and GATES spans the
+        # whole toolchain -- so the mutant needs the whole toolchain. Directories rather than the
+        # ~50 paths GATES currently references, which would be a list stale by the next gate.
+        # `dist` is here because without it the "no mutation of a packaged skill" check SKIPS, and
+        # in a staged tempdir a skip is indistinguishable from a pass.
+        needs=(".gitignore", "scripts", "plugins", "evals", "dist"),
         mutations=(
             Mutation(
                 "an unignored corpora path stops being reported",
@@ -1319,8 +1328,13 @@ GUARDS: tuple[Guard, ...] = (
         name="project_gates",
         subject="plugins/rails-flow/scripts/project_gates.py",
         selftest="plugins/rails-flow/scripts/project_gates.py",
+        # The manifests, plus the scripts they name: a fixture asserts every declared check points
+        # at a script that exists, so the mutant needs those scripts on disk. Directories, because
+        # a manifest gaining a row must not be able to outrun this list.
         needs=("plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
-               "plugins/design-flow/checks.json"),
+               "plugins/design-flow/checks.json",
+               "plugins/rails-flow/scripts", "plugins/qa-flow/scripts",
+               "plugins/design-flow/scripts"),
         mutations=(
             Mutation(
                 "a not-applicable check is counted as a pass",
@@ -1348,6 +1362,9 @@ GUARDS: tuple[Guard, ...] = (
         name="crawl_report",
         subject="plugins/qa-flow/scripts/crawl_report.py",
         selftest="plugins/qa-flow/scripts/crawl_report.py",
+        # Its "the collector ships beside its judge" fixture reads the real file, exactly as the
+        # other three qa-flow judges' do -- and those three declared it while this one did not.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "the 200-but-error rule stops firing",
@@ -1553,7 +1570,7 @@ GUARDS: tuple[Guard, ...] = (
         mutations=(
             Mutation(
                 "the count comparison stops comparing, so a stale number passes",
-                "        if rows[shape.label] != len(hits):",
+                "        if want_files != len(hits):",
                 "        if False:",
                 "a wrong count in the table is DRIFT",
             ),
@@ -1596,6 +1613,40 @@ GUARDS: tuple[Guard, ...] = (
                 'ROOTS = ("plugins", "scripts")',
                 "ROOTS = ()",
                 "the source walk finds the corpus files",
+            ),
+            # #398. `reach` is a second, independent claim per row: how many copies share one
+            # install root, which is the ceiling on what extracting the shape could remove. The
+            # file count can be right while it is wrong, so it needs its own mutation.
+            Mutation(
+                "the reach comparison stops comparing, so a stale ceiling passes",
+                "        if want_reach != got_reach:",
+                "        if False:",
+                "a wrong reach in the table is DRIFT",
+            ),
+            # The grouping, not the comparison. A `unit()` that answers the same thing for every
+            # path makes reach == files everywhere: each row stays internally consistent and the
+            # column silently stops meaning "one install root".
+            Mutation(
+                "every path groups into one install root, so reach collapses into the file count",
+                '    if parts[0] == "plugins" and len(parts) > 1:',
+                "    if False:",
+                "every declared shape is measured at its known count and reach in the corpus",
+            ),
+            Mutation(
+                "a plugin directory the manifest never installs stops being reported",
+                "    return sorted(u for u in seen if u.startswith(\"plugins/\") and u not in roots)",
+                "    return []",
+                "a copy under an undeclared plugin directory is reported",
+            ),
+            # Both directions of the manifest read. Returning an empty set instead of raising
+            # would make every measured plugin undeclared -- a rule that fires on everything is a
+            # rule that gets switched off, which is the same defect as one that never fires.
+            Mutation(
+                "an unparseable manifest yields no roots instead of refusing to guess",
+                "        raise Unreadable(f\"{MANIFEST}: not readable as JSON ({exc}), so no install root is known \"\n"
+                "                         \"and `reach` would be grouping by a boundary nothing confirms\") from exc",
+                "        return set()",
+                "an unparseable manifest returned instead of raising",
             ),
         ),
     ),
@@ -2202,19 +2253,18 @@ GUARDS: tuple[Guard, ...] = (
         # Read, not imported. The selftest's last checks run the REAL tier table against the REAL
         # agents and FAIL rather than skip when absent -- so the mutant needs them, or every
         # mutation reports as "caught by the wrong fixture" and the real signal is buried.
+        #
+        # The agents are named as a DIRECTORY, not enumerated. They were enumerated, and the list
+        # went stale the moment an eleventh agent shipped: `claim-verifier.md` was missing, the
+        # unmutated selftest failed in the staged tempdir on a tier row naming an agent the mutant
+        # did not have, and all seven mutations read as caught. Exactly the `build_coverage` defect
+        # of #422, in the guard right next to it -- when you find one instance, grep for the
+        # pattern. A hand-typed list of everything in a directory is a coverage gap with a date on
+        # it.
         needs=(
             "plugins/rails-flow/reference/model-tiers.md",
             "plugins/rails-flow/commands/handoff.md",
-            "plugins/rails-flow/agents/claude-skills-reporter.md",
-            "plugins/rails-flow/agents/code-reviewer.md",
-            "plugins/rails-flow/agents/design-auditor.md",
-            "plugins/rails-flow/agents/doc-updater.md",
-            "plugins/rails-flow/agents/migration-writer.md",
-            "plugins/rails-flow/agents/pr-reviewer.md",
-            "plugins/rails-flow/agents/rails-developer.md",
-            "plugins/rails-flow/agents/security-auditor.md",
-            "plugins/rails-flow/agents/skill-curator.md",
-            "plugins/rails-flow/agents/test-runner.md",
+            "plugins/rails-flow/agents",
         ),
         mutations=(
             Mutation(

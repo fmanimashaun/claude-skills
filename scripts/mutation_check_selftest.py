@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -36,6 +37,21 @@ CHECKS = 0
 def _tick() -> None:
     global CHECKS
     CHECKS += 1
+
+
+def _declared_missing(guard: "mc.Guard", repo: Path) -> list[str]:
+    """Paths a guard declares that are not in `repo`, asked the way `stage()` copies them.
+
+    `subject`, `selftest` and `deps` are Python modules, so `is_file()` is the right question.
+    `needs` is DATA the selftest reads, and `stage()` deliberately accepts a DIRECTORY there (#422,
+    so a new reference doc is picked up rather than quietly missing). Asking `is_file()` of it made
+    this assertion contradict the staging it checks, and the first guard to use the feature then
+    failed a gate that could not be satisfied.
+    """
+    missing = [p for p in (guard.subject, guard.selftest, *guard.deps)
+               if not (repo / p).is_file()]
+    missing += [p for p in guard.needs if not (repo / p).exists()]
+    return missing
 
 
 # A trivial subject + selftest pair, so the three failure modes can be exercised without depending
@@ -186,10 +202,26 @@ def run() -> int:
                 )
 
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
+    # Both directions of the widened `needs` test first, because relaxing an assertion is how one
+    # stops asserting. A directory in `needs` must be accepted; a path that is simply not there
+    # must still be reported.
+    _probe = mc.Guard(name="probe", subject="scripts/mutation_check.py",
+                      selftest="scripts/mutation_check_selftest.py",
+                      needs=("plugins/rails-flow/agents",))
+    _tick()
+    if _declared_missing(_probe, original_repo):
+        FAILURES.append(
+            "a directory in `needs` was reported missing, but `stage()` copies one — the "
+            "assertion would contradict the staging it checks")
+    _tick()
+    if not _declared_missing(replace(_probe, needs=("no/such/path",)), original_repo):
+        FAILURES.append(
+            "a `needs` path that does not exist was NOT reported — widening the test to accept "
+            "directories must not stop it noticing an absent one")
+
     for real_guard in mc.GUARDS:
         _tick()
-        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps,
-                               *real_guard.needs) if not (original_repo / p).is_file()]
+        missing = _declared_missing(real_guard, original_repo)
         if missing:
             FAILURES.append(f"{real_guard.name}: declares files that do not exist: {missing}")
         if not real_guard.mutations:
