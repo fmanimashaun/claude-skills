@@ -960,6 +960,12 @@ GUARDS: tuple[Guard, ...] = (
                 "domChanged counts as an effect",
             ),
             Mutation(
+                "the constraint-validation exclusion goes, so every validated form reports dead (#357)",
+                '    if control.get("constraintBlocked"):',
+                '    if False:',
+                "a submit blocked by constraint validation is not dead",
+            ),
+            Mutation(
                 "the href exclusion goes, so every link on the site reports dead",
                 '        return "link with href — navigation is its effect and is not observed here"',
                 '        pass',
