@@ -427,7 +427,7 @@ def collect() -> dict:
         "corpora": corpora,
         "crossCheck": {"state": state, "message": message},
         "patterns": [{"name": inline(n), "status": inline(s), "note": inline(note)}
-                     for n, s, note in bc.INTERACTION_PATTERNS],
+                     for n, s, note, _probe in bc.INTERACTION_PATTERNS],
         "primitives": [{"name": inline(f"`{n}`"), "status": inline(s)}
                        for n, s in bc.LAYOUT_PRIMITIVES],
         "provenance": stable_provenance(provenance()),
