@@ -2396,6 +2396,108 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`fidara-design` — plans/pricing and billing, the second slice of the commerce family** (#91).
+  Two page anatomies (**Plans — compare and switch**, **Billing**) plus **Invoice / statement**, which
+  is deliberately *not* a fourth anatomy: it is the shipped `Detail` anatomy with the only three
+  differences named (immutable, so no edit affordance; the money/reference type split; print is the
+  same template). Four catalogue entries — **Plan comparison / feature matrix**, **Seat / quantity
+  selector**, **Saved payment methods**, **Subscription state and dunning** — plus worked markup for
+  the matrix, the default-method radio group and the past-due notice.
+  Externally verifiable claims, each cited at the version in scope:
+  WCAG 2.2 [1.1.1 (A)](https://www.w3.org/TR/WCAG22/#non-text-content) with the
+  [non-text-content definition](https://www.w3.org/TR/WCAG22/#dfn-non-text-content),
+  [1.3.1 (A)](https://www.w3.org/TR/WCAG22/#info-and-relationships) via
+  [H63](https://www.w3.org/WAI/WCAG22/Techniques/html/H63) /
+  [H43](https://www.w3.org/WAI/WCAG22/Techniques/html/H43) /
+  [H39](https://www.w3.org/WAI/WCAG22/Techniques/html/H39),
+  [1.4.1 (A)](https://www.w3.org/TR/WCAG22/#use-of-color),
+  [1.4.10 (AA)](https://www.w3.org/TR/WCAG22/#reflow),
+  [3.2.2 (A)](https://www.w3.org/TR/WCAG22/#on-input),
+  [3.3.4 (AA)](https://www.w3.org/TR/WCAG22/#error-prevention-legal-financial-data);
+  [ARIA 1.2 `aria-sort`](https://www.w3.org/TR/wai-aria-1.2/#aria-sort);
+  APG [Table](https://www.w3.org/WAI/ARIA/apg/patterns/table/),
+  [Grid](https://www.w3.org/WAI/ARIA/apg/patterns/grid/) and
+  [Alert](https://www.w3.org/WAI/ARIA/apg/patterns/alert/);
+  [ARIA in HTML](https://www.w3.org/TR/html-aria/) for `input type=number` → `spinbutton`;
+  WHATWG HTML for the [`type=number` note](https://html.spec.whatwg.org/multipage/input.html#number-state-(type=number)),
+  the underflow/overflow/step-mismatch validity states, `<caption>` and
+  [`download`](https://html.spec.whatwg.org/multipage/links.html#downloading-resources);
+  **PCI DSS v4.0.1 (June 2024) Requirement 3.4.1** quoted from the standard itself for PAN masking,
+  with the scope condition stated rather than assumed — a tokenised merchant is outside it only
+  because no code path touches a raw PAN, not because the requirement exempts them.
+- **A source conflict recorded instead of resolved by fiat** (#91). Whether `role="alert"` is
+  announced for a banner already present at page load has **no normative answer**: ARIA 1.2 (the
+  Recommendation) is silent on load timing, [ARIA 1.3](https://www.w3.org/TR/wai-aria-1.3/) is a
+  *Working Draft* and says an alert is announced *"when the alert is rendered on the page"*, while
+  [APG](https://www.w3.org/WAI/ARIA/apg/patterns/alert/) reports the measured opposite — *"at this
+  time, screen readers do not inform users of alerts that are present on the page before page load
+  completes."* Doctrine states the disagreement and then decides: a state true at load goes in the
+  reading order, `role="alert"` is reserved for a change during the session. No MUST is claimed in
+  either direction.
+- **`type="number"` for a seat count is a decision between two live sources, and both are named**
+  (#91). The HTML Standard's spinbox test leaves quantities in — its own `min`/`max` example is
+  `<input name="quantity" … type="number" min="1">` — while the **GOV.UK Design System** currently
+  says *"Do not use `<input type="number">` unless your user research shows that there's a need for
+  it"*, with no carve-out for incrementable numbers, citing the wheel-scroll hazard. That hazard is
+  real and unspecified: an [open WHATWG issue](https://github.com/whatwg/html/issues/10911), and
+  **Firefox disabled the behaviour by default in 130**
+  ([bug 1741469](https://bugzilla.mozilla.org/show_bug.cgi?id=1741469)). The entry picks
+  `type="number"`, says why, and marks `inputmode="numeric"` a legitimate Project Override — rather
+  than citing one source and omitting the other.
+- **The money-typography question the checkout slice escalated is now settled, at the source** (#91).
+  `brand.md` gains **Money is `tabular-nums`, not `--font-mono`**: the ruling stands, and it is now
+  backed by mechanism rather than by a scope list. `tabular-nums` maps to the OpenType `tnum` feature
+  ([CSS Fonts 3 §tabular-nums](https://www.w3.org/TR/css-fonts-3/#tabular-nums), W3C Recommendation
+  2018-09-20; [CSS Fonts 4](https://www.w3.org/TR/css-fonts-4/#valdef-font-variant-numeric-tabular-nums)
+  repeats it verbatim), and the spec **forbids synthesis** when a font lacks it — *"no attempt is made
+  to synthesize the feature except where explicitly defined for specific properties"*
+  ([§feature-precedence](https://www.w3.org/TR/css-fonts-3/#feature-precedence)), and
+  `font-variant-numeric` is not among the exempt properties. So the rule carries a **pack-font
+  condition**: measured against the font binaries, Bricolage Grotesque implements `tnum` functionally;
+  Newsreader and Overpass Mono register it inertly, being tabular already. `brand_pack_lint.py` cannot
+  check this — a pack declares a family *name*, not a *binary* — so overriding `fonts.sans` is the one
+  override carrying a manual check, and doctrine says so rather than implying a gate exists.
+  **Change type: design/architecture** for the choice itself (no W3C or WHATWG document takes a
+  position on monospace versus tabular figures for currency); authority is the maintainer decision on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91).
+- **`components.md` → Description list contradicted that ruling, and the shipped component could not
+  obey it** (#91). The entry said *"money and identifiers in `font-mono`"* while `page-anatomies.md`
+  and `component-implementations.md` already said money is `tabular-nums` — a `doctrine-contradiction`
+  inside one skill, which an agent building an invoice row would have resolved the wrong way. Fixed at
+  both ends: the entry now names two options, and `Ui::DescriptionListComponent::RowComponent` gains
+  `numeric:` beside `mono:` (passing both raises), because the ruling was previously unimplementable in
+  the component the ruling is about — `claims-vs-enforcement` on our own doctrine.
+- **A plan change is a modal, and `crud-modal-pattern.md` now says so with the reasoning** (#91). The
+  checkout exception's four conditions are run against a plan change as a worked negative: it fails
+  three, so it is ordinary CRUD on a subscription record. The one case that flips it — a change that
+  must collect a *new* payment instrument — hands off to Checkout, because a provider iframe inside a
+  focus trap is the failure the exception exists to avoid. Written down because "money ⇒ full page" is
+  the reasonable wrong reading of the exception, and it would produce a new full-page flow every
+  release. **Change type: design/architecture**; authority is the maintainer decision on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91).
+- **Five negatives recorded so they are not reinvented** (#91). (a) **1.4.10 Reflow explicitly permits
+  horizontally scrolling a data table** — its Note 2 names *"data tables (not individual cells) … It is
+  acceptable to provide two-dimensional scrolling for such parts of the content"* — so our card-stack
+  preference is ergonomics and must never be cited as conformance. (b) **No spec requires any markup on
+  a currency amount**: WCAG 2.2 does not contain the word "currency", and neither `<data>` nor `<bdi>`
+  carries a currency example in the HTML Standard. (c) **Stating "(PDF, 240 KB)" on a download link is
+  not a WCAG requirement at any level and not a technique for 2.4.4 either, sufficient or advisory**;
+  G201, usually cited for it, is about opening new windows. (d) **A plan downgrade is not settled by
+  3.3.4's text** — the Understanding document narrows the SC away from *"the simple creation or editing
+  of … records"* — so our downgrade confirmation is recorded as a product decision, while cancelling
+  and deleting a stored payment method remain squarely inside the criterion. (e) The `✓`-needs-a-name
+  rule follows from WCAG's *definition* of non-text content — *"or where the sequence is not expressing
+  something in human language"* — and is stated that way, because WCAG's note names ASCII art,
+  emoticons and leetspeak, not symbol glyphs. The #142 discipline throughout: cite what the source
+  says, not what it is taken to say.
+- **Not done in this slice, and deliberately** (#91): no rows were added to
+  `scripts/build_coverage.py`'s `ENTRIES` for the four new catalogue entries and three anatomies.
+  `coverage.md` and `docs/coverage.html` can only be regenerated with the licensed corpora attached,
+  and committing an `ENTRIES` change without regenerating them would leave a stale matrix that fails
+  the drift gate on the next maintainer's machine — the exact "damage still landed elsewhere" shape
+  CLAUDE.md records for the corpora exemption. The rows and their evidence strings are listed on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91) for a corpora-attached follow-up.
+
 - **The generated-layout tree listed `test/` in the file that mandates `--skip-test` fifty lines
   above it** (#395). §1 of `project-setup.md` says the framework's test scaffolding "must never be
   generated"; §2's tree then listed `test/` as part of what a generated app contains, so an agent

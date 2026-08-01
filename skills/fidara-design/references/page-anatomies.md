@@ -668,10 +668,11 @@ times."* Do not reach for the **Real-time Exception** — its example is an auct
 to the time limit is possible"*, which a reservation timer you chose the length of is not.
 
 **Money is `tabular-nums`; the order reference is `font-mono`.** They are different jobs and
-[brand.md](brand.md) scopes `--font-mono` to *reference numbers, SLA timers, code, timestamps* — not
-to money. `tabular-nums` is what makes a column of totals align in the interface face. Storage is the
-rails-8 skill's call, not this one: `ecosystem-gems.md` says store integer minor units
-(`price_cents`), so never round a float into a total you display.
+[brand.md](brand.md#money-is-tabular-nums-not---font-mono-91) scopes `--font-mono` to *reference
+numbers, SLA timers, code, timestamps* — not to money. `tabular-nums` is what makes a column of totals
+align in the interface face; that section carries the full rule, including the pack-font condition the
+utility silently depends on. Storage is the rails-8 skill's call, not this one: `ecosystem-gems.md`
+says store integer minor units (`price_cents`), so never round a float into a total you display.
 
 **The confirmation is the last step of this flow, not a toast.** Land on a real page with the order
 reference as text (`font-mono`), what was bought, what was charged, where it is going, and what
@@ -732,3 +733,137 @@ A list of records. Answers *"what have I bought?"*
 more often than not, and a horizontally scrolling table hides the total — the one column that matters.
 
 **An empty state names the action.** "No orders yet" plus a route to the storefront.
+
+## Plans — compare and switch
+
+The signed-in half of pricing. Answers *"what am I on, what else is there, and what changes if I
+move?"* Those are three questions the marketing [Pricing](#pricing) page never has to answer, because
+it has no current plan to compare against — which is why this is a separate anatomy and not a
+variant of that one.
+
+The grid itself is the
+[Plan comparison / feature matrix](components.md#plan-comparison--feature-matrix) entry; what this
+anatomy adds is **state** — which plan is current, what a change costs, and when it takes effect.
+
+```erb
+<div class="stack">
+  <header class="stack" style="--space: var(--space-2xs)">
+    <h1 class="text-step-3">Plan</h1>
+    <%# current plan, renewal date and seat count as TEXT — this page's first job is to say %>
+    <%# where the reader already stands, before offering anywhere else to go %>
+  </header>
+
+  <%# billing period: Ui::ButtonGroup kind: :select — a radiogroup, not styling. It changes the %>
+  <%# PRICES shown, so the price region carries role="status"; the toggle itself does not %>
+
+  <div class="grid-auto items-start" style="--min: 17rem">
+    <%# one Ui::Card per plan. The current plan says "Current plan" in text and its action is %>
+    <%# aria-disabled, not a no-op "Choose". The recommended plan carries a Ui::Badge %>
+  </div>
+
+  <%# the feature matrix below the cards — the cards are for choosing, the matrix for checking %>
+</div>
+```
+
+**Say where the reader already is, first.** A plan page that opens on a grid of options makes the
+customer hunt for their own row. Current plan, price, renewal date and seat count go above the grid
+as text.
+
+**The current plan is not a choice.** Mark it in text — a tint or a ring is the same colour-alone
+failure as any other status — and make its action `aria-disabled` rather than removing it, so the
+cards do not change shape between plans. A removed button also moves every other card's action to a
+different place on the page.
+
+**A change is a modal, not a second checkout.** Run it against the four conditions in
+[crud-modal-pattern.md](crud-modal-pattern.md#worked-negative-a-plan-change-is-a-modal-and-money-is-not-the-test)
+before reaching for a full-page flow: a plan change fails three of them. The exception is a change
+that must collect a **new** payment instrument, which hands off to
+[Checkout](#checkout--the-purchase-flow) because a provider iframe inside a focus trap is the failure
+the exception exists to avoid.
+
+**The confirmation states the money, the date, and the remainder — in that order.** "£X from today",
+"£X from the renewal date", and what happens to the period already paid for. Whether the arithmetic is
+proration, credit or neither is the app's billing rule, not this kit's — but the number the user will
+be charged must appear before they press, not after.
+
+**Which of these confirmations WCAG actually compels is worth being exact about.** **Cancelling** is
+inside 3.3.4 (Error Prevention — Legal, Financial, Data, **AA**) on its *"legal commitments or
+financial transactions"* clause, and that is a direct application of the trigger rather than a
+spec-named example. **A downgrade is not settled by the text**: it modifies user-controllable data,
+but the Understanding document narrows the SC away from *"the simple creation or editing of documents,
+records or other data"* and toward preventing *"mass loss of data"*, and a downgrade is neither a
+deletion nor irreversible. **So the downgrade confirmation is ours, not WCAG's** — we require it
+because the customer cannot otherwise see what they are giving up, which is a product argument and is
+stated as one. Do not cite 3.3.4 for it.
+
+**A downgrade removes things; name them.** List what stops working and what happens to data over the
+new limit. This is the one screen where the interface knows the consequence and the user does not.
+
+**Cancelling is not a plan card.** It is a separate, quieter control below the grid — a real
+destructive confirmation naming the date access ends, never an eighth card in the grid competing with
+the seven that take money.
+
+## Billing
+
+The account's money surface. Answers *"am I paid up, what am I paying with, and where are my
+invoices?"* Three regions, one page — this is the [Settings](#settings) anatomy with billing
+sections, not a new shell.
+
+```erb
+<div class="stack">
+  <h1 class="text-step-3">Billing</h1>
+
+  <%# 1. STATE — first, because a past-due account makes the rest of the page beside the point. %>
+  <%#    A past-due notice lives in the READING ORDER here, not behind role="alert" — see %>
+  <%#    components.md → Subscription state and dunning for why that distinction matters %>
+  <section class="box stack" aria-labelledby="subscription-heading">
+    <h2 id="subscription-heading" class="text-step-1">Subscription</h2>
+    <%# Ui::DescriptionList layout: :inline — plan, status (badge + text), renews on, seats %>
+  </section>
+
+  <%# 2. PAYMENT METHODS — components.md → Saved payment methods %>
+  <section class="box stack" aria-labelledby="methods-heading">
+    <h2 id="methods-heading" class="text-step-1">Payment methods</h2>
+  </section>
+
+  <%# 3. INVOICES — a Ui::Table on wide screens, Ui::Card stack on narrow, same as Order history %>
+  <section class="stack" aria-labelledby="invoices-heading">
+    <h2 id="invoices-heading" class="text-step-1">Invoices</h2>
+    <%# per row: number (a link, font-mono), date, amount (tabular-nums), status, download %>
+    <nav aria-label="Pagination">…</nav>
+  </section>
+</div>
+```
+
+**Order the page by urgency, not by tidiness.** State first, method second, history last. A customer
+opening this page in response to a failed-payment email is looking for one thing, and it is not the
+invoice archive.
+
+**Section per `box`, save per section** — inherited from [Settings](#settings), and it matters more
+here: one page-wide save over a payment method and a plan is a single button that could do two
+irreversible things.
+
+**Never a full card number, anywhere on this page.** Brand plus last four, from the provider's token
+— the full number should not be in your database to render. Full rule in
+[components.md](components.md#saved-payment-methods).
+
+**An empty invoice list is a real state.** A trial account has no invoices and that is not an error;
+`Ui::EmptyState` saying so beats an empty table with headers.
+
+## Invoice / statement
+
+**This is the [Detail](#detail) anatomy, and reaching for a fourth anatomy here would be the
+duplication this file exists to prevent.** One record, a breadcrumb, a header with the reference and
+a status badge, a description list, a table of line items. Three things differ, and only these three:
+
+**It is immutable, so there is no edit affordance.** An invoice is a record of something that already
+happened. The actions slot holds download, print and "pay now" — never "edit". A Detail screen whose
+actions slot opens a modal is the default; this is the one that must not.
+
+**The reference is `font-mono` and every amount is `tabular-nums`** — different jobs, and the split
+is [brand.md](brand.md)'s, not a preference. `INV-0142` is a reference number; `£1,204.00` is money.
+
+**Print is the same template, not a second design.** A receipt, a PDF and the screen are one view
+with `print:` variants — hide the app chrome, show the full URL of anything that was a link, and let
+the line-item table run to its natural length rather than paginating in CSS. Two templates drift, and
+the one nobody looks at is the one the customer forwards to their accounts department.

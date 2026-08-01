@@ -182,3 +182,33 @@ the app is still a modal. Edits *within* a purchase — change an address, remov
 the modal pattern, because they are ordinary CRUD on a record the user is already looking at. The
 anatomy is in
 [page-anatomies.md](page-anatomies.md#checkout--the-purchase-flow).
+
+### Worked negative: a plan change is a modal, and money is not the test
+
+The obvious candidate for a second exception is the **plan change** — upgrade, downgrade, cancel. It
+moves money, so the instinct is to reach for the full-page flow. Run it against the four conditions
+and it fails three of them, which is the point of having conditions at all:
+
+| Condition | Checkout | Plan change |
+|---|---|---|
+| Dismiss affordances are wrong over the commitment | yes | **yes** — this one does hold |
+| The page behind is the thing being abandoned | yes | **no** — it is the billing page, which the user returns to either way |
+| A focus trap fights a provider iframe | yes | **no** — an existing customer pays with the method on file; no iframe is mounted |
+| Steps need addressable state | yes | **no** — it is one decision and one confirm, not a sequence with a URL per step |
+
+So a plan change is **ordinary CRUD on a subscription record**: the plan list is the page, and the
+change opens the shared modal frame with a confirmation that states the new price, the date it takes
+effect, and what happens to the current period. **The financial weight is carried by the confirmation
+step, not by the page shape** — that is what WCAG 3.3.4 asks for, and a modal satisfies *Confirmed*
+exactly as well as a page does.
+
+**The one case that flips it** is a plan change that must collect a **new payment instrument**,
+because condition three then starts holding: mounting the provider's iframe inside a focus trap is
+the failure the exception exists to avoid. Hand off to the checkout flow rather than embedding a
+payment iframe in a dialog. The anatomy is in
+[page-anatomies.md](page-anatomies.md#plans--compare-and-switch).
+
+**This too is our architecture decision, recorded on
+[#91](https://github.com/fmanimashaun/claude-skills/issues/91).** It is written down because the
+opposite reading is reasonable, and an agent that reasons "money ⇒ full page" from the checkout
+exception alone would build a second full-page flow every release.
