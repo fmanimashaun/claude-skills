@@ -1032,8 +1032,8 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "an undeterministic run is judged instead of refused",
-                '    missing = [k for k in ("reducedMotion", "frozenClock", "seededData") if not d.get(k)]',
-                '    missing = []',
+                "    missing = [k for k in DETERMINISM_KEYS if not d.get(k)]",
+                "    missing = []",
                 "motion not frozen",
             ),
             Mutation(
@@ -1041,6 +1041,34 @@ GUARDS: tuple[Guard, ...] = (
                 '        if route.startswith(pattern) and len(pattern) > best:',
                 '        if route.startswith(pattern) :',
                 "the longest matching prefix wins",
+            ),
+            # The ignore-region half of #112. `ignored` shipped in the schema, emitted as a
+            # hardcoded `[]` and read by nobody, so the field existed and the feature did not.
+            # These three break the parts that make it real rather than declared.
+            Mutation(
+                "the mask a config demands is trusted instead of verified against the run",
+                "        if want != got:",
+                "        if False:",
+                "a mask the config demands but the run never applied is refused",
+            ),
+            Mutation(
+                "a per-route mask REPLACES the global list instead of adding to it",
+                '    out = list(visual.get("ignore") or [])',
+                "    out = []",
+                "a per-route mask ADDS to the global list",
+            ),
+            Mutation(
+                "an unreadable line in the visual block is skipped and silently defaulted",
+                "        raise Unusable(_unreadable(path, lineno, raw))",
+                "        continue",
+                "an unreadable tolerance is refused, not silently defaulted",
+            ),
+            Mutation(
+                "a regression reports its ratio without the diff image",
+                '            picture = shot.get("diff") or "(none written: the collector produced '
+                'no diff image)"',
+                '            picture = "(none)"',
+                "a regression names its diff image",
             ),
         ),
     ),
