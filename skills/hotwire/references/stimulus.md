@@ -38,10 +38,19 @@ JS.
 - Scope = the element + descendants, **excluding** nested elements carrying
   the same controller (nested scopes don't leak).
 - Registration: with Rails importmap, `app/javascript/controllers/index.js`
-  eager-loads/registers everything under `controllers/` (run
-  `bin/rails stimulus:manifest:update` after adding files if pins are
-  stale — the generator `bin/rails g stimulus clipboard` handles it). With a
-  bundler: `application.register("clipboard", ClipboardController)`.
+  calls `eagerLoadControllersFrom("controllers", application)` and
+  `config/importmap.rb` carries
+  `pin_all_from "app/javascript/controllers", under: "controllers"` — a new
+  `*_controller.js` registers itself with **no command to run**, and
+  `bin/rails g stimulus clipboard` only writes the file. With a bundler,
+  `index.js` is instead a generated manifest of explicit
+  `application.register("clipboard", ClipboardController)` lines.
+- **`stimulus:manifest:update` belongs to the bundler path, not importmap's.**
+  The generator runs it for you there, and deliberately skips it when
+  `config/importmap.rb` exists. Running it by hand in an importmap app
+  *overwrites* `index.js` with those explicit registrations — the eager-load
+  line is gone, auto-registration with it, and every controller you add after
+  that needs the task re-run. It is a downgrade, not a repair.
 - Inside a controller: `this.element`, `this.identifier`,
   `this.application`, `this.dispatch(...)` (§8).
 - **Two static registration hooks, both easy to miss.**
@@ -88,16 +97,33 @@ replacement).
 <form data-action="submit->form#validate:prevent">
 ```
 
-- **Default events** let you omit `event->` for the common case: `click` on
-  buttons/links, `submit` on forms, `input` on inputs/textareas, `change` on
-  selects — `data-action="search#filter"` on an input means `input`.
+- **Default events** let you omit `event->`, but only on seven tag names:
+  `a`/`button` → `click`, `form` → `submit`, `details` → `toggle`, `input` →
+  `input` (except `input[type=submit]` → `click`), `select` → `change`,
+  `textarea` → `input`. So `data-action="search#filter"` on an input means
+  `input`. Any other element — `div`, `span`, `li` — has **no** default and
+  the action is dropped **silently**: the internal `missing event name` error
+  is swallowed while parsing the attribute, so you get no binding and no
+  console warning. Spell out `event->` anywhere off those seven.
 - **Globals**: `@window` / `@document` after the event name — with automatic
   cleanup on disconnect (the reason to prefer this over manual
   `addEventListener` in `connect`).
-- **Keyboard filters**: `keydown.enter`, `keyup.esc`, modifiers
-  `keydown.ctrl+k` / `.meta+`, `.shift+`, `.alt+`; letters/digits and named
-  keys (`up down left right home end page_up page_down space tab
-  enter esc f1…`) supported.
+- **Keyboard filters** apply to `keydown` / `keyup` / `keypress` only — on any
+  other event the dot is read as part of the event name (that is how
+  jQuery-style `jquery.custom.event->x#y` works), so `click.esc->x#y` waits on
+  a `click.esc` event that never fires. The complete filter set is
+  `enter tab esc space up down left right home end page_up page_down`, plus
+  any single letter `a`–`z` or digit `0`–`9`. **There are no function-key
+  filters.** An unmapped name is not ignored: `keydown.f1` **throws**
+  `contains unknown key filter` at event time — on the first keystroke whose
+  modifier state matches, not just on F1 — and the throw escapes Stimulus'
+  error handler, so the action never runs and the page reports an uncaught
+  error instead.
+- **Modifiers** (`keydown.ctrl+k`, `.meta+`, `.shift+`, `.alt+`) match
+  **exactly** on all four of meta/ctrl/alt/shift, so `keydown.ctrl+k` stays
+  silent while Shift is also held — spell out `keydown.ctrl+shift+k` if you
+  want that too. Mouse events take the same modifiers as a prefix:
+  `ctrl+click->x#y`.
 - **Options** (suffix with `:`): `:prevent` (preventDefault), `:stop`
   (stopPropagation), `:once`, `:capture`, `:passive`, `:self` (only when
   `event.target` is the element itself). Custom options can be registered on
