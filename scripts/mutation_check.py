@@ -89,6 +89,18 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the coercion rule drops its backreference and flags any two identifiers",
+                r'\b\1\.to_(?:i|f)\b',
+                r'\b[a-z_]+\.to_(?:i|f)\b',
+                "different identifiers are not a contradiction",
+            ),
+            Mutation(
+                "the coercion rule stops skipping Ruby comments",
+                '            if line.lstrip().startswith("#"):\n                continue\n',
+                "            if False:\n                continue\n",
+                "a Ruby comment quoting the bad expression is silent",
+            ),
+            Mutation(
                 "render rules require a paren again (the #142 blind spot)",
                 r'_RENDER_CALL = re.compile(r"render\(?\s*',
                 r'_RENDER_CALL = re.compile(r"render\(\s*',
