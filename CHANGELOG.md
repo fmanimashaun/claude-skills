@@ -2082,6 +2082,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`rails-8/references/ecosystem-gems.md` §6 documented a pagy API that no longer exists** (#390).
+  The snippet's `include Pagy::Backend` / `include Pagy::Frontend` and `pagy_nav(@pagy)` were
+  removed wholesale in the version-43 redesign, with **no shims** — and since the skill wrote
+  `gem "pagy"` unpinned, a downstream agent installed the current gem and got
+  `NameError: uninitialized constant Pagy::Backend` on boot. On the golden path, too: line 33 marks
+  pagy as the answer for *"any real list"*. Rewritten to `include Pagy::Method`,
+  `pagy(:offset, collection, limit: 25)` and `@pagy.series_nav`, and the Gemfile line now pins
+  `"~> 43.6"` so the doctrine says what it was checked against.
+  **Version boundary is exact, not observational** — the audit left this INCONCLUSIVE because the
+  43.0.0 changelog says only *"a complete redesign"*, but the gem's own git tree settles it without
+  needing the prose. `gem/lib/pagy/backend.rb` and `gem/lib/pagy/frontend.rb` are **present in tag
+  `9.4.0` and absent in tag `43.0.0`** (replaced by `toolbox/paginators/method.rb`), and pagy
+  published **no stable release between the two**. So: **≤ 9.4.0 (2025-08-13) the old snippet is
+  correct; ≥ 43.0.0 (2025-11-03) it raises.** Checked against **43.6.1** (2026-07-21). For the
+  record, the removal actually landed in the prerelease `43.0.0.rc1` (2025-07-05), whose tree
+  already has `method.rb` and neither of the two removed files.
+  Citation: pagy's own search-and-replace table in
+  [Upgrade to 43](https://ddnexus.github.io/pagy/guides/upgrade-guide/) — `include Pagy::Backend` →
+  `include Pagy::Method`, `include Pagy::Frontend` → *"(remove: integrated)"*, `pagy_nav(@pagy, ...)`
+  → `@pagy.series_nav(...)`; and the current API in
+  [Quick Start](https://ddnexus.github.io/pagy/guides/quick-start) /
+  [README](https://github.com/ddnexus/pagy/blob/master/README.md). Release dates from
+  [the rubygems API](https://rubygems.org/api/v1/versions/pagy.json).
+- **Two claims in #390 were wrong, and the fix does not carry them** (#142's lesson, again). The
+  report said the paginator symbol is *"a required first argument"*; it is not —
+  `Pagy::Method` defines `pagy` as `|paginator = :offset, collection, **options|`, so
+  `pagy(collection)` still works. The skill therefore tells you to pass `:offset` **because the
+  choice is worth seeing**, not because omitting it raises — a rule stated with a false reason is
+  the next reader's bug. The report also dated 43.0.0 to *2025-07-05*, which is **before** the 9.4.0
+  it calls the last 9.x — an ordering that cannot be true. That date belongs to the prerelease
+  `43.0.0.rc1`; stable 43.0.0 is 2025-11-03. Neither error changes the verdict, which is why they
+  are recorded rather than argued: the report was right that the API is gone and right about what
+  replaced it.
+- **Executing the new snippet caught a trap the linters structurally cannot.**
+  `python3 scripts/lint_markdown_code.py` is `ruby -c` — it accepts anything syntactically valid, and
+  a `NameError` is exactly the failure #390 is about. So the rewrite was **run** against a real
+  install of pagy 43.6.1: the old two `include`s raise `NameError`, the new snippet paginates
+  (page 2, limit 25, records 26–50 of 300), and `@pagy.limit_tag_js` — which the first draft listed
+  as a plain helper — **raises `Pagy::OptionError` unless the `pagy` call passes `max_limit:`**. That
+  caveat is now in the doctrine. Verified, not asserted.
+
 - **`fidara-design/references/coverage.md` was unreachable from its own `SKILL.md`** (#158) — 230
   lines of component doctrine (every component's guidance state, what to build it from, and which
   surface it belongs on) reachable only via `brand.md` and `marketing-copy.md`. That is depth two,
