@@ -3473,6 +3473,44 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Visual regression: the two acceptance criteria 1.19.0 did not actually meet** (#112). The issue
+  asked for five things and shipped three. Re-verified by running each, not by reading the code.
+  - **Ignore regions were decoration, not a feature.** `ignored` was in the schema from day one,
+    `--schema` advertised `["[data-testid=clock]"]` to users, the collector emitted a hardcoded `[]`
+    and **nothing read it** — so the tolerance story was configurable and the ignore-region story was
+    a field name. Now: `visual.ignore` (global) and `visual.ignore_per_route` in `qa.config.yml`,
+    resolved by `visual_baseline.py --masks` and applied by the collector through Playwright's
+    `page.screenshot({ mask })` ([Array\<Locator\>, since v1.8; masked boxes are filled
+    `#FF00FF`](https://playwright.dev/docs/api/class-page#page-screenshot)). `maskColor` is left
+    unset on purpose — pinning it would impose a Playwright >=1.35 floor to change a constant that is
+    already deterministic and lands identically on baseline and candidate.
+  - **The mask claim is cross-checked, in both directions, or the run is refused.** A config that
+    calls a clock dynamic paired with a run that never masked it produces a ratio measured over
+    pixels nobody meant to compare — and the opposite, a run masking what no config asked for, hides
+    a regression instead of reporting it. Declaring the field without verifying it is how it stayed
+    decoration for three releases, so the fix is a comparison, not a second declaration.
+  - **Every regression now names a diff image** (`qa/baselines/_diffs/…`): changed pixels magenta
+    over a faded greyscale of the candidate, produced in the same browser pass that already has both
+    images decoded. "31% changed" with nowhere to look is what gets answered with a tolerance bump
+    instead of a fix.
+  - **Two more determinism controls, both measured rather than asserted.** `deviceScaleFactor` is
+    pinned to 1 (a baseline shot at 2 shares no pixel with one shot at 1 — a ~100% diff caused only
+    by the reviewer's display) and `document.fonts.ready` is awaited (`networkidle` says the requests
+    finished, not that the font is applied). If the font wait fails the collector **withdraws the
+    claim** and the judge refuses the run, exactly as `seededData` already worked.
+  - **A docstring promise nothing kept, now kept.** `read_config` said unparseable input "is reported
+    rather than silently defaulted" while the reader skipped every line it did not recognise:
+    `max_diff_ratio: 1e-2` was not matched by `[0-9.]+`, fell back to 0.002, and judged the run **5x
+    tighter than the config asked for** with nothing printed. It is now an `Unusable` naming the file,
+    line and text. Same claims-vs-enforcement shape as #151 and #161.
+  - 53 selftest checks (was 29) and 7 declared mutations (was 3), all caught. The mutation gate
+    earned its keep twice here: it rejected a stale anchor the moment `DETERMINISM_KEYS` replaced an
+    inline tuple, and the new fixtures had to be made refusal-proof (`matched()` returns -1 rather
+    than letting `Unusable` propagate) because a mutant that dies before its labelled assertion is
+    not a caught mutant.
+
 ### 1.19.1 — 2026-08-01
 
 Both of these came from the first run against a real Rails app, which is the run no fixture here

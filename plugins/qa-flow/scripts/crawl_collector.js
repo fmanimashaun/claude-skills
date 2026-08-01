@@ -11,13 +11,17 @@
 //   qa/manual-tests/visual.json         -> visual_baseline.py   (with --visual)
 //
 //   node crawl_collector.js --routes / /dashboard --base http://localhost:3000 --out qa/manual-tests
+//   node crawl_collector.js --visual --seeded --masks qa/manual-tests/masks.json --routes /
+//
+// `--masks` takes the map visual_baseline.py prints with `--masks`: route -> selectors to paint
+// over. This file applies them and records what it applied; it does not decide what is dynamic.
 //
 // WHAT IT DOES NOT DO. It does not screenshot, judge layout, or evaluate the design system —
 // design-flow's conformance collector owns that, and this one deliberately does not duplicate it.
 // For theme parity, run design-flow's collector twice (light, then with the `dark` class) and pass
 // both snapshots to theme_parity.py; this file does not re-implement that either.
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -63,13 +67,37 @@ const MAX_CONTROLS = Number(arg('max-controls', 40));
 const VISUAL = process.argv.includes('--visual');
 const BASELINES = arg('baselines', 'qa/baselines');
 const VIEWPORT = { width: 1280, height: 900 };
+// A baseline shot at deviceScaleFactor 2 shares not one pixel with the same page shot at 1, so the
+// ratio would read ~100% on a machine that merely has a different display. Playwright defaults this
+// to 1, but a default is not a pin: a device descriptor sets it to 2 or 3, and inheriting a value
+// that decides whether every comparison is meaningful is not something to leave implicit.
+const SCALE = 1;
 const THEME = arg('theme', 'light');
+
+// WHICH SELECTORS ARE DYNAMIC IS A POLICY DECISION, AND IT IS NOT MADE HERE (#112). visual_baseline.py
+// resolves the config's global + per-route ignore lists and prints the map; this file only paints
+// over what it is handed and records what it painted. Same split as everywhere else: deciding is
+// Python's, and a rule here would be a rule with no fixture. The judge REFUSES a run whose recorded
+// masks disagree with the config, so a stale or absent map is reported, never quietly judged.
+const MASKS = (() => {
+  const path = arg('masks', null);
+  if (!path) return {};
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    console.error(`Cannot read --masks ${path}: ${error.message}\n` +
+      '  Generate it with:  python3 visual_baseline.py --masks --routes / /dashboard \\\n' +
+      '                       --config qa/qa.config.yml > qa/manual-tests/masks.json');
+    process.exit(2);
+  }
+})();
 
 // DETERMINISM. Without it the diff ratios are noise, and a flaky visual check is worse than none:
 // it trains people to ignore the one report that needs eyes. visual_baseline.py REFUSES a run that
-// does not record all three, so this object is a CLAIM and must only assert what is actually true.
+// does not record all five, so this object is a CLAIM and must only assert what is actually true.
 //
-// Two of the three this file can genuinely do, and it does them below before the first paint.
+// Four of the five this file can genuinely do, and it does them below: motion and the clock before
+// the first paint, the pixel ratio at newPage, the fonts before the shot.
 // `seededData` it CANNOT: seeding the app's fixtures is the caller's job, and asserting it here
 // would be a lie that lets a run with live, moving data be judged pixel-for-pixel. So it comes from
 // an explicit `--seeded` flag and defaults to FALSE -- the judge then refuses, which is the correct
@@ -77,6 +105,8 @@ const THEME = arg('theme', 'light');
 const determinism = {
   reducedMotion: true,
   frozenClock: true,
+  pinnedScale: true,
+  fontsLoaded: true,
   seededData: process.argv.includes('--seeded'),
 };
 
@@ -88,7 +118,8 @@ const browser = await chromium.launch();
 const shots = [];
 
 for (const route of routes) {
-  const page = await browser.newPage(VISUAL ? { viewport: VIEWPORT } : {});
+  const page = await browser.newPage(
+    VISUAL ? { viewport: VIEWPORT, deviceScaleFactor: SCALE } : {});
   if (VISUAL) {
     // Freeze motion and the clock BEFORE the first paint, or the first frame is already wrong.
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -140,17 +171,36 @@ for (const route of routes) {
     const dir = `${VIEWPORT.width}x${VIEWPORT.height}-${THEME}`;
     const baseline = `${BASELINES}/${dir}/${slug}.png`;
     const candidate = `${BASELINES}/_candidates/${dir}/${slug}.png`;
+    const diff = `${BASELINES}/_diffs/${dir}/${slug}.png`;
     const baselinePresent = existsSync(baseline);
+    // FONTS BEFORE PIXELS. `networkidle` says the requests finished; it does not say the font is
+    // applied, and a webfont that swaps in after the shot changes every glyph on the page — a
+    // whole-page diff that looks like a catastrophic regression and is nothing at all.
+    // Recorded, not assumed: if the wait fails the claim is withdrawn and the judge refuses the
+    // whole run. Asserting `fontsLoaded: true` unconditionally would be the same lie `seededData`
+    // exists to avoid — a determinism block is only worth anything if every entry is measured.
+    const fontsOk = await page.evaluate(() => document.fonts.ready.then(() => true))
+      .catch(() => false);
+    if (!fontsOk) determinism.fontsLoaded = false;
+    const ignored = (MASKS[route] || []).map(String);
+    const maskLocators = ignored.map((selector) => page.locator(selector));
     // The CANDIDATE is always written and the BASELINE is never touched. Promotion is a human's
     // act: an agent that can overwrite a baseline can launder a regression into the new truth.
+    //
+    // `mask` overlays each locator's bounding box with a flat #FF00FF block (Playwright's default,
+    // left unset on purpose: pinning `maskColor` would impose a >=1.35 floor to change a constant
+    // that is already deterministic, and the same block lands on baseline and candidate alike).
     mkdirSync(`${BASELINES}/_candidates/${dir}`, { recursive: true });
-    await page.screenshot({ path: candidate, fullPage: true });
+    await page.screenshot({ path: candidate, fullPage: true, mask: maskLocators });
     let diffRatio = null;
+    let diffPresent = false;
     if (baselinePresent) {
       // Compared IN THE BROWSER, where a canvas already exists. Decoding PNGs in Python would mean
       // a third-party image library inside a gate, and this file measures rather than judges: it
-      // emits the ratio and visual_baseline.py decides what it means.
-      diffRatio = await page.evaluate(async ([a, b]) => {
+      // emits the ratio and visual_baseline.py decides what it means. The DIFF IMAGE comes back
+      // from the same pass for the same reason — the pixels are already decoded here, and a ratio
+      // with no picture is a number a reviewer cannot act on.
+      const measured = await page.evaluate(async ([a, b]) => {
         const load = (src) => new Promise((res, rej) => {
           const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src;
         });
@@ -162,15 +212,38 @@ for (const route of routes) {
           return c.getContext('2d').getImageData(0, 0, w, h).data;
         };
         const p1 = draw(x), p2 = draw(y);
+        const out = document.createElement('canvas'); out.width = w; out.height = h;
+        const ctx = out.getContext('2d');
+        const image = ctx.createImageData(w, h);
         let changed = 0;
         for (let i = 0; i < p1.length; i += 4) {
-          if (Math.abs(p1[i] - p2[i]) + Math.abs(p1[i + 1] - p2[i + 1]) +
-              Math.abs(p1[i + 2] - p2[i + 2]) > 24) changed += 1;
+          const off = Math.abs(p1[i] - p2[i]) + Math.abs(p1[i + 1] - p2[i + 1]) +
+                      Math.abs(p1[i + 2] - p2[i + 2]);
+          if (off > 24) {
+            changed += 1;
+            // Changed pixels magenta, unchanged ones a faded greyscale of the candidate, so the
+            // eye lands on the change while it stays locatable on the page it came from.
+            image.data[i] = 255; image.data[i + 1] = 0; image.data[i + 2] = 255;
+          } else {
+            const grey = 200 + (p1[i] + p1[i + 1] + p1[i + 2]) / 3 * 0.2;
+            image.data[i] = grey; image.data[i + 1] = grey; image.data[i + 2] = grey;
+          }
+          image.data[i + 3] = 255;
         }
+        ctx.putImageData(image, 0, 0);
         // Size differences count as changed pixels rather than being cropped away silently.
         const total = Math.max(x.width * x.height, y.width * y.height);
-        return (changed + (total - w * h)) / total;
+        return {
+          ratio: (changed + (total - w * h)) / total,
+          png: out.toDataURL('image/png').split(',')[1],
+        };
       }, [pathToFileURL(candidate).href, pathToFileURL(baseline).href]).catch(() => null);
+      if (measured) {
+        diffRatio = measured.ratio;
+        mkdirSync(`${BASELINES}/_diffs/${dir}`, { recursive: true });
+        writeFileSync(diff, Buffer.from(measured.png, 'base64'));
+        diffPresent = true;
+      }
     }
     shots.push({
       route,
@@ -179,8 +252,11 @@ for (const route of routes) {
       baseline,
       baselinePresent,
       candidate,
+      // Null rather than the path when nothing was written: reporting a path to a file that does
+      // not exist sends a reviewer looking for evidence that was never produced.
+      diff: diffPresent ? diff : null,
       diffRatio,
-      ignored: [],
+      ignored,
     });
   }
 
