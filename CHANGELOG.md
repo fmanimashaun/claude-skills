@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 1.55.0 — 2026-08-01
 
 - **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
   subprocess per declared mutation, so it gets slower every time anyone makes the repo safer; at
@@ -1363,7 +1363,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.18.0 — 2026-08-01
 
 - **A vague ask now becomes a buildable brief, and the brief is an index over its sources rather
   than a copy of them** (#130). New `/rails-flow:brief` writes `docs/brain/BRIEF.md`: the intake
@@ -2121,7 +2121,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.3.0 — 2026-08-01
 
 - **Unattended pipeline runs are bounded by a circuit breaker instead of by hope** (#128, the
   `comp:pipeline` half; the rails-flow half shipped in rails-flow 1.14.0). The gates said when a
@@ -2323,7 +2323,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.30.0 — 2026-08-01
 
 - **`bin/ci` was doctrine's "whole gate" and ran zero specs** (#391). The skill mandates
   `--skip-test`, and Rails wraps every test step in its generator template in
@@ -4295,7 +4295,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.21.0 — 2026-08-01
 
 - **Broken links and missing assets are caught now** (#108, epic item E — *"classic, cheap,
   currently absent"*). Everything the crawl added in 1.17.0–1.18.0 judges the routes **you listed**.
@@ -5339,7 +5339,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.12.0 — 2026-08-01
 
 - **NEW `/design-flow:variants <brief> [--variants N]` — N brand-conformant compositions of one
   brief plus a live comparison switcher** (#160). Borrowed in shape from
@@ -6254,7 +6254,51 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
-### Unreleased
+### 2026-08-01 (release v1.55.0)
+
+> ### The largest release here, and most of it exists because things were checked rather than assumed
+>
+> Twenty issues close. Two doctrine audits read ~120 externally-verifiable claims against primary
+> sources and found **ten wrong and seven missing** — including a **critical CVE** our own doctrine
+> was steering users into. Several features refuted the issue that asked for them. And four gates
+> failed only once everything was merged together, which is the argument for merging.
+
+- **SECURITY — our doctrine pinned users to a vulnerable Rails** (#388). `SKILL.md` named 8.1.3 as
+  current stable; **8.1.3.1** fixes **CVE-2026-66066 / GHSA-xr9x-r78c-5hrm**, CVSS **9.5**, an
+  arbitrary file read + RCE in Active Storage. Two things the report omitted are now in the doctrine
+  because "upgrade" alone is not safe advice: the fix needs **libvips ≥ 8.13** at runtime or it is a
+  no-op, and a possibly-exploited app must **rotate `secret_key_base`**. A stale version claim in
+  `README.md` was found by grepping every site rather than the two the report named.
+- **`load_defaults 8.1` had seven changes, not the two reported** (#392, #393). Five undocumented
+  and **two we had wrong**: we called a raise a deprecation, and read `yjit` as switched on in 8.1
+  when 8.1 switches it **off** in dev/test. `escape_json_responses = false` is now in the security
+  checklist, not just the upgrade list. The upgrade watch list is the one place a reader is entitled
+  to assume completeness.
+- **Ten hotwire and rails-8 doctrine claims corrected** (#380, #383, #384, #385, #386, #389, #390,
+  #394) — including `data-turbo-disable-submitter`, which **does not exist in Turbo**; Stimulus
+  function-key filters, which **throw** rather than no-op; a Kamal "skip the registry" instruction
+  that made the first `kamal setup` fail; and a pagy snippet that raised `NameError` on paste.
+  Version boundaries were **bisected across published tags**, not inferred.
+- **NEW — typed findings records** (#138 shipped previously; #134 blast radius, #108 link audit,
+  #105 focus restore, #112 visual baselines, #360 quality pass, #160 variant mode, #158 skill
+  routing, #130 intake interview, #128 circuit breakers, #359 claim-verifier wiring).
+- **`quality-pass` is a new shipped skill** — reuse, simplification, efficiency, altitude. Advisory
+  by design: a gate on taste gets switched off, and then nothing checks quality at all.
+- **Four gates failed only after everything merged**, each individually green. `skill routing`
+  returned **CANNOT CHECK** rather than skipping a whole unpinned new skill; `shared shapes` caught
+  four counts in our own worked example going stale; `coverage matrix` caught an evidence string
+  demanding an exact heading that shipped with a descriptive suffix; and a selftest asserting
+  `len(SHIPPED_SKILLS) == 4` turned out to be a **second source of truth** for the set above it.
+- Also lands the last three doctrine groups: Stimulus key filters, the `stimulus:manifest:update`
+  contradiction and the default-event map (#381, #382, #387), plus `bin/ci` running **zero**
+  specs under the `--skip-test` this skill mandates (#391) and a SimpleCov version boundary
+  (#396). Verification **corrected two of our own reports**: the Stimulus key-filter error
+  escapes as an uncaught page error rather than through Stimulus' handler, and a missing
+  default event is dropped **silently** rather than throwing — written as reported we would
+  have promised a visible error where the real behaviour is silence.
+- Gate sweep **44 → 55**. Self-consistency selftest 98 → 105 assertions.
+
+### 1.55.0 — 2026-08-01
 
 - **`claim-verifier` is now actually wired into the flows that claim to use it** (#359). It shipped
   in v1.52.0 and was referenced from **nowhere** — an agent built because descriptions go unchecked,
