@@ -2104,6 +2104,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`rails-8` named a vulnerable Rails as "current stable"** (#388). `SKILL.md` said **8.1.3**
+  (2026-03-24); the current stable is **8.1.3.1** (2026-07-29), a **security** release fixing
+  **CVE-2026-66066** / [GHSA-xr9x-r78c-5hrm](https://github.com/rails/rails/security/advisories/GHSA-xr9x-r78c-5hrm)
+  — critical, CVSS v4 9.5, arbitrary file read and RCE in Active Storage variant processing. Every
+  8.1 below 8.1.3.1 is affected (`>= 8.1.0.beta1, < 8.1.3.1`; backports 8.0.5.1 and 7.2.3.2), so the
+  skill was pointing every new app at a known RCE while `auth-security.md:212` told the same agent to
+  *"keep Rails patched … stay current"* — a rule its own version block made unsatisfiable.
+  The block now carries the CVE, the pin, and **two things the report omitted that make the upgrade
+  actually safe** — the fix needs **libvips >= 8.13** at runtime, and a possibly-exploited app must
+  rotate `secret_key_base`. Support dates restated as absolutes (8.1 bug fixes to 2026-10-10,
+  security to 2027-10-10; 8.0 bug-fix support ended 2026-05-07) and cited to the
+  [end-of-support announcement](https://rubyonrails.org/2025/10/29/new-rails-releases-and-end-of-support-announcement),
+  because `maintenance_policy.html` states only the *relative* rule and is where a reader would
+  wrongly look. **Version boundary: Rails 8.1.3 → 8.1.3.1.** Verified against rubygems.org, the
+  GitHub Security Advisory API and the [release post](https://rubyonrails.org/2026/7/29/Rails-Versions-7-2-3-2-8-0-5-1-and-8-1-3-1-have-been-released),
+  2026-08-01.
+- **The skill stated two different Ruby floors, and the lower one was end-of-life** (#394).
+  `testing.md:87` claimed a "3.4+ floor" while `SKILL.md:64` and `controllers-routing.md:289` said
+  `>= 3.2` — a `doctrine-contradiction`, and load-bearing, since §7's whole `parse.y` analysis exists
+  *because* 3.2–3.3 is in scope. **External half (CONFIRMED):** `required_ruby_version = ">= 3.2.0"`
+  in the `actionpack`/`activesupport`/`railties` gemspecs at tag `v8.1.3.1`; Ruby 3.2 is `eol` since
+  **2026-04-01** and **Ruby 3.3 has been `security maintenance` since the same date** — the latter
+  absent from the report, and it means the entire 3.2–3.3 band is out of normal maintenance
+  ([ruby-lang.org/en/downloads/branches](https://www.ruby-lang.org/en/downloads/branches/)).
+  **Design half — no upstream, so the authority is the maintainer decision recorded at
+  [#394 (comment)](https://github.com/fmanimashaun/claude-skills/issues/394#issuecomment-5152697344)**,
+  flagged there for sign-off before promotion: the skill's supported floor is **Ruby 3.4** — the
+  oldest branch still in normal maintenance, so it is a re-checkable rule rather than a number that
+  goes stale — while Rails' `>= 3.2.0` stays stated and is now explicitly labelled a *compatibility
+  minimum, not a support statement*. All three sites now name which of the two numbers they mean, and
+  §7 keeps its premise: Rails permits 3.2, so an existing app may sit below our floor, and
+  `--parser=parse.y` rejects the form even on 3.4.7. **Version boundary: Rails 8.1.3.1 requires Ruby
+  >= 3.2.0; this skill supports >= 3.4.**
+- **The pin was stale in `README.md` too, which #388 did not mention** (#388, collateral —
+  found by grepping every version site rather than only the two lines the report cited). Its
+  Versioning section said "pinned to **Rails 8.1.3**" — the same claim, one directory up, where a user reads it
+  before installing anything. A version fresh in the skill and stale in the README is worse than both
+  being stale, so it moves with them; `SKILL.md`'s provenance line (Rails Guides `v8.1.3` → `v8.1.3.1`,
+  both editions live) moves for the same reason. Also recorded in-line, in the skill, where a
+  downstream agent will read it: **there is no Rails 8.2 or 9.0** — no gem, no tag, no `8-2-stable`
+  branch — because a third-party post dated 2026-04-20 claims otherwise and keeps resurfacing.
 - **Rails 8.1 stopped HTML-escaping `render json:`, and our security checklist never said so**
   (#393). `load_defaults 8.1` sets `config.action_controller.escape_json_responses = false`, so the
   JSON renderer no longer escapes `<`, `>`, `&`, U+2028 or U+2029. Rails' own changelog names the
