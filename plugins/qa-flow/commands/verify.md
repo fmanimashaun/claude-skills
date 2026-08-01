@@ -58,6 +58,42 @@ rank first**, because an untested route that changes state is the worst kind to 
 A gap is **not** a failure of the run: it is the deliverable, and `report` exits 0 with one. Use
 `--fail-on-untested` only once a team has reached full coverage and wants to hold it.
 
+**Then DERIVE the radius rather than reasoning it out (#134).** The route table is the
+denominator; `blast_radius.py` is the selection. It reverse-walks the architecture graph
+(`/rails-flow:graph`, #141) from the changed files to their **dependents**, maps those onto the
+route table and onto conventional spec paths, and prints the justifying edge for every inclusion:
+
+```bash
+git diff --name-only "$(git merge-base origin/main HEAD)"..HEAD > qa/reports/changed.txt
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py" derive \
+  --changed-from qa/reports/changed.txt \
+  --graph docs/architecture/graph.json \
+  --routes qa/reports/routes.json
+```
+
+Read the exit code, do not just skim the output:
+
+| exit | meaning | what you do |
+|---|---|---|
+| 0 | targeted scope derived, every changed file accounted for | select autonomously, attach the report to the plan |
+| 1 | **wide** — a risk axis fired and/or a changed app file could not be accounted for | present the selection for approval **before** executing, exactly as the rule above says |
+| 2 | unusable — no changed-file list, or an input that could not be read | fix the input; a check that did not run is never a pass |
+
+Three properties are worth knowing before you argue with it:
+
+- **`--graph` is optional.** With no graph artefact the derivation falls back to Rails conventions
+  and says so in its `derived from:` line. It is useful on day one, on any Rails project, with no
+  graph tool installed. When `graphify`/`code-review-graph` output has been folded into the graph,
+  the tool is **named in the report** and every edge it contributed is labelled `[via <tool>]`;
+  `--no-enrichment` reproduces the bare-runner walk. The verdict is the same either way.
+- **It is a FLOOR, never a ceiling.** The graph extractor is regex-based, so metaprogrammed
+  structure is invisible to it — the graph's own `notes` are reprinted in the report for that
+  reason. Use a computed radius to justify **widening** a scope; never cite it to shrink one below
+  the certification baseline.
+- **Nothing narrows silently.** Every route not selected, every node past `--depth`, every changed
+  file excluded as non-app code, and every conventional spec path that does not exist is printed
+  with its reason — including when the list is empty.
+
 ## Phase 3 — Targeted execution (parallel where possible)
 
 Per the plan, dispatch: `e2e-tester` (sanity + selected `@regression` charters,

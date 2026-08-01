@@ -71,6 +71,12 @@ links:                               # link/anchor audit during the crawl (#113)
 coverage:                            # route coverage denominator (#119)
   exclude: []                        # substrings: health endpoints, dev-only, ActiveStorage
   authenticated_prefixes: []         # e.g. /admin — declared, never guessed from the path
+blast_radius:                        # derived regression scope (#134)
+  exclude: []                        # substrings: paths a change to cannot affect the app
+  high_risk:                         # ADDS to the built-in axes; it can never switch one off
+    auth: []                         # e.g. app/models/api_key.rb
+    tenancy: []
+    money: []
 web_e2e:          playwright        # playwright | cypress-cucumber | selenium-pytest-bdd | none
 mobile:           none              # appium | none
 functional_agent: playwright-mcp    # playwright-mcp | autonoma-selfhosted | none
@@ -95,6 +101,13 @@ Two keys are easy to conflate, so they are deliberately separate (#110):
   spent 45–60s compiling *each* route on first visit. With one timeout covering both, the
   crawl passes boot and dies on route 2, which reads as a broken app rather than a slow
   compile. Generous by default because being wrong here fails a healthy build.
+
+**`blast_radius.high_risk`** is **additive only**, and that is a decision rather than an
+oversight. `/qa-flow:verify` calls the wide selection non-negotiable for auth, tenancy, money,
+migrations and shared concerns; a key that could empty one of those axes would make the
+non-negotiable configurable, so declaring `migration: []` adds nothing and removes nothing. Use it
+to name the paths this project's naming conventions hide — a `Ledger` model called `Posting`, an
+authorization concern called `Gatekeeper`. `blast_radius.py`'s selftest pins both halves.
 
 **`runtime.ignore`** suppresses known third-party console/network noise (browser extensions,
 framework devtools banners) so the check does not go red on every run and get switched off.

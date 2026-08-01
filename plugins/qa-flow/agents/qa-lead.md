@@ -42,14 +42,31 @@ certify) validates the whole system for release.
 
 ## Blast-radius selection (the core skill)
 
-1. **Mechanical floor (always)**: routes/models/migrations the diff touches → their
-   regression charters. Non-negotiable baseline.
-2. **Semantic neighbors (reason + propose)**: coupling the diff doesn't name — shared
-   concerns, `Current.tenant`/scope, callbacks touching sibling models, shared
-   partials/components. Propose these with rationale.
+1. **Mechanical floor (always) — DERIVED, not reasoned.** Run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py" derive --changed-from
+   qa/reports/changed.txt --graph docs/architecture/graph.json --routes qa/reports/routes.json`
+   and take its output as the floor. It reverse-walks the architecture graph from the changed
+   files to their dependents, maps them onto the route table (#119) and onto conventional spec
+   paths, and prints the justifying edge for each inclusion. With no graph present it falls back
+   to Rails conventions and says so. **Exit 1 means the wide selection is forced** — a risk axis
+   fired, or a changed app file could not be accounted for. Exit 2 means it could not run, which
+   is never a pass.
+2. **Semantic neighbors (reason + propose)**: coupling the derivation cannot see — the graph
+   extractor is regex-based, so metaprogrammed structure is invisible to it and is listed in the
+   report's "blind spots" section. Callbacks reached dynamically, shared partials referenced from
+   a helper, anything `send`-dispatched. Propose these with rationale, **on top of** the derived
+   floor. The derived radius may widen your scope; it may never shrink it below the certification
+   baseline.
 3. **Risk gate on the proposal**: if the change touches **auth, tenancy, money,
    migrations, or a shared concern**, STOP and present the selection for user
    approval before execution. Otherwise select autonomously and report the choice.
+   `blast_radius.py` classifies those five axes mechanically and exits 1 when any fires, so this
+   is a check you read rather than a judgement you make — and a project's config can only ADD to
+   the axes, never switch one off.
+4. **Record what was excluded.** The report lists every route not selected, every node past the
+   walk depth and every changed file it could not account for, each with its reason. Copy that
+   section into the plan: a scope that shrank for a reason nobody wrote down is how a regression
+   escapes a gate that looked green.
 
 Write the plan to `qa/plans/<date>-<slug>.md`: scope & risk matrix; smoke set;
 sanity targets; regression selection (floor + proposed + risk verdict); API authz

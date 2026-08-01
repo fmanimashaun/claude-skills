@@ -131,7 +131,7 @@ special runtime. Three places where we take it, all as ordinary files in git:
 |---|---|---|
 | Prose hand-offs between parallel agents | **Typed findings records** (JSONL: severity, `file:line`, a stable dedupe `signature`, `caused_by` / `blocks`) | Dedupe becomes mechanical; completeness becomes checkable (every input id must appear in the output); fixes order **topologically** so root causes precede symptoms |
 | Prose "this blocks that" inside issue bodies | **Declared issue edges** (`depends-on` / `blocks` / `part-of`) | Triage *computes* the ready-now set and the critical path instead of re-deriving it by hand |
-| Judged regression scope | **Code graph for blast radius** — changed file → reverse dependencies → routes → tests | Test selection is derived and justifiable, with a convention-based fallback when no graph tool is installed |
+| Judged regression scope | **Code graph for blast radius** (`qa-flow/scripts/blast_radius.py`) — changed file → reverse dependencies → routes → tests | Test selection is derived and justifiable — every inclusion prints the edge that justified it — with a convention-based fallback when no graph tool is installed |
 
 Same benefits — deterministic merges, computed ordering, derived scope — with state that stays
 greppable, diffable and reviewable. The graph is in the **data**, not in a database.
@@ -528,9 +528,13 @@ Appium) plus the API/perf/a11y tiers feed one free, unified **Allure** HTML repo
   testable?) → sanity on the changed areas → **targeted regression by blast radius**
   (does this change threaten existing behavior?). Not feature re-testing. Defects file
   as `qa,from-qa` issues worked via `/rails-flow:issues label:qa`; no next feature
-  until green. Regression selection is automatic at the mechanical floor, proposed for
-  semantic neighbors, and **human-gated when the change touches auth, tenancy, money,
-  migrations, or a shared concern**.
+  until green. The mechanical floor is **computed, not judged** — `blast_radius.py`
+  reverse-walks the architecture graph from the changed files to their dependents, maps
+  them onto the route table and onto conventional spec paths, and prints the justifying
+  edge for every inclusion (Rails conventions when no graph is present). Semantic
+  neighbors are proposed on top, and the selection is **human-gated when the change
+  touches auth, tenancy, money, migrations, or a shared concern** — five axes the script
+  classifies mechanically and exits 1 on.
 - `/qa-flow:certify` — the comprehensive pre-`main` gate. Full regression across
   browsers + release-only layers (k6 load/soak, OWASP ZAP DAST) against **staging**.
   A clean sweep writes `qa/CERTIFICATION` (bound to the exact dev sha) and promotes the
@@ -610,6 +614,26 @@ detect lifecycle transitions and remember them — they never invoke Claude head
 spend tokens. A dormant GitHub Actions adapter ships as an `.example` for when cloud
 minutes are available.
 
+### Unattended runs stop instead of digging — circuit breakers
+
+A gate says when a stage may *advance*. It says nothing about when to stop **retrying** one,
+and that is what goes wrong on an unattended run: an agent that cannot make progress does not
+idle, it re-pushes the image and redeploys, and every attempt looks like activity in a log.
+
+`scripts/breaker.py` bounds a run against `pipeline/run-ledger.jsonl` — append-only JSONL,
+committed, so a run is a `git diff` rather than a memory. The stages and the limits are declared
+**once**, and `check` reads them back and takes no threshold flags, so a run cannot widen its own
+cap halfway through. It refuses a stage five ways: `already-passed`, `out-of-order` (release
+cannot be attempted until certify passed — gate-skipping, made mechanical), `attempt-cap` (3),
+`no-progress` (2 identical failure signatures), `budget` (120 minutes). Overridable within a
+bounded range, because an override that can be set to infinity is not a breaker.
+
+A failure cannot be recorded without its signature and a stop cannot be recorded without a
+diagnosis. `breaker.py report` derives **complete / partial / stopped** from the ledger and exits
+`0` only for `complete`, so a partial run cannot be relayed as a success by anything reading the
+exit code. Full doctrine, including which of the four forbidden escapes are enforced and which
+stay doctrine: `plugins/pipeline/reference/stop-conditions.md`.
+
 ### Platform note
 
 qa-flow and pipeline hooks are **bash + python3**. On Windows, run Claude Code inside
@@ -662,7 +686,9 @@ claude-skills/
 ├── skills/                # bundled into the rails-stack plugin
 │   ├── rails-8/          # SKILL.md + references/  (source of truth)
 │   ├── hotwire/          # SKILL.md + references/
-│   └── fidara-design/    # the Fidara design system: SKILL.md + 7 references
+│   ├── fidara-design/    # the Fidara design system: SKILL.md + 7 references
+│   ├── code-review/      # review doctrine: the claims-vs-enforcement defect classes
+│   └── quality-pass/     # advisory second pass: reuse, simplification, efficiency, altitude
 ├── plugins/               # DISTRIBUTED — the app plugins in marketplace.json
 │   ├── rails-flow/       # agentic build flow: commands + agents + hooks
 │   ├── qa-flow/          # independent QA flow
@@ -852,10 +878,11 @@ editing anything under `skills/`, rebuild the packages with
 
 ## Versioning
 
-Skill content is pinned to **Rails 8.1.3**, **Turbo 8.0.23**, **Stimulus
-3.2.2**, and **Hotwire Native iOS 1.2.2 / Android 1.2.5**, written July 2026.
-The skills instruct Claude to verify versions when the current date is well
-past that — but expect a refresh here when Rails 8.2/9 lands.
+Skill content is pinned to **Rails 8.1.3.1**, **Turbo 8.0.23**, **Stimulus
+3.2.2**, and **Hotwire Native iOS 1.2.2 / Android 1.2.5**, written July 2026;
+the Rails pin was re-verified 2026-08-01. The skills instruct Claude to verify
+versions when the current date is well past that — but expect a refresh here
+when Rails 8.2/9 lands (neither had shipped as of 2026-08-01).
 
 ## License
 

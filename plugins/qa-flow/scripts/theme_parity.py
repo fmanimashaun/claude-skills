@@ -154,8 +154,15 @@ def compare(light: dict, dark: dict) -> list[Finding]:
         if painted and (lr.get("w"), lr.get("h")) != (0, 0) and (dr.get("w"), dr.get("h")) == (0, 0):
             out.append(Finding(ref, "vanished", "sized in light, zero-sized in dark"))
 
+    # Built ONCE. It was a comprehension inside the loop below, which does not depend on the loop
+    # variable -- so the whole light-side element list was walked again for every dark element,
+    # quadratic in a page's element count on a rule whose entire input is a page of elements.
+    # Behaviour is unchanged; #360's `efficiency` dimension found it, and the `present only in
+    # dark` fixture below covers the branch.
+    light_refs = {e.get("ref") for e in light.get("elements", [])}
+
     for ref, el in by_ref_dark.items():
-        if ref not in {e.get("ref") for e in light.get("elements", [])}:
+        if ref not in light_refs:
             lr = el.get("rect") or {}
             if (lr.get("w"), lr.get("h")) != (0, 0):
                 out.append(Finding(ref, "vanished", "present in dark, absent from light"))

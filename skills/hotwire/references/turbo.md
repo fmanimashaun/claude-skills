@@ -41,9 +41,16 @@ instant from cache).
 <a href="/big-report" data-turbo="false">Full reload</a>          <!-- opt out (self + descendants) -->
 <a href="/settings" data-turbo-action="replace">No history entry</a>
 <a href="/slow" data-turbo-prefetch="false">Don't prefetch</a>    <!-- prefetch-on-hover is ON by default -->
-<form data-turbo-disable-submitter>…</form>                        <!-- button disabled during submit (default) -->
+<button data-turbo-submits-with="Saving…">Save</button>           <!-- submitter's label while submitting -->
 ```
 
+- **Disabling the submitter is global config, not an attribute.** Turbo sets
+  `submitter.disabled` for the duration of every submit and clears it after;
+  the only knob is `Turbo.config.forms.submitter`, which takes `"disabled"`
+  (the default) or `"aria-disabled"` — the latter sets `aria-disabled="true"`
+  and cancels clicks instead, so the button stays focusable. There is **no**
+  per-form or per-submitter attribute for this; `data-turbo-submits-with`
+  above is the per-element knob and it only changes the label.
 - Progress bar appears for visits >500ms
   (`Turbo.config.drive.progressBarDelay` to tune; style `.turbo-progress-bar`).
 - **Cache & previews**: Turbo snapshots pages before leaving and shows the
@@ -56,8 +63,12 @@ instant from cache).
 - **Assets**: mark bundles
   `<link rel="stylesheet" href="..." data-turbo-track="reload">` — when the
   fingerprint changes mid-session, Turbo does a full reload so users get new
-  code. `data-turbo-track="dynamic"` instead updates the element in place
-  without a reload (good for non-critical CSS).
+  code. `data-turbo-track="dynamic"` is not a gentler version of that and
+  never reloads: it marks a **stylesheet** — `<style>` or
+  `<link rel="stylesheet">`, nothing else — for **removal when the new page's
+  `<head>` does not carry it**. Turbo's head merge is otherwise purely
+  additive, so stylesheets accumulate across visits and are never taken away;
+  `dynamic` is the opt-in that lets page-specific CSS go when you leave.
 - **View transitions**: add
   `<meta name="view-transition" content="same-origin">` and Turbo uses the
   browser View Transitions API for animated page changes where supported.
@@ -142,7 +153,12 @@ Key mechanics:
   outside a results frame targets it this way).
 - **Breaking out** — `target="_top"` (or `data-turbo-frame="_top"` per link)
   promotes navigation to a full page visit. Anchors with
-  `data-turbo-frame="_self"` stay put.
+  `data-turbo-frame="_self"` stay put. Between the two, and only useful when
+  frames are **nested**: `data-turbo-frame="_parent"` (**Turbo ≥ 8.0.21**)
+  navigates the *immediate* enclosing frame —
+  `parentElement.closest("turbo-frame")`, so a grandchild reaches its parent,
+  not the outermost frame. With no enclosing frame, or one that is `disabled`,
+  `_parent` falls back to a full page visit rather than erroring.
 - **Promoting to history** — frames don't touch the URL by default; add
   `data-turbo-action="advance"` to the frame to make its navigations push
   history (tabbed interfaces with shareable URLs).
@@ -170,11 +186,11 @@ A stream is HTML that mutates named elements:
 | Action | Effect on `target` element |
 |---|---|
 | `append` / `prepend` | Insert template inside, at end / start — **id-de-duplicated**, see below |
-| `before` / `after` | Insert template as sibling |
+| `before` / `after` | Insert template as sibling, before / after — **id-de-duplicated** (Turbo ≥ 8.0.21), see below |
 | `replace` | Replace the whole element — accepts `method="morph"` |
 | `update` | Replace only the element's inner content — accepts `method="morph"` |
 | `remove` | Delete the element (no template needed) |
-| `refresh` | Trigger a page refresh (morphing — §3) |
+| `refresh` | Trigger a page refresh (§3) — accepts `method` / `scroll` (Turbo ≥ 8.0.21) |
 
 `target="id"` addresses one element; `targets=".css-selector"` (plural)
 addresses many. Streams intentionally have **no client logic** beyond these
@@ -190,18 +206,35 @@ calls `morphChildren`. In Rails:
 on a region the user is interacting with (open `<details>`, scroll position,
 focus) and a wholesale swap would reset it.
 
-**How `append`/`prepend` de-duplicate — the precision matters.** Turbo calls
-`removeDuplicateTargetChildren()` first: it collects the **direct children**
-of the target that carry an `id` matching an `id` on any top-level element of
-the incoming `<template>`, and **removes** them. Then it appends (or
-prepends) the new content. So:
+**`refresh` carries its own `method` and `scroll`** (Turbo ≥ 8.0.21):
+`<turbo-stream action="refresh" method="morph" scroll="preserve">`. They win
+over the page's `turbo-refresh-method` / `turbo-refresh-scroll` meta tags for
+that one refresh, so a broadcast can morph a page whose default is `replace`.
+Omit them and the meta tags decide — and their default is `replace`, not
+morph, so `refresh` is only a morph when something says so.
+
+**How the four insertion actions de-duplicate — the precision matters.**
+`append`/`prepend`/`before`/`after` all strip matching ids before inserting:
+the first pair calls `removeDuplicateTargetChildren()`, the second
+`removeDuplicateTargetSiblings()` (**Turbo ≥ 8.0.21**; on 8.0.20 and earlier
+`before`/`after` inserted unconditionally and left ids duplicated). Each
+collects the elements **in its scope** that carry an `id` matching an `id` on
+any top-level element of the incoming `<template>`, and **removes** them. Then
+the content goes in. So:
 
 - The guarantee is **id uniqueness, not position.** The new element lands at
-  the container's end (`append`) or start (`prepend`) — *not* where the old
-  one sat. Do not read "replaced" as "replaced in place"; for that you want
-  `replace` with `method="morph"`.
-- The scope is **direct children of the target only** — not a document-wide
-  or descendant search.
+  the container's end (`append`) or start (`prepend`), or beside the target
+  (`before`/`after`) — *not* where the old one sat. Do not read "replaced" as
+  "replaced in place"; for that you want `replace` with `method="morph"`.
+- The scope is bounded either way, but it **differs by action**:
+  `append`/`prepend` scan the **direct children of the target**;
+  `before`/`after` scan the **target's siblings** — its parent's children,
+  which **includes the target itself**. Neither is a document-wide or
+  descendant search.
+- Because of that, **`before`/`after` whose template carries the target's own
+  `id` insert nothing at all**: the de-dup removes the target, the insertion
+  point goes with it, and Turbo drops the content silently. When the arriving
+  element *is* the target, use `replace`.
 - It matches **every** top-level template child with an `id`, not just the
   first.
 
@@ -293,8 +326,10 @@ toasts or dispatching events; keep them as dumb as the built-ins.
 
 All bubble to `document`; the most-used, in lifecycle order:
 
-- `turbo:click`, `turbo:before-visit` (cancelable — block navigation),
-  `turbo:visit`
+- `turbo:before-prefetch` (cancelable, fires **on the link** before a
+  hover-prefetch request — the programmatic counterpart to §2's
+  `data-turbo-prefetch="false"`), `turbo:click`, `turbo:before-visit`
+  (cancelable — block navigation), `turbo:visit`
 - `turbo:submit-start` / `turbo:submit-end` (form lifecycle — disable/enable
   UI), `turbo:before-fetch-request` (mutate headers — auth tokens),
   `turbo:before-fetch-response`
@@ -310,9 +345,13 @@ All bubble to `document`; the most-used, in lifecycle order:
   `method="morph"` stream action; `turbo:before-morph-attribute` (cancelable,
   `detail: { attributeName, mutationType }`) fires per attribute — cancel it
   to keep morph from touching one attribute (§3)
-- `turbo:before-frame-render` / `turbo:frame-load` /
-  `turbo:frame-missing` (handle mismatched frames gracefully),
-  `turbo:before-stream-render` (wrap/intercept stream application — its
+- `turbo:before-frame-render` / `turbo:frame-render` (`detail.fetchResponse`)
+  / `turbo:frame-load` — all three fire per frame, in that order; plus
+  `turbo:frame-missing` (handle mismatched frames gracefully) and
+  `turbo:before-frame-morph` (`detail: { currentElement, newElement }`), the
+  frame-level morph hook fired by `<turbo-frame refresh="morph">` — **not**
+  cancelable, unlike the element/attribute ones above
+- `turbo:before-stream-render` (wrap/intercept stream application — its
   `detail.render` is **writable**, see `references/production.md` §1.5)
 - `turbo:fetch-request-error`, `turbo:reload`
 
