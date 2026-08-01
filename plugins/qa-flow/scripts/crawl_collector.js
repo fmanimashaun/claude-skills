@@ -8,6 +8,7 @@
 // Run with `node`, against an app the caller already booted. It writes two files the judges read:
 //   qa/manual-tests/crawl.json          -> crawl_report.py
 //   qa/manual-tests/interactions.json   -> interaction_report.py
+//   qa/manual-tests/visual.json         -> visual_baseline.py   (with --visual)
 //
 //   node crawl_collector.js --routes / /dashboard --base http://localhost:3000 --out qa/manual-tests
 //
@@ -17,7 +18,8 @@
 // both snapshots to theme_parity.py; this file does not re-implement that either.
 
 import { chromium } from 'playwright';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -34,15 +36,52 @@ const routes = [].concat(arg('routes', '/'));
 // A control we activate must not navigate away mid-sweep, or every later control reports
 // "not exercised" for a reason that is our fault rather than the app's.
 const MAX_CONTROLS = Number(arg('max-controls', 40));
+const VISUAL = process.argv.includes('--visual');
+const BASELINES = arg('baselines', 'qa/baselines');
+const VIEWPORT = { width: 1280, height: 900 };
+const THEME = arg('theme', 'light');
+
+// DETERMINISM. Without it the diff ratios are noise, and a flaky visual check is worse than none:
+// it trains people to ignore the one report that needs eyes. visual_baseline.py REFUSES a run that
+// does not record all three, so this object is a CLAIM and must only assert what is actually true.
+//
+// Two of the three this file can genuinely do, and it does them below before the first paint.
+// `seededData` it CANNOT: seeding the app's fixtures is the caller's job, and asserting it here
+// would be a lie that lets a run with live, moving data be judged pixel-for-pixel. So it comes from
+// an explicit `--seeded` flag and defaults to FALSE -- the judge then refuses, which is the correct
+// outcome for a caller who has not said the data is fixed.
+const determinism = {
+  reducedMotion: true,
+  frozenClock: true,
+  seededData: process.argv.includes('--seeded'),
+};
 
 const pages = [];
 const controls = [];
 
 mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch();
+const shots = [];
 
 for (const route of routes) {
-  const page = await browser.newPage();
+  const page = await browser.newPage(VISUAL ? { viewport: VIEWPORT } : {});
+  if (VISUAL) {
+    // Freeze motion and the clock BEFORE the first paint, or the first frame is already wrong.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addInitScript(() => {
+      const frozen = new Date('2026-01-01T00:00:00Z').getTime();
+      Date.now = () => frozen;
+      const style = document.createElement('style');
+      style.textContent = '*,*::before,*::after{animation:none!important;transition:none!important;' +
+                          'caret-color:transparent!important}';
+      document.addEventListener('DOMContentLoaded', () => document.head.appendChild(style));
+    });
+    if (THEME === 'dark') {
+      await page.addInitScript(() =>
+        document.addEventListener('DOMContentLoaded', () =>
+          document.documentElement.classList.add('dark')));
+    }
+  }
   const console_ = [];
   const failed = [];
   page.on('console', (m) => console_.push({ level: m.type(), text: m.text() }));
@@ -71,6 +110,55 @@ for (const route of routes) {
   pages.push(record);
 
   if (record.skipped) { await page.close(); continue; }
+
+  if (VISUAL) {
+    const slug = route.replace(/^\//, '').replace(/\W+/g, '-') || 'root';
+    const dir = `${VIEWPORT.width}x${VIEWPORT.height}-${THEME}`;
+    const baseline = `${BASELINES}/${dir}/${slug}.png`;
+    const candidate = `${BASELINES}/_candidates/${dir}/${slug}.png`;
+    const baselinePresent = existsSync(baseline);
+    // The CANDIDATE is always written and the BASELINE is never touched. Promotion is a human's
+    // act: an agent that can overwrite a baseline can launder a regression into the new truth.
+    mkdirSync(`${BASELINES}/_candidates/${dir}`, { recursive: true });
+    await page.screenshot({ path: candidate, fullPage: true });
+    let diffRatio = null;
+    if (baselinePresent) {
+      // Compared IN THE BROWSER, where a canvas already exists. Decoding PNGs in Python would mean
+      // a third-party image library inside a gate, and this file measures rather than judges: it
+      // emits the ratio and visual_baseline.py decides what it means.
+      diffRatio = await page.evaluate(async ([a, b]) => {
+        const load = (src) => new Promise((res, rej) => {
+          const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src;
+        });
+        const [x, y] = await Promise.all([load(a), load(b)]);
+        const w = Math.min(x.width, y.width), h = Math.min(x.height, y.height);
+        const draw = (img) => {
+          const c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0);
+          return c.getContext('2d').getImageData(0, 0, w, h).data;
+        };
+        const p1 = draw(x), p2 = draw(y);
+        let changed = 0;
+        for (let i = 0; i < p1.length; i += 4) {
+          if (Math.abs(p1[i] - p2[i]) + Math.abs(p1[i + 1] - p2[i + 1]) +
+              Math.abs(p1[i + 2] - p2[i + 2]) > 24) changed += 1;
+        }
+        // Size differences count as changed pixels rather than being cropped away silently.
+        const total = Math.max(x.width * x.height, y.width * y.height);
+        return (changed + (total - w * h)) / total;
+      }, [pathToFileURL(candidate).href, pathToFileURL(baseline).href]).catch(() => null);
+    }
+    shots.push({
+      route,
+      viewport: `${VIEWPORT.width}x${VIEWPORT.height}`,
+      theme: THEME,
+      baseline,
+      baselinePresent,
+      candidate,
+      diffRatio,
+      ignored: [],
+    });
+  }
 
   // ---- interaction sweep on this route ------------------------------------------------------
   const found = await page.evaluate((cap) => {
@@ -176,6 +264,11 @@ writeFileSync(`${outDir}/crawl.json`,
   JSON.stringify({ schema: 'qa-flow/route-crawl/1', pages }, null, 2));
 writeFileSync(`${outDir}/interactions.json`,
   JSON.stringify({ schema: 'qa-flow/interaction-sweep/1', controls }, null, 2));
+
+if (VISUAL) {
+  writeFileSync(`${outDir}/visual.json`,
+    JSON.stringify({ schema: 'qa-flow/visual-run/1', determinism, shots }, null, 2));
+}
 
 console.log(`wrote ${outDir}/crawl.json (${pages.length} route(s)) and ` +
             `${outDir}/interactions.json (${controls.length} control(s))`);
