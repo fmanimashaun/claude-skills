@@ -2366,11 +2366,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   which is the citation used, because it is first-party to the framework we ship. The criterion is
   **1.3.1 Info and Relationships (Level A)**, and the markup passes its technique **H48** while the
   accessibility tree does not, so nothing in the HTML looks wrong.
-  - **Nine shipped markup sites and five prose rules were emitting bare lists** and now carry
+  - **Nine shipped markup sites and six prose rules were emitting bare lists** and now carry
     `role="list"`: the cart lines, the checkout and order-progress `<ol>`s, the mobile card-stack
-    fallback, the navbar/rail/nested-section lists, the Breadcrumbs `<ol>`, and the prose prescribing a
-    bare `<ul>` for the rail, the Stepper, the avatar group and the mega-menu columns. Found by grepping
-    the pattern rather than fixing the one instance, per CLAUDE.md.
+    fallback, the navbar / mobile-nav / rail / nested-section lists, the Breadcrumbs `<ol>`, and the prose
+    prescribing a bare `<ul>` or `<ol>` for the rail, the Stepper, the avatar group, the Breadcrumbs row
+    and the mega-menu columns (twice). Found by grepping the pattern rather than fixing the one
+    instance, per CLAUDE.md.
   - **A claim I expected to make was REFUTED, and shipping it would have misdirected people.**
     `display: flex` / `display: grid` **on the list element itself** does *not* break list semantics in
     current Safari, Chrome or Firefox — so `stack`, `cluster` and `grid-auto` on a `<ul>` are all safe.
