@@ -583,6 +583,158 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        name="blast_radius",
+        subject="plugins/qa-flow/scripts/blast_radius.py",
+        selftest="plugins/qa-flow/scripts/blast_radius_selftest.py",
+        mutations=(
+            # -- the reverse walk itself -------------------------------------------------------
+            Mutation(
+                "the walk follows OUTGOING edges, reporting dependencies as dependents",
+                '        target = edge.get("to")',
+                '        target = edge.get("from")',
+                "a dependent is included by an incoming references edge",
+            ),
+            Mutation(
+                "the depth cap stops applying, so the radius silently becomes the whole app",
+                "    for level in range(1, max(depth, 0) + 1):",
+                "    for level in range(1, 99):",
+                "the depth cutoff excludes",
+            ),
+            # Narrowing WITHOUT saying so is the failure this tool exists to prevent, so the
+            # cutoff's report is a separate rule from the cutoff itself.
+            Mutation(
+                "the depth cutoff stops reporting what it dropped",
+                "    for node in frontier:\n        for edge in incoming.get(node, []):",
+                "    for node in []:\n        for edge in incoming.get(node, []):",
+                "the depth cutoff is reported, not silent",
+            ),
+            Mutation(
+                "an enrichment edge stops naming the tool that produced it",
+                '                    + (f"  [via {tool}]" if tool else ""),',
+                '                    + "",',
+                "an enriched edge names the tool that produced it",
+            ),
+            Mutation(
+                "--no-enrichment stops excluding machine-local edges",
+                "    if use_enrichment and isinstance(block, dict):",
+                "    if isinstance(block, dict):",
+                "--no-enrichment reproduces a bare-runner walk",
+            ),
+            # -- the five non-negotiable risk axes ----------------------------------------------
+            Mutation(
+                "the migration axis stops firing",
+                '    "migration": ("db/migrate/", "db/schema.rb", "db/structure.sql"),',
+                "",
+                "fires the migration axis",
+            ),
+            Mutation(
+                "the shared-concern axis stops firing",
+                '    "shared-concern": ("/concerns/", "app/views/layouts/", '
+                '"app/helpers/application_helper.rb"),',
+                "",
+                "fires the shared-concern axis",
+            ),
+            Mutation(
+                "the money name hints stop firing",
+                '    "money": ("payment", "invoice", "billing", "charge", "subscription", '
+                '"price", "pricing",\n              "order", "ledger", "refund", "wallet", '
+                '"transaction", "checkout", "coupon",\n              "discount", "payout", '
+                '"tax"),',
+                "",
+                "fires the money axis",
+            ),
+            # The whole point of "non-negotiable": a project's config may ADD to an axis and may
+            # never empty one. Declaring `migration: []` must not switch the structural rule off.
+            Mutation(
+                "config becomes able to switch a structural axis off",
+                "        for axis, markers in STRUCTURAL_RISK.items():",
+                "        for axis, markers in {k: v for k, v in STRUCTURAL_RISK.items() "
+                "if declared.get(k) != []}.items():",
+                "config cannot switch a non-negotiable axis off",
+            ),
+            Mutation(
+                "a declared high-risk path stops being printed as excluded",
+                '            report.excluded.append(Exclusion(path, "declared in qa.config.yml '
+                '`blast_radius.exclude`"))',
+                "            pass",
+                "a declared exclusion is printed with its reason",
+            ),
+            # -- the silence half: rules that are only useful if they stay quiet -----------------
+            Mutation(
+                "`authenticated` becomes an auth signal, so every controller change is wide",
+                "TAG_RISK: dict[str, str] = {",
+                'TAG_RISK: dict[str, str] = {\n    "authenticated": "auth",',
+                "an authenticated controller is not on its own an auth hit",
+            ),
+            Mutation(
+                "the risk classifier stops exempting test files, so every spec edit is wide",
+                "    report.risk = classify_risk([p for p in considered "
+                "if not p.startswith(TEST_ROOTS)],",
+                "    report.risk = classify_risk(considered,",
+                "a spec-only change is never wide",
+            ),
+            Mutation(
+                "non-app files stop being excluded, so a docs edit reads as under-determined",
+                "        if not (path.startswith(APP_ROOTS) or path in APP_FILES):",
+                "        if False:",
+                "a docs-only change is excluded with a reason, not unresolved",
+            ),
+            # -- accounting: an unexplained file must never read as "nothing is affected" --------
+            Mutation(
+                "an unaccounted-for app file stops forcing the wide selection",
+                "        return bool(self.risk) or bool(self.unresolved)",
+                "        return bool(self.risk)",
+                "an unaccounted-for app file forces wide",
+            ),
+            Mutation(
+                "a conventional spec path that does not exist is dropped instead of reported",
+                '            present = (root / candidate).exists()\n'
+                '            out[candidate] = TestTarget(candidate, f"{reason} ({why})", present)',
+                '            present = (root / candidate).exists()\n'
+                "            if present:\n"
+                '                out[candidate] = TestTarget(candidate, f"{reason} ({why})", '
+                "present)",
+                "a missing spec is reported, not dropped",
+            ),
+            Mutation(
+                "the test-framework narrowing stops reporting itself",
+                "    if present_frameworks:\n"
+                "        for framework in sorted(set(TEST_ROOTS) - present_frameworks):",
+                "    if False:\n"
+                "        for framework in sorted(set(TEST_ROOTS) - present_frameworks):",
+                "and the drop is printed once, with its reason",
+            ),
+            Mutation(
+                "the excluded section is hidden when it is empty",
+                '    lines.append(f"excluded from the radius -> {len(report.excluded)}")',
+                "    if report.excluded:\n"
+                '        lines.append(f"excluded from the radius -> {len(report.excluded)}")',
+                "the excluded section prints even when empty",
+            ),
+            # -- route selection reads the #119 table rather than asserting agreement -------------
+            Mutation(
+                "every route is claimed to be in the route table, so a disagreement is hidden",
+                "                                              inclusion.unit in by_key)",
+                "                                              True)",
+                "a graph route absent from the route table is flagged",
+            ),
+            # -- exit codes: 2 is "could not run", never 0 ------------------------------------------
+            Mutation(
+                "an empty changed-file list becomes a clean run instead of UNUSABLE",
+                '        raise Unusable("no changed files supplied -- pass --changed or '
+                '--changed-from")',
+                "        return []",
+                "no changed files is UNUSABLE (2), not clean (0)",
+            ),
+            Mutation(
+                "--require-graph falls back silently instead of failing",
+                "    elif args.require_graph:",
+                "    elif False:",
+                "--require-graph with no graph is UNUSABLE (2), never a silent fallback",
+            ),
+        ),
+    ),
+    Guard(
         name="evidence_manifest",
         subject="plugins/qa-flow/scripts/evidence_manifest.py",
         selftest="plugins/qa-flow/scripts/evidence_manifest_selftest.py",
@@ -1000,6 +1152,11 @@ GUARDS: tuple[Guard, ...] = (
         name="interaction_report",
         subject="plugins/qa-flow/scripts/interaction_report.py",
         selftest="plugins/qa-flow/scripts/interaction_report.py",
+        # Without this the collector is absent from the mutant's directory, and every fixture that
+        # cross-checks it -- including the `dismiss.*` field checks and the syntax gate's own
+        # negative test -- silently does not run. `visual_baseline` below needs it for the same
+        # reason.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "an effect kind is dropped, so a working control reports dead",
@@ -1024,6 +1181,55 @@ GUARDS: tuple[Guard, ...] = (
                 '        if not control.get("exercised", False):',
                 '        if False:',
                 "an unexercised control is not judged clean",
+            ),
+            # #105 criterion 4, second half. The first of these is the one that decides whether the
+            # focus-restore rule is usable: APG's base Disclosure pattern has no Escape row, so
+            # dropping the scope guard fires on every accordion on the internet.
+            Mutation(
+                "the APG scope guard goes, so every ordinary accordion reports a focus-restore bug",
+                '    if kind not in RESTORE_REQUIRED:',
+                '    if False:',
+                "an ordinary disclosure that keeps focus is NOT a finding",
+            ),
+            Mutation(
+                "the combobox discriminator goes, so combobox popups stop being judged",
+                '    if trigger_role == "combobox":',
+                '    if False:',
+                "a combobox that keeps focus fires focus-restore-missing",
+            ),
+            Mutation(
+                "the menu discriminator goes, so menu popups stop being judged",
+                '    if haspopup == "menu" or popup_role == "menu":',
+                '    if False:',
+                "a menu that keeps focus fires focus-restore-missing",
+            ),
+            Mutation(
+                "a probe that never completed is graded instead of named",
+                '    if closed is None or restored is None:',
+                '    if False:',
+                "a probe with focusRestored=null is not judged clean",
+            ),
+            # Ordering, not presence: moving the call BELOW the exclusions silently drops every
+            # overlay opened by a link -- which is a large share of the real ones.
+            Mutation(
+                "the dismissal is judged after the exclusions, so links lose their overlays",
+                '        judge_dismissal(result, ref, control)\n'
+                '        if excluded_reason(control):\n'
+                '            result.excluded += 1\n'
+                '            continue',
+                '        if excluded_reason(control):\n'
+                '            result.excluded += 1\n'
+                '            continue\n'
+                '        judge_dismissal(result, ref, control)',
+                "a link with href is still judged on focus restore",
+            ),
+            # The syntax gate's own negative test. `node --check <path>` exits 0 on a broken ESM
+            # file, so this gate is one careless edit away from being unable to fail at all.
+            Mutation(
+                "the collector syntax gate always reports success",
+                '    return proc.returncode, proc.stderr.decode("utf-8", "replace")',
+                '    return 0, ""',
+                "the module-mode check FAILS on a broken ES module",
             ),
         ),
     ),
@@ -1081,6 +1287,63 @@ GUARDS: tuple[Guard, ...] = (
                 'no diff image)"',
                 '            picture = "(none)"',
                 "a regression names its diff image",
+            ),
+        ),
+    ),
+    # #360. Every mutation here makes a STALE NUMBER read as a fresh one, which is the only thing
+    # this checker can fail on. Note what is deliberately absent: no mutation asks whether a copy
+    # of a shape is justified, because the quality pass is advisory and a gate on taste would
+    # contradict the doctrine this guards.
+    Guard(
+        name="check_shared_shapes",
+        subject="scripts/check_shared_shapes.py",
+        selftest="scripts/check_shared_shapes.py",   # --selftest lives in the module itself
+        mutations=(
+            Mutation(
+                "the count comparison stops comparing, so a stale number passes",
+                "        if rows[shape.label] != len(hits):",
+                "        if False:",
+                "a wrong count in the table is DRIFT",
+            ),
+            # A `continue` rather than `if False:`: disabling the membership test would index a
+            # missing key and die with a KeyError, and a mutation that crashes before a labelled
+            # assertion is caught by a traceback rather than by the fixture written for it.
+            Mutation(
+                "a measured shape with no row in the table goes unreported",
+                '        if shape.label not in rows:\n'
+                '            findings.append(\n'
+                '                f"{shape.label}: measured in {len(hits)} file(s) and has NO row in'
+                ' the table. A "\n'
+                '                f"count nobody reads is not doctrine.")\n'
+                "            continue\n",
+                "        if shape.label not in rows:\n            continue\n",
+                "a shape with no row is reported",
+            ),
+            Mutation(
+                "the other direction of the join goes, so prose nothing measures passes",
+                "    for label in rows:",
+                "    for label in []:",
+                "a table row nothing measures is reported",
+            ),
+            Mutation(
+                "a pattern that matches nothing is accepted, so a rotted regex reads as a pass",
+                "        if not hits:",
+                "        if False:",
+                "a pattern that matches nothing is reported",
+            ),
+            Mutation(
+                "an empty marked table parses instead of raising",
+                "    if not rows:",
+                "    if False:",
+                "an empty marked table parsed instead of raising",
+            ),
+            # The corpus guard. With no roots every count is 0, every comparison is vacuous, and a
+            # gate over zero files reports exactly like a gate over a clean repo.
+            Mutation(
+                "the measured roots go empty, so every count is taken over no files",
+                'ROOTS = ("plugins", "scripts")',
+                "ROOTS = ()",
+                "the source walk finds the corpus files",
             ),
         ),
     ),
@@ -1793,6 +2056,116 @@ GUARDS: tuple[Guard, ...] = (
                 "and len(_tokens(text)) >= 3]",
                 "            if True]",
                 "non-goals that say nothing",
+    # #128, the pipeline half. Two of these break a fixture whose job is to stay SILENT -- a
+    # breaker that refuses a run which was progressing does not get tuned, it gets bypassed, and
+    # then nothing is bounded at all. The last one breaks neither: it drifts the CODE away from the
+    # shipped DOCTRINE, which only the real-file checks can see.
+    Guard(
+        name="breaker",
+        subject="plugins/pipeline/scripts/breaker.py",
+        selftest="plugins/pipeline/scripts/breaker_selftest.py",
+        # Read, not imported. The selftest's last checks run against the SHIPPED doctrine and the
+        # SHIPPED surfaces, and FAIL rather than skip when absent -- so the mutant needs them, or
+        # every mutation reports as "caught by the wrong fixture" and the real signal is buried.
+        needs=(
+            "plugins/pipeline/reference/stop-conditions.md",
+            "plugins/pipeline/commands/ack.md",
+            "plugins/pipeline/commands/deploy-cloud.md",
+            "plugins/pipeline/commands/install-hooks.md",
+            "plugins/pipeline/commands/pipeline.md",
+            "plugins/pipeline/commands/release.md",
+            "plugins/pipeline/commands/setup-cloud.md",
+            "plugins/pipeline/commands/setup-pipeline.md",
+            "plugins/pipeline/commands/status.md",
+            "plugins/pipeline/agents/kamal-configurator.md",
+            "plugins/pipeline/agents/pipeline-coordinator.md",
+        ),
+        mutations=(
+            Mutation(
+                "the attempt cap stops firing",
+                "    if len(failures) >= cap:",
+                "    if False:",
+                "three failures against a cap of three",
+            ),
+            Mutation(
+                "the no-progress detector stops firing",
+                "        if len(set(recent)) == 1:",
+                "        if False:",
+                "two identical failure signatures",
+            ),
+            Mutation(
+                "the signature normaliser strips digits, so a converging run reads as stuck",
+                '    return _WS.sub(" ", text).strip().lower()',
+                '    return _WS.sub(" ", re.sub(r"\\d+", "", text)).strip().lower()',
+                "a changing failure count is progress, not a stall",
+            ),
+            Mutation(
+                "the ordering rule stops firing, and gate-skipping returns",
+                "        if not _passed(records, earlier):",
+                "        if False:",
+                "release reached before certify passed",
+            ),
+            Mutation(
+                "the budget breaker stops firing",
+                "    if spent >= budget:",
+                "    if False:",
+                "the wall-clock budget is spent",
+            ),
+            Mutation(
+                "a passed stage may be re-attempted",
+                '    if _passed(records, stage):\n        return "already-passed", (',
+                '    if False:\n        return "already-passed", (',
+                "a passed stage is not re-attempted",
+            ),
+            Mutation(
+                "an override outside its bounds is accepted, so a cap becomes unbounded",
+                "        if not low <= value <= high:",
+                "        if False:",
+                "an attempt cap of 99",
+            ),
+            Mutation(
+                "a failure is recorded with no signature, making no-progress unfalsifiable",
+                '    if args.outcome == "fail" and not (args.signature or "").strip():',
+                "    if False:",
+                "a fail recorded with no signature",
+            ),
+            Mutation(
+                "`report` exits 0 on a partial run -- partial presented as complete",
+                '    if state == "complete":\n        return 0',
+                "    if True:\n        return 0",
+                "reporting an unfinished run",
+            ),
+            Mutation(
+                "exceeding the cap stops spoiling the verdict, so the breaker becomes advisory",
+                '        if len(failures) > limits["attempts"]:',
+                "        if False:",
+                "a cap exceeded then passed is still stopped",
+            ),
+            Mutation(
+                "a second `start` silently resets every attempt counter",
+                '            if state != "complete":',
+                "            if False:",
+                "restarting over an unfinished run",
+            ),
+            Mutation(
+                "an undiagnosed stop stops being named in the report",
+                '        if not str(stop.get("diagnosis", "")).strip():',
+                "        if False:",
+                "a stop with no diagnosis is named in the report",
+            ),
+            Mutation(
+                "a missing `started` disables the budget rule instead of being unusable",
+                '        raise Unusable(\n            "the `run` record carries no `started` '
+                "timestamp, so the budget cannot be measured. \"\n            \"That is unusable "
+                'input, not an unlimited budget."\n        )',
+                "        return float(0)",
+                "a run record with no started timestamp",
+            ),
+            Mutation(
+                "the bound widens in the code while the doctrine still states the old one",
+                '    "attempts": (1, 10),',
+                '    "attempts": (1, 99),',
+                "allowed range 1..99",
             ),
         ),
     ),

@@ -34,6 +34,11 @@ Review checklist:
   cannot see, because they read the claim and the code as one thing. **Apply the `code-review`
   skill** (bundled in rails-stack); it names the classes and how to detect each. When a claim
   and the code disagree, decide which is wrong — the fix is not automatically the code.
+- **Quality, second and separately.** Once the above is done, apply the **`quality-pass` skill**
+  (also bundled in rails-stack) for reuse, simplification, efficiency and altitude. Keep it in its
+  own section of the report and mark every one of its findings a **Suggestion** — quality is
+  judgement, and it must never produce a BLOCKING verdict. If one of them turns out to be a bug,
+  it moves back into the list above with a `code-review` class name attached.
 
 Output a structured report — **every finding, no matter how small**, each with `file:line`, a
 concrete repro / failure scenario, a severity (**BLOCKING** = must fix before commit, vs

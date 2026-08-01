@@ -10,7 +10,9 @@ description: >-
   dead-declaration, carve-out-without-negative-test, coverage-gap,
   doctrine-contradiction, unverified-negative, gate-that-cannot-fail) and how to
   detect each. Complements correctness review (authorization, scoping, query
-  safety, tests); it does not replace it.
+  safety, tests); it does not replace it. Code QUALITY — duplication, redundant
+  state, efficiency, a fix at the wrong level — is the separate, advisory
+  `quality-pass` skill, which runs after this one.
 ---
 
 # Reviewing for claims the code does not honour
@@ -30,6 +32,14 @@ author read the claim and the code as a single intention. A reviewer with fresh
 context reads them as two artefacts that may disagree.
 
 Ask both questions on every review. This skill covers the second.
+
+**There is a third question, and it is not asked here.** *Is this the change, or just a
+change that works?* — duplication of something that already exists, redundant or derivable
+state, work repeated inside a loop, a fix applied at the wrong level. That is the
+**`quality-pass`** skill, and it is deliberately a separate pass: a reviewer hunting
+correctness and quality in one read does neither well. It runs **after** this one and it is
+**advisory** — it never blocks a merge. Everything in *this* file can and should. If a
+quality finding turns out to be a bug, it comes back here with a class name.
 
 ## How to use this
 
