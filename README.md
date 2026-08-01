@@ -131,7 +131,7 @@ special runtime. Three places where we take it, all as ordinary files in git:
 |---|---|---|
 | Prose hand-offs between parallel agents | **Typed findings records** (JSONL: severity, `file:line`, a stable dedupe `signature`, `caused_by` / `blocks`) | Dedupe becomes mechanical; completeness becomes checkable (every input id must appear in the output); fixes order **topologically** so root causes precede symptoms |
 | Prose "this blocks that" inside issue bodies | **Declared issue edges** (`depends-on` / `blocks` / `part-of`) | Triage *computes* the ready-now set and the critical path instead of re-deriving it by hand |
-| Judged regression scope | **Code graph for blast radius** — changed file → reverse dependencies → routes → tests | Test selection is derived and justifiable, with a convention-based fallback when no graph tool is installed |
+| Judged regression scope | **Code graph for blast radius** (`qa-flow/scripts/blast_radius.py`) — changed file → reverse dependencies → routes → tests | Test selection is derived and justifiable — every inclusion prints the edge that justified it — with a convention-based fallback when no graph tool is installed |
 
 Same benefits — deterministic merges, computed ordering, derived scope — with state that stays
 greppable, diffable and reviewable. The graph is in the **data**, not in a database.
@@ -528,9 +528,13 @@ Appium) plus the API/perf/a11y tiers feed one free, unified **Allure** HTML repo
   testable?) → sanity on the changed areas → **targeted regression by blast radius**
   (does this change threaten existing behavior?). Not feature re-testing. Defects file
   as `qa,from-qa` issues worked via `/rails-flow:issues label:qa`; no next feature
-  until green. Regression selection is automatic at the mechanical floor, proposed for
-  semantic neighbors, and **human-gated when the change touches auth, tenancy, money,
-  migrations, or a shared concern**.
+  until green. The mechanical floor is **computed, not judged** — `blast_radius.py`
+  reverse-walks the architecture graph from the changed files to their dependents, maps
+  them onto the route table and onto conventional spec paths, and prints the justifying
+  edge for every inclusion (Rails conventions when no graph is present). Semantic
+  neighbors are proposed on top, and the selection is **human-gated when the change
+  touches auth, tenancy, money, migrations, or a shared concern** — five axes the script
+  classifies mechanically and exits 1 on.
 - `/qa-flow:certify` — the comprehensive pre-`main` gate. Full regression across
   browsers + release-only layers (k6 load/soak, OWASP ZAP DAST) against **staging**.
   A clean sweep writes `qa/CERTIFICATION` (bound to the exact dev sha) and promotes the
