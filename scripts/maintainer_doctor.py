@@ -117,6 +117,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
     ("token contrast", ("python3", "scripts/check_token_contrast.py")),
     ("token contrast selftest", ("python3", "scripts/check_token_contrast.py", "--selftest")),
+    # #360, and the same argument one skill along: the quality-pass worked example states how many
+    # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
+    # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
+    # disagreeing with the repo, exactly as the tier gates below reconcile a table against agents.
+    ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
+    ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
@@ -153,6 +159,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
+    ("qa-flow blast radius", ("python3", "plugins/qa-flow/scripts/blast_radius.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
@@ -177,6 +184,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # checkers only see markdown. Its syntax check therefore lives with it, and SKIPS loudly when
     # node is absent instead of failing the sweep for want of a binary (CORPORA_GATES' reasoning).
     ("design-flow conformance collector", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--check-collector")),
+    # Same argument, second collector — and it had no gate at all until #105's focus-restore work
+    # touched it. Note it needs MODULE mode: `crawl_collector.js` is ESM, and plain
+    # `node --check <file>` exits 0 on a broken ES module, so the obvious gate could not fail.
+    ("qa-flow crawl collector", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--check-collector")),
     # #158. Both halves registered, for the reason spelled out on the tell-detector above: the
     # selftest proves each rule fires and stays silent on fixtures, the bare run asserts the four
     # SHIPPED skills actually route to every one of their 42 reference files. Only the second could
