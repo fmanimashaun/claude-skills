@@ -2325,6 +2325,68 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`hotwire/references/stimulus.md` §3 invented function-key filters, and an unknown filter throws
+  rather than no-oping** (#381). `defaultSchema.keyMappings` holds twelve named keys
+  (`enter tab esc space up down left right home end page_up page_down`) plus `a`–`z` and `0`–`9`, and
+  no `f*` entry at all — the doctrine's trailing `f1…` named a range that has never existed. The
+  failure mode is why this was P1: `Action#shouldIgnoreKeyboardEvent` raises
+  `contains unknown key filter` when the name is absent from the map, via an `error()` helper whose
+  whole body is `throw new Error(message)`. Two adjacent facts verified in the
+  same file and now stated: filters bind to `keydown`/`keyup`/`keypress` only (elsewhere the parser
+  folds the dot back into the event name, which is how `jquery.custom.event->x#y` works), and
+  `keyFilterDissatisfied` compares all four of meta/ctrl/alt/shift **exactly**, so `keydown.ctrl+k`
+  stays silent while Shift is held. Verified against **Stimulus 3.2.2** — the version the skill
+  targets and the latest release (published 2023-08-07; `keyMappings` is unchanged across 3.x) —
+  [`src/core/schema.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/schema.ts),
+  [`src/core/action.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/action.ts),
+  [`src/core/action_descriptor.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/action_descriptor.ts).
+  - **The report's account of where the error lands was wrong, and the correction is the sharper
+    warning.** It said the error "surfaces through Stimulus' error handler". It does not:
+    `shouldIgnoreKeyboardEvent` is reached from `Binding#willBeInvokedByEvent`, which sits *outside*
+    the `try` in `invokeWithEvent`, and `EventListener#handleEvent` wraps nothing — so the throw
+    escapes to the page as an uncaught error. Verified in
+    [`src/core/binding.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/binding.ts)
+    and [`src/core/event_listener.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/event_listener.ts).
+    An issue body is a hypothesis, including one we wrote.
+- **`hotwire/references/stimulus.md` §1 prescribed `stimulus:manifest:update`, the one command that
+  destroys the auto-registration the same sentence promised** (#382) — a `doctrine-contradiction` in
+  the `skills/code-review/SKILL.md` sense, not merely a stale fact. The importmap installer writes a
+  four-line `index.js` calling `eagerLoadControllersFrom("controllers", application)` and appends
+  `pin_all_from "app/javascript/controllers", under: "controllers"`, so a new controller needs **no
+  command**; the rake task overwrites that file with explicit `application.register` lines, deleting
+  the eager-load call and making the task permanently necessary. The old "if pins are stale" reason
+  was wrong too — the task never touches pins. Verified against **stimulus-rails v1.3.4** (latest,
+  published 2024-08-16, the version Rails 8 resolves) —
+  [`index_for_importmap.js`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/install/app/javascript/controllers/index_for_importmap.js),
+  [`stimulus_with_importmap.rb`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/install/stimulus_with_importmap.rb),
+  [`stimulus_tasks.rake`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/tasks/stimulus_tasks.rake).
+  - **Verification found the old text wrong in a way the report missed, in the same clause.** "the
+    generator `bin/rails g stimulus clipboard` handles it" inverts the truth: the generator's line is
+    `rails_command "stimulus:manifest:update" unless Rails.root.join("config/importmap.rb").exist? || options[:skip_manifest]`
+    — it *deliberately skips* the task on importmap and runs it only on the bundler path, where
+    `index.js` genuinely is a generated manifest. The doctrine now names both paths instead of
+    blurring them
+    ([`stimulus_generator.rb`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/generators/stimulus/stimulus_generator.rb)).
+  - **Grepped for the class, per CLAUDE.md — no second instance.** The only other statement of this
+    fact in the corpus, `rails-8/references/views-hotwire.md:131` ("pinned via `pin_all_from` and
+    auto-registered"), is correct and corroborates the fix; the two shipped `keydown.esc` examples
+    use a real filter; and every `data-action` written without `event->` in `skills/` sits on a
+    `<button>`, which does have a default.
+- **`hotwire/references/stimulus.md` §3's default-event map was four rules where the source has
+  seven, and the omissions were the unguessable ones** (#387). `defaultEventNames` is
+  `a`/`button` → `click`, `form` → `submit`, `details` → `toggle`, `input` → `input` *except*
+  `input[type=submit]` → `click`, `select` → `change`, `textarea` → `input`. `details` matters most:
+  §10 steers people to `<details>` as the no-JS disclosure element, and guessing `click` there yields
+  a silently dead controller. Verified against **Stimulus 3.2.2** —
+  [`src/core/action.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/action.ts).
+  - **The report's failure mode was wrong in the safe-sounding direction.** It said an element with
+    no default "turns into a thrown `missing event name`". It throws, but
+    `ValueListObserver#parseToken` catches it into a `ParseResult.error` that **nothing in the
+    codebase ever reads** — so the action is dropped with no binding and no console output. Written
+    as reported, the doctrine would have promised a visible error where the real behaviour is
+    silence, which is the harder bug. Verified in
+    [`src/mutation-observers/value_list_observer.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/mutation-observers/value_list_observer.ts)
+    (`grep -rn ParseResult src` → six hits, none reading `.error`).
 - **`hotwire/references/native.md` documented a `RouteDecisionHandler` signature that 1.3.0 broke on
   both platforms** (#384). §4 told agents to implement `matches(location:…)` / `handle(location:…)`;
   since **iOS 1.3.0** and **Android 1.3.0** both functions receive the whole `VisitProposal`, so code
