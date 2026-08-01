@@ -4237,7 +4237,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.11.0 — 2026-08-01
 
 - **NEW `llm_tell_detector.py` — an offline detector for LLM design tells** (#157). Stdlib only, no
   browser, no API key. Borrowed in *shape* from [impeccable](https://github.com/pbakaus/impeccable):
@@ -5011,7 +5011,43 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
-### Unreleased
+### 2026-08-01 (release v1.53.0)
+
+> ### Two checks that exist because inference was tried first and did not work
+>
+> Both features here started as "grep for the bad pattern", and in both cases building the check
+> proved the grep could not be trusted. The detector's twelve tells collapsed to seven once each was
+> grounded in doctrine. The topology gate's keyword approach would have **missed the one command
+> that gets fan-out right** and passed two that did not.
+
+- **NEW — offline detector for LLM design tells** (#157, design-flow 1.11.0). Seven named rules,
+  each citing the doctrine line it enforces. Stdlib only, no browser, no API key. Runs on every edit
+  as a PostToolUse hook and inside `/design-flow:audit`. A disable must carry a reason; a bare one is
+  itself a finding.
+- **The rule set is seven, not the twelve requested, and that is the finding.** Two of the tells are
+  **prescribed by our own doctrine** — `components.md:185` mandates `backdrop-blur-sm` for the modal
+  backdrop, `:658` mandates `animate-pulse` for skeletons — so rules for them would fire on the
+  reference implementations they enforce. Three more need rendered contrast or page structure a
+  static scan cannot see.
+- **Two of the seven find outright bugs, not drift.** `bg-gradient-to-*` was removed in Tailwind v4
+  and `duration-fast` never existed, so both emit **no CSS at all**: the markup looks right, renders
+  wrong, and nothing raises.
+- **NEW — agent topology is declared and gated** (#137, rails-flow 1.16.1 · qa-flow 1.20.0).
+  `harness-doctrine.md` §8a; every command dispatching 2+ of its plugin's agents declares its
+  topology, a fan-out declares `merge:`, a loop declares `exit:`. Enforced by `undeclared-topology`.
+- **FIX — `/qa-flow:verify` consolidated a five-way fan-out with only a verdict rule.** Nothing said
+  what happens when two layers report the same defect, or when one PASSes a surface another fails.
+  Now states precedence (any S1/S2 outranks every PASS; a skipped layer is not a PASS) and dedupe
+  (same route + assertion is ONE defect). Filing one issue per layer makes the fix queue lie.
+- **Loop breakers remain deliberately absent**, recorded where a reader will look. They are §8's
+  known gap owned by #128; requiring them before they exist would be the claims-vs-enforcement
+  defect the document is named for.
+- Gate sweep **41 → 43**. Self-consistency selftest 77 → **93** assertions; mutations 21 → **25**.
+  Two of this release's bugs were caught by our own guards rather than by review: a coverage counter
+  printing `0 commands examined` under a "no findings" verdict, and an IDE unused-import hint
+  revealing a shared constant that had been imported and then hand-copied.
+
+### 1.53.0 — 2026-08-01
 
 - **Agent topology is now declared by each command, and gated** (#137). `docs/harness-doctrine.md`
   gains **§8a**; every command dispatching two or more of its own plugin's agents carries
