@@ -31,8 +31,8 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 69 |
-| — `derivable` from documented parts | 44 |
+| — `documented` | 72 |
+| — `derivable` from documented parts | 41 |
 | — `needs doctrine` (tracked writing gap) | 0 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
@@ -44,6 +44,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Component | Kind | In TW | In FB | Where / when to use it | Watch out for |
 |---|---|---|---|---|---|
 | Accordion / Disclosure | component | — | ✓ | an authenticated app screen, inside one of the three shells | 732 instances in the audit corpus — the second most common interactive pattern after links. APG-verified contract (#142): what is required, and what is ours, is stated separately |
+| Activity feed / Timeline | component | ✓ | ✓ | a record's history, or a stream that loads more as you scroll | TWO shapes: a static history is an ordinary <ol>, and only scroll-loading content earns APG's feed pattern — which is a structure, not a widget |
 | Alert / Banner | component | ✓ | ✓ | in-page state (Alert) vs page-wide announcement (Banner) | — |
 | Avatar | component | ✓ | ✓ | wherever a person is named; pair with the name, never alone as identification | — |
 | Badge / Tag / Chip | component | ✓ | ✓ | status and category labels inside table rows, list items and headings | — |
@@ -78,6 +79,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Select | component | ✓ | ✓ | a closed set of ~2–10 options; above that reach for the combobox | — |
 | Skeleton / loading placeholder | component | — | ✓ | a Turbo frame whose content size IS known — preferred over a spinner because it does not shift layout | Turbo frame loading states need this; without it agents invent spinners |
 | Spinner / busy indicator | component | — | ✓ | a region whose content is loading and has no known size | — |
+| Stacked list | component | ✓ | ✓ | any index of records that is not tabular, and the Table's mobile fallback | role=list is not optional decoration: Preflight unstyles every list and WebKit then drops the role. One stretched link per row, or none |
 | Stepper / wizard | component | — | ✓ | a multi-step flow: checkout, onboarding, long forms | a display, not a widget: no tablist, no progressbar, no arrow keys. Move focus on advance and then do NOT add a live region — 4.1.3 excludes what a change of context already announced. Also feeds #91's checkout flow, which is inside 3.3.4 (AA) |
 | Table (CRUD) | component | ✓ | ✓ | the index of a resource — sortable headers, row actions, select-all | — |
 | Tabs | component | ✓ | ✓ | switching views of the SAME resource; never as page navigation | — |
@@ -87,6 +89,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Toggle / Switch | component | ✓ | ✓ | a setting that applies immediately; if it needs Save, use a Checkbox | — |
 | Tooltip / Popover | component | — | ✓ | a supplementary label (Tooltip) or a small rich panel (Popover); never the only place information appears | — |
 | Video player | component | — | ✓ | marketing and docs surfaces; inside a `frame` so layout never shifts | no APG pattern, so the keyboard model is the UA's and not ours; `kind=captions` is not `kind=subtitles`; and an autoplaying video is governed by WCAG 2.2.2 (A), not by reduced-motion |
+| Grid list | composition | ✓ | — | an index whose items carry media or several attributes worth scanning at once | `grid-auto` on the <ul> is safe; role=grid is NOT — APG's Grid is a composite widget with roving tabindex, which a wall of cards does not have |
 | Stat tile | composition | ✓ | — | the metric row at the top of a dashboard, one metric per Card | page-anatomies composes these from Card, one metric each — deliberately not a new component |
 | About page archetype | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | — |
 | Auth page archetype (sign-in / sign-up / reset) | page archetype | ✓ | — | a whole app screen | uses the cover > center > stack recipe for true vertical centering, not bare center |
@@ -115,14 +118,19 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 
 ## Derivable — compose it from documented parts
 
-No dedicated catalogue entry, and none needed: these are compositions. Build from what the
+**No anatomy of their own, and none needed: these are compositions.** Build from what the
 **Build from** column names rather than inventing markup — that is what keeps a JIT-built
 screen consistent with everything already in the app.
+
+A few rows here still carry a `components.md` section (Command palette is the one to know
+about). That is not a contradiction: the section records the ARIA subtleties of *composing*
+them, and the row stays `derivable` because there is no anatomy to build straight from. The
+earlier wording — *"no dedicated catalogue entry"* — said something stronger than the file
+meant, and was already false when it was written.
 
 | Component | Kind | In TW | In FB | Build from | Where / when to use it |
 |---|---|---|---|---|---|
 | Action panel | component | ✓ | — | Card + Heading (card scale) + Button group | an authenticated app screen, inside one of the three shells |
-| Activity feed / Timeline | component | ✓ | ✓ | Media object rows in a `divide-y` container; the rail is a border on the container, not a pseudo-element per row | an authenticated app screen, inside one of the three shells |
 | Bottom navigation | component | — | ✓ | the native tab bar on Hotwire Native; the shipped sidebar/stacked shells on web | native mobile shells (Hotwire Native); never as a web nav |
 | Category filters | component | ✓ | — | the documented `Ui::Disclosure`, one per filter group, inside a `stack` — `<details>`/`<summary>` only where the group never animates | a commerce surface (catalog, product, cart, checkout) |
 | Chat bubble | component | — | ✓ | Media object rows in a `divide-y` container — the same shape, without inventing message semantics | a messaging, comment or activity thread — not general app screens |
@@ -135,7 +143,6 @@ screen consistent with everything already in the app.
 | QR code | component | — | ✓ | generate in the app and render an `<img>` inside a `frame` | wherever a code must be scanned — checkout, tickets, device pairing |
 | Search input | component | — | ✓ | the documented Text input, `type=search`, with a leading Lucide icon | an authenticated app screen, inside one of the three shells |
 | Speed dial / FAB cluster | component | — | ✓ | the page-header actions slot (Heading + Button group), or a Dropdown for overflow | a mobile-first surface where the primary action must stay reachable while scrolling |
-| Stacked list | component | ✓ | ✓ | Media object rows inside a `divide-y` container | an authenticated app screen, inside one of the three shells |
 | Status indicator / dot | component | — | ✓ | Badge, or a `size-2 rounded-full` span plus `sr-only` text — never colour alone | an authenticated app screen, inside one of the three shells |
 | Store navigation | component | ✓ | — | the documented navbar / sidebar navigation | a commerce surface (catalog, product, cart, checkout) |
 | Bento grid section | composition | ✓ | — | `center` > `stack` of Heading + prose + `grid-auto`/`Switcher`, Buttons for CTAs — no bespoke section CSS | a section of a marketing page, stacked inside the landing / pricing / about anatomy |
@@ -148,7 +155,6 @@ screen consistent with everything already in the app.
 | FAQ section | composition | ✓ | — | `center` > `stack` of Heading + prose + `grid-auto`/`Switcher`, Buttons for CTAs — no bespoke section CSS | a section of a marketing page, stacked inside the landing / pricing / about anatomy |
 | Feature section | composition | ✓ | — | `center` > `stack` of Heading + prose + `grid-auto`/`Switcher`, Buttons for CTAs — no bespoke section CSS | a section of a marketing page, stacked inside the landing / pricing / about anatomy |
 | Footer | composition | ✓ | ✓ | `center` > `cluster` of link lists + Logo | a section of a marketing page, stacked inside the landing / pricing / about anatomy |
-| Grid list | composition | ✓ | — | `grid-auto` of Cards | a region of an app screen, inside one of the three shells |
 | Hero section | composition | ✓ | ✓ | `center` > `stack` of Heading + prose + `grid-auto`/`Switcher`, Buttons for CTAs — no bespoke section CSS | a section of a marketing page, stacked inside the landing / pricing / about anatomy |
 | Incentives block | composition | ✓ | — | Card + Heading + Description list / Table inside `grid-auto` or `Switcher` | a block within a storefront, product, cart or checkout page |
 | Logo cloud | composition | ✓ | — | `center` > `stack` of Heading + prose + `grid-auto`/`Switcher`, Buttons for CTAs — no bespoke section CSS | a section of a marketing page, stacked inside the landing / pricing / about anatomy |
