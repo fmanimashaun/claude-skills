@@ -124,7 +124,7 @@ screen consistent with everything already in the app.
 | Action panel | component | ✓ | — | Card + Heading (card scale) + Button group | an authenticated app screen, inside one of the three shells |
 | Activity feed / Timeline | component | ✓ | ✓ | Media object rows in a `divide-y` container; the rail is a border on the container, not a pseudo-element per row | an authenticated app screen, inside one of the three shells |
 | Bottom navigation | component | — | ✓ | the native tab bar on Hotwire Native; the shipped sidebar/stacked shells on web | native mobile shells (Hotwire Native); never as a web nav |
-| Category filters | component | ✓ | — | `<details>`/`<summary>` groups inside a `stack`, until #142 lands | a commerce surface (catalog, product, cart, checkout) |
+| Category filters | component | ✓ | — | the documented `Ui::Disclosure`, one per filter group, inside a `stack` — `<details>`/`<summary>` only where the group never animates | a commerce surface (catalog, product, cart, checkout) |
 | Chat bubble | component | — | ✓ | Media object rows in a `divide-y` container — the same shape, without inventing message semantics | a messaging, comment or activity thread — not general app screens |
 | Command palette | component | ✓ | — | the documented Modal containing the documented Combobox with a listbox popup; keep `aria-activedescendant` so typing keeps filtering | an authenticated app screen, inside one of the three shells |
 | Device mockup | component | — | ✓ | a `frame` at the screenshot's own ratio | marketing surfaces only, to frame a product screenshot |
@@ -182,15 +182,15 @@ Flowbite's `data-*` trigger attributes are the better source, and they cut acros
 
 | Pattern | Status | Note |
 |---|---|---|
-| disclosure (collapse / accordion) | planned #142 | the single largest gap found: 732 `data-collapse-toggle` instances across the Flowbite corpus and we shipped no controller at all |
+| disclosure (collapse / accordion) | shipped | the largest gap the corpus audit found — 732 `data-collapse-toggle` instances — and now the most fully specified pattern we ship: two modes, and the APG-required rules stated apart from the ones that are ours (#142) |
 | dialog (modal / drawer) | shipped | focus trap, Escape, restore focus on close |
 | menu (dropdown) | shipped | roving tabindex, Escape, click-outside |
 | list-navigation (tabs / single-select groups) | shipped | arrow keys + Home/End |
 | dismissible (alert / toast) | shipped | removes the node, announces politely |
 | theme toggle (light / dark) | shipped | 13 corpus pages carry one; ours is a role-token flip |
-| filter / typeahead | planned #95 | needed by both command palette and combobox |
-| drag and drop (upload) | planned #95 | needed by the file dropzone; keyboard path is mandatory |
-| carousel / slide | declined | see Carousel — a doctrine position, not a backlog item |
+| filter / typeahead | shipped | TWO mechanisms, not one: filtering is `aria-autocomplete` (`list` or `both`) on an editable combobox, and typeahead-jump belongs to the SELECT-ONLY combobox and the menu. Applying the typeahead half to an editable combobox swallows the space bar (#229) |
+| drag and drop (upload) | shipped | `preventDefault()` on `dragover` or the drop never fires; and the clickable native input — not a keyboard path — is what satisfies WCAG 2.5.7, so it stays visible |
+| carousel / slide | shipped | the contract is written and the Lightbox composes it, but the default answer is still no — see the Carousel row for why. `declined` was the wrong word for that: it read as though the mechanism did not exist |
 
 ## Layout primitives
 
