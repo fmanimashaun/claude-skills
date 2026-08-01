@@ -162,7 +162,9 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Category page archetype": "## Category\n",
     "Product page archetype": "## Product\n",
     "Cart page archetype": "## Cart\n",
-    "Checkout page archetype": "## Checkout\n",
+    # #91 shipped the anatomy as "## Checkout — the purchase flow"; the evidence is the
+    # heading PREFIX so a descriptive suffix does not falsify a row that is genuinely there.
+    "Checkout page archetype": "## Checkout",
     "Order detail page archetype": "## Order detail\n",
     "Order history page archetype": "## Order history\n",
     # catalogue components (components.md)
