@@ -9,6 +9,37 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **NEW gate `skill routing` + `skill routing selftest`** (#158) — asserts every file in a shipped
+  skill's `references/` is named by its own `SKILL.md`, that no `SKILL.md` routes to a reference
+  that does not exist, and that no `SKILL.md` body exceeds Claude Code's documented 500-line
+  Level-2 budget. `scripts/check_skill_routing.py`, registered in `GATES`, 15 selftest checks,
+  5 declared mutations in `mutation_check.py`.
+  - **The issue's central premise was REFUTED, and the gate is what survived it.** #158 proposed
+    rebuilding `SKILL.md` as a "capability router" because *"a skill is loaded as a unit, so a task
+    that only needs `jobs-and-realtime.md` still pays for `deployment-kamal.md`"*. The official docs
+    say the opposite: *"Claude reads only the files each task needs. A Skill can include dozens of
+    reference files, but if your task only needs the sales schema, that's the one file Claude loads.
+    The rest stay on the filesystem and **cost zero tokens**"*
+    ([agent-skills/overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)).
+    The domain-split `references/` layout we already have is the documented recommendation
+    (*"Pattern 2: Domain-specific organization"*,
+    [best-practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)).
+    **No router was built** — there is no Claude Code routing/sub-skill mechanism to build one on,
+    and the issue's supporting citation (`npx skills add --full-depth`) is an unrelated third-party
+    registry flag about git-clone freshness, not context depth.
+  - What the issue got right is its last criterion — reachability *"asserted by a script rather than
+    by review"* — and that rests on a claim the docs do make: *"Keep references one level deep from
+    SKILL.md. All reference files should link directly from SKILL.md"*, because *"Claude may
+    partially read files when they're referenced from other referenced files"* (best-practices).
+  - **The precision fixture is the point.** Routing is a `references/<name>` path, not a bare
+    filename: two fidara-design references name `coverage.md` in prose while routing nothing, so a
+    substring test would have called the tree clean and hidden the one real defect. Link syntax is
+    *not* required either — the docs never mandate `[]()`, and demanding it would fail all 19
+    rails-8 dispatch rows for a rule nobody wrote.
+  - Scope is pinned in `SHIPPED_SKILLS` and enforced **by the gate against the real tree**, both
+    directions, so a fifth skill fails the sweep until added deliberately. It is not pinned in the
+    selftest: a scope asserted only over fixtures is a claim about fixtures, and keeping
+    `--selftest` hermetic is what lets the mutation harness run it against a mutated copy.
 - **Agent worktrees are ignored and pruned from every linter.** Claude Code puts background-agent
   worktrees at `.claude/worktrees/` — **inside the repo**, one full copy each — and
   `git status --porcelain` collapses the whole tree to a single `?? ` line, so sixteen repo copies
@@ -2048,6 +2079,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`fidara-design/references/coverage.md` was unreachable from its own `SKILL.md`** (#158) — 230
+  lines of component doctrine (every component's guidance state, what to build it from, and which
+  surface it belongs on) reachable only via `brand.md` and `marketing-copy.md`. That is depth two,
+  which the official guidance names as the case that degrades: *"Keep references one level deep from
+  SKILL.md. All reference files should link directly from SKILL.md to ensure Claude reads complete
+  files when needed"* / *"Claude may partially read files when they're referenced from other
+  referenced files ... resulting in incomplete information"*
+  ([agent-skills/best-practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices),
+  fetched 2026-08-01). So an agent building an uncatalogued component could consult the design system
+  and never see the matrix that says what to build it from. Now routed from the **Concrete code**
+  block, and held there by the new `skill routing` gate rather than by review.
+- The other three shipped skills were already clean: 42 reference files across four skills, all
+  routed one level deep, every `SKILL.md` well inside the 500-line Level-2 budget (largest is
+  rails-8 at 227). Verified by running the gate, not by reading.
 
 ### 1.29.1 — 2026-08-01
 
