@@ -1201,7 +1201,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 
-### Unreleased
+### 1.16.0 — 2026-08-01
 
 - **`extract_claims.py` — the half of `claim-verifier` that can actually be proven** (#359). Its
   acceptance criterion asked for fixtures showing the agent fires on a false claim and stays silent
@@ -2033,7 +2033,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
 
-### Unreleased
+### 1.29.0 — 2026-08-01
 
 - **`stock-phrase`: the LLM house style is now named in the copy doctrine, as an advisory count.**
   Borrowed from the `humanize` plugin in `fcakyon/claude-codex-settings`, which blocks ~53 stock
@@ -4186,6 +4186,15 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+
+### 1.10.1 — 2026-08-01
+
+- **`design-auditor` reports stock LLM phrasing as a count** (#131). Marketing copy using
+  `leverage`, `seamless(ly)`, `elevate`, `unlock`, `empower`, `robust`, `cutting-edge` — **reported,
+  never failed on**. A word has legitimate uses (*"Unlock your first report"* is a real CTA), so one
+  is a word choice and six is a draft nobody edited. Marketing surfaces only: never documentation,
+  where `harness` and `elevate` are ordinary technical vocabulary.
+
 ### 1.10.0 — 2026-08-01
 
 - **design-flow's brand-pack lint is runnable as a gate in a user's CI** (#334). A `checks.json`
@@ -4909,6 +4918,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.52.0)
+
+> ### Reviewing the diff would not have caught any of them
+>
+> Three defects shipped from this repository in one day, each found by a human asking whether a claim
+> was true and none by the forty gates. Every diff was internally consistent — **the defect was in the
+> sentence describing it**. `claim-verifier` exists for exactly that, borrowed from `fable-advisor`.
+
+- **NEW `claim-verifier`** — verifies what a change says about itself. Extracts enforcement,
+  exhaustiveness, causation and measurement claims, then checks each by **running or grepping**;
+  reading the code is explicitly not checking, because the claims are about behaviour.
+  **UNVERIFIABLE is a finding** — a claim nobody can check should not be in a description.
+- **The issue asked for a third model tier, and building it proved that wrong.** Pinning a *shipped*
+  agent to an expensive alias spends a stranger's money on our authority, and a value outside their
+  `availableModels` is skipped anyway. **A pin cannot buy a second opinion; it can only impose a
+  cost.** So the agent is `inherit` and must **state which model it ran as**, saying plainly when that
+  matches the session. The vocabulary needed no third value — the mechanism was never the frontmatter.
+- **NEW `extract_claims.py`** — the half that can be proven, since an agent is a prompt and has no
+  fixtures. The script extracts, the agent judges. Its **silence** half is what makes it usable: it
+  drops hedged and unfalsifiable sentences, because a verifier handed *"this is cleaner"* has nothing
+  to run. A limitation is recorded rather than hidden — it cannot tell a claim being *made* from one
+  being *quoted*, and **when in doubt it extracts**, because dropping a real claim silently is the
+  failure it exists to stop.
+- **Stock LLM phrasing is named in the copy doctrine, as an advisory count**, borrowed from
+  `humanize`. Advisory unlike every other row in that table: those fail on a fact, this fails on a
+  word, and *"Unlock your first report"* is a real CTA.
 
 ### 2026-08-01 (release v1.51.1)
 
