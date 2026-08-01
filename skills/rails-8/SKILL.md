@@ -184,9 +184,10 @@ generate, then trim what isn't needed.
 - **Deprecated associations** — `has_many :posts, deprecated: true` reports
   every usage (`:warn`/`:raise`/`:notify`) to help retire schema.
   (`models.md`)
-- **Registry-free Kamal deploys** — Kamal 2.8 uses a local registry by
-  default for simple deploys; no Docker Hub/GHCR needed to start.
-  (`deployment-kamal.md`)
+- **Local-registry Kamal deploys** — Kamal 2.8 added an **opt-in** local
+  registry (`registry: server: localhost:5555`, which 8.1 generates for
+  you); Kamal's own default is still Docker Hub, so a config written
+  without that line needs credentials. (`deployment-kamal.md`)
 - **Alphabetized `schema.rb` columns** — expect reordered-but-equivalent
   schema diffs after the first 8.1 migration; don't "fix" them.
 - **Verbose redirect logs** in development
