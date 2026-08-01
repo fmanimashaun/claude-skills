@@ -1070,6 +1070,51 @@ GUARDS: tuple[Guard, ...] = (
     # first: corners counted as elements, and an inline-link exemption wide enough to swallow every
     # native <button>.
     Guard(
+        name="llm_tell_detector",
+        subject="plugins/design-flow/scripts/llm_tell_detector.py",
+        selftest="plugins/design-flow/scripts/llm_tell_detector.py",
+        # It IMPORTS `rendered_conformance` for the shared palette-step definition (#157 criterion
+        # 7), so without this every mutant dies at import and each mutation reads as "caught" by a
+        # traceback rather than by the fixture named below.
+        needs=("plugins/design-flow/scripts/rendered_conformance.py",
+               "plugins/design-flow/scripts/conformance_collector.js"),
+        mutations=(
+            # Three of these four are bugs I actually shipped into the first draft, kept as
+            # mutations because a bug that happened once is the best evidence a fixture is load-
+            # bearing rather than decorative.
+            Mutation(
+                "the shared palette step loses its hyphen (`gray500`, matching nothing)",
+                'STEP_ALTERNATION = _STEP[:-len(r"\\Z")]',
+                'STEP_ALTERNATION = _STEP[1:-len(r"\\Z")]',
+                "stock palette",
+            ),
+            Mutation(
+                "the ease lookahead returns, excusing `ease-in-out` (it starts with `ease-in`)",
+                're.compile(r"\\bease-(?:in-out|linear|initial)\\b")',
+                're.compile(r"\\bease-(?!(?:out|in)\\b)(?:in-out|linear|initial)\\b")',
+                "ease-in-out",
+            ),
+            Mutation(
+                "the duration rule flags the documented FIX, `duration-(--duration-fast)`",
+                'r"(?<![-\\w])duration-(?:"',
+                'r"\\bduration-(?:"',
+                "custom-property duration",
+            ),
+            Mutation(
+                "the token-definition carve-out widens to every hex",
+                'return before.endswith("--") or bool(TOKEN_DEFINITION.search(before))',
+                "return True",
+                "a plain declaration is NOT a token definition",
+            ),
+            Mutation(
+                "a disable stops suppressing, so the escape hatch is decorative",
+                "        if rule.name in allowed:\n            report.suppressed += 1\n            continue",
+                "        if False:\n            report.suppressed += 1\n            continue",
+                "a disable with a reason suppresses",
+            ),
+        ),
+    ),
+    Guard(
         name="rendered_conformance",
         subject="plugins/design-flow/scripts/rendered_conformance.py",
         selftest="plugins/design-flow/scripts/rendered_conformance.py",

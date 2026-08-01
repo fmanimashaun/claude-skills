@@ -31,6 +31,38 @@ Read the exit code, because two of them mean opposite things:
 Treating any non-zero exit as a defect to report conflates the two. Warnings flag config setup
 generates that no doctrine reads: probably dead scaffolding, worth a look but not a blocker.
 
+## Second: the LLM-tell detector, over the project's own views
+
+The cross-check above audits the *toolchain*. This one audits **what was generated into this
+project** — the static half of the conformance question, needing no browser and no booted app:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/llm_tell_detector.py" app/views app/components
+```
+
+Seven rules, each citing the doctrine line it enforces (`--list-rules` prints them). **Two of them
+find outright bugs rather than style**: `bg-gradient-to-*` was removed in Tailwind v4 and
+`duration-fast` never existed, so both produce **no CSS at all** — the markup looks right, renders
+wrong, and nothing raises. The other five are literal values where a role or scale step belongs,
+which is what "AI beige" and "Inter for everything" look like in markup.
+
+This also runs automatically on every edit, as a PostToolUse hook — so the audit run should
+normally be quiet. A pile of findings here means the hook is not installed, which is worth knowing
+on its own.
+
+**Exit 1 is a project defect** — fix it in the view. That is the opposite of the cross-check above,
+where exit 1 means a *toolchain* defect, so do not carry the habit across. Exit 2 is still "could
+not run".
+
+Disagree with a rule on a specific line? Disable it **with a reason**:
+
+```erb
+<!-- design-flow-disable stock-palette-literal: third-party embed dictates the palette -->
+```
+
+A bare disable with no reason is itself a finding, deliberately: the first justified exception is
+what teaches everyone else to switch the checker off wholesale.
+
 ## Browser mode — measure conformance on the rendered page (optional, #107)
 
 The checklist below reads **source**, so it cannot see what the cascade resolves to: a colour
