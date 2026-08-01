@@ -469,18 +469,48 @@ ENTRIES: tuple[Entry, ...] = (
 
 # Interaction patterns and layout primitives are enumerated separately: they have no
 # one-to-one corpus directory, so a component matrix cannot express them.
-INTERACTION_PATTERNS: tuple[tuple[str, str, str], ...] = (
-    ("disclosure (collapse / accordion)", "planned #142",
-     "the single largest gap found: 732 `data-collapse-toggle` instances across the Flowbite "
-     "corpus and we shipped no controller at all"),
-    ("dialog (modal / drawer)", "shipped", "focus trap, Escape, restore focus on close"),
-    ("menu (dropdown)", "shipped", "roving tabindex, Escape, click-outside"),
-    ("list-navigation (tabs / single-select groups)", "shipped", "arrow keys + Home/End"),
-    ("dismissible (alert / toast)", "shipped", "removes the node, announces politely"),
-    ("theme toggle (light / dark)", "shipped", "13 corpus pages carry one; ours is a role-token flip"),
-    ("filter / typeahead", "planned #95", "needed by both command palette and combobox"),
-    ("drag and drop (upload)", "planned #95", "needed by the file dropzone; keyboard path is mandatory"),
-    ("carousel / slide", "declined", "see Carousel — a doctrine position, not a backlog item"),
+#
+# The fourth element is a PROBE: a literal string that occurs in the shipped reference docs if
+# and only if this pattern's contract has been written. `verify_interaction_claims` enforces
+# `shipped` <=> probe present, in BOTH directions, which is the same principle
+# `verify_shipped_evidence` already applies to component rows.
+#
+# It is here because the half without the guard rotted, silently, while the guarded half stayed
+# honest: four of these nine rows were still `planned #142` / `planned #95` / `declined` after the
+# contracts had shipped, and one of them ("keyboard path is mandatory" for the dropzone) had
+# become the OPPOSITE of the doctrine it summarised -- forms.md quotes 2.5.7's Understanding
+# document saying a keyboard equivalent does NOT satisfy the criterion on its own. A status
+# column readers act on must be checkable, not asserted.
+INTERACTION_PATTERNS: tuple[tuple[str, str, str, str], ...] = (
+    ("disclosure (collapse / accordion)", "shipped",
+     "the largest gap the corpus audit found — 732 `data-collapse-toggle` instances — and now the "
+     "most fully specified pattern we ship: two modes, and the APG-required rules stated apart "
+     "from the ones that are ours (#142)",
+     "### Disclosure — the full contract (#142)"),
+    ("dialog (modal / drawer)", "shipped", "focus trap, Escape, restore focus on close",
+     "**focus-trap + restore**"),
+    ("menu (dropdown)", "shipped", "roving tabindex, Escape, click-outside",
+     "## Dropdown / Menu"),
+    ("list-navigation (tabs / single-select groups)", "shipped", "arrow keys + Home/End",
+     "**list-navigation** (roving tabindex)"),
+    ("dismissible (alert / toast)", "shipped", "removes the node, announces politely",
+     "## Toast / Notification"),
+    ("theme toggle (light / dark)", "shipped", "13 corpus pages carry one; ours is a role-token flip",
+     "`theme` (dark toggle + localStorage)"),
+    ("filter / typeahead", "shipped",
+     "TWO mechanisms, not one: filtering is `aria-autocomplete` (`list` or `both`) on an editable "
+     "combobox, and typeahead-jump belongs to the SELECT-ONLY combobox and the menu. Applying the "
+     "typeahead half to an editable combobox swallows the space bar (#229)",
+     "**`aria-autocomplete`** is required"),
+    ("drag and drop (upload)", "shipped",
+     "`preventDefault()` on `dragover` or the drop never fires; and the clickable native input — "
+     "not a keyboard path — is what satisfies WCAG 2.5.7, so it stays visible",
+     "## File upload / Dropzone (#95)"),
+    ("carousel / slide", "shipped",
+     "the contract is written and the Lightbox composes it, but the default answer is still no — "
+     "see the Carousel row for why. `declined` was the wrong word for that: it read as though the "
+     "mechanism did not exist",
+     "Behavior: the `carousel` controller."),
 )
 
 LAYOUT_PRIMITIVES: tuple[tuple[str, str], ...] = (
@@ -638,7 +668,13 @@ BUILD: dict[str, str] = {
     "Chat bubble": "Media object rows in a `divide-y` container",
     "Device mockup": "a `frame` at the screenshot's own ratio",
     "Product quickview": "the documented Modal with the product overview blocks inside",
-    "Category filters": "`<details>`/`<summary>` groups inside a `stack`, until #142 lands",
+    # Was "`<details>`/`<summary>` groups inside a `stack`, until #142 lands" — a workaround
+    # pointer that outlived its workaround. #142 shipped `Ui::Disclosure` and the full contract,
+    # so this cell was telling agents to go build the cheap substitute instead of using the
+    # doctrine. Same defect as the BUILD-fallback guard catches on `documented` rows; this row is
+    # `derivable`, so nothing was watching it.
+    "Category filters": "the documented `Ui::Disclosure`, one per filter group, inside a `stack` — "
+        "`<details>`/`<summary>` only where the group never animates",
     "Store navigation": "the documented navbar / sidebar navigation",
     # needs doctrine — the nearest safe thing to do TODAY
     # APG has no command-palette pattern (the Patterns index lists 30, none for it), so this is
@@ -749,6 +785,85 @@ def verify_shipped_evidence() -> list[str]:
     return problems
 
 
+def verify_interaction_claims() -> list[str]:
+    """`shipped` in the interaction table must mean the contract is written -- and the other
+    statuses must mean it is NOT.
+
+    The component half of this file has had an evidence guard since #124; this half had none, and
+    it is the half that rotted. Four of nine rows outlived the work they tracked: `planned #142`
+    survived the disclosure contract shipping, both `planned #95` rows survived their own doctrine,
+    and `carousel / slide` said `declined` while components.md prescribes the controller by name.
+
+    So the check runs in BOTH directions. A one-way "shipped rows cite a doc" rule is the
+    `carve-out-without-negative-test` shape: every one of those four stale rows would have passed
+    it, because none of them claimed `shipped`.
+    """
+    problems: list[str] = []
+    blob = reference_blob()
+    if not blob:
+        return [f"cannot read the reference docs at {OUT.parent} to verify interaction claims"]
+
+    seen: dict[str, str] = {}
+    for name, status, _note, probe in INTERACTION_PATTERNS:
+        if not probe.strip():
+            problems.append(
+                f"interaction pattern {name!r} has no probe — its status is then an assertion, "
+                "which is what let four rows outlive the work they tracked"
+            )
+            continue
+        # A probe reused across rows would make one document vouch for two patterns.
+        if probe in seen:
+            problems.append(
+                f"interaction patterns {seen[probe]!r} and {name!r} share the probe {probe!r} — "
+                "one doc cannot be evidence for two different mechanisms"
+            )
+        seen[probe] = name
+
+        present = probe in blob
+        if status.strip() == "shipped" and not present:
+            problems.append(
+                f"interaction pattern {name!r} claims `shipped`, but its probe {probe!r} does not "
+                "appear in any reference doc — either it is not shipped, or the doc moved"
+            )
+        elif status.strip() != "shipped" and present:
+            problems.append(
+                f"interaction pattern {name!r} is {status!r}, but its probe {probe!r} IS in the "
+                "reference docs — the contract landed and the status was never flipped"
+            )
+
+    return problems
+
+
+def verify_cell_text() -> list[str]:
+    """No cell may contain a `|`: markdown reads it as a column break.
+
+    Every table in this file is assembled by `add(f"| {a} | {b} |")`, so one pipe inside a note
+    silently splits the row into an extra column — the header still says three columns, the row
+    now has four, and the renderer never complains. Caught while writing the `filter / typeahead`
+    note as ``aria-autocomplete=list|both``, which produced a broken table that generated,
+    committed and drift-checked perfectly happily.
+    """
+    problems: list[str] = []
+
+    def scan(where: str, *values: str) -> None:
+        for value in values:
+            if "|" in value:
+                problems.append(
+                    f"{where} contains a `|` ({value!r}) — markdown reads it as a column break, "
+                    "so the row silently grows a column. Rephrase it or write `\\|`"
+                )
+
+    for entry in ENTRIES:
+        scan(f"row {entry.name!r}", entry.name, entry.kind, entry.status, entry.note,
+             resolve_build(entry), resolve_use(entry))
+    for name, status, note, _probe in INTERACTION_PATTERNS:
+        scan(f"interaction pattern {name!r}", name, status, note)
+    for name, status in LAYOUT_PRIMITIVES:
+        scan(f"layout primitive {name!r}", name, status)
+
+    return problems
+
+
 def verify_totality(tw_found: set[str], fb_found: set[str]) -> None:
     """Every discovered corpus entry is claimed exactly once; nothing claims a ghost.
 
@@ -824,6 +939,8 @@ def verify_totality(tw_found: set[str], fb_found: set[str]) -> None:
         problems.append(f"duplicate canonical names in ENTRIES: {dupes}")
 
     problems.extend(verify_shipped_evidence())
+    problems.extend(verify_interaction_claims())
+    problems.extend(verify_cell_text())
 
     if problems:
         raise BuildError("\n".join(f"  - {p}" for p in problems))
@@ -946,7 +1063,7 @@ def render(tw_found: set[str], fb_found: set[str]) -> str:
     add("")
     add("| Pattern | Status | Note |")
     add("|---|---|---|")
-    for name, status, note in INTERACTION_PATTERNS:
+    for name, status, note, _probe in INTERACTION_PATTERNS:
         add(f"| {name} | {status} | {note} |")
     add("")
 
