@@ -9,6 +9,28 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **NEW `verify_interaction_claims` in `build_coverage.py` — the half of the matrix with no guard
+  is the half that rotted** (#89). `verify_shipped_evidence` has checked every `documented`
+  component row against the reference docs since #124. `INTERACTION_PATTERNS` had nothing, and four
+  of its nine rows were wrong (see the rails-stack entry). Each row now carries a **probe** — a
+  literal string present in the shipped docs iff that contract is written — and the rule is
+  `shipped` ⇔ probe present.
+  - **Checked in both directions on purpose.** A one-way *"`shipped` rows must cite a doc"* rule
+    would have caught **none** of the four, because none of them claimed `shipped`; that is the
+    `carve-out-without-negative-test` shape from the `code-review` skill. The direction that
+    actually failed in production — a `planned`/`declined` row whose contract has landed — is the
+    first fixture, and the near-miss beside it proves a genuinely unwritten pattern stays silent, so
+    the rule is about whether the doctrine exists and not about the word `planned`.
+  - Probes must be non-empty and distinct across rows, or one document vouches for two mechanisms.
+    Fails **closed** when the reference docs cannot be read, like the evidence guard beside it.
+  - Runs inside `verify_totality`, and is exercised by `--selftest` with a synthetic corpus, so it
+    holds on a runner and on a corpora-less clone. Coverage selftest 41 → **52** checks.
+- **NEW `verify_cell_text` — a `|` in any cell silently splits the row into an extra column**
+  (#89). Every table here is assembled with `add(f"| {a} | {b} |")`, so a pipe inside a note grows
+  the row a column while the header keeps three, and nothing complains. **Found by nearly shipping
+  one**: the new `filter / typeahead` note was first written as ``aria-autocomplete=list|both``,
+  which generated, committed and drift-checked perfectly happily. Scans every rendered cell —
+  component rows, interaction patterns, layout primitives — with fixtures on two of the three.
 - **NEW gate `skill routing` + `skill routing selftest`** (#158) — asserts every file in a shipped
   skill's `references/` is named by its own `SKILL.md`, that no `SKILL.md` routes to a reference
   that does not exist, and that no `SKILL.md` body exceeds Claude Code's documented 500-line
@@ -2130,6 +2152,37 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   both 1.0.0 and both stated correctly, and `SimpleCov.start`, `enable_coverage` and
   `minimum_coverage` were not renamed by the same redesign. Version boundary: `group` / `skip` /
   `cover` are **SimpleCov >= 1.0.0**.
+- **FIX — `coverage.md`'s Interaction-patterns table had outlived the work it tracked, in four of
+  its nine rows** (#89). The component half of that matrix has been evidence-checked since #124;
+  this half was hand-maintained prose, and it rotted quietly while the phases under this epic
+  shipped. **Change type: a correction of factual claims about our own repo, measured against our
+  own files — no framework claim, so no `doctrine-verifier` verdict is in scope.** Each status is
+  now derived from a probe string that must occur in the shipped reference docs (below).
+  - `disclosure (collapse / accordion)` read **`planned #142`**, with the note *"we shipped no
+    controller at all"*. `interaction-stimulus.md` §*Disclosure — the full contract (#142)* has
+    shipped the full two-mode contract since v1.35.0, `components.md` §*Disclosure / Accordion*
+    names `Ui::Disclosure` / `Ui::Accordion`, and the matrix's **own** Accordion row already said
+    `documented`. So the file contradicted itself about the pattern it calls the second most common
+    on the web.
+  - `drag and drop (upload)` read **`planned #95`, "keyboard path is mandatory"** — which is not
+    merely stale but the **inverse** of the doctrine it summarised. `forms.md` §*File upload /
+    Dropzone* quotes Understanding WCAG 2.5.7 saying *"achieving keyboard equivalence for a dragging
+    operation does not automatically meet this success criterion, unless that equivalent keyboard
+    operation also provides controls that can be clicked or tapped with a pointer"* — the visible,
+    clickable native input is what satisfies it. An agent reading only the matrix would have built
+    the 2.5.7 failure the reference doc exists to prevent.
+  - `filter / typeahead` read `planned #95`. Both consumers shipped; the note now states the
+    distinction #229 established — filtering is `aria-autocomplete` on an **editable** combobox,
+    typeahead-jump belongs to the **select-only** one, and conflating them swallows the space bar.
+  - `carousel / slide` read **`declined`** while `components.md` §*Carousel* prescribes the
+    `carousel` controller by name and the `documented` Lightbox row composes it. `declined` in a
+    status column reads as *the mechanism does not exist*; the doctrine position ("the default
+    answer is still no") now lives in the note, where it was always meant to be.
+- **FIX — `Category filters` told agents to build a workaround that had been superseded** (#89).
+  Its **Build from** cell said *"`<details>`/`<summary>` groups inside a `stack`, until #142
+  lands"*. #142 landed. The existing guard catches exactly this text — but only on `documented`
+  rows, and this row is `derivable`, so nothing was watching. Now points at `Ui::Disclosure`, with
+  `<details>` kept as the cheap option for groups that never animate, per `components.md`.
 - **`fidara-design/references/coverage.md` was unreachable from its own `SKILL.md`** (#158) — 230
   lines of component doctrine (every component's guidance state, what to build it from, and which
   surface it belongs on) reachable only via `brand.md` and `marketing-copy.md`. That is depth two,
@@ -3521,6 +3574,44 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Visual regression: the two acceptance criteria 1.19.0 did not actually meet** (#112). The issue
+  asked for five things and shipped three. Re-verified by running each, not by reading the code.
+  - **Ignore regions were decoration, not a feature.** `ignored` was in the schema from day one,
+    `--schema` advertised `["[data-testid=clock]"]` to users, the collector emitted a hardcoded `[]`
+    and **nothing read it** — so the tolerance story was configurable and the ignore-region story was
+    a field name. Now: `visual.ignore` (global) and `visual.ignore_per_route` in `qa.config.yml`,
+    resolved by `visual_baseline.py --masks` and applied by the collector through Playwright's
+    `page.screenshot({ mask })` ([Array\<Locator\>, since v1.8; masked boxes are filled
+    `#FF00FF`](https://playwright.dev/docs/api/class-page#page-screenshot)). `maskColor` is left
+    unset on purpose — pinning it would impose a Playwright >=1.35 floor to change a constant that is
+    already deterministic and lands identically on baseline and candidate.
+  - **The mask claim is cross-checked, in both directions, or the run is refused.** A config that
+    calls a clock dynamic paired with a run that never masked it produces a ratio measured over
+    pixels nobody meant to compare — and the opposite, a run masking what no config asked for, hides
+    a regression instead of reporting it. Declaring the field without verifying it is how it stayed
+    decoration for three releases, so the fix is a comparison, not a second declaration.
+  - **Every regression now names a diff image** (`qa/baselines/_diffs/…`): changed pixels magenta
+    over a faded greyscale of the candidate, produced in the same browser pass that already has both
+    images decoded. "31% changed" with nowhere to look is what gets answered with a tolerance bump
+    instead of a fix.
+  - **Two more determinism controls, both measured rather than asserted.** `deviceScaleFactor` is
+    pinned to 1 (a baseline shot at 2 shares no pixel with one shot at 1 — a ~100% diff caused only
+    by the reviewer's display) and `document.fonts.ready` is awaited (`networkidle` says the requests
+    finished, not that the font is applied). If the font wait fails the collector **withdraws the
+    claim** and the judge refuses the run, exactly as `seededData` already worked.
+  - **A docstring promise nothing kept, now kept.** `read_config` said unparseable input "is reported
+    rather than silently defaulted" while the reader skipped every line it did not recognise:
+    `max_diff_ratio: 1e-2` was not matched by `[0-9.]+`, fell back to 0.002, and judged the run **5x
+    tighter than the config asked for** with nothing printed. It is now an `Unusable` naming the file,
+    line and text. Same claims-vs-enforcement shape as #151 and #161.
+  - 53 selftest checks (was 29) and 7 declared mutations (was 3), all caught. The mutation gate
+    earned its keep twice here: it rejected a stale anchor the moment `DETERMINISM_KEYS` replaced an
+    inline tuple, and the new fixtures had to be made refusal-proof (`matched()` returns -1 rather
+    than letting `Unusable` propagate) because a mutant that dies before its labelled assertion is
+    not a caught mutant.
+
 ### 1.19.1 — 2026-08-01
 
 Both of these came from the first run against a real Rails app, which is the run no fixture here
@@ -4350,6 +4441,74 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **NEW `/design-flow:variants <brief> [--variants N]` — N brand-conformant compositions of one
+  brief plus a live comparison switcher** (#160). Borrowed in shape from
+  [emilkowalski/skills](https://github.com/emilkowalski/skills). One-shot generation is right when
+  there is a correct answer; for a hero or a pricing page it invites a yes/no, which tends to
+  become yes. Variants make the human a **chooser** rather than an approver. Change type:
+  **design/architecture** — the workflow, the scaffold layout and the composition-only contract are
+  ours, and the authority is the maintainer decision recorded on
+  [#160](https://github.com/fmanimashaun/claude-skills/issues/160), not a citation. The one
+  externally-verifiable half is **reused, not invented**: the switcher is `turbo_frame_tag` plus
+  `data-turbo-frame` links, the same mechanism `crud-modal-pattern.md:7` and
+  `skills/hotwire/references/turbo.md:141` already ship, so no new framework surface enters a skill.
+- **The constraint is checked, not stated** — `variant_conformance.py`, ten named rules, each
+  citing what it enforces. Every variant is fully brand-conformant and they differ in **composition
+  only**: same role tokens, same components, same API. That sentence in prose with nothing making it
+  true is the claims-vs-enforcement defect this repo warns about most, and it is the exact sentence
+  that keeps variant mode from becoming the style menu we declined with ui-ux-pro-max.
+- **#160's own acceptance criterion 2 was half a category error, and implementing it as written
+  would have shipped a gate that cannot run.** It asks for conformance *"asserted by running
+  `brand_pack_lint` and the #157 detector against each [variant]"*. The detector takes file paths,
+  so per-variant is exactly right and it is **run rather than reimplemented** — a second copy of its
+  seven rules is the duplication #157 criterion 7 already forbade. `brand_pack_lint.py` takes a
+  brand-pack *directory* and validates `brand.json` + `theme.css`; a variant is a set of `.html.erb`
+  partials. It cannot be run against one, and it should not be — pack completeness is a property of
+  the **pack**, identical for all N variants, so running it N times proves one thing N times and
+  nothing about the variants. It runs once, in Phase 0, and the per-set invariants neither existing
+  check covers became the new script.
+- **The rule the detector could not have carried: `variant-names-pack-primitive`.** `brand.md:78-82`
+  says components consume roles only and nothing outside a pack may name a primitive — but knowing
+  whether `fm-navy` *is* a primitive requires reading the pack's `@theme` block, and the detector is
+  context-free by design. Same split as `rendered_conformance.py` (needs a browser) versus
+  `llm_tell_detector.py` (needs nothing): a real difference in what the check must be handed. The
+  `@theme inline` role layer is skipped, because flagging `bg-primary` would invert the rule and
+  report a finding on every correct variant — fixtured in both directions.
+- **A rule that did not run is reported as a finding, never as silence.** If the manifest's brand
+  cannot be resolved to a pack, the primitive check emits *"could not run — a rule that did not run
+  is not a pass"*. Likewise a run that examined **zero** variant sets exits **2**, not 0: no
+  findings over no input is indistinguishable from a pass, the shape this repo keeps catching in its
+  own gates.
+- **`variant-switcher-unguarded` is an omission from #160, not a criterion in it.** A switcher route
+  renders every *rejected* variant, so leaving it reachable in production ships three landing pages
+  nobody approved. The command guards it with `Rails.env.development?` and constrains the slug; the
+  check tracks routes.rb block nesting so a **closed** development block cannot launder a later
+  route — the failure mode of the naive backwards search, and its own fixture.
+- **`variant-set-not-distinct` detects identity, never similarity.** "These two feel samey" is taste,
+  and a rule that cries wolf gets switched off. The signature is the ordered structural tags plus
+  render targets, so two variants whose copy differs but whose arrangement does not are still caught
+  — with the near-miss (two genuinely different arrangements) fixtured as SILENCE.
+- **Criterion 5 is a check, not a sentence.** `--verify-discard` asserts the views, the controller
+  and the route are all gone once a variant is chosen, because an un-run discard step looks exactly
+  like a completed one. `/design-flow:audit` gained leftover variant scaffolding as a drift class
+  for the same reason.
+- Selftest: **36 checks across 10 rules, eleven of them SILENCE fixtures**, and **three of the ten
+  declared mutations are caught by a silence fixture rather than a firing one**. That is where the
+  risk is: every rule here has an obvious over-broad form (`bg-primary` is a role token *and* a
+  string ending in a primitive's suffix; an ERB comment naming `--color-x:` is prose *and* a
+  custom-property declaration; `# do not remove` ends in a block opener), and flagging the wrong
+  half makes the checker report findings on every correct set it is given.
+- **FIX — design-flow's only project check had never once run, and could not have passed if it
+  had.** `checks.json`'s `brand-pack` entry named `app/assets/stylesheets/brand`, a path
+  `/design-flow:setup` never creates (packs live in `brands/<slug>/`), so it was permanently NOT
+  APPLICABLE — and it passed `brand_pack_lint.py` no pack directory, so on the one repo where it did
+  apply it would have exited 2 on a usage error. Found while registering the variant check beside
+  it. `project_gates.py --selftest` validates that a shipped command names a real script and supplies
+  any required subcommand; neither of those is wrong here, which is the blind spot: nothing asserts
+  that a shipped check's `applies_when` names a path the plugin actually generates.
 
 ### 1.11.0 — 2026-08-01
 
