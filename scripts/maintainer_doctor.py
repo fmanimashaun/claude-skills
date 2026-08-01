@@ -132,6 +132,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # disagreeing with the repo, exactly as the tier gates below reconcile a table against agents.
     ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
     ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
+    # #92 (Phase 5), and the same shape a third time: `page-anatomies.md` -> How a page is paced
+    # states a count measured from `coverage.md`, a band range, and a worked sequence whose whole
+    # point is that consecutive bands differ. NOT a design gate — nothing here judges a sequence.
+    # It refuses a number or a name in shipped doctrine disagreeing with the repo, and it resolves
+    # the band tones through `foundations-tokens.md` so the section's "no new token" promise is
+    # enforced rather than asserted.
+    ("page pacing", ("python3", "scripts/check_page_pacing.py")),
+    ("page pacing selftest", ("python3", "scripts/check_page_pacing.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
@@ -148,6 +156,15 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.
     ("project gates", ("python3", "plugins/rails-flow/scripts/project_gates.py", "--selftest")),
+    # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
+    # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
+    # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,
+    # so five checks across two plugins were permanent silent skips — a gate that cannot fail,
+    # inside the manifest that registers the gates. Registered as both halves for the reason the
+    # tell-detector above states: the selftest proves the rules fire and stay silent on fixtures,
+    # the bare run asserts the SHIPPED manifests agree with the plugins that ship them.
+    ("checks.json paths", ("python3", "scripts/check_manifest_paths.py")),
+    ("checks.json paths selftest", ("python3", "scripts/check_manifest_paths.py", "--selftest")),
     # #299: every plugin's tier table reconciled against its OWN shipped agents. The selftest above
     # proves the checker works; these prove the four SHIPPED tables are true. Without them a table is
     # doctrine nothing enforces — which is the exact state #127 found rails-flow's pins in, and the

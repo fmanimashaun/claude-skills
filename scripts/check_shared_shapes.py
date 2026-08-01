@@ -21,6 +21,17 @@ THE TABLE IS THE JOIN. Each row's first column must name a shape this file measu
 must have a row. Both directions, because a shape with no row is a measurement nobody reads and a
 row with no shape is prose nothing measures.
 
+REACH IS THE SECOND NUMBER, AND IT IS THE ONE DECISIONS REST ON (#398). A total file count says how
+much duplication exists; it does not say how much of it a shared module could ever remove. Each
+plugin is a separate `source:` in `marketplace.json` and every plugin script is invoked through
+`${CLAUDE_PLUGIN_ROOT}`, which resolves to that plugin's own root -- so a copy can only be shared
+with copies under the SAME root. `reach` is therefore the size of the largest single install root
+holding the shape: the ceiling on what any extraction is worth. #398 was answered with it -- the
+harness row's two columns are far apart, and it is the CEILING that moves when someone adds a copy
+somewhere new. (Deliberately no digits here. This module is the arbiter for those numbers; quoting
+them in its own docstring would create a second copy with nothing reading it, which is the class
+the checker exists to refuse. The table is the only place they live.)
+
 Exit codes:  0 the doctrine matches the repo · 1 it does not · 2 the doc could not be read
 
 Stdlib only, no network.
@@ -29,13 +40,19 @@ Stdlib only, no network.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 DOC = REPO / "skills" / "quality-pass" / "references" / "worked-example.md"
+# What defines an install root. Read rather than assumed: `reach` groups copies by the directory a
+# plugin is installed FROM, so the manifest naming those directories is the arbiter, and a layout
+# change that this file's path grouping stopped matching would otherwise rot in silence.
+MANIFEST = Path(".claude-plugin") / "marketplace.json"
 
 # Where the shapes are counted. `scripts/` is included deliberately: it is maintainer tooling that
 # never ships, and half the worked example's point is that a copy on the far side of a distribution
@@ -45,9 +62,9 @@ ROOTS = ("plugins", "scripts")
 BEGIN = "<!-- shared-shapes:begin -->"
 END = "<!-- shared-shapes:end -->"
 
-# A row of the marked table: `| label | 4 | where |`. The digit column is what rejects the header
-# and the `|---|` separator, so no extra parsing state is needed.
-ROW = re.compile(r"^\|\s*(?P<label>[^|]+?)\s*\|\s*(?P<files>\d+)\s*\|")
+# A row of the marked table: `| label | 4 | 4 | where |`. The digit columns are what reject the
+# header and the `|---|` separator, so no extra parsing state is needed.
+ROW = re.compile(r"^\|\s*(?P<label>[^|]+?)\s*\|\s*(?P<files>\d+)\s*\|\s*(?P<reach>\d+)\s*\|")
 
 
 @dataclass(frozen=True)
@@ -117,33 +134,98 @@ def measure(shape: Shape, files: list[Path]) -> list[Path]:
     return [p for p in files if rx.search(p.read_text(encoding="utf-8"))]
 
 
-def declared(text: str) -> dict[str, int]:
-    """{label: file count} from the marked table, or raise."""
+def unit(path: Path, root: Path) -> str:
+    """The install root `path` would be shared FROM, as a repo-relative directory.
+
+    `plugins/<name>/...` is that plugin's root, because `marketplace.json` gives each plugin its own
+    `source:` and `${CLAUDE_PLUGIN_ROOT}` resolves to it. Everything else under ROOTS is `scripts/`,
+    maintainer tooling that is one directory and therefore one unit.
+
+    Grouping is by PATH and then cross-checked against the manifest (`undeclared_units`) rather than
+    resolved from it directly: the mutation checker runs this module's selftest from a temp
+    directory containing nothing else, so a function that had to read the manifest could not be
+    exercised against the synthetic corpus at all.
+    """
+    parts = path.relative_to(root).parts
+    if parts[0] == "plugins" and len(parts) > 1:
+        return f"plugins/{parts[1]}"
+    return f"{parts[0]}/"
+
+
+def reach(hits: list[Path], root: Path) -> int:
+    """The most copies of a shape sharing one install root -- the ceiling on any extraction."""
+    counts = Counter(unit(p, root) for p in hits)
+    return max(counts.values()) if counts else 0
+
+
+def plugin_roots(manifest_text: str) -> set[str]:
+    """Every `plugins/<name>` a marketplace entry names as its `source`, or raise."""
+    try:
+        data = json.loads(manifest_text)
+    except ValueError as exc:
+        raise Unreadable(f"{MANIFEST}: not readable as JSON ({exc}), so no install root is known "
+                         "and `reach` would be grouping by a boundary nothing confirms") from exc
+    roots = set()
+    for entry in data.get("plugins", []):
+        source = str(entry.get("source", "")).strip().rstrip("/")
+        while source.startswith("./"):
+            source = source[2:]
+        if source.startswith("plugins/"):
+            roots.add(source)
+    if not roots:
+        raise Unreadable(f"{MANIFEST}: no entry declares a `plugins/<name>` source. Either the "
+                         "layout moved or the key was renamed; grouping by `plugins/<name>` would "
+                         "then be a boundary the manifest no longer draws.")
+    return roots
+
+
+def undeclared_units(files: list[Path], root: Path, roots: set[str]) -> list[str]:
+    """Measured `plugins/<name>` directories the manifest does not install as a plugin.
+
+    This is what keeps `reach` honest. Grouping by path is only the right grouping while
+    `plugins/<name>` IS an install root; a new nesting level, or a plugin dropped from the
+    manifest, would silently make `reach` a count over directories nobody installs.
+    """
+    seen = {unit(p, root) for p in files}
+    return sorted(u for u in seen if u.startswith("plugins/") and u not in roots)
+
+
+def declared(text: str) -> dict[str, tuple[int, int]]:
+    """{label: (file count, reach)} from the marked table, or raise."""
     if BEGIN not in text or END not in text:
         raise Unreadable(
             f"{DOC.name}: no {BEGIN} / {END} markers. Without them this check would parse whatever "
             "table it found first, which is how a gate starts reading the wrong input.")
     block = text.split(BEGIN, 1)[1].split(END, 1)[0]
-    rows: dict[str, int] = {}
+    rows: dict[str, tuple[int, int]] = {}
     for line in block.splitlines():
         m = ROW.match(line.strip())
         if m:
-            rows[m.group("label").strip()] = int(m.group("files"))
+            rows[m.group("label").strip()] = (int(m.group("files")), int(m.group("reach")))
     if not rows:
-        raise Unreadable(f"{DOC.name}: the marked table has no rows with a file count")
+        raise Unreadable(f"{DOC.name}: the marked table has no rows with a file count and a reach")
     return rows
 
 
-def reconcile(text: str, root: Path,
+def reconcile(text: str, root: Path, manifest_text: str,
               shapes: tuple[Shape, ...] = SHAPES) -> list[str]:
     """Findings, one string each. Empty means the doctrine matches the repo.
 
     `shapes` is a parameter rather than a read of the module global so the selftest can add a
-    deliberately-dead shape without mutating state the next fixture would inherit.
+    deliberately-dead shape without mutating state the next fixture would inherit. `manifest_text`
+    is passed in for the same reason the corpus root is: every fixture must run with this module
+    and nothing else on disk.
     """
     rows = declared(text)
     files = sources(root)
+    roots = plugin_roots(manifest_text)
     findings: list[str] = []
+
+    for stray in undeclared_units(files, root, roots):
+        findings.append(
+            f"{stray}: measured as an install root, but no marketplace entry has it as a `source`. "
+            f"`reach` groups by `plugins/<name>`; if that is no longer where a plugin is installed "
+            f"from, every reach below is a count over the wrong boundary.")
 
     for shape in shapes:
         hits = measure(shape, files)
@@ -160,11 +242,19 @@ def reconcile(text: str, root: Path,
                 f"{shape.label}: measured in {len(hits)} file(s) and has NO row in the table. A "
                 f"count nobody reads is not doctrine.")
             continue
-        if rows[shape.label] != len(hits):
-            where = ", ".join(str(p.relative_to(root)) for p in hits)
+        want_files, want_reach = rows[shape.label]
+        where = ", ".join(str(p.relative_to(root)) for p in hits)
+        if want_files != len(hits):
             findings.append(
-                f"{shape.label}: the table says {rows[shape.label]}, the repo has {len(hits)} "
-                f"-- {where}")
+                f"{shape.label}: the table says {want_files}, the repo has {len(hits)} -- {where}")
+        got_reach = reach(hits, root)
+        if want_reach != got_reach:
+            spread = ", ".join(f"{u} x{c}" for u, c in
+                               sorted(Counter(unit(p, root) for p in hits).items()))
+            findings.append(
+                f"{shape.label}: the table says a reach of {want_reach}, the largest install root "
+                f"holds {got_reach} -- {spread}. Reach is the ceiling on what extracting this "
+                f"shape could remove, so a decision resting on the old number needs re-reading.")
 
     for label in rows:
         if label not in {s.label for s in shapes}:
@@ -176,7 +266,8 @@ def reconcile(text: str, root: Path,
 
 def run() -> int:
     try:
-        findings = reconcile(DOC.read_text(encoding="utf-8"), REPO)
+        findings = reconcile(DOC.read_text(encoding="utf-8"), REPO,
+                             (REPO / MANIFEST).read_text(encoding="utf-8"))
     except (OSError, Unreadable) as exc:
         print(f"CANNOT RECONCILE: {exc}", file=sys.stderr)
         return 2
@@ -191,9 +282,17 @@ def run() -> int:
     return 0
 
 
-def _table(rows: dict[str, int]) -> str:
-    body = "\n".join(f"| {label} | {n} | somewhere |" for label, n in rows.items())
-    return f"{BEGIN}\n\n| shape | files | where |\n|---|---|---|\n{body}\n\n{END}\n"
+def _table(rows: dict[str, tuple[int, int]]) -> str:
+    body = "\n".join(f"| {label} | {n} | {r} | somewhere |" for label, (n, r) in rows.items())
+    return f"{BEGIN}\n\n| shape | files | reach | where |\n|---|---|---|---|\n{body}\n\n{END}\n"
+
+
+# The corpus's own manifest, in the shape the real one has. Synthetic for the same reason the
+# corpus is: `reach` must be exercisable with nothing but this module on disk. TWO plugins, because
+# the corpus needs to distinguish "grouped by plugin" from "grouped by `plugins/` as one lump" --
+# with a single plugin those two answers are the same and the grouping could break unnoticed.
+_MANIFEST = ('{"plugins": [{"name": "demo", "source": "./plugins/demo"},'
+             ' {"name": "other", "source": "./plugins/other"}]}')
 
 
 # A corpus carrying known copies of the real SHAPES, laid out as the real roots are. Synthetic on
@@ -263,20 +362,39 @@ def selftest():
         n += 1
 '''
 
-# What `_corpus` below must measure to. Written out rather than derived from the corpus by the
-# same code under test: a fixture derived from its subject cannot witness that subject shrinking.
+# A third harness copy, under a SECOND plugin. It is what makes the harness row's reach differ from
+# both its file count AND from a grouping that lumps all of `plugins/` together, so a broken
+# `unit()` cannot produce the expected reach by accident.
+_D = '''\
+def selftest():
+    n = 0
+
+    def check(label: str, ok: bool, detail: str = "") -> None:
+        nonlocal n
+        n += 1
+        return None
+'''
+
+# What `_corpus` below must measure to, as (files, reach). Written out rather than derived from the
+# corpus by the same code under test: a fixture derived from its subject cannot witness that subject
+# shrinking. The harness row is the one that matters -- 4 files but a reach of 2, because the other
+# two copies sit in `scripts/` and in a second plugin, and no module reaches either from
+# `plugins/demo`. That gap is the whole reason the column exists, so the corpus is built to contain
+# it, and to contain it in BOTH the ways it can close: the reach is neither the file count nor the
+# count of everything under `plugins/`.
 _CORPUS_TRUTH = {
-    "`class Unusable(RuntimeError)`": 2,
-    "the `json.loads` -> `Unusable` prologue": 1,
-    "the `check(label, ok, detail)` selftest harness": 3,
-    "the `SELFTEST FAILED --` reporter": 1,
-    "WCAG relative luminance": 1,
+    "`class Unusable(RuntimeError)`": (2, 2),
+    "the `json.loads` -> `Unusable` prologue": (1, 1),
+    "the `check(label, ok, detail)` selftest harness": (4, 2),
+    "the `SELFTEST FAILED --` reporter": (1, 1),
+    "WCAG relative luminance": (1, 1),
 }
 
 
 def _corpus(tmp: Path) -> Path:
     for rel, body in (("plugins/demo/scripts/a.py", _A),
                       ("plugins/demo/scripts/b.py", _B),
+                      ("plugins/other/scripts/d.py", _D),
                       ("scripts/c.py", _C)):
         for token, value in _SUBS.items():
             body = body.replace(token, value)
@@ -301,33 +419,55 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory(prefix="shared-shapes-") as tmpdir:
         root = _corpus(Path(tmpdir))
         files = sources(root)
-        check("the source walk finds the corpus files", len(files) == 3,
+        check("the source walk finds the corpus files", len(files) == 4,
               f"found {[str(p) for p in files]}")
 
         truth = dict(_CORPUS_TRUTH)
-        measured = {s.label: len(measure(s, files)) for s in SHAPES}
-        check("every declared shape is measured at its known count in the corpus",
+        measured = {s.label: (len(measure(s, files)), reach(measure(s, files), root))
+                    for s in SHAPES}
+        check("every declared shape is measured at its known count and reach in the corpus",
               measured == truth, f"{measured} != {truth}")
+
+        # The grouping itself, stated separately from the counts above. Without this, a `unit()`
+        # that returned one constant would still satisfy every reach in a corpus whose largest
+        # unit happens to be the whole corpus.
+        check("a plugins/<name> path groups under that plugin's install root",
+              unit(root / "plugins/demo/scripts/a.py", root) == "plugins/demo",
+              unit(root / "plugins/demo/scripts/a.py", root))
+        check("a scripts/ path groups apart from every plugin",
+              unit(root / "scripts/c.py", root) == "scripts/",
+              unit(root / "scripts/c.py", root))
 
         # SILENCE, and it is the half that matters: a table stating the true counts must be
         # clean. A checker that fires on correct input is a checker that gets switched off.
-        out = reconcile(_table(truth), root)
+        out = reconcile(_table(truth), root, _MANIFEST)
         check("a table stating the true counts is silent", out == [], f"{out}")
 
         # FIRES: a count that disagrees.
         first = SHAPES[0].label
-        out = reconcile(_table({**truth, first: truth[first] + 1}), root)
+        bumped = (truth[first][0] + 1, truth[first][1])
+        out = reconcile(_table({**truth, first: bumped}), root, _MANIFEST)
         check("a wrong count in the table is DRIFT",
               any(first in f and "the table says" in f for f in out), f"{out}")
 
+        # FIRES: the reach disagrees while the file count is right. The two are separate claims --
+        # a copy moving from `scripts/` into a plugin changes what extraction is worth without
+        # changing how many copies exist, and that is exactly the move #398 turns on.
+        harness = "the `check(label, ok, detail)` selftest harness"
+        widened = (truth[harness][0], truth[harness][1] + 1)
+        out = reconcile(_table({**truth, harness: widened}), root, _MANIFEST)
+        check("a wrong reach in the table is DRIFT",
+              any(harness in f and "a reach of" in f for f in out), f"{out}")
+
         # FIRES: a shape with no row at all. Distinct from a wrong count -- a dropped row would
         # otherwise vanish silently, which is the failure the two-way join exists to stop.
-        out = reconcile(_table({k: v for k, v in truth.items() if k != first}), root)
+        out = reconcile(_table({k: v for k, v in truth.items() if k != first}), root, _MANIFEST)
         check("a shape with no row is reported",
               any(first in f and "NO row" in f for f in out), f"{out}")
 
         # FIRES: a row naming something nothing measures.
-        out = reconcile(_table({**truth, "`class Imaginary(RuntimeError)`": 3}), root)
+        out = reconcile(_table({**truth, "`class Imaginary(RuntimeError)`": (3, 3)}),
+                        root, _MANIFEST)
         check("a table row nothing measures is reported",
               any("Imaginary" in f for f in out), f"{out}")
 
@@ -335,9 +475,29 @@ def selftest() -> int:
         # is exactly how a rotted regex reads as a pass, so zero is reported before the compare.
         dead = Shape("`class NeverWritten(RuntimeError)`",
                      r"^class NeverWritten\(RuntimeError\):", "x")
-        out = reconcile(_table({**truth, dead.label: 0}), root, shapes=SHAPES + (dead,))
+        out = reconcile(_table({**truth, dead.label: (0, 0)}), root, shapes=SHAPES + (dead,),
+                        manifest_text=_MANIFEST)
         check("a pattern that matches nothing is reported",
               any("matches NOTHING" in f for f in out), f"{out}")
+
+        # FIRES: a plugin directory holding measured copies that the manifest does not install.
+        # Reach would then be grouping by a boundary nobody ships, which is the one way this
+        # column can be wrong while every number in it stays internally consistent.
+        out = reconcile(_table(truth), root,
+                        '{"plugins": [{"name": "other", "source": "./plugins/other"}]}')
+        check("a copy under an undeclared plugin directory is reported",
+              any("plugins/demo" in f and "no marketplace entry" in f for f in out), f"{out}")
+
+        # SILENCE: a manifest declaring MORE plugins than the corpus holds stays quiet, as does a
+        # skills-only entry whose source is the repo root. Without this the fixture above could be
+        # passing because the rule fires on everything, and the rule reads one direction only --
+        # a declared plugin with no copies is not a finding.
+        out = reconcile(_table(truth), root,
+                        '{"plugins": [{"name": "demo", "source": "./plugins/demo"},'
+                        ' {"name": "other", "source": "./plugins/other"},'
+                        ' {"name": "unused", "source": "./plugins/unused"},'
+                        ' {"name": "skills-only", "source": "./"}]}')
+        check("declared plugins with no copies are not findings", out == [], f"{out}")
 
     # An unmarked document must RAISE rather than parse the nearest table. A gate that silently
     # reads the wrong input reports clean over something it never examined.
@@ -349,8 +509,26 @@ def selftest() -> int:
         pass
     n += 1
     try:
-        declared(f"{BEGIN}\n\n| shape | files |\n|---|---|\n\n{END}\n")
+        declared(f"{BEGIN}\n\n| shape | files | reach |\n|---|---|---|\n\n{END}\n")
         failures.append("an empty marked table parsed instead of raising")
+    except Unreadable:
+        pass
+
+    # The manifest is the arbiter for `reach`, so an unreadable one must RAISE. Returning an empty
+    # set would make `undeclared_units` report every plugin, and a rule that fires on everything
+    # gets switched off; returning "no constraint" would make it report nothing, which is worse.
+    check("a manifest naming plugin sources yields their roots",
+          plugin_roots(_MANIFEST) == {"plugins/demo", "plugins/other"}, f"{plugin_roots(_MANIFEST)}")
+    n += 1
+    try:
+        plugin_roots("{not json")
+        failures.append("an unparseable manifest returned instead of raising")
+    except Unreadable:
+        pass
+    n += 1
+    try:
+        plugin_roots('{"plugins": [{"name": "rails-stack", "source": "./"}]}')
+        failures.append("a manifest declaring no plugins/<name> source returned instead of raising")
     except Unreadable:
         pass
 

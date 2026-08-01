@@ -64,16 +64,37 @@ and half of what follows turns on that boundary.
 |---|---|---|
 | `class Unusable(RuntimeError)` | 5 | one plugin |
 | the `json.loads` -> `Unusable` prologue | 5 | one plugin |
-| the `check(label, ok, detail)` selftest harness | 12 | three plugins + non-shipped tooling |
-| the `SELFTEST FAILED --` reporter | 10 | two plugins + non-shipped tooling |
+| the `check(label, ok, detail)` selftest harness | 13 | three plugins + non-shipped tooling |
+| the `SELFTEST FAILED --` reporter | 11 | two plugins + non-shipped tooling |
 | WCAG relative luminance | 3 | two plugins + non-shipped tooling |
+| shape | files | reach | where |
+|---|---|---|---|
+| `class Unusable(RuntimeError)` | 5 | 5 | one plugin |
+| the `json.loads` -> `Unusable` prologue | 5 | 5 | one plugin |
+| the `check(label, ok, detail)` selftest harness | 12 | 5 | three plugins + non-shipped tooling |
+| the `SELFTEST FAILED --` reporter | 10 | 5 | two plugins + non-shipped tooling |
+| WCAG relative luminance | 3 | 1 | two plugins + non-shipped tooling |
 
 <!-- shared-shapes:end -->
+
+**`reach` is the column decisions rest on** (#398). `files` says how much duplication exists;
+`reach` says how much of it a shared module could ever remove — the size of the largest single
+install root holding the shape. Each plugin is its own `source:` in `marketplace.json` and every
+plugin script is invoked through `${CLAUDE_PLUGIN_ROOT}`, which resolves to that plugin's own root,
+so copies only share with copies under the same root. Read the rows where the two columns agree
+against the row where they differ most, and the findings below fall out of the table rather than
+out of judgement: where `reach` equals `files` the copies are all in one plugin, an import
+resolves, and the boundary is no defence — the reason not to extract has to be the size of the
+prize. Where `reach` is 1, no two copies are reachable from one module at all, duplication is the
+only option available, and the question becomes what keeps them honest instead.
 
 These counts are not asserted. `scripts/check_shared_shapes.py` re-derives every one of
 them from the repo and fails when this table disagrees — a count in prose that nothing
 re-reads is the `claims-vs-enforcement` class, and it would be a poor look inside the
-skill next door to the one that names it.
+skill next door to the one that names it. `reach` is gated the same way, and its grouping is
+cross-checked against `marketplace.json`: if `plugins/<name>` ever stops being where a plugin is
+installed from, the column would be counting a boundary nobody ships, and that fails rather than
+rots.
 
 The harness and reporter counts include **that checker's own selftest**, which uses the
 same harness every other script in the repo uses. That is not an oversight and it is not
@@ -153,19 +174,83 @@ decided no" is a real outcome and the next reader should not have to measure aga
    one more way a mutant dies at import instead of at a labelled fixture, and a crash is
    not a verdict.
 2. **The one unit big enough to be worth a module cannot be shared.** The selftest harness
-   is the largest shared shape, and it has **nine** copies spanning two plugins that install
-   independently plus tooling that never ships. A module inside one plugin reaches four of
-   the nine, leaves the pattern in place everywhere else, and buys the smaller half of the
-   saving.
+   is the largest shared shape, and it is the row where the table's `files` and `reach` columns
+   disagree most — its `where` column says why. A module inside any one of those install roots
+   reaches only the `reach` share of the copies, leaves the pattern in place everywhere else, and
+   buys the smaller part of the saving.
+
+   (Those two numbers were restated here as bare digits — "nine copies", "four of the nine" —
+   and by the time #398 read this section both were stale, one of them wrong in three separate
+   ways. The fix three lines under the table caught the other instance of the same defect and
+   missed this one, which is what it looks like when you patch an instance instead of grepping
+   the pattern. Again: the digits are gone, the sentence points at the table.)
 3. **So the real question is a distribution question, not a refactor** — whether these
    plugins should vendor a shared module at all. That is a decision about how the product
    is packaged, it is not made by a review pass, and it was filed separately
    ([#398](https://github.com/fmanimashaun/claude-skills/issues/398)) rather than smuggled
    in under a cleanup. Filing it is part of the finding, not a way of avoiding one: the
-   pass's job is to surface the question at the level it actually lives at.
+   pass's job is to surface the question at the level it actually lives at. It was answered
+   separately too — see below.
 
 The `efficiency` finding was fixed in place, because it costs nothing and removes real
 work.
+
+## The distribution question, answered: still no (#398)
+
+#398 asked the one thing the pass deliberately left open — whether the plugins should vendor a
+shared selftest harness rather than carry a copy each. **They should not.** The reasoning is here
+so the next reader inherits it instead of re-measuring, and because a decision recorded only in a
+closed issue is a decision nobody finds.
+
+**What the boundary actually is.** Not "the files are absent". The marketplace is one git repo, so
+an install may well have every plugin tree on disk. The boundary is that **`${CLAUDE_PLUGIN_ROOT}`
+is the only path a plugin is given**, and it resolves to that plugin's own root. Every script
+invocation in `plugins/` goes through it and **none** reaches outside — no `.py` under `plugins/`
+resolves a path above its own plugin (`parents[2]` and higher appear zero times). A cross-plugin
+import would have to hard-code a relative escape that depends on a layout nothing promises and that
+breaks the moment a plugin is vendored, copied, or installed from a different marketplace. That is
+a new coupling between independently installable products, not a refactor — which is why the
+`reach` column exists and why it is measured from `marketplace.json` rather than assumed.
+
+**The arithmetic, so the answer is checkable rather than asserted.** A shared harness has to be an
+object: `check()` mutates closure state and the reporter reads it. Call it ~16 lines with its
+docstring. Per file it removes the 7-line harness and the 7-line reporter and adds four — two to
+put the sibling directory on `sys.path` and import it, one to construct, one to `return
+t.report()`. So one install root holding **R** copies nets **10R − 16** lines. At the ceiling the
+`reach` column records today, that is the low thirties; across all four roots together, about
+**44 lines** — out of the **6,016** in the twelve files, well under **1%**.
+
+Against that: **298** call sites become `t.check(...)`, and **ten** of the twelve subjects carry a
+`mutation_check.py` guard that would gain a `deps=` entry, covering **81** declared mutations.
+Every one of those is a way a mutant dies at import rather than at a labelled fixture.
+`run_baseline` (#422) now makes that failure loud instead of silent — it runs the unmutated
+selftest first and reports INERT — so the risk is smaller than #398 assumed when it was filed.
+Smaller, not gone, and it is being spent on well under 1%.
+
+Those three are point-in-time, like the 29% at the top of this file, and they are re-derivable
+rather than remembered. The twelve files are the harness row's own hits — `check_shared_shapes.py`
+prints them whenever the row drifts. The call sites are `grep -c '^[[:space:]]*check('` across
+them; the mutations are the `Mutation(` entries under those subjects' `GUARDS` in
+`scripts/mutation_check.py`.
+
+**Vendoring is the worse of the two options, not the better one.** Copying one source module into
+each plugin at package time needs a build step and a drift gate to guarantee four copies of a
+16-line module stay identical. That machinery is larger than the duplication it polices, and it
+converts twelve honest copies into four copies that *claim* to be one — which is strictly worse to
+debug, because a diverged vendored copy looks like a shared module until it doesn't.
+
+**What makes the copies acceptable is a shared control, not a shared module** — the general form
+already stated for the luminance near-miss above. `scripts/mutation_check.py` proves each of these
+selftests can actually fail, which is the property the duplication could otherwise silently lose.
+It covers ten of the twelve. The exceptions are real and worth naming rather than rounding away:
+`plugins/rails-flow/scripts/extract_claims.py` and `plugins/rails-flow/scripts/findings.py` both
+ship a `--selftest` that no guard mutates, so for those two the control is asserted rather than
+proven. That is a mutation-coverage gap, not an argument for a shared module.
+
+**What would change the answer.** The `reach` column, gated, is the trigger: if one install root
+ever holds enough copies for `10R − 16` to be worth the churn, the number moves and the gate makes
+someone re-read this section. A count of copies across the repo never will be — it is the wrong
+number, and reporting it was how the question got framed as a refactor in the first place.
 
 ## What to take from this
 

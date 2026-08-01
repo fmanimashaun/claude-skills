@@ -10,7 +10,7 @@ WHY (#108, epic item E — "broken link + missing asset audit: classic, cheap, c
 #113 shipped the reporting half of this: a `links` evidence lane an agent fills in by hand and
 `validate_evidence.py` checks the shape of. Nothing mechanical ever followed a link. The crawl added
 in 1.17.0–1.18.0 visits a fixed list of routes and never looks at what those pages link TO, so a
-footer link to `/pricng` is invisible: the typo is not in `qa/routes.json`, so it is never crawled,
+footer link to `/pricng` is invisible: the typo is not in `qa/reports/routes.json`, so it is never crawled,
 never judged, and never reported.
 
 THE CARVE-OUT THIS PAYS FOR. `interaction_report.py` excludes `a[href]` from `dead-control` because

@@ -359,6 +359,47 @@ Families are a **pack field** (`brand.json` → `fonts`); the three *roles* are 
 
 Tracking: headings `-0.02em`; all-caps labels `+0.05–0.1em`; `antialiased`.
 
+### Money is `tabular-nums`, not `--font-mono` (#91)
+
+**Money is not on that third list, and this is the boundary crossed most often.** A reference number,
+an SLA timer, a code snippet and a timestamp are the four things `--font-mono` is for; a price, a
+subtotal and an invoice total are none of them. What a column of figures needs is **equal digit
+widths**, and that is a numeral feature rather than a face: `font-variant-numeric: tabular-nums`
+*"Enables display of tabular numerals (OpenType feature: `tnum`)"*
+([CSS Fonts 3 §tabular-nums](https://www.w3.org/TR/css-fonts-3/#tabular-nums), W3C Recommendation
+2018-09-20; [CSS Fonts 4](https://www.w3.org/TR/css-fonts-4/#valdef-font-variant-numeric-tabular-nums)
+repeats it verbatim). Reaching for the mono face to align ten digits changes the face of everything
+around them as well. So: **`tabular-nums` on money, `font-mono` on the reference beside it.**
+
+**It only works if the pack's sans font really carries `tnum`, and nothing will tell you when it
+does not.** *"When a font lacks support for a given underlying font feature, text is simply rendered
+as if that font feature was not enabled; font fallback does not occur and no attempt is made to
+synthesize the feature except where explicitly defined for specific properties"*
+([CSS Fonts 3 §feature-precedence](https://www.w3.org/TR/css-fonts-3/#feature-precedence)) — and
+`font-variant-numeric` is **not** among the properties the spec exempts, which are
+`font-variant-position` and small caps. A pack that overrides `fonts.sans` with a face lacking `tnum`
+therefore gets a **silent no-op**: the utility is in the markup, the figures still do not line up, and
+nothing fails anywhere.
+
+Measured against the font binaries rather than assumed: **Bricolage Grotesque implements `tnum`
+functionally** — its default digits are proportional and the feature substitutes fixed-width figures,
+so `fidara` gets the alignment it claims. Newsreader and Overpass Mono register the tag but inertly,
+both being tabular already by default (Overpass Mono because every glyph shares one advance width,
+which is what monospace means).
+
+**`brand_pack_lint.py` cannot check this, and that is a property of the pack format rather than a gap
+to file.** A pack declares a font *family name*, not a font *binary*, so the lint has nothing local to
+inspect. Overriding `fonts.sans` is consequently the one override carrying a manual check: confirm the
+face lists `tnum` before shipping it, or the rule above is decoration.
+
+**Which of the two reads better for money has no upstream, so the choice above is ours.** No W3C or
+WHATWG document takes a position on monospace versus tabular figures for currency, and none asks for
+any markup around a money value — WCAG 2.2 does not contain the word "currency", and neither `<data>`
+nor `<bdi>` carries a currency example in the HTML Standard. Anything claiming a spec *requires*
+`<data>`, `<bdi>` or an `aria-label` on an amount is folklore; right-aligning a numeric column is
+likewise a convention with no standard behind it. Decision recorded on
+[#91](https://github.com/fmanimashaun/claude-skills/issues/91).
+
 ## Voice / meta (for marketing copy, not product chrome)
 
 Per-pack. For `fidara`: Fidara Solutions Ltd. Etymology **Fi** (use) + **ara** (Yoruba:
