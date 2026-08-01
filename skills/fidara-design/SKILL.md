@@ -52,9 +52,12 @@ prefix. See [references/brand.md](references/brand.md).
    is **composed, not designed** — pick a shell, pick an anatomy, fill from the catalog. Also
    carries the primitive-instead-of-breakpoint substitution table.
 4. **Components** — [references/components.md](references/components.md) +
-   [references/forms.md](references/forms.md). ~16 catalog components, each a composition of
-   layout primitives + role tokens, with a fixed **variant × size × state** vocabulary, an
-   a11y checklist, and a prescribed responsive behavior.
+   [references/forms.md](references/forms.md). The catalog — each entry a composition of layout
+   primitives + role tokens, with a fixed **variant × size × state** vocabulary, an a11y
+   checklist, and a prescribed responsive behavior. **What exists is counted in
+   [references/coverage.md](references/coverage.md)**, which a script regenerates; a number
+   repeated here would be a second copy with no arbiter, and the one that was here ("~16") had
+   drifted to under half the real figure.
 5. **Interaction** — [references/interaction-stimulus.md](references/interaction-stimulus.md).
    Behavior is Hotwire, not a JS framework: four reusable Stimulus mixins (list-navigation,
    focus-trap+restore, dismissable-layer, anchored-position) cover every overlay; style off

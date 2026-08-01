@@ -564,7 +564,8 @@ A mutable list. Answers *"what am I about to buy, and can I still change it?"*
 <div class="grid-auto items-start" style="--min: 18rem">
   <div class="stack">
     <h1 class="text-step-3">Basket</h1>
-    <ul class="stack divide-y divide-border">
+    <ul role="list" class="stack divide-y divide-border">
+      <%# the Stacked list recipe (components.md); role="list" because Preflight unstyles it %>
       <%# per line: Ui::MediaObject — image, name (a link back), variant, unit price %>
       <%# quantity: labelled number input, "Update" reachable without JS %>
       <%# remove: an accessible name that NAMES THE ITEM — see below %>
@@ -608,7 +609,7 @@ claiming another flow qualifies; almost none do.
 ```erb
 <div class="center stack" style="--measure: 34rem">
   <%# brand mark only. No nav, no promotions, no newsletter — the shell is deliberately stripped %>
-  <ol class="cluster text-step--1" aria-label="Checkout progress">
+  <ol role="list" class="cluster text-step--1" aria-label="Checkout progress">
     <%# Contact → Delivery → Payment → Review. The Stepper contract, not a tablist — components.md %>
   </ol>
 
@@ -698,7 +699,7 @@ One order. Answers *"what did I buy, and where is it?"* The `Detail` anatomy wit
     <div class="cluster"><%# invoice download, reorder, support %></div>
   </header>
 
-  <ol class="stack" aria-label="Order progress">
+  <ol role="list" class="stack" aria-label="Order progress">
     <%# an ordered list because the sequence IS the meaning; the current step is marked in text %>
   </ol>
 

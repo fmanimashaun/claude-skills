@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **FIX — `mutation_check`'s own selftest rejected the declaration #422 had just added.** Rule 6 asserts
+  every guard names paths that exist, and tested all four fields with `is_file()`. #422 deliberately gave
+  the `build_coverage` guard a **directory** (*"a directory, so a new reference doc is picked up rather
+  than quietly missing"*), so the commit that removed one vacuous guard left `dev`'s `mutation check` gate
+  failing. `subject` and `selftest` are scripts and still must be files; `deps` and `needs` are staged by
+  copying, so existence is the real rule for them — which still catches the typo the check exists for.
+  Found running the sweep on a clean `origin/dev`, not on a change.
+
 ### 1.55.0 — 2026-08-01
 
 - **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
@@ -2426,6 +2436,77 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   the drift gate on the next maintainer's machine — the exact "damage still landed elsewhere" shape
   CLAUDE.md records for the corpora exemption. The rows and their evidence strings are listed on
   [#91](https://github.com/fmanimashaun/claude-skills/issues/91) for a corpora-attached follow-up.
+
+- **fidara-design: the list family is documented — Stacked list, Grid list, Activity feed / Timeline**
+  (Refs #95, the Phase-2 umbrella's *Lists + data display* group). All three were `derivable` rows whose
+  entire guidance was one **Build from** cell (*"Media object rows inside a `divide-y` container"*), while
+  the group's acceptance criterion asks for variant × size × state, an a11y contract and responsive rules.
+  `coverage.md` **69 → 72 `documented`**, 44 → 41 derivable. Verified against
+  [APG Patterns index](https://www.w3.org/WAI/ARIA/apg/patterns/) (still **30**, re-counted),
+  [Feed](https://www.w3.org/WAI/ARIA/apg/patterns/feed/), [`feed`](https://www.w3.org/TR/wai-aria-1.2/#feed),
+  [Grid](https://www.w3.org/WAI/ARIA/apg/patterns/grid/), [Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/),
+  ARIA 1.2 [`list`](https://www.w3.org/TR/wai-aria-1.2/#list) / [`listitem`](https://www.w3.org/TR/wai-aria-1.2/#listitem),
+  and WCAG 2.2 [1.3.1](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html) (A) and
+  [2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) (AA).
+- **Three ARIA patterns are near-misses for a list of records and every one of them is wrong — stated
+  with the quote that rules it out.** **Listbox**: *"it does not provide an accessible way to present a
+  list of interactive elements, such as links, buttons, or checkboxes"*, which is what a record row is.
+  **Grid**: *"A grid is a composite widget so it: Always contains multiple focusable elements … Requires
+  the author to provide code that manages focus movement inside it"* — a wall of cards has no roving
+  tabindex, so `role="grid"` announces a keyboard model that does not exist. **Feed**: scoped to
+  *"a dynamic list of articles that often appears to scroll infinitely"*, so a fixed-length history is
+  not one. Plain `list`/`listitem` is the answer, and *"Authors **MUST** ensure elements whose role is
+  listitem are contained in, or owned by, an element whose role is list"*.
+- **FIX — every list this kit ships loses its list semantics in Safari, and two things we already
+  ship are what cause it.** Tailwind v4's Preflight sets `ol, ul, menu { list-style: none }`
+  ([Preflight](https://tailwindcss.com/docs/preflight)), and WebKit then drops the role **on purpose** —
+  *"This was a purposeful change due to rampant 'list'-itis by web developers… If you want to override
+  the heuristic, you can add `role=list`"* ([WebKit 170179](https://bugs.webkit.org/show_bug.cgi?id=170179),
+  resolved as a duplicate of 134187, unretracted through the tracker's last activity in January 2023 and
+  still reproducing in independent testing on Safari 15.6–17). Tailwind's **own** docs carry the fix
+  verbatim — *"Unstyled lists are not announced as lists by VoiceOver… add a `list` role to the element"* —
+  which is the citation used, because it is first-party to the framework we ship. The criterion is
+  **1.3.1 Info and Relationships (Level A)**, and the markup passes its technique **H48** while the
+  accessibility tree does not, so nothing in the HTML looks wrong.
+  - **Nine shipped markup sites and six prose rules were emitting bare lists** and now carry
+    `role="list"`: the cart lines, the checkout and order-progress `<ol>`s, the mobile card-stack
+    fallback, the navbar / mobile-nav / rail / nested-section lists, the Breadcrumbs `<ol>`, and the prose
+    prescribing a bare `<ul>` or `<ol>` for the rail, the Stepper, the avatar group, the Breadcrumbs row
+    and the mega-menu columns (twice). Found by grepping the pattern rather than fixing the one
+    instance, per CLAUDE.md.
+  - **A claim I expected to make was REFUTED, and shipping it would have misdirected people.**
+    `display: flex` / `display: grid` **on the list element itself** does *not* break list semantics in
+    current Safari, Chrome or Firefox — so `stack`, `cluster` and `grid-auto` on a `<ul>` are all safe.
+    The real hazard is `display: contents` used to flatten a `<ul>` wrapper so its `<li>`s become grid
+    items, which resets the accessible role; MDN's answer is `subgrid`
+    ([Grid layout and accessibility](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout/Accessibility)).
+    The broader claim is written down as the thing *not* to believe.
+- **The feed entry states which document binds, because APG and core ARIA disagree in strength.** APG
+  states `aria-posinset`/`aria-setsize` flatly; ARIA 1.2 says authors **MAY**. We bind to the APG pattern
+  and say so. Two negatives are recorded the #142 way: **`aria-level` is not part of the Feed pattern**
+  (it is a `listitem` property, and it appears nowhere in the pattern), and **`role="feed"` takes no
+  `role="list"`** — `feed` is a subclass of `list` whose required owned elements are `article`.
+- **Three claims are OURS and say so, because the gate found no upstream** (design decisions under
+  CLAUDE.md's *What the gate covers* carve-out, recorded on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95)): (1) applying Tailwind's `<ul>`-shaped
+  callout to `<ol>` as well; (2) the one-stretched-link-per-row rule, and the corollary that a row with a
+  second control must not use it, because the overlay covers its siblings; (3) `<time datetime>` with a
+  relative label — **no WCAG criterion governs relative versus absolute time, and none mandates `<time>`**.
+  Likewise **no success criterion requires `aria-posinset`/`aria-setsize`** outside the feed pattern, so
+  the entry scopes them to virtualised lists rather than implying an obligation.
+- **FIX — the Media object entry carried its `a11y` bullet twice**, with the decorative-`alt` rule stated
+  in both and the responsive rule buried inside the first. Merged; the `Responsive:` bullet now holds the
+  responsive rule, like every other entry in the file.
+- **FIX — `coverage.md`'s derivable section said something stronger than it meant, and was already false.**
+  *"No dedicated catalogue entry, and none needed"* — while Command palette, a derivable row, has had a
+  `components.md` section since #229. The distinction the file actually draws is **anatomy**, not the
+  existence of a section, so it now says that and names the exception instead of contradicting it.
+- **FIX — `Chat bubble`'s `Build from` re-spelled the Stacked list's composition** instead of pointing at
+  it, so it went stale the moment that row was promoted. Same defect the promoted-row guard exists for,
+  in the half it does not cover (`derivable` rows).
+- **FIX — `fidara-design/SKILL.md` advertised "~16 catalog components"; the catalog holds well over twice
+  that.** Replaced with a pointer to `coverage.md`, which a script regenerates — a count restated in prose
+  beside a generated one is a second copy with no arbiter, which is how it drifted.
 
 ### 1.30.0 — 2026-08-01
 
