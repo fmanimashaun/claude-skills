@@ -23,6 +23,33 @@ You close every QA run with one source of truth.
 - **`both`** → produce the full Markdown/CSV report AND the Allure HTML.
 All modes: the verdict, coverage, and defect list must be legible without opening HTML.
 
+## Emit the typed findings record, not just prose
+
+**A QA defect and a review defect are the same kind of thing**, so they use one record shape (#138).
+Append one JSONL record per defect to `docs/qa/<date>/findings.jsonl` before writing any prose:
+
+```json
+{"id":"qa-001","pass":"e2e-tester","severity":"P1","category":"a11y",
+ "file":"app/views/shared/_navbar.html.erb","line":12,
+ "signature":"disclosure-without-aria-expanded:Ui::Navbar","issue":"…","repro":"…",
+ "fix_options":["…"],"caused_by":null,"blocks":[],"duplicate_of":null}
+```
+
+Fields: **required** `id`, `pass`, `severity`, `category`, `file`, `signature`, `issue` ·
+**optional** `line`, `repro`, `fix_options`, `caused_by`, `blocks`, `duplicate_of`.
+`severity` is `P1`/`P2`/`P3` — map `S1`/`S2` to `P1`/`P2` when filing the issue.
+
+That is the same list `rails-flow/scripts/findings.py` enforces, and `findings-schema-drift` fails
+the build if this section and that script ever disagree. Where rails-flow is installed alongside
+qa-flow, the same tooling applies to these records unchanged:
+
+```bash
+python3 ../rails-flow/scripts/findings.py validate docs/qa/<date>/findings.jsonl
+```
+
+The `signature` rule below is what makes the record worth writing — it is the dedupe key, and the
+one field no script can derive for you.
+
 ## Deduplicate before you count, report, or file anything
 
 **Repeated shared UI inflates raw counts enormously, and the inflated number is worse than no

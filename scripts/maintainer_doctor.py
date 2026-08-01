@@ -155,6 +155,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("design-flow setup cross-check", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--quiet")),
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
+    ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
     ("design-flow LLM-tell detector", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--selftest")),
     # #157 criterion 6, and NOT redundant with the selftest above: the selftest proves each rule
     # fires and stays silent on synthetic fixtures, while this runs the whole rule set against the

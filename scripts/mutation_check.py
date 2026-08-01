@@ -89,6 +89,18 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the schema-parity rule stops noticing an undocumented field",
+                "        missing = sorted(f for f in fields if f not in documented)",
+                "        missing = []",
+                "qa-reporter missing an enforced field",
+            ),
+            Mutation(
+                "a renamed field tuple becomes a silent pass instead of a finding",
+                '            findings.append(Finding(\n                "findings-schema-drift", rel(script), 1,\n                f"cannot find the `{group}` field tuple, so the schema cannot be compared. If it "\n                f"was renamed, update this rule rather than leaving the comparison silently dead",\n            ))\n',
+                "",
+                "a renamed field tuple must be a finding",
+            ),
+            Mutation(
                 "the topology rule stops requiring a merge rule on a fan-out",
                 'if kind == "parallel" and not re.search(r"\\bmerge:", detail, re.I):',
                 "if False:",

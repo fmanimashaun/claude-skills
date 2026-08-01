@@ -676,6 +676,50 @@ def check_v4_outline_none() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_findings_schema_drift() -> tuple[list[Finding], int]:
+    """qa-flow's reporter must document the SAME record fields `findings.py` enforces (#138).
+
+    Criterion 7 asks that "qa-flow's reporter emits the same shape" so a QA defect and a review
+    defect are one kind of thing. The two live in different plugins on purpose — qa-flow is
+    documented as independent, so it does not import rails-flow's code — which means the **schema is
+    the contract**, and a contract nothing compares is the `claims-vs-enforcement` defect this file
+    exists for. Two documents agreeing today is not the same as two documents that must agree.
+
+    Direction matters: a field in the script and missing from the doc means a QA record silently
+    omits something every review record carries, and the omission surfaces only when someone runs
+    the validator over a QA file. The reverse — documented but unenforced — is a promise to the
+    agent that nothing keeps.
+    """
+    findings: list[Finding] = []
+    script = ROOT / "plugins" / "rails-flow" / "scripts" / "findings.py"
+    doc = ROOT / "plugins" / "qa-flow" / "agents" / "qa-reporter.md"
+    if not (script.is_file() and doc.is_file()):
+        return findings, 0
+    source = read(script)
+    canonical: dict[str, set[str]] = {}
+    for group in ("REQUIRED", "OPTIONAL"):
+        match = re.search(rf"^{group} = \(([^)]*)\)", source, re.M)
+        if not match:
+            findings.append(Finding(
+                "findings-schema-drift", rel(script), 1,
+                f"cannot find the `{group}` field tuple, so the schema cannot be compared. If it "
+                f"was renamed, update this rule rather than leaving the comparison silently dead",
+            ))
+            return findings, 0
+        canonical[group] = set(re.findall(r'"([a-z_]+)"', match.group(1)))
+    body = read(doc)
+    documented = set(re.findall(r"`([a-z_]+)`", body))
+    for group, fields in canonical.items():
+        missing = sorted(f for f in fields if f not in documented)
+        if missing:
+            findings.append(Finding(
+                "findings-schema-drift", rel(doc), 1,
+                f"does not document {group.lower()} field(s) {', '.join(missing)} that "
+                f"`findings.py` enforces. A QA record would omit what every review record carries",
+            ))
+    return findings, len(canonical["REQUIRED"]) + len(canonical["OPTIONAL"])
+
+
 def check_undeclared_topology() -> tuple[list[Finding], int]:
     """A command dispatching 2+ of its plugin's agents must DECLARE its topology (#137).
 
@@ -977,6 +1021,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     outlines, outlines_examined = check_v4_outline_none()
     coercions, coercions_examined = check_unreachable_coercion_fallback()
     topologies, topologies_examined = check_undeclared_topology()
+    schema, schema_examined = check_findings_schema_drift()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -991,10 +1036,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "skill_docs_scanned_for_v4_outline": outlines_examined,
         "shipped_docs_scanned_for_coercion_fallbacks": coercions_examined,
         "multi_agent_commands_checked_for_topology": topologies_examined,
+        "findings_schema_fields_compared": schema_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root + coercions + topologies,
+            + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema,
             coverage)
 
 
@@ -1419,6 +1465,50 @@ def selftest() -> int:
     # Scope: this is Tailwind-v4 doctrine WE ship. A plugin or script mentioning it is not a recipe.
     scenario("outside skills/ is out of scope", rule=ON, expect_finding=False,
              files={"plugins/x/commands/c.md": 'class="focus-visible:outline-none"\n'})
+
+    # ---- findings-schema-drift -----------------------------------------------------
+    # This rule reads two REAL repo paths rather than a synthetic tree, so `scenario()` (which
+    # rebuilds ROOT in a temp dir) cannot drive it. Exercised directly instead, in both directions.
+    FS = "findings-schema-drift"
+    real, _ = check_findings_schema_drift()
+    checks += 1
+    if real:
+        failures.append(f"{FS}: the shipped schema and qa-reporter already disagree: {real}")
+    _saved_root = ROOT
+    import tempfile as _tf
+    for label, doc_body, expect in (
+        ("a documented field set that matches", None, False),
+        ("qa-reporter missing an enforced field",
+         "Fields: `id`, `pass`, `severity`, `category`, `file`, `signature`, `issue`, `line`.\n", True),
+        ("qa-reporter documenting nothing at all", "No schema here.\n", True),
+    ):
+        checks += 1
+        root = Path(_tf.mkdtemp(prefix="schemadrift-"))
+        (root / "plugins/rails-flow/scripts").mkdir(parents=True)
+        (root / "plugins/qa-flow/agents").mkdir(parents=True)
+        (root / "plugins/rails-flow/scripts/findings.py").write_text(
+            'REQUIRED = ("id", "signature")\nOPTIONAL = ("line", "caused_by")\n', encoding="utf-8")
+        body = doc_body or "Fields: `id`, `signature`, `line`, `caused_by`.\n"
+        (root / "plugins/qa-flow/agents/qa-reporter.md").write_text(body, encoding="utf-8")
+        ROOT = root
+        got, _ = check_findings_schema_drift()
+        ROOT = _saved_root
+        if bool(got) != expect:
+            failures.append(f"{FS} / {label}: expected {'a finding' if expect else 'silence'}")
+    # A renamed tuple must be a FINDING, never a silent pass. This is the `gate-that-cannot-fail`
+    # shape: the comparison would simply stop happening and the run would still say "no findings".
+    checks += 1
+    root = Path(_tf.mkdtemp(prefix="schemadrift-"))
+    (root / "plugins/rails-flow/scripts").mkdir(parents=True)
+    (root / "plugins/qa-flow/agents").mkdir(parents=True)
+    (root / "plugins/rails-flow/scripts/findings.py").write_text(
+        'MANDATORY = ("id",)\nOPTIONAL = ("line",)\n', encoding="utf-8")
+    (root / "plugins/qa-flow/agents/qa-reporter.md").write_text("`id` `line`\n", encoding="utf-8")
+    ROOT = root
+    renamed, _ = check_findings_schema_drift()
+    ROOT = _saved_root
+    if not renamed:
+        failures.append(f"{FS}: a renamed field tuple must be a finding, not a silent pass")
 
     # ---- undeclared-topology ------------------------------------------------------
     UT = "undeclared-topology"

@@ -5011,6 +5011,38 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
+### Unreleased
+
+- **NEW `findings.py` — typed findings records, so multi-agent output is queryable and dedupe is
+  mechanical** (#138). Plain JSONL in git; no graph database, no orchestration runtime (criterion 8,
+  and `harness-doctrine.md` §9). `/rails-flow:review`'s seven passes append records before writing
+  prose, and synthesis reads the data instead of merging seven text blobs by judgement.
+- **Three things that were judgement are now checked.** *Dedupe* groups by `signature` and reports
+  `distinct (N instances)` — the #118 arithmetic, where 773 real occurrences were ~18 defects.
+  *Completeness* asserts every input id appears in the output as reported or `duplicate_of`, so
+  #77's "no pass may drop a finding" is verified rather than contracted — synthesis may reorder and
+  collapse, never drop. *Fix order* is a topological sort on `caused_by`/`blocks`.
+- **An edge outranks severity, and that is the whole point of the graph.** A P1 symptom waits for
+  its P3 cause, because fixing the symptom first is wasted work; severity is the tiebreak only
+  within what the graph leaves free. Pinned by a fixture, since a severity sort that quietly
+  overrode edges would look correct in every example where the two happen to agree.
+- **A cycle is reported, not raised.** Order with a cycle in it still beats no order, so the members
+  fall back to severity and the caller is told — a mutual `caused_by` is usually a modelling error.
+- **`signature` stays the agent's judgement and the script trusts it**, stated as a limit rather
+  than hidden: deriving it from file+line is wrong in both directions, since the same defect moves
+  when a line is inserted and two different defects share a line.
+- **qa-flow's reporter emits the same record** (criterion 7), and the parity is **gated** rather
+  than claimed. The two live in different plugins deliberately — qa-flow is independent and does not
+  import rails-flow — so the schema is the contract, and `findings-schema-drift` compares the field
+  tuples in `findings.py` against the fields documented in `qa-reporter.md`. Two documents agreeing
+  today is not the same as two documents that must agree.
+- The drift rule **fails when its own anchor goes missing**: if the `REQUIRED`/`OPTIONAL` tuples are
+  renamed it reports that, rather than comparing nothing and passing. That is a `gate-that-cannot-fail`
+  in waiting, and it has a fixture plus a mutation of its own.
+- Findings selftest **29 checks**; self-consistency 93 → **98** assertions; mutations 25 → **27**;
+  gate sweep 43 → **44**. One mutation had to be rewritten: the first version broke syntax, so the
+  mutant died at import and every mutation read as "caught" by a traceback rather than by a fixture.
+
 ### 2026-08-01 (release v1.53.0)
 
 > ### Two checks that exist because inference was tried first and did not work
