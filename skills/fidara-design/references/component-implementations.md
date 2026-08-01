@@ -1721,7 +1721,8 @@ Preflight sets `list-style: none` on every `ol`/`ul`, and WebKit then drops the 
      <%# event time on an unmapped name, so `page-down` fails on the first keystroke, not at boot %>
      data-controller="feed" data-action="keydown.page_down->feed#next keydown.page_up->feed#previous">
   <% @posts.each_with_index do |post, i| %>
-    <article role="article" aria-labelledby="post-<%= post.id %>-title"
+    <%# <article> already IS role="article"; APG names the role, the element supplies it %>
+    <article aria-labelledby="post-<%= post.id %>-title"
              aria-describedby="post-<%= post.id %>-body"
              aria-posinset="<%= i + 1 %>" aria-setsize="<%= @total || -1 %>" tabindex="-1">
       <h3 id="post-<%= post.id %>-title"><%= post.title %></h3>

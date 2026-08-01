@@ -679,10 +679,12 @@ warns against exactly the shape that tempts you here — *"where you have a `<ul
 container, that `ul` becomes a grid item — the child `<li>` elements do not"*; the answer is `subgrid`, not
 flattening ([Grid layout and accessibility](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout/Accessibility)).
 
-**`aria-posinset` / `aria-setsize` are not required by anything, and are ours when used.** No WCAG success
-criterion mentions them; they are `listitem`-supported ARIA properties
+**On a list, `aria-posinset` / `aria-setsize` are required by nothing, and are ours when used.** No WCAG
+success criterion mentions them; on a list they are merely `listitem`-supported ARIA properties
 ([`listitem`](https://www.w3.org/TR/wai-aria-1.2/#listitem)). Add them only where DOM order is not the set
-order — a virtualised or windowed list — and never as decoration on a complete one.
+order — a virtualised or windowed list — and never as decoration on a complete one. **A feed is the
+exception**, and it is the pattern rather than WCAG that asks:
+see [Activity feed / Timeline](#activity-feed--timeline).
 
 ## Grid list
 - **A composition, not a component:** `<ul role="list" class="grid-auto">` of `<li>` [Card](#card)s. `--min:
@@ -719,8 +721,9 @@ order — a virtualised or windowed list — and never as decoration on a comple
   ([Feed](https://www.w3.org/WAI/ARIA/apg/patterns/feed/)), and the role definition is built on the same
   property — *"A scrollable list of articles where scrolling may cause articles to be added to or removed
   from either end of the list"* ([`feed`](https://www.w3.org/TR/wai-aria-1.2/#feed)). So a status history is
-  an ordinary **`<ol role="list">`** of Media object rows: an `<ol>` because the order is the meaning, the
-  same reasoning as the [Stepper](#stepper--wizard).
+  the [Stacked list](#stacked-list) with a rail, in an **`<ol role="list">`** — an `<ol>` because the order
+  is the meaning, the same reasoning as the [Stepper](#stepper--wizard). Rows are Media objects wherever an
+  actor or an icon is shown, and a plain `stack` of text + timestamp where they are not.
 - **The rail is a border on the container, not a pseudo-element per row.** `border-s border-border` on the
   `<ol>` with the row's dot marker positioned over it — n rows, one line, and nothing to clean up after the
   last entry.
