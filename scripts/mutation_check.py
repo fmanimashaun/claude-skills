@@ -363,6 +363,37 @@ GUARDS: tuple[Guard, ...] = (
                 "        if False:",
                 "share the probe",
             ),
+            # `verify_no_undeclared_entry` (#89) is the negative direction the component half
+            # never had. Both of its halves get a mutation for the same reason the interaction
+            # guard's do -- and the second is the more important one here, because the way this
+            # guard fails is not by going quiet but by becoming a false-positive machine that
+            # someone then deletes.
+            # Each `expects` is the FIXTURE's own label, never the guard's message -- with the
+            # guard neutered it emits no message at all, so matching on it would match nothing
+            # and every mutation would read as caught-by-something-else (#422).
+            Mutation(
+                "a `derivable` row is allowed to have a catalogue entry again",
+                "        if entry.is_documented:\n            continue",
+                "        if True:\n            continue",
+                "a `derivable` row whose catalogue entry exists must be caught",
+            ),
+            Mutation(
+                "the catalogue match widens to a substring, convicting correct rows",
+                "            if title.casefold() == entry.name.casefold() or re.match(\n"
+                "                re.escape(entry.name) + r\"\\s*[—–\\-(]\", title, re.I\n"
+                "            ):",
+                "            if entry.name.casefold() in title.casefold():",
+                "must not convict a row named",
+            ),
+            # forms.md is the second catalogue file, and dropping it is silent: nothing else in
+            # the run reads it, so without this the tuple could shrink to one file and the guard
+            # would keep passing while blind to the whole forms family.
+            Mutation(
+                "the guard stops reading forms.md, blinding it to the forms family",
+                'CATALOGUE_FILES = ("components.md", "forms.md")',
+                'CATALOGUE_FILES = ("components.md",)',
+                "forms.md is a catalogue file too",
+            ),
             # `verify_cell_text` likewise. The interaction half is mutated rather than the ENTRIES
             # half because that is the loop the near-miss was found in: the note that nearly shipped
             # a broken table was an interaction note.

@@ -31,8 +31,8 @@ builder refuses to emit a row that lacks it.
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
 | fidara rows | 113 |
-| — `documented` | 72 |
-| — `derivable` from documented parts | 41 |
+| — `documented` | 73 |
+| — `derivable` from documented parts | 40 |
 | — `needs doctrine` (tracked writing gap) | 0 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
@@ -56,6 +56,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Carousel / Slider | component | — | ✓ | prefer not to — if a client insists, a marketing surface only | content behind a timed or manual slide is content most users never see, and the pattern is a persistent a11y liability. This is a doctrine position, not a backlog item — if a client insists, build it in the app against the a11y contract rather than blessing it as a kit primitive |
 | Checkbox | component | ✓ | ✓ | independent booleans; multiples need a fieldset with a legend | — |
 | Combobox / Autocomplete | component | ✓ | — | an authenticated app screen, inside one of the three shells | — |
+| Command palette | component | ✓ | — | an authenticated app screen, inside one of the three shells | a composition WITH its own catalogue entry — Modal shell + editable Combobox, results as a listbox or grid popup. No APG pattern covers it (the index lists 30 and none is a command palette), so the shape is ours; `aria-haspopup="grid"` is required only if the rows carry icon + label + shortcut |
 | Copy to clipboard | component | — | ✓ | next to an API key, invite link or ID | the announcement IS the feature; a repeat needs the region cleared or it stays silent |
 | Description list | component | ✓ | — | read-only attribute/value pairs on a detail or settings screen | blank values render an em dash + sr-only 'not set', never an empty <dd> |
 | Drawer / off-canvas | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | ONE ROW, TWO CONTRACTS: the overlay drawer is a modal dialog and traps focus; the persistent push drawer is not a dialog and must not |
@@ -134,7 +135,6 @@ meant, and was already false when it was written.
 | Bottom navigation | component | — | ✓ | the native tab bar on Hotwire Native; the shipped sidebar/stacked shells on web | native mobile shells (Hotwire Native); never as a web nav |
 | Category filters | component | ✓ | — | the documented `Ui::Disclosure`, one per filter group, inside a `stack` — `<details>`/`<summary>` only where the group never animates | a commerce surface (catalog, product, cart, checkout) |
 | Chat bubble | component | — | ✓ | Media object rows in a `divide-y` container — the same shape, without inventing message semantics | a messaging, comment or activity thread — not general app screens |
-| Command palette | component | ✓ | — | the documented Modal containing the documented Combobox with a listbox popup; keep `aria-activedescendant` so typing keeps filtering | an authenticated app screen, inside one of the three shells |
 | Device mockup | component | — | ✓ | a `frame` at the screenshot's own ratio | marketing surfaces only, to frame a product screenshot |
 | Number input | component | — | ✓ | the documented Text input with `inputmode=numeric` | an authenticated app screen, inside one of the three shells |
 | Phone input | component | — | ✓ | a text input with `inputmode=tel` and app-side normalisation, using the shipped field anatomy | any form collecting a telephone number |
