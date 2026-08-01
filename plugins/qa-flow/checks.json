@@ -57,6 +57,21 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "route-crawl",
+      "why": "A route that returns 200 while rendering an error page passes every status check.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/crawl_report.py",
+        "{match:qa/manual-tests/crawl.json}"
+      ],
+      "applies_when": [
+        "qa/manual-tests"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
