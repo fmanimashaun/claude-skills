@@ -1858,6 +1858,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **FIX — five catalog entries carried no accessibility contract, and two contradicted our own rule**
+  (#95). Found doing Phase 2's audit criterion by **measuring** the catalog rather than reading it:
+  every `## ` section scored for variant / size / a11y / responsive content.
+  - **The over-broad reading was rejected first.** 34 of 36 sections "failed" that scan, because a
+    Divider has no variants and a Breadcrumb has no sizes — requiring those axes universally would be
+    the false-positive machine this repo keeps refusing to ship. **No gate was added.** a11y was the
+    one dimension near-universal enough for the misses to be real, and there were exactly five.
+  - **Two of the five contradicted `design-auditor`'s own checklist**, which mandates *no colour-only
+    state*: Pagination's active page was `bg-primary/10 text-primary` and nothing else, and Avatar's
+    status dot was a bare coloured dot. Both now carry a text equivalent — `aria-current="page"` and
+    `sr-only` status text — so the colour is the visual half rather than the whole signal.
+  - The other three: **Table (CRUD)** had no `<caption>`/`<th scope>` rule, so a cell could not be
+    associated with its header; **Media object** had no `alt` guidance, where the right default is
+    `alt=""` because a thumbnail beside a name announces it twice; **Empty state** had no rule that
+    its icon is `aria-hidden`, that its title is a real heading at the implied level, and that a
+    filtered-into-empty region must be `aria-live` or the user filters into silence.
+  - `Forms` is a one-line pointer to `forms.md` and is deliberately left alone — its contracts live
+    there and duplicating them is the mechanism the catalog forbids.
+
 ### 1.28.0 — 2026-08-01
 
 - **A per-page motion cap, which was #136's one genuinely missing rule** (#136). `motion.md` §7
