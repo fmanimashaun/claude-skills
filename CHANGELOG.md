@@ -2145,6 +2145,70 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   both editions live) moves for the same reason. Also recorded in-line, in the skill, where a
   downstream agent will read it: **there is no Rails 8.2 or 9.0** — no gem, no tag, no `8-2-stable`
   branch — because a third-party post dated 2026-04-20 claims otherwise and keeps resurfacing.
+- **Rails 8.1 stopped HTML-escaping `render json:`, and our security checklist never said so**
+  (#393). `load_defaults 8.1` sets `config.action_controller.escape_json_responses = false`, so the
+  JSON renderer no longer escapes `<`, `>`, `&`, U+2028 or U+2029. Rails' own changelog names the
+  consequence — *"vulnerabilities when the resulting JSON is embedded in HTML"*
+  ([actionpack/CHANGELOG.md @ 8-1-stable, under 8.1.0](https://github.com/rails/rails/blob/8-1-stable/actionpack/CHANGELOG.md);
+  the flip itself is `railties/lib/rails/application/configuration.rb` `when "8.1"`, and
+  [Configuring §3.1.1](https://guides.rubyonrails.org/configuring.html) lists it). Now in
+  `auth-security.md` §4 **Injection & escaping** — the checklist a reader actually consults — with
+  the per-response `escape: true`. **The JSONP carve-out is documented as partial, not absolute**,
+  which neither the issue nor Rails' changelog sentence says: `renderers.rb:171` skips the flip when
+  `:callback` is present, but `escape_js_separators_in_json = false` is global with no callback
+  branch, so `json/encoding.rb:203-208` takes the `HTML_ENTITIES_REGEX` arm — `<`, `>`, `&` escaped,
+  U+2028/9 **not**. **The issue's other remedy is a trap and is documented as one:** setting
+  `config.action_controller.escape_json_responses = true` back is *"deprecated and will have no
+  effect in Rails 8.2"* — the deprecation shipped in **v8.1.0 itself**
+  (`renderers.rb:30-40`, `DeprecatedEscapeJsonResponses`), so doctrine points at `escape: true` and
+  `json_escape` instead. *Version boundary:* Rails ≤ 8.0 or `load_defaults` ≤ 8.0 still escape.
+- **`load_defaults 8.1` promotes path-relative redirects from `:log` to `:raise`, undocumented**
+  (#392). `mattr_accessor :action_on_path_relative_redirect, default: :log`
+  ([actionpack redirecting.rb:31 @ 8-1-stable](https://github.com/rails/rails/blob/8-1-stable/actionpack/lib/action_controller/metal/redirecting.rb)),
+  set to `:raise` by the `when "8.1"` block. Verified the trigger against
+  `_compute_redirect_to_location` rather than the issue's wording: it fires on a `String` starting
+  with neither `/`, `?`, a scheme, nor `//`, and the payload is real — Rails' own docs give
+  `redirect_to "@attacker.com"` → `http://yourdomain.com@attacker.com`, read by browsers as
+  `userinfo@host`. Documented in `auth-security.md` §4 and `controllers-routing.md` §6 with the
+  error class (`ActionController::Redirecting::PathRelativeRedirectError`) and all three modes.
+  Also corrected the nit the same issue raised: 8.1 **added** `action_on_open_redirect`, it did not
+  *"replace"* `raise_on_open_redirects`.
+  [8-0-stable redirecting.rb](https://github.com/rails/rails/blob/8-0-stable/actionpack/lib/action_controller/metal/redirecting.rb)
+  declares exactly one mattr, `raise_on_open_redirects` — so the new setting is an addition — and at
+  8.1 the old one is still declared and still short-circuits (`redirecting.rb:262`,
+  `return false if raise_on_open_redirects`). Verification then turned up a **second precedence rule
+  nobody had reported, and it loses protection rather than adding it**: `actionpack railtie.rb:114-128`
+  downgrades `action_on_open_redirect` to `:log` when an app *explicitly* carries
+  `raise_on_open_redirects = false` forward, so an upgraded app can keep the old opt-out and silently
+  stop raising on open redirects. Now a watch item in `project-setup.md` §7 and a sub-bullet in
+  `auth-security.md` §4. *Version boundary:* `load_defaults` ≤ 8.0 keeps `:log`.
+- **Both issues came from diffing `load_defaults 8.1` against our doctrine, so the diff was finished
+  rather than sampled.** The `when "8.1"` block sets **seven** things; the two above were the two
+  nobody had written down, but three more were undocumented and two documented claims were wrong.
+  `project-setup.md` §7 now carries the complete seven-row table — old value, 8.1 value, and the
+  observable change — because the 8.0 → 8.1 watch list is the one place a reader is entitled to
+  assume completeness. Enumeration cross-checked two ways: the `when "8.1"` branch of
+  `railties/lib/rails/application/configuration.rb` @ 8-1-stable, and the guides'
+  ["Default Values for Target Version 8.1"](https://guides.rubyonrails.org/configuring.html), which
+  agree exactly.
+- **The three further gaps that diff found**, all now documented: `active_support.escape_js_separators_in_json`
+  `true → false` (U+2028/9 unescaped **everywhere** `to_json` runs, views included — wider than the
+  controller flip, and recorded with Rails' stated reasoning that ECMAScript 2019 legalised them in
+  string literals); `action_view.remove_hidden_field_autocomplete` `false → true` (`autocomplete="off"`
+  dropped from `form_tag`/`token_tag`/`method_tag` and the hidden params in `button_to`, `check_box`,
+  `select` multiple, `file_field`, extended to the form builder's `hidden_field` in **8.1.1**);
+  `action_view.render_tracker` `:regex → :ruby` (template dependencies parsed by prism/ripper instead
+  of a regex, so fragment-cache digest trees can shift on upgrade — now in `performance-caching.md`
+  §2, with the verified note that `<%# Template Dependency: … %>` still works, `ruby_tracker.rb`
+  keeping the same `EXPLICIT_DEPENDENCY` scan).
+- **And two claims we already shipped that the diff proved wrong.** `SKILL.md` and `project-setup.md`
+  called order-dependent finders a **deprecation**; under `load_defaults 8.1`
+  `raise_on_missing_required_finder_order_columns` is `true` and `.first`/`.last` on an unordered
+  relation **raises `ActiveRecord::MissingRequiredOrderError`**
+  ([activerecord/CHANGELOG.md @ 8-1-stable](https://github.com/rails/rails/blob/8-1-stable/activerecord/CHANGELOG.md)) —
+  so the advice was right and the severity was understated. And `performance-caching.md` read as
+  though 8.1 turned YJIT on; 7.2 did that (`config.yjit = true`), while **8.1 narrows it to
+  `!Rails.env.local?`** — off in development and test. Both corrected.
 - **FIX — `coverage.md`'s Interaction-patterns table had outlived the work it tracked, in four of
   its nine rows** (#89). The component half of that matrix has been evidence-checked since #124;
   this half was hand-maintained prose, and it rotted quietly while the phases under this epic
@@ -2189,7 +2253,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   block, and held there by the new `skill routing` gate rather than by review.
 - The other three shipped skills were already clean: 42 reference files across four skills, all
   routed one level deep, every `SKILL.md` well inside the 500-line Level-2 budget (largest is
-  rails-8 at 227). Verified by running the gate, not by reading.
+  rails-8, 227 lines when this was measured and 240 after the 8.1 defaults work below).
+  Verified by running the gate, not by reading.
 
 ### 1.29.1 — 2026-08-01
 
@@ -3569,6 +3634,57 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Focus restore is measured now, not claimed** (#105, criterion 4's second half). Criterion 4 reads
+  *"flags dead controls **+ missing focus restore**"*; only the first half shipped in 1.17.0, and the
+  omission was not noted anywhere. `crawl_collector.js` now presses **Escape** on a layer it just
+  opened and records whether the layer closed and whether `document.activeElement` **is** the trigger
+  element — identity, not a selector match. `interaction_report.py` judges it as
+  `focus-restore-missing`.
+  - **It is the measured half of something already reported.** `a11y-auditor` counts
+    `Restore Failures` per overlay in its CSV and `validate_evidence.py`'s keyboard profile gates that
+    CSV's *arithmetic* — but the number in the column is the agent's own claim and nothing compares it
+    to a browser. That is the claims-vs-enforcement shape this repo warns about, sitting inside the
+    a11y pass. This asks the DOM.
+  - **The narrow scope is the whole design, and it contradicts the issue text.** #105 asked for a rule
+    on anything whose trigger flips `aria-expanded`. Verified against the live WAI-ARIA APG
+    (2026-08-01), that is wrong: focus-return-on-Escape is mandated for
+    [Dialog (Modal)](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) (*"When a dialog closes,
+    focus returns to the element that invoked the dialog"*),
+    [Menu/Menubar](https://www.w3.org/WAI/ARIA/apg/patterns/menu/) (*"Escape: Close the menu that
+    contains focus and return focus to the element or context … from which the menu was opened"*) and
+    [Combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) (*"Escape: Closes the popup and
+    returns focus to the combobox"*) — and is **absent entirely** from the base
+    [Disclosure](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) pattern, whose Keyboard
+    Interaction table has no `Escape` row, and from
+    [Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/), which never mentions Escape. So the
+    rule as the issue described it would have flagged **every FAQ accordion and every listbox** against
+    APG's own spec. Those are measured, printed *out of scope* by name, and never counted — with the
+    negative fixtures and a declared mutation that removes the scope guard.
+  - **The trigger's role is the discriminator, not the popup's.** A plain button controlling a listbox
+    is a standalone listbox (exempt); the same popup under `role="combobox"` is in scope. Fixtured as a
+    near-miss pair, because keying off the popup alone silently loses the combobox case.
+  - `closedOnEscape`/`focusRestored` are **`null` when the probe did not complete**, never `false` — an
+    overlay whose dismissal could not be observed is named, exactly like a control that was never
+    clicked, and is not a pass.
+  - The dismissal is judged **before** the `dead-control` exclusions: a link's *navigation* is
+    unobservable from a sweep that stays on the page, but the dialog it opened is entirely observable.
+    A declared mutation reorders the two.
+- **FIX — `a11y-auditor` told agents to demand `Escape` of every "overlay", undefined** (#105). The
+  same over-broad claim the rule above refuses, sitting in shipped doctrine an agent follows verbatim:
+  *"per overlay, assert the three individually … `Escape` closes it, focus returns to the trigger"*
+  with no definition of *overlay*, so an FAQ accordion counts, inflating the `Overlays` denominator and
+  filing `S1`s against behaviour APG does not require. Found by grepping for the pattern after the
+  judge's scope was settled — one instance of a contradiction travels in groups. The column is now
+  scoped to the same three patterns, with the same citations, and says so.
+- **FIX — the qa-flow browser collector had no syntax gate, and the obvious one cannot fail.**
+  `crawl_collector.js` is a shipped `.js` file an agent runs in a user's project;
+  `lint_markdown_code.py` only reads fenced blocks, so nothing checked it. Worse, **`node --check
+  <file>` exits 0 on an ES module with a blatant syntax error** (verified on Node 24:
+  `import x from "y"; const = ;` passes) — it is detected as ESM and the check silently does nothing,
+  so a gate written the obvious way would have passed on anything. `interaction_report.py
+  --check-collector` feeds the source in on **stdin with `--input-type=module`**, is registered in
+  `GATES`, SKIPs loudly when `node` is absent, and carries its own negative test plus a mutation that
+  makes it always-succeed.
 - **Visual regression: the two acceptance criteria 1.19.0 did not actually meet** (#112). The issue
   asked for five things and shipped three. Re-verified by running each, not by reading the code.
   - **Ignore regions were decoration, not a feature.** `ignored` was in the schema from day one,
