@@ -7,6 +7,35 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+
+### Unreleased
+
+- **The gates run in CI now. Until today they ran nowhere automatically.** Every automated check on a
+  pull request in this repo belonged to a **third party** — AccessLint and GitGuardian. Our own
+  workflow was `release.yml`, which fires only on a push to `main`, *after* merge, and whose single
+  check is the `dist/` drift guard. The **35** gates this repo builds, documents at length and treats
+  as its safety net ran when a maintainer remembered to type the command.
+  - That is the `claims-vs-enforcement` defect CLAUDE.md warns about most, **in its own
+    infrastructure**: the file insists guarantees belong in the deterministic layer, and the
+    deterministic layer was a command a human had to remember. Actions is free and unmetered for
+    public repos, so there was never a cost reason either.
+  - Found by being asked to justify *"CI has no browser"* — a claim of mine that was **wrong**
+    (`ubuntu-latest` ships Chrome). Checking it turned up the real situation, which was worse than
+    the thing I had said.
+  - **New `--gates-only`** runs the sweep without the machine diagnostics, because those ask about a
+    maintainer's *clone* — branch, stale `main` ref, `gh` auth, licensed corpora — and none is
+    meaningful on a runner. Failing on them would teach people to ignore a red build, which is worse
+    than having no CI. The gates are the opposite: each is a claim about repo **content**, identical
+    on a runner and a laptop.
+  - **CI asserts `node` and `ruby` exist rather than tolerating their absence.** Without them
+    `lint_markdown_code.py` returns exit 3 → SKIP, and in CI a skip is indistinguishable from a pass
+    unless something asserts the interpreters are there.
+  - **`dist/` drift is checked on PRs too**, not only at release: it is a diagnostic rather than a
+    gate, so `--gates-only` skips it, and `release.yml` catches it only after merge on someone else's
+    clock. Same shape in both files deliberately — change one, change the other.
+  - Proven to block: an injected `outline-none` regression in shipped doctrine returns **exit 1**
+    with `gate: self-consistency` FAILing. Restored, exit 0.
+
 ### 2026-07-31 — a committed coverage page, and bytes that depend only on data
 
 - **FIX — CLAUDE.md claimed all hooks fail open; two fail closed on purpose** (#132). A

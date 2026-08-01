@@ -590,10 +590,25 @@ class Doctor:
                 self.add(FAIL, f"gate: {name}", tail, " ".join(cmd))
 
     # ---- driver ----------------------------------------------------------------------
-    def diagnose(self, gates: bool) -> int:
+    def diagnose(self, gates: bool, gates_only: bool = False) -> int:
         if not self.check_is_marketplace_repo():
             self.report()
             return 2
+        # GATES-ONLY is for CI, and skipping the machine diagnostics there is the point rather than a
+        # shortcut. Every one of them asks a question about a MAINTAINER'S CLONE: which branch you are
+        # on, whether your local `main` ref is stale, whether `gh` is authenticated, whether the
+        # licensed corpora are attached. A runner is not a clone anyone works in -- it is detached, it
+        # has no `gh` login, and it will never have the private corpora. Running them there produces
+        # failures that mean nothing, which teaches people to ignore a red build: the one outcome
+        # worse than having no CI at all.
+        #
+        # The GATES are the opposite. Every one is a claim about the CONTENT of the repo, so it holds
+        # identically on a runner and on a laptop. That is what makes them the right half to automate,
+        # and the only half.
+        if gates_only:
+            self.check_gates()
+            self.report()
+            return 1 if any(r.status == FAIL for r in self.results) else 0
         self.check_prerequisites()
         self.git("fetch", "--all", "--tags", "--prune")
         self.check_branch()
@@ -647,6 +662,8 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Diagnose and repair a maintainer machine.")
     p.add_argument("--fix", action="store_true", help="apply the SAFE repairs (never rewrites history)")
     p.add_argument("--gates", action="store_true", help="also run the full gate sweep (slower)")
+    p.add_argument("--gates-only", action="store_true",
+                   help="run ONLY the gate sweep, skipping machine diagnostics (for CI)")
     p.add_argument("--selftest", action="store_true", help="prove the checks fire and stay silent")
     args = p.parse_args(argv)
 
@@ -656,7 +673,8 @@ def main(argv: list[str] | None = None) -> int:
 
         return st.run()
 
-    return Doctor(fix=args.fix).diagnose(gates=args.gates)
+    return Doctor(fix=args.fix).diagnose(gates=args.gates or args.gates_only,
+                                         gates_only=args.gates_only)
 
 
 if __name__ == "__main__":

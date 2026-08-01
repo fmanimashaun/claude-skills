@@ -1,0 +1,76 @@
+name: Gates
+
+# WHY THIS EXISTS. Until now, every automated check on a pull request in this repo belonged to a
+# THIRD PARTY -- AccessLint and GitGuardian. Our own workflow was `release.yml`, which fires only on
+# a push to `main`, after merge, and whose single check is the `dist/` drift guard. So the 35 gates
+# this repo builds, documents at length, and treats as its safety net ran **nowhere automatically**:
+# they ran when a maintainer remembered to type `maintainer_doctor --gates`.
+#
+# That is the claims-vs-enforcement defect the repo warns about most, sitting in its own
+# infrastructure. CLAUDE.md insists guarantees belong in the deterministic layer; the deterministic
+# layer was a command a human had to remember.
+#
+# Actions is free and unmetered for public repositories, so there was never a cost reason either.
+
+on:
+  pull_request:
+  # `dev` too, not only PRs: a maintainer merging their own PR is the normal path here, and the
+  # merge COMMIT is content no PR run ever tested -- a clean merge of two clean branches can still
+  # break a gate that reads across both.
+  push:
+    branches: [dev]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # `lint_markdown_code.py` shells out to `node --check` and `ruby -c`. Both are preinstalled on
+      # ubuntu-latest, and this step FAILS rather than skipping if either is missing: that linter
+      # reports exit 3 (INCOMPLETE) when an interpreter is absent, the doctor maps 3 to SKIP, and a
+      # skip in CI is indistinguishable from a pass unless something asserts the interpreters exist.
+      - name: Interpreters the gates shell out to
+        run: |
+          set -euo pipefail
+          for bin in node ruby; do
+            command -v "$bin" >/dev/null || { echo "::error::$bin is not on PATH — the markdown code linter would report INCOMPLETE and its findings would be silently skipped."; exit 1; }
+            echo "$bin: $("$bin" --version)"
+          done
+
+      # The gate sweep WITHOUT the machine diagnostics. Those ask about a maintainer's clone --
+      # current branch, stale local `main` ref, `gh` auth, the licensed corpora -- none of which is
+      # meaningful on a runner, and failing on them would teach people to ignore a red build.
+      #
+      # The corpora-dependent gate SKIPs by design when the private repo is absent, which is exactly
+      # a runner's situation. That was built for a maintainer without the kits; CI inherits it free.
+      - name: Gate sweep
+        run: python3 scripts/maintainer_doctor.py --gates-only
+
+      # `dist/` drift is a DIAGNOSTIC rather than a gate, so `--gates-only` does not cover it. It is
+      # checked here too because release.yml checks it only at release time, on `main`, AFTER merge
+      # -- which means a PR that changed a skill without repackaging would go green here and break
+      # the release later, on someone else's clock. Same shape as release.yml's step on purpose: if
+      # you change one, change the other.
+      - name: Committed dist/ is a clean build
+        run: |
+          set -euo pipefail
+          python3 scripts/package_core.py
+          # --porcelain catches tracked modifications AND untracked files, so a brand-new skill whose
+          # dist/*.skill was never committed also trips this (git diff --quiet would miss it).
+          drift="$(git status --porcelain -- dist/)"
+          if [ -n "$drift" ]; then
+            echo "::error::Committed dist/*.skill differs from a clean package_core.py build (or a built artifact is untracked)."
+            echo "Run 'python3 scripts/package_core.py' and commit dist/."
+            printf '%s\n' "$drift"
+            exit 1
+          fi
+          echo "dist/ matches a clean build."
