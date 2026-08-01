@@ -40,6 +40,38 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/interaction_report.py" qa/manual-tests/in
 Both exit 1 on findings, so they gate. Both also report what they could **not** judge — an
 unreachable route, an unexercised control — and neither counts that as clean.
 
+## 4. Visual regression (opt in with `--visual`)
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/crawl_collector.js" --visual --seeded \
+  --base "http://localhost:${PORT:-3000}" --routes / /dashboard --out qa/manual-tests
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/visual_baseline.py" qa/manual-tests/visual.json
+```
+
+**`--seeded` is your assertion, not the tool's.** The collector freezes motion and the clock itself,
+but it cannot seed your fixtures — and without fixed data a pixel diff is a flake generator, which is
+worse than no check because it trains people to ignore the one report that needs eyes. Omit the flag
+and the judge **refuses the run** rather than reporting noise. That is the correct outcome for a
+caller who has not said the data is fixed.
+
+**A screen with no baseline is reported `new` — neither a pass nor a failure.** Treating it as a pass
+would call a brand-new screen visually correct the day it is written, when nothing has been reviewed.
+Treating it as a failure means every new screen breaks the build until someone raises the tolerance
+to zero effect.
+
+**Nothing here writes to `qa/baselines/`.** Candidates land in `qa/baselines/_candidates/`; promoting
+one is your act. An agent that can overwrite a baseline can launder a regression into the new truth
+in a single run.
+
+Tolerances live under a `visual:` block in `qa/qa.config.yml` — a global `max_diff_ratio` and
+per-route overrides, longest matching prefix wins:
+
+```yaml
+visual:
+  max_diff_ratio: 0.002
+  /checkout: 0.0001
+```
+
 ## 4. Theme parity (a separate pass, deliberately)
 
 Theme parity needs **two snapshots of the same route**, which is why it is not part of the crawl
