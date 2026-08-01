@@ -9,6 +9,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`scripts/check_page_pacing.py` — the pacing doctrine's numbers are measured, not asserted**
+  (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92)). *How a page is paced*
+  states a count taken from `coverage.md`, a band range, and a worked sequence whose entire point is
+  that consecutive bands differ. Each is a claim about the repo, and a claim in prose rots silently
+  — the `claims-vs-enforcement` class. Six rules, every one a **join** rather than a taste:
+  `identical-row-count` (the stated 14 re-measured against `coverage.md`), `band-count` (the table
+  against the range printed above it), `unknown-composition` (a band naming no `coverage.md` row),
+  `unknown-tone` (a tone naming no role in `foundations-tokens.md`'s `@theme inline`),
+  `tone-repeat` and `shape-repeat`. `--selftest`: 21 checks, weighted toward **silence** — a
+  checker that fires on our own shipped sequence is one somebody deletes. Registered as two gates
+  (`page pacing`, `page pacing selftest`) and behind **10 declared mutations**, one of which
+  inverts the tone rule so the silence direction is guarded too.
+  **This is deliberately not a design gate.** Nothing in it judges whether a band sequence is any
+  good; it refuses only a number or a name in shipped doctrine disagreeing with the repo — the same
+  shape as `check_shared_shapes.py` and `check_handoff.py`. `unknown-tone` resolves the vocabulary
+  through the token file rather than a hardcoded `{card, background}`, so the section's *"no new
+  token"* promise is enforced in the file that makes it instead of being another prose guarantee.
 - **DECISION — the selftest harness stays one copy per install root; it is not extracted and not
   vendored** (#398). This is an **architecture/distribution decision**, not a framework claim, so
   the authority is the maintainer decision recorded on
@@ -2461,6 +2478,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **fidara-design: `page-anatomies.md` gains *How a page is paced*** (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92),
+  the Phase-5 *template synthesis* issue — its shippable half only; see Repository hygiene for the
+  gate). The defect is **measurable in our own generated data**: **14** of the 16 marketing-section
+  rows in `references/coverage.md` carry a *byte-identical* `Build from` string (the two exceptions
+  are *Marketing header* and *Footer*). Every row is correct alone; followed literally they compose
+  fourteen identical centred stacks separated by equal whitespace — a page right in every part and
+  flat as a whole. The new section ships the missing layer: a **6–8 band** default sequence with
+  three axis columns (Tone · Columns · Width), and the rules that keep consecutive bands from
+  reading the same — tone alternates at every boundary, consecutive bands never share both Columns
+  and Width, edges come from tone rather than a `border-b`, a `card`-tone band carries no
+  `Ui::Card`, one primary *action* at most once per band, decoration in at most two non-adjacent
+  bands. It **composes only from rows that already exist** and introduces no new token, `@utility`,
+  `brand.json` field, archetype or framework syntax.
+  **Change type: design/architecture** — there is no specification for how many bands a marketing
+  page has or in what order, so `doctrine-verifier` would return INCONCLUSIVE for want of a source;
+  authority is the maintainer decision recorded on
+  [#92](https://github.com/fmanimashaun/claude-skills/issues/92#issuecomment-5152577804). Every
+  claim that *does* have a source is cited to the file carrying it (`foundations-tokens.md`
+  → *Elevation idiom*, `visual-assets.md` §8, `motion.md` §14, the *Settings* nested-card rule), and
+  the one number asserted about ourselves is **measured, not asserted** — see the gate below.
+- **The proposal's "exactly one axis moves per boundary" was rejected, and the reason is in the
+  section.** It **contradicts the tone rule outright**: if tone must change at every boundary and
+  only one axis may change, tone is the axis that changes every time, so Columns and Width never
+  change at all — the stricter-sounding rule *is* the flat page. The shipped rule is a floor rather
+  than an equality: never share **both** Columns and Width, which is exactly what the 14 identical
+  rows break, and which a script can decide.
+- **`Landing` now says it is the spine of that sequence, not a second answer.** Its four sections
+  are bands 1, 2, 5 and 7, so the two are one doctrine rather than two that drift.
 - **`fidara-design` — plans/pricing and billing, the second slice of the commerce family** (#91).
   Two page anatomies (**Plans — compare and switch**, **Billing**) plus **Invoice / statement**, which
   is deliberately *not* a fourth anatomy: it is the shipped `Detail` anatomy with the only three
