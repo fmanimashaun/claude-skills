@@ -3407,6 +3407,66 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Computed blast radius** (#134): `plugins/qa-flow/scripts/blast_radius.py` derives the
+  regression scope from the change instead of reasoning it out. `/qa-flow:verify` Phase 2 and
+  `qa-lead` now take its output as the mechanical floor, and every inclusion prints **the edge that
+  justified it** — an unexplained scope list is a different guess, not a derivation.
+  - **Tier 3, deterministic** (`docs/harness-doctrine.md` §1/§10): a script with an exit code, not
+    an instruction an agent may reinterpret. It is a **check, not a hook**, so the advisory-vs-gate
+    question does not arise; the ladder in §4 is walked in full — both-direction selftest, a
+    declared mutation per rule, registered in `GATES`, and three states where a skip is not a pass.
+  - **Change type: architecture (our own design), not a framework claim.** No `doctrine-verifier`
+    verdict was sought and none applies: the artefact shapes it consumes (`{nodes, edges, flows}`,
+    `routes.json`) are ours, and the risk axes it enforces are quoted verbatim from
+    `/qa-flow:verify`'s existing rule rather than invented. The one external claim it leans on —
+    Rails' `app/…` layout and `spec/…`/`test/…` naming — is *reused*, not extended.
+  - **A consumer, not a second extractor** (issue thread, maintainer decision). It reverse-walks
+    the graph `/rails-flow:graph` already emits: `radius(node) = { e.from : e.to == node }`,
+    transitively to `--depth`. One uniform edge direction (subject → object) is what makes an
+    incoming edge mean exactly "who depends on this".
+  - **Not `findings.py`'s graph, deliberately.** v1.54.0's records form a graph over *defects*
+    (`caused_by`/`blocks` between findings, for fix order). Blast radius is a graph over *code*
+    (files/nodes/edges, for test scope). Same idea, disjoint node types — folding one into the
+    other would have meant inventing a synthetic finding per source file, which is a category
+    error, not reuse.
+  - **The convention fallback ships and works with no graph tool installed**, on any Rails
+    project: model → its specs and its conventional controller, controller → its routes and
+    request/system specs, view → its action, migration → its table. When the graph is present but
+    has never heard of a changed file, conventions still cover it and the report says which
+    derivation accounted for each file — a graph that never indexed a file must not make it
+    invisible.
+  - **Integrates with the route table (#119) rather than re-deriving routes.** Route names come
+    from `qa/reports/routes.json` in both modes; a route the graph names and the table does not is
+    **flagged** rather than silently accepted.
+  - **The five risk axes are enforced, not advised.** auth · tenancy · money · migration ·
+    shared-concern force the wide selection and exit 1 ("present for approval"), which is what
+    `/qa-flow:verify` already promised in prose and nothing made true. `qa.config.yml`'s
+    `blast_radius.high_risk` is **additive only** — a key that could empty an axis would make a
+    non-negotiable configurable, and a fixture pins that declaring `migration: []` changes nothing.
+  - **Why this guesses at risk where `route_coverage.py` refuses to guess at auth.** The direction
+    of the error differs: over-crediting coverage fails unsafe (it retires the question),
+    over-including a risk axis fails safe (it widens scope and asks). Every hit prints the pattern
+    that fired it. The `authenticated` graph tag is deliberately *not* a signal — Rails 8's
+    generated auth is opt-out, so it is the default state of every controller, and a classifier
+    that always fires is one a team switches off.
+  - **A floor, never a ceiling.** The extractor is regex-based, so metaprogrammed structure is
+    invisible to it; the graph's own `notes` are reprinted in the report and the rule is printed on
+    every run. Enrichment edges from `graphify`/`code-review-graph` are included and **labelled
+    with the tool**, `--no-enrichment` reproduces a bare-runner walk, and a fixture pins that the
+    **verdict is identical either way** — so a machine-local tool can never make CI and a laptop
+    disagree about whether to stop.
+  - **Nothing narrows silently.** Depth-cutoff drops, non-app files, declared exclusions,
+    conventional spec paths that do not exist, and the Minitest-vs-RSpec narrowing (observed from
+    which directory exists, not guessed) are each printed with a reason — including when the list
+    is empty.
+  - Exit codes 0 clean · 1 findings · 2 unusable, **72 selftest checks** across both directions and
+    **20 declared mutations** in `scripts/mutation_check.py`, all caught. Registered as the
+    `qa-flow blast radius` gate. Deliberately **not** in `plugins/qa-flow/checks.json`: its input is
+    a per-run diff, not a committed artefact, and a project gate that goes red because a PR touched
+    a migration is a gate a team turns off.
+
 ### 1.19.1 — 2026-08-01
 
 Both of these came from the first run against a real Rails app, which is the run no fixture here
