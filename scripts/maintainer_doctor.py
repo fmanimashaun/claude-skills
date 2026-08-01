@@ -162,6 +162,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # doctrine we actually ship. It has already earned it — the first run flagged our own token
     # definitions as raw-hex violations and a comment saying "NOT an arbitrary `rounded-[12px]`".
     ("design-flow tells vs our own doctrine", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--doctrine-selfcheck")),
+    # #160. Only the SELFTEST is a gate: the subject is a USER's variant set, and this repo is a
+    # marketplace, not a Rails app — a gate pointed at `app/views/design_variants` here would SKIP
+    # forever, and a permanent skip reads as a pass. The live check runs in a user's project via
+    # design-flow's `checks.json`, where `applies_when` decides applicability honestly.
+    ("design-flow variant conformance", ("python3", "plugins/design-flow/scripts/variant_conformance.py", "--selftest")),
     # The browser collector is a shipped `.js` FILE, so no markdown linter reads it — the fenced-code
     # checkers only see markdown. Its syntax check therefore lives with it, and SKIPS loudly when
     # node is absent instead of failing the sweep for want of a binary (CORPORA_GATES' reasoning).
@@ -170,6 +175,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # touched it. Note it needs MODULE mode: `crawl_collector.js` is ESM, and plain
     # `node --check <file>` exits 0 on a broken ES module, so the obvious gate could not fail.
     ("qa-flow crawl collector", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--check-collector")),
+    # #158. Both halves registered, for the reason spelled out on the tell-detector above: the
+    # selftest proves each rule fires and stays silent on fixtures, the bare run asserts the four
+    # SHIPPED skills actually route to every one of their 42 reference files. Only the second could
+    # have caught `fidara-design/references/coverage.md` sitting at depth 2, which it did.
+    ("skill routing", ("python3", "scripts/check_skill_routing.py")),
+    ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
     # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the

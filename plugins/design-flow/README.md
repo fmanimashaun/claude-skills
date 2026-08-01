@@ -20,6 +20,13 @@ across projects **without a designer or Figma**, by applying the **fidara-design
 - `/design-flow:component <name>` — author (or refactor) a UI component per the system: compose
   layout primitives + semantic role tokens, apply the `variant × size × state` vocabulary, add
   the a11y checklist and the prescribed responsive behavior.
+- `/design-flow:variants <brief> [--variants N]` — **N brand-conformant compositions of one
+  brief** (default 3) plus a dev-only switcher route to compare them live in the real app. For
+  briefs with many defensible answers (a hero, a pricing page, a landing section), where one
+  output invites a yes/no — which tends to become yes. Variants differ in **composition only**:
+  same tokens, same components, same API, asserted by `variant_conformance.py` rather than by
+  inspection. It is not a style menu, and picking one deletes the rest and the switcher.
+  Reachable as `--variants N` on `/design-flow:component`.
 - `/design-flow:audit [path]` — flag UI drift against the system: raw/brand colors in component
   code, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus
   ring / ARIA, non-`min-h-touch` targets, hand-rolled layout CSS.
@@ -51,6 +58,14 @@ across projects **without a designer or Figma**, by applying the **fidara-design
 - **`setup_doctrine_crosscheck.py`** — catches doctrine that reads a config key `/design-flow:setup`
   never generates. A toolchain check, not a project one.
 - **`brand_pack_lint.py`** — validates a brand pack's completeness.
+- **`variant_conformance.py`** — ten named rules over a variant set (`--list-rules`). It **runs**
+  the LLM-tell detector per variant rather than reimplementing it, and adds what a context-free
+  scan cannot have: a variant bringing its own CSS or custom properties, a variant naming a
+  **pack-private primitive** instead of a role token (that one needs the pack, so it needs a
+  parameter the detector is never given), two variants with an identical composition signature,
+  a missing rationale, and a switcher route reachable outside development. `--verify-discard`
+  proves the scaffolding is gone once a variant is chosen, because an un-run discard step looks
+  exactly like a completed one.
 - **`rendered_conformance.py`** — the browser half: what the cascade actually computed. Needs
   Playwright and a booted app, so it runs on demand rather than per edit.
 

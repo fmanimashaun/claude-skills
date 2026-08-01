@@ -89,6 +89,12 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the wiring rule stops noticing a flow that never calls claim-verifier",
+                '        if "claim-verifier" not in body:',
+                "        if False:",
+                "a flow that never names claim-verifier",
+            ),
+            Mutation(
                 "the schema-parity rule stops noticing an undocumented field",
                 "        missing = sorted(f for f in fields if f not in documented)",
                 "        missing = []",
@@ -137,9 +143,15 @@ GUARDS: tuple[Guard, ...] = (
                 "bleed into each other",
             ),
             Mutation(
-                "corpora no longer pruned from the walk",
+                "agent worktrees are no longer pruned, so a sweep reads other agents' copies",
+                ', "design-corpora", "worktrees"}',
                 ', "design-corpora"}',
-                "}",
+                "another agent's copy",
+            ),
+            Mutation(
+                "corpora no longer pruned from the walk",
+                '"design-corpora", "worktrees"}',
+                '"worktrees"}',
                 "not ours to enforce",
             ),
             Mutation(
@@ -1086,8 +1098,8 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "an undeterministic run is judged instead of refused",
-                '    missing = [k for k in ("reducedMotion", "frozenClock", "seededData") if not d.get(k)]',
-                '    missing = []',
+                "    missing = [k for k in DETERMINISM_KEYS if not d.get(k)]",
+                "    missing = []",
                 "motion not frozen",
             ),
             Mutation(
@@ -1095,6 +1107,34 @@ GUARDS: tuple[Guard, ...] = (
                 '        if route.startswith(pattern) and len(pattern) > best:',
                 '        if route.startswith(pattern) :',
                 "the longest matching prefix wins",
+            ),
+            # The ignore-region half of #112. `ignored` shipped in the schema, emitted as a
+            # hardcoded `[]` and read by nobody, so the field existed and the feature did not.
+            # These three break the parts that make it real rather than declared.
+            Mutation(
+                "the mask a config demands is trusted instead of verified against the run",
+                "        if want != got:",
+                "        if False:",
+                "a mask the config demands but the run never applied is refused",
+            ),
+            Mutation(
+                "a per-route mask REPLACES the global list instead of adding to it",
+                '    out = list(visual.get("ignore") or [])',
+                "    out = []",
+                "a per-route mask ADDS to the global list",
+            ),
+            Mutation(
+                "an unreadable line in the visual block is skipped and silently defaulted",
+                "        raise Unusable(_unreadable(path, lineno, raw))",
+                "        continue",
+                "an unreadable tolerance is refused, not silently defaulted",
+            ),
+            Mutation(
+                "a regression reports its ratio without the diff image",
+                '            picture = shot.get("diff") or "(none written: the collector produced '
+                'no diff image)"',
+                '            picture = "(none)"',
+                "a regression names its diff image",
             ),
         ),
     ),
@@ -1547,6 +1587,87 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # design-flow #160. THREE of these ten are caught by a fixture whose job is to stay SILENT, and
+    # those are the ones worth having: this check stands between an agent and a user's repo, and
+    # every rule it carries has an obvious over-broad form. `bg-primary` is a role token AND a
+    # string ending in a primitive's suffix; an ERB comment naming `--color-x:` is prose AND a
+    # custom-property declaration; `# do not remove` is a comment AND a line ending in `do`. Flag
+    # the wrong half of any pair and variant mode reports findings on every correct set it is
+    # given, which is how a checker gets switched off wholesale.
+    Guard(
+        name="variant_conformance",
+        subject="plugins/design-flow/scripts/variant_conformance.py",
+        selftest="plugins/design-flow/scripts/variant_conformance.py",
+        # It RUNS the #157 detector rather than reimplementing it, and the detector in turn imports
+        # `rendered_conformance` for the shared palette-step definition. Without both, every mutant
+        # dies at import and reads as "caught" by a traceback instead of by the fixture named below.
+        needs=("plugins/design-flow/scripts/llm_tell_detector.py",
+               "plugins/design-flow/scripts/rendered_conformance.py",
+               "plugins/design-flow/scripts/conformance_collector.js"),
+        mutations=(
+            Mutation(
+                "the role layer is read as primitives, so every conformant variant is a finding",
+                "        if opening.group(1):",
+                "        if False:",
+                "role tokens are NOT flagged as primitives",
+            ),
+            Mutation(
+                "an ERB comment naming a custom property becomes a styling violation",
+                "        if tells.COMMENT_LINE.match(line):\n            continue\n"
+                "        for pattern, what in STYLING:",
+                "        if False:\n            continue\n        for pattern, what in STYLING:",
+                "a comment naming a custom property is NOT a finding",
+            ),
+            Mutation(
+                "an unresolvable pack becomes a silent skip instead of a finding",
+                "    if not theme:",
+                "    if False:",
+                "an unresolvable pack is a finding, not a skip",
+            ),
+            Mutation(
+                "the distinctness rule stops noticing two variants with one arrangement",
+                "        twin = signatures.get(signature)",
+                "        twin = None",
+                "two variants differing only in copy fire",
+            ),
+            Mutation(
+                "a set of one passes, so variant mode degenerates to the yes/no it replaces",
+                "    if len(entries) < 2:",
+                "    if len(entries) < 1:",
+                "a set of one fires",
+            ),
+            Mutation(
+                "the rationale requirement is dropped and the choice becomes aesthetic again",
+                '        if not str(entry.get("rationale") or "").strip():',
+                "        if False:",
+                "a blank rationale fires",
+            ),
+            Mutation(
+                "the undeclared-partial direction is dropped, so discard misses a leftover",
+                '        if entry == MANIFEST or entry in declared or not entry.endswith(".erb"):',
+                "        if True:",
+                "an undeclared partial in the set fires",
+            ),
+            Mutation(
+                "the route tracker stops popping, so a CLOSED dev block launders a later route",
+                "        if _CLOSES.match(line) and stack:",
+                "        if False and stack:",
+                "a closed development block does not launder a later route",
+            ),
+            Mutation(
+                "an empty scaffolding directory reads as a clean pass",
+                "    if not set_dirs:",
+                "    if False:",
+                "an empty variants directory is fatal too",
+            ),
+            Mutation(
+                "comments re-enter the route tracker, so `# do` unbalances the stack",
+                '        if line.lstrip().startswith("#"):\n            continue',
+                "        if False:\n            continue",
+                "a comment does not unbalance the block tracker",
+            ),
+        ),
+    ),
     # rails-flow #127 + the rails-flow half of #128. FOUR of these seven break a fixture whose job
     # is to stay SILENT, because a work order is ordinary prose about files and tests: `<...>` is a
     # placeholder AND an HTML tag, "above" is the conversation AND the table three lines up, `TODO`
@@ -1617,6 +1738,48 @@ GUARDS: tuple[Guard, ...] = (
                 'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b")',
                 'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b", re.I)',
                 "the word todo in prose",
+            ),
+        ),
+    ),
+    # #158. The routing regex is the mutation that matters here. Its whole job is telling a real
+    # dispatch entry apart from prose that happens to name the file, and getting that wrong in the
+    # LOOSE direction is silent: every reference looks routed and the gate reports clean forever.
+    # That is precisely how `fidara-design/references/coverage.md` hid at depth 2 while two other
+    # reference files name it in passing.
+    Guard(
+        name="check_skill_routing",
+        subject="scripts/check_skill_routing.py",
+        selftest="scripts/check_skill_routing.py",
+        mutations=(
+            Mutation(
+                "the `references/` anchor becomes optional, so prose naming a file counts as routing",
+                'REF_PATH_RE = re.compile(r"(?:\\./)?references/([A-Za-z0-9._-]+\\.md)")',
+                'REF_PATH_RE = re.compile(r"(?:\\./)?(?:references/)?([A-Za-z0-9._-]+\\.md)")',
+                "a bare prose mention is NOT routing",
+            ),
+            Mutation(
+                "the unrouted rule stops reporting, so an orphaned reference is clean",
+                "    for missing in sorted(present - routed):",
+                "    for missing in []:",
+                "an unrouted reference is a finding",
+            ),
+            Mutation(
+                "the dead-link rule stops reporting, so a router pointing at nothing is clean",
+                "    for dead in sorted(routed - present):",
+                "    for dead in []:",
+                "a dead reference link is a finding",
+            ),
+            Mutation(
+                "the Level-2 budget goes off-by-one and fires on a compliant 500-line body",
+                "    if line_count > MAX_SKILL_LINES:",
+                "    if line_count >= MAX_SKILL_LINES:",
+                "a body exactly AT the budget is silent",
+            ),
+            Mutation(
+                "a skill directory with no SKILL.md becomes a silent skip instead of an error",
+                '        raise Unreadable(f"{name}/: no SKILL.md")',
+                "        return [], 0",
+                "skipped instead of raising",
             ),
         ),
     ),
