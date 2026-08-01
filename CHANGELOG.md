@@ -3259,7 +3259,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.17.0 — 2026-08-01
 
 - **Dead controls are caught now** (#105, criterion 4). Everything nearby judges a control by how it
   **looks** — `icon-only-unnamed` wants a name, `focus-ring-missing` wants a focus style,
@@ -4738,6 +4738,41 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.49.0)
+
+> ### Three defects nothing else in the toolchain could see
+>
+> Each of these is invisible to every existing rule **by construction**, which is why they needed
+> their own judges rather than another threshold on an existing one:
+>
+> - a route returning **200** while rendering its 500 template — survives every status check ever
+>   written, and is the normal shape behind a `rescue_from`;
+> - a page that is **individually conformant in both themes** and unreadable in one — every other
+>   rule judges a single rendering, so the defect is the *difference*;
+> - a control that is **named, focusable, correctly marked up and inert** — it satisfies every rule
+>   that judges appearance, and only using it reveals anything.
+>
+> `qa-flow` changed; every other component is byte-identical.
+
+- **Route crawl judged** — non-2xx, redirects the crawl did not follow, console errors, failed
+  requests, and the 200-but-error case the file exists for. A page *about* errors is not an error
+  page, so markers match the title and H1 only and "Error handling guide" stays silent — fixtured.
+- **Theme parity judged** — `contrast-regression`, `vanished`, `colour-frozen`. **The XOR is the
+  whole rule**: a page equally bad in *both* themes belongs to `rendered_conformance.py`, and
+  reporting it here would double-count. It consumes design-flow's snapshot and does not re-run its
+  rules — one rule, one owner.
+- **Dead controls judged** — the exclusions are the design, because a false positive on a working
+  button is what gets a rule switched off. A `disabled` control doing nothing is correct; a link with
+  an `href` navigates; an anchor *without* one navigates nowhere and is exactly the dead control
+  worth catching.
+- **In all three: a thing that was not verified is never counted as clean.** An unreachable route, an
+  unexercised control and an unusable input file are each named on every run. An empty crawl
+  reporting zero findings would be indistinguishable from a healthy app.
+- **Six defects in this release's own fixtures were caught by mutation, not by reading** — including
+  two fixtures derived from the very constant they were testing (removing the key deleted the
+  assertion that would have named it) and an unguarded index that made a mutant **crash** before any
+  labelled assertion could report. A crash is not a verdict.
 
 ### 2026-08-01 (release v1.48.0)
 
