@@ -26,8 +26,11 @@ much duplication exists; it does not say how much of it a shared module could ev
 plugin is a separate `source:` in `marketplace.json` and every plugin script is invoked through
 `${CLAUDE_PLUGIN_ROOT}`, which resolves to that plugin's own root -- so a copy can only be shared
 with copies under the SAME root. `reach` is therefore the size of the largest single install root
-holding the shape: the ceiling on what any extraction is worth. #398 was answered with it (12
-harness copies, reach 5), and the ceiling is the number that would move if someone added a copy.
+holding the shape: the ceiling on what any extraction is worth. #398 was answered with it -- the
+harness row's two columns are far apart, and it is the CEILING that moves when someone adds a copy
+somewhere new. (Deliberately no digits here. This module is the arbiter for those numbers; quoting
+them in its own docstring would create a second copy with nothing reading it, which is the class
+the checker exists to refuse. The table is the only place they live.)
 
 Exit codes:  0 the doctrine matches the repo · 1 it does not · 2 the doc could not be read
 
