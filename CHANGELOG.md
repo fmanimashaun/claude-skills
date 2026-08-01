@@ -7,6 +7,28 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+
+### Unreleased
+
+- **FIX — `design-flow` was missing from the README's install block** (#203, second occurrence).
+  It is in `marketplace.json`, named **four times** in the README, and had **no
+  `/plugin install design-flow@claude-skills` line** — so anyone following the install steps got
+  four of five plugins and never learned the fifth existed. Its `/design-flow:setup` was missing
+  from the setup ordering too. Found by a maintainer asking for the install commands.
+- **NEW `uninstallable-plugin` rule**, because this is the second time. The existing
+  `undocumented-plugin` rule stayed **green** throughout, exactly as its own docstring predicts:
+  *"it proves the name appears SOMEWHERE in the file, not that it appears in the list that
+  enumerates what ships"*, and four prose mentions satisfied it.
+  - That docstring also explains why it was left loose — locating a prose *section* needs judgement
+    about where a section begins, which is how a mechanical rule turns noisy. **An install command
+    is not a section.** `/plugin install <name>@` is a fixed pattern, so "this plugin has no install
+    line" is decidable with no judgement at all, and the trap the looser rule documents does not
+    apply.
+  - Proven to add coverage rather than duplicate: with the line deleted, the new rule fires and
+    `undocumented-plugin` stays silent. Three fixtures including the near-miss that matters — **prose
+    naming the plugin does not satisfy it**, or it would be the looser rule again under a new name.
+    One declared mutation. Self-consistency assertions 70 → **73**.
+
 ### 2026-08-01 — the gates finally run somewhere
 
 - **FIX — the publish was not gated, which is the branch that matters.** `gates.yml` shipped hours

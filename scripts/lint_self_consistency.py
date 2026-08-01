@@ -676,6 +676,41 @@ def check_v4_outline_none() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_uninstallable_plugins() -> tuple[list[Finding], int]:
+    """Every declared plugin needs an actual `/plugin install` line in the README.
+
+    `check_undocumented_plugins` above proves a plugin is named SOMEWHERE, and its own docstring is
+    explicit that this is not the same as being in the list that enumerates what ships -- locating a
+    prose section needs judgement, which is how a mechanical rule turns noisy.
+
+    An install COMMAND needs no such judgement. `/plugin install <name>@` is a fixed pattern, so
+    "this plugin has no install line" is decidable without deciding where a section begins.
+
+    It shipped: `design-flow` was in the manifest, named four times in the README, and **absent from
+    the install block** -- so anyone following the README installed four of five plugins and never
+    learned the fifth existed. The looser rule stayed green precisely because the name appeared in
+    nearby prose, which is the boundary its docstring predicts.
+    """
+    manifest = ROOT / ".claude-plugin" / "marketplace.json"
+    readme = ROOT / "README.md"
+    if not manifest.is_file() or not readme.is_file():
+        return [], 0
+    try:
+        payload = json.loads(read(manifest))
+    except json.JSONDecodeError:
+        return [], 0
+    names = [p["name"] for p in payload.get("plugins", []) if isinstance(p, dict) and "name" in p]
+    body = read(readme)
+    findings = []
+    for name in names:
+        if not re.search(rf"/plugin\s+install\s+{re.escape(name)}@", body):
+            findings.append(Finding(
+                "uninstallable-plugin", rel(readme), 1,
+                f"`{name}` is declared in marketplace.json but has no `/plugin install {name}@…` "
+                "line in the README -- a reader following the install block never gets it"))
+    return findings, len(names)
+
+
 def check_invisible_characters() -> tuple[list[Finding], int]:
     """No invisible or confusable whitespace in anything we ship."""
     findings: list[Finding] = []
@@ -779,6 +814,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
     pointers, pointers_examined = check_doc_pointers()
+    uninstallable, plugins_installable = check_uninstallable_plugins()
     outlines, outlines_examined = check_v4_outline_none()
     coverage = {
         "python_modules": len(python_sources),
@@ -789,11 +825,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "doc_pointers_examined": pointers_examined,
+        "plugins_checked_for_install_lines": plugins_installable,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers + outlines,
+            + pointers + outlines + uninstallable,
             coverage)
 
 
@@ -1143,6 +1180,27 @@ def selftest() -> int:
                     "ActiveRecord::Base.with_connection { |c| c.execute(sql) }\n"
                     "chat.with_instructions(\"be terse\").with_temperature(0.2)\n"
                     "  .with_tool(Weather).with_schema(Schema)\n```\n"})
+
+    # ---- uninstallable-plugin ------------------------------------------------------
+    # The defect that shipped: design-flow was in the manifest, named FOUR times in the README, and
+    # absent from the install block. The looser `undocumented-plugin` rule stayed green because of
+    # those prose mentions -- which is exactly the boundary its own docstring predicts.
+    UP = "uninstallable-plugin"
+    MANIFEST = '{"plugins": [{"name": "rails-flow"}, {"name": "design-flow"}]}'''
+    scenario("a declared plugin with no install line", rule=UP, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "README.md": "Use design-flow for UI work.\n\n"
+                                 "```\n/plugin install rails-flow@claude-skills\n```\n"})
+    scenario("every declared plugin has one", rule=UP, expect_finding=False,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "README.md": "```\n/plugin install rails-flow@claude-skills\n"
+                                 "/plugin install design-flow@claude-skills\n```\n"})
+    # NEAR MISS: prose naming the plugin is NOT an install line. This is the whole point of the
+    # rule -- if a mention satisfied it, it would be the looser rule again under a new name.
+    scenario("prose mentioning the plugin does not satisfy it", rule=UP, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "README.md": "design-flow ships tokens. Install design-flow to use it.\n"
+                                 "```\n/plugin install rails-flow@claude-skills\n```\n"})
 
     # ---- v4-outline-none (#305) ----------------------------------------------------
     # A rename that kept the old spelling alive with the opposite meaning: v3's `outline-none` was
