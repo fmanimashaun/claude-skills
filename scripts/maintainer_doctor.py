@@ -156,6 +156,15 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.
     ("project gates", ("python3", "plugins/rails-flow/scripts/project_gates.py", "--selftest")),
+    # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
+    # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
+    # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,
+    # so five checks across two plugins were permanent silent skips — a gate that cannot fail,
+    # inside the manifest that registers the gates. Registered as both halves for the reason the
+    # tell-detector above states: the selftest proves the rules fire and stay silent on fixtures,
+    # the bare run asserts the SHIPPED manifests agree with the plugins that ship them.
+    ("checks.json paths", ("python3", "scripts/check_manifest_paths.py")),
+    ("checks.json paths selftest", ("python3", "scripts/check_manifest_paths.py", "--selftest")),
     # #299: every plugin's tier table reconciled against its OWN shipped agents. The selftest above
     # proves the checker works; these prove the four SHIPPED tables are true. Without them a table is
     # doctrine nothing enforces — which is the exact state #127 found rails-flow's pins in, and the
