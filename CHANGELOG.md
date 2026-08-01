@@ -2325,6 +2325,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.30.0 — 2026-08-01
 
+- **`brand.md` — how to start a pack when the client has no palette** (#129). A decision path, not
+  a gallery: logo colour → does the product recede → hue family → formality, stop at the first
+  answer. Plus the snap path for a client who *does* have brand colours, and the statement the
+  issue asked for plainly — this is **a starting point for client onboarding, not a style menu**.
+  **Change type: design/architecture** (the brand-pack model has no upstream); authority is the
+  maintainer decision on [#129](https://github.com/fmanimashaun/claude-skills/issues/129).
+- **The contrast bar in that section is externally verifiable and cited, not asserted.** 4.5:1 per
+  WCAG 2.2 SC 1.4.3 (Level AA), with the 3:1 allowance correctly scoped to large-scale text
+  (≥18pt / ≥14pt bold): https://www.w3.org/TR/WCAG22/#contrast-minimum. It also records what is
+  **not** gated and why: SC 1.4.11 requires 3:1 only of information *required* to identify a
+  component, and its Understanding note states that a control with visible content needs no
+  boundary indication — so gating `--border`/`--input` on a flat ratio would be stricter than the
+  spec, and a rule stricter than the spec is a rule people switch off.
+  https://www.w3.org/TR/WCAG22/#non-text-contrast ·
+  https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html
+
+
 - **`bin/ci` was doctrine's "whole gate" and ran zero specs** (#391). The skill mandates
   `--skip-test`, and Rails wraps every test step in its generator template in
   `<% unless options[:skip_test] -%>`
@@ -5818,24 +5835,6 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
-
-- **`brand.md` — how to start a pack when the client has no palette** (#129). A decision path, not
-  a gallery: logo colour → does the product recede → hue family → formality, stop at the first
-  answer. Plus the snap path for a client who *does* have brand colours, and the statement the
-  issue asked for plainly — this is **a starting point for client onboarding, not a style menu**.
-  **Change type: design/architecture** (the brand-pack model has no upstream); authority is the
-  maintainer decision on [#129](https://github.com/fmanimashaun/claude-skills/issues/129).
-- **The contrast bar in that section is externally verifiable and cited, not asserted.** 4.5:1 per
-  WCAG 2.2 SC 1.4.3 (Level AA), with the 3:1 allowance correctly scoped to large-scale text
-  (≥18pt / ≥14pt bold): https://www.w3.org/TR/WCAG22/#contrast-minimum. It also records what is
-  **not** gated and why: SC 1.4.11 requires 3:1 only of information *required* to identify a
-  component, and its Understanding note states that a control with visible content needs no
-  boundary indication — so gating `--border`/`--input` on a flat ratio would be stricter than the
-  spec, and a rule stricter than the spec is a rule people switch off.
-  https://www.w3.org/TR/WCAG22/#non-text-contrast ·
-  https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html
-
 ### 1.15.0 — 2026-07-29
 - **First increment of Phase 2**, honouring that issue's own instruction to ship one group at a time
   rather than all ~17 components at once.
@@ -6296,6 +6295,16 @@ boot/validation path — with a bullet each so the promotion could close them se
   escapes as an uncaught page error rather than through Stimulus' handler, and a missing
   default event is dropped **silently** rather than throwing — written as reported we would
   have promised a visible error where the real behaviour is silence.
+- **Palette + type-pairing candidates for brand packs** (#129), and the measuring found two live
+  contrast defects: the **fidara pack itself** still carried both #304 defects — `--primary` at
+  4.42:1 and white-on-electric at **2.73:1** on every dark-mode primary button — because #304
+  was fixed in the doctrine file and nowhere else, and the gate read one hardcoded path, so it
+  reported clean over the file that was already right while the pack users install kept the
+  defect. `_template`, the file every client pack is copied from, failed three pairs. Both
+  fixed, and the gate's **input** widened so an empty glob is now a hard error.
+- **A citation refuted our own code**: the sRGB linearisation breakpoint is `0.04045`, and we
+  carried WCAG 2.0's `0.03928`. Corrected, and the difference proved immaterial across all 256
+  8-bit channels rather than asserted so.
 - Gate sweep **44 → 55**. Self-consistency selftest 98 → 105 assertions.
 
 ### 1.55.0 — 2026-08-01
