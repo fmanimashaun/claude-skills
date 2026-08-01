@@ -1178,6 +1178,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **One CI entry point a Rails project can actually run** (#334). The plugins shipped **eleven**
+  checks that run against a *user's* repo and **no way to run them together** — a user had to know
+  each script existed, know which applied, and invoke each by hand, which in practice meant an agent
+  ran them when it remembered. New `project_gates.py`, plus a `checks.json` per plugin so a check
+  **registers itself** and the runner hardcodes nothing.
+  - **Four states, not two: pass / FAIL / not-applicable / ERROR.** A project with no `qa/` reports
+    the evidence checks as **not applicable**, printed loudly every run with the reason — a repo with
+    zero evidence must not go the same green as a repo with complete evidence.
+  - **A missing dependency FAILS rather than skipping**, because in CI a skip is indistinguishable
+    from a pass. For the same reason `rendered_conformance.py` is deliberately **not** registered:
+    it needs Playwright, which is the user's dependency, and a gate that quietly skips without a
+    browser is worse than no gate.
+  - **`setup-flow` §8 scaffolds it into the project's own `dev → main` CI** as an approved diff, and
+    insists the deploy job declares `needs: doctrine`. A parallel job is *advisory* — it can go red
+    after the deploy — which is a check that reports rather than a gate that stops.
+  - **§8's rationale is corrected.** It justified scoping CI down partly with *"local hooks + qa-flow
+    already proved it for feature → dev"*. That was an assumption, not a guarantee: if the agent did
+    not run qa-flow, nothing proved anything. The Actions-minutes argument stands alone and stays.
+  - **Two defects in my own work, both caught by mutating rather than reading.** I declared
+    `evidence_manifest.py` with no arguments — it requires a subcommand, so it exited on a usage
+    error; the runner correctly reported FAIL, but nothing would have caught the *manifest* before a
+    user's first run. The assertion I added for it was then **vacuous** (`--help` exits 0 whether or
+    not a subcommand is required) and only surfaced by re-introducing the bug and watching it pass.
+    Its replacement reads the usage block for a subparser group, and was narrowed after it fired a
+    **false positive** on `architecture_graph.py`'s `{json,md}` — a `--format` choice list, not a
+    subcommand. A rule that fires on a correct manifest gets deleted, so the pattern was narrowed
+    rather than the finding excused.
+
 ### 1.14.2 — 2026-08-01
 
 - **FIX — a bare doc pointer is invisible to the lint.** `setup-flow` cited the rails-8 skill's

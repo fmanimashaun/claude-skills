@@ -1,0 +1,43 @@
+{
+  "plugin": "rails-flow",
+  "comment": [
+    "Checks this plugin can run against a USER'S repo, for project_gates.py to discover.",
+    "A plugin declares its own; the runner never hardcodes a list, so adding a check here is the",
+    "whole registration step and a new plugin needs no change to the runner.",
+    "",
+    "applies_when: every path must exist in the user's repo, or the check reports NOT APPLICABLE",
+    "with that reason. An empty list means it always applies. Not-applicable is never a pass.",
+    "requires: executables that must be on PATH. Missing is a FAILURE, not a skip -- in CI a skip",
+    "is indistinguishable from a pass unless something asserts the dependency is there."
+  ],
+  "checks": [
+    {
+      "id": "acceptance-criteria",
+      "why": "Acceptance criteria that cannot fail grade nothing.",
+      "command": ["python3", "{plugin}/scripts/check_criteria.py", "{match:docs/acceptance/*.md}"],
+      "applies_when": ["docs/acceptance"],
+      "requires": ["python3"]
+    },
+    {
+      "id": "work-order",
+      "why": "A work order an executor cannot run from is not self-contained.",
+      "command": ["python3", "{plugin}/scripts/check_handoff.py", "{match:docs/handoff/*.md}"],
+      "applies_when": ["docs/handoff"],
+      "requires": ["python3"]
+    },
+    {
+      "id": "human-guide",
+      "why": "A guide whose steps nobody can re-run is a sentiment.",
+      "command": ["python3", "{plugin}/scripts/check_guide.py", "{match:docs/guides/*.md}"],
+      "applies_when": ["docs/guides"],
+      "requires": ["python3"]
+    },
+    {
+      "id": "architecture-graph-drift",
+      "why": "The graph is regenerated at session end; a stale one describes an app that no longer exists.",
+      "command": ["python3", "{plugin}/scripts/architecture_graph.py", "--check"],
+      "applies_when": ["app", "docs/architecture.md"],
+      "requires": ["python3"]
+    }
+  ]
+}

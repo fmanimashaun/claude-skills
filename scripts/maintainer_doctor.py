@@ -124,6 +124,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
     # also catches an agent's `model:` drifting from the doctrine that documents it (#127).
     ("rails-flow work order", ("python3", "plugins/rails-flow/scripts/check_handoff.py", "--selftest")),
+    # #334. Its selftest also validates every SHIPPED checks.json -- that each names a real
+    # script and supplies a required subcommand -- so a manifest defect fails here rather
+    # than on a user's first run.
+    ("project gates", ("python3", "plugins/rails-flow/scripts/project_gates.py", "--selftest")),
     # #299: every plugin's tier table reconciled against its OWN shipped agents. The selftest above
     # proves the checker works; these prove the four SHIPPED tables are true. Without them a table is
     # doctrine nothing enforces — which is the exact state #127 found rails-flow's pins in, and the
