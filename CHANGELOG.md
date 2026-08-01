@@ -3259,6 +3259,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The three judges shipped in 1.17.0 now have something that feeds them** (#105). They landed with
+  a `--schema` and **no collector** — usable in principle and unusable in practice, which is a gap
+  worth naming rather than glossing: a judge nobody can feed is a judge nobody runs.
+  - **`crawl_collector.js`** produces both documents in one pass, and **measures only**: it cannot be
+    unit-tested without a browser, so it holds no rule. A rule there would be a rule with no fixture
+    and no mutation guard. It records facts; the Python argues about them.
+  - **`/qa-flow:crawl`** wires it up, reads the project's own `app:` block rather than inventing a
+    boot command, and takes routes from `qa/routes.json` — crawling a hand-typed list is how a route
+    nobody remembered stays untested forever. It performs **no git operations**.
+  - **A collector and its judge are separate files in separate languages, so nothing stopped them
+    drifting.** Both judges now cross-check the shipped collector against their own schema, including
+    every effect kind — a collector that quietly stops emitting a field would make the rule reading
+    it go **silent rather than fail**. Proven by renaming `h1` to `h1x` and watching the selftest
+    catch it.
+  - Two false positives in that check were fixed before it shipped: object **shorthand** (`{ route }`
+    is `route: route`) had to count, and the effect-kind check was stricter than the field check
+    beside it for no reason.
+  - **The command says what it does not do, and where each thing lives instead** — layout and tap
+    targets to `rendered_conformance.py`, a11y to `a11y-auditor`, coverage to `route_coverage.py`.
+    That list is the duplicate-mechanism guard written down where the next author will read it.
+
 ### 1.17.0 — 2026-08-01
 
 - **Dead controls are caught now** (#105, criterion 4). Everything nearby judges a control by how it
