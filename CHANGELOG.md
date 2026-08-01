@@ -3261,6 +3261,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Dead controls are caught now** (#105, criterion 4). Everything nearby judges a control by how it
+  **looks** — `icon-only-unnamed` wants a name, `focus-ring-missing` wants a focus style,
+  `aria-controls-no-expanded` wants the state attribute. A control can satisfy all three and **still
+  do nothing when clicked**: a button whose Stimulus controller failed to register, or whose target
+  selector no longer matches. Named, focusable, correctly marked up, and inert.
+  - **The exclusions are the design**, because a false "dead control" on a working button is the
+    finding that gets a rule switched off. A `disabled` control doing nothing is *correct*; a link
+    with an `href` navigates, which a sweep staying on the page cannot observe, and flagging it would
+    put every link on the site in the report. An anchor **without** an href is still judged — it
+    navigates nowhere, and is exactly the dead control worth catching.
+  - What counts as an effect is deliberately broad — DOM mutation, navigation, a request, a focus
+    move, an ARIA state flip, a dialog opening. A declared mutation drops one of those and proves a
+    working control then reports dead.
+  - **A control that was never activated is not a working control** — named every run, never counted
+    as passing.
+  - **Three defects in my own fixtures, all caught by mutation rather than reading.** The effect-kind
+    fixture looped over `EFFECT_KEYS` itself, so removing a key deleted the assertion that would have
+    named it — a fixture derived from its subject cannot witness that subject shrinking; it is a
+    literal list now. And an unguarded `[0]` made the mutant **crash** before any labelled assertion
+    reported, which the checker correctly refused as a coincidental catch: a crash is not a verdict.
+
 - **Theme-only failures are caught now** (#105, criterion 3). Every other rule in this toolchain
   judges **one** rendering, so a theme-only defect is invisible to all of them by construction: each
   snapshot is individually conformant, and the defect is the *difference*.

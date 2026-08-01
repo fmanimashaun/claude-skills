@@ -933,6 +933,34 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #105 criterion 4. Two of these break the rule by making it fire MORE, which is the
+    # direction that gets a rule switched off: a false 'dead control' on a working button is
+    # worse than no rule at all.
+    Guard(
+        name="interaction_report",
+        subject="plugins/qa-flow/scripts/interaction_report.py",
+        selftest="plugins/qa-flow/scripts/interaction_report.py",
+        mutations=(
+            Mutation(
+                "an effect kind is dropped, so a working control reports dead",
+                'EFFECT_KEYS = ("domChanged", "navigated", "requested", "focusMoved", "ariaChanged", "dialogOpened")',
+                'EFFECT_KEYS = ("navigated", "requested", "focusMoved", "ariaChanged", "dialogOpened")',
+                "domChanged counts as an effect",
+            ),
+            Mutation(
+                "the href exclusion goes, so every link on the site reports dead",
+                '        return "link with href — navigation is its effect and is not observed here"',
+                '        pass',
+                "a link with href is not dead",
+            ),
+            Mutation(
+                "an unexercised control is judged instead of named",
+                '        if not control.get("exercised", False):',
+                '        if False:',
+                "an unexercised control is not judged clean",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
