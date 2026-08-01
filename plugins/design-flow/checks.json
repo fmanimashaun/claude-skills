@@ -1,0 +1,18 @@
+{
+  "plugin": "design-flow",
+  "comment": [
+    "Checks design-flow can run against a USER'S repo. Format documented in rails-flow/checks.json.",
+    "rendered_conformance.py is deliberately absent: it needs a browser, which is the user's",
+    "dependency. A gate that skips when Playwright is missing reads as a pass, so it stays in the",
+    "agent-driven browser pass where its absence is visible."
+  ],
+  "checks": [
+    {
+      "id": "brand-pack",
+      "why": "An incomplete brand pack fails at render time, in the client's colours.",
+      "command": ["python3", "{plugin}/scripts/brand_pack_lint.py", "--quiet"],
+      "applies_when": ["app/assets/stylesheets/brand"],
+      "requires": ["python3"]
+    }
+  ]
+}
