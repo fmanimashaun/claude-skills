@@ -2082,6 +2082,49 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Kamal's local registry is opt-in, not the default — `deployment-kamal.md` told agents to skip
+  registry setup and broke the first deploy** (#389). §4 claimed Kamal 2.8 "by default … spins up a
+  local registry" and that you can therefore "skip registry setup entirely"; `:72` marked the whole
+  `registry:` block "optional since Kamal 2.8". All false. Kamal's default registry is Docker Hub —
+  *"The default registry is Docker Hub, but you can change it using `registry/server`"* — and the
+  local registry is opted into with a `server` that starts with `localhost`: *"If the registry server
+  starts with `localhost`, Kamal will start a local Docker registry on that port and push the app
+  image to it"*
+  ([docs/configuration/docker-registry](https://kamal-deploy.org/docs/configuration/docker-registry/),
+  generated from
+  [`lib/kamal/configuration/docs/registry.yml`](https://github.com/basecamp/kamal/blob/main/lib/kamal/configuration/docs/registry.yml),
+  fetched 2026-08-01). The opt-in test is
+  [`Registry#local?`](https://github.com/basecamp/kamal/blob/v2.8.0/lib/kamal/configuration/registry.rb)
+  — `server.to_s.match?("^localhost[:$]")` — and
+  [`Validator::Registry`](https://github.com/basecamp/kamal/blob/v2.8.0/lib/kamal/configuration/validator/registry.rb)
+  waives the mandatory `username`/`password` **only** for such a server.
+  - **Reproduced, not reasoned about.** Against a real `kamal` 2.8.0 gem, the exact config the old
+    §4 prescribed (no `registry:` block) fails before anything is built:
+    `ERROR (Kamal::ConfigurationError): registry/username: is required`. The replacement config was
+    run the same way and resolves `repository: localhost:5555/myapp`.
+  - **What the issue got wrong, and it changed the fix.** #389 implied a fresh Rails 8.1 app hits
+    the auth failure. It does not: Rails 8.1 *generates* `registry: server: localhost:5555`
+    ([`deploy.yml.tt` at v8.1.0](https://github.com/rails/rails/blob/v8.1.0/railties/lib/rails/generators/rails/app/templates/config/deploy.yml.tt)).
+    The failure path was **our own §2 annotated `deploy.yml`**, which still showed the pre-2.8
+    Docker-Hub shape (`username`/`password`, no `server:`) under a comment calling it optional — an
+    agent copying our example wrote a config needing credentials it was told it did not need. So the
+    fix is a re-attribution (the *generator* opts in, not Kamal) plus repairing the §2-vs-§4
+    contradiction, not a deletion of the section.
+  - **Downstream claims resting on the same premise, all corrected**: the §2 image name
+    (`your-user/myapp` is the remote-registry form; a bare name is right for the local one, and
+    `repository` is `[server, image].compact.join("/")`); §3's `.kamal/secrets`, which presented
+    `KAMAL_REGISTRY_PASSWORD` as the live default when 8.1 generates it commented out and a local
+    registry authenticates nothing; the "Registry-free deploys (Kamal 2.8, new in 8.1)" heading and
+    contents entry; and `rails-8/SKILL.md:162`, which carried the same "by default" wording.
+  - Also corrected an over-claim inherited from the old text: the enumerated minimum omitted
+    `builder.arch`, which is required and whose error surfaces only *after* the registry validates
+    (observed in the same reproduction). §9's checklist gained a `registry:` row so the first-deploy
+    gate can catch this class instead of prose promising it.
+  - **Version boundary**: Kamal **2.8.0** (released 2025-10-19) added the local registry; before it
+    there is no local registry at all. Rails **8.1.0** (2025-10-22) generates the opt-in. Rails does
+    not pin Kamal (`gem "kamal", require: false`), and the behaviour is unchanged through the current
+    2.12.0. Nothing here is Rails-version-dependent — it is a Kamal release, so the old "new in 8.1"
+    framing was loose as well.
 - **`fidara-design/references/coverage.md` was unreachable from its own `SKILL.md`** (#158) — 230
   lines of component doctrine (every component's guidance state, what to build it from, and which
   surface it belongs on) reachable only via `brand.md` and `marketing-copy.md`. That is depth two,
