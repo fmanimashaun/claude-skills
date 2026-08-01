@@ -87,6 +87,21 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "visual-regression",
+      "why": "A screen with no baseline has never been reviewed; a changed one may be a regression.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/visual_baseline.py",
+        "{match:qa/manual-tests/visual.json}"
+      ],
+      "applies_when": [
+        "qa/baselines"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

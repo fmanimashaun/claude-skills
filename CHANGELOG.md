@@ -3281,6 +3281,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Visual regression baselines** (#112). The audit produced 359 screenshots and had nothing to
+  compare them to; capturing evidence is not regression testing, and the comparison is the product.
+  - **Four states, and the third is the one the issue asked for.** A screen with **no baseline** is
+    `new` — *neither a pass nor a failure*. As a pass, a brand-new screen is "visually correct" the
+    day it is written when nothing has been reviewed; as a failure, every new screen breaks the build
+    until someone raises the tolerance to zero effect.
+  - **Nothing can promote a baseline.** The judging path has no write call at all, asserted against
+    the module's own source — an agent that can overwrite a baseline can launder a regression into
+    the new truth in one run. The check is scoped to the judging path, because the selftest writes
+    fixtures and must; including it made the assertion fire on correct code.
+  - **`--seeded` is the caller's assertion, not the tool's.** The collector freezes motion and the
+    clock itself, but it **cannot** seed the app's fixtures — so claiming `seededData: true`
+    unconditionally would have been a lie that lets a run with live data be judged pixel-for-pixel.
+    It defaults to **false** and the judge refuses, which is right for a caller who has not said the
+    data is fixed.
+  - Diffs are computed **in the browser**, where a canvas already exists: decoding PNGs in Python
+    would put a third-party image library inside a gate. Size differences count as changed pixels
+    rather than being cropped away silently.
+  - **A fixture that proved nothing, caught by mutation.** The longest-prefix tolerance test declared
+    the *shorter* pattern first, so "last match wins" and "longest match wins" gave the same answer —
+    the mutation removing the length comparison **survived** until the fixture was reordered.
+
 ### 1.18.0 — 2026-08-01
 
 - **The three judges shipped in 1.17.0 now have something that feeds them** (#105). They landed with

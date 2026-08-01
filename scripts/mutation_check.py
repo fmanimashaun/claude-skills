@@ -967,6 +967,35 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #112. The first is the acceptance criterion in one line: a missing baseline must be neither a
+    # pass nor a failure. Mutating it to a pass makes a brand-new screen 'visually correct' the day
+    # it is written, which is exactly backwards -- nothing has ever been reviewed.
+    Guard(
+        name="visual_baseline",
+        subject="plugins/qa-flow/scripts/visual_baseline.py",
+        selftest="plugins/qa-flow/scripts/visual_baseline.py",
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
+        mutations=(
+            Mutation(
+                "a missing baseline is treated as a pass",
+                '        if not shot.get("baselinePresent"):',
+                '        if False:',
+                "a missing baseline is `new`",
+            ),
+            Mutation(
+                "an undeterministic run is judged instead of refused",
+                '    missing = [k for k in ("reducedMotion", "frozenClock", "seededData") if not d.get(k)]',
+                '    missing = []',
+                "motion not frozen",
+            ),
+            Mutation(
+                "the first matching prefix wins instead of the longest",
+                '        if route.startswith(pattern) and len(pattern) > best:',
+                '        if route.startswith(pattern) :',
+                "the longest matching prefix wins",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
