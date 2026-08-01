@@ -3,6 +3,10 @@ description: Comprehensive release certification before dev->main — full regre
 argument-hint: "[optional focus note]"
 ---
 
+<!-- topology: parallel
+     merge: ANY S1/S2 open, or any layer failing its bar, outranks every other layer's PASS (see
+            Phase 4). The same defect found by two layers is ONE defect, reported with both. -->
+
 # /qa-flow:certify
 
 The final gate before main. Comprehensive whole-application validation that existing

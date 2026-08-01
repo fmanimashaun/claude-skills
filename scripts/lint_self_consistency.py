@@ -676,6 +676,77 @@ def check_v4_outline_none() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_undeclared_topology() -> tuple[list[Finding], int]:
+    """A command dispatching 2+ of its plugin's agents must DECLARE its topology (#137).
+
+    #137 asks for topology doctrine plus existing usages "labelled in-place". Building the check
+    first is what showed why the labels have to be explicit: **prose does not correlate with
+    topology**. `/rails-flow:review` is the flagship parallel fan-out — seven specialist passes, and
+    the README says so — yet the word "parallel" appears nowhere in `review.md`. A keyword gate
+    would have missed the one command that gets this right, and passed the ones that do not.
+
+    Two more measurements pushed the same way. Counting dispatched agents alone over-fires:
+    `/rails-flow:feature` names eight, sequentially, and a pipeline has nothing to reconcile.
+    And searching for merge vocabulary under-fires: `/qa-flow:certify` declares a perfectly good
+    precedence rule ("ANY S1/S2 open, or any layer failing its bar -> FAIL") in words no reasonable
+    keyword list contains.
+
+    So the command declares, and this checks the declaration:
+
+        parallel  -> must also carry `merge:`  (how duplicate or conflicting outputs combine)
+        loop      -> must also carry `exit:`   (the property that ends it)
+        sequential/agent-to-agent -> the declaration alone
+
+    Loop BREAKERS are deliberately not required here. `docs/harness-doctrine.md` section 8 records
+    attempt caps and no-progress detection as a known gap owned by #128, and says plainly that
+    writing them as doctrine before they exist would be the claims-vs-enforcement defect. An exit
+    condition is a different thing: it is a property the command can state today.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    marker = re.compile(r"<!--\s*topology:\s*(sequential|parallel|loop|agent-to-agent)\b(.*?)-->",
+                        re.S | re.I)
+    root = ROOT / "plugins"
+    if not root.is_dir():
+        return findings, examined
+    for command in sorted(root.glob("*/commands/*.md")):
+        # `command.parent.parent` rather than indexing into `.parts`: the index version was off by
+        # one, resolved every plugin name to "plugins", found no agents directory, and examined ZERO
+        # commands while reporting "no findings". The coverage counter is the only reason that was
+        # visible -- a clean verdict over an empty scan is the failure mode this whole file exists
+        # to catch, and it does not announce itself.
+        agents = {path.stem for path in (command.parent.parent / "agents").glob("*.md")}
+        body = read(command)
+        dispatched = {name for name in agents if re.search(rf"`{re.escape(name)}`", body)}
+        if len(dispatched) < 2:
+            continue
+        examined += 1
+        found = marker.search(body)
+        if not found:
+            findings.append(Finding(
+                "undeclared-topology", rel(command), 1,
+                f"dispatches {len(dispatched)} agents but declares no topology. Add "
+                f"`<!-- topology: sequential|parallel|loop|agent-to-agent -->`; a parallel one also "
+                f"needs `merge:`, a loop needs `exit:`. See docs/harness-doctrine.md",
+            ))
+            continue
+        kind, detail = found.group(1).lower(), found.group(2)
+        if kind == "parallel" and not re.search(r"\bmerge:", detail, re.I):
+            findings.append(Finding(
+                "undeclared-topology", rel(command), body[:found.start()].count("\n") + 1,
+                "declares `topology: parallel` but no `merge:` rule. A fan-out without one leaves "
+                "'both agents reported it' and 'the agents disagree' undefined at the point they "
+                "matter most",
+            ))
+        if kind == "loop" and not re.search(r"\bexit:", detail, re.I):
+            findings.append(Finding(
+                "undeclared-topology", rel(command), body[:found.start()].count("\n") + 1,
+                "declares `topology: loop` but no `exit:` condition. An exit is a property the "
+                "command can state today; breakers are a separate known gap (#128)",
+            ))
+    return findings, examined
+
+
 def check_unreachable_coercion_fallback() -> tuple[list[Finding], int]:
     """`X.to_sym … || X.to_i` -- the guard raises on exactly the input the fallback is for.
 
@@ -905,6 +976,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
     outlines, outlines_examined = check_v4_outline_none()
     coercions, coercions_examined = check_unreachable_coercion_fallback()
+    topologies, topologies_examined = check_undeclared_topology()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -918,10 +990,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
         "shipped_docs_scanned_for_coercion_fallbacks": coercions_examined,
+        "multi_agent_commands_checked_for_topology": topologies_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root + coercions,
+            + pointers + outlines + uninstallable + plugin_root + coercions + topologies,
             coverage)
 
 
@@ -1346,6 +1419,40 @@ def selftest() -> int:
     # Scope: this is Tailwind-v4 doctrine WE ship. A plugin or script mentioning it is not a recipe.
     scenario("outside skills/ is out of scope", rule=ON, expect_finding=False,
              files={"plugins/x/commands/c.md": 'class="focus-visible:outline-none"\n'})
+
+    # ---- undeclared-topology ------------------------------------------------------
+    UT = "undeclared-topology"
+    TWO = {"plugins/x/agents/alpha.md": "a\n", "plugins/x/agents/beta.md": "b\n"}
+    scenario("two agents dispatched with no declaration", rule=UT, expect_finding=True,
+             files={**TWO, "plugins/x/commands/c.md": "---\nd: x\n---\nRun `alpha` then `beta`.\n"})
+    scenario("parallel without a merge rule", rule=UT, expect_finding=True,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\n<!-- topology: parallel -->\nRun `alpha` and `beta`.\n"})
+    scenario("loop without an exit condition", rule=UT, expect_finding=True,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\n<!-- topology: loop -->\nRun `alpha` and `beta`.\n"})
+    # The SILENT half. Each of these is a shape that exists in the real tree, and a rule that
+    # fired on any of them would be removed within a week.
+    scenario("parallel WITH a merge rule", rule=UT, expect_finding=False,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\n<!-- topology: parallel\n     merge: highest severity wins -->\n"
+                    "Run `alpha` and `beta`.\n"})
+    scenario("loop WITH an exit condition", rule=UT, expect_finding=False,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\n<!-- topology: loop\n     exit: no new findings -->\n"
+                    "Run `alpha` and `beta`.\n"})
+    # A pipeline has nothing to reconcile -- this is `/rails-flow:feature`, eight agents deep.
+    scenario("sequential needs no merge rule", rule=UT, expect_finding=False,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\n<!-- topology: sequential -->\nRun `alpha` then `beta`.\n"})
+    # ONE agent is not a fan-out. Requiring a declaration here would put a topology comment on
+    # every command in the repo and make the marker meaningless.
+    scenario("a single agent needs no declaration", rule=UT, expect_finding=False,
+             files={**TWO, "plugins/x/commands/c.md": "---\nd: x\n---\nRun `alpha`.\n"})
+    # A name that is not one of THIS plugin's agents must not count toward the two.
+    scenario("prose naming a non-agent does not count", rule=UT, expect_finding=False,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\nRun `alpha`, then check `bundle` and `rubocop`.\n"})
 
     # ---- unreachable-coercion-fallback --------------------------------------------
     UC = "unreachable-coercion-fallback"

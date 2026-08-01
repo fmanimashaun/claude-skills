@@ -325,6 +325,50 @@ When it ships, it ships as a hook or a script, with the ladder in §4 behind it.
 
 ---
 
+## 8a. A topology is a declaration, not something a reader infers
+
+Multi-agent shape — sequential, parallel, loop, agent-to-agent — changes what can go wrong, so
+[#137](https://github.com/fmanimashaun/claude-skills/issues/137) asked for it to be documented and
+for existing usages to be labelled in place. Building the check first is what showed *why the labels
+have to be explicit rather than inferred*, and the evidence is worth keeping:
+
+- **Prose does not correlate with topology.** `/rails-flow:review` is the flagship parallel
+  fan-out — seven specialist passes, and the README says so — yet the word "parallel" appears
+  **nowhere** in `review.md`. A keyword-based check would have missed the one command that handles
+  this correctly and passed the ones that do not.
+- **Counting agents over-fires.** `/rails-flow:feature` names eight agents. It is a pipeline: each
+  phase consumes the previous phase's output, so there is nothing to reconcile.
+- **Searching for merge vocabulary under-fires.** `/qa-flow:certify` declares a sound precedence
+  rule — *"ANY S1/S2 open, or any layer failing its bar → FAIL"* — in words no reasonable keyword
+  list contains.
+
+So the command declares and the gate checks the declaration:
+
+```
+<!-- topology: parallel
+     merge: any layer reporting an S1/S2 outranks every PASS; the same defect seen by
+            two layers is ONE defect, keyed on route + failing assertion. -->
+```
+
+**A fan-out owes a `merge:` rule.** Not because reconciliation is hard, but because without it the
+two questions that decide a verdict are undefined exactly when they arise: *both agents reported
+it* (one defect or two?) and *the agents disagree* (which wins?). Absence of a finding from one
+agent is never evidence against another's — they looked at different things.
+
+**A loop owes an `exit:` condition** — the property that ends it, not a step count. Breakers
+(attempt caps, no-progress detection) are **deliberately not required here**: §8 records them as a
+known gap owned by #128, and demanding them before they exist would be the exact defect this
+document is named for. An exit condition is different — a command can state one today.
+
+Enforced by `undeclared-topology` in `lint_self_consistency.py`: any command dispatching two or
+more of its own plugin's agents must carry the marker, a `parallel` one must carry `merge:`, a
+`loop` must carry `exit:`. Four commands qualify today. The rule ships with a fires-and-silent
+fixture per branch and two declared mutations, because its first version resolved every plugin name
+to `"plugins"`, examined **zero** commands, and reported "no findings" — a clean verdict over an
+empty scan, visible only because the coverage counter printed the zero.
+
+---
+
 ## 9. Prefer inspectable state over opaque machinery
 
 Plain text in git beats a store you cannot diff. This is already a decided question, not a preference:
@@ -356,7 +400,7 @@ authoritative is the failure mode this repo keeps writing down.
 
 ## 10. Classify deliberately: the checklist when you add a hook, agent, command or gate
 
-Silence is not a claim of exemption. Answer all four.
+Silence is not a claim of exemption. Answer all five.
 
 1. **Which tier is this?** Prose, output contract, or deterministic (§1). If a rule in it must always
    hold and you are writing tier 1 or 2, say so out loud — in the CHANGELOG entry and in the PR —
@@ -367,7 +411,10 @@ Silence is not a claim of exemption. Answer all four.
 3. **If it is a check, walk the ladder** (§4): selftest proving both directions → a declared mutation
    per *rule* → registered in `GATES` → three states with `skip ≠ pass` → and it must not write into
    what it inspects.
-4. **If it is doctrine with a copyable example, who compares the two?** #56 is the case where the rule
+4. **If it dispatches two or more agents, which topology, and what reconciles them?** Declare it
+   in the command (§8a). A `parallel` fan-out owes a `merge:` rule; a `loop` owes an `exit:`
+   condition. `undeclared-topology` fails the build if you skip it.
+5. **If it is doctrine with a copyable example, who compares the two?** #56 is the case where the rule
    and the example disagreed and nothing noticed, and the example is what ships (§2). Today the answer
    is often "nobody" — say that, rather than assuming the rule protects the example.
 
@@ -390,6 +437,7 @@ would be a poor place to make one, so the honest accounting is:
 | Claim | How to re-check it |
 |---|---|
 | The gate list, and that it is complete | `GATES` in `scripts/maintainer_doctor.py`; `python3 scripts/maintainer_doctor.py --selftest` asserts every `*_selftest.py` is reachable from it |
+| Every multi-agent command declares a topology, and a fan-out declares a merge rule | `python3 scripts/lint_self_consistency.py` (rule `undeclared-topology`) |
 | Every gate's selftest can actually fail | `python3 scripts/mutation_check.py --selftest` (declared mutations) and `python3 scripts/mutation_check.py` (per-rule coverage) |
 | The whole sweep, with skips distinguished from passes | `python3 scripts/maintainer_doctor.py --gates` |
 | Nothing mechanically enforces #77's no-disposition clause | `grep -rn "disposition" scripts/ plugins/*/scripts/ evals/*.py` — no hits |
