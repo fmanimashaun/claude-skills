@@ -5039,6 +5039,12 @@ boot/validation path — with a bullet each so the promotion could close them se
 - The drift rule **fails when its own anchor goes missing**: if the `REQUIRED`/`OPTIONAL` tuples are
   renamed it reports that, rather than comparing nothing and passing. That is a `gate-that-cannot-fail`
   in waiting, and it has a fixture plus a mutation of its own.
+- **`/rails-flow:fix` and `/rails-flow:issues` now consume the JSONL directly**, completing the
+  second half of criterion 6. `/fix` takes its order from `findings.py order` and is told **not** to
+  "correct" a P1 symptom back ahead of its P3 cause — the graph is the only place that relationship
+  is recorded. `/issues` files **one issue per distinct `signature`**, not per record, and carries
+  the signature into the issue body so the next review recognises the defect instead of re-filing
+  it. That is the 773-vs-18 arithmetic applied at the point where it decides how many issues exist.
 - Findings selftest **29 checks**; self-consistency 93 → **98** assertions; mutations 25 → **27**;
   gate sweep 43 → **44**. One mutation had to be rewritten: the first version broke syntax, so the
   mutant died at import and every mutation read as "caught" by a traceback rather than by a fixture.

@@ -20,6 +20,24 @@ this session (the user reporting problems while reviewing the running app) and a
 **file them first** — one issue each, with repro + expected/actual, batched in a single pass — so
 they enter the queue below instead of becoming ad-hoc hot-fixes. Then triage normally.
 
+## Phase 0 — File from `findings.jsonl`, one issue per *defect*
+
+If a review produced `docs/reviews/<date>/findings.jsonl`, file from **that**, not from the markdown
+(#138). The distinction is the whole point:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" dedupe docs/reviews/<date>/findings.jsonl
+```
+
+**File one issue per distinct `signature`, not per record.** A defect seen by three passes, or
+appearing on 72 pages, is **one** issue that says "N instances across M locations" — not N issues.
+This is measured, not hypothetical: a real crawl produced **773** occurrences of one a11y defect
+whose distinct count was about **18**, and a developer told "773 defects" stops reading, while one
+told "18, one of which is on every page" fixes the navbar.
+
+Carry `signature` into the issue body. It is how the next review recognises the same defect instead
+of filing it again.
+
 ## Phase 1 — Triage
 
 ```bash
