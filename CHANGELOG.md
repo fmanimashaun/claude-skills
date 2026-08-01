@@ -6164,7 +6164,14 @@ boot/validation path — with a bullet each so the promotion could close them se
   four counts in our own worked example going stale; `coverage matrix` caught an evidence string
   demanding an exact heading that shipped with a descriptive suffix; and a selftest asserting
   `len(SHIPPED_SKILLS) == 4` turned out to be a **second source of truth** for the set above it.
-- Gate sweep **44 → 54**. Self-consistency selftest 98 → 105 assertions.
+- Also lands the last three doctrine groups: Stimulus key filters, the `stimulus:manifest:update`
+  contradiction and the default-event map (#381, #382, #387), plus `bin/ci` running **zero**
+  specs under the `--skip-test` this skill mandates (#391) and a SimpleCov version boundary
+  (#396). Verification **corrected two of our own reports**: the Stimulus key-filter error
+  escapes as an uncaught page error rather than through Stimulus' handler, and a missing
+  default event is dropped **silently** rather than throwing — written as reported we would
+  have promised a visible error where the real behaviour is silence.
+- Gate sweep **44 → 55**. Self-consistency selftest 98 → 105 assertions.
 
 ### 1.55.0 — 2026-08-01
 
