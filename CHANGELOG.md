@@ -1200,7 +1200,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 
-### Unreleased
+### 1.15.1 — 2026-08-01
 
 - **FIX — the CI job we scaffold into a user's repo could never run** (#334). `setup-flow` §8
   proposed a `doctrine` job whose step was
@@ -4835,6 +4835,26 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.51.1)
+
+> ### The CI job we scaffold for users could never run
+>
+> `setup-flow` proposed a `doctrine` job stepping on `$CLAUDE_PLUGIN_ROOT` — a variable that exists
+> only inside Claude Code's plugin context and **not in GitHub Actions**. Every run would have failed
+> with `can't open file '/scripts/project_gates.py'`.
+>
+> Nothing we own could have caught it: our own workflows never reference that variable, so **the
+> workflow we test and the workflow we scaffold are different files**. It surfaced when a maintainer
+> ran the command by hand — and the correct knowledge was already twelve lines below in the same
+> file, where the graph job says *"the script ships inside the plugin, which CI does not install."*
+
+- Fixed by checking the toolchain out **beside** the repo at a **pinned tag** — one checkout serves
+  all four plugins, since the runner discovers each `checks.json` itself. Pinning is mandatory: an
+  unpinned `main` means our next release silently changes what a user's CI enforces.
+- **NEW `plugin-root-in-ci` rule**, scoped to ```yaml fences. Prose naming the variable is correct
+  and common, so matching anywhere would fire on a correct sentence in that very file. Four
+  fixtures, two of them silence cases.
 
 ### 2026-08-01 (release v1.51.0)
 
