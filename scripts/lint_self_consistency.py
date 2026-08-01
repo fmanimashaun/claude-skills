@@ -1577,8 +1577,12 @@ def selftest() -> int:
     scenario("a CI.run example with no test step", rule=CIG, expect_finding=True,
              files={"skills/x/references/testing.md":
                     "```ruby\nCI.run do\n" + CI_STEPS + "end\n```\n"})
-    scenario("the same defect written with the full class name", rule=CIG, expect_finding=True,
-             files={"skills/x/references/testing.md":
+    # Also the only PLUGIN-side positive. The scope test is one `or`, so a mutation dropping just
+    # the `plugins/` half would survive against skills-only fixtures -- a coverage gap in the rule's
+    # own tests, which is the class this linter exists to catch.
+    scenario("the same defect in a plugin, written with the full class name",
+             rule=CIG, expect_finding=True,
+             files={"plugins/x/commands/setup.md":
                     "```ruby\nActiveSupport::ContinuousIntegration.run do\n" + CI_STEPS + "end\n```\n"})
     scenario("a CI.run example that runs the suite is silent", rule=CIG, expect_finding=False,
              files={"skills/x/references/testing.md":

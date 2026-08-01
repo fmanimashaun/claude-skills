@@ -493,11 +493,12 @@ end
   - **No separate system-test step.** RSpec system specs live in `spec/system` and already run
     inside `bundle exec rspec`; Rails' skipped `Tests: System` comment has no RSpec counterpart
     to restore.
-  - **The DSL is three verbs.** `step(title, *command)` — one string goes through the shell,
-    several are passed to `system` individually and escaped for you; `success?`; and
-    `failure(title, subtitle)`. `CI.run` sets `ENV["CI"] = "true"`, times each step, and aborts
-    non-zero if any step failed. That is the whole surface of
-    `ActiveSupport::ContinuousIntegration`, which `bin/ci` aliases to `CI`.
+  - **Three verbs cover everything a `config/ci.rb` needs.** `step(title, *command)` — one string
+    goes through the shell, several are passed to `system` individually and escaped for you;
+    `success?`; and `failure(title, subtitle)`, which is how the commented `gh signoff` block
+    branches. `CI.run` sets `ENV["CI"] = "true"`, times each step, and aborts non-zero if any step
+    failed. (`heading` and `echo` are public too, for printing your own output.) `bin/ci` is a
+    two-line script that aliases `ActiveSupport::ContinuousIntegration` to `CI` and loads this file.
 
   Mirror the same steps in `.github/workflows/ci.yml` — but **scope the triggers economically**.
   Run the hosted CI only where it's the *independent* gate, the `dev → main` promotion — **not** on
