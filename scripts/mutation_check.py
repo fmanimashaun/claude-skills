@@ -288,6 +288,12 @@ GUARDS: tuple[Guard, ...] = (
         name="build_coverage",
         subject="scripts/build_coverage.py",
         selftest="scripts/build_coverage_selftest.py",
+        # The selftest's evidence guards read every doc under `references/` -- `verify_shipped_
+        # evidence` and `verify_interaction_claims` both resolve it from the SUBJECT's location, so
+        # a staged mutant with no `references/` made the unmutated selftest exit 1 and every
+        # mutation vacuously "caught". A directory, so a new reference doc is picked up rather than
+        # quietly missing. `run_baseline` is what now proves this is sufficient.
+        needs=("skills/fidara-design/references",),
         mutations=(
             Mutation(
                 "the totality guard stops naming unclassified corpus entries",
@@ -302,7 +308,13 @@ GUARDS: tuple[Guard, ...] = (
                 "        | (set(BUILD) & {e.name for e in ENTRIES if e.is_documented})\n"
                 "    )",
                 "    stale = []",
-                "still carrying a BUILD fallback",
+                # The FIXTURE's label, not the guard's message. With `stale = []` the guard never
+                # emits its message at all, so `expect_error` reports "expected BuildError, mapping
+                # was accepted" under this label -- and the old `expects` ("still carrying a BUILD
+                # fallback", one word off the label's "its") matched nothing. It only ever passed
+                # because the whole selftest was failing for want of the reference docs; the
+                # baseline control above is what made it visible.
+                "a documented row still carrying its BUILD fallback",
             ),
             Mutation(
                 "the stale-fallback guard keys on the NAME instead of the status",
@@ -326,6 +338,41 @@ GUARDS: tuple[Guard, ...] = (
                 "    if needs:\n",
                 "    if True:\n",
                 "yet the Tracked table header was still emitted",
+            ),
+            # `verify_interaction_claims` shipped in #399 with selftest fixtures and no mutations,
+            # which is the gap this block closes: a fixture proves a guard fires TODAY, a mutation
+            # proves the fixture would notice if the guard stopped firing. Both DIRECTIONS get one,
+            # because the guard's whole point is that a one-way rule would have caught none of the
+            # four stale rows it was written for -- and a mutation on only the `shipped` half would
+            # reproduce that blind spot in the meta-check.
+            Mutation(
+                "the interaction guard stops flagging a `planned` row whose contract HAS landed",
+                "        elif status.strip() != \"shipped\" and present:",
+                "        elif False:",
+                "the contract landed and the status was never flipped",
+            ),
+            Mutation(
+                "the interaction guard stops flagging a `shipped` row with no doc behind it",
+                "        if status.strip() == \"shipped\" and not present:",
+                "        if False:",
+                "does not appear in any reference doc",
+            ),
+            Mutation(
+                "one document is allowed to vouch for two different interaction patterns",
+                "        if probe in seen:",
+                "        if False:",
+                "share the probe",
+            ),
+            # `verify_cell_text` likewise. The interaction half is mutated rather than the ENTRIES
+            # half because that is the loop the near-miss was found in: the note that nearly shipped
+            # a broken table was an interaction note.
+            Mutation(
+                "the pipe guard stops reading interaction notes, so a `|` splits the row again",
+                "    for name, status, note, _probe in INTERACTION_PATTERNS:\n"
+                "        scan(f\"interaction pattern {name!r}\", name, status, note)",
+                "    for name, status, note, _probe in ():\n"
+                "        scan(f\"interaction pattern {name!r}\", name, status, note)",
+                "a `|` inside an interaction note was not flagged",
             ),
         ),
     ),
@@ -2481,8 +2528,30 @@ GUARDS: tuple[Guard, ...] = (
 )
 
 
+def stage(guard: Guard, workdir: Path) -> Path:
+    """Copy subject + selftest + deps + needs into `workdir`, UNMUTATED. Returns the entry point.
+
+    Mirrors the repo layout rather than flattening, so `parents[1]`-relative reads still work.
+    """
+    for relative in {guard.subject, guard.selftest, *guard.deps}:
+        target = workdir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((REPO / relative).read_text(encoding="utf-8"), encoding="utf-8")
+    for relative in guard.needs:
+        source, target = REPO / relative, workdir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # A whole directory, not just a file: `build_coverage_selftest` reads EVERY doc under
+        # `references/`, and naming the 19 of them here would go quiet the day a 20th is added --
+        # the coverage-gap class, in the harness that exists to catch it.
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        else:
+            shutil.copyfile(source, target)
+    return workdir / guard.selftest
+
+
 def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
-    """Copy subject + selftest + deps into `workdir`, with the mutation applied.
+    """Stage the guard into `workdir`, with the mutation applied to the subject.
 
     Raises if the anchor is absent or non-unique: a mutation that did not apply produces a mutant
     identical to the original, which passes and reads exactly like a caught mutation.
@@ -2499,17 +2568,44 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
     if mutated == source:
         raise RuntimeError(f"{guard.name} / {mutation.name}: replacement changed nothing")
 
-    # Mirror the repo layout rather than flattening, so `parents[1]`-relative reads still work.
-    for relative in {guard.subject, guard.selftest, *guard.deps}:
-        target = workdir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text((REPO / relative).read_text(encoding="utf-8"), encoding="utf-8")
-    for relative in guard.needs:
-        target = workdir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPO / relative, target)
+    entry = stage(guard, workdir)
     (workdir / guard.subject).write_text(mutated, encoding="utf-8")
-    return workdir / guard.selftest
+    return entry
+
+
+def run_baseline(guard: Guard) -> list[str]:
+    """The control: the UNMUTATED selftest must PASS in the same staged tempdir.
+
+    Without this, `run_guard`'s "returncode != 0 means caught" reads a guard that cannot pass at
+    all as a guard that catches everything. That is not hypothetical -- it was true of
+    `build_coverage` for as long as its selftest read the reference docs, which are not part of
+    the subject: the staged mutant had no `references/`, the unmutated selftest already exited 1,
+    and all of its mutations were therefore "caught" without the mutation doing anything. A
+    gate-that-cannot-fail inside the meta-gate whose whole job is proving gates can fail.
+
+    Run once per guard rather than once per mutation: staging is identical, and the cost is one
+    selftest run against N.
+    """
+    workdir = Path(tempfile.mkdtemp(prefix=f"mutbase-{guard.name}-"))
+    try:
+        entry = stage(guard, workdir)
+        argv = [sys.executable, str(entry)]
+        if guard.selftest == guard.subject:
+            argv.append("--selftest")
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            return [
+                f"{guard.name}: INERT — the UNMUTATED selftest already fails in the staged "
+                f"tempdir (exit {result.returncode}), so every mutation below is 'caught' whether "
+                "or not it breaks anything. Add what it reads to the guard's `needs`.\n"
+                + "\n".join(f"      {line}" for line in
+                            (result.stdout + result.stderr).strip().splitlines()[-6:])
+            ]
+    except subprocess.TimeoutExpired:
+        return [f"{guard.name}: the unmutated baseline timed out"]
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    return []
 
 
 def run_guard(guard: Guard) -> list[str]:
@@ -2523,7 +2619,10 @@ def run_guard(guard: Guard) -> list[str]:
     ~7% on a machine that was running other agents' sweeps at the same time. An unmeasurable
     speedup is not worth adding concurrency to the checker every other gate is judged by.
     """
-    problems: list[str] = []
+    # The baseline runs the UNMUTATED selftest first. Without it a guard whose staged copy is
+    # missing a dependency fails for that reason alone, and every mutation then reads as "caught"
+    # by the breakage rather than by a fixture -- which is exactly what `build_coverage` was doing.
+    problems: list[str] = run_baseline(guard)
     for mutation in guard.mutations:
         workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
         try:
