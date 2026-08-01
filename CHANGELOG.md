@@ -5011,6 +5011,78 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
+### 2026-08-01 (release v1.54.0)
+
+> ### Three things that were judgement are now arithmetic
+>
+> `/rails-flow:review` fanned out seven passes and merged seven prose blobs by judgement. Dedupe
+> depended on whether a reader thought two findings looked alike; "no pass may drop a finding" was a
+> contract nothing checked; and *"A is caused by B"* was recorded nowhere, so fix order was a guess.
+
+- **NEW — typed findings records** (#138, rails-flow 1.17.0 · qa-flow 1.20.1). Each pass appends
+  JSONL; synthesis reads the data. **Dedupe** groups by `signature` and reports
+  `distinct (N instances)`. **Completeness** asserts every input id appears in the output as
+  reported or `duplicate_of` — reorder yes, collapse yes, **drop no** (#77). **Fix order** is a
+  topological sort on `caused_by`/`blocks` (#118 for the counting half).
+- **An edge outranks severity, and that is the point of the graph.** A P1 symptom waits for its P3
+  cause; severity only breaks ties the graph leaves free. `/fix` is told explicitly not to "correct"
+  that back — the inversion looks like a mistake and is the whole value. Pinned by a fixture,
+  because a severity sort that quietly overrode edges looks right in every case where they agree.
+- **`/issues` files one issue per distinct signature, not per record.** A real crawl produced **773**
+  occurrences of one a11y defect whose distinct count was about **18**. A developer told "773
+  defects" stops reading; told "18, one on every page", they fix the navbar. Same arithmetic,
+  applied where it decides how many issues exist.
+- **Parity between the two plugins is gated, not claimed.** qa-flow is independent and does not
+  import rails-flow, so the schema *is* the contract — and `findings-schema-drift` compares the
+  field tuples in `findings.py` against the fields documented in `qa-reporter.md`. It also fails
+  when its own anchor is renamed, rather than comparing nothing and passing.
+- **Plain JSONL in git** — no graph database, no orchestration runtime, per `harness-doctrine.md`
+  §9. A record you can `git diff` and `grep` without a running service.
+- **What the script deliberately will not do:** derive `signature`. It is a stable identity for the
+  *defect*, not the occurrence, and `file:line` is wrong in both directions — the same defect moves
+  when a line is inserted, two different defects share a line. The agent judges, the script counts.
+- Findings selftest **29 checks**; self-consistency 93 → **98**; mutations 25 → **27**; sweep
+  43 → **44**. One mutation was rewritten after the first version broke syntax and every mutation
+  read as "caught" by a traceback rather than by a fixture — a crash is not a verdict.
+
+### 1.54.0 — 2026-08-01
+
+- **NEW `findings.py` — typed findings records, so multi-agent output is queryable and dedupe is
+  mechanical** (#138). Plain JSONL in git; no graph database, no orchestration runtime (criterion 8,
+  and `harness-doctrine.md` §9). `/rails-flow:review`'s seven passes append records before writing
+  prose, and synthesis reads the data instead of merging seven text blobs by judgement.
+- **Three things that were judgement are now checked.** *Dedupe* groups by `signature` and reports
+  `distinct (N instances)` — the #118 arithmetic, where 773 real occurrences were ~18 defects.
+  *Completeness* asserts every input id appears in the output as reported or `duplicate_of`, so
+  #77's "no pass may drop a finding" is verified rather than contracted — synthesis may reorder and
+  collapse, never drop. *Fix order* is a topological sort on `caused_by`/`blocks`.
+- **An edge outranks severity, and that is the whole point of the graph.** A P1 symptom waits for
+  its P3 cause, because fixing the symptom first is wasted work; severity is the tiebreak only
+  within what the graph leaves free. Pinned by a fixture, since a severity sort that quietly
+  overrode edges would look correct in every example where the two happen to agree.
+- **A cycle is reported, not raised.** Order with a cycle in it still beats no order, so the members
+  fall back to severity and the caller is told — a mutual `caused_by` is usually a modelling error.
+- **`signature` stays the agent's judgement and the script trusts it**, stated as a limit rather
+  than hidden: deriving it from file+line is wrong in both directions, since the same defect moves
+  when a line is inserted and two different defects share a line.
+- **qa-flow's reporter emits the same record** (criterion 7), and the parity is **gated** rather
+  than claimed. The two live in different plugins deliberately — qa-flow is independent and does not
+  import rails-flow — so the schema is the contract, and `findings-schema-drift` compares the field
+  tuples in `findings.py` against the fields documented in `qa-reporter.md`. Two documents agreeing
+  today is not the same as two documents that must agree.
+- The drift rule **fails when its own anchor goes missing**: if the `REQUIRED`/`OPTIONAL` tuples are
+  renamed it reports that, rather than comparing nothing and passing. That is a `gate-that-cannot-fail`
+  in waiting, and it has a fixture plus a mutation of its own.
+- **`/rails-flow:fix` and `/rails-flow:issues` now consume the JSONL directly**, completing the
+  second half of criterion 6. `/fix` takes its order from `findings.py order` and is told **not** to
+  "correct" a P1 symptom back ahead of its P3 cause — the graph is the only place that relationship
+  is recorded. `/issues` files **one issue per distinct `signature`**, not per record, and carries
+  the signature into the issue body so the next review recognises the defect instead of re-filing
+  it. That is the 773-vs-18 arithmetic applied at the point where it decides how many issues exist.
+- Findings selftest **29 checks**; self-consistency 93 → **98** assertions; mutations 25 → **27**;
+  gate sweep 43 → **44**. One mutation had to be rewritten: the first version broke syntax, so the
+  mutant died at import and every mutation read as "caught" by a traceback rather than by a fixture.
+
 ### 2026-08-01 (release v1.53.0)
 
 > ### Two checks that exist because inference was tried first and did not work

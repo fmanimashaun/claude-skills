@@ -13,6 +13,23 @@ Read `CLAUDE.md`, `GUARDRAILS.md`, and — if `$ARGUMENTS` references a review r
 that report (e.g. `docs/reviews/*.md`). Identify the next phase marked "Not started",
 or treat the described bug as a single-phase fix. Base branch: `dev` if present.
 
+**When a `findings.jsonl` sits beside the report, read that instead — it is the source and the
+markdown is a rendering of it** (#138). Take the fix order from the data rather than from the
+prose:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" order docs/reviews/<date>/findings.jsonl
+```
+
+**The order is topological, and an edge outranks severity** — a P1 symptom appears *after* its P3
+cause, deliberately. Do not "correct" that back to severity order: fixing a symptom before its cause
+is wasted work, and the graph is the only place that relationship is recorded. If the command
+reports a **cycle**, it fell back to severity for those ids and said so — that usually means a
+mutual `caused_by` someone should look at, not something to route around.
+
+A record's `signature` groups duplicates, so one fix may close several ids. Say which ids a fix
+covers; that is what lets the completeness check pass later.
+
 **File first if it isn't filed.** If this defect surfaced live in conversation (the user was
 reviewing the running app) and no repo issue exists for it, **file it before touching code** —
 `gh issue create` with the repro, expected vs actual, and `file:line` if known — then work it from

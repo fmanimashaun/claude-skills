@@ -51,11 +51,51 @@ cross-examination. Default remains one-shot subagents.
 
 ## Synthesis
 
+**Each pass appends its findings as JSONL to `docs/reviews/<YYYY-MM-DD>/findings.jsonl`**, one
+record per finding, before writing any prose. The record shape and every rule below are enforced by
+`findings.py` — run it rather than doing this by judgement:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" dedupe   docs/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" order    docs/reviews/<date>/findings.jsonl
+```
+
+```json
+{"id":"sec-001","pass":"security-auditor","severity":"P1","category":"authz",
+ "file":"app/controllers/invoices_controller.rb","line":42,
+ "signature":"missing-tenant-scope:InvoicesController#show","issue":"…","repro":"…",
+ "fix_options":["…"],"caused_by":null,"blocks":["perf-003"],"duplicate_of":null}
+```
+
+**You write `signature`; the script trusts it.** It is a stable identity for the *defect*, not the
+occurrence — `missing-tenant-scope:InvoicesController#show`, not a file and line. Two passes seeing
+one defect must produce the same signature, and that is the one judgement the mechanics cannot make
+for you: file+line is wrong in both directions, since the same defect moves when a line is inserted
+and two different defects share a line.
+
+Then synthesis, which is now checked rather than promised:
+
+1. **Dedupe is mechanical** — `dedupe` groups by signature and reports `distinct (N instances)`. It
+   collapses the *same* defect seen by two passes; it never discards a real one.
+2. **Completeness is verified, not contracted.** Every input id must appear in the output as either
+   a reported finding or a `duplicate_of`. Synthesis may reorder and may collapse; it may **not**
+   drop. A dropped id **fails**:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" completeness --input findings.jsonl --output synthesis.jsonl
+   ```
+3. **Fix order is topological, not just severity-sorted.** `caused_by` / `blocks` are edges, and an
+   edge **outranks severity**: a P1 symptom waits for its P3 cause, because fixing the symptom first
+   is wasted work. Severity is the tiebreak *within* what the graph leaves free. A cycle is reported
+   rather than raised — a mutual `caused_by` is usually a modelling error worth a human look.
+4. **The markdown report is generated from the data**, never authored:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" report docs/reviews/<date>/findings.jsonl > docs/reviews/<date>-codebase-review.md
+   ```
+
 Each pass reports **every** finding (any severity) with `file:line` + repro + fix option(s) and
-does **not** self-decide disposition — so synthesis only ever **orders** findings, never drops
-them. Merge and de-duplicate (a dedupe collapses the *same* finding seen by two passes; it never
-discards a real one), order into **phases** (Phase 1 = all P1s, then coherent P2/P3 groupings of
-~5-10 items each), and write the report to
+does **not** self-decide disposition. Order into **phases** (Phase 1 = all P1s, then coherent
+P2/P3 groupings of ~5-10 items each), and write the report to
 `docs/reviews/<YYYY-MM-DD>-codebase-review.md` with each phase marked `Status: Not started`. Every
 finding — including low-severity/residual ones — appears in the report, issue-ready; the
 disposition (fix now / defer / accept) is the developer flow's and the human's call, never a pass's.
