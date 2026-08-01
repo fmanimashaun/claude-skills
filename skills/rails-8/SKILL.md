@@ -167,10 +167,23 @@ generate, then trim what isn't needed.
 - **Verbose redirect logs** in development
   (`config.action_dispatch.verbose_redirect_logs = true` in new apps).
 
+**`load_defaults 8.1` also flips seven framework defaults** — the complete list, with
+what each one changes, is `project-setup.md` §7. Three change behaviour you can trip
+over in a *new* app, not just an upgraded one:
+
+- `render json:` **no longer HTML-escapes** `<`, `>`, `&`, U+2028/9
+  (`escape_json_responses = false`) — Rails' changelog names the risk as
+  *"vulnerabilities when the resulting JSON is embedded in HTML"*. (`auth-security.md` §4)
+- A path-relative `redirect_to "orders/new"` **raises**
+  (`action_on_path_relative_redirect = :raise`). (`auth-security.md` §4)
+- `.first`/`.last` on an unordered relation **raises**
+  `ActiveRecord::MissingRequiredOrderError` rather than warning.
+
 Deprecations to avoid in new code: order-dependent finders (`.first`/`.last`)
-on relations with no inferable order — add an explicit `.order`;
-`signed_id_verifier_secret` (use `Rails.application.message_verifiers`);
-`String#mb_chars`; `update_all` with `WITH`/`DISTINCT`.
+on relations with no inferable order — add an explicit `.order` (this one *raises*
+under 8.1 defaults, see above); `signed_id_verifier_secret` (use
+`Rails.application.message_verifiers`); `String#mb_chars`; `update_all` with
+`WITH`/`DISTINCT`.
 
 ## Reference files — read before working in an area
 
