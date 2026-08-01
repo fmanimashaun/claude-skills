@@ -4237,6 +4237,48 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **NEW `llm_tell_detector.py` — an offline detector for LLM design tells** (#157). Stdlib only, no
+  browser, no API key. Borrowed in *shape* from [impeccable](https://github.com/pbakaus/impeccable):
+  every rule is **named**, so it can be argued with and disabled individually, and **a disable must
+  carry a reason** — a bare one is itself a finding. That is the mechanism `brand_pack_lint.py`
+  lacks, and without it the first justified exception is what teaches everyone to switch a checker
+  off wholesale.
+- **The rule set is seven, not the twelve #157 listed, and the arithmetic is the point.** Criterion 3
+  requires each rule to cite doctrine, since *"a rule with no doctrine behind it is taste"*.
+  Grounding all twelve eliminated five: **two are prescribed by our own doctrine** —
+  `components.md:185` mandates `backdrop-blur-sm` for the modal backdrop and `components.md:658`
+  mandates `animate-pulse` for skeletons, so "glassmorphism" and "pulsing" rules would fire on the
+  reference implementations they enforce — and **three need rendered output or page structure** a
+  static scan cannot see (ghost-cards is a contrast measurement, and belongs to #107).
+- **Two of the seven find outright bugs rather than drift.** `bg-gradient-to-*` was *removed* in
+  Tailwind v4 with no alias and `duration-fast` never existed (there is no `--duration-*` theme
+  namespace), so both emit **no CSS at all** — the markup looks right, renders wrong, and nothing
+  raises anywhere.
+- **Criterion 6 (zero findings against our own reference implementations) earned its place
+  immediately.** Its first run produced 11 findings against our own doctrine, both of them real rule
+  bugs: `raw-hex-literal` flagged the token *definitions* (`--color-fm-navy: #0C1B33` — a custom
+  property IS the token layer the rule protects), and `off-scale-radius` flagged a comment reading
+  *"NOT an arbitrary `rounded-[12px]`"*. Now a gate, so neither can come back.
+- **The two scanners had already drifted, and unifying them was the fix.** The markdown path never
+  called `rule.exempt`, so the same `--color-fm-navy: #0C1B33` was exempt in a `.css` file and a
+  finding in our token doc. There is now one `_scan_line`; patching the copy would only have
+  deferred the next divergence.
+- **Criterion 7 (the palette rule defined once, shared with #107) was nearly violated silently** —
+  `PALETTE_STEP` was imported and then hand-copied into the rule. The alternation is now derived
+  from the shared pattern's own source, and a shape change fails loudly at import instead of
+  matching nothing.
+- **Wired as a PostToolUse hook** on `Edit|Write|MultiEdit` for view and component surfaces, and as
+  a second step in `/design-flow:audit`. **Advisory, therefore fail-open** per the
+  guarantee-vs-advice test in `docs/harness-doctrine.md` — verified by running it with `python3`
+  shadowed by a stub that exits 127 (exit 0, silent). design-flow had no `hooks/` directory before
+  this; hooks load by convention, exactly as rails-flow's do.
+- Detector selftest: **40 checks across 7 rules**. Five declared mutations, all caught by their own
+  named fixture — **three of them are bugs that were actually in the first draft**, including an
+  `ease-in-out` lookahead that excused the single most common instance of the tell it detects.
+  Gate sweep 41 → **43**.
+
 ### 1.10.1 — 2026-08-01
 
 - **`design-auditor` reports stock LLM phrasing as a count** (#131). Marketing copy using
