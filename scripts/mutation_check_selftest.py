@@ -193,10 +193,18 @@ def run() -> int:
     # rule for those two, and it still catches the typo this check exists for.
     for real_guard in mc.GUARDS:
         _tick()
-        missing = [p for p in (real_guard.subject, real_guard.selftest)
+        # `subject`, `selftest` and `deps` are Python modules that get IMPORTED, so they must be
+        # files. `needs` is different: it means "stage this beside the mutant", and a guard whose
+        # selftest reads a whole directory of fixtures must be able to declare the directory —
+        # `build_coverage` needs all of `skills/fidara-design/references`, and naming files would
+        # silently miss the next one added, which is the rot that made five guards inert.
+        #
+        # `dev` fixed this concurrently and let `deps` be a directory too. Kept the stricter form:
+        # no guard declares a directory dep, so the two behave identically today, and a dep that
+        # resolves to a directory could never be imported — it is a typo worth catching.
+        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
                    if not (original_repo / p).is_file()]
-        missing += [p for p in (*real_guard.deps, *real_guard.needs)
-                    if not (original_repo / p).exists()]
+        missing += [p for p in real_guard.needs if not (original_repo / p).exists()]
         if missing:
             FAILURES.append(f"{real_guard.name}: declares paths that do not exist: {missing}")
         if not real_guard.mutations:

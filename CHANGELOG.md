@@ -54,26 +54,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     selftest harness and reporter every other script here uses, and it is not exempted from its own
     measurement. `check_shared_shapes.py` re-derives both, so the number is measured, not restated.
 
-- **FIX — five guards were INERT on `dev`, so 44 mutations were proving nothing** (`Refs #422`).
-  `run_baseline` is what made them visible: it runs each guard's UNMUTATED selftest in the staged
-  tempdir first, and a guard whose staging is incomplete fails there — after which every mutation
-  "passes" by being caught by the breakage instead of by the fixture it names. Found running the
-  sweep on a clean `origin/dev`, not on a change. Every one had the same cause, an incomplete
-  `needs`, and the fix is the same shape #422 already argued for on `build_coverage`:
-  - `check_handoff` (7) — hand-typed **eleven** agent files; `claim-verifier.md` was added later and
-    never appended, so the mutant reconciled a complete tier table against ten agents and reported
-    the eleventh row as stale. Now the `agents` directory.
-  - `validate_evidence` (24) — five profile contracts are cross-checked against the agent markdown
-    that writes them; none of it was staged. Now the `agents` directory.
-  - `project_gates` (3) — its selftest validates every SHIPPED `checks.json`, and no manifest was
-    staged. Now the `plugins` tree, which is also the only declaration that stays true when a fourth
-    plugin ships one.
-  - `crawl_report` (3) — asserts the collector ships beside its judge; the collector was not staged.
-  - `maintainer_doctor` (7) — asserts every `GATES` entry names a script that exists, and 55 of them
-    were absent. Now the three trees the gate list points into.
-  - **The lesson is one line long and this is its second week running:** a hand-typed list of a
-    directory's contents goes quiet the first time the directory grows. `needs` takes directories on
-    purpose; use one.
+- **NOTE — five guards were INERT on `dev` (`check_handoff`, `validate_evidence`, `project_gates`,
+  `crawl_report`, `maintainer_doctor`), so 44 mutations proved nothing.** Fixed on `dev` by #429,
+  which carried no CHANGELOG entry, so the record is here. Found independently twice in one evening —
+  by #429 and by #423's branch, both by running the sweep on a clean `origin/dev` rather than on a
+  change — and both arrived at the same fix, so the merge simply takes #429's. Worth recording
+  because the cause was identical in all five and is now on its second week: **a hand-typed list of a
+  directory's contents goes quiet the first time the directory grows.** `run_baseline` (#422) is what
+  made it visible at all — without that control, a guard whose staging is incomplete is
+  indistinguishable from one whose fixtures all work. `needs` takes directories; use one.
 
 ### 1.55.0 — 2026-08-01
 
@@ -2411,6 +2400,53 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The generated-layout tree listed `test/` in the file that mandates `--skip-test` fifty lines
+  above it** (#395). §1 of `project-setup.md` says the framework's test scaffolding "must never be
+  generated"; §2's tree then listed `test/` as part of what a generated app contains, so an agent
+  reading the tree as the map of a scaffolded app believed a directory §1 guarantees is absent.
+  Verified: `--skip-test` skips `build(:test)` outright, so none of `test/test_helper.rb`,
+  `test/fixtures/files/`, `test/controllers/`, `test/mailers/`, `test/models/`, `test/helpers/` or
+  `test/integration/` is written, and `capybara`/`selenium-webdriver` leave the `Gemfile` with it
+  ([`app_generator.rb`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/app_generator.rb)
+  `create_test_files`,
+  [`Gemfile.tt`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/templates/Gemfile.tt),
+  both gated on `depends_on_system_test?`; fetched 2026-08-01). **The row was also wrong on its own
+  terms, before `--skip-test` is considered**: `def test` creates no `test/jobs/`, and `test/system/`
+  + `test/application_system_test_case.rb` are written only when `--devcontainer` is *also* passed
+  (`build(:system_test)` is called unconditionally but its body is `if devcontainer? &&
+  depends_on_system_test?`). So the row is gone rather than corrected, and the note replacing it says
+  what is absent, what takes its place (`spec/`, from `rspec:install`), the two consequences already
+  documented elsewhere, and — because a deletion invites a restoration — not to add it back from
+  memory. Version boundary: Rails **8.1** (`8-1-stable`, = 8.1.3.1); the flag's behaviour is not new
+  in 8.1, the contradiction was with our own doctrine.
+- **The issue's stated consequence for mailer previews was REFUTED, and the real defect is a
+  different one** (#395). The report reasoned that previews at `test/mailers/previews/` would leave
+  `/rails/mailers` "silently empty" because rspec-rails does not change `preview_paths`. Both halves
+  are wrong, and the corrected doctrine had to be written from the sources rather than from the
+  issue. (a) Rails' railtie adds its default as a **union** — `options.preview_paths |=
+  ["#{Rails.root}/test/mailers/previews"]` — so that path is in the search list whether or not the
+  directory exists, and a preview hand-written there *does* render
+  ([`railtie.rb`](https://github.com/rails/rails/blob/8-1-stable/actionmailer/lib/action_mailer/railtie.rb)).
+  (b) rspec-rails **does** set the path: its `rspec_rails.action_mailer` initializer runs `before:
+  "action_mailer.set_configs"` and appends `"#{Rails.root}/spec/mailers/previews"`, and
+  `rails g mailer` writes the preview file there
+  ([`rspec-rails.rb`](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec-rails.rb),
+  [`mailer_generator.rb`](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/generators/rspec/mailer/mailer_generator.rb)).
+  So the harm was not an empty page but doctrine naming a directory the mandated scaffold does not
+  create — telling an agent to hand-build the `test/` tree §1 promises will not exist, in a second
+  location from where the generator on line 14 of the same file actually writes. `mail-storage-richtext.md`
+  §1 now states `spec/mailers/previews/` with the mechanism behind it.
+- **`config_default_preview_path` guards on `.empty?`, so *appending* a preview path also drops the
+  `spec/` default** (found while verifying #395). Not in the report, and the non-obvious half: because
+  rspec-rails only supplies its default *"unless `options.preview_paths.empty?`"*, any app-level touch
+  of the setting — `<<` included, not just assignment — suppresses `spec/mailers/previews` silently.
+  The guidance therefore names both paths in the worked example rather than showing the guides' bare
+  append. Assignment is called out separately as unable to *remove* Rails' `test/` entry, since the
+  railtie unions it back afterwards. Also recorded: `show_previews` defaults to
+  `Rails.env.development?`, and `preview_path` **singular** is not a Rails 8 setting — deprecated in
+  **7.1**, removed in **7.2**
+  ([Action Mailer CHANGELOG](https://github.com/rails/rails/blob/v7.2.0/actionmailer/CHANGELOG.md)).
+  Change type: framework claim, CONFIRMED verdict; sources above fetched 2026-08-01.
 - **fidara-design: the list family is documented — Stacked list, Grid list, Activity feed / Timeline**
   (Refs #95, the Phase-2 umbrella's *Lists + data display* group). All three were `derivable` rows whose
   entire guidance was one **Build from** cell (*"Media object rows inside a `divide-y` container"*), while

@@ -84,10 +84,27 @@ lib/tasks/  # rake tasks; lib/ is NOT autoloaded by default
 public/     # static files served as-is; error pages; robots.txt
 script/     # one-off/throwaway scripts (bin/rails runner script/foo.rb)
 storage/    # Active Storage disk service + SQLite databases (gitignored)
-test/       # models/, controllers/, system/, integration/, fixtures/, mailers/, jobs/, helpers/
 vendor/javascript/         # importmap-downloaded packages
 Dockerfile  .dockerignore  .kamal/secrets  .github/workflows/ci.yml
 ```
+
+**There is no `test/` in that tree, and its absence is the mandated invocation rather than
+an omission.** `--skip-test` (§1) skips `build(:test)` entirely
+([`app_generator.rb`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/app_generator.rb),
+`create_test_files`), so none of `test/test_helper.rb`, `test/fixtures/files/`,
+`test/controllers/`, `test/mailers/`, `test/models/`, `test/helpers/` or `test/integration/`
+is written. `capybara` and `selenium-webdriver` drop out of the `Gemfile` too, by a second
+gate — `depends_on_system_test?`, which is false as soon as `--skip-test` is set
+([`Gemfile.tt`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/templates/Gemfile.tt)).
+`spec/` takes its place a step later, from `rspec:install` — layout in `testing.md` §3;
+`testing.md` §1 puts those two gems back under `group :test`.
+
+Do not add a `test/` row back from memory. Even in a default app that keeps the test suite,
+the generator writes no `test/jobs/`, and `test/system/` + `test/application_system_test_case.rb`
+appear only under `--devcontainer`. Two consequences of the missing directory are
+documented where they bite: the generated `config/ci.rb` carries no test step (§1 above and
+`testing.md` §11), and **mailer previews do not live under `test/` in this stack** —
+`mail-storage-richtext.md` §1.
 
 Autoloading (Zeitwerk): everything under `app/*` is autoloaded and
 eager-loaded in production; file path must match constant
