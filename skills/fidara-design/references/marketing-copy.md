@@ -209,14 +209,33 @@ specified here and implemented by `design-auditor`:
 | **duplicate-hero-cta** | The closing-band copy is byte-identical to the hero's | String equality |
 | **numeric-only-pricing-tiers** | Tier names are all of the form `Basic`/`Pro`/`Enterprise` **and** the only differences between tiers are numeric | Diff the tier feature lists |
 | **stat-without-unit** | A stats-band figure has no unit and no period | Regex: a bare number with no adjacent unit token |
+| **stock-phrase** *(advisory)* | Marketing copy uses the LLM house style — `leverage`, `seamless(ly)`, `elevate`, `unlock`, `empower`, `robust`, `cutting-edge`, `game-changing`, `vibrant`, `delve`, `harness`, `tapestry`, `a testament to`, `in today's fast-paced`, `in conclusion` | Word match — but **reported as a count, never a failure**; see below |
 | **greeting-in-auth** | An auth `h1` matches a greeting ("Welcome", "Hello", "Hi there") rather than the action | String match |
 
-**Scope note, so this file does not over-claim.** These checks are a **specification**. Wiring them
-into `design-auditor` and making `/design-flow:component` consult this file are changes to the
-**design-flow plugin**, which is a separate component from this skill and is not changed by the PR
-that adds this file. Until that lands, this doctrine is advisory to an agent reading the skill
-rather than enforced by the auditor — stated plainly because a doctrine file claiming enforcement it
-does not have is precisely the defect class `code-review` calls `gate-that-cannot-fail`.
+### Why `stock-phrase` is advisory when the rows above are not
+
+The others fail on a fact. This one fails on a **word**, and a word has legitimate uses — so it is
+reported as a **count**, never as a failure. `unlock` is a real CTA (*"Unlock your first report"*);
+`harness` is an ordinary noun. A rule that blocks on those is switched off within a day, and then
+catches nothing at all.
+
+**One caution about the evidence, because it is easy to over-read.** Scanning *this repo's own
+skills* for those words finds seven hits — `harness` (the #105 capture harness), `elevate` (CSS
+elevation), `unlock` (a scroll lock) — all legitimate. That proves the list must **never** run over
+documentation. It says much less about a user's hero headline, which is a different corpus and the
+actual target. Nobody has measured the rate there yet, and the honest response to an unmeasured
+false-positive rate is to report rather than block.
+
+**What the count is for.** One stock phrase is a word choice. Six in a landing page is a draft nobody
+edited — and §1's rule already covers it: copy is a positioning decision the human owns, so the
+auditor surfaces the count and the human decides.
+
+**Scope note, so this file does not over-claim.** These checks are a **specification**;
+`design-auditor` implements them and `/design-flow:component` consults this file. That wiring landed
+after this doctrine was first written — the note here used to say it had not, which was true when
+written and stale within a release. A doctrine file claiming enforcement it does not have is the
+defect class `code-review` calls `gate-that-cannot-fail`; one still claiming a gap that has since
+been closed is the same error pointing the other way.
 
 ---
 
