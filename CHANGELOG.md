@@ -3829,6 +3829,28 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The marketing doctrine is wired into the flow that uses it** (#131, #135, #136). Three reference
+  files shipped in earlier releases — `marketing-copy.md`, `visual-assets.md`, `motion.md` — and
+  each carried the same open acceptance criterion: *`/design-flow:component` consults it, and
+  `design-auditor` gains the mechanical checks*. Doctrine nothing consults is the
+  `claims-vs-enforcement` class one level up: the file exists, and the agent that should read it
+  never learns it is there.
+  - **`/design-flow:component`** now branches on the surface. A marketing surface — landing,
+    pricing, feature section, hero — makes all three references mandatory before markup, each
+    answering something the component catalog does not. The copy rule is the load-bearing one:
+    **draft against the contract, never invent positioning**, and if the claim is unknown say so in
+    the output rather than filling the slot. A confident placeholder is worse than an obvious one.
+  - **`design-auditor`** gains three grep-able checks and two checklist sections. The greps are the
+    unambiguous half — placeholder copy (`lorem`, `TODO`, `Your headline here`), decorative visuals
+    missing `aria-hidden`, and raw hex in illustration or geometry, with `Ui::Logo` as the one
+    documented exception brand.md allows. The checklist half covers what a grep cannot read for, and
+    says plainly that copy is a positioning decision the human owns.
+  - **The three pointers are full paths on purpose**, so `lint_self_consistency.py`'s doc-pointer
+    rule validates that each target exists: 62 → **65** pointers checked. Proven by renaming one to
+    `moshun.md`, which the linter caught. A bare filename would have been prose.
+
 ### 1.8.0 — 2026-08-01
 
 - **Agent model pins reconciled with the tier doctrine** (#299). Every agent moved from a
