@@ -1981,6 +1981,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+
+### Unreleased
+
+- **`stock-phrase`: the LLM house style is now named in the copy doctrine, as an advisory count.**
+  Borrowed from the `humanize` plugin in `fcakyon/claude-codex-settings`, which blocks ~53 stock
+  words. Useful to us for a specific reason: **`/design-flow:component` drafts marketing copy**, so
+  that vocabulary is a risk *we create*.
+  - **Advisory, not a failure, unlike every other row in that table.** The others fail on a fact;
+    this one fails on a *word*, and a word has legitimate uses — `unlock` is a real CTA
+    (*"Unlock your first report"*), `harness` is an ordinary noun. One is a word choice; six in a
+    landing page is a draft nobody edited, and §1 already says copy is the human's decision.
+  - **One caution recorded about the evidence, because it is easy to over-read.** Scanning *this
+    repo's own skills* finds seven hits — `harness` (the #105 capture harness), `elevate` (CSS
+    elevation), `unlock` (a scroll lock) — all legitimate. That proves the list must never run over
+    documentation. It says much less about a user's hero headline, which is the actual target and
+    where nobody has measured the rate. The honest response to an unmeasured false-positive rate is
+    to report rather than block.
+- **FIX — the doctrine's scope note claimed a gap that had since been closed.** It said the checks
+  were a specification and that wiring them into `design-auditor` and `/design-flow:component` was
+  "not changed by the PR that adds this file". Both landed a release later. A doctrine file claiming
+  enforcement it lacks is `gate-that-cannot-fail`; one still claiming a gap that has been closed is
+  the same error pointing the other way.
+
 ### 1.28.1 — 2026-08-01
 
 - **FIX — five catalog entries carried no accessibility contract, and two contradicted our own rule**

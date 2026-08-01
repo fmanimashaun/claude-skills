@@ -22,6 +22,12 @@ use instead.
   primitive (`grid-auto`, `Layout::Sidebar`/`Switcher`, `cluster`) fits.
 - Hardcoded sizing: `text-[…px]`, `w-[…px]`, fixed heights instead of `--text-step-*`/`--space-*`.
 - Selectors bound to markup internals; `data-testid` used for styling.
+- **Stock LLM phrasing in marketing copy** — `leverage`, `seamless(ly)`, `elevate`, `unlock`,
+  `empower`, `robust`, `cutting-edge`, `game-changing`, `vibrant`, `delve`, `harness`, `tapestry`,
+  `a testament to`, `in today's fast-paced`. **Report the COUNT, never fail on it.** A word has
+  legitimate uses — *"Unlock your first report"* is a real CTA — so one is a word choice and six is a
+  draft nobody edited. Marketing surfaces only: never documentation, where `harness` and `elevate`
+  are ordinary technical vocabulary.
 - **Placeholder copy shipped as content** (#131): `lorem`, `ipsum`, `Lorem ipsum`, `TODO`,
   `TBD`, `Coming soon`, `Your headline here`, `Feature one`. Placeholder text is a **finding**, not
   a style note — it is the one copy defect that is unambiguous without reading for meaning.
