@@ -1853,6 +1853,50 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.27.0 — 2026-08-01
+
+- **Input group documented as a Text-input variant, not a new component** (#95, Phase 2). The last
+  named Phase-2 family with no contract. **Change type: architecture decision**, recorded here
+  because there is no upstream: APG has no input-group pattern.
+  - **It is not a missing component.** The Tailwind UI `forms/input-groups` corpus directory was
+    already claimed by the `Text input` row, and `forms.md` already mentioned prefix/suffix twice —
+    what was missing was the **contract**, not the row. Giving addons their own component would have
+    been the *duplicate mechanism* Phase 2's own criteria forbid. The `Text input` matrix note now
+    states the claim explicitly so the next reader does not re-litigate it.
+  - Four rules, each with a reason: the **focus ring moves to the wrapper** (`focus-within`), because
+    a ring around half a field is worse than none; a **decorative addon is `aria-hidden`**, or
+    *"Amount"* is announced as *"Amount pound"*; an **interactive addon is not an addon** but a
+    cluster of two focusable things, each needing its own name and touch target; and `f.input_field`
+    rather than hand-rolled anatomy, which is the composed-cluster row of the existing table.
+
+- **FIX — two role-token pairs failed WCAG 1.4.3, and only one of them was reported** (#304).
+  **Change type: incorrect doctrine.** Internally measurable, so it is settled by arithmetic against
+  our own tokens; the calculator is validated against the two standard controls (`#767676`/white =
+  4.54, white/black = 21.00) before any figure is trusted.
+  - **Reported:** light `--primary` on `--background` was **4.42:1**, under 4.5:1. `--primary` now
+    points at a new `--color-fm-cerulean-700` (`#0072C4`) → **4.74:1**. The brand hex `#0077CC` is
+    **unchanged**, because the Prism mark, `chart-1` and `brand.md` all carry it and **a logo is not
+    text** — 1.4.3 does not apply to it. Fixing an accessibility defect by editing a brand asset
+    would have been the wrong lever.
+  - **Not reported, and worse:** the `.dark` block overrode `--primary` to electric but **not**
+    `--primary-foreground`, which therefore inherited `#FFFFFF` from `:root`. White on `#00A3FF` is
+    **2.73:1** — that is the label on **every primary button in dark mode**, solid-background text
+    rather than a near-miss link colour. Now `var(--color-fm-navy)` → **6.30:1**.
+  - **The second one is the argument for the new script.** The first was found by a person reading a
+    table; the second was invisible until something enumerated the pairs mechanically. A token file
+    is exactly where a reader checks the pair they are thinking about and no others.
+  - **NEW `scripts/check_token_contrast.py`** — parses the token file (palette, `:root`, and `.dark`
+    *inheriting* from `:root`, which is the mechanism behind the second defect) and measures **ten**
+    role-token text pairs. Two gates added. Both regressions proven caught with their exact ratios.
+    A missing or renamed token **raises** rather than resolving to something arbitrary, so a pair
+    that stops being measured can never read as a pair that passed.
+  - Two defects in the checker itself, caught before it shipped: it skipped the `@theme` palette, so
+    every role referencing it was unresolvable — it *reported* that rather than passing, but a parser
+    reading half the file can still miss a pair; and an emptiness check ended up **after** the merge
+    that made it unreachable, a gate that cannot fail.
+  - `components.md`'s contrast table restated these numbers in prose and was stale the moment the
+    tokens moved. Corrected, and it now points at the command that re-derives it.
+
 ### 1.26.0 — 2026-08-01
 
 - **FIX — chrome used the content type step in eleven places, not the six reported** (#306).
@@ -4457,6 +4501,38 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.46.0)
+
+> ### Two contrast failures, and only one of them had been reported
+>
+> The reported defect was a link colour at **4.42:1**, a near miss under 1.4.3. Measuring the
+> *adjacent* pairs found a worse one nobody had: `.dark` overrode `--primary` but not
+> `--primary-foreground`, so it inherited white — **2.73:1** on every primary button label in dark
+> mode. Solid-background text, not a near miss.
+>
+> That asymmetry is the release. A person checks the pair they are thinking about; only a script
+> enumerates the rest. There is now a script, and two gates.
+>
+> `fidara-design` changed; `rails-8`, `hotwire` and `code-review` are byte-identical, and no plugin
+> changed at all.
+
+- **FIX — two role-token pairs failed WCAG 1.4.3** (#304). Light `--primary` now points at a new
+  `--color-fm-cerulean-700` (`#0072C4`) → **4.74:1**, and dark `--primary-foreground` is navy →
+  **6.30:1**. The brand hex `#0077CC` is **unchanged**: the Prism mark, `chart-1` and `brand.md` all
+  carry it, and **a logo is not text**, so fixing a text defect by editing a brand asset would have
+  been the wrong lever.
+- **NEW `scripts/check_token_contrast.py`** — measures ten role-token text pairs from the doctrine
+  file, modelling the `.dark`-inherits-from-`:root` cascade that caused the unreported defect. A
+  renamed token **raises** rather than resolving, so a pair that stops being measured cannot read as
+  one that passed. Both regressions proven caught with their exact ratios.
+- **Input group is a Text-input variant, not a new component** (#95). The corpus directory was
+  already claimed by `Text input`; what was missing was the contract, not the row. Adding a component
+  would have been the duplicate mechanism Phase 2's own criteria forbid.
+- **The issue dependency graph is backfilled and valid** (#133). 25 issue bodies carry a `part-of`
+  fence; **no** sequential `depends-on` between phases, because the numbering implies an order the
+  history contradicts — Phase 3 closed while Phase 2 is open. The tool then rejected the issue that
+  *specified* it, whose example fence parsed as four real edges.
 
 ### 2026-08-01 (release v1.45.0)
 
