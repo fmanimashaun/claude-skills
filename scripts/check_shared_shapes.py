@@ -197,6 +197,21 @@ def declared(text: str) -> dict[str, tuple[int, int]]:
             f"{DOC.name}: no {BEGIN} / {END} markers. Without them this check would parse whatever "
             "table it found first, which is how a gate starts reading the wrong input.")
     block = text.split(BEGIN, 1)[1].split(END, 1)[0]
+
+    # EXACTLY ONE table between the markers. A merge that unions two versions of this table --
+    # which is precisely what happened when a branch carrying the 3-column form met a `dev` that
+    # had gained the `reach` column -- leaves both inside the block, and `ROW` then skips every
+    # row of the stale one IN SILENCE, because a 3-column row fails its two-digit-column test.
+    # The gate stayed green over shipped doctrine containing a contradictory stale table; it only
+    # failed later, and by luck, because the surviving numbers happened to disagree with the repo.
+    # A separator line (`|---|---|`) is one per table, so counting them is the cheap check.
+    separators = [ln for ln in block.splitlines() if re.match(r"^\|[-| :]+\|$", ln.strip())]
+    if len(separators) != 1:
+        raise Unreadable(
+            f"{DOC.name}: the marked block holds {len(separators)} tables, not 1. A merge probably "
+            f"unioned two versions of it. Rows whose column count does not match are skipped "
+            f"silently, so this must be a hard error rather than a quiet half-read.")
+
     rows: dict[str, tuple[int, int]] = {}
     for line in block.splitlines():
         m = ROW.match(line.strip())
