@@ -7,7 +7,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-
 ### 2026-08-01 — the gates finally run somewhere
 
 - **FIX — the publish was not gated, which is the branch that matters.** `gates.yml` shipped hours
@@ -3260,6 +3259,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **A route crawl is judged now — and the case it exists for is the 200** (#105, criterion 1).
+  qa-flow could enumerate routes (#119) and capture console errors per page (#109); design-flow could
+  judge a *rendered* page against the design system (#107). **Nothing judged which routes are
+  broken.**
+  - A non-2xx is caught by anything, including a curl loop. **A Rails app that rescues an exception
+    and renders its 500 template with a 200 status is the failure that survives every status check
+    ever written** — and it is the normal shape of an error page behind a `rescue_from`. Status is
+    necessary and not sufficient: a page is a finding when it *renders* like an error, and when it
+    logs one.
+  - **The near-misses are what make it survivable.** A page *about* errors is not an error page, so
+    markers are anchored to the shapes frameworks actually render and matched against the title and
+    H1 only — "Error handling guide" and "Error budget report" stay silent, and are fixtured that
+    way. Console **warnings** are excluded for the same reason: noise in every real app, and a rule
+    firing on all of them is a rule nobody reads.
+  - **An unreachable route is not a passing route**, and an unusable crawl file is not a clean crawl.
+    Both named every run. An empty crawl reporting zero findings would be indistinguishable from a
+    healthy app.
+  - Registered with `project_gates.py`, so it runs at a project's `dev → main`. 23 selftest checks,
+    3 mutations all caught, including the 200-but-error rule going quiet.
 
 ### 1.16.0 — 2026-08-01
 
@@ -3955,7 +3975,6 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
-
 
 ### 1.10.0 — 2026-08-01
 
