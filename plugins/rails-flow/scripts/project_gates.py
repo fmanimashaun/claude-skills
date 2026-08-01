@@ -142,6 +142,21 @@ def applicability(check: Check, project: Path) -> str | None:
     return None
 
 
+def required_subcommand(help_text: str) -> set[str]:
+    """The subparser choices a script REQUIRES, or an empty set if it takes none.
+
+    Two signals together, because either alone is wrong: the group must sit in the `usage:` block,
+    and argparse follows a subparser group with ` ...`. Matching `{a,b}` anywhere in the help fired a
+    false positive on a `--format {json,md}` choice list in the options body.
+
+    Extracted from its caller so a fixture can exercise it directly. Inline, a mutation that neutered
+    it deleted the only assertion that would have noticed -- a check that cannot fail.
+    """
+    usage = help_text.split("\n\n", 1)[0]
+    found = re.search(r"\{([a-z,]+)\}\s*\.\.\.", usage)
+    return set(found.group(1).split(",")) if found else set()
+
+
 def run_check(check: Check, project: Path) -> Result:
     why_not = applicability(check, project)
     if why_not:
@@ -273,6 +288,17 @@ def selftest() -> int:
     # The SHIPPED manifests must be loadable and name scripts that exist -- otherwise this runner
     # reports ERROR on a user's first run, which is the worst possible first impression.
     checks, problems = load_checks(plugin_roots(Path(__file__)))
+    # The subparser detector, fixtured directly. Both directions, because the false positive is what
+    # would get this rule deleted and the true positive is what it exists for.
+    check("a subparser group is detected",
+          required_subcommand("usage: p [-h] {completed,derive,validate} ...\n\noptions:\n") ==
+          {"completed", "derive", "validate"})
+    check("a --format choice list is NOT a subcommand",
+          required_subcommand("usage: p [-h] [--out OUT]\n\noptions:\n  --format {json,md}\n") == set(),
+          "a choice list in the options body must not read as a required subcommand")
+    check("a script with no subparsers reports none",
+          required_subcommand("usage: p [-h] [--selftest] [path]\n\noptions:\n") == set())
+
     check("shipped manifests parse", not problems, f"{problems}")
     check("shipped manifests declare checks", len(checks) >= 5, f"got {len(checks)}")
 
@@ -303,11 +329,9 @@ def selftest() -> int:
         # produced a false positive on `architecture_graph.py`, whose `{json,md}` is a --format
         # choice list in the options body -- a rule that fires on a correct manifest gets deleted,
         # so the pattern is narrowed rather than the finding excused.
-        usage = helped.stdout.split("\n\n", 1)[0]
-        group = re.search(r"\{([a-z,]+)\}\s*\.\.\.", usage)
-        if not group:
+        options = required_subcommand(helped.stdout)
+        if not options:
             continue                       # no subcommands: a bare invocation is legitimate
-        options = set(group.group(1).split(","))
         supplied = [tok for tok in argv[2:] if not tok.startswith("-")]
         check(f"{c.plugin}/{c.id} supplies a required subcommand",
               bool(supplied) and supplied[0] in options,
