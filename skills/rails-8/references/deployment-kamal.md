@@ -243,7 +243,10 @@ Before first deploy and after significant changes:
   S3/GCS/R2 need credentials + gem). `:azure` no longer exists in 8.1.
 - Logs go to STDOUT (default) — view with `kamal logs`; add an APM/error
   subscriber (`Rails.error`) before you need it.
-- Run `bin/ci` green, then `kamal setup` (first time) / `kamal deploy`.
+- Run `bin/ci` green, then `kamal setup` (first time) / `kamal deploy`. Check
+  `config/ci.rb` actually has the `Tests: RSpec` step first (`testing.md` §11) —
+  under `--skip-test` Rails writes none, and a green `bin/ci` would then mean
+  "lint and audits passed", not "the suite passed".
 - Verify: site loads over https, `kamal app logs` clean, a background job
   processes, `kamal rollback` story understood (previous version listed in
   `kamal app containers`).

@@ -1053,6 +1053,62 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: ci-gate-without-test-step
+# ---------------------------------------------------------------------------
+# A fenced `CI.run` block is a `config/ci.rb` a user pastes into their project, and `bin/ci` is the
+# thing our doctrine calls "the whole gate" and "full-gate confidence". So a shipped example with no
+# test step ships a gate that cannot fail -- it runs setup, lint and audits and reports green having
+# executed no specs.
+#
+# It is not hypothetical and the mechanism is not obvious (#391). Rails wraps every test step in
+# `config/ci.rb.tt` in `<% unless options[:skip_test] -%>`, and this skill MANDATES `--skip-test`
+# (project-setup.md ss1), so the generated file has no `Tests:` step to begin with. Doctrine that
+# said "swap the test step" was therefore describing an edit to a line the mandated scaffold never
+# writes, while four other places went on calling `bin/ci` the full gate.
+#
+# The rule cannot catch that wording -- prose is not mechanically checkable -- but it can pin the
+# artifact, which is the half that matters: the corrected example can never be "simplified" back,
+# and any future `CI.run` we ship has to answer the same question. Deliberately narrow: only blocks
+# that actually open a `CI.run` count, so a snippet showing one `step` line in isolation (as
+# api-documentation.md does for the OpenAPI drift gate) is not a whole-file example and stays silent.
+_CI_RUN_FENCE = re.compile(r"^[ \t]*```[A-Za-z0-9+-]*[ \t]*$(.*?)^[ \t]*```[ \t]*$",
+                           re.MULTILINE | re.DOTALL)
+_CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
+# `rspec` covers `bundle exec rspec` and `parallel_rspec`; `rails test` covers a Minitest project.
+_CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
+
+
+def check_ci_gate_without_test_step() -> tuple[list[Finding], int]:
+    """A shipped `CI.run` example must run a test suite (#391).
+
+    See the block comment above for why this exists and why it is scoped the way it is.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".md"):
+        relpath = rel(path).replace("\\", "/")
+        if not (relpath.startswith("skills/") or relpath.startswith("plugins/")):
+            continue          # shipped surface only; the CHANGELOG quotes old examples on purpose
+        body = read(path)
+        for match in _CI_RUN_FENCE.finditer(body):
+            block = match.group(1)
+            if not _CI_RUN_OPEN.search(block):
+                continue
+            examined += 1
+            if _CI_SUITE_STEP.search(block):
+                continue
+            findings.append(Finding(
+                "ci-gate-without-test-step", relpath, body[:match.start()].count("\n") + 1,
+                "ships a `CI.run` example with no step that runs the suite. `bin/ci` is the gate "
+                "this doctrine calls full-gate confidence, and Rails omits every `Tests:` step "
+                "under the `--skip-test` scaffold we mandate -- so this example is a gate that "
+                "reports green having run zero specs. Add `step \"Tests: RSpec\", "
+                "\"bundle exec rspec\"` (testing.md ss11)",
+            ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1073,6 +1129,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     topologies, topologies_examined = check_undeclared_topology()
     schema, schema_examined = check_findings_schema_drift()
     unwired, unwired_examined = check_unwired_claim_verifier()
+    ci_gates, ci_gates_examined = check_ci_gate_without_test_step()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1089,10 +1146,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "multi_agent_commands_checked_for_topology": topologies_examined,
         "findings_schema_fields_compared": schema_examined,
         "flows_checked_for_claim_verifier": unwired_examined,
+        "shipped_ci_run_examples": ci_gates_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired,
+            + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
+            + ci_gates,
             coverage)
 
 
@@ -1507,6 +1566,41 @@ def selftest() -> int:
              files={".claude-plugin/marketplace.json": MANIFEST,
                     "README.md": "design-flow ships tokens. Install design-flow to use it.\n"
                                  "```\n/plugin install rails-flow@claude-skills\n```\n"})
+
+    # ---- ci-gate-without-test-step (#391) -------------------------------------------
+    # `bin/ci` is what the rails-8 skill calls "the whole gate". Rails omits every `Tests:` step
+    # under the `--skip-test` scaffold that skill mandates, so a shipped `CI.run` example without
+    # one is a gate that reports green having run no specs.
+    CIG = "ci-gate-without-test-step"
+    CI_STEPS = ('  step "Setup", "bin/setup --skip-server"\n'
+                '  step "Style: Ruby", "bin/rubocop"\n')
+    scenario("a CI.run example with no test step", rule=CIG, expect_finding=True,
+             files={"skills/x/references/testing.md":
+                    "```ruby\nCI.run do\n" + CI_STEPS + "end\n```\n"})
+    scenario("the same defect written with the full class name", rule=CIG, expect_finding=True,
+             files={"skills/x/references/testing.md":
+                    "```ruby\nActiveSupport::ContinuousIntegration.run do\n" + CI_STEPS + "end\n```\n"})
+    scenario("a CI.run example that runs the suite is silent", rule=CIG, expect_finding=False,
+             files={"skills/x/references/testing.md":
+                    "```ruby\nCI.run do\n" + CI_STEPS +
+                    '  step "Tests: RSpec", "bundle exec rspec"\nend\n```\n'})
+    scenario("a Minitest project's suite counts too", rule=CIG, expect_finding=False,
+             files={"skills/x/references/testing.md":
+                    "```ruby\nCI.run do\n" + CI_STEPS +
+                    '  step "Tests: Rails", "bin/rails test"\nend\n```\n'})
+    # NEAR MISS, and the one that keeps the rule usable: a single `step` line quoted to show ONE
+    # check (api-documentation.md does this for the OpenAPI drift gate) is not a whole-file example.
+    # If it fired there, the fix would be to paste an entire ci.rb into a section about swagger.
+    scenario("a lone step line without CI.run is not a whole file", rule=CIG, expect_finding=False,
+             files={"skills/x/references/api-documentation.md":
+                    '```ruby\nstep "API docs: fresh", "bin/rails rswag:specs:swaggerize"\n```\n'})
+    # NEAR MISS: the doctrine EXPLAINING this defect has to name `CI.run` in prose. Fencing is what
+    # separates an example a user pastes from a sentence about one.
+    scenario("prose naming CI.run outside a fence stays silent", rule=CIG, expect_finding=False,
+             files={"skills/x/references/testing.md":
+                    "Under `--skip-test`, the `CI.run` block Rails generates has no test step.\n"})
+    scenario("the CHANGELOG may quote a superseded example", rule=CIG, expect_finding=False,
+             files={"CHANGELOG.md": "```ruby\nCI.run do\n" + CI_STEPS + "end\n```\n"})
 
     # ---- v4-outline-none (#305) ----------------------------------------------------
     # A rename that kept the old spelling alive with the opposite meaning: v3's `outline-none` was

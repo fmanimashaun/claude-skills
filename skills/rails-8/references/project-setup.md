@@ -42,6 +42,13 @@ config.generators do |g|
 end
 ```
 
+`--skip-test` has a **second consequence, and it is the one that gets missed.** Rails gates the
+test steps in its `config/ci.rb` template on the same flag, so the generated file has no `Tests:`
+step and `bin/ci` — which this skill treats as the full gate — runs **zero specs**. Writing that
+step in is not optional cleanup; it is what makes `bin/ci` mean what the rest of this skill says
+it means. Do it in the same pass as the generator config above: the file to write is in
+`testing.md` §11.
+
 After generation: `bin/setup` (installs gems, prepares DB, starts server —
 `bin/setup --skip-server` to prep only). Day-to-day server: `bin/dev` (runs
 `Procfile.dev` when there are watchers, e.g. Tailwind; otherwise just the

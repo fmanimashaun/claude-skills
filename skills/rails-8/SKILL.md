@@ -83,7 +83,7 @@ majestic monolith.
 | Deployment | **Kamal 2** + generated `Dockerfile` | `config/deploy.yml`, `.kamal/secrets` |
 | Testing | **RSpec** + FactoryBot + Capybara (pure RSpec, no matcher add-ons) | Scaffold with `--skip-test`; doctrine in `references/testing.md` |
 | Lint / security | rubocop-rails-omakase, Brakeman, bundler-audit | Wired into CI |
-| CI | `config/ci.rb` + `bin/ci` (local CI, new in 8.1) and a GitHub Actions workflow | `--skip-ci` to omit |
+| CI | `config/ci.rb` + `bin/ci` (local CI, new in 8.1) and a GitHub Actions workflow | `--skip-ci` omits only the GitHub workflow files; `config/ci.rb` + `bin/ci` are always generated. `--skip-test` strips their test steps — add one back (`testing.md` §11) |
 | Extras | PWA stubs (`app/views/pwa/`), `script/` for one-offs, `/up` health endpoint, Docker entrypoint running `db:prepare` | |
 
 ## The golden-path feature workflow
@@ -111,8 +111,10 @@ to be driven and keeps every step verifiable:
 6. **Tests.** Model spec + request spec at minimum; a system spec for any
    nontrivial user flow. FactoryBot factories for data (`testing.md`).
 7. **Verify.** `bundle exec rspec` (or the project's suite), then
-   `bin/rubocop -a`, or the whole gate: `bin/ci`. Fix everything it flags
-   before declaring done.
+   `bin/rubocop -a`, or the whole gate: `bin/ci` — which is only a whole gate
+   once `config/ci.rb` carries the RSpec step, because the mandated
+   `--skip-test` scaffold writes none (`testing.md` §11). Fix everything it
+   flags before declaring done.
 
 Scaffolding (`bin/rails g scaffold ...`) is legitimate for standard CRUD —
 generate, then trim what isn't needed.
@@ -149,8 +151,9 @@ generate, then trim what isn't needed.
   user_id: 123)` with `tagged`/`set_context` and pluggable subscribers, for
   machine-readable telemetry alongside the human log. (`observability.md`)
 - **Local CI** — `config/ci.rb` DSL run by `bin/ci`: setup, RuboCop,
-  bundler-audit, `bin/importmap audit`, Brakeman, tests, optional
-  `gh signoff`. (`testing.md`)
+  bundler-audit, `bin/importmap audit`, Brakeman, optional `gh signoff` — plus
+  the test step **you** write, which Rails omits under the `--skip-test`
+  scaffold this skill mandates. (`testing.md` §11)
 - **Markdown rendering** — `render markdown: @page` / `format.md` /
   `.md.erb` templates; useful for docs pages and AI-facing endpoints.
   (`views-hotwire.md`)
@@ -221,7 +224,10 @@ skill prefers otherwise — consistency beats purity. Flag, don't silently
 A change is done when: migrations run cleanly both ways where practical,
 `bundle exec rspec` (or the project's suite) passes, `bin/rubocop` is clean,
 Brakeman raises no new warnings, and — for full-gate confidence — `bin/ci`
-passes. For UI work, state which Turbo behavior was used and why. Never hand
-back code you haven't at least boot-checked (`bin/rails runner`, a test, or
+passes. `bin/ci` does **not** stand in for the first of those unless
+`config/ci.rb` carries the RSpec step (`testing.md` §11): under the mandated
+`--skip-test` scaffold it runs no specs at all, so a green `bin/ci` on its own
+proves lint and audits only. For UI work, state which Turbo behavior was used
+and why. Never hand back code you haven't at least boot-checked (`bin/rails runner`, a test, or
 `bin/rails zeitwerk:check` for autoloading-sensitive changes) when a runtime
 is available.
