@@ -47,11 +47,11 @@ at most **three** animated regions, never two running at once in the viewport, a
 the reader scrolled to on purpose. Count them; this is the one motion rule that is arithmetic rather
 than judgement. Every pattern also needs its static end-state and a reduced-motion behaviour change
 (not merely a shortened duration).
-**Marketing copy** (#131, `references/marketing-copy.md`) — every section carries the copy contract
+**Marketing copy** (#131, `skills/fidara-design/references/marketing-copy.md`) — every section carries the copy contract
 for its archetype: one reader, a claim with its proof, specific over generic. Copy is a
 **positioning decision the human owns**; flag a draft that asserts a benefit with no proof, or that
 addresses no one in particular, but never rewrite positioning as if it were a style fix.
-**Visual assets** (#135, `references/visual-assets.md`) — prefer specific over decorative: a product
+**Visual assets** (#135, `skills/fidara-design/references/visual-assets.md`) — prefer specific over decorative: a product
 screenshot beats brand geometry, which beats stock illustration. Illustration styles are never mixed
 on one surface. Third-party illustration must be recoloured to role tokens.
 **Composition/branding** — full-page single-focus views (auth, marketing splash, onboarding) use

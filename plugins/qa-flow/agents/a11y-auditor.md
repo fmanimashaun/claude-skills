@@ -244,7 +244,7 @@ feature only *detects* the setting, so every finding here is "the author wrote n
 never "the browser failed to honour a promise". (Forced colors is the opposite: that one the user
 agent really does enforce.) Our own CSS gates motion inside
 `@media (prefers-reduced-motion: no-preference)` rather than overriding inside `reduce` — see
-`fidara-design`'s `references/motion.md`, which also records why that direction is ours and not a
+`skills/fidara-design/references/motion.md`, which also records why that direction is ours and not a
 published rule.
 
 **What gates, and what does not — the whole point of this mode:**

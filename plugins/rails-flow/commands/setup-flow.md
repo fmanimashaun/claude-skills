@@ -172,7 +172,7 @@ execution to subagents; keep judgment here.
 - Defects reported mid-session get **FILED as issues first**, then worked one at a time via
   `/rails-flow:fix` (own branch → PR → spec). Never hot-fix inline, and never stack several
   unrelated fixes on the checked-out branch.
-- Before writing or reviewing Ruby, read the **rails-8 skill's `references/style.md`** — how
+- Before writing or reviewing Ruby, read the **rails-8 skill's `skills/rails-8/references/style.md`** — how
   code should read here (conditional returns, method + invocation ordering, bang methods,
   visibility modifiers, `_later`/`_now` job naming). Project Overrides above win where they
   conflict; everything else follows the skill.
