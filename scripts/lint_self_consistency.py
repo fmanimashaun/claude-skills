@@ -676,6 +676,52 @@ def check_v4_outline_none() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_unwired_claim_verifier() -> tuple[list[Finding], int]:
+    """`claim-verifier` must actually be invoked by the flows that claim to use it (#359).
+
+    Criterion 5 is *"wired into the promotion flow, where the cost of a false claim is highest"*.
+    That is a claim about this repo, and leaving it to prose would be the joke version of the
+    defect: an agent built because descriptions go unchecked, itself described as wired and never
+    called. The agent shipped in v1.52.0 and was referenced from **nowhere** until this rule.
+
+    Deliberately narrow — it checks the wiring exists, not that anyone obeys it. Whether a
+    maintainer actually reads the verdict is not mechanically knowable, and pretending otherwise
+    would be the same defect one level up.
+    """
+    findings: list[Finding] = []
+    agent = ROOT / "plugins" / "rails-flow" / "agents" / "claim-verifier.md"
+    if not agent.is_file():
+        return findings, 0            # not shipped in this tree; nothing to wire
+    callers = {
+        ".claude/agents/release-manager.md":
+            "the promotion body becomes the published release notes, so a false sentence there "
+            "outlives every other kind",
+        ".claude/commands/maintainer-work.md":
+            "the PR body is what the next reader believes about the change",
+    }
+    examined = 0
+    for relpath, why in callers.items():
+        path = ROOT / relpath
+        if not path.is_file():
+            continue
+        examined += 1
+        body = read(path)
+        if "claim-verifier" not in body:
+            findings.append(Finding(
+                "unwired-claim-verifier", relpath, 1,
+                f"never invokes `claim-verifier`, but #359 wires it in here because {why}. An "
+                f"agent that verifies descriptions, itself described as wired and never called, "
+                f"is the defect it was built for",
+            ))
+        elif "extract_claims.py" not in body:
+            findings.append(Finding(
+                "unwired-claim-verifier", relpath, 1,
+                "names `claim-verifier` without `extract_claims.py`, so the claim list is "
+                "gathered by judgement — which is the half #359 proved cannot be relied on",
+            ))
+    return findings, examined
+
+
 def check_findings_schema_drift() -> tuple[list[Finding], int]:
     """qa-flow's reporter must document the SAME record fields `findings.py` enforces (#138).
 
@@ -1022,6 +1068,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     coercions, coercions_examined = check_unreachable_coercion_fallback()
     topologies, topologies_examined = check_undeclared_topology()
     schema, schema_examined = check_findings_schema_drift()
+    unwired, unwired_examined = check_unwired_claim_verifier()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1037,10 +1084,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_docs_scanned_for_coercion_fallbacks": coercions_examined,
         "multi_agent_commands_checked_for_topology": topologies_examined,
         "findings_schema_fields_compared": schema_examined,
+        "flows_checked_for_claim_verifier": unwired_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema,
+            + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired,
             coverage)
 
 
@@ -1465,6 +1513,47 @@ def selftest() -> int:
     # Scope: this is Tailwind-v4 doctrine WE ship. A plugin or script mentioning it is not a recipe.
     scenario("outside skills/ is out of scope", rule=ON, expect_finding=False,
              files={"plugins/x/commands/c.md": 'class="focus-visible:outline-none"\n'})
+
+    # ---- unwired-claim-verifier ----------------------------------------------------
+    # Reads real repo paths, so `scenario()`'s synthetic tree cannot drive it. Exercised directly.
+    UCV = "unwired-claim-verifier"
+    checks += 1
+    if check_unwired_claim_verifier()[0]:
+        failures.append(f"{UCV}: the shipped flows already fail this rule")
+    _root = ROOT
+    import tempfile as _t2
+    # `expect` is a SUBSTRING of the required message, not a boolean. The boolean version was
+    # vacuous and a mutation proved it: disabling the "never invokes" branch left the `elif` to fire
+    # instead, so a finding still appeared and `bool(got)` could not tell the two branches apart.
+    for label, agent_exists, release_body, expect in (
+        ("a flow that never names claim-verifier", True, "Open the promotion PR.\n",
+         "never invokes"),
+        ("a flow naming it without extract_claims.py", True,
+         "Hand the body to `claim-verifier`.\n", "without `extract_claims.py`"),
+        ("a flow with both is silent", True,
+         "Run extract_claims.py then hand it to `claim-verifier`.\n", None),
+        # If the agent is not in the tree there is nothing to wire, and demanding a caller for a
+        # non-existent agent would fail every clone that trims plugins.
+        ("no agent shipped means nothing to wire", False, "Open the promotion PR.\n", None),
+    ):
+        checks += 1
+        root = Path(_t2.mkdtemp(prefix="unwired-"))
+        (root / ".claude/agents").mkdir(parents=True)
+        (root / ".claude/commands").mkdir(parents=True)
+        if agent_exists:
+            (root / "plugins/rails-flow/agents").mkdir(parents=True)
+            (root / "plugins/rails-flow/agents/claim-verifier.md").write_text("x\n", encoding="utf-8")
+        (root / ".claude/agents/release-manager.md").write_text(release_body, encoding="utf-8")
+        (root / ".claude/commands/maintainer-work.md").write_text(
+            "Run extract_claims.py then `claim-verifier`.\n", encoding="utf-8")
+        ROOT = root
+        got, _ = check_unwired_claim_verifier()
+        ROOT = _root
+        messages = " ".join(f.message for f in got)
+        if expect is None and got:
+            failures.append(f"{UCV} / {label}: expected silence, got {messages[:80]}")
+        if expect is not None and expect not in messages:
+            failures.append(f"{UCV} / {label}: expected a finding saying {expect!r}, got {messages[:80]!r}")
 
     # ---- findings-schema-drift -----------------------------------------------------
     # This rule reads two REAL repo paths rather than a synthetic tree, so `scenario()` (which
