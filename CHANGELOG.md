@@ -3589,6 +3589,57 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Focus restore is measured now, not claimed** (#105, criterion 4's second half). Criterion 4 reads
+  *"flags dead controls **+ missing focus restore**"*; only the first half shipped in 1.17.0, and the
+  omission was not noted anywhere. `crawl_collector.js` now presses **Escape** on a layer it just
+  opened and records whether the layer closed and whether `document.activeElement` **is** the trigger
+  element — identity, not a selector match. `interaction_report.py` judges it as
+  `focus-restore-missing`.
+  - **It is the measured half of something already reported.** `a11y-auditor` counts
+    `Restore Failures` per overlay in its CSV and `validate_evidence.py`'s keyboard profile gates that
+    CSV's *arithmetic* — but the number in the column is the agent's own claim and nothing compares it
+    to a browser. That is the claims-vs-enforcement shape this repo warns about, sitting inside the
+    a11y pass. This asks the DOM.
+  - **The narrow scope is the whole design, and it contradicts the issue text.** #105 asked for a rule
+    on anything whose trigger flips `aria-expanded`. Verified against the live WAI-ARIA APG
+    (2026-08-01), that is wrong: focus-return-on-Escape is mandated for
+    [Dialog (Modal)](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) (*"When a dialog closes,
+    focus returns to the element that invoked the dialog"*),
+    [Menu/Menubar](https://www.w3.org/WAI/ARIA/apg/patterns/menu/) (*"Escape: Close the menu that
+    contains focus and return focus to the element or context … from which the menu was opened"*) and
+    [Combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) (*"Escape: Closes the popup and
+    returns focus to the combobox"*) — and is **absent entirely** from the base
+    [Disclosure](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) pattern, whose Keyboard
+    Interaction table has no `Escape` row, and from
+    [Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/), which never mentions Escape. So the
+    rule as the issue described it would have flagged **every FAQ accordion and every listbox** against
+    APG's own spec. Those are measured, printed *out of scope* by name, and never counted — with the
+    negative fixtures and a declared mutation that removes the scope guard.
+  - **The trigger's role is the discriminator, not the popup's.** A plain button controlling a listbox
+    is a standalone listbox (exempt); the same popup under `role="combobox"` is in scope. Fixtured as a
+    near-miss pair, because keying off the popup alone silently loses the combobox case.
+  - `closedOnEscape`/`focusRestored` are **`null` when the probe did not complete**, never `false` — an
+    overlay whose dismissal could not be observed is named, exactly like a control that was never
+    clicked, and is not a pass.
+  - The dismissal is judged **before** the `dead-control` exclusions: a link's *navigation* is
+    unobservable from a sweep that stays on the page, but the dialog it opened is entirely observable.
+    A declared mutation reorders the two.
+- **FIX — `a11y-auditor` told agents to demand `Escape` of every "overlay", undefined** (#105). The
+  same over-broad claim the rule above refuses, sitting in shipped doctrine an agent follows verbatim:
+  *"per overlay, assert the three individually … `Escape` closes it, focus returns to the trigger"*
+  with no definition of *overlay*, so an FAQ accordion counts, inflating the `Overlays` denominator and
+  filing `S1`s against behaviour APG does not require. Found by grepping for the pattern after the
+  judge's scope was settled — one instance of a contradiction travels in groups. The column is now
+  scoped to the same three patterns, with the same citations, and says so.
+- **FIX — the qa-flow browser collector had no syntax gate, and the obvious one cannot fail.**
+  `crawl_collector.js` is a shipped `.js` file an agent runs in a user's project;
+  `lint_markdown_code.py` only reads fenced blocks, so nothing checked it. Worse, **`node --check
+  <file>` exits 0 on an ES module with a blatant syntax error** (verified on Node 24:
+  `import x from "y"; const = ;` passes) — it is detected as ESM and the check silently does nothing,
+  so a gate written the obvious way would have passed on anything. `interaction_report.py
+  --check-collector` feeds the source in on **stdin with `--input-type=module`**, is registered in
+  `GATES`, SKIPs loudly when `node` is absent, and carries its own negative test plus a mutation that
+  makes it always-succeed.
 - **Visual regression: the two acceptance criteria 1.19.0 did not actually meet** (#112). The issue
   asked for five things and shipped three. Re-verified by running each, not by reading the code.
   - **Ignore regions were decoration, not a feature.** `ignored` was in the schema from day one,
