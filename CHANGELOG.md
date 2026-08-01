@@ -3261,6 +3261,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Theme-only failures are caught now** (#105, criterion 3). Every other rule in this toolchain
+  judges **one** rendering, so a theme-only defect is invisible to all of them by construction: each
+  snapshot is individually conformant, and the defect is the *difference*.
+  - The failure it is really for is **text that disappears in dark mode** — a hardcoded colour, or a
+    role token used for text against a surface that inverts underneath it. In light it is a
+    paragraph; in dark it is the same colour as its background. Nothing reading a single snapshot can
+    see that, because in each one the element is just "some colour on some colour".
+  - **It consumes design-flow's snapshot and does not re-run its rules** — the decision made when
+    #105 was re-scoped. Re-implementing `tap-target-small` here would be a second rule with a second
+    owner, drifting from the first. The snapshot is data; the rules stay where they live.
+  - **The XOR is the whole rule.** A page equally bad in *both* themes is `rendered_conformance.py`'s
+    finding, not a parity failure — reporting it here would double-count, and the declared mutation
+    that turns the XOR into an `or` proves the distinction is real rather than incidental.
+  - `colour-frozen` fires only when a colour is identical across themes **and the surroundings
+    inverted**: a brand mark is legitimately fixed, so sameness alone is not a signal. A translucent
+    colour is **refused** rather than composited into an invented ratio. Two snapshots of the same
+    theme are refused outright — they always agree, so they would report parity while testing nothing.
+
 - **A route crawl is judged now — and the case it exists for is the 200** (#105, criterion 1).
   qa-flow could enumerate routes (#119) and capture console errors per page (#109); design-flow could
   judge a *rendered* page against the design system (#107). **Nothing judged which routes are
