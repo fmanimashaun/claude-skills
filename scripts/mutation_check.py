@@ -161,6 +161,24 @@ GUARDS: tuple[Guard, ...] = (
                 "unbounded",
             ),
             Mutation(
+                "a shipped CI.run example with no test step stops being flagged (#391)",
+                "            if _CI_SUITE_STEP.search(block):",
+                "            if True:",
+                "a CI.run example with no test step",
+            ),
+            Mutation(
+                "the ci-gate rule escapes the shipped surface and reads the CHANGELOG",
+                'if not (relpath.startswith("skills/") or relpath.startswith("plugins/")):',
+                "if False:",
+                "the CHANGELOG may quote a superseded example",
+            ),
+            Mutation(
+                "the ci-gate rule stops reading plugins, covering only half the shipped surface",
+                'if not (relpath.startswith("skills/") or relpath.startswith("plugins/")):',
+                'if not relpath.startswith("skills/"):',
+                "the same defect in a plugin",
+            ),
+            Mutation(
                 "the renders_many singular setter is flagged as a mismatch again",
                 'if used in declared or f"{used}s" in declared:',
                 "if used in declared:",
