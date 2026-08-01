@@ -8,7 +8,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 ## Repository hygiene
 
 
-### Unreleased
+### 2026-08-01 — the install block, and a rule that can see it
 
 - **FIX — `design-flow` was missing from the README's install block** (#203, second occurrence).
   It is in `marketplace.json`, named **four times** in the README, and had **no
@@ -3281,7 +3281,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.18.0 — 2026-08-01
 
 - **The three judges shipped in 1.17.0 now have something that feeds them** (#105). They landed with
   a `--schema` and **no collector** — usable in principle and unusable in practice, which is a gap
@@ -4783,6 +4783,36 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.50.0)
+
+> ### Two things that existed but could not be used
+>
+> The three crawl judges shipped last release with a `--schema` and **no collector** — usable in
+> principle, unusable in practice. And `design-flow` has been in the marketplace, named four times
+> in the README, with **no install line**: anyone following the install steps got four of five
+> plugins and never learned the fifth existed.
+>
+> Both are the same shape. A thing that exists and cannot be reached is not shipped.
+
+- **The crawl judges now have a collector.** `crawl_collector.js` produces both documents in one
+  pass and **measures only** — it cannot be unit-tested without a browser, so it holds no rule; a
+  rule there would be a rule with no fixture and no mutation guard.
+- **`/qa-flow:crawl`** reads the project's own `app:` block rather than inventing a boot command,
+  and takes routes from `qa/routes.json` — crawling a hand-typed list is how a route nobody
+  remembered stays untested forever. It performs **no git operations**.
+- **Both judges cross-check the shipped collector against their own schema.** They are separate
+  files in separate languages, so nothing stopped them drifting — and a collector that quietly
+  stops emitting a field makes the rule reading it go **silent rather than fail**. Proven by
+  renaming a field and watching the selftest catch it.
+- **FIX — `design-flow` had no `/plugin install` line** (#203, second occurrence), and its setup
+  command was missing from the ordering. The existing `undocumented-plugin` rule stayed **green**
+  exactly as its own docstring predicts: it proves a name appears *somewhere*, not that it appears
+  in the list that enumerates what ships.
+- **NEW `uninstallable-plugin` rule.** The looser rule was deliberately left loose because locating a
+  prose *section* needs judgement — but **an install command is not a section**. `/plugin install
+  <name>@` is a fixed pattern, so this is decidable with none. Proven to add coverage rather than
+  duplicate: delete the line and the new rule fires while the old one stays silent.
 
 ### 2026-08-01 (release v1.49.0)
 
