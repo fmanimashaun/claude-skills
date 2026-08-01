@@ -1199,6 +1199,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+
+### Unreleased
+
+- **FIX — the CI job we scaffold into a user's repo could never run** (#334). `setup-flow` §8
+  proposed a `doctrine` job whose step was
+  `python3 "$CLAUDE_PLUGIN_ROOT/scripts/project_gates.py"`. **That variable does not exist in
+  GitHub Actions** — it is set only inside Claude Code's own plugin context — so the job failed on
+  every run with `can't open file '/scripts/project_gates.py'`. It shipped in the release whose
+  stated purpose was putting guarantees in the deterministic layer.
+  - **Nothing could have caught it, and that is the interesting part.** Our own workflows never
+    reference that variable, so every gate we own was silent: *the workflow we test and the workflow
+    we scaffold are different files.* It surfaced when a maintainer ran the command by hand.
+  - **The correct knowledge was already in the same file, twelve lines below.** The
+    architecture-graph job says plainly *"the script ships inside the plugin, which CI does not
+    install"* and vendors a copy. I wrote the broken job anyway.
+  - Fixed by checking the toolchain out **beside** the repo at a **pinned tag** — one checkout serves
+    all four plugins, because the runner discovers each `checks.json` itself. Pinning is stated as
+    mandatory: an unpinned `main` means our next release silently changes what a user's CI enforces.
+  - **The two patterns now coexist explicitly.** Vendoring suits one self-contained file whose
+    staleness is visible; a pinned checkout suits many scripts across four plugins, where vendoring
+    would be four copies drifting independently.
+- **NEW `plugin-root-in-ci` rule.** Scoped to ```yaml fences, which is where our docs put CI
+  scaffolding. **Prose naming the variable is correct and common** — it is how an agent resolves a
+  plugin path at runtime, and the same file legitimately says *"copy from
+  `${CLAUDE_PLUGIN_ROOT}/scripts/x.py`"* — so matching anywhere would fire on that sentence and the
+  rule would be deleted within a day. Four fixtures, two of them silence cases including a YAML
+  **comment**. Assertions 73 → **77**.
+
 ### 1.15.0 — 2026-08-01
 
 - **One CI entry point a Rails project can actually run** (#334). The plugins shipped **eleven**
