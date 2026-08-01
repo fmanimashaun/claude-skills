@@ -188,10 +188,16 @@ def run() -> int:
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
     for real_guard in mc.GUARDS:
         _tick()
-        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps,
-                               *real_guard.needs) if not (original_repo / p).is_file()]
+        # `subject`, `selftest` and `deps` are Python modules, so they must be FILES. `needs` is
+        # different: it is "stage this beside the mutant", and a guard whose selftest reads a whole
+        # directory of fixtures must be able to declare the directory. `build_coverage` needs all of
+        # `skills/fidara-design/references` — naming files would silently miss the next one added,
+        # which is the failure mode `needs` exists to prevent.
+        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
+                   if not (original_repo / p).is_file()]
+        missing += [p for p in real_guard.needs if not (original_repo / p).exists()]
         if missing:
-            FAILURES.append(f"{real_guard.name}: declares files that do not exist: {missing}")
+            FAILURES.append(f"{real_guard.name}: declares paths that do not exist: {missing}")
         if not real_guard.mutations:
             FAILURES.append(
                 f"{real_guard.name}: declares no mutations — a guard with an empty list passes "
