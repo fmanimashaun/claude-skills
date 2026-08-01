@@ -15,7 +15,7 @@ knowledge → build → test → ship → design.
 | Plugin | Role | Key commands |
 |--------|------|--------------|
 | **rails-stack** | The knowledge — Rails 8 + Hotwire + design-system skills that auto-load when relevant | *(skills, no commands)* |
-| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:feature` `/fix` `/review` `/pr-comments` `/issues` `/curate` `/explain` `/handoff` `/graph` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
+| **rails-flow** | The build process — orchestrated feature work with hard gates | `/rails-flow:brief` `/feature` `/fix` `/review` `/pr-comments` `/issues` `/curate` `/explain` `/handoff` `/graph` `/report` `/setup-flow` `/brain` `/brain-review` `/brain-sync` |
 | **qa-flow** | Independent QA — black-box testing of the running app, gates dev→main | `/qa-flow:smoke` `/qa-flow:cases` `/qa-flow:functional` `/qa-flow:verify` `/qa-flow:certify` `/qa-flow:setup-qa` |
 | **pipeline** | Lifecycle + release — sequences the flows, builds the container, deploys | `/pipeline` `/pipeline:release` `/pipeline:deploy-cloud` `/pipeline:status` `/pipeline:ack` `/pipeline:setup-pipeline` |
 | **design-flow** | UI/design — applies the Fidara design system for consistent, modern, responsive UI | `/design-flow:setup` `/design-flow:component` `/design-flow:audit` |
@@ -54,6 +54,7 @@ only as guidance eventually gets skipped under pressure.
 flowchart TB
     subgraph BUILD["🔨 BUILD loop"]
         direction LR
+        B0["/rails-flow:brief<br/>intake, once per engagement"] -.->|scope · non-goals| B1
         B1["/rails-flow:feature<br/>or :fix"] --> B2["/rails-flow:review<br/>7 parallel passes"]
         B2 --> B3["/qa-flow:smoke<br/>app boots?"]
         B3 --> B4["/qa-flow:verify<br/>independent QA"]
@@ -131,7 +132,7 @@ special runtime. Three places where we take it, all as ordinary files in git:
 |---|---|---|
 | Prose hand-offs between parallel agents | **Typed findings records** (JSONL: severity, `file:line`, a stable dedupe `signature`, `caused_by` / `blocks`) | Dedupe becomes mechanical; completeness becomes checkable (every input id must appear in the output); fixes order **topologically** so root causes precede symptoms |
 | Prose "this blocks that" inside issue bodies | **Declared issue edges** (`depends-on` / `blocks` / `part-of`) | Triage *computes* the ready-now set and the critical path instead of re-deriving it by hand |
-| Judged regression scope | **Code graph for blast radius** — changed file → reverse dependencies → routes → tests | Test selection is derived and justifiable, with a convention-based fallback when no graph tool is installed |
+| Judged regression scope | **Code graph for blast radius** (`qa-flow/scripts/blast_radius.py`) — changed file → reverse dependencies → routes → tests | Test selection is derived and justifiable — every inclusion prints the edge that justified it — with a convention-based fallback when no graph tool is installed |
 
 Same benefits — deterministic merges, computed ordering, derived scope — with state that stays
 greppable, diffable and reviewable. The graph is in the **data**, not in a database.
@@ -161,7 +162,22 @@ The skills give Claude the *knowledge*; the **rails-flow** plugin encodes the *p
 an orchestrated development flow for any Rails 8 project, following Anthropic's
 orchestrator-workers and evaluator-optimizer patterns.
 
-**Commands** (namespaced): `/rails-flow:setup-flow` scaffolds CLAUDE.md, GUARDRAILS.md and
+**Commands** (namespaced): `/rails-flow:brief` is the front door for a **client engagement** —
+it turns "we need a site for X" into `docs/brain/BRIEF.md` before any scaffolding happens.
+It detects which situation it is in (documents exist / code exists / greenfield), **ingests
+first**, reports a coverage map of what the sources already answer, and interviews only the
+genuine gaps — one question at a time, each carrying a recommendation so the user can accept a
+default rather than invent an answer. The brief is deliberately an **index over the sources, not
+a copy of them**: a PRD stays authoritative and the brief cites into it, because two documents
+saying the same thing disagree within a week with no rule for which wins.
+`check_brief.py` enforces the falsifiable half — every `path § "locator"` citation is opened and
+resolved, no long run of a cited source is reproduced (blockquotes and fenced code exempt, because
+attributed quotation is the point), every coverage row has a state, non-goals are neither empty nor
+hedged, every open question names an owner, and every `D-nnn` resolves in `DECISIONS.md`. What it
+deliberately does *not* check is the interview itself: one-question-at-a-time and stopping when
+decidable leave no trace in the artifact, so they are documented as advice rather than dressed up as
+enforcement ·
+`/rails-flow:setup-flow` scaffolds CLAUDE.md, GUARDRAILS.md and
 the `docs/brain/` memory system into a project · `/rails-flow:feature <desc>` runs the full
 loop — plan (delegated exploration) → feature branch off `dev` → spec-first implementation
 (the failing spec that proves the NEW behavior comes before the code) → mandatory gates
@@ -528,9 +544,13 @@ Appium) plus the API/perf/a11y tiers feed one free, unified **Allure** HTML repo
   testable?) → sanity on the changed areas → **targeted regression by blast radius**
   (does this change threaten existing behavior?). Not feature re-testing. Defects file
   as `qa,from-qa` issues worked via `/rails-flow:issues label:qa`; no next feature
-  until green. Regression selection is automatic at the mechanical floor, proposed for
-  semantic neighbors, and **human-gated when the change touches auth, tenancy, money,
-  migrations, or a shared concern**.
+  until green. The mechanical floor is **computed, not judged** — `blast_radius.py`
+  reverse-walks the architecture graph from the changed files to their dependents, maps
+  them onto the route table and onto conventional spec paths, and prints the justifying
+  edge for every inclusion (Rails conventions when no graph is present). Semantic
+  neighbors are proposed on top, and the selection is **human-gated when the change
+  touches auth, tenancy, money, migrations, or a shared concern** — five axes the script
+  classifies mechanically and exits 1 on.
 - `/qa-flow:certify` — the comprehensive pre-`main` gate. Full regression across
   browsers + release-only layers (k6 load/soak, OWASP ZAP DAST) against **staging**.
   A clean sweep writes `qa/CERTIFICATION` (bound to the exact dev sha) and promotes the
@@ -610,6 +630,26 @@ detect lifecycle transitions and remember them — they never invoke Claude head
 spend tokens. A dormant GitHub Actions adapter ships as an `.example` for when cloud
 minutes are available.
 
+### Unattended runs stop instead of digging — circuit breakers
+
+A gate says when a stage may *advance*. It says nothing about when to stop **retrying** one,
+and that is what goes wrong on an unattended run: an agent that cannot make progress does not
+idle, it re-pushes the image and redeploys, and every attempt looks like activity in a log.
+
+`scripts/breaker.py` bounds a run against `pipeline/run-ledger.jsonl` — append-only JSONL,
+committed, so a run is a `git diff` rather than a memory. The stages and the limits are declared
+**once**, and `check` reads them back and takes no threshold flags, so a run cannot widen its own
+cap halfway through. It refuses a stage five ways: `already-passed`, `out-of-order` (release
+cannot be attempted until certify passed — gate-skipping, made mechanical), `attempt-cap` (3),
+`no-progress` (2 identical failure signatures), `budget` (120 minutes). Overridable within a
+bounded range, because an override that can be set to infinity is not a breaker.
+
+A failure cannot be recorded without its signature and a stop cannot be recorded without a
+diagnosis. `breaker.py report` derives **complete / partial / stopped** from the ledger and exits
+`0` only for `complete`, so a partial run cannot be relayed as a success by anything reading the
+exit code. Full doctrine, including which of the four forbidden escapes are enforced and which
+stay doctrine: `plugins/pipeline/reference/stop-conditions.md`.
+
 ### Platform note
 
 qa-flow and pipeline hooks are **bash + python3**. On Windows, run Claude Code inside
@@ -662,7 +702,9 @@ claude-skills/
 ├── skills/                # bundled into the rails-stack plugin
 │   ├── rails-8/          # SKILL.md + references/  (source of truth)
 │   ├── hotwire/          # SKILL.md + references/
-│   └── fidara-design/    # the Fidara design system: SKILL.md + 7 references
+│   ├── fidara-design/    # the Fidara design system: SKILL.md + 7 references
+│   ├── code-review/      # review doctrine: the claims-vs-enforcement defect classes
+│   └── quality-pass/     # advisory second pass: reuse, simplification, efficiency, altitude
 ├── plugins/               # DISTRIBUTED — the app plugins in marketplace.json
 │   ├── rails-flow/       # agentic build flow: commands + agents + hooks
 │   ├── qa-flow/          # independent QA flow
@@ -711,6 +753,10 @@ Skills are plain folders; installing = putting each skill at
 After installing, restart Claude Code so all hooks register. Per-project setup runs in
 dependency order: `/rails-flow:setup-flow` → `/design-flow:setup` → `/qa-flow:setup-qa` →
 `/pipeline:setup-pipeline`.
+
+On a **client engagement**, `/rails-flow:brief` comes before all of them: scaffolding a project
+whose scope, non-goals and constraints are still in someone's head is how the first slice gets
+built against a guess.
 
 Run those inside any Claude Code session. The `rails-stack` plugin bundles the
 rails-8, hotwire, and fidara-design skills and **auto-updates as new versions ship —
@@ -853,9 +899,14 @@ editing anything under `skills/`, rebuild the packages with
 ## Versioning
 
 Skill content is pinned to **Rails 8.1.3**, **Turbo 8.0.23**, **Stimulus
-3.2.2**, and **Hotwire Native iOS 1.2.2 / Android 1.2.5**, written July 2026.
+3.2.2**, and **Hotwire Native iOS 1.3.0 / Android 1.3.1**, written July 2026.
 The skills instruct Claude to verify versions when the current date is well
 past that — but expect a refresh here when Rails 8.2/9 lands.
+Skill content is pinned to **Rails 8.1.3.1**, **Turbo 8.0.23**, **Stimulus
+3.2.2**, and **Hotwire Native iOS 1.2.2 / Android 1.2.5**, written July 2026;
+the Rails pin was re-verified 2026-08-01. The skills instruct Claude to verify
+versions when the current date is well past that — but expect a refresh here
+when Rails 8.2/9 lands (neither had shipped as of 2026-08-01).
 
 ## License
 

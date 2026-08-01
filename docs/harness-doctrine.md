@@ -292,12 +292,16 @@ count, last commit, the top of `docs/brain/STATUS.md`, the `MEMORY.md` index, a 
 nudge, and an issue→fix discipline advisory. `maintainer-status.sh` injects the open-issue count, the
 P1 count and the `type:incorrect-doctrine` count. Both are stdout-becomes-context, both fail open.
 
-**What does not exist: the self-contained work order.** [#127](https://github.com/fmanimashaun/claude-skills/issues/127)
-proposes a per-unit `HANDOFF.md` — goal, acceptance criteria, files in and explicitly out of scope,
+**The self-contained work order now exists.** [#127](https://github.com/fmanimashaun/claude-skills/issues/127)
+asked for a per-unit file — goal, acceptance criteria, files in and explicitly out of scope,
 applicable guardrails, stop conditions, how to verify — so that execution does not depend on
-conversation state. **#127 is open. Nothing in the repo assembles that today**, and context for a
-build still lives spread across `CLAUDE.md`, `GUARDRAILS.md`, the phase plan, `docs/brain` and the
-conversation. Recorded as a gap.
+conversation state. `/rails-flow:handoff` writes `docs/handoff/<slug>.md` (per unit, **not** a root
+`HANDOFF.md`: concurrent branches each have one, and a single root file conflicts on every merge),
+and `check_handoff.py` rejects one that points at the conversation, leaves a `<placeholder>`, or
+restates a criterion instead of citing its id. This paragraph read *"#127 is open. Nothing in the
+repo assembles that today"* until #128's second half was worked and someone re-read it — a stale
+gap-claim is as misleading as a stale guarantee, and it survives longer because nobody re-checks
+good news.
 
 ---
 
@@ -307,21 +311,56 @@ An agent that cannot make progress but keeps trying digs a deeper hole — rever
 loosening tests to make them pass, widening scope to route around a blocker — and every one of those
 looks like activity in a log.
 
-**What exists today is one stop condition, and it is deterministic.** `stop-gate.sh` reads
+**The oldest stop condition here is deterministic and tiny.** `stop-gate.sh` reads
 `stop_hook_active` from its own payload and exits 0 if it is already true, so the gate blocks **once**
-and can never loop. That is the whole of it.
+and can never loop. For a long time that was the whole of it, and
+[#128](https://github.com/fmanimashaun/claude-skills/issues/128) recorded the rest as a gap: an
+attempt cap, a no-progress detector keyed on an unchanging failure signature, enumerated forbidden
+escapes, a blast-radius cap, budgets, escalate-and-continue, and a final report that distinguishes
+complete from partial from stopped. This section used to say a grep for
+`circuit.?breaker|stop condition|max attempts|bail out` across `plugins/` and `skills/` *"still
+returns none"*. **Re-run it: it returns 26 hits in five files.** The claim was true when written and
+went stale the day the first half shipped, which is why the row in §11 says to re-run the grep rather
+than to trust the sentence.
 
-[#128](https://github.com/fmanimashaun/claude-skills/issues/128) proposes the rest: an attempt cap, a
-no-progress detector keyed on an unchanging failure signature, enumerated forbidden escapes (weakening
-a test to make it pass, reverting a passing task to unblock the current one, expanding scope past the
-work order, disabling a guardrail), a blast-radius cap, per-task budgets, escalate-and-continue, and a
-final report that distinguishes complete from partial from stopped. **#128 is open.** A grep across
-`plugins/` and `skills/` for `circuit.?breaker|stop condition|max attempts|bail out` found zero hits
-when it was filed, and still returns none.
+It shipped in two halves, and they are deliberately different shapes because the two plugins fail
+differently:
 
-Writing those seven bullets here as though they were doctrine would be precisely the
-`claims-vs-enforcement` defect this document exists to name. So: **this is a known gap, not a rule.**
-When it ships, it ships as a hook or a script, with the ladder in §4 behind it.
+- **rails-flow — a checked artefact.** The stop conditions are a required section of the work order
+  `/rails-flow:handoff` writes, and `check_handoff.py` rejects one that states no **number**: "stop
+  when you are stuck" cannot be evaluated by the thing that is stuck. All four escapes are checked
+  individually.
+- **pipeline — a run ledger and a breaker.** A pipeline has no work order; it has a gated chain of
+  stages, sometimes unattended, whose most autonomous agent deploys to production and was told to
+  *"troubleshoot autonomously"* and *"re-run idempotently"* with no bound at all.
+  `plugins/pipeline/scripts/breaker.py` opens a run against `pipeline/run-ledger.jsonl` — append-only
+  JSONL, committed, so §9's *if you cannot diff it, you cannot gate it* holds — and answers one
+  question per stage: may this be attempted now? The limits are recorded once at `start` and `check`
+  takes no threshold flags, so a run cannot widen its own cap halfway through.
+
+Three things about that second half are worth keeping when it is next edited:
+
+- **Two of #128's four escapes became mechanical here, and two did not.** Gate-skipping is decidable
+  from the ledger (`out-of-order`), and so is re-running work that already passed. Weakening a test
+  and disabling a guardrail involve file edits the breaker cannot see, so they stay doctrine in
+  `reference/stop-conditions.md` — and `breaker.py --selftest` asserts that file still enumerates all
+  four with the strings the script declares, so the two cannot drift apart. Naming which half is
+  enforced is the point; a table that lists four and enforces two silently is the defect this
+  document is about.
+- **Escalate-and-continue was NOT copied across, on purpose.** rails-flow's criteria are independent,
+  so a stop there moves to unrelated work. A pipeline is a gated chain: nothing downstream of a
+  stopped stage is independent of it, and "continuing" is the out-of-order escape under a friendlier
+  name. Copying the bullet for symmetry would have shipped advice that contradicts the mechanism
+  beside it.
+- **The honest report is an exit code, not a promise.** `breaker.py report` derives
+  complete / partial / stopped from the ledger and exits `0` **only** for `complete`. Exceeding a cap
+  makes a run `stopped` even if every stage later passed — crediting the outcome would make the cap
+  advisory.
+
+It is a script, not a hook, and the classification is deliberate: a hook sees one tool call, and every
+one of these rules is a statement about a run. It is also a **discipline, not a sandbox** — it cannot
+stop an agent that never calls it or that deletes the ledger. Both show up in a diff instead, and the
+module's own docstring says so rather than implying otherwise.
 
 ---
 
@@ -356,9 +395,15 @@ it* (one defect or two?) and *the agents disagree* (which wins?). Absence of a f
 agent is never evidence against another's — they looked at different things.
 
 **A loop owes an `exit:` condition** — the property that ends it, not a step count. Breakers
-(attempt caps, no-progress detection) are **deliberately not required here**: §8 records them as a
-known gap owned by #128, and demanding them before they exist would be the exact defect this
-document is named for. An exit condition is different — a command can state one today.
+(attempt caps, no-progress detection) are **still not required in the marker**, and now for a
+different reason than when this was written. The original reason was that §8 recorded them as a gap
+owned by #128 and demanding them before they existed would be the exact defect this document is named
+for. #128 has since shipped, so that reason has expired; the decision stands on its replacement: a
+breaker is now a **mechanism with a ledger behind it**, and a number typed into an HTML comment would
+be a claim nothing enforces sitting next to one that is enforced — strictly worse than no claim. A
+command that loops should call `breaker.py`; the marker still declares only what ends the loop.
+(No command declares `topology: loop` today, so this branch has no subjects — it is a forward guard
+with a fires-and-silent fixture pair, not a live rule.)
 
 Enforced by `undeclared-topology` in `lint_self_consistency.py`: any command dispatching two or
 more of its own plugin's agents must carry the marker, a `parallel` one must carry `merge:`, a
@@ -443,7 +488,9 @@ would be a poor place to make one, so the honest accounting is:
 | Nothing mechanically enforces #77's no-disposition clause | `grep -rn "disposition" scripts/ plugins/*/scripts/ evals/*.py` — no hits |
 | Nothing mechanically cross-checks a skill's non-negotiables against its own recipes | `grep -rn "non-negotiable" scripts/ plugins/*/scripts/` — no check |
 | `guard-bash.sh` does not block a push to a shared branch | Feed it `{"tool_input":{"command":"git push origin dev"}}` on stdin; it exits 0 |
-| #127 and #128 are unshipped | Their issue state on the tracker |
+| §8's stop conditions exist rather than being proposed | `grep -rniE "circuit.?breaker\|stop condition\|max attempts\|bail out" plugins/ skills/` — it returned **zero** when #128 was filed and returns hits now, so re-run it rather than trusting the sentence |
+| The pipeline breaker fires on every rule it claims, and stays quiet on a healthy run | `python3 plugins/pipeline/scripts/breaker.py --selftest` (59 checks) and `python3 scripts/mutation_check.py --guard breaker` (14 declared mutations) |
+| The pipeline doctrine and the pipeline code still agree | The last checks of that same selftest: `reference/stop-conditions.md` must state the numbers, the bounds and all four escapes the script declares, and every pipeline surface describing an unattended re-run must name `breaker.py` |
 | The shell and code in this file are valid | `python3 scripts/lint_markdown_shell.py` and `python3 scripts/lint_markdown_code.py` — `docs/` is in their default roots |
 
 The last row is the one place this document *is* under a gate, and it is a narrow one: the fenced
