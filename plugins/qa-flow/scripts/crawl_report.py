@@ -41,6 +41,22 @@ from pathlib import Path
 
 SCHEMA = "qa-flow/route-crawl/1"
 
+# The document a collector must produce. ONE definition, printed by `--schema` and cross-checked
+# against the shipped collector by the selftest -- they are separate files in separate languages, so
+# nothing else stops them drifting, and a collector that quietly stops emitting a field makes the
+# rule reading it go silent rather than fail.
+SCHEMA_EXAMPLE = {
+    "schema": SCHEMA,
+    "pages": [{
+        "route": "/dashboard", "status": 200, "title": "Dashboard", "h1": "Your work",
+        "console": [{"level": "error", "text": "Uncaught TypeError: x is not a function"}],
+        "failedRequests": [{"method": "GET", "url": "/assets/missing.js",
+                            "failure": "net::ERR_ABORTED"}],
+        "skipped": None,
+    }],
+}
+COLLECTOR = "crawl_collector.js"
+
 # Text that means "this page IS an error", in the <title> or the first heading. Deliberately
 # anchored to the shapes frameworks actually render, not to the word "error" anywhere on the page --
 # a documentation page about error handling is not an error page, and a rule that cannot tell the
@@ -151,16 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.selftest:
         return selftest()
     if args.schema:
-        print(json.dumps({
-            "schema": SCHEMA,
-            "pages": [{
-                "route": "/dashboard", "status": 200, "title": "Dashboard", "h1": "Your work",
-                "console": [{"level": "error", "text": "Uncaught TypeError: x is not a function"}],
-                "failedRequests": [{"method": "GET", "url": "/assets/missing.js",
-                                    "failure": "net::ERR_ABORTED"}],
-                "skipped": None,
-            }],
-        }, indent=2))
+        print(json.dumps(SCHEMA_EXAMPLE, indent=2))
         return 0
     if not args.crawl:
         ap.error("a crawl file is required (or --schema / --selftest)")
@@ -243,6 +250,18 @@ def selftest() -> int:
     check("a skipped route is named", "auth required" in r.skipped[0], f"{r.skipped}")
 
     # AN UNUSABLE CRAWL IS NOT A CLEAN CRAWL -- three ways in.
+    # THE COLLECTOR MUST EMIT EVERY FIELD THIS SCHEMA DECLARES. Object shorthand counts:
+    # `{ route, status }` is the same as `route: route`.
+    collector = Path(__file__).with_name(COLLECTOR)
+    check(f"{COLLECTOR} ships beside its judge", collector.is_file(), f"{collector} is missing")
+    if collector.is_file():
+        js = collector.read_text(encoding="utf-8")
+        missing = [f for f in SCHEMA_EXAMPLE["pages"][0]
+                   if not re.search(rf"(?m)^\s*{re.escape(f)}\s*[,:]", js)]
+        check("the collector emits every field the schema declares", not missing,
+              f"{COLLECTOR} never emits {missing} — the rule reading it would go quiet")
+        check("the collector stamps the schema tag", SCHEMA in js, f"{SCHEMA} absent")
+
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         for label, body in (("not json", "{["),

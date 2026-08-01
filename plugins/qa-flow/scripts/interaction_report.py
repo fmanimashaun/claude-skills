@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,6 +50,20 @@ SCHEMA = "qa-flow/interaction-sweep/1"
 
 # Any one of these means the control did something. Kept broad on purpose: see the docstring.
 EFFECT_KEYS = ("domChanged", "navigated", "requested", "focusMoved", "ariaChanged", "dialogOpened")
+
+# The document a collector must produce. ONE definition, printed by `--schema` and cross-checked
+# against the shipped collector by the selftest: separate files in separate languages drift, and a
+# collector that quietly stops emitting a field makes the rule reading it go silent rather than fail.
+SCHEMA_EXAMPLE = {
+    "schema": SCHEMA,
+    "controls": [{
+        "ref": "main > button.filter", "tag": "button", "role": "", "name": "Filter",
+        "disabled": False, "href": None, "exercised": True, "reason": None,
+        "effects": {k: False for k in EFFECT_KEYS},
+        "consoleAfter": [{"level": "error", "text": "..."}],
+    }],
+}
+COLLECTOR = "crawl_collector.js"
 
 
 class Unusable(RuntimeError):
@@ -131,15 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.selftest:
         return selftest()
     if args.schema:
-        print(json.dumps({
-            "schema": SCHEMA,
-            "controls": [{
-                "ref": "main > button.filter", "tag": "button", "role": "", "name": "Filter",
-                "disabled": False, "href": None, "exercised": True, "reason": None,
-                "effects": {k: False for k in EFFECT_KEYS},
-                "consoleAfter": [{"level": "error", "text": "..."}],
-            }],
-        }, indent=2))
+        print(json.dumps(SCHEMA_EXAMPLE, indent=2))
         return 0
     if not args.sweep:
         ap.error("a sweep file is required (or --schema / --selftest)")
@@ -222,6 +229,21 @@ def selftest() -> int:
     check("a console warning on activate stays silent",
           rules(ctl(effects={**{k: False for k in EFFECT_KEYS}, "domChanged": True},
                     consoleAfter=[{"level": "warning", "text": "meh"}])) == [])
+
+    # THE COLLECTOR MUST EMIT EVERY FIELD THIS SCHEMA DECLARES. Object shorthand counts.
+    collector = Path(__file__).with_name(COLLECTOR)
+    check(f"{COLLECTOR} ships beside its judge", collector.is_file(), f"{collector} is missing")
+    if collector.is_file():
+        js = collector.read_text(encoding="utf-8")
+        missing = [f for f in SCHEMA_EXAMPLE["controls"][0]
+                   if not re.search(rf"(?m)^\s*{re.escape(f)}\s*[,:]", js)]
+        check("the collector emits every field the schema declares", not missing,
+              f"{COLLECTOR} never emits {missing} — the rule reading it would go quiet")
+        for key in EFFECT_KEYS:
+            # `[,:]`, matching the field check above: `{ requested }` is shorthand for
+            # `requested: requested`, and requiring a colon reported a false positive on it.
+            check(f"the collector measures {key}", re.search(rf"(?m)^\s*{key}\s*[,:]", js) is not None,
+                  f"{COLLECTOR} never sets {key}, so that effect can never be observed")
 
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
