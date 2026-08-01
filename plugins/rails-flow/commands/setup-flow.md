@@ -448,10 +448,23 @@ branch moves. Propose one job that runs all of them:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The toolchain is checked out BESIDE the repo. `$CLAUDE_PLUGIN_ROOT` does not exist in CI --
+      # it is set only inside Claude Code's own plugin context -- so a job referencing it fails with
+      # `can't open file '/scripts/project_gates.py'` on every run.
+      - uses: actions/checkout@v4
+        with:
+          repository: fmanimashaun/claude-skills
+          ref: v1.51.0            # PIN a tag: on `main`, your CI changes when we ship
+          path: .claude-toolchain
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - run: python3 "$CLAUDE_PLUGIN_ROOT/scripts/project_gates.py"
+      - run: python3 .claude-toolchain/plugins/rails-flow/scripts/project_gates.py
 ```
+
+The runner discovers every sibling plugin's `checks.json` from that one checkout, so a single step
+covers all of them. **Pin the `ref`** — an unpinned `main` means our next release silently changes
+what your CI enforces, which is the same drift this whole toolchain exists to remove. Bump it
+deliberately, the way you bump any other dependency.
 
 `project_gates.py` discovers which of the shipped checks apply to *this* repo and reports four
 states — **pass / FAIL / not-applicable / ERROR**. A project with no `qa/` directory reports the
@@ -498,6 +511,12 @@ seconds-long job. Two setup details worth stating to the user:
   `.claude/scripts/architecture_graph.py` (copy from
   `${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py`) and re-copy when rails-flow
   updates — or skip the job if the team would rather not vendor. Say which was chosen.
+- **Two patterns coexist here on purpose, and the difference is worth stating.** This job
+  **vendors** one script; the doctrine job above **checks the toolchain out** at a pinned tag.
+  Vendoring suits a single self-contained file whose staleness is visible — the digest guard fails —
+  but it drifts by design, which is what "re-copy when rails-flow updates" means. The doctrine gate
+  runs many scripts across four plugins, so vendoring it would be four copies drifting
+  independently; a pinned checkout is one dependency you bump deliberately.
 - `generated_at`/`commit` are excluded from the digest, so this never fails merely because
   someone re-ran the generator.
 

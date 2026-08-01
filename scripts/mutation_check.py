@@ -139,6 +139,12 @@ GUARDS: tuple[Guard, ...] = (
                 "a declared plugin with no install line",
             ),
             Mutation(
+                "the CI plugin-root rule stops firing",
+                '                if "CLAUDE_PLUGIN_ROOT" in line and not line.lstrip().startswith("#"):',
+                '                if False:',
+                "a scaffolded CI job using the plugin root",
+            ),
+            Mutation(
                 "a dead settings key stops being reported (the file's first rule)",
                 "        if not keys:\n            continue",
                 "        if True:\n            continue",
