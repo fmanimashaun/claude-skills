@@ -22,6 +22,15 @@ use instead.
   primitive (`grid-auto`, `Layout::Sidebar`/`Switcher`, `cluster`) fits.
 - Hardcoded sizing: `text-[…px]`, `w-[…px]`, fixed heights instead of `--text-step-*`/`--space-*`.
 - Selectors bound to markup internals; `data-testid` used for styling.
+- **Placeholder copy shipped as content** (#131): `lorem`, `ipsum`, `Lorem ipsum`, `TODO`,
+  `TBD`, `Coming soon`, `Your headline here`, `Feature one`. Placeholder text is a **finding**, not
+  a style note — it is the one copy defect that is unambiguous without reading for meaning.
+- **Decorative visuals that are not hidden** (#135): an `<svg>` or decorative `<img>` inside a
+  marketing section without `aria-hidden="true"`, and any `alt` text that describes decoration
+  rather than content. Brand geometry carries no meaning, so it must not be announced.
+- **Illustration or geometry using raw colour** (#135): a `fill=`/`stroke=` hex inside a component,
+  or a gradient stop that is not a role token. The **one** exception is `Ui::Logo`, which brand.md
+  makes the only component allowed literal brand colours.
 
 ## Checklist (per components/audit doctrine)
 
@@ -33,6 +42,18 @@ icon-only; no color-only state; keyboard reachable; `prefers-reduced-motion`.
 **Consistency** — catalog variant/size names; one mechanism per component (no duplicate
 button/badge idioms); radius language (btn `rounded-md`, card `rounded-lg`, badge
 `rounded-full`); Lucide icons; single source of truth for tokens.
+**Motion** (#136, `skills/fidara-design/references/motion.md`) — **one** entrance pattern per page,
+at most **three** animated regions, never two running at once in the viewport, and never on content
+the reader scrolled to on purpose. Count them; this is the one motion rule that is arithmetic rather
+than judgement. Every pattern also needs its static end-state and a reduced-motion behaviour change
+(not merely a shortened duration).
+**Marketing copy** (#131, `references/marketing-copy.md`) — every section carries the copy contract
+for its archetype: one reader, a claim with its proof, specific over generic. Copy is a
+**positioning decision the human owns**; flag a draft that asserts a benefit with no proof, or that
+addresses no one in particular, but never rewrite positioning as if it were a style fix.
+**Visual assets** (#135, `references/visual-assets.md`) — prefer specific over decorative: a product
+screenshot beats brand geometry, which beats stock illustration. Illustration styles are never mixed
+on one surface. Third-party illustration must be recoloured to role tokens.
 **Composition/branding** — full-page single-focus views (auth, marketing splash, onboarding) use
 the `cover > center > stack` recipe for true **vertical** centering, not bare `center`
 (top-aligned); a **brand mark** (`Ui::Logo`, per brand.md — clear-space 1.5×, min 20px/lockup

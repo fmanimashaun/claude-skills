@@ -22,6 +22,21 @@ Build (or fix) `$ARGUMENTS` to the **fidara-design** doctrine. Delegate to the
    assignments, so apply both before writing markup. For the
    concrete code, reference `reference-implementation.md` (Button/Card + Stimulus mixins) and
    `component-implementations.md` (the full worked catalog) — mirror those exact shapes.
+
+   **If the surface is MARKETING** — a landing page, pricing, a feature section, a hero: anything a
+   prospect rather than a logged-in user reads — three more references are mandatory before writing
+   markup, each answering a question the component catalog does not.
+   - `skills/fidara-design/references/marketing-copy.md` (#131) — the copy contract for that section archetype: who the one reader
+     is, the claim and its proof, specific over generic. **Draft against the contract; never invent
+     positioning** — that is the human's decision. A confident placeholder is worse than an obvious
+     one, so no `Lorem ipsum` and no `Your headline here`: if you do not know the claim, say so in
+     the output instead of filling the slot.
+   - `skills/fidara-design/references/visual-assets.md` (#135) — the asset tier, preferring specific over decorative: a product
+     screenshot beats brand geometry, which beats stock illustration. Geometry derives from the
+     prism facets and accent bar using **role tokens**, is `aria-hidden`, and never carries meaning.
+     Never mix illustration styles on one surface.
+   - `skills/fidara-design/references/motion.md` (#136) — named patterns only, tokenised durations, a defined static end-state.
+     Motion never carries information, and every pattern has a reduced-motion fallback.
    **If it's a CRUD screen** (list + create/edit/delete), follow `crud-modal-pattern.md`:
    mutations open in the shared `turbo-frame` modal and update the list via Turbo Stream —
    never build a full-page new/edit form. **If it's a chart / KPI / dashboard**, follow

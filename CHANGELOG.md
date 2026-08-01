@@ -1853,6 +1853,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.28.0 — 2026-08-01
+
+- **A per-page motion cap, which was #136's one genuinely missing rule** (#136). `motion.md` §7
+  capped a single *stagger*; nothing capped the **page** — the limit that actually gets exceeded,
+  because each section is added by someone who only saw their own section. Now: one entrance pattern
+  per page, at most three animated regions, never two running at once in the viewport, and never on
+  content the reader scrolled to *on purpose*. The arithmetic follows §7 — three regions at the 1.6s
+  ceiling is 4.8s of page assembly if they queue, which is why they may not run together rather than
+  merely being capped in number. **Ours, not upstream**: no spec bounds animation count, so it is
+  recorded as a decision rather than left to taste, and `design-auditor` counts it.
+
 ### 1.27.0 — 2026-08-01
 
 - **Input group documented as a Text-input variant, not a new component** (#95, Phase 2). The last
@@ -3829,6 +3840,32 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.9.0 — 2026-08-01
+
+- **`design-auditor` counts the per-page motion cap** (#136) — one entrance pattern per
+  page, at most three animated regions, never two at once in the viewport. The rule itself is
+  rails-stack doctrine (`motion.md` §14); this is the half that enforces it, and it is the one
+  motion check that is arithmetic rather than judgement.
+- **The marketing doctrine is wired into the flow that uses it** (#131, #135, #136). Three reference
+  files shipped in earlier releases — `marketing-copy.md`, `visual-assets.md`, `motion.md` — and
+  each carried the same open acceptance criterion: *`/design-flow:component` consults it, and
+  `design-auditor` gains the mechanical checks*. Doctrine nothing consults is the
+  `claims-vs-enforcement` class one level up: the file exists, and the agent that should read it
+  never learns it is there.
+  - **`/design-flow:component`** now branches on the surface. A marketing surface — landing,
+    pricing, feature section, hero — makes all three references mandatory before markup, each
+    answering something the component catalog does not. The copy rule is the load-bearing one:
+    **draft against the contract, never invent positioning**, and if the claim is unknown say so in
+    the output rather than filling the slot. A confident placeholder is worse than an obvious one.
+  - **`design-auditor`** gains three grep-able checks and two checklist sections. The greps are the
+    unambiguous half — placeholder copy (`lorem`, `TODO`, `Your headline here`), decorative visuals
+    missing `aria-hidden`, and raw hex in illustration or geometry, with `Ui::Logo` as the one
+    documented exception brand.md allows. The checklist half covers what a grep cannot read for, and
+    says plainly that copy is a positioning decision the human owns.
+  - **The three pointers are full paths on purpose**, so `lint_self_consistency.py`'s doc-pointer
+    rule validates that each target exists: 62 → **65** pointers checked. Proven by renaming one to
+    `moshun.md`, which the linter caught. A bare filename would have been prose.
+
 ### 1.8.0 — 2026-08-01
 
 - **Agent model pins reconciled with the tier doctrine** (#299). Every agent moved from a
@@ -4501,6 +4538,39 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.47.0)
+
+> ### Doctrine that nothing consulted
+>
+> Three reference files shipped in earlier releases and all three carried the **same** open
+> criterion: the command that should read them, and the auditor that should enforce them, had never
+> been told they exist. That is `claims-vs-enforcement` one level up — the file is right, and the
+> agent never learns it is there.
+>
+> Closing it also surfaced #136's one genuinely missing rule: motion had a **stagger** cap but no
+> **page** cap, which is the limit that actually gets exceeded, because each section is added by
+> someone who only saw their own section.
+>
+> `fidara-design` and the design-flow plugin changed; `rails-8`, `hotwire` and `code-review` are
+> byte-identical.
+
+- **`/design-flow:component` consults the marketing doctrine** (#131, #135, #136). A marketing
+  surface now makes `marketing-copy.md`, `visual-assets.md` and `motion.md` mandatory before markup.
+  The load-bearing rule is **draft against the contract, never invent positioning** — and if the
+  claim is unknown, say so rather than filling the slot, because a confident placeholder is worse
+  than an obvious one.
+- **`design-auditor` gains the mechanical half** — placeholder copy, decorative visuals missing
+  `aria-hidden`, and raw hex in illustration or geometry (with `Ui::Logo` the one documented
+  exception). Plus checklist sections for what a grep cannot read for, stating plainly that copy is a
+  positioning decision the human owns.
+- **A per-page motion cap** (#136) — one entrance pattern per page, at most three animated regions,
+  never two at once in the viewport, never on content the reader scrolled to on purpose. Three
+  regions at §7's 1.6s ceiling is 4.8s of page assembly if they queue, which is why they may not run
+  together rather than merely being capped in number.
+- **The three new pointers are full paths**, so the doc-pointer lint validates their targets exist:
+  62 → **65** checked. Proven by renaming one and watching the linter catch it. A bare filename
+  would have been prose.
 
 ### 2026-08-01 (release v1.46.0)
 
