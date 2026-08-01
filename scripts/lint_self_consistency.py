@@ -711,6 +711,45 @@ def check_uninstallable_plugins() -> tuple[list[Finding], int]:
     return findings, len(names)
 
 
+def check_plugin_root_in_ci() -> tuple[list[Finding], int]:
+    """`$CLAUDE_PLUGIN_ROOT` must not appear inside a scaffolded YAML block.
+
+    That variable is set only inside Claude Code's own plugin execution context. It does **not**
+    exist in GitHub Actions, in a plain shell, or anywhere else -- so a CI job referencing it fails
+    on every run with `can't open file '/scripts/…'`.
+
+    We shipped exactly that: a `doctrine` job scaffolded into a user's `ci.yml` by `setup-flow`,
+    in the release whose stated purpose was putting guarantees in the deterministic layer. Nothing
+    caught it because our OWN workflows never reference the variable -- the workflow we test and the
+    workflow we scaffold are different files, so a gate on one says nothing about the other. It
+    surfaced when a maintainer ran the command by hand and got the error.
+
+    Scope is a ```yaml fence, which is where our docs put CI and config scaffolding. Prose that
+    names the variable is fine and common -- it IS how an agent resolves a plugin path at runtime,
+    and the same file legitimately says "copy from ${CLAUDE_PLUGIN_ROOT}/scripts/x.py". Matching
+    anywhere would fire on that correct sentence, which is how a rule gets deleted.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".md"):
+        rel_path = rel(path).replace("\\", "/")
+        if not rel_path.startswith(("plugins/", "skills/")):
+            continue
+        body = read(path)
+        for match in re.finditer(r"(?m)^\s*```ya?ml\s*$(.*?)^\s*```\s*$", body, re.S):
+            examined += 1
+            block = match.group(1)
+            for offset, line in enumerate(block.splitlines()):
+                if "CLAUDE_PLUGIN_ROOT" in line and not line.lstrip().startswith("#"):
+                    findings.append(Finding(
+                        "plugin-root-in-ci", rel_path,
+                        body[:match.start()].count("\n") + 2 + offset,
+                        "`CLAUDE_PLUGIN_ROOT` inside a YAML block -- it is set only inside Claude "
+                        "Code's plugin context, so this fails in CI with `can't open file`. Check "
+                        "the toolchain out at a pinned tag, or vendor the script."))
+    return findings, examined
+
+
 def check_invisible_characters() -> tuple[list[Finding], int]:
     """No invisible or confusable whitespace in anything we ship."""
     findings: list[Finding] = []
@@ -815,6 +854,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     invisible, invisible_examined = check_invisible_characters()
     pointers, pointers_examined = check_doc_pointers()
     uninstallable, plugins_installable = check_uninstallable_plugins()
+    plugin_root, yaml_blocks = check_plugin_root_in_ci()
     outlines, outlines_examined = check_v4_outline_none()
     coverage = {
         "python_modules": len(python_sources),
@@ -826,11 +866,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "doc_pointers_examined": pointers_examined,
         "plugins_checked_for_install_lines": plugins_installable,
+        "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers + outlines + uninstallable,
+            + pointers + outlines + uninstallable + plugin_root,
             coverage)
 
 
@@ -1180,6 +1221,34 @@ def selftest() -> int:
                     "ActiveRecord::Base.with_connection { |c| c.execute(sql) }\n"
                     "chat.with_instructions(\"be terse\").with_temperature(0.2)\n"
                     "  .with_tool(Weather).with_schema(Schema)\n```\n"})
+
+    # ---- plugin-root-in-ci ---------------------------------------------------------
+    # We shipped a `doctrine` job referencing $CLAUDE_PLUGIN_ROOT, which does not exist in CI. Our
+    # own workflows never reference it, so no gate could have caught it -- the workflow we test and
+    # the workflow we scaffold are different files.
+    PR_ = "plugin-root-in-ci"
+    scenario("a scaffolded CI job using the plugin root", rule=PR_, expect_finding=True,
+             files={"plugins/x/commands/setup.md":
+                    "Add this job:\n\n```yaml\n  doctrine:\n    steps:\n"
+                    "      - run: python3 \"$CLAUDE_PLUGIN_ROOT/scripts/gates.py\"\n```\n"})
+    scenario("a checked-out toolchain path is fine", rule=PR_, expect_finding=False,
+             files={"plugins/x/commands/setup.md":
+                    "```yaml\n  doctrine:\n    steps:\n"
+                    "      - run: python3 .claude-toolchain/plugins/x/scripts/gates.py\n```\n"})
+    # NEAR MISS, and the one that decides whether this rule survives: PROSE naming the variable is
+    # correct and common -- it IS how an agent resolves a plugin path at runtime, and the same file
+    # legitimately says "copy from ${CLAUDE_PLUGIN_ROOT}/scripts/x.py". Firing on that would get the
+    # rule deleted within a day.
+    scenario("prose naming the variable stays silent", rule=PR_, expect_finding=False,
+             files={"plugins/x/commands/setup.md":
+                    "Vendor it from `${CLAUDE_PLUGIN_ROOT}/scripts/x.py` into `.claude/scripts/`.\n"
+                    "\n```yaml\n  job:\n    steps:\n      - run: python3 .claude/scripts/x.py\n```\n"})
+    # A COMMENT inside the YAML is prose too -- the fixed job explains the trap in one.
+    scenario("a YAML comment naming it stays silent", rule=PR_, expect_finding=False,
+             files={"plugins/x/commands/setup.md":
+                    "```yaml\n  job:\n    steps:\n"
+                    "      # $CLAUDE_PLUGIN_ROOT does not exist in CI, so we check out instead\n"
+                    "      - run: python3 .claude-toolchain/x.py\n```\n"})
 
     # ---- uninstallable-plugin ------------------------------------------------------
     # The defect that shipped: design-flow was in the manifest, named FOUR times in the README, and
