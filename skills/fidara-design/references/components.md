@@ -413,14 +413,159 @@ DEFAULTS = { variant: :primary, size: :md }
 - **`<details>`/`<summary>`** is the cheaper option for simple, unanimated cases — but it cannot
   animate open/close at all, so it is not a drop-in swap for the controller.
 
-## Navigation (header + sidebar + tabs)
-- **App shell** = `Layout::Sidebar` (desktop rail `lg:w-72`, collapsible to `4rem`) + a sticky `header`
-  (`h-14 border-b border-border`). Mobile: sidebar becomes an off-canvas **drawer** (`fixed inset-0
-  -translate-x-full` + backdrop, `lg:hidden`), toggled by the hamburger. Nav links: active = `bg-accent
-  text-primary`, `aria-current="page"`. **Standardize active color on `--primary`** (resolves the
-  auctioneer `cerulean` vs fmworkflows `electric` drift — dark mode already lifts primary→electric).
-- **Tabs** (`Ui::Tabs`): `role="tablist"/tab/tabpanel`, `aria-selected`, roving tabindex; styles `underline |
-  pill | full-width`; active = `data-[state=active]:border-primary`.
+## Navigation — app header / navbar
+- **There is no APG pattern for a navbar.** The index lists 30 and *"navbar"*, *"header navigation"*
+  and *"vertical navigation"* are not among them — the nearest entries are **Breadcrumb** and
+  **Landmarks**, and Landmarks documents the `navigation` *role*, not a widget. So the contract below
+  is assembled from HTML, ARIA and WCAG, and every line says which.
+- **Bar:** sticky `h-14 border-b border-border`, a `cluster` (`--justify: space-between`) of Logo →
+  nav → account menu. **Link states:** rest `text-muted-foreground` · hover `hover:bg-accent hover:text-foreground`
+  · active `bg-accent text-primary` **plus `aria-current="page"`** · focus ring.
+  **Standardize active color on `--primary`** (resolves the auctioneer `cerulean` vs fmworkflows
+  `electric` drift — dark mode already lifts primary→electric). Separation is the border, never a shadow.
+
+### The `<nav>` landmark — the naming rules every navigation region here follows
+
+Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so they are written once.
+
+- **`<nav>` is the `navigation` landmark** (ARIA in HTML maps `nav` → `role=navigation`), and HTML
+  scopes it: *"The nav element represents a section of a page that links to other pages or to parts
+  within the page: a section with navigation links."*
+- **Not every list of links wants one.** HTML is explicit: *"Not all groups of links on a page need to
+  be in a nav element — the element is primarily intended for sections that consist of major
+  navigation blocks… The footer element alone is sufficient for such cases; while a nav element can
+  be used in such cases, it is usually unnecessary."* So the footer's link list is **not** a `<nav>`.
+- **Labelling is an APG practice, not a spec MUST — state it at that strength.** APG: *"If a page
+  includes more than one navigation landmark, each should have a unique label"*, and, in the other
+  direction, *"If a landmark is only used once on the page it may not require a label."* An app screen
+  always carries several, so **ours: every `<nav>` in this kit gets one.**
+- **Never put the role in the label.** APG: *"Do not use the landmark role as part of the label. For
+  example, a navigation landmark with a label 'Site Navigation' will be announced by a screen reader
+  as 'Site Navigation Navigation'. The label should simply be 'Site'."* → `aria-label="Main"`, not
+  `"Main navigation"`.
+- **Uniqueness has one documented exception, and it is the one you will hit:** APG allows *identical*
+  repeated instances to share a label — pagination above and below the same table is the named case.
+  Do not invent "Pagination top" / "Pagination bottom".
+- **A `<nav>` inside `<header>` is fine.** APG's *"should be top level landmarks"* list is `banner`,
+  `main`, `complementary`, `contentinfo`; `navigation` is deliberately not on it.
+
+### Skip link — 2.4.1 is Level A, and every shell already renders the target
+
+- **2.4.1 Bypass Blocks (Level A):** *"A mechanism is available to bypass blocks of content that are
+  repeated on multiple web pages."* **A skip link is one sufficient technique, not the criterion.**
+  WCAG offers two routes: links that skip (G1 / G123 / G124), **or** grouping that can be skipped
+  (**ARIA11** landmarks, **H69** headings). Ours: **ship the link anyway.** The landmark route passes
+  the criterion but does nothing for a sighted keyboard user, who has no rotor to skip with.
+- **First element in `<body>`, before the header, pointing at the `<main id="main">` that all three
+  shells in [page-anatomies.md](page-anatomies.md) already render.**
+- **`tabindex="-1"` on the target is a mechanism, not an attribute anyone mandates — and without it
+  focus does not land where you think it does.** HTML's *scroll to the fragment* steps *"Run the
+  focusing steps for target, **with the Document's viewport as the fallback target**"*, and a plain
+  `<main>` is not a focusable area, so the **viewport** takes focus instead of the region. G1 tests
+  the outcome rather than the markup — *"Check that after activating the link, the keyboard focus has
+  moved to the main content"* — and `tabindex="-1"` is how you make that true.
+- **Do NOT build it from `sr-only` + `focus-visible:not-sr-only` + a positioning utility.** That is
+  the recipe everyone reaches for and it is a coin flip: `not-sr-only` sets `position: static`,
+  `absolute`/`fixed` set something else, and Tailwind resolves a same-property collision by
+  **generated-stylesheet order, not class order** — *"the class that appears later in the stylesheet
+  wins… you should just never add two conflicting classes to the same element."* Use **one**
+  `position` utility and move it with `top`; worked markup in
+  [component-implementations.md](component-implementations.md).
+- **Sticky bars are governed by 2.4.11 Focus Not Obscured (Minimum) (AA, new in 2.2):** *"When a user
+  interface component receives keyboard focus, the component is not entirely hidden due to
+  author-created content."* Failure **F110** names this exact case — *"a sticky footer or header
+  completely hiding focused elements."* Note **entirely**: partial overlap still passes 2.4.11 (the
+  stricter 2.4.12 Enhanced is **AAA**). `scroll-margin-top` of the bar's height on focusable content
+  is the cheap fix.
+- **2.5.8 Target Size (Minimum) (AA) applies in full — a nav link does NOT get the Inline exception.**
+  That exception reads *"The target is in a sentence or its size is otherwise constrained by the
+  line-height of non-target text"*, and a nav item is a discrete block target, not a word in prose.
+  So 24 × 24 CSS px: `min-h-touch` on every link, the hamburger and the account trigger. (Compare
+  [Inline link](#inline-link), which *is* exempt — the two rows say opposite things on purpose.)
+- **Two AA criteria govern the bar across pages rather than within it.** **2.4.5 Multiple Ways (AA)**:
+  *"More than one way is available to locate a web page within a set of web pages except where the web
+  page is the result of, or a step in, a process."* The nav is one way; the
+  [Command palette](#command-palette) or a search field is the second — that is what earns it.
+  **3.2.3 Consistent Navigation (AA)**: *"Navigational mechanisms that are repeated on multiple web
+  pages … occur in the same relative order each time they are repeated."* Item order is therefore a
+  property of the app, not of the screen.
+- **Mobile: the collapse is a Disclosure, not a menu.** A real `<button aria-expanded>` — 4.1.2 Name,
+  Role, Value (**A**) is what a `<div>` with a click handler fails. `aria-controls` is **Optional**
+  per APG's Disclosure pattern (*"Optionally, the element with role button has a value specified for
+  aria-controls…"*): write it, never claim it is required. That pattern's keyboard table is **two
+  rows, `Enter` and `Space`, and that is the whole of it** — no arrow keys, no `role="menu"`; see
+  [Mega menu / Flyout](#mega-menu--flyout) for why. **Behavior:** the `disclosure` +
+  `dismissable-layer` mixins.
+- **Responsive:** the bar never wraps to two rows — that is the signal the screen wanted the sidebar
+  shell. Below `md` the links collapse behind the disclosure; Logo and hamburger stay.
+
+## Navigation — sidebar / vertical
+- **Rail:** `Layout::Sidebar` at `lg:w-72`, collapsible to `4rem`, `hidden lg:block`; below `lg` it
+  becomes the off-canvas **drawer** — and that is *two contracts, not one component that morphs*.
+  Read [Drawer / off-canvas](#drawer--off-canvas) first: the overlay drawer is a modal dialog and
+  traps focus, the persistent rail is a `<nav>` and must not.
+- **Landmark and label** per [the rules above](#the-nav-landmark--the-naming-rules-every-navigation-region-here-follows):
+  `<nav aria-label="Main">`, one label, no "navigation" in it.
+- **A `<ul>` inside, and that is ours.** Nothing upstream requires a list — ARIA calls a navigation
+  landmark *"a collection of navigational elements (usually links)"* and stops there. We use `<ul>` so
+  the rail announces its size, which is most of what a rail buys over scattered links.
+- **`aria-current="page"` on exactly one element** — ARIA: *"Authors SHOULD only mark one element in a
+  set of elements as current with aria-current."* **Mark the deepest active item and nothing else.**
+  Whether an ancestor *section* may also carry it is a question **ARIA does not answer** — we looked,
+  and there is no rule about a container and its own item. So the single-mark rule here is **ours**,
+  chosen because two `aria-current`s down one path is the ambiguity that SHOULD exists to prevent.
+- **"You are here" is 2.4.8 Location, and that is Level AAA** — *"Information about the user's
+  location within a set of web pages is available."* Never quote it as an AA obligation. What *is* AA
+  is that the active state must not be colour alone (1.4.1); `aria-current` plus the weight change
+  carries it.
+- **Nested sections are Disclosures, not menus.** Each group header is a `<button aria-expanded>`
+  whose sublist is `hidden` when collapsed; `disclosure` mixin, no `role="menu"`, no `aria-haspopup`.
+  (Same reasoning as [Mega menu / Flyout](#mega-menu--flyout), where the APG quote lives.)
+- **Collapsed to `4rem` the links are icon-only, so every one needs a name** — `sr-only` text, never
+  `title`. A Tooltip is *supplementary*: `aria-describedby` describes, it does not name. An icon-only
+  rail without `sr-only` labels is a rail of unnamed links.
+- **Sizes / states:** items `text-step--1 rounded-md px-3 min-h-touch` (2.5.8 again — a rail link is
+  not inline text); rest `text-muted-foreground`, hover `hover:bg-accent`, active `bg-accent
+  text-primary`, focus ring. Account menu pinned bottom with `mt-auto`.
+- **Responsive:** `hidden lg:block` plus the drawer below `lg`. Never toggle `aria-modal` by media query.
+
+## Tabs
+- **A real APG pattern — cite it, and note that three of its keyboard rows are marked `(Optional)`.**
+  `role="tablist"` container, `role="tab"` children, `role="tabpanel"` panels.
+- **Four wiring rules, all stated unconditionally by the pattern.** Each tab has `aria-controls`
+  *"referring to its associated tabpanel element"*; **each panel has `aria-labelledby` referring back
+  to its tab**; the active tab is `aria-selected="true"` and *"all other tab elements have it set to
+  false"*; and the tablist itself is named — *"If the tab list has a visible label, the element with
+  role tablist has aria-labelledby set to a value that refers to the labelling element. Otherwise, the
+  tablist element has a label provided by aria-label."* The panel's `aria-labelledby` is the one
+  routinely dropped, and it is not optional.
+- **One tab stop, via roving tabindex.** Inactive tabs `tabindex="-1"`; with a real `<button>` the
+  active tab needs nothing — *"it is not necessary to set tabindex="0" on the selected (active) tab
+  element"* — though writing it is harmless. `aria-activedescendant` is a generic composite-widget
+  technique in APG's keyboard practice; **the Tabs pattern and both its examples never use it**, so do
+  not present it as this pattern's recommendation.
+- **A vertical tablist carries `aria-orientation="vertical"`** — *"The default value of
+  aria-orientation for a tablist element is horizontal"* — and a horizontal one must **not** swallow
+  ↑/↓. Both halves, and every optional row, in
+  [interaction-stimulus.md](interaction-stimulus.md#tabs--the-optional-rows-the-forbidden-one-and-manual-activation-95).
+- **A panel with no focusable content takes `tabindex="0"`** — *"When the tabpanel does not contain
+  any focusable elements or the first element with content is not focusable, the tabpanel should set
+  tabindex="0" to include it in the tab sequence of the page."* A "should", so state it as one.
+- **Tabs are not page navigation — and that is OURS, not APG's.** The pattern has no "when not to use"
+  section at all, and nothing in APG warns against routing with tabs; we looked. Our reason: a tablist
+  is one tab stop with a roving tabindex and `aria-selected`, whereas page navigation is a set of
+  links carrying `aria-current`. Route-tabs hand links a widget keyboard model nobody expects and drop
+  the `aria-current` that tells a screen reader where it is. Use the two nav rows above.
+- **Variants** `underline · pill · full-width`. **Sizes** `sm/md`. **State is styled off
+  `aria-selected` — never a JS-toggled class, and never `data-[state=active]`.** The attribute APG
+  already requires is the state, so `aria-[selected=true]:border-primary` needs no second source of
+  truth. (This row prescribed `data-[state=active]` while the worked implementation used
+  `aria-[selected=true]`; the implementation was right and the row has been corrected.)
+- **Responsive:** the tablist scrolls, the panels do not — `overflow-x-auto` on the tablist alone.
+  Ours: past ~5 tabs on a phone the row stops being scannable, so switch to a `Ui::Dropdown` or a
+  `<select>` that swaps the panel. A wrapped tablist has lost the single-row affordance that made it
+  a tablist.
+- **Behavior:** the `tabs` controller on the **list-navigation** mixin.
 
 ## Breadcrumbs
 - `<nav aria-label="Breadcrumb">` → `<ol class="cluster">` of items at `text-step--1

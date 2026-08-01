@@ -15,10 +15,11 @@ Nothing on this page introduces a new `@utility`.
 
 ## The contract every shell keeps
 
-The base layout owns two things. A shell may not drop them:
+The base layout owns three things. A shell may not drop them:
 
 ```erb
 <%# app/views/layouts/application.html.erb %>
+<a href="#main" class="fixed left-2 -top-16 focus-visible:top-2 …">Skip to main content</a>
 <turbo-frame id="modal"></turbo-frame>   <%# CRUD is modal-driven — crud-modal-pattern.md %>
 <div id="toasts" aria-live="polite" class="…"></div>
 ```
@@ -27,6 +28,13 @@ The base layout owns two things. A shell may not drop them:
 page load, and `#toasts` is the only place flash output belongs. A shell that omits
 either breaks flows that live outside its own template — the failure shows up in an
 unrelated screen, which is the worst kind.
+
+The skip link is **first in `<body>`, before the header**, and it is a **Level A**
+obligation (WCAG 2.4.1 Bypass Blocks), not a nicety. Every `<main>` below therefore
+carries `id="main"` **and `tabindex="-1"`** — without the latter the fragment's focusing
+steps fall back to the viewport and focus never reaches the region. Full recipe, including
+why the usual `sr-only` + `focus-visible:not-sr-only` construction is a coin flip, in
+`components.md` → Skip link and `component-implementations.md`.
 
 ## Type, once, so no screen re-derives it
 
@@ -68,7 +76,7 @@ stay visible while working. This is the default for authenticated app UI.
     <% end %>
 
     <% sidebar.with_main do %>
-      <main id="main" class="min-h-0 overflow-y-auto">…</main>
+      <main id="main" tabindex="-1" class="min-h-0 overflow-y-auto">…</main>
     <% end %>
   <% end %>
 </div>
@@ -78,7 +86,7 @@ stay visible while working. This is the default for authenticated app UI.
   Nav items are `text-step--1` with `min-h-touch`.
 - **Mobile** — the rail becomes a drawer. `Layout::SidebarComponent` owns the
   disclosure; do not hand-roll a second one. The trigger lives in the mobile top bar,
-  is icon-only, and therefore needs `sr-only` text (`components.md` → Navigation).
+  is icon-only, and therefore needs `sr-only` text (`components.md` → Navigation — sidebar / vertical).
 - **Brand mark** — rail top on desktop, mobile top bar centre or left. Never both at once.
 - **Scroll containment** — the rail and `<main>` scroll independently. Both need
   `min-h-0` alongside `overflow-y-auto`; a flex/grid child will not scroll without it
@@ -102,7 +110,7 @@ marketing-adjacent app pages, onboarding, single-purpose tools, reading views.
     </div>
   </header>
 
-  <main id="main" class="shell section-y-compact">…</main>
+  <main id="main" tabindex="-1" class="shell section-y-compact">…</main>
 </div>
 ```
 
@@ -123,7 +131,7 @@ inbox + reading pane, record + activity feed, editor + inspector.
   <% sidebar.with_sidebar do %>…<% end %>
   <% sidebar.with_main do %>
     <div class="grid-auto items-start" style="--min: 28rem">
-      <main id="main" class="min-h-0 overflow-y-auto">…</main>
+      <main id="main" tabindex="-1" class="min-h-0 overflow-y-auto">…</main>
       <aside class="min-h-0 overflow-y-auto" aria-label="Details">…</aside>
     </div>
   <% end %>

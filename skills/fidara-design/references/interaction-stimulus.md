@@ -67,7 +67,7 @@ mandated (#142).
 | Date / Time input | native `input[type=date\|time]` — **"No corresponding role"** in ARIA in HTML | the platform picker's own | none |
 | Date picker, custom | **no APG pattern**: Dialog **or** Combobox + `role=grid`; `aria-selected` = chosen, `aria-current="date"` = today | grid navigation; month/year heading is a live region | focus-trap + dismissable |
 | Lightbox / gallery viewer | Dialog **containing** a Carousel | Esc · Tab trapped · prev/next | focus-trap + dismissable + carousel |
-| Tabs | `role=tablist/tab/tabpanel` `aria-selected aria-controls` | ←→ (Home/End) | list-nav |
+| Tabs | `role=tablist/tab/tabpanel` `aria-selected aria-controls`; the **panel** carries `aria-labelledby` back to its tab, and the tablist is named; see the contract below | ←→ · ↑↓ **only** when `aria-orientation=vertical` · Space/Enter when activation is manual · **Home/End are `(Optional)`** | list-nav |
 | Tooltip | `role=tooltip` `aria-describedby` | show on focus+hover · Esc | anchored + dismissable |
 | Popover | trigger `aria-expanded aria-controls` | Esc · focus moves in | anchored + dismissable + focus-trap(soft) |
 | Combobox | input `role=combobox aria-expanded aria-controls` (**both** required); listbox popup `aria-activedescendant` | ↓ into list · ↑↓ in list · Enter · Esc | list-nav + anchored |
@@ -323,6 +323,55 @@ way to animate open/close**, so it cannot host the transition above. Use it for 
 unanimated disclosure where the cheapness is worth it; reach for the controller otherwise.
 Practitioners also document inconsistent screen-reader state announcement across readers —
 enough to know the gaps exist, not enough to pin one.
+
+### Tabs — the optional rows, the forbidden one, and manual activation (#95)
+
+Tabs **is** an APG pattern, which makes it the opposite risk from Disclosure above: the temptation is
+not to invent keys but to ship the whole table as required when the pattern marks part of it
+`(Optional)`. The catalog entry ([components.md → Tabs](components.md#tabs)) carries the role wiring;
+this is the behaviour.
+
+**Required — no qualifier on any of these:**
+
+| Requirement | Verbatim |
+|---|---|
+| `Tab` into the list lands on the **active** tab, not the first | *"When focus moves into the tab list, places focus on the active tab element."* |
+| `Tab` out goes to the panel | *"…moves focus to the next element in the page tab sequence outside the tablist, which is the tabpanel unless the first element containing meaningful content inside the tabpanel is focusable."* |
+| ←/→ move between tabs (horizontal) | *"Left Arrow: moves focus to the previous tab"* / *"Right Arrow: Moves focus to the next tab"* |
+| ↓/↑ **only** when `aria-orientation="vertical"` | *"When a tab list has its aria-orientation set to vertical: Down Arrow performs as Right Arrow is described above."* |
+| `Space` or `Enter` activate under manual activation | *"Space or Enter: Activates the tab if it was not activated automatically on focus."* |
+
+**A horizontal tablist must NOT listen for ↑/↓ — this is the row implementations get wrong**, because
+binding all four arrows feels more helpful. APG says the opposite, and gives the reason: *"If the tab
+list is horizontal, it does not listen for Down Arrow or Up Arrow so those keys can provide their
+normal browser scrolling functions even when focus is inside the tab list."* A tablist that eats ↓
+traps a keyboard user who is trying to scroll the page.
+
+**Optional — ship them if you like, never write them down as required.** `Home` and `End` are each
+marked `(Optional)` in the pattern's own table, as is `Delete` (*"If deletion is allowed, deletes
+(closes) the current tab element…"*, with a context-menu alternative). **There is no `Ctrl+Delete`**:
+it is absent from the current pattern *and* from the 2017 APG 1.1 snapshot — the same vintage that
+produced #142's phantom accordion keys, checked for exactly that reason.
+
+**Two rows nobody remembers exist**, both conditional on the tab having a popup menu: `Shift + F10`
+*"If the tab has an associated popup menu, opens the menu"*, and correspondingly *"If a tab element
+has a popup menu, it has the property aria-haspopup set to either menu or true."* Omit both when
+there is no menu — do not emit `aria-haspopup` unconditionally.
+
+**Automatic vs manual activation — and in a Hotwire app the answer is usually manual.** APG
+recommends automatic, *conditionally*, and the condition is the whole point: *"It is recommended that
+tabs activate automatically when they receive focus as long as their associated tab panels are
+displayed without noticeable latency. This typically requires tab panel content to be preloaded."*
+**A panel that is a lazy `<turbo-frame>` is by definition not preloaded**, so arrowing across five
+tabs would fire five requests and stall focus movement on each. Ours, inferred from APG's own
+precondition rather than stated by it: **panels rendered inline → automatic; panels behind a lazy
+frame → manual**, and the controller reads which from the markup rather than guessing.
+
+**Roving tabindex, not `aria-activedescendant`.** Both are generic composite-widget strategies in
+APG's keyboard practice, but the Tabs pattern and both of its reference examples implement only the
+first, and note that a `<button>` tab needs no explicit `tabindex="0"`: *"Since an HTML button element
+is used for the tab, it is not necessary to set tabindex="0" on the selected (active) tab element."*
+Writing it anyway is harmless; citing `aria-activedescendant` as this pattern's recommendation is not.
 
 ## Controller conventions (mirror the markup ergonomics)
 
