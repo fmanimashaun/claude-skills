@@ -7,7 +7,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-
 ### 2026-08-01 — the gates finally run somewhere
 
 - **FIX — the publish was not gated, which is the branch that matters.** `gates.yml` shipped hours
@@ -3260,6 +3259,66 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.17.0 — 2026-08-01
+
+- **Dead controls are caught now** (#105, criterion 4). Everything nearby judges a control by how it
+  **looks** — `icon-only-unnamed` wants a name, `focus-ring-missing` wants a focus style,
+  `aria-controls-no-expanded` wants the state attribute. A control can satisfy all three and **still
+  do nothing when clicked**: a button whose Stimulus controller failed to register, or whose target
+  selector no longer matches. Named, focusable, correctly marked up, and inert.
+  - **The exclusions are the design**, because a false "dead control" on a working button is the
+    finding that gets a rule switched off. A `disabled` control doing nothing is *correct*; a link
+    with an `href` navigates, which a sweep staying on the page cannot observe, and flagging it would
+    put every link on the site in the report. An anchor **without** an href is still judged — it
+    navigates nowhere, and is exactly the dead control worth catching.
+  - What counts as an effect is deliberately broad — DOM mutation, navigation, a request, a focus
+    move, an ARIA state flip, a dialog opening. A declared mutation drops one of those and proves a
+    working control then reports dead.
+  - **A control that was never activated is not a working control** — named every run, never counted
+    as passing.
+  - **Three defects in my own fixtures, all caught by mutation rather than reading.** The effect-kind
+    fixture looped over `EFFECT_KEYS` itself, so removing a key deleted the assertion that would have
+    named it — a fixture derived from its subject cannot witness that subject shrinking; it is a
+    literal list now. And an unguarded `[0]` made the mutant **crash** before any labelled assertion
+    reported, which the checker correctly refused as a coincidental catch: a crash is not a verdict.
+
+- **Theme-only failures are caught now** (#105, criterion 3). Every other rule in this toolchain
+  judges **one** rendering, so a theme-only defect is invisible to all of them by construction: each
+  snapshot is individually conformant, and the defect is the *difference*.
+  - The failure it is really for is **text that disappears in dark mode** — a hardcoded colour, or a
+    role token used for text against a surface that inverts underneath it. In light it is a
+    paragraph; in dark it is the same colour as its background. Nothing reading a single snapshot can
+    see that, because in each one the element is just "some colour on some colour".
+  - **It consumes design-flow's snapshot and does not re-run its rules** — the decision made when
+    #105 was re-scoped. Re-implementing `tap-target-small` here would be a second rule with a second
+    owner, drifting from the first. The snapshot is data; the rules stay where they live.
+  - **The XOR is the whole rule.** A page equally bad in *both* themes is `rendered_conformance.py`'s
+    finding, not a parity failure — reporting it here would double-count, and the declared mutation
+    that turns the XOR into an `or` proves the distinction is real rather than incidental.
+  - `colour-frozen` fires only when a colour is identical across themes **and the surroundings
+    inverted**: a brand mark is legitimately fixed, so sameness alone is not a signal. A translucent
+    colour is **refused** rather than composited into an invented ratio. Two snapshots of the same
+    theme are refused outright — they always agree, so they would report parity while testing nothing.
+
+- **A route crawl is judged now — and the case it exists for is the 200** (#105, criterion 1).
+  qa-flow could enumerate routes (#119) and capture console errors per page (#109); design-flow could
+  judge a *rendered* page against the design system (#107). **Nothing judged which routes are
+  broken.**
+  - A non-2xx is caught by anything, including a curl loop. **A Rails app that rescues an exception
+    and renders its 500 template with a 200 status is the failure that survives every status check
+    ever written** — and it is the normal shape of an error page behind a `rescue_from`. Status is
+    necessary and not sufficient: a page is a finding when it *renders* like an error, and when it
+    logs one.
+  - **The near-misses are what make it survivable.** A page *about* errors is not an error page, so
+    markers are anchored to the shapes frameworks actually render and matched against the title and
+    H1 only — "Error handling guide" and "Error budget report" stay silent, and are fixtured that
+    way. Console **warnings** are excluded for the same reason: noise in every real app, and a rule
+    firing on all of them is a rule nobody reads.
+  - **An unreachable route is not a passing route**, and an unusable crawl file is not a clean crawl.
+    Both named every run. An empty crawl reporting zero findings would be indistinguishable from a
+    healthy app.
+  - Registered with `project_gates.py`, so it runs at a project's `dev → main`. 23 selftest checks,
+    3 mutations all caught, including the 200-but-error rule going quiet.
 
 ### 1.16.0 — 2026-08-01
 
@@ -3955,7 +4014,6 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
-
 
 ### 1.10.0 — 2026-08-01
 
@@ -4680,6 +4738,41 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.49.0)
+
+> ### Three defects nothing else in the toolchain could see
+>
+> Each of these is invisible to every existing rule **by construction**, which is why they needed
+> their own judges rather than another threshold on an existing one:
+>
+> - a route returning **200** while rendering its 500 template — survives every status check ever
+>   written, and is the normal shape behind a `rescue_from`;
+> - a page that is **individually conformant in both themes** and unreadable in one — every other
+>   rule judges a single rendering, so the defect is the *difference*;
+> - a control that is **named, focusable, correctly marked up and inert** — it satisfies every rule
+>   that judges appearance, and only using it reveals anything.
+>
+> `qa-flow` changed; every other component is byte-identical.
+
+- **Route crawl judged** — non-2xx, redirects the crawl did not follow, console errors, failed
+  requests, and the 200-but-error case the file exists for. A page *about* errors is not an error
+  page, so markers match the title and H1 only and "Error handling guide" stays silent — fixtured.
+- **Theme parity judged** — `contrast-regression`, `vanished`, `colour-frozen`. **The XOR is the
+  whole rule**: a page equally bad in *both* themes belongs to `rendered_conformance.py`, and
+  reporting it here would double-count. It consumes design-flow's snapshot and does not re-run its
+  rules — one rule, one owner.
+- **Dead controls judged** — the exclusions are the design, because a false positive on a working
+  button is what gets a rule switched off. A `disabled` control doing nothing is correct; a link with
+  an `href` navigates; an anchor *without* one navigates nowhere and is exactly the dead control
+  worth catching.
+- **In all three: a thing that was not verified is never counted as clean.** An unreachable route, an
+  unexercised control and an unusable input file are each named on every run. An empty crawl
+  reporting zero findings would be indistinguishable from a healthy app.
+- **Six defects in this release's own fixtures were caught by mutation, not by reading** — including
+  two fixtures derived from the very constant they were testing (removing the key deleted the
+  assertion that would have named it) and an unguarded index that made a mutant **crash** before any
+  labelled assertion could report. A crash is not a verdict.
 
 ### 2026-08-01 (release v1.48.0)
 

@@ -878,6 +878,89 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #105. The first mutation is the whole point of the file: a 200 that renders an error is the
+    # page every status check calls healthy, so the rule that catches it must be proven to fire.
+    Guard(
+        name="crawl_report",
+        subject="plugins/qa-flow/scripts/crawl_report.py",
+        selftest="plugins/qa-flow/scripts/crawl_report.py",
+        mutations=(
+            Mutation(
+                "the 200-but-error rule stops firing",
+                '    for pattern in ERROR_PAGE_MARKERS:',
+                '    for pattern in []:',
+                "200 rendering 'Internal Server Error' fires",
+            ),
+            Mutation(
+                "an unreachable route is judged instead of named",
+                '            result.skipped.append(f"{page.get(\'route\', \'?\')}: {page.get(\'skipped\')}")',
+                '            pass',
+                "a skipped route is named",
+            ),
+            Mutation(
+                "console warnings become findings, so the rule fires on every real app",
+                'CONSOLE_FATAL = ("error",)',
+                'CONSOLE_FATAL = ("error", "warning")',
+                "a console WARNING stays silent",
+            ),
+        ),
+    ),
+    # #105 criterion 3. The XOR is the whole rule: a page equally bad in BOTH themes belongs to
+    # rendered_conformance, and reporting it here would double-count. Mutating it to `or` is the
+    # difference between a parity check and a second contrast checker.
+    Guard(
+        name="theme_parity",
+        subject="plugins/qa-flow/scripts/theme_parity.py",
+        selftest="plugins/qa-flow/scripts/theme_parity.py",
+        mutations=(
+            Mutation(
+                "parity becomes a second contrast checker, firing on both-themes-bad",
+                '                if (l_ratio >= AA_NORMAL) != (d_ratio >= AA_NORMAL):',
+                '                if (l_ratio >= AA_NORMAL) or not (d_ratio >= AA_NORMAL):',
+                "bad in BOTH themes is not a parity finding",
+            ),
+            Mutation(
+                "a frozen colour fires even when the surface never moved",
+                '            if lc == dc and lbg != dbg:',
+                '            if lc == dc:',
+                "a frozen colour on an unmoved surface is silent",
+            ),
+            Mutation(
+                "a translucent colour gets a fabricated ratio instead of being refused",
+                '    if a[3] < 1.0 or b[3] < 1.0:',
+                '    if False:',
+                "a translucent foreground yields no ratio",
+            ),
+        ),
+    ),
+    # #105 criterion 4. Two of these break the rule by making it fire MORE, which is the
+    # direction that gets a rule switched off: a false 'dead control' on a working button is
+    # worse than no rule at all.
+    Guard(
+        name="interaction_report",
+        subject="plugins/qa-flow/scripts/interaction_report.py",
+        selftest="plugins/qa-flow/scripts/interaction_report.py",
+        mutations=(
+            Mutation(
+                "an effect kind is dropped, so a working control reports dead",
+                'EFFECT_KEYS = ("domChanged", "navigated", "requested", "focusMoved", "ariaChanged", "dialogOpened")',
+                'EFFECT_KEYS = ("navigated", "requested", "focusMoved", "ariaChanged", "dialogOpened")',
+                "domChanged counts as an effect",
+            ),
+            Mutation(
+                "the href exclusion goes, so every link on the site reports dead",
+                '        return "link with href — navigation is its effect and is not observed here"',
+                '        pass',
+                "a link with href is not dead",
+            ),
+            Mutation(
+                "an unexercised control is judged instead of named",
+                '        if not control.get("exercised", False):',
+                '        if False:',
+                "an unexercised control is not judged clean",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
