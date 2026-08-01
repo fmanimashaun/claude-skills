@@ -3831,6 +3831,15 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **A per-page motion cap, which was #136's one genuinely missing rule** (#136). `motion.md` §7
+  capped a single *stagger*; nothing capped the **page** — the limit that actually gets exceeded,
+  because each section is added by someone who only saw their own section. Now: one entrance pattern
+  per page, at most three animated regions, never two running at once in the viewport, and never on
+  content the reader scrolled to *on purpose*. The arithmetic follows §7 — three regions at the 1.6s
+  ceiling is 4.8s of page assembly if they queue, which is why they may not run together rather than
+  merely being capped in number. **Ours, not upstream**: no spec bounds animation count, so it is
+  recorded as a decision rather than left to taste, and `design-auditor` counts it.
+
 - **The marketing doctrine is wired into the flow that uses it** (#131, #135, #136). Three reference
   files shipped in earlier releases — `marketing-copy.md`, `visual-assets.md`, `motion.md` — and
   each carried the same open acceptance criterion: *`/design-flow:component` consults it, and

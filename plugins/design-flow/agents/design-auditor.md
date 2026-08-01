@@ -42,6 +42,11 @@ icon-only; no color-only state; keyboard reachable; `prefers-reduced-motion`.
 **Consistency** — catalog variant/size names; one mechanism per component (no duplicate
 button/badge idioms); radius language (btn `rounded-md`, card `rounded-lg`, badge
 `rounded-full`); Lucide icons; single source of truth for tokens.
+**Motion** (#136, `skills/fidara-design/references/motion.md`) — **one** entrance pattern per page,
+at most **three** animated regions, never two running at once in the viewport, and never on content
+the reader scrolled to on purpose. Count them; this is the one motion rule that is arithmetic rather
+than judgement. Every pattern also needs its static end-state and a reduced-motion behaviour change
+(not merely a shortened duration).
 **Marketing copy** (#131, `references/marketing-copy.md`) — every section carries the copy contract
 for its archetype: one reader, a claim with its proof, specific over generic. Copy is a
 **positioning decision the human owns**; flag a draft that asserts a benefit with no proof, or that

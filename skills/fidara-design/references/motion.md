@@ -323,6 +323,28 @@ hook for direction-aware transitions.
 **The rules above still apply across pages** — a departure is still shorter than an arrival, and a
 cross-viewport transition is still `--duration-slow`.
 
+## 14. One entrance pattern per page, at most three regions
+
+§7 caps a single stagger. This caps the **page**, which is the limit that actually gets exceeded —
+each section is added by someone who only saw their own section.
+
+- **One entrance pattern per page.** Pick `fade-up` *or* `scale-in` *or* a stagger, and use it
+  everywhere on that page. Three different entrances do not read as three ideas; they read as an
+  unfinished template.
+- **At most three animated regions**, and **never two running at once in the viewport**. Motion is a
+  focus signal, and a signal competing with another signal is noise. If two regions would animate
+  together, they are one region.
+- **Never on content the reader came for.** A hero, a feature grid, a testimonial band may animate
+  in. Body copy, tables, form fields and anything below the fold that the reader scrolled to *on
+  purpose* must be present on arrival — animating it makes the reader wait for something they
+  already asked for.
+
+The arithmetic follows §7: three regions at the 1.6s stagger ceiling is 4.8s of page assembly if
+they queue, which is why they may not run together rather than merely being capped in number.
+
+This is **ours**, not an upstream rule — no spec bounds animation count. It is recorded here so it
+is a decision rather than each author's taste, and it is the number `design-auditor` counts.
+
 ## What we did not take
 
 - **The five springs** (`CELL`, `CROSSFADE`, `SMALL`, `DISCLOSE`, `SURFACE`). They are `motion`
