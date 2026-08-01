@@ -89,6 +89,12 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the wiring rule stops noticing a flow that never calls claim-verifier",
+                '        if "claim-verifier" not in body:',
+                "        if False:",
+                "a flow that never names claim-verifier",
+            ),
+            Mutation(
                 "the schema-parity rule stops noticing an undocumented field",
                 "        missing = sorted(f for f in fields if f not in documented)",
                 "        missing = []",
@@ -137,9 +143,15 @@ GUARDS: tuple[Guard, ...] = (
                 "bleed into each other",
             ),
             Mutation(
-                "corpora no longer pruned from the walk",
+                "agent worktrees are no longer pruned, so a sweep reads other agents' copies",
+                ', "design-corpora", "worktrees"}',
                 ', "design-corpora"}',
-                "}",
+                "another agent's copy",
+            ),
+            Mutation(
+                "corpora no longer pruned from the walk",
+                '"design-corpora", "worktrees"}',
+                '"worktrees"}',
                 "not ours to enforce",
             ),
             Mutation(
@@ -571,6 +583,158 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        name="blast_radius",
+        subject="plugins/qa-flow/scripts/blast_radius.py",
+        selftest="plugins/qa-flow/scripts/blast_radius_selftest.py",
+        mutations=(
+            # -- the reverse walk itself -------------------------------------------------------
+            Mutation(
+                "the walk follows OUTGOING edges, reporting dependencies as dependents",
+                '        target = edge.get("to")',
+                '        target = edge.get("from")',
+                "a dependent is included by an incoming references edge",
+            ),
+            Mutation(
+                "the depth cap stops applying, so the radius silently becomes the whole app",
+                "    for level in range(1, max(depth, 0) + 1):",
+                "    for level in range(1, 99):",
+                "the depth cutoff excludes",
+            ),
+            # Narrowing WITHOUT saying so is the failure this tool exists to prevent, so the
+            # cutoff's report is a separate rule from the cutoff itself.
+            Mutation(
+                "the depth cutoff stops reporting what it dropped",
+                "    for node in frontier:\n        for edge in incoming.get(node, []):",
+                "    for node in []:\n        for edge in incoming.get(node, []):",
+                "the depth cutoff is reported, not silent",
+            ),
+            Mutation(
+                "an enrichment edge stops naming the tool that produced it",
+                '                    + (f"  [via {tool}]" if tool else ""),',
+                '                    + "",',
+                "an enriched edge names the tool that produced it",
+            ),
+            Mutation(
+                "--no-enrichment stops excluding machine-local edges",
+                "    if use_enrichment and isinstance(block, dict):",
+                "    if isinstance(block, dict):",
+                "--no-enrichment reproduces a bare-runner walk",
+            ),
+            # -- the five non-negotiable risk axes ----------------------------------------------
+            Mutation(
+                "the migration axis stops firing",
+                '    "migration": ("db/migrate/", "db/schema.rb", "db/structure.sql"),',
+                "",
+                "fires the migration axis",
+            ),
+            Mutation(
+                "the shared-concern axis stops firing",
+                '    "shared-concern": ("/concerns/", "app/views/layouts/", '
+                '"app/helpers/application_helper.rb"),',
+                "",
+                "fires the shared-concern axis",
+            ),
+            Mutation(
+                "the money name hints stop firing",
+                '    "money": ("payment", "invoice", "billing", "charge", "subscription", '
+                '"price", "pricing",\n              "order", "ledger", "refund", "wallet", '
+                '"transaction", "checkout", "coupon",\n              "discount", "payout", '
+                '"tax"),',
+                "",
+                "fires the money axis",
+            ),
+            # The whole point of "non-negotiable": a project's config may ADD to an axis and may
+            # never empty one. Declaring `migration: []` must not switch the structural rule off.
+            Mutation(
+                "config becomes able to switch a structural axis off",
+                "        for axis, markers in STRUCTURAL_RISK.items():",
+                "        for axis, markers in {k: v for k, v in STRUCTURAL_RISK.items() "
+                "if declared.get(k) != []}.items():",
+                "config cannot switch a non-negotiable axis off",
+            ),
+            Mutation(
+                "a declared high-risk path stops being printed as excluded",
+                '            report.excluded.append(Exclusion(path, "declared in qa.config.yml '
+                '`blast_radius.exclude`"))',
+                "            pass",
+                "a declared exclusion is printed with its reason",
+            ),
+            # -- the silence half: rules that are only useful if they stay quiet -----------------
+            Mutation(
+                "`authenticated` becomes an auth signal, so every controller change is wide",
+                "TAG_RISK: dict[str, str] = {",
+                'TAG_RISK: dict[str, str] = {\n    "authenticated": "auth",',
+                "an authenticated controller is not on its own an auth hit",
+            ),
+            Mutation(
+                "the risk classifier stops exempting test files, so every spec edit is wide",
+                "    report.risk = classify_risk([p for p in considered "
+                "if not p.startswith(TEST_ROOTS)],",
+                "    report.risk = classify_risk(considered,",
+                "a spec-only change is never wide",
+            ),
+            Mutation(
+                "non-app files stop being excluded, so a docs edit reads as under-determined",
+                "        if not (path.startswith(APP_ROOTS) or path in APP_FILES):",
+                "        if False:",
+                "a docs-only change is excluded with a reason, not unresolved",
+            ),
+            # -- accounting: an unexplained file must never read as "nothing is affected" --------
+            Mutation(
+                "an unaccounted-for app file stops forcing the wide selection",
+                "        return bool(self.risk) or bool(self.unresolved)",
+                "        return bool(self.risk)",
+                "an unaccounted-for app file forces wide",
+            ),
+            Mutation(
+                "a conventional spec path that does not exist is dropped instead of reported",
+                '            present = (root / candidate).exists()\n'
+                '            out[candidate] = TestTarget(candidate, f"{reason} ({why})", present)',
+                '            present = (root / candidate).exists()\n'
+                "            if present:\n"
+                '                out[candidate] = TestTarget(candidate, f"{reason} ({why})", '
+                "present)",
+                "a missing spec is reported, not dropped",
+            ),
+            Mutation(
+                "the test-framework narrowing stops reporting itself",
+                "    if present_frameworks:\n"
+                "        for framework in sorted(set(TEST_ROOTS) - present_frameworks):",
+                "    if False:\n"
+                "        for framework in sorted(set(TEST_ROOTS) - present_frameworks):",
+                "and the drop is printed once, with its reason",
+            ),
+            Mutation(
+                "the excluded section is hidden when it is empty",
+                '    lines.append(f"excluded from the radius -> {len(report.excluded)}")',
+                "    if report.excluded:\n"
+                '        lines.append(f"excluded from the radius -> {len(report.excluded)}")',
+                "the excluded section prints even when empty",
+            ),
+            # -- route selection reads the #119 table rather than asserting agreement -------------
+            Mutation(
+                "every route is claimed to be in the route table, so a disagreement is hidden",
+                "                                              inclusion.unit in by_key)",
+                "                                              True)",
+                "a graph route absent from the route table is flagged",
+            ),
+            # -- exit codes: 2 is "could not run", never 0 ------------------------------------------
+            Mutation(
+                "an empty changed-file list becomes a clean run instead of UNUSABLE",
+                '        raise Unusable("no changed files supplied -- pass --changed or '
+                '--changed-from")',
+                "        return []",
+                "no changed files is UNUSABLE (2), not clean (0)",
+            ),
+            Mutation(
+                "--require-graph falls back silently instead of failing",
+                "    elif args.require_graph:",
+                "    elif False:",
+                "--require-graph with no graph is UNUSABLE (2), never a silent fallback",
+            ),
+        ),
+    ),
+    Guard(
         name="evidence_manifest",
         subject="plugins/qa-flow/scripts/evidence_manifest.py",
         selftest="plugins/qa-flow/scripts/evidence_manifest_selftest.py",
@@ -988,6 +1152,11 @@ GUARDS: tuple[Guard, ...] = (
         name="interaction_report",
         subject="plugins/qa-flow/scripts/interaction_report.py",
         selftest="plugins/qa-flow/scripts/interaction_report.py",
+        # Without this the collector is absent from the mutant's directory, and every fixture that
+        # cross-checks it -- including the `dismiss.*` field checks and the syntax gate's own
+        # negative test -- silently does not run. `visual_baseline` below needs it for the same
+        # reason.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "an effect kind is dropped, so a working control reports dead",
@@ -1013,6 +1182,55 @@ GUARDS: tuple[Guard, ...] = (
                 '        if False:',
                 "an unexercised control is not judged clean",
             ),
+            # #105 criterion 4, second half. The first of these is the one that decides whether the
+            # focus-restore rule is usable: APG's base Disclosure pattern has no Escape row, so
+            # dropping the scope guard fires on every accordion on the internet.
+            Mutation(
+                "the APG scope guard goes, so every ordinary accordion reports a focus-restore bug",
+                '    if kind not in RESTORE_REQUIRED:',
+                '    if False:',
+                "an ordinary disclosure that keeps focus is NOT a finding",
+            ),
+            Mutation(
+                "the combobox discriminator goes, so combobox popups stop being judged",
+                '    if trigger_role == "combobox":',
+                '    if False:',
+                "a combobox that keeps focus fires focus-restore-missing",
+            ),
+            Mutation(
+                "the menu discriminator goes, so menu popups stop being judged",
+                '    if haspopup == "menu" or popup_role == "menu":',
+                '    if False:',
+                "a menu that keeps focus fires focus-restore-missing",
+            ),
+            Mutation(
+                "a probe that never completed is graded instead of named",
+                '    if closed is None or restored is None:',
+                '    if False:',
+                "a probe with focusRestored=null is not judged clean",
+            ),
+            # Ordering, not presence: moving the call BELOW the exclusions silently drops every
+            # overlay opened by a link -- which is a large share of the real ones.
+            Mutation(
+                "the dismissal is judged after the exclusions, so links lose their overlays",
+                '        judge_dismissal(result, ref, control)\n'
+                '        if excluded_reason(control):\n'
+                '            result.excluded += 1\n'
+                '            continue',
+                '        if excluded_reason(control):\n'
+                '            result.excluded += 1\n'
+                '            continue\n'
+                '        judge_dismissal(result, ref, control)',
+                "a link with href is still judged on focus restore",
+            ),
+            # The syntax gate's own negative test. `node --check <path>` exits 0 on a broken ESM
+            # file, so this gate is one careless edit away from being unable to fail at all.
+            Mutation(
+                "the collector syntax gate always reports success",
+                '    return proc.returncode, proc.stderr.decode("utf-8", "replace")',
+                '    return 0, ""',
+                "the module-mode check FAILS on a broken ES module",
+            ),
         ),
     ),
     # #112. The first is the acceptance criterion in one line: a missing baseline must be neither a
@@ -1032,8 +1250,8 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "an undeterministic run is judged instead of refused",
-                '    missing = [k for k in ("reducedMotion", "frozenClock", "seededData") if not d.get(k)]',
-                '    missing = []',
+                "    missing = [k for k in DETERMINISM_KEYS if not d.get(k)]",
+                "    missing = []",
                 "motion not frozen",
             ),
             Mutation(
@@ -1041,6 +1259,34 @@ GUARDS: tuple[Guard, ...] = (
                 '        if route.startswith(pattern) and len(pattern) > best:',
                 '        if route.startswith(pattern) :',
                 "the longest matching prefix wins",
+            ),
+            # The ignore-region half of #112. `ignored` shipped in the schema, emitted as a
+            # hardcoded `[]` and read by nobody, so the field existed and the feature did not.
+            # These three break the parts that make it real rather than declared.
+            Mutation(
+                "the mask a config demands is trusted instead of verified against the run",
+                "        if want != got:",
+                "        if False:",
+                "a mask the config demands but the run never applied is refused",
+            ),
+            Mutation(
+                "a per-route mask REPLACES the global list instead of adding to it",
+                '    out = list(visual.get("ignore") or [])',
+                "    out = []",
+                "a per-route mask ADDS to the global list",
+            ),
+            Mutation(
+                "an unreadable line in the visual block is skipped and silently defaulted",
+                "        raise Unusable(_unreadable(path, lineno, raw))",
+                "        continue",
+                "an unreadable tolerance is refused, not silently defaulted",
+            ),
+            Mutation(
+                "a regression reports its ratio without the diff image",
+                '            picture = shot.get("diff") or "(none written: the collector produced '
+                'no diff image)"',
+                '            picture = "(none)"',
+                "a regression names its diff image",
             ),
         ),
     ),
@@ -1550,6 +1796,87 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # design-flow #160. THREE of these ten are caught by a fixture whose job is to stay SILENT, and
+    # those are the ones worth having: this check stands between an agent and a user's repo, and
+    # every rule it carries has an obvious over-broad form. `bg-primary` is a role token AND a
+    # string ending in a primitive's suffix; an ERB comment naming `--color-x:` is prose AND a
+    # custom-property declaration; `# do not remove` is a comment AND a line ending in `do`. Flag
+    # the wrong half of any pair and variant mode reports findings on every correct set it is
+    # given, which is how a checker gets switched off wholesale.
+    Guard(
+        name="variant_conformance",
+        subject="plugins/design-flow/scripts/variant_conformance.py",
+        selftest="plugins/design-flow/scripts/variant_conformance.py",
+        # It RUNS the #157 detector rather than reimplementing it, and the detector in turn imports
+        # `rendered_conformance` for the shared palette-step definition. Without both, every mutant
+        # dies at import and reads as "caught" by a traceback instead of by the fixture named below.
+        needs=("plugins/design-flow/scripts/llm_tell_detector.py",
+               "plugins/design-flow/scripts/rendered_conformance.py",
+               "plugins/design-flow/scripts/conformance_collector.js"),
+        mutations=(
+            Mutation(
+                "the role layer is read as primitives, so every conformant variant is a finding",
+                "        if opening.group(1):",
+                "        if False:",
+                "role tokens are NOT flagged as primitives",
+            ),
+            Mutation(
+                "an ERB comment naming a custom property becomes a styling violation",
+                "        if tells.COMMENT_LINE.match(line):\n            continue\n"
+                "        for pattern, what in STYLING:",
+                "        if False:\n            continue\n        for pattern, what in STYLING:",
+                "a comment naming a custom property is NOT a finding",
+            ),
+            Mutation(
+                "an unresolvable pack becomes a silent skip instead of a finding",
+                "    if not theme:",
+                "    if False:",
+                "an unresolvable pack is a finding, not a skip",
+            ),
+            Mutation(
+                "the distinctness rule stops noticing two variants with one arrangement",
+                "        twin = signatures.get(signature)",
+                "        twin = None",
+                "two variants differing only in copy fire",
+            ),
+            Mutation(
+                "a set of one passes, so variant mode degenerates to the yes/no it replaces",
+                "    if len(entries) < 2:",
+                "    if len(entries) < 1:",
+                "a set of one fires",
+            ),
+            Mutation(
+                "the rationale requirement is dropped and the choice becomes aesthetic again",
+                '        if not str(entry.get("rationale") or "").strip():',
+                "        if False:",
+                "a blank rationale fires",
+            ),
+            Mutation(
+                "the undeclared-partial direction is dropped, so discard misses a leftover",
+                '        if entry == MANIFEST or entry in declared or not entry.endswith(".erb"):',
+                "        if True:",
+                "an undeclared partial in the set fires",
+            ),
+            Mutation(
+                "the route tracker stops popping, so a CLOSED dev block launders a later route",
+                "        if _CLOSES.match(line) and stack:",
+                "        if False and stack:",
+                "a closed development block does not launder a later route",
+            ),
+            Mutation(
+                "an empty scaffolding directory reads as a clean pass",
+                "    if not set_dirs:",
+                "    if False:",
+                "an empty variants directory is fatal too",
+            ),
+            Mutation(
+                "comments re-enter the route tracker, so `# do` unbalances the stack",
+                '        if line.lstrip().startswith("#"):\n            continue',
+                "        if False:\n            continue",
+                "a comment does not unbalance the block tracker",
+            ),
+        ),
+    ),
     # rails-flow #127 + the rails-flow half of #128. FOUR of these seven break a fixture whose job
     # is to stay SILENT, because a work order is ordinary prose about files and tests: `<...>` is a
     # placeholder AND an HTML tag, "above" is the conversation AND the table three lines up, `TODO`
@@ -1620,6 +1947,48 @@ GUARDS: tuple[Guard, ...] = (
                 'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b")',
                 'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b", re.I)',
                 "the word todo in prose",
+            ),
+        ),
+    ),
+    # #158. The routing regex is the mutation that matters here. Its whole job is telling a real
+    # dispatch entry apart from prose that happens to name the file, and getting that wrong in the
+    # LOOSE direction is silent: every reference looks routed and the gate reports clean forever.
+    # That is precisely how `fidara-design/references/coverage.md` hid at depth 2 while two other
+    # reference files name it in passing.
+    Guard(
+        name="check_skill_routing",
+        subject="scripts/check_skill_routing.py",
+        selftest="scripts/check_skill_routing.py",
+        mutations=(
+            Mutation(
+                "the `references/` anchor becomes optional, so prose naming a file counts as routing",
+                'REF_PATH_RE = re.compile(r"(?:\\./)?references/([A-Za-z0-9._-]+\\.md)")',
+                'REF_PATH_RE = re.compile(r"(?:\\./)?(?:references/)?([A-Za-z0-9._-]+\\.md)")',
+                "a bare prose mention is NOT routing",
+            ),
+            Mutation(
+                "the unrouted rule stops reporting, so an orphaned reference is clean",
+                "    for missing in sorted(present - routed):",
+                "    for missing in []:",
+                "an unrouted reference is a finding",
+            ),
+            Mutation(
+                "the dead-link rule stops reporting, so a router pointing at nothing is clean",
+                "    for dead in sorted(routed - present):",
+                "    for dead in []:",
+                "a dead reference link is a finding",
+            ),
+            Mutation(
+                "the Level-2 budget goes off-by-one and fires on a compliant 500-line body",
+                "    if line_count > MAX_SKILL_LINES:",
+                "    if line_count >= MAX_SKILL_LINES:",
+                "a body exactly AT the budget is silent",
+            ),
+            Mutation(
+                "a skill directory with no SKILL.md becomes a silent skip instead of an error",
+                '        raise Unreadable(f"{name}/: no SKILL.md")',
+                "        return [], 0",
+                "skipped instead of raising",
             ),
         ),
     ),

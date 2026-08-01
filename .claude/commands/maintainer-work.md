@@ -112,6 +112,22 @@ Two hard rules, both the opposite of what feels natural:
 
 Repackage `dist/` in this PR if `skills/**` changed — that is content, not a version.
 
+**Check what the body claims, not just what the diff does.** The gate above verifies the *doctrine*;
+this verifies the *description*, and they fail differently. Three defects shipped from this repo in
+one day whose diffs were each internally consistent and whose sentences were wrong — *"the gates run
+in CI"* when every PR check was third-party, *"the publish is gated"* when the release job had no
+`needs:`, and a scaffolded CI job referencing a variable that does not exist in GitHub Actions
+(#359). No diff review catches those, because the defect is not in the diff.
+
+```bash
+python3 plugins/rails-flow/scripts/extract_claims.py /tmp/pr-body.md
+```
+
+Hand the list to **`claim-verifier`**, which checks each by **running or grepping** rather than
+reasoning. An unverifiable claim is a finding: make it checkable or delete it. This is cheap here
+and mandatory at the promotion, where the body becomes the published release notes — see
+`release-manager`.
+
 ## Phase 5 — Stop. Shipping is a separate, deliberate act.
 
 **Do not promote as part of working an issue.** `/maintainer-work` ends when the fix is
