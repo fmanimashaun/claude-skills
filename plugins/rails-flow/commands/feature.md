@@ -3,6 +3,10 @@ description: Orchestrated feature development — plan, spec-first implementatio
 argument-hint: <feature description>
 ---
 
+<!-- topology: sequential
+     merge: n/a — each phase consumes the previous phase's output, so there is nothing to reconcile.
+            The eight agents are a pipeline, not a fan-out. -->
+
 # /rails-flow:feature — $ARGUMENTS
 
 Build the requested feature end-to-end using the orchestrated flow below. You are the

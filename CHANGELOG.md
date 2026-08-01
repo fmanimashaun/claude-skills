@@ -5011,6 +5011,36 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
+### Unreleased
+
+- **Agent topology is now declared by each command, and gated** (#137). `docs/harness-doctrine.md`
+  gains **§8a**; every command dispatching two or more of its own plugin's agents carries
+  `<!-- topology: … -->`, a `parallel` one carries a `merge:` rule, a `loop` carries `exit:`.
+  Enforced by the new `undeclared-topology` rule in `lint_self_consistency.py`.
+- **Building the check first is what proved the labels must be explicit rather than inferred**, and
+  all three measurements pushed the same way. `/rails-flow:review` is the flagship parallel fan-out
+  — the README says so — yet the word "parallel" appears **nowhere** in `review.md`, so a keyword
+  gate would have missed the one command that gets this right. Counting agents over-fires
+  (`/rails-flow:feature` names eight, sequentially — a pipeline reconciles nothing). Searching for
+  merge vocabulary under-fires (`/qa-flow:certify` states a sound precedence rule in words no
+  keyword list contains).
+- **FIX — `/qa-flow:verify` Phase 4 consolidated a five-way fan-out with only a verdict rule.**
+  Nothing said what happens when two layers report the same defect, or when one PASSes a surface
+  another fails. Now states both: precedence (any S1/S2 outranks every PASS; a skipped layer is not
+  a PASS) and dedupe (same route + failing assertion is ONE defect, reported with every layer that
+  saw it). Filing one issue per layer inflates the count and makes the fix queue lie.
+- **Loop breakers are deliberately still absent**, and §8a says so where a reader will look. Attempt
+  caps and no-progress detection are §8's recorded gap, owned by #128; requiring them before they
+  exist would be the claims-vs-enforcement defect this document is named for. An `exit:` condition
+  is a different thing — a command can state one today.
+- **The rule's first version examined ZERO commands and reported "no findings."** An off-by-one
+  resolved every plugin name to `"plugins"`, so it found no agents directory and skipped everything
+  — a clean verdict over an empty scan, visible only because the coverage counter printed the zero.
+  Kept in the docstring, and the reason those counters exist.
+- Self-consistency selftest **85 → 93** assertions; mutations **23 → 25**, both new ones caught by
+  their own fixture. `/design-flow:audit` and the design-flow README also document the new detector
+  from #157.
+
 ### 2026-08-01 (release v1.52.1)
 
 > ### Everything here came from running the toolchain against a real Rails app

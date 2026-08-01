@@ -89,6 +89,18 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the topology rule stops requiring a merge rule on a fan-out",
+                'if kind == "parallel" and not re.search(r"\\bmerge:", detail, re.I):',
+                "if False:",
+                "parallel without a merge rule",
+            ),
+            Mutation(
+                "the topology rule demands a declaration from every single-agent command",
+                "        if len(dispatched) < 2:\n            continue\n",
+                "        if False:\n            continue\n",
+                "a single agent needs no declaration",
+            ),
+            Mutation(
                 "the coercion rule drops its backreference and flags any two identifiers",
                 r'\b\1\.to_(?:i|f)\b',
                 r'\b[a-z_]+\.to_(?:i|f)\b',

@@ -3,6 +3,11 @@ description: Independent QA verification after a feature merges to dev — smoke
 argument-hint: "[PR number or feature slug]"
 ---
 
+<!-- topology: parallel
+     merge: any layer reporting an S1/S2 outranks every PASS — a clean run from one agent is never
+            evidence against another's defect. The same defect found by two layers is ONE defect
+            (dedupe on route + assertion), reported with the layers that saw it. -->
+
 # /qa-flow:verify — $ARGUMENTS
 
 Fires after a feature PR merges into dev. QA's question here is NOT "does the new
@@ -66,7 +71,19 @@ the change can't affect and say so.
 ## Phase 4 — Report & defects
 
 `qa-reporter` consolidates the report and files each defect as a
-`qa,from-qa,severity:sN` issue. Verdict:
+`qa,from-qa,severity:sN` issue.
+
+**Consolidating a fan-out needs two rules, not one, and only the verdict rule was ever written
+down.** Phase 3 dispatches up to five agents over overlapping surfaces, so:
+
+- **Precedence.** Any layer reporting an S1/S2 outranks every other layer's PASS. A clean run from
+  `e2e-tester` is not evidence against a defect `exploratory-tester` found — they looked at
+  different things. Silence from a skipped layer is not a PASS either; say it was skipped.
+- **Dedupe.** The same defect seen by two layers is **one** defect, keyed on route + failing
+  assertion, reported with every layer that saw it. Two *similar-looking* defects on different
+  routes are two. Filing one issue per layer inflates the count and makes the fix queue lie.
+
+Verdict:
 - **PASS** → the feature is cleared; report it, next feature may proceed.
 - **FAIL** → the feature is NOT cleared. Defects flow to `/rails-flow:issues
   label:qa` for fixing through the developer flow; verify re-runs until PASS. No
