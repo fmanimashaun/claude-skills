@@ -186,12 +186,19 @@ def run() -> int:
                 )
 
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
+    # `subject` and `selftest` are scripts, so they must be FILES. `deps` and `needs` are staged
+    # by copying, and #422 deliberately declared a DIRECTORY there ("a directory, so a new
+    # reference doc is picked up rather than quietly missing") -- which `is_file()` then rejected,
+    # leaving the fix that removed one vacuous guard failing this selftest. Existence is the real
+    # rule for those two, and it still catches the typo this check exists for.
     for real_guard in mc.GUARDS:
         _tick()
-        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps,
-                               *real_guard.needs) if not (original_repo / p).is_file()]
+        missing = [p for p in (real_guard.subject, real_guard.selftest)
+                   if not (original_repo / p).is_file()]
+        missing += [p for p in (*real_guard.deps, *real_guard.needs)
+                    if not (original_repo / p).exists()]
         if missing:
-            FAILURES.append(f"{real_guard.name}: declares files that do not exist: {missing}")
+            FAILURES.append(f"{real_guard.name}: declares paths that do not exist: {missing}")
         if not real_guard.mutations:
             FAILURES.append(
                 f"{real_guard.name}: declares no mutations — a guard with an empty list passes "
