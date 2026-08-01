@@ -2273,6 +2273,116 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.30.0 — 2026-08-01
 
+- **`bin/ci` was doctrine's "whole gate" and ran zero specs** (#391). The skill mandates
+  `--skip-test`, and Rails wraps every test step in its generator template in
+  `<% unless options[:skip_test] -%>`
+  ([`config/ci.rb.tt` on `8-1-stable`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/templates/config/ci.rb.tt),
+  fetched 2026-08-01) — so the mandated scaffold writes a `config/ci.rb` with no `Tests: Rails`, no
+  `Tests: Seeds`, and not even the commented-out `Tests: System` line. `testing.md` §11 then told the
+  agent to *"swap the test step"*: an edit to a line the mandated invocation never writes, while four
+  other places went on calling `bin/ci` the full gate. A `gate-that-cannot-fail` in shipped doctrine.
+  §11 now gives the **whole file** a `--skip-test` app needs — `Tests: RSpec` plus the `Tests: Seeds`
+  step Rails also drops, ordered after the suite because `db:seed:replant` truncates and re-seeds —
+  and the mandate moved beside `--skip-test` itself in `project-setup.md` §1, where the consequence
+  originates. `SKILL.md` (golden-path step 7, the 8.1 feature list, Definition of done) and
+  `deployment-kamal.md` now state plainly that a green `bin/ci` without that step proves lint and
+  audits only. DSL surface re-verified rather than assumed against
+  [`ActiveSupport::ContinuousIntegration`](https://github.com/rails/rails/blob/8-1-stable/activesupport/lib/active_support/continuous_integration.rb):
+  `step(title, *command)`, `success?`, `failure(title, subtitle)` — nothing else, and `CI.run`
+  aborts non-zero if any step failed. Version boundary: Rails **8.1.0+** (railties CHANGELOG,
+  *"Introduce `bin/ci` for running your tests, style checks, and security audits…"*).
+- **Verifying #391 found a second wrong claim one table row away.** `SKILL.md`'s stack table said
+  `--skip-ci` omits `config/ci.rb` + `bin/ci`. It does not. `skip_ci?` guards only `create_cifiles`
+  — `.github/workflows/ci.yml` and `.github/dependabot.yml` — while `config/ci.rb` is templated
+  unconditionally by `config`, and `bin/ci` is never in `bin`'s exclude pattern (thruster, rubocop,
+  brakeman, bundler-audit)
+  ([`app_generator.rb`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/app_generator.rb));
+  the flag's own `desc:` is *"Skip GitHub CI files"*
+  ([`app_base.rb`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/app_base.rb)).
+  So a reader passing `--skip-ci` to avoid local CI still gets `bin/ci`, and one keeping it for local
+  CI still gets the Actions workflow whose triggers `testing.md` §11 tells them to scope.
+- **New `ci-gate-without-test-step` rule** in `lint_self_consistency.py`, closing the enforcement
+  half of #391: a fenced `CI.run` block under `skills/` or `plugins/` must carry a `step` that runs
+  the suite (`rspec`, or `rails test` for a Minitest project). It cannot catch the prose half —
+  *"swap the test step"* is not mechanically checkable — but it pins the artifact, which is the half
+  that lasts: the corrected `config/ci.rb` cannot be "simplified" back, and any future `CI.run` we
+  ship must answer the same question. Narrow on purpose, and two near-miss fixtures decide that: a
+  lone `step` line with no `CI.run` (how `api-documentation.md` shows the OpenAPI drift gate) and
+  prose naming `CI.run` outside a fence both stay silent, as does the CHANGELOG quoting a superseded
+  example. Two mutations registered, both caught.
+- **SimpleCov's `add_group` → `group` rename landed in 1.0.0, not 1.0.2** (#396). `testing.md` §2
+  stated the floor twice — an inline `# SimpleCov >= 1.0.2` beside the `group` call and *"renamed in
+  1.0.2"* in the prose below — so a reader pins or gates two patch releases too high. The rename is
+  in the **1.0.0** Deprecations section, alongside `add_filter` → `skip` and `track_files` → `cover`,
+  with the legacy names kept working and each warning
+  ([SimpleCov CHANGELOG](https://github.com/simplecov-ruby/simplecov/blob/main/CHANGELOG.md), fetched
+  2026-08-01); 1.0.1, 1.0.2 and 1.0.3 mention none of them. The rest of the same paragraph was
+  re-verified and left alone: the `StringFilter` path-segment change and the Ruby >= 3.2 minimum are
+  both 1.0.0 and both stated correctly, and `SimpleCov.start`, `enable_coverage` and
+  `minimum_coverage` were not renamed by the same redesign. Version boundary: `group` / `skip` /
+  `cover` are **SimpleCov >= 1.0.0**.
+- **`hotwire/references/stimulus.md` §3 invented function-key filters, and an unknown filter throws
+  rather than no-oping** (#381). `defaultSchema.keyMappings` holds twelve named keys
+  (`enter tab esc space up down left right home end page_up page_down`) plus `a`–`z` and `0`–`9`, and
+  no `f*` entry at all — the doctrine's trailing `f1…` named a range that has never existed. The
+  failure mode is why this was P1: `Action#shouldIgnoreKeyboardEvent` raises
+  `contains unknown key filter` when the name is absent from the map, via an `error()` helper whose
+  whole body is `throw new Error(message)`. Two adjacent facts verified in the
+  same file and now stated: filters bind to `keydown`/`keyup`/`keypress` only (elsewhere the parser
+  folds the dot back into the event name, which is how `jquery.custom.event->x#y` works), and
+  `keyFilterDissatisfied` compares all four of meta/ctrl/alt/shift **exactly**, so `keydown.ctrl+k`
+  stays silent while Shift is held. Verified against **Stimulus 3.2.2** — the version the skill
+  targets and the latest release (published 2023-08-07; `keyMappings` is unchanged across 3.x) —
+  [`src/core/schema.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/schema.ts),
+  [`src/core/action.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/action.ts),
+  [`src/core/action_descriptor.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/action_descriptor.ts).
+  - **The report's account of where the error lands was wrong, and the correction is the sharper
+    warning.** It said the error "surfaces through Stimulus' error handler". It does not:
+    `shouldIgnoreKeyboardEvent` is reached from `Binding#willBeInvokedByEvent`, which sits *outside*
+    the `try` in `invokeWithEvent`, and `EventListener#handleEvent` wraps nothing — so the throw
+    escapes to the page as an uncaught error. Verified in
+    [`src/core/binding.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/binding.ts)
+    and [`src/core/event_listener.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/event_listener.ts).
+    An issue body is a hypothesis, including one we wrote.
+- **`hotwire/references/stimulus.md` §1 prescribed `stimulus:manifest:update`, the one command that
+  destroys the auto-registration the same sentence promised** (#382) — a `doctrine-contradiction` in
+  the `skills/code-review/SKILL.md` sense, not merely a stale fact. The importmap installer writes a
+  four-line `index.js` calling `eagerLoadControllersFrom("controllers", application)` and appends
+  `pin_all_from "app/javascript/controllers", under: "controllers"`, so a new controller needs **no
+  command**; the rake task overwrites that file with explicit `application.register` lines, deleting
+  the eager-load call and making the task permanently necessary. The old "if pins are stale" reason
+  was wrong too — the task never touches pins. Verified against **stimulus-rails v1.3.4** (latest,
+  published 2024-08-16, the version Rails 8 resolves) —
+  [`index_for_importmap.js`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/install/app/javascript/controllers/index_for_importmap.js),
+  [`stimulus_with_importmap.rb`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/install/stimulus_with_importmap.rb),
+  [`stimulus_tasks.rake`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/tasks/stimulus_tasks.rake).
+  - **Verification found the old text wrong in a way the report missed, in the same clause.** "the
+    generator `bin/rails g stimulus clipboard` handles it" inverts the truth: the generator's line is
+    `rails_command "stimulus:manifest:update" unless Rails.root.join("config/importmap.rb").exist? || options[:skip_manifest]`
+    — it *deliberately skips* the task on importmap and runs it only on the bundler path, where
+    `index.js` genuinely is a generated manifest. The doctrine now names both paths instead of
+    blurring them
+    ([`stimulus_generator.rb`](https://github.com/hotwired/stimulus-rails/blob/v1.3.4/lib/generators/stimulus/stimulus_generator.rb)).
+  - **Grepped for the class, per CLAUDE.md — no second instance.** The only other statement of this
+    fact in the corpus, `rails-8/references/views-hotwire.md:131` ("pinned via `pin_all_from` and
+    auto-registered"), is correct and corroborates the fix; the two shipped `keydown.esc` examples
+    use a real filter; and every `data-action` written without `event->` in `skills/` sits on a
+    `<button>`, which does have a default.
+- **`hotwire/references/stimulus.md` §3's default-event map was four rules where the source has
+  seven, and the omissions were the unguessable ones** (#387). `defaultEventNames` is
+  `a`/`button` → `click`, `form` → `submit`, `details` → `toggle`, `input` → `input` *except*
+  `input[type=submit]` → `click`, `select` → `change`, `textarea` → `input`. `details` matters most:
+  §10 steers people to `<details>` as the no-JS disclosure element, and guessing `click` there yields
+  a silently dead controller. Verified against **Stimulus 3.2.2** —
+  [`src/core/action.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/core/action.ts).
+  - **The report's failure mode was wrong in the safe-sounding direction.** It said an element with
+    no default "turns into a thrown `missing event name`". It throws, but
+    `ValueListObserver#parseToken` catches it into a `ParseResult.error` that **nothing in the
+    codebase ever reads** — so the action is dropped with no binding and no console output. Written
+    as reported, the doctrine would have promised a visible error where the real behaviour is
+    silence, which is the harder bug. Verified in
+    [`src/mutation-observers/value_list_observer.ts`](https://github.com/hotwired/stimulus/blob/v3.2.2/src/mutation-observers/value_list_observer.ts)
+    (`grep -rn ParseResult src` → six hits, none reading `.error`).
 - **`hotwire/references/native.md` documented a `RouteDecisionHandler` signature that 1.3.0 broke on
   both platforms** (#384). §4 told agents to implement `matches(location:…)` / `handle(location:…)`;
   since **iOS 1.3.0** and **Android 1.3.0** both functions receive the whole `VisitProposal`, so code
