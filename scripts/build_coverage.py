@@ -307,7 +307,9 @@ ENTRIES: tuple[Entry, ...] = (
     E("Form layout", COMPONENT, "documented", "—", ["application-ui/forms/form-layouts"], [],
       "simple_form owns every form; the wrapper anatomy is defined once in an initializer"),
     E("Text input", COMPONENT, "documented", "—", ["application-ui/forms/input-groups"],
-      ["Input Field", "Floating Label"], "floating label is a variant, not a component"),
+      ["Input Field", "Floating Label"],
+      "floating label AND prefix/suffix addons are variants, not components — the input-groups "
+      "corpus directory is claimed here on purpose (#95)"),
     E("Select", COMPONENT, "documented", "—", ["application-ui/forms/select-menus"], ["Select"]),
     E("Textarea", COMPONENT, "documented", "—", ["application-ui/forms/textareas"], ["Textarea"]),
     E("Checkbox", COMPONENT, "documented", "—", ["application-ui/forms/checkboxes"], ["Checkbox"]),
