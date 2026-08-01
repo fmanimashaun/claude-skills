@@ -2264,6 +2264,67 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   so the advice was right and the severity was understated. And `performance-caching.md` read as
   though 8.1 turned YJIT on; 7.2 did that (`config.yjit = true`), while **8.1 narrows it to
   `!Rails.env.local?`** — off in development and test. Both corrected.
+- **`hotwire/references/turbo.md` §2 documented `data-turbo-disable-submitter`, an attribute Turbo
+  has never had** (#380) — and it sat inside the fenced Drive cheat sheet, so an agent wrote a no-op
+  onto a user's form and believed it had configured something. Grepping `src/` of the shipped tag
+  returns zero matches and the official reference does not list it. The behaviour the comment
+  described is real and *is* the default, but it is **global config, not markup**:
+  `Turbo.config.forms.submitter` takes `"disabled"` (sets `submitter.disabled` for the submit,
+  clears it after) or `"aria-disabled"` (sets the attribute and cancels clicks, so the button stays
+  focusable) —
+  [`src/core/config/forms.js`](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/config/forms.js).
+  The block line is replaced by `data-turbo-submits-with`, the per-element knob that does exist
+  ([`form_submission.js` L183–215](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/drive/form_submission.js),
+  [attributes reference](https://turbo.hotwired.dev/reference/attributes)). **Version boundary:**
+  verified against **Turbo 8.0.23**, the version `hotwire/SKILL.md` targets; the attribute exists in
+  no Turbo 8 release.
+- **`turbo.md` §2 described `data-turbo-track="dynamic"` as updating the element in place without a
+  reload** (#383) — it *removes* the element, and both halves of the sentence were wrong: the
+  mechanism (remove, not update) and the trigger (absent from the new `<head>`, not "the fingerprint
+  changed"). `unusedDynamicStylesheetElements` filters the current head's stylesheets that the new
+  head lacks, and `removeUnusedDynamicStylesheetElements()` deletes them
+  ([`page_renderer.js` L86, L119–122, L197–205](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/drive/page_renderer.js));
+  the official reference says the same in one line. It exists because Turbo's head merge is additive,
+  so page-specific CSS otherwise piles up forever. Two precisions the issue did not carry, both from
+  source: `"dynamic"` appears **once** in the whole tree, on that stylesheet filter, so it applies to
+  `<style>` / `<link rel="stylesheet">` and nothing else despite the reference's generic wording; and
+  the `reload` half of the sentence was correct and is unchanged. **Version boundary:** verified
+  against **Turbo 8.0.23**; behaviour unchanged across Turbo 8.
+- **`turbo.md` §5 scoped stream id-de-duplication to `append`/`prepend`** (#385) — since **Turbo
+  8.0.21** all four insertion actions de-duplicate, so the reference told agents an element-removal
+  would not happen when it does. `before`/`after` call `removeDuplicateTargetSiblings()`
+  ([`stream_actions.js`](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/streams/stream_actions.js),
+  [`stream_element.js` L78–93](https://github.com/hotwired/turbo/blob/v8.0.23/src/elements/stream_element.js));
+  added by [hotwired/turbo#1290](https://github.com/hotwired/turbo/pull/1290), shipped in
+  [v8.0.21](https://github.com/hotwired/turbo/releases/tag/v8.0.21). **Version boundary confirmed by
+  reading both tags**: `removeDuplicateTargetSiblings` is absent at v8.0.20 and present at v8.0.21 —
+  doctrine was correct for ≤ 8.0.20 and wrong from 8.0.21, the dangerous shape where a claim stays
+  true-looking inside one major version. The section is retitled to cover all four and states the
+  scope difference: `append`/`prepend` scan the target's **direct children**, `before`/`after` scan
+  the target's **siblings**, which is its parent's children *including the target itself*. That last
+  clause is not pedantry — a `before`/`after` whose template carries the target's own `id` removes
+  the target, loses the insertion point (`e.parentElement?.insertBefore`, and `targetElements`
+  re-queries by id) and **inserts nothing, silently**. Reproduced against a real DOM, not inferred.
+- **`turbo.md`'s §4, §5 and §8 lookup tables omitted real Turbo 8 API** (#386) — agents read absence
+  from a table as "no such thing". Added: `data-turbo-frame="_parent"`, which navigates the
+  *immediate* enclosing frame via `parentElement.closest("turbo-frame")` and falls back to a full page
+  visit when there is no enclosing frame or it is `disabled`
+  ([`frame_controller.js` L482–511 and L585–594](https://github.com/hotwired/turbo/blob/v8.0.23/src/core/frames/frame_controller.js),
+  behaviour pinned by five functional tests; **Turbo ≥ 8.0.21**,
+  [hotwired/turbo#1446](https://github.com/hotwired/turbo/pull/1446));
+  the `refresh` action's `method` / `scroll`, which override the page's meta tags for that one
+  refresh (`page_view.js` L19, L63; **Turbo ≥ 8.0.21**,
+  [hotwired/turbo#1208](https://github.com/hotwired/turbo/pull/1208));
+  and `turbo:before-prefetch`, `turbo:frame-render` and `turbo:before-frame-morph`. Enumerating every
+  `turbo:*` dispatch in v8.0.23 gives **24** events against §8's 21 — exactly those three, so the
+  issue's list was complete. Two things it got only half right, corrected here: its enumeration
+  missed `src/http/`, which is where `turbo:fetch-request-error` is dispatched (§8 already listed it,
+  so nothing was wrong — but the method would not have caught it); and `turbo:before-frame-morph` is
+  dispatched **without** `cancelable`, unlike the element and attribute morph hooks beside it, so the
+  reference now says so. §5's `refresh` row also loses its "(morphing — §3)" gloss: the action honours
+  whatever is configured, and the meta-tag default is `replace`. **Version boundary:** `_parent` and
+  the refresh attributes are absent at v8.0.20 and present at v8.0.21 (both tags read); the three
+  events predate 8.0.21 and had simply never been listed.
 - **FIX — `coverage.md`'s Interaction-patterns table had outlived the work it tracked, in four of
   its nine rows** (#89). The component half of that matrix has been evidence-checked since #124;
   this half was hand-maintained prose, and it rotted quietly while the phases under this epic
