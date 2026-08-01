@@ -1313,6 +1313,66 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A vague ask now becomes a buildable brief, and the brief is an index over its sources rather
+  than a copy of them** (#130). New `/rails-flow:brief` writes `docs/brain/BRIEF.md`: the intake
+  artefact that gates a client engagement, run **before** `/rails-flow:setup-flow`. It detects
+  which of three situations it is in — documents exist, code exists, or greenfield — **ingests
+  first**, reports a coverage map of what the sources already answer, and interviews only the
+  genuine gaps. **Change type: design / architecture.** The brief's shape, the coverage vocabulary,
+  the citation syntax and the duplication rule are our own decisions about our own toolchain; no
+  upstream exists to cite, so the authority is the maintainer decision recorded on
+  [#130](https://github.com/fmanimashaun/claude-skills/issues/130#issuecomment-5152551963). **No
+  framework claim rides along** — nothing here asserts how Rails, Hotwire, Claude Code or any gem
+  behaves.
+  - **The issue's citation format does not exist and could never have resolved.** #130 specified
+    `PRD S7.2`-style references *"matching the citation convention already used in `docs/brain/`"*.
+    `grep -rn "PRD S"` over this repo returns **nothing**: the brain uses `D-nnn` ids and the four
+    provenance tags, and `PRD S7.2` names no file, so an agent following the issue verbatim would
+    have shipped a citation style the toolchain does not use and that nothing could check. The
+    syntax is therefore ours — `` `docs/prd.md` § "Pricing tiers" `` — a real path plus a string
+    that literally occurs in that file, **and the checker opens the file and looks**. It carries
+    code unchanged (`` `app/models/booking.rb` § "class Booking" ``), which is what lets one
+    mechanism serve document intake and codebase intake instead of two.
+  - **A fourth coverage state, because three could not describe greenfield.** The issue gives
+    answered-with-source / thin / missing; a greenfield brief has no document to cite, so every row
+    would have had to lie in the `answered` cell. A `decided` row cites a `D-nnn` that must exist in
+    `docs/brain/DECISIONS.md` — which is what turns the issue's *"decisions … are written to
+    DECISIONS.md"* from a hope into a checkable claim, reusing the `[decided]` provenance tag the
+    brain already defines rather than inventing a fifth vocabulary.
+  - **"Never duplicates an existing PRD" is measured, not requested** —
+    `plugins/rails-flow/scripts/check_brief.py` (61-check selftest, 11 declared mutations, **five in
+    the silence direction**), registered as the `rails-flow product brief` gate and in the plugin's
+    `checks.json` so a user's own `project_gates.py` runs it. A 12-word contiguous run reproduced
+    from a cited source is a finding. **Its whole risk is false positives**, because a brief and its
+    PRD describe the same product in the same words: blockquotes, fenced code, table rows and
+    headings are exempt, each with a near-miss fixture, since attributed quotation is the one place
+    the brief is *supposed* to borrow and the coverage map's Source cell quotes the source's own
+    heading by design. The checker also rejects a citation that resolves to nothing, an `answered`
+    row with no source, a `decided` row with no `D-nnn`, non-goals that say "none", an open question
+    with no owner, and a coverage gap recorded nowhere.
+  - **Two rules shipped broken and the fixtures caught both**, which is the reason for the silent
+    half. `\bnon-goal\b` does **not** match "Non-goals" — the `\b` fails against the trailing `s` —
+    so `## Non-goals (out of scope)` was collected as the *scope* section and a brief with no scope
+    section at all reported clean. And the mode cross-check read first the whole section and then
+    the whole line, both of which always contained the expected word (`"**Mode: A — documents.**
+    Intake read the documents first"`), so it could not fire; it now reads only the declaration
+    clause. Neither was visible by reading.
+  - **What is deliberately NOT enforced, said out loud rather than implied.** One-question-at-a-
+    time, every question carrying a recommendation, and stopping when the first slice is decidable
+    are runtime interview behaviour that leaves no trace in the artifact — tier 1 prose per
+    [`docs/harness-doctrine.md`](docs/harness-doctrine.md) §1, and labelled as tier 1 in the command
+    so nobody reads enforcement that does not exist. Success criteria are **not** graded for
+    falsifiability here either: that is `check_criteria.py`'s job on `docs/acceptance/<slug>.md`, and
+    enforcing one property twice at two fidelities is the second-source-of-truth failure this whole
+    command exists to prevent.
+  - **The self-containment rules are imported from `check_handoff.py`, not copied.** "What counts as
+    a reference to the conversation" is one decision, and two copies of it would be exactly the
+    doc-drift the checker polices, committed inside the checker. The import is a seam: with the
+    module absent the rules report **UNVERIFIED**, never clean — a skip masquerading as a pass is
+    the failure this repo has shipped twice. `TBD` is carved out of `## Open questions` and only
+    there, because a recorded unknown with an owner is that section's job and an unrecorded one
+    anywhere else is the defect.
+  - Hands document distillation to `/rails-flow:curate` rather than reimplementing it.
 - **`code-reviewer` now runs the quality pass as an explicitly second, explicitly non-blocking
   section** (#360). Without a call site the new `quality-pass` skill would be doctrine nothing
   points at. The wiring states both halves of its contract: it runs **after** the correctness

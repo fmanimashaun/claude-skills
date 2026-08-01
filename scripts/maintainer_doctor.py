@@ -130,6 +130,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
     # also catches an agent's `model:` drifting from the doctrine that documents it (#127).
     ("rails-flow work order", ("python3", "plugins/rails-flow/scripts/check_handoff.py", "--selftest")),
+    # #130. Its riskiest rule is a SIMILARITY rule (no long run of a cited source reproduced in the
+    # brief), so most of its selftest is the silence direction — a blockquote, a fence, a table
+    # cell and a run one word under the threshold are all shapes that look like duplication.
+    ("rails-flow product brief", ("python3", "plugins/rails-flow/scripts/check_brief.py", "--selftest")),
     ("rails-flow claim extraction", ("python3", "plugins/rails-flow/scripts/extract_claims.py", "--selftest")),
     # #334. Its selftest also validates every SHIPPED checks.json -- that each names a real
     # script and supplies a required subcommand -- so a manifest defect fails here rather
