@@ -133,6 +133,12 @@ GUARDS: tuple[Guard, ...] = (
             # The two ORIGINAL rules had fixtures but never got mutations — the per-rule coverage
             # check in mutation_check_selftest.py found that, three rules later.
             Mutation(
+                "the install-line rule stops firing (#203, second occurrence)",
+                '        if not re.search(rf"/plugin\\s+install\\s+{re.escape(name)}@", body):',
+                '        if False:',
+                "a declared plugin with no install line",
+            ),
+            Mutation(
                 "a dead settings key stops being reported (the file's first rule)",
                 "        if not keys:\n            continue",
                 "        if True:\n            continue",

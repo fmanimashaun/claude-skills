@@ -698,11 +698,12 @@ Skills are plain folders; installing = putting each skill at
 /plugin install rails-stack@claude-skills   # knowledge: Rails 8 + Hotwire skills
 /plugin install rails-flow@claude-skills    # build process: orchestrated feature work
 /plugin install qa-flow@claude-skills       # independent QA: verify + certify + release gate
+/plugin install design-flow@claude-skills   # UI/design: tokens, components, rendered conformance
 /plugin install pipeline@claude-skills      # lifecycle + containerized release + cloud deploy
 ```
 
 After installing, restart Claude Code so all hooks register. Per-project setup runs in
-dependency order: `/rails-flow:setup-flow` → `/qa-flow:setup-qa` →
+dependency order: `/rails-flow:setup-flow` → `/design-flow:setup` → `/qa-flow:setup-qa` →
 `/pipeline:setup-pipeline`.
 
 Run those inside any Claude Code session. The `rails-stack` plugin bundles the
