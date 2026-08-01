@@ -39,6 +39,24 @@ across projects **without a designer or Figma**, by applying the **fidara-design
 - **design-auditor** — the consistency gate (design-system-specific; complements rails-flow's).
 - **brand-guardian** — enforces token/brand/logo/icon usage and the two-brand model.
 
+## Checks
+
+- **`llm_tell_detector.py`** — seven named rules for LLM design tells, each citing the doctrine
+  line it enforces (`--list-rules`). Stdlib only, no browser. Runs on **every edit** via a
+  PostToolUse hook and inside `/design-flow:audit`. Two rules find outright bugs rather than style:
+  `bg-gradient-to-*` (removed in Tailwind v4) and `duration-fast` (never existed) both emit **no
+  CSS at all**, so the markup looks right and renders wrong with nothing raised.
+  Disable one **with a reason** — `<!-- design-flow-disable <rule>: why -->`; a bare disable is
+  itself a finding.
+- **`setup_doctrine_crosscheck.py`** — catches doctrine that reads a config key `/design-flow:setup`
+  never generates. A toolchain check, not a project one.
+- **`brand_pack_lint.py`** — validates a brand pack's completeness.
+- **`rendered_conformance.py`** — the browser half: what the cascade actually computed. Needs
+  Playwright and a booted app, so it runs on demand rather than per edit.
+
+The hook is **advisory and fails open**: with `python3` absent it goes quiet rather than blocking
+an edit, per the guarantee-vs-advice test in `docs/harness-doctrine.md`.
+
 ## The doctrine
 
 Everything follows the **fidara-design** skill (`skills/fidara-design/`): foundations/tokens,

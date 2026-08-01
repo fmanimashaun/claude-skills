@@ -2,6 +2,11 @@
 description: Full parallel codebase review — seven specialist passes producing a phased, /fix-consumable report
 ---
 
+<!-- topology: parallel
+     merge: dedupe collapses the SAME finding seen by two passes (never two findings that merely
+            look alike); on disagreement the higher severity wins, and a pass that reports nothing
+            is not evidence of absence. -->
+
 # /rails-flow:review
 
 Run a thorough review of this Rails project and write a phased fix plan.

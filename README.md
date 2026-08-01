@@ -91,6 +91,12 @@ fix ships as new doctrine.
 
 All three multi-agent shapes are in use. The rule is *default sequential; justify parallel*.
 
+Each command **declares** its topology in place, rather than leaving a reader to infer it —
+a fan-out declares how conflicting or duplicate outputs merge, a loop declares its exit
+condition, and `undeclared-topology` fails the build when one does not. The reasoning, and
+why inference was tried first and abandoned, is in
+[docs/harness-doctrine.md](docs/harness-doctrine.md) §8a.
+
 | Topology | Where | Why |
 |---|---|---|
 | **Sequential** | `/feature` phases · the `doctrine-verifier` gate · `smoke → verify → certify` | Stage N+1 is meaningless if N failed. Cheapest and most debuggable |

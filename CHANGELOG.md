@@ -4237,6 +4237,48 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.11.0 — 2026-08-01
+
+- **NEW `llm_tell_detector.py` — an offline detector for LLM design tells** (#157). Stdlib only, no
+  browser, no API key. Borrowed in *shape* from [impeccable](https://github.com/pbakaus/impeccable):
+  every rule is **named**, so it can be argued with and disabled individually, and **a disable must
+  carry a reason** — a bare one is itself a finding. That is the mechanism `brand_pack_lint.py`
+  lacks, and without it the first justified exception is what teaches everyone to switch a checker
+  off wholesale.
+- **The rule set is seven, not the twelve #157 listed, and the arithmetic is the point.** Criterion 3
+  requires each rule to cite doctrine, since *"a rule with no doctrine behind it is taste"*.
+  Grounding all twelve eliminated five: **two are prescribed by our own doctrine** —
+  `components.md:185` mandates `backdrop-blur-sm` for the modal backdrop and `components.md:658`
+  mandates `animate-pulse` for skeletons, so "glassmorphism" and "pulsing" rules would fire on the
+  reference implementations they enforce — and **three need rendered output or page structure** a
+  static scan cannot see (ghost-cards is a contrast measurement, and belongs to #107).
+- **Two of the seven find outright bugs rather than drift.** `bg-gradient-to-*` was *removed* in
+  Tailwind v4 with no alias and `duration-fast` never existed (there is no `--duration-*` theme
+  namespace), so both emit **no CSS at all** — the markup looks right, renders wrong, and nothing
+  raises anywhere.
+- **Criterion 6 (zero findings against our own reference implementations) earned its place
+  immediately.** Its first run produced 11 findings against our own doctrine, both of them real rule
+  bugs: `raw-hex-literal` flagged the token *definitions* (`--color-fm-navy: #0C1B33` — a custom
+  property IS the token layer the rule protects), and `off-scale-radius` flagged a comment reading
+  *"NOT an arbitrary `rounded-[12px]`"*. Now a gate, so neither can come back.
+- **The two scanners had already drifted, and unifying them was the fix.** The markdown path never
+  called `rule.exempt`, so the same `--color-fm-navy: #0C1B33` was exempt in a `.css` file and a
+  finding in our token doc. There is now one `_scan_line`; patching the copy would only have
+  deferred the next divergence.
+- **Criterion 7 (the palette rule defined once, shared with #107) was nearly violated silently** —
+  `PALETTE_STEP` was imported and then hand-copied into the rule. The alternation is now derived
+  from the shared pattern's own source, and a shape change fails loudly at import instead of
+  matching nothing.
+- **Wired as a PostToolUse hook** on `Edit|Write|MultiEdit` for view and component surfaces, and as
+  a second step in `/design-flow:audit`. **Advisory, therefore fail-open** per the
+  guarantee-vs-advice test in `docs/harness-doctrine.md` — verified by running it with `python3`
+  shadowed by a stub that exits 127 (exit 0, silent). design-flow had no `hooks/` directory before
+  this; hooks load by convention, exactly as rails-flow's do.
+- Detector selftest: **40 checks across 7 rules**. Five declared mutations, all caught by their own
+  named fixture — **three of them are bugs that were actually in the first draft**, including an
+  `ease-in-out` lookahead that excused the single most common instance of the tell it detects.
+  Gate sweep 41 → **43**.
+
 ### 1.10.1 — 2026-08-01
 
 - **`design-auditor` reports stock LLM phrasing as a count** (#131). Marketing copy using
@@ -4968,6 +5010,72 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.53.0)
+
+> ### Two checks that exist because inference was tried first and did not work
+>
+> Both features here started as "grep for the bad pattern", and in both cases building the check
+> proved the grep could not be trusted. The detector's twelve tells collapsed to seven once each was
+> grounded in doctrine. The topology gate's keyword approach would have **missed the one command
+> that gets fan-out right** and passed two that did not.
+
+- **NEW — offline detector for LLM design tells** (#157, design-flow 1.11.0). Seven named rules,
+  each citing the doctrine line it enforces. Stdlib only, no browser, no API key. Runs on every edit
+  as a PostToolUse hook and inside `/design-flow:audit`. A disable must carry a reason; a bare one is
+  itself a finding.
+- **The rule set is seven, not the twelve requested, and that is the finding.** Two of the tells are
+  **prescribed by our own doctrine** — `components.md:185` mandates `backdrop-blur-sm` for the modal
+  backdrop, `:658` mandates `animate-pulse` for skeletons — so rules for them would fire on the
+  reference implementations they enforce. Three more need rendered contrast or page structure a
+  static scan cannot see.
+- **Two of the seven find outright bugs, not drift.** `bg-gradient-to-*` was removed in Tailwind v4
+  and `duration-fast` never existed, so both emit **no CSS at all**: the markup looks right, renders
+  wrong, and nothing raises.
+- **NEW — agent topology is declared and gated** (#137, rails-flow 1.16.1 · qa-flow 1.20.0).
+  `harness-doctrine.md` §8a; every command dispatching 2+ of its plugin's agents declares its
+  topology, a fan-out declares `merge:`, a loop declares `exit:`. Enforced by `undeclared-topology`.
+- **FIX — `/qa-flow:verify` consolidated a five-way fan-out with only a verdict rule.** Nothing said
+  what happens when two layers report the same defect, or when one PASSes a surface another fails.
+  Now states precedence (any S1/S2 outranks every PASS; a skipped layer is not a PASS) and dedupe
+  (same route + assertion is ONE defect). Filing one issue per layer makes the fix queue lie.
+- **Loop breakers remain deliberately absent**, recorded where a reader will look. They are §8's
+  known gap owned by #128; requiring them before they exist would be the claims-vs-enforcement
+  defect the document is named for.
+- Gate sweep **41 → 43**. Self-consistency selftest 77 → **93** assertions; mutations 21 → **25**.
+  Two of this release's bugs were caught by our own guards rather than by review: a coverage counter
+  printing `0 commands examined` under a "no findings" verdict, and an IDE unused-import hint
+  revealing a shared constant that had been imported and then hand-copied.
+
+### 1.53.0 — 2026-08-01
+
+- **Agent topology is now declared by each command, and gated** (#137). `docs/harness-doctrine.md`
+  gains **§8a**; every command dispatching two or more of its own plugin's agents carries
+  `<!-- topology: … -->`, a `parallel` one carries a `merge:` rule, a `loop` carries `exit:`.
+  Enforced by the new `undeclared-topology` rule in `lint_self_consistency.py`.
+- **Building the check first is what proved the labels must be explicit rather than inferred**, and
+  all three measurements pushed the same way. `/rails-flow:review` is the flagship parallel fan-out
+  — the README says so — yet the word "parallel" appears **nowhere** in `review.md`, so a keyword
+  gate would have missed the one command that gets this right. Counting agents over-fires
+  (`/rails-flow:feature` names eight, sequentially — a pipeline reconciles nothing). Searching for
+  merge vocabulary under-fires (`/qa-flow:certify` states a sound precedence rule in words no
+  keyword list contains).
+- **FIX — `/qa-flow:verify` Phase 4 consolidated a five-way fan-out with only a verdict rule.**
+  Nothing said what happens when two layers report the same defect, or when one PASSes a surface
+  another fails. Now states both: precedence (any S1/S2 outranks every PASS; a skipped layer is not
+  a PASS) and dedupe (same route + failing assertion is ONE defect, reported with every layer that
+  saw it). Filing one issue per layer inflates the count and makes the fix queue lie.
+- **Loop breakers are deliberately still absent**, and §8a says so where a reader will look. Attempt
+  caps and no-progress detection are §8's recorded gap, owned by #128; requiring them before they
+  exist would be the claims-vs-enforcement defect this document is named for. An `exit:` condition
+  is a different thing — a command can state one today.
+- **The rule's first version examined ZERO commands and reported "no findings."** An off-by-one
+  resolved every plugin name to `"plugins"`, so it found no agents directory and skipped everything
+  — a clean verdict over an empty scan, visible only because the coverage counter printed the zero.
+  Kept in the docstring, and the reason those counters exist.
+- Self-consistency selftest **85 → 93** assertions; mutations **23 → 25**, both new ones caught by
+  their own fixture. `/design-flow:audit` and the design-flow README also document the new detector
+  from #157.
 
 ### 2026-08-01 (release v1.52.1)
 
