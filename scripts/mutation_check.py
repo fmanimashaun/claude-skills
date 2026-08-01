@@ -988,6 +988,11 @@ GUARDS: tuple[Guard, ...] = (
         name="interaction_report",
         subject="plugins/qa-flow/scripts/interaction_report.py",
         selftest="plugins/qa-flow/scripts/interaction_report.py",
+        # Without this the collector is absent from the mutant's directory, and every fixture that
+        # cross-checks it -- including the `dismiss.*` field checks and the syntax gate's own
+        # negative test -- silently does not run. `visual_baseline` below needs it for the same
+        # reason.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "an effect kind is dropped, so a working control reports dead",
@@ -1012,6 +1017,55 @@ GUARDS: tuple[Guard, ...] = (
                 '        if not control.get("exercised", False):',
                 '        if False:',
                 "an unexercised control is not judged clean",
+            ),
+            # #105 criterion 4, second half. The first of these is the one that decides whether the
+            # focus-restore rule is usable: APG's base Disclosure pattern has no Escape row, so
+            # dropping the scope guard fires on every accordion on the internet.
+            Mutation(
+                "the APG scope guard goes, so every ordinary accordion reports a focus-restore bug",
+                '    if kind not in RESTORE_REQUIRED:',
+                '    if False:',
+                "an ordinary disclosure that keeps focus is NOT a finding",
+            ),
+            Mutation(
+                "the combobox discriminator goes, so combobox popups stop being judged",
+                '    if trigger_role == "combobox":',
+                '    if False:',
+                "a combobox that keeps focus fires focus-restore-missing",
+            ),
+            Mutation(
+                "the menu discriminator goes, so menu popups stop being judged",
+                '    if haspopup == "menu" or popup_role == "menu":',
+                '    if False:',
+                "a menu that keeps focus fires focus-restore-missing",
+            ),
+            Mutation(
+                "a probe that never completed is graded instead of named",
+                '    if closed is None or restored is None:',
+                '    if False:',
+                "a probe with focusRestored=null is not judged clean",
+            ),
+            # Ordering, not presence: moving the call BELOW the exclusions silently drops every
+            # overlay opened by a link -- which is a large share of the real ones.
+            Mutation(
+                "the dismissal is judged after the exclusions, so links lose their overlays",
+                '        judge_dismissal(result, ref, control)\n'
+                '        if excluded_reason(control):\n'
+                '            result.excluded += 1\n'
+                '            continue',
+                '        if excluded_reason(control):\n'
+                '            result.excluded += 1\n'
+                '            continue\n'
+                '        judge_dismissal(result, ref, control)',
+                "a link with href is still judged on focus restore",
+            ),
+            # The syntax gate's own negative test. `node --check <path>` exits 0 on a broken ESM
+            # file, so this gate is one careless edit away from being unable to fail at all.
+            Mutation(
+                "the collector syntax gate always reports success",
+                '    return proc.returncode, proc.stderr.decode("utf-8", "replace")',
+                '    return 0, ""',
+                "the module-mode check FAILS on a broken ES module",
             ),
         ),
     ),

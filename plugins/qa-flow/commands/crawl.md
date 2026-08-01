@@ -46,7 +46,21 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/interaction_report.py" qa/manual-tests/in
 ```
 
 Both exit 1 on findings, so they gate. Both also report what they could **not** judge — an
-unreachable route, an unexercised control — and neither counts that as clean.
+unreachable route, an unexercised control, an overlay whose dismissal probe never completed — and
+neither counts any of that as clean.
+
+### Focus restore, and the overlays it deliberately ignores
+
+When a control opens a layer the collector presses **Escape** and records whether the layer closed
+and whether `document.activeElement` is the trigger element itself. `focus-restore-missing` fires
+on that, and **only for the patterns APG actually mandates it for** — a modal dialog, a `role=menu`
+popup, a combobox popup. An ordinary disclosure (an FAQ accordion) and a standalone listbox are
+measured, printed as **out of scope**, and never counted as findings: APG's Disclosure pattern has
+no `Escape` row at all, so a rule keyed on `aria-expanded` would flag every accordion you ship.
+
+This is the *measured* half of something `a11y-auditor` already reports. That agent counts
+`Restore Failures` per overlay in its CSV and `validate_evidence.py` gates the CSV's arithmetic —
+but that number is the agent's own claim. This one asks the browser.
 
 ## 4. Visual regression (opt in with `--visual`)
 

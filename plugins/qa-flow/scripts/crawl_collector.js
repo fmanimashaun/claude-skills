@@ -12,6 +12,10 @@
 //
 //   node crawl_collector.js --routes / /dashboard --base http://localhost:3000 --out qa/manual-tests
 //
+// Syntax-checked by `interaction_report.py --check-collector`, which runs `node --check` in MODULE
+// mode. Plain `node --check <file>` exits 0 on a broken ESM file, so a gate written the obvious way
+// could not fail on this file at all.
+//
 // WHAT IT DOES NOT DO. It does not screenshot, judge layout, or evaluate the design system —
 // design-flow's conformance collector owns that, and this one deliberately does not duplicate it.
 // For theme parity, run design-flow's collector twice (light, then with the `dark` class) and pass
@@ -236,11 +240,14 @@ for (const route of routes) {
 
     let exercised = true;
     let reason = null;
+    let handle = null;
+    let expandedBefore = null;
     try {
-      const handle = (await page.$$(
+      handle = (await page.$$(
         'button, a, [role="button"], [role="tab"], [role="menuitem"], summary, [onclick]'
       ))[control.index];
       if (!handle) throw new Error('element no longer in the DOM');
+      expandedBefore = await handle.evaluate((el) => el.getAttribute('aria-expanded'));
       // `force` is deliberate: an obscured control is still a control, and refusing to click it
       // would report "not exercised" for a layout reason rather than a behavioural one.
       await handle.click({ timeout: 2000, force: true, noWaitAfter: true });
@@ -259,6 +266,63 @@ for (const route of routes) {
         .join('|'),
       dialogs: document.querySelectorAll('dialog[open],[role="dialog"]').length,
     })).catch(() => null) : null;
+
+    // ---- dismissal probe: an overlay that opened must hand focus back (#105, criterion 4) -----
+    //
+    // MEASUREMENT ONLY. It emits the RAW attributes that tell one kind of popup from another and
+    // classifies none of them: interaction_report.py decides what counts as an in-scope overlay,
+    // and that decision has to stay in Python because it is the part with an upstream to cite.
+    // APG mandates Escape-closes-and-restores-focus for a modal dialog, a `role=menu` popup and a
+    // combobox popup -- and states NO such requirement for the base Disclosure pattern or a
+    // standalone listbox. A rule keyed on `aria-expanded` alone would therefore fire on every
+    // ordinary accordion on the internet, which is the false positive that gets a rule switched
+    // off. Emitting `haspopup`/`triggerRole`/`popupRole` is what lets the judge draw that line.
+    //
+    // Pressing Escape is an ACTION, so unlike every field above it cannot be recorded
+    // unconditionally -- something must decide when to press. That decision scopes WHAT is
+    // measured rather than judging it, and per the collector contract the scoping is stated here:
+    // the probe runs whenever an open dialog appeared OR the trigger's own `aria-expanded` flipped
+    // to "true". Deliberately WIDER than the judged set, so a disclosure is measured and reported
+    // out of scope rather than never observed at all.
+    //
+    // `closedOnEscape` and `focusRestored` are `null` when the probe itself failed -- never
+    // `false`, which the judge would read as a real failure rather than as an unrun check.
+    let dismiss = null;
+    if (exercised && after && handle) {
+      const probe = await handle.evaluate((el) => ({
+        expandedAfter: el.getAttribute('aria-expanded'),
+        haspopup: el.getAttribute('aria-haspopup'),
+        triggerRole: el.getAttribute('role') || '',
+        popupRole: (() => {
+          const id = (el.getAttribute('aria-controls') || '').split(/\s+/)[0];
+          const target = id ? document.getElementById(id) : null;
+          return target ? (target.getAttribute('role') || '') : null;
+        })(),
+      })).catch(() => null);
+      const dialogAppeared = after.dialogs > before.dialogs;
+      const expandedFlipped = !!probe && expandedBefore !== 'true' && probe.expandedAfter === 'true';
+      if (probe && (dialogAppeared || expandedFlipped)) {
+        await page.keyboard.press('Escape').catch(() => {});
+        await page.waitForTimeout(150);
+        const closedOnEscape = await (dialogAppeared
+          ? page.evaluate(() => document.querySelectorAll('dialog[open],[role="dialog"]').length)
+            .then((n) => n <= before.dialogs)
+          : handle.evaluate((el) => el.getAttribute('aria-expanded') !== 'true')
+        ).catch(() => null);
+        // Identity, not a selector match: `el === document.activeElement` is the only thing that
+        // distinguishes "focus went back to THIS trigger" from "focus went to something like it".
+        const focusRestored = await handle.evaluate((el) => el === document.activeElement)
+          .catch(() => null);
+        dismiss = {
+          dialogOpened: dialogAppeared,
+          haspopup: probe.haspopup,
+          triggerRole: probe.triggerRole,
+          popupRole: probe.popupRole,
+          closedOnEscape,
+          focusRestored,
+        };
+      }
+    }
 
     page.off('console', onMsg);
     page.off('request', onReq);
@@ -281,6 +345,7 @@ for (const route of routes) {
         ariaChanged: after.aria !== before.aria,
         dialogOpened: after.dialogs > before.dialogs,
       } : {},
+      dismiss,
       consoleAfter: after_console,
     });
 
