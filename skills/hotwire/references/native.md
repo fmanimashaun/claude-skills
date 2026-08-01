@@ -1,4 +1,4 @@
-# Hotwire Native (iOS 1.2.x / Android 1.2.x) — Web-First Mobile Apps
+# Hotwire Native (iOS 1.3.x / Android 1.3.x) — Web-First Mobile Apps
 
 Hotwire Native wraps your web app in a real native shell: a native navigation
 stack driving a web view (WKWebView / Android WebView) that renders HTML from
@@ -47,12 +47,15 @@ let rootURL = URL(string: "https://myapp.example")!
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
-  private let navigator = Navigator()
+  private let navigator = Navigator(configuration: .init(
+    name: "main",
+    startLocation: rootURL
+  ))
 
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
              options connectionOptions: UIScene.ConnectionOptions) {
     window?.rootViewController = navigator.rootViewController
-    navigator.route(rootURL)
+    navigator.start()
   }
 }
 ```
@@ -67,7 +70,8 @@ Hotwire.loadPathConfiguration(from: [
 ])
 Hotwire.registerBridgeComponents([FormComponent.self])
 // Optional knobs: Hotwire.config.applicationUserAgentPrefix,
-// Hotwire.config.showDoneButtonOnModals, debug logging, etc.
+// Hotwire.config.showDoneButtonOnModals, Hotwire.config.debugLoggingEnabled, etc.
+// (debugLoggingEnabled is iOS-only — Android dropped it in 1.3.0, see §3.)
 ```
 
 `.file` is the bundled fallback; `.server` fetches (and caches) the live
@@ -131,6 +135,10 @@ Hotwire.loadPathConfiguration(
 Hotwire.registerBridgeComponents(
   BridgeComponentFactory("form", ::FormComponent)
 )
+// Optional knobs: Hotwire.config.applicationUserAgentPrefix,
+// Hotwire.config.logger — pluggable since 1.3.0, which removed
+// Hotwire.config.debugLoggingEnabled; for debug output set
+// Hotwire.config.logger.logLevel = HotwireLogLevel.DEBUG.
 ```
 
 ## 4. Navigation: the routing table and server-driven stack control
@@ -177,13 +185,33 @@ list underneath refreshes.
 **Route decision handlers** decide *whether* a URL is in-app at all. Defaults:
 same-domain → in-app; external http(s) → `SFSafariViewController` (iOS) /
 Custom Tab (Android); other schemes (`mailto:`, `sms:`) → system. Customize by
-subclassing `RouteDecisionHandler` and registering in priority order:
+implementing `RouteDecisionHandler` (iOS protocol) /
+`Router.RouteDecisionHandler` (Android interface) — not subclassing — and
+registering in priority order:
 `Hotwire.registerRouteDecisionHandlers([AppNavigationRouteDecisionHandler(),
-MyHandler()])` (same shape in Kotlin).
+MyHandler()])`. Kotlin takes the same call with **varargs**, no brackets.
+
+Both platforms hand the handler the whole **`VisitProposal`** as of **1.3.0**,
+a breaking change:
+
+- **iOS** — `matches(proposal:configuration:)` and
+  `handle(proposal:configuration:navigator:)`, where `navigator` is now the
+  `Navigating` protocol rather than the concrete `Navigator`; read
+  `proposal.url` (a `URL`).
+- **Android** — `matches(proposal, configuration)` and
+  `handle(proposal, configuration, activity)`; read `proposal.location`
+  (a `String`). `HotwireDestination.customRouteDecision(proposal)` moved the
+  same way.
+
+Through **iOS ≤1.2.2 / Android ≤1.2.8** both functions took a `location` in
+place of the proposal, so that older shape is correct on 1.2.x and does not
+compile on 1.3.x. Web view policy decision handlers (iOS) took the same
+`Navigator` → `Navigating` change.
 
 **Manual navigation** from native code: iOS
-`navigator.route(url)` / `.pop()` / `.clearAll()` (each takes
-`animated: false`); Android `delegate.currentNavigator?.route(location)` /
+`navigator.route(url)` / `.pop()` / `.clearAll()` — only `pop`/`clearAll` take
+`animated:` (defaulting `true` / `false`); `route` takes `options:` and
+`parameters:`. Android `delegate.currentNavigator?.route(location)` /
 `pop()` / `clearAll()` inside a `HotwireActivity` (plain `navigator.` inside a
 `HotwireFragment`).
 

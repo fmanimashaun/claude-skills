@@ -42,6 +42,13 @@ config.generators do |g|
 end
 ```
 
+`--skip-test` has a **second consequence, and it is the one that gets missed.** Rails gates the
+test steps in its `config/ci.rb` template on the same flag, so the generated file has no `Tests:`
+step and `bin/ci` — which this skill treats as the full gate — runs **zero specs**. Writing that
+step in is not optional cleanup; it is what makes `bin/ci` mean what the rest of this skill says
+it means. Do it in the same pass as the generator config above: the file to write is in
+`testing.md` §11.
+
 After generation: `bin/setup` (installs gems, prepares DB, starts server —
 `bin/setup --skip-server` to prep only). Day-to-day server: `bin/dev` (runs
 `Procfile.dev` when there are watchers, e.g. Tailwind; otherwise just the
@@ -213,13 +220,38 @@ Process: bump the gem one minor at a time → `bundle update rails` →
 `new_framework_defaults_8_1.rb`, flipping flags one by one with green tests →
 finally set `load_defaults 8.1` and delete the file.
 
-8.1-specific watch items:
+### What `load_defaults 8.1` flips — all seven
 
+Flipping the flag turns **all** of these on at once, which is why the step above says do
+them one at a time out of `new_framework_defaults_8_1.rb`. This list is exhaustive as of
+Rails 8.1.3 — it is the same set the guides publish under
+[Configuring §3.1.1, "Default Values for Target Version 8.1"](https://guides.rubyonrails.org/configuring.html),
+cross-checked against the `when "8.1"` branch of
+`railties/lib/rails/application/configuration.rb`:
+
+| Setting | Library default (`load_defaults` ≤ 8.0) | `load_defaults 8.1` | What changes |
+|---|---|---|---|
+| `action_controller.escape_json_responses` | `true` | `false` | `render json:` stops escaping `<`, `>`, `&`, U+2028, U+2029. **Security-relevant** — `auth-security.md` §4. `escape: true` restores it per response; setting the config back to `true` is deprecated and inert in 8.2. JSONP (`:callback`) keeps entity escaping but **not** separator escaping, because `escape_js_separators_in_json` (row 4) is global and has no callback carve-out. |
+| `action_controller.action_on_path_relative_redirect` | `:log` | `:raise` | `redirect_to "orders/new"` — no leading `/` — raises `PathRelativeRedirectError` where it used to log and redirect. The whole check is new in 8.1; Rails 8.0 has no path-relative protection at all. **Security-relevant** — `auth-security.md` §4. |
+| `active_record.raise_on_missing_required_finder_order_columns` | `false` | `true` | `.first`/`.last`/`#second`… on a relation with no `order` **and** no `implicit_order_column`, `query_constraints` or `primary_key` to fall back on **raises** `ActiveRecord::MissingRequiredOrderError`. Under 8.1 defaults this is a raise, not a deprecation warning. |
+| `active_support.escape_js_separators_in_json` | `true` | `false` | `ActiveSupport::JSON` / `to_json` stop escaping U+2028 and U+2029 **everywhere**, views included — wider than the controller flip above. `<`, `>`, `&` are still escaped. Rails' reasoning: ECMAScript 2019 made both legal inside JS string literals. |
+| `action_view.remove_hidden_field_autocomplete` | `false` | `true` | Hidden inputs from `form_tag`, `token_tag`, `method_tag`, and the hidden params inside `button_to`, `check_box`, `select` (multiple) and `file_field` drop `autocomplete="off"`; 8.1.1 extended it to the form builder's `hidden_field`. Expect rendered-HTML diffs in view specs. |
+| `action_view.render_tracker` | `:regex` | `:ruby` | Template dependencies are found by a real Ruby parser (prism, ripper fallback) instead of a regex, so fragment-cache digest trees can shift on upgrade — see `performance-caching.md` §2. |
+| `yjit` | `true` (since 7.2) | `!Rails.env.local?` | YJIT stays on in production but is now **off in development and test**. Set `RUBY_YJIT_ENABLE=1` locally if you need parity when benchmarking. |
+
+Other 8.1-specific watch items:
+
+- **Delete `config.action_controller.raise_on_open_redirects` while you are in there.**
+  It is deprecated in 8.1 in favour of `action_on_open_redirect`, and carrying an
+  explicit `= false` forward **silently downgrades** the framework default `:raise` to
+  `:log` — you keep the setting and lose the protection. Details in
+  `auth-security.md` §4.
 - `schema.rb` columns are now **alphabetized** — the first post-upgrade
   migration rewrites column order. Commit it; don't hand-edit back.
 - Order-dependent finders (`.first`, `.last`, `#second`…) on relations with
-  no inferable order are deprecated → add explicit `.order(:id)` (or rely on
-  the primary key where Rails can).
+  no inferable order → add explicit `.order(:id)` (or rely on the primary key
+  where Rails can). Deprecated on the library default; **raising** once
+  `load_defaults 8.1` is on (row 3 above).
 - `signed_id_verifier_secret` deprecated → `Rails.application.message_verifiers`.
 - `String#mb_chars`, `ActiveSupport::Configurable` deprecated;
   `Benchmark.ms` removed (use the `benchmark` gem).

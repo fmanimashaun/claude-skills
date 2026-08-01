@@ -177,6 +177,14 @@ this mode exists to produce, and a regression in them is a diff rather than an o
   CSS-chain/`data-testid` selectors bound to markup internals; radius not matching the system
   (btn `rounded-md`, card `rounded-lg`, badge `rounded-full`); non-Lucide icons.
 
+**Leftover variant scaffolding**
+- `app/views/design_variants/`, `app/controllers/design_variants_controller.rb`, or a
+  `design_variants` route still present. A variant set is a **decision in progress**: once one is
+  chosen the rest are dead screens, and an un-run discard step looks exactly like a completed one.
+  Verify rather than eyeball it — `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py"
+  --verify-discard .` — and if the set is still live, the audit is premature: choose first, then
+  audit the winner in its real home.
+
 **Composition/branding**
 - Full-page single-focus views (auth, marketing splash, onboarding) using bare `center` (top-aligned)
   instead of the `cover > center > stack` recipe that centers **vertically**.

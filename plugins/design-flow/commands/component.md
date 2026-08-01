@@ -8,6 +8,15 @@ argument-hint: "<component name or screen>  [e.g. pricing-card | settings form |
 Build (or fix) `$ARGUMENTS` to the **fidara-design** doctrine. Delegate to the
 **ui-composer** agent. Never freehand CSS — compose.
 
+## `--variants N` — when the brief has no single right answer
+
+`$ARGUMENTS` ending in `--variants N` (default 3) hands off to **`/design-flow:variants`**: N
+brand-conformant compositions of the same brief plus a switcher to compare them live in the app.
+Use it when the brief has many defensible solutions — a hero, a pricing page, a landing section,
+a dashboard's first screen — where one output invites a yes/no and the useful question is *which
+of these three, and why?*. Everything below still applies to **each** variant; variant mode
+changes how many outputs there are, never what the doctrine is. Without the flag, one output.
+
 ## Order of operations (follow every time)
 
 1. **Locate it in the catalog** (`skills/fidara-design/references/components.md` /

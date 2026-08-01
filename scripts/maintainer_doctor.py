@@ -115,8 +115,23 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # inflates the sweep count; GATE names are asserted unique in the selftest now.
     ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
+    # #129 widened its INPUT from the doctrine file to every shipped brand pack, because the #304
+    # fix had been applied to the doctrine file and to neither pack — so the gate read clean over
+    # the one file that was already right while the artifact users install kept the defect.
     ("token contrast", ("python3", "scripts/check_token_contrast.py")),
     ("token contrast selftest", ("python3", "scripts/check_token_contrast.py", "--selftest")),
+    # #129. A candidate palette ships in a client's colours, so "measured, not asserted" is the
+    # whole feature: --check measures every candidate against 1.4.3 in both modes.
+    ("design-flow palette candidates",
+     ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
+    ("design-flow palette candidates selftest",
+     ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--selftest")),
+    # #360, and the same argument one skill along: the quality-pass worked example states how many
+    # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
+    # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
+    # disagreeing with the repo, exactly as the tier gates below reconcile a table against agents.
+    ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
+    ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
@@ -124,6 +139,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
     # also catches an agent's `model:` drifting from the doctrine that documents it (#127).
     ("rails-flow work order", ("python3", "plugins/rails-flow/scripts/check_handoff.py", "--selftest")),
+    # #130. Its riskiest rule is a SIMILARITY rule (no long run of a cited source reproduced in the
+    # brief), so most of its selftest is the silence direction — a blockquote, a fence, a table
+    # cell and a run one word under the threshold are all shapes that look like duplication.
+    ("rails-flow product brief", ("python3", "plugins/rails-flow/scripts/check_brief.py", "--selftest")),
     ("rails-flow claim extraction", ("python3", "plugins/rails-flow/scripts/extract_claims.py", "--selftest")),
     # #334. Its selftest also validates every SHIPPED checks.json -- that each names a real
     # script and supplies a required subcommand -- so a manifest defect fails here rather
@@ -145,13 +164,21 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                         "--agents", "plugins/pipeline/agents",
                         "--tiers", "plugins/pipeline/reference/model-tiers.md")),
+    # #128, the pipeline half. Its last checks run against the SHIPPED doctrine and the SHIPPED
+    # commands: that reference/stop-conditions.md still states the numbers and the four escapes the
+    # script declares, and that every pipeline surface describing an unattended re-run names the
+    # breaker. Fixtures prove the breakers fire; only those can see the doctrine drifting away from
+    # the code, which is the same defect one level up.
+    ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
+    ("qa-flow blast radius", ("python3", "plugins/qa-flow/scripts/blast_radius.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     ("qa-flow interaction sweep", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--selftest")),
     ("qa-flow visual baselines", ("python3", "plugins/qa-flow/scripts/visual_baseline.py", "--selftest")),
+    ("qa-flow link audit", ("python3", "plugins/qa-flow/scripts/link_audit.py", "--selftest")),
     ("design-flow setup cross-check", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--quiet")),
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
@@ -162,10 +189,25 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # doctrine we actually ship. It has already earned it — the first run flagged our own token
     # definitions as raw-hex violations and a comment saying "NOT an arbitrary `rounded-[12px]`".
     ("design-flow tells vs our own doctrine", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--doctrine-selfcheck")),
+    # #160. Only the SELFTEST is a gate: the subject is a USER's variant set, and this repo is a
+    # marketplace, not a Rails app — a gate pointed at `app/views/design_variants` here would SKIP
+    # forever, and a permanent skip reads as a pass. The live check runs in a user's project via
+    # design-flow's `checks.json`, where `applies_when` decides applicability honestly.
+    ("design-flow variant conformance", ("python3", "plugins/design-flow/scripts/variant_conformance.py", "--selftest")),
     # The browser collector is a shipped `.js` FILE, so no markdown linter reads it — the fenced-code
     # checkers only see markdown. Its syntax check therefore lives with it, and SKIPS loudly when
     # node is absent instead of failing the sweep for want of a binary (CORPORA_GATES' reasoning).
     ("design-flow conformance collector", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--check-collector")),
+    # Same argument, second collector — and it had no gate at all until #105's focus-restore work
+    # touched it. Note it needs MODULE mode: `crawl_collector.js` is ESM, and plain
+    # `node --check <file>` exits 0 on a broken ES module, so the obvious gate could not fail.
+    ("qa-flow crawl collector", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--check-collector")),
+    # #158. Both halves registered, for the reason spelled out on the tell-detector above: the
+    # selftest proves each rule fires and stays silent on fixtures, the bare run asserts the four
+    # SHIPPED skills actually route to every one of their 42 reference files. Only the second could
+    # have caught `fidara-design/references/coverage.md` sitting at depth 2, which it did.
+    ("skill routing", ("python3", "scripts/check_skill_routing.py")),
+    ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
     # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the
@@ -194,6 +236,27 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 # silently stop the exemption applying — and that the set is exactly this one.
 CORPORA_GATES = frozenset({"coverage matrix drift"})
 
+# Seconds a subprocess gets before the doctor calls it hung. Right for a check that reads the tree
+# once, which is nearly all of them.
+DEFAULT_TIMEOUT = 180
+
+# Gates whose cost grows with the repo's own thoroughness, and the seconds they get.
+#
+# The default 180s is right for a check that reads the tree once. It is the WRONG SHAPE for
+# `mutation coverage`, which spawns one subprocess per declared mutation and therefore gets slower
+# every time anyone makes the repo safer. It crossed the budget at 236 mutations (#129), and a
+# timeout reported as FAIL is indistinguishable from a real survivor — the sweep says "fix the
+# failures before doing maintenance work" about a checker that was working fine.
+#
+# Declared here rather than raised globally, because a slow gate is a property of THAT gate: giving
+# every gate ten minutes would mean a genuinely hung check sits there for ten minutes.
+#
+# Keyed by gate NAME, exactly as CORPORA_GATES is, and the selftest asserts the names are real —
+# a rename would otherwise silently drop the allowance and the gate would start failing on time.
+SLOW_GATES: dict[str, int] = {
+    "mutation coverage": 900,
+}
+
 
 @dataclass
 class Result:
@@ -210,10 +273,11 @@ class Doctor:
     fixed: list[str] = field(default_factory=list)
 
     # ---- helpers ----------------------------------------------------------------------
-    def run(self, *args: str, cwd: Path | None = None) -> tuple[int, str]:
+    def run(self, *args: str, cwd: Path | None = None,
+            timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
         try:
             p = subprocess.run(
-                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=180
+                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout
             )
             return p.returncode, (p.stdout + p.stderr).strip()
         except FileNotFoundError:
@@ -589,7 +653,7 @@ class Doctor:
                     f"git clone {CORPORA_REPO} {CORPORA_DIR}",
                 )
                 continue
-            code, out = self.run(*cmd)
+            code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 self.add(PASS, f"gate: {name}")
             elif code == 3:

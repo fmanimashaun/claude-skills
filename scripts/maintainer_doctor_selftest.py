@@ -450,6 +450,40 @@ def run() -> int:
             "selftest never belongs here: it SKIPs its own corpora fixtures and still exits 0."
         )
 
+    # ---- the slow-gate allowance is name-keyed too, so the names must be real -----------
+    # Same failure mode as CORPORA_GATES: rename the gate and the allowance quietly lapses, after
+    # which `mutation coverage` starts reporting a TIMEOUT as a failure and the sweep tells a
+    # maintainer to fix a checker that was working.
+    _tick()
+    unknown = sorted(set(md.SLOW_GATES) - {name for name, _ in md.GATES})
+    if unknown:
+        FAILURES.append(
+            f"SLOW_GATES names no such gate: {unknown} — the longer timeout would never apply. "
+            f"Known gates: {sorted(name for name, _ in md.GATES)}"
+        )
+
+    # And it must stay NARROW, pinned exactly, for the reason the default exists at all: a gate
+    # given ten minutes is a gate that hangs for ten minutes before anyone hears about it. Only a
+    # check whose cost grows with the number of checks belongs here.
+    _tick()
+    expected_slow = {"mutation coverage"}
+    if set(md.SLOW_GATES) != expected_slow:
+        FAILURES.append(
+            f"SLOW_GATES is {sorted(md.SLOW_GATES)}, expected {sorted(expected_slow)} — only "
+            "`mutation_check.py` spawns one subprocess per declared mutation and therefore gets "
+            "slower every time the repo gets safer. Everything else reads the tree once; if one "
+            "of those is near the limit, that is a defect in the check, not a budget to raise."
+        )
+
+    # A shorter-than-default "allowance" would be a tightening wearing the name of an exemption.
+    _tick()
+    stingy = sorted(n for n, secs in md.SLOW_GATES.items() if secs <= md.DEFAULT_TIMEOUT)
+    if stingy:
+        FAILURES.append(
+            f"SLOW_GATES entries at or under the {md.DEFAULT_TIMEOUT}s default: {stingy} — that "
+            "silently TIGHTENS a gate through a table whose whole purpose is to loosen one"
+        )
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for f in FAILURES:

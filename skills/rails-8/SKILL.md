@@ -19,7 +19,7 @@ description: >-
 # Rails 8 Full-Stack Development — The Rails Way
 
 This skill encodes the officially recommended way to build Rails 8.1.x
-applications, distilled from the Rails Guides (v8.1.3) and the framework's own
+applications, distilled from the Rails Guides (v8.1.3.1) and the framework's own
 generated defaults. Follow it to produce code a Rails core contributor would
 recognize as idiomatic: the *omakase* menu, the one-person-framework, the
 majestic monolith.
@@ -56,19 +56,44 @@ majestic monolith.
    `bin/setup`, `bin/dev`, `bin/ci`, `bin/rails db:prepare`, `kamal deploy`.
    Keep those commands working.
 
-## Version facts (as of this skill's writing)
+## Version facts (verified 2026-08-01)
 
-- Current stable: **Rails 8.1.3** (2026-03-24). The 8.1 series receives bug
-  fixes until October 2026, security fixes beyond. Rails 8.0 is
-  security-fixes-only from May 2026.
-- Requires **Ruby >= 3.2**. Prefer the latest stable Ruby (4.0.x, released
-  Dec 2025; 3.4.x also fully supported). Keep YJIT for production; ZJIT is
-  still experimental.
+- Current stable: **Rails 8.1.3.1** (2026-07-29) — a **security** release, not
+  a routine one. It fixes **CVE-2026-66066** (GHSA-xr9x-r78c-5hrm, *critical*,
+  CVSS v4 9.5): possible arbitrary file read and remote code execution in
+  Active Storage variant processing, via libvips loaders Rails did not block.
+  **Every 8.1 below 8.1.3.1 is affected**, so pin `>= 8.1.3.1` and never leave
+  an app on 8.1.3. Backports: **8.0.5.1** and **7.2.3.2**. The fix also needs
+  **libvips >= 8.13** at runtime, and an app that may already have been
+  exploited must rotate `secret_key_base` and its other secrets.
+  ([release post](https://rubyonrails.org/2026/7/29/Rails-Versions-7-2-3-2-8-0-5-1-and-8-1-3-1-have-been-released),
+  [advisory](https://github.com/rails/rails/security/advisories/GHSA-xr9x-r78c-5hrm))
+- The 8.1 series gets bug fixes until **2026-10-10**, security fixes until
+  **2027-10-10**. Rails **8.0 left bug-fix support on 2026-05-07** and is
+  security-only until 2026-11-07; 7.2 security support ends 2026-08-09.
+  ([support dates](https://rubyonrails.org/2025/10/29/new-rails-releases-and-end-of-support-announcement)
+  — the maintenance policy page states only the relative rule, never these dates.)
+- **Rails 8.1 requires Ruby >= 3.2.0** (`required_ruby_version` in the 8.1.3.1
+  gemspecs). That is a compatibility minimum, not a support statement — **this
+  skill's floor is Ruby 3.4**, because 3.4 and 4.0 are the only branches still
+  in normal maintenance: **Ruby 3.2 is end-of-life since 2026-04-01** and
+  **3.3 has been security-fixes-only since the same date**
+  ([branches](https://www.ruby-lang.org/en/downloads/branches/)). Prefer the
+  current stable **4.0.x** (4.0.6 on 2026-08-01; check, don't assume). 3.4.x is
+  the supported alternative. Keep YJIT for production; ZJIT is still
+  experimental. Dropped into an app already on 3.2/3.3, follow the project —
+  Rails permits it — but say the interpreter is unsupported, and note that the
+  parser hazard in `references/controllers-routing.md` §7 applies there.
+- **There is no Rails 8.2 or 9.0** as of 2026-08-01 — no gem, no tag, no
+  announcement. Third-party posts claiming an 8.2 release have circulated and
+  are wrong; check rubygems.org or the Rails blog before believing a number.
 - New apps get `config.load_defaults 8.1` in `config/application.rb`.
 - If the user's app is on an older Rails, upgrade one minor version at a time
   (7.2 → 8.0 → 8.1) with `bin/rails app:update` and the framework-defaults
   file. Verify current versions with a web search if the date is well past
-  March 2026.
+  **August 2026** — and look for a newer *security* patch specifically, since
+  those ship as a fourth version segment (8.1.3 → 8.1.3.1) that a `~> 8.1.3`
+  pin will pick up but a `= 8.1.3` pin will not.
 
 ## What `rails new` gives you (the default stack)
 
@@ -83,7 +108,7 @@ majestic monolith.
 | Deployment | **Kamal 2** + generated `Dockerfile` | `config/deploy.yml`, `.kamal/secrets` |
 | Testing | **RSpec** + FactoryBot + Capybara (pure RSpec, no matcher add-ons) | Scaffold with `--skip-test`; doctrine in `references/testing.md` |
 | Lint / security | rubocop-rails-omakase, Brakeman, bundler-audit | Wired into CI |
-| CI | `config/ci.rb` + `bin/ci` (local CI, new in 8.1) and a GitHub Actions workflow | `--skip-ci` to omit |
+| CI | `config/ci.rb` + `bin/ci` (local CI, new in 8.1) and a GitHub Actions workflow | `--skip-ci` omits only the GitHub workflow files; `config/ci.rb` + `bin/ci` are always generated. `--skip-test` strips their test steps — add one back (`testing.md` §11) |
 | Extras | PWA stubs (`app/views/pwa/`), `script/` for one-offs, `/up` health endpoint, Docker entrypoint running `db:prepare` | |
 
 ## The golden-path feature workflow
@@ -111,8 +136,10 @@ to be driven and keeps every step verifiable:
 6. **Tests.** Model spec + request spec at minimum; a system spec for any
    nontrivial user flow. FactoryBot factories for data (`testing.md`).
 7. **Verify.** `bundle exec rspec` (or the project's suite), then
-   `bin/rubocop -a`, or the whole gate: `bin/ci`. Fix everything it flags
-   before declaring done.
+   `bin/rubocop -a`, or the whole gate: `bin/ci` — which is only a whole gate
+   once `config/ci.rb` carries the RSpec step, because the mandated
+   `--skip-test` scaffold writes none (`testing.md` §11). Fix everything it
+   flags before declaring done.
 
 Scaffolding (`bin/rails g scaffold ...`) is legitimate for standard CRUD —
 generate, then trim what isn't needed.
@@ -149,8 +176,9 @@ generate, then trim what isn't needed.
   user_id: 123)` with `tagged`/`set_context` and pluggable subscribers, for
   machine-readable telemetry alongside the human log. (`observability.md`)
 - **Local CI** — `config/ci.rb` DSL run by `bin/ci`: setup, RuboCop,
-  bundler-audit, `bin/importmap audit`, Brakeman, tests, optional
-  `gh signoff`. (`testing.md`)
+  bundler-audit, `bin/importmap audit`, Brakeman, optional `gh signoff` — plus
+  the test step **you** write, which Rails omits under the `--skip-test`
+  scaffold this skill mandates. (`testing.md` §11)
 - **Markdown rendering** — `render markdown: @page` / `format.md` /
   `.md.erb` templates; useful for docs pages and AI-facing endpoints.
   (`views-hotwire.md`)
@@ -159,18 +187,32 @@ generate, then trim what isn't needed.
 - **Deprecated associations** — `has_many :posts, deprecated: true` reports
   every usage (`:warn`/`:raise`/`:notify`) to help retire schema.
   (`models.md`)
-- **Registry-free Kamal deploys** — Kamal 2.8 uses a local registry by
-  default for simple deploys; no Docker Hub/GHCR needed to start.
-  (`deployment-kamal.md`)
+- **Local-registry Kamal deploys** — Kamal 2.8 added an **opt-in** local
+  registry (`registry: server: localhost:5555`, which 8.1 generates for
+  you); Kamal's own default is still Docker Hub, so a config written
+  without that line needs credentials. (`deployment-kamal.md`)
 - **Alphabetized `schema.rb` columns** — expect reordered-but-equivalent
   schema diffs after the first 8.1 migration; don't "fix" them.
 - **Verbose redirect logs** in development
   (`config.action_dispatch.verbose_redirect_logs = true` in new apps).
 
+**`load_defaults 8.1` also flips seven framework defaults** — the complete list, with
+what each one changes, is `project-setup.md` §7. Three change behaviour you can trip
+over in a *new* app, not just an upgraded one:
+
+- `render json:` **no longer HTML-escapes** `<`, `>`, `&`, U+2028/9
+  (`escape_json_responses = false`) — Rails' changelog names the risk as
+  *"vulnerabilities when the resulting JSON is embedded in HTML"*. (`auth-security.md` §4)
+- A path-relative `redirect_to "orders/new"` **raises**
+  (`action_on_path_relative_redirect = :raise`). (`auth-security.md` §4)
+- `.first`/`.last` on an unordered relation **raises**
+  `ActiveRecord::MissingRequiredOrderError` rather than warning.
+
 Deprecations to avoid in new code: order-dependent finders (`.first`/`.last`)
-on relations with no inferable order — add an explicit `.order`;
-`signed_id_verifier_secret` (use `Rails.application.message_verifiers`);
-`String#mb_chars`; `update_all` with `WITH`/`DISTINCT`.
+on relations with no inferable order — add an explicit `.order` (this one *raises*
+under 8.1 defaults, see above); `signed_id_verifier_secret` (use
+`Rails.application.message_verifiers`); `String#mb_chars`; `update_all` with
+`WITH`/`DISTINCT`.
 
 ## Reference files — read before working in an area
 
@@ -221,7 +263,10 @@ skill prefers otherwise — consistency beats purity. Flag, don't silently
 A change is done when: migrations run cleanly both ways where practical,
 `bundle exec rspec` (or the project's suite) passes, `bin/rubocop` is clean,
 Brakeman raises no new warnings, and — for full-gate confidence — `bin/ci`
-passes. For UI work, state which Turbo behavior was used and why. Never hand
-back code you haven't at least boot-checked (`bin/rails runner`, a test, or
+passes. `bin/ci` does **not** stand in for the first of those unless
+`config/ci.rb` carries the RSpec step (`testing.md` §11): under the mandated
+`--skip-test` scaffold it runs no specs at all, so a green `bin/ci` on its own
+proves lint and audits only. For UI work, state which Turbo behavior was used
+and why. Never hand back code you haven't at least boot-checked (`bin/rails runner`, a test, or
 `bin/rails zeitwerk:check` for autoloading-sensitive changes) when a runtime
 is available.

@@ -4,14 +4,27 @@
     "Checks design-flow can run against a USER'S repo. Format documented in rails-flow/checks.json.",
     "rendered_conformance.py is deliberately absent: it needs a browser, which is the user's",
     "dependency. A gate that skips when Playwright is missing reads as a pass, so it stays in the",
-    "agent-driven browser pass where its absence is visible."
+    "agent-driven browser pass where its absence is visible.",
+    "",
+    "brand-pack was broken from the day it was written and nothing here could have caught it: it",
+    "named `app/assets/stylesheets/brand`, a path /design-flow:setup never creates (packs live in",
+    "`brands/<slug>/`), so it was permanently NOT APPLICABLE -- and it passed no pack directory, so",
+    "on the one repo where it did apply it would have exited 2 on a usage error. Not-applicable is",
+    "not a pass, which is exactly why project_gates.py says so on every run."
   ],
   "checks": [
     {
       "id": "brand-pack",
       "why": "An incomplete brand pack fails at render time, in the client's colours.",
-      "command": ["python3", "{plugin}/scripts/brand_pack_lint.py", "--quiet"],
-      "applies_when": ["app/assets/stylesheets/brand"],
+      "command": ["python3", "{plugin}/scripts/brand_pack_lint.py", "--quiet", "{match:brands/*}"],
+      "applies_when": ["brands"],
+      "requires": ["python3"]
+    },
+    {
+      "id": "variant-conformance",
+      "why": "Variants that differ in anything but composition are a fork of the design system, and a switcher route left reachable in production ships every rejected screen.",
+      "command": ["python3", "{plugin}/scripts/variant_conformance.py", "."],
+      "applies_when": ["app/views/design_variants"],
       "requires": ["python3"]
     }
   ]

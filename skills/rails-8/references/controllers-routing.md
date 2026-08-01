@@ -254,6 +254,20 @@ are not optional style — they are correctness. Open-redirect protection:
 `redirect_to params[:return_to]` raises unless
 `allow_other_host: true` is explicit — keep it that way.
 
+Two 8.1 framework defaults change what these lines do; both are in
+`auth-security.md` §4 with the reasoning:
+
+- **A path-relative `redirect_to` raises.** `redirect_to "orders/new"` — a `String`
+  starting with neither `/`, `?`, a scheme, nor `//` — is a path-relative redirect;
+  Rails prepends protocol + host with no separator, so it is an injection surface
+  (`redirect_to "@attacker.com"` → `http://yourdomain.com@attacker.com`).
+  `load_defaults 8.1` sets `action_on_path_relative_redirect = :raise`
+  (`ActionController::Redirecting::PathRelativeRedirectError`); the library default is
+  `:log`. Write `redirect_to new_order_path` or at minimum a leading slash.
+- **`render json:` no longer HTML-escapes** (`escape_json_responses = false`). Fine for
+  an `application/json` consumer; never inline that payload into HTML without
+  `json_escape`.
+
 ## 7. Error handling
 
 ```ruby
@@ -286,9 +300,11 @@ on 4.0.6**.
 | default | Syntax OK | Syntax OK |
 
 So the failing combination is narrow: **`parse.y` on Ruby 3.2–3.3**, where it is also the *default*.
-This skill requires **Ruby >= 3.2** while recommending the latest stable, so the form breaks on the
-floor we support and is fine on the version we suggest — exactly the combination that gets a snippet
-shipped broken, parsing on the author's machine and raising on the user's.
+This skill's floor is **Ruby 3.4** (SKILL.md, *Version facts*), where Prism is the default and the
+form parses — but **Rails itself only requires 3.2.0**, so an existing app you are dropped into may
+sit below that floor, and even on 3.4.7 `--parser=parse.y` still rejects it. The snippet therefore
+parses on the author's machine and raises on the user's — exactly the combination that gets a
+snippet shipped broken.
 
 Note the scope, which is narrower than "endless defs reject bare keyword arguments": bare
 `def m = render x: 1` is fine on either parser. It only breaks when the endless `def` is itself an

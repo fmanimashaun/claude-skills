@@ -4,7 +4,7 @@
 1. The Kamal model and core commands
 2. `config/deploy.yml` — annotated
 3. Secrets — `.kamal/secrets` and `credentials:fetch` (8.1)
-4. Registry-free deploys (Kamal 2.8, new in 8.1)
+4. The local registry — opt-in (Kamal 2.8+)
 5. The generated Dockerfile
 6. Accessories (Postgres, etc.)
 7. SQLite in production
@@ -49,8 +49,10 @@ What Rails generates, with the parts you actually edit:
 # Name of your application. Used to uniquely configure containers.
 service: myapp
 
-# Name of the container image.
-image: your-user/myapp
+# Name of the container image. A bare name is right for the local registry
+# below; use your-user/myapp on Docker Hub or GHCR — Kamal prepends
+# registry.server to build the full repository path.
+image: myapp
 
 # Deploy to these servers.
 servers:
@@ -69,12 +71,19 @@ proxy:
   host: app.example.com
   # kamal-proxy health-checks GET /up by default before cutover.
 
-# Credentials for your image host (see §3–4; optional since Kamal 2.8).
+# Where the image is pushed. Kamal's own default is Docker Hub; a server
+# starting with localhost opts into a local registry instead (see §4).
+# This is what 8.1 generates — no registry account, no credentials:
 registry:
-  # server: registry.digitalocean.com / ghcr.io / ... (omit for Docker Hub)
-  username: your-user
-  password:
-    - KAMAL_REGISTRY_PASSWORD
+  server: localhost:5555
+
+# For a remote registry, replace the block above. username/password are
+# REQUIRED here — Kamal only waives them for a localhost server:
+# registry:
+#   server: ghcr.io   # omit the line entirely for Docker Hub (the default)
+#   username: your-user
+#   password:
+#     - KAMAL_REGISTRY_PASSWORD
 
 # Inject ENV variables into containers (secrets come from .kamal/secrets).
 env:
@@ -125,14 +134,17 @@ not secrets) that resolves the names listed under `env.secret` and
 ```bash
 # .kamal/secrets
 
-# Option A (default): read from your local environment when deploying
-KAMAL_REGISTRY_PASSWORD=$KAMAL_REGISTRY_PASSWORD
+# The master key is the only live line 8.1 generates: the local registry (§4)
+# authenticates nothing, so KAMAL_REGISTRY_PASSWORD is dead weight until you
+# move to a remote registry. Add exactly one of the options below then.
+RAILS_MASTER_KEY=$(cat config/master.key)
+
+# Option A: read from your local environment when deploying
+# KAMAL_REGISTRY_PASSWORD=$KAMAL_REGISTRY_PASSWORD
 
 # Option B (new in 8.1): pull from encrypted Rails credentials — the low-fi
 # secret store; only config/master.key needs to exist on the deploying machine
-KAMAL_REGISTRY_PASSWORD=$(bin/rails credentials:fetch kamal.registry_password)
-
-RAILS_MASTER_KEY=$(cat config/master.key)
+# KAMAL_REGISTRY_PASSWORD=$(bin/rails credentials:fetch kamal.registry_password)
 
 # Option C: a secrets manager via kamal's adapters
 # SECRETS=$(kamal secrets fetch --adapter 1password --account my-account --from Vault/Item KAMAL_REGISTRY_PASSWORD)
@@ -145,14 +157,40 @@ application-level secrets should still live in **Rails credentials**
 (decrypted by `RAILS_MASTER_KEY`) rather than being enumerated one-by-one in
 deploy.yml.
 
-## 4. Registry-free deploys (Kamal 2.8, new in 8.1)
+## 4. The local registry — opt-in (Kamal 2.8+)
 
-Kamal no longer requires Docker Hub/GHCR for basic deploys — by default it
-spins up a **local registry** and ships the image to your servers directly.
-For a first deploy you can therefore skip registry setup entirely: set
-`service`, `image`, a server IP, `proxy.host`, and `RAILS_MASTER_KEY`, then
-`kamal setup`. Move to a remote registry (`registry.server:` +
-username/password) when you have many servers or want CI-built images.
+Kamal's default registry is **Docker Hub**. There is no registry-free mode
+and nothing to omit: leave `registry` out and `kamal setup` fails config
+validation demanding `username`/`password`. What Kamal 2.8 added is an
+**opt-in local registry**, and the opt-in is one line — a `server` that
+starts with `localhost`:
+
+```yaml
+registry:
+  server: localhost:5555
+```
+
+That is all of it. Kamal reads the `localhost` prefix, runs a `registry:3`
+container on the **deploying machine** at that port, skips `docker login`
+both locally and on the servers, and reverse-tunnels the port over SSH to
+each host so they can pull. `username`/`password` are not validated for a
+localhost server, so a first deploy needs no registry account at all —
+`service`, a server IP, `proxy.host`, `builder.arch`, `RAILS_MASTER_KEY`
+and the two lines above are enough for `kamal setup`. (`image` may be
+omitted: Kamal falls back to `service` when the registry is local, giving
+`localhost:5555/myapp`. `builder.arch` cannot — it is required, and the
+config error for leaving it out arrives only after the registry passes.)
+
+Rails 8.1's generated `config/deploy.yml` ships that opt-in already filled
+in, which is why a fresh app deploys without a registry account. It is the
+**generator** that chose it, not a Kamal default: hand-write the config, or
+follow Kamal's own docs example, and you get Docker Hub.
+
+Move to a remote registry — `server` + username/password, and a
+`your-user/myapp` image name — once the image has to outlive one laptop.
+The local registry lives on the machine running `kamal deploy`, reachable
+only through that SSH tunnel, so CI-built images and several people
+deploying the same app both need a real registry.
 
 ## 5. The generated Dockerfile
 
@@ -230,6 +268,10 @@ Before first deploy and after significant changes:
 
 - `RAILS_MASTER_KEY` present in `.kamal/secrets`; `config/master.key` **not**
   committed; credentials contain all app secrets.
+- `registry:` block present and decided — `server: localhost:5555` (local, no
+  credentials) or a remote server **with** username/password and
+  `KAMAL_REGISTRY_PASSWORD` resolvable. There is no third option: an absent
+  or credential-less remote block fails the first `kamal setup`.
 - DNS A record → server IP; ports 80/443 open; `proxy.host` matches (Let's
   Encrypt fails otherwise).
 - `volumes:` covers `/rails/storage` (SQLite and/or local Active Storage).
@@ -243,7 +285,10 @@ Before first deploy and after significant changes:
   S3/GCS/R2 need credentials + gem). `:azure` no longer exists in 8.1.
 - Logs go to STDOUT (default) — view with `kamal logs`; add an APM/error
   subscriber (`Rails.error`) before you need it.
-- Run `bin/ci` green, then `kamal setup` (first time) / `kamal deploy`.
+- Run `bin/ci` green, then `kamal setup` (first time) / `kamal deploy`. Check
+  `config/ci.rb` actually has the `Tests: RSpec` step first (`testing.md` §11) —
+  under `--skip-test` Rails writes none, and a green `bin/ci` would then mean
+  "lint and audits passed", not "the suite passed".
 - Verify: site loads over https, `kamal app logs` clean, a background job
   processes, `kamal rollback` story understood (previous version listed in
   `kamal app containers`).

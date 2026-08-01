@@ -76,15 +76,16 @@ code):
 require "simplecov"
 SimpleCov.start "rails" do
   enable_coverage :branch
-  group "Jobs", "app/jobs"    # SimpleCov >= 1.0.2; was `add_group` before the rename
+  group "Jobs", "app/jobs"    # SimpleCov >= 1.0.0; was `add_group` before the rename
   # minimum_coverage 90   # fail the suite below this — enable once realistic
 end
 ```
 
-SimpleCov 1.0 notes: `add_group` → `group` (renamed in 1.0.2; the old name warns).
+SimpleCov 1.0 notes: `add_group` → `group` (renamed in **1.0.0**, alongside `add_filter` →
+`skip` and `track_files` → `cover`; the old names keep working and each warns).
 String filters now match at path-segment boundaries — `"lib"` matches `/lib/` but no
-longer `/library/`; use a Regexp for substring matching. Requires Ruby >= 3.2 (already
-inside this skill's 3.4+ floor).
+longer `/library/`; use a Regexp for substring matching. Requires Ruby >= 3.2, which
+this skill's **Ruby 3.4** floor already satisfies.
 
 `spec/rails_helper.rb` — the important settings:
 
@@ -455,25 +456,58 @@ plugins:            # `require:` on RuboCop < 1.72
   - rubocop-capybara
 ```
 
-- **`bin/ci`** — swap the test step in `config/ci.rb` (8.1 local CI):
+- **`bin/ci`** — **add** the test step to `config/ci.rb` (8.1 local CI). There is nothing to
+  "swap": Rails wraps every test step in its generator template in
+  `<% unless options[:skip_test] -%>`, so the `--skip-test` scaffold this skill mandates
+  (`project-setup.md` §1) writes a `config/ci.rb` with **no `Tests:` step at all** — not
+  `Tests: Rails`, not `Tests: Seeds`, not even the commented-out `Tests: System` line. Until you
+  add one, `bin/ci` runs setup, RuboCop and three security audits and **zero specs**, and a green
+  run means "lint and audits passed", not "the suite passed".
+
+  This is the whole file for a `--skip-test` app. Everything but the two `Tests:` lines is what
+  Rails generated; those two are the ones it omitted, and they are what makes `bin/ci` a gate:
 
 ```ruby
+# config/ci.rb — run with bin/ci
 CI.run do
   step "Setup", "bin/setup --skip-server"
   step "Style: Ruby", "bin/rubocop"
+
   step "Security: Gem audit", "bin/bundler-audit"
-  step "Security: Importmap audit", "bin/importmap audit"
-  step "Security: Brakeman", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error"
+  step "Security: Importmap vulnerability audit", "bin/importmap audit"
+  step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error"
+
+  # Rails omits BOTH of these under --skip-test. Without them bin/ci is not a test gate.
   step "Tests: RSpec", "bundle exec rspec"
+  step "Tests: Seeds", "env RAILS_ENV=test bin/rails db:seed:replant"
+
   step "Factories: lint", "bin/rails factory_bot:lint RAILS_ENV=test"
 end
 ```
 
+  Three things about that file:
+  - **`Tests: Seeds` goes after the suite, not before.** `db:seed:replant` truncates every table
+    and re-seeds, so running it first would hand the suite a seeded database. Its value is
+    catching a `db/seeds.rb` that has drifted from the schema — a break that no spec sees and
+    that surfaces on the next `bin/setup`.
+  - **No separate system-test step.** RSpec system specs live in `spec/system` and already run
+    inside `bundle exec rspec`; Rails' skipped `Tests: System` comment has no RSpec counterpart
+    to restore.
+  - **Three verbs cover everything a `config/ci.rb` needs.** `step(title, *command)` — one string
+    goes through the shell, several are passed to `system` individually and escaped for you;
+    `success?`; and `failure(title, subtitle)`, which is how the commented `gh signoff` block
+    branches. `CI.run` sets `ENV["CI"] = "true"`, times each step, and aborts non-zero if any step
+    failed. (`heading` and `echo` are public too, for printing your own output.) `bin/ci` is a
+    two-line script that aliases `ActiveSupport::ContinuousIntegration` to `CI` and loads this file.
+
   Mirror the same steps in `.github/workflows/ci.yml` — but **scope the triggers economically**.
   Run the hosted CI only where it's the *independent* gate, the `dev → main` promotion — **not** on
-  every `feature → dev` PR (the local `bin/ci` hooks + qa-flow already cover that). Full-matrix-on-
-  every-PR duplicates local verification and burns Actions minutes; on a private repo it can
-  **exhaust the monthly quota and block merges**. Use:
+  every `feature → dev` PR. The reason is **Actions minutes**: full-matrix-on-every-PR duplicates
+  verification you can run locally, and on a private repo it can **exhaust the monthly quota and
+  block merges**. It is *not* that "local `bin/ci` + qa-flow already proved it" — that is an
+  assumption, not a guarantee, since nothing forces either to have run, and this section is the
+  standing proof of how it fails: until you add the test step above, local `bin/ci` proves nothing
+  about the suite at all. Use:
   ```yaml
   on:
     pull_request: { branches: [main] }   # PRs whose BASE is main → the dev→main promotion PR
