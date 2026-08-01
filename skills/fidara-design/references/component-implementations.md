@@ -776,21 +776,44 @@ landmark noise outweighs the structure.
 ## Tabs — `app/components/ui/tabs_component.rb`
 
 ```erb
-<%# tabs_controller uses list-navigation; panels toggle by data-[state=active] %>
-<div data-controller="tabs">
-  <div role="tablist" class="cluster border-b border-border" style="--space: 0">
+<%# tabs_controller uses list-navigation. `aria-selected` IS the state — the attribute APG already %>
+<%# requires — so nothing toggles a second data-state beside it. Four things here are required by  %>
+<%# the pattern and are the ones that go missing: the tablist's NAME, each tab's `id`, each panel's %>
+<%# `aria-labelledby` pointing back at that id, and `aria-orientation` on a vertical list.          %>
+<div data-controller="tabs" data-tabs-activation-value="<%= activation %>">
+  <div role="tablist" aria-label="<%= label %>" aria-orientation="<%= orientation %>"
+       class="cluster border-b border-border overflow-x-auto" style="--space: 0">
     <% tabs.each_with_index do |t, i| %>
-      <button role="tab" data-tabs-target="tab" data-action="tabs#select" tabindex="<%= i.zero? ? 0 : -1 %>"
-              aria-selected="<%= i.zero? %>" aria-controls="panel-<%= i %>"
+      <button role="tab" id="<%= id %>-tab-<%= i %>" data-tabs-target="tab" data-action="tabs#select"
+              tabindex="<%= i.zero? ? 0 : -1 %>" aria-selected="<%= i.zero? %>"
+              aria-controls="<%= id %>-panel-<%= i %>"
               class="px-4 py-2 text-step--1 border-b-2 border-transparent -mb-px min-h-touch
                      aria-[selected=true]:border-primary aria-[selected=true]:text-primary"><%= t[:label] %></button>
     <% end %>
   </div>
   <% tabs.each_with_index do |t, i| %>
-    <div id="panel-<%= i %>" role="tabpanel" data-tabs-target="panel" class="pt-4 <%= 'hidden' unless i.zero? %>"><%= t[:content] %></div>
+    <div id="<%= id %>-panel-<%= i %>" role="tabpanel" aria-labelledby="<%= id %>-tab-<%= i %>"
+         tabindex="0" data-tabs-target="panel"
+         class="pt-4 <%= 'hidden' unless i.zero? %>"><%= t[:content] %></div>
   <% end %>
 </div>
 ```
+
+- **`label:` is not optional and there is no sensible default** — APG names the tablist via
+  `aria-labelledby` when a visible heading exists, `aria-label` otherwise. Pass the heading's id as
+  `labelledby:` when there is one; an unnamed tablist is an unnamed group of buttons.
+- **`orientation:` is computed from the variant, not hardcoded** — `horizontal` unless the tabs are
+  stacked, and it changes which arrow keys the controller binds. A horizontal list must leave ↑/↓ to
+  the browser's scrolling.
+- **`activation:` is `:automatic` for inline panels and `:manual` when a panel is a lazy
+  `<turbo-frame>`** — the frame is not preloaded, which is precisely the condition APG's
+  automatic-activation recommendation excludes. See
+  [interaction-stimulus.md](interaction-stimulus.md#tabs--the-optional-rows-the-forbidden-one-and-manual-activation-95).
+- **`tabindex="0"` on every panel is a deliberate superset of APG's rule**, which asks for it only
+  *"When the tabpanel does not contain any focusable elements or the first element with content is not
+  focusable"*. A panel here holds arbitrary slot content, so the condition cannot be evaluated at
+  render time; the cost of always emitting it is one tab stop, and the cost of getting it wrong is an
+  unreachable panel. Ours, and stated so it is not mistaken for the pattern's wording.
 
 ## Toast — `app/components/ui/toast_component.rb`
 
@@ -1322,6 +1345,120 @@ end
   <% end %>
 </div>
 ```
+
+### Skip link — `app/views/layouts/application.html.erb`
+
+WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` renders the target
+(`<main id="main" tabindex="-1">`). Two lines complete it, and both are load-bearing.
+
+```erb
+<%# FIRST element in <body>, before the header. ONE position utility — `fixed` — and `top` does %>
+<%# the reveal. `sr-only` + `focus-visible:not-sr-only` + `fixed` would put two `position` rules  %>
+<%# in conflict, and Tailwind resolves that by generated-stylesheet order, not class order.       %>
+<a href="#main"
+   class="fixed left-2 -top-16 z-[100] focus-visible:top-2 rounded-md bg-primary px-4 py-2
+          text-step--1 font-medium text-primary-foreground
+          focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30
+          focus-visible:ring-offset-2">Skip to main content</a>
+
+<%# …and the target must be a focusable area, or the FALLBACK takes focus instead of the region: %>
+<%# HTML's scroll-to-the-fragment steps run the focusing steps "with the Document's viewport as   %>
+<%# the fallback target", and a plain <main> is not focusable. tabindex="-1" is the mechanism.    %>
+<main id="main" tabindex="-1" class="shell section-y-compact">…</main>
+```
+
+### Navigation — `app/components/layout/navbar_component.rb` and the rail's list
+
+```erb
+<%# ---- APP BAR (stacked shell). `sticky` puts it inside 2.4.11 Focus Not Obscured (AA): a ---- %>
+<%# focused control must never be ENTIRELY covered, so give focusable content scroll-margin-top. %>
+<header class="sticky top-0 z-40 h-14 border-b border-border bg-card pt-safe">
+  <div class="shell cluster h-full" style="--justify: space-between">
+    <%= render(Ui::LogoComponent.new(brand_variant: :fmworkflows)) %>
+
+    <%# ONE label per navigation landmark, and the word "navigation" is not in it — a screen %>
+    <%# reader already says the role, so aria-label="Main navigation" reads twice.           %>
+    <nav aria-label="Main" class="hidden md:block">
+      <ul class="cluster" style="--space: var(--space-3xs)">
+        <% items.each do |item| %>
+          <li><%= link_to item[:label], item[:path],
+                    "aria-current": ("page" if current_page?(item[:path])),
+                    class: "block min-h-touch rounded-md px-3 py-2 text-step--1 text-muted-foreground
+                            hover:bg-accent hover:text-foreground
+                            aria-[current=page]:bg-accent aria-[current=page]:text-primary
+                            focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30" %></li>
+        <% end %>
+      </ul>
+    </nav>
+
+    <%# Mobile collapse: a DISCLOSURE. A real <button> (4.1.2), aria-expanded reflecting state, %>
+    <%# and Enter/Space as the entire keyboard contract. No role="menu", no arrow keys.         %>
+    <button type="button" data-controller="disclosure" data-action="disclosure#toggle"
+            aria-expanded="false" aria-controls="nav-mobile"
+            class="md:hidden with-icon min-h-touch px-3 rounded-md hover:bg-accent
+                   focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30">
+      <%= helpers.lucide_icon("menu") %><span class="sr-only">Main menu</span>
+    </button>
+  </div>
+
+  <%# The panel `aria-controls` points at — write it and it must EXIST. `hidden` when collapsed: %>
+  <%# aria-expanded="false" on its own leaves these links in the tab order and the a11y tree.    %>
+  <%# Same label as the desktop nav on purpose — `hidden`/`md:hidden` means only one of the two  %>
+  <%# is ever in the accessibility tree, so the page never has two navigation landmarks at once. %>
+  <nav id="nav-mobile" aria-label="Main" class="md:hidden border-t border-border" hidden>
+    <ul class="stack shell py-2" style="--space: var(--space-3xs)">…</ul>
+  </nav>
+</header>
+```
+
+```erb
+<%# ---- RAIL (sidebar shell). Same landmark rules; the list is ours, so the rail announces ---- %>
+<%# its size. Only the DEEPEST active item carries aria-current — ARIA says to mark one element  %>
+<%# in a set, and says nothing about an ancestor section, so marking both is our call to decline. %>
+<nav aria-label="Main" class="stack" style="--space: var(--space-3xs)">
+  <ul class="stack" style="--space: var(--space-3xs)">
+    <% sections.each do |section| %>
+      <li>
+        <% if section[:children].present? %>
+          <%# A nested section is a Disclosure, never a menu — no role="menu", no aria-haspopup. %>
+          <button type="button" data-controller="disclosure" data-action="disclosure#toggle"
+                  aria-expanded="<%= section[:open] %>" aria-controls="nav-<%= section[:id] %>"
+                  class="cluster w-full min-h-touch rounded-md px-3 text-step--1 text-muted-foreground
+                         hover:bg-accent hover:text-foreground focus-visible:outline-hidden
+                         focus-visible:ring-2 focus-visible:ring-ring/30" style="--justify: space-between">
+            <span class="with-icon"><%= helpers.lucide_icon(section[:icon]) %></span>
+            <%# The label is what disappears when the rail collapses to 4rem — and an icon-only %>
+            <%# link with no accessible name is an unnamed link, so it becomes sr-only, not gone. %>
+            <span class="flex-1 text-left <%= "sr-only" if collapsed? %>"><%= section[:label] %></span>
+          </button>
+          <ul id="nav-<%= section[:id] %>" class="stack ps-6" <%= "hidden" unless section[:open] %>>…</ul>
+        <% else %>
+          <%= link_to section[:path],
+                "aria-current": ("page" if current_page?(section[:path])),
+                class: "cluster min-h-touch rounded-md px-3 text-step--1 text-muted-foreground
+                        hover:bg-accent hover:text-foreground
+                        aria-[current=page]:bg-accent aria-[current=page]:text-primary
+                        focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30" do %>
+            <span class="with-icon"><%= helpers.lucide_icon(section[:icon]) %></span>
+            <span class="<%= "sr-only" if collapsed? %>"><%= section[:label] %></span>
+          <% end %>
+        <% end %>
+      </li>
+    <% end %>
+  </ul>
+</nav>
+```
+
+- **`aria-current` is emitted as a Ruby value, not a class.** `link_to` drops an attribute whose
+  value is `nil`, so `("page" if current_page?(…))` renders the attribute on exactly one link and
+  nothing on the others — which is what makes `aria-[current=page]:` a safe styling hook and keeps
+  the active state off a colour-only cue.
+- **The rail's `min-h-touch` is 2.5.8 Target Size (Minimum) (AA), not padding taste.** Its *Inline*
+  exception covers targets *in a sentence*; a stacked rail link is a discrete block target and gets
+  no exception. The same reason the hamburger is `min-h-touch px-3` rather than a bare icon.
+- **Below `lg` the rail is not this markup** — it is the overlay drawer, which *is* a modal dialog
+  (`components.md` → Drawer / off-canvas). Render both and switch by breakpoint; never toggle
+  `aria-modal` and a focus trap on one element by media query.
 
 ### Breadcrumbs — `app/components/ui/breadcrumbs_component.rb`
 
