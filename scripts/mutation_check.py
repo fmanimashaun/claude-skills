@@ -1023,6 +1023,27 @@ GUARDS: tuple[Guard, ...] = (
                 'CORPORA_GATES = frozenset({"coverage matrix drift", "packaging determinism"})',
                 "CORPORA_GATES is",
             ),
+            # #129 added a SECOND name-keyed carve-out, so it gets the same three mutations the
+            # first one has: a name that matches nothing, a set that grew, and the direction
+            # nobody thinks of -- an "allowance" that is really a tightening.
+            Mutation(
+                "the slow-gate allowance is keyed on a gate that does not exist",
+                '    "mutation coverage": 900,',
+                '    "mutatoin coverage": 900,',
+                "SLOW_GATES names no such gate",
+            ),
+            Mutation(
+                "the slow-gate allowance widens to a gate that reads the tree once",
+                '    "mutation coverage": 900,',
+                '    "mutation coverage": 900,\n    "packaging determinism": 900,',
+                "SLOW_GATES is",
+            ),
+            Mutation(
+                "a SLOW_GATES entry silently tightens a gate instead of loosening it",
+                '    "mutation coverage": 900,',
+                '    "mutation coverage": 30,',
+                "silently TIGHTENS a gate",
+            ),
         ),
     ),
     # rails-flow #126. Two of these break a POSITIVE rule; two break a fixture whose job is to
@@ -1930,7 +1951,16 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
 
 
 def run_guard(guard: Guard) -> list[str]:
-    """Failures for one guard. Empty list = every mutation was caught by the right fixture."""
+    """Failures for one guard. Empty list = every mutation was caught by the right fixture.
+
+    Serial, deliberately. Wall time is one subprocess per declared mutation and the list only
+    grows -- 236 of them crossed `maintainer_doctor`'s 180s per-gate budget while #129 was being
+    written. The fix is `SLOW_GATES` over there, which states the cost honestly, rather than a
+    thread pool here: every mutation does run in its own temp directory against its own
+    subprocess, so parallelising is safe and is the obvious next step, but it measured at only
+    ~7% on a machine that was running other agents' sweeps at the same time. An unmeasurable
+    speedup is not worth adding concurrency to the checker every other gate is judged by.
+    """
     problems: list[str] = []
     for mutation in guard.mutations:
         workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
@@ -1979,7 +2009,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.guard and not guards:
         print(f"no guard named {args.guard!r}; known: {[g.name for g in GUARDS]}", file=sys.stderr)
         return 2
-
     problems: list[str] = []
     total = 0
     for guard in guards:

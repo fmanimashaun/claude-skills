@@ -214,6 +214,27 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 # silently stop the exemption applying — and that the set is exactly this one.
 CORPORA_GATES = frozenset({"coverage matrix drift"})
 
+# Seconds a subprocess gets before the doctor calls it hung. Right for a check that reads the tree
+# once, which is nearly all of them.
+DEFAULT_TIMEOUT = 180
+
+# Gates whose cost grows with the repo's own thoroughness, and the seconds they get.
+#
+# The default 180s is right for a check that reads the tree once. It is the WRONG SHAPE for
+# `mutation coverage`, which spawns one subprocess per declared mutation and therefore gets slower
+# every time anyone makes the repo safer. It crossed the budget at 236 mutations (#129), and a
+# timeout reported as FAIL is indistinguishable from a real survivor — the sweep says "fix the
+# failures before doing maintenance work" about a checker that was working fine.
+#
+# Declared here rather than raised globally, because a slow gate is a property of THAT gate: giving
+# every gate ten minutes would mean a genuinely hung check sits there for ten minutes.
+#
+# Keyed by gate NAME, exactly as CORPORA_GATES is, and the selftest asserts the names are real —
+# a rename would otherwise silently drop the allowance and the gate would start failing on time.
+SLOW_GATES: dict[str, int] = {
+    "mutation coverage": 900,
+}
+
 
 @dataclass
 class Result:
@@ -230,10 +251,11 @@ class Doctor:
     fixed: list[str] = field(default_factory=list)
 
     # ---- helpers ----------------------------------------------------------------------
-    def run(self, *args: str, cwd: Path | None = None) -> tuple[int, str]:
+    def run(self, *args: str, cwd: Path | None = None,
+            timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
         try:
             p = subprocess.run(
-                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=180
+                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout
             )
             return p.returncode, (p.stdout + p.stderr).strip()
         except FileNotFoundError:
@@ -609,7 +631,7 @@ class Doctor:
                     f"git clone {CORPORA_REPO} {CORPORA_DIR}",
                 )
                 continue
-            code, out = self.run(*cmd)
+            code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 self.add(PASS, f"gate: {name}")
             elif code == 3:
