@@ -5011,6 +5011,30 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
+### Unreleased
+
+- **`claim-verifier` is now actually wired into the flows that claim to use it** (#359). It shipped
+  in v1.52.0 and was referenced from **nowhere** — an agent built because descriptions go unchecked,
+  itself described as wired and never called. `release-manager` runs `extract_claims.py` over the
+  promotion body and hands the list to `claim-verifier` **before** opening the PR, because that body
+  becomes the published release notes and a false sentence there outlives every other kind.
+  `/maintainer-work` does the same, more cheaply, at the `dev` PR.
+- **New `unwired-claim-verifier` rule** makes criterion 5 checkable rather than prose. It is
+  deliberately narrow: it verifies the wiring exists, not that anyone reads the verdict — whether a
+  maintainer obeys it is not mechanically knowable, and pretending otherwise would be the same
+  defect one level up. It also fails a flow that names the agent **without** `extract_claims.py`,
+  since gathering the claim list by judgement is the half #359 proved cannot be relied on.
+- **Criterion 3 was declined, not skipped, and the reversal is already recorded.** It asked for
+  `claim-verifier` to be pinned to a model different from the session. `reference/model-tiers.md`
+  argues the opposite for a *shipped* agent: a pin spends a stranger's money on our authority, and a
+  value outside their `availableModels` is skipped anyway. A pin cannot buy a second opinion, only a
+  cost. So it stays `inherit`, the caller obtains independence via a per-invocation model or
+  `CLAUDE_CODE_SUBAGENT_MODEL`, and the agent must state which model it ran as.
+- **A fixture here was vacuous and a mutation caught it.** The wiring rule has two branches; asserting
+  only that *something* fired could not tell them apart, so disabling the first branch left the
+  `elif` to fire and the mutant survived. Fixtures now assert the message, not the boolean.
+- Self-consistency selftest 98 → **103** assertions; mutations 27 → **28**.
+
 ### 2026-08-01 (release v1.54.0)
 
 > ### Three things that were judgement are now arithmetic
