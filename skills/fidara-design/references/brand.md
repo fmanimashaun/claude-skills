@@ -193,6 +193,98 @@ hand: `--background`'s companion is `--foreground` (not `--background-foreground
 feedback roles plus `--ring` are deliberately **not** re-pointed on dark — requiring a dark
 value for all 22 roles would be a wrong check.
 
+## Starting a pack when the client has no palette
+
+A new client routinely arrives with a logo and a vibe and nothing else, and a pack cannot be
+finished without a palette. So there is a **small, measured candidate set** — ten palettes, each
+a complete role mapping for light *and* dark, every text pair measured against WCAG 1.4.3.
+
+**It is a starting point for client onboarding, not a style menu for fidara's own products.**
+That distinction is the whole design. This system is prescriptive on purpose — one radius
+language, one type scale, one component API — because consistency is what a client is buying.
+A catalogue of hundreds of looks would undo exactly the drift-killing this skill exists to do.
+Ten exist to make the first hour fast and correct; after that a pack has **one** palette, like
+every other pack.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --list
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --emit harbor --out brands/acme
+```
+
+### Choosing one — a decision path, not a gallery
+
+Walk it in order and stop at the first answer. Do not browse.
+
+1. **Does the client have a logo with a colour that must be echoed in the UI?**
+   Yes → skip the catalogue entirely and take the *snap* path below. No → continue.
+2. **Must the product recede behind the client's own content or imagery?**
+   Yes → `graphite`. It is the brand-light option: a near-black primary that does not compete.
+3. **Match the logo's hue family.** blue → `harbor` (quiet) or `cobalt` (loud) · indigo/blue-violet
+   → `indigo` · green → `pine` · teal/cyan → `teal` · purple → `amethyst` · red/burgundy →
+   `garnet` · orange/amber → `ember` · brown/rust → `clay`.
+4. **Tie-break on formality, using the neutral temperature.** `cool` neutrals read corporate and
+   clinical; `warm` neutrals read human and unhurried; `pure` neutrals read contemporary and
+   product-y. `--list` prints each candidate's ramp.
+5. **One caution that is not taste.** A green or red brand sits next to the `success` and
+   `destructive` roles. Neither is disqualifying, but it makes SC 1.4.1 (colour is never the only
+   signal) load-bearing rather than nice-to-have — the icon + label rule is already mandatory, so
+   just do not weaken it.
+
+### The client DOES have brand colours — snap, measure, report
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --snap "#C8102E" --neutral warm
+```
+
+It maps their colour onto the role structure, measures every text pair in both modes, and where
+their colour cannot carry a role it reports the **nearest passing colour of the same hue** with
+both numbers. That last part is the point: *"your red is 3.1:1 on white, the nearest passing one
+of the same hue is #A8102A at 4.6:1"* is a conversation, whereas *"it fails"* is an argument.
+
+**Their logo keeps their exact colour.** WCAG 1.4.3 exempts logotypes, and a mark is not
+themeable — that is already the documented exception for `Ui::Logo`. What moves is the `--primary`
+*role*, which is text and buttons.
+
+Edited the pack afterwards? The numbers in its header are now stale. Re-measure it:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --measure brands/acme
+```
+
+### The bar, and where it comes from
+
+Every candidate clears **4.5:1** on each text pair in both modes — WCAG 2.2 SC 1.4.3 (Level AA),
+*"The visual presentation of text and images of text has a contrast ratio of at least 4.5:1"*
+([spec](https://www.w3.org/TR/WCAG22/#contrast-minimum)). The 3:1 allowance is for **large-scale**
+text only (≥18pt, or ≥14pt bold), and every pair measured here is body-sized in at least one
+documented use, so the stricter number is the honest one.
+
+Deliberately **not** gated: `--border` and `--input`. SC 1.4.11 asks 3:1 only of visual
+information *required* to identify a component, and its Understanding note says plainly that
+where a control has visible content helping users identify it, a boundary indication is not
+required ([1.4.11](https://www.w3.org/TR/WCAG22/#non-text-contrast),
+[understanding](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html)). Gating a
+flat border ratio would be stricter than the spec, and a rule stricter than the spec is a rule
+people switch off.
+
+### Type pairings are an offer, never a step
+
+A pack that omits `fonts` inherits the system stack, and **inheriting is the right default** — it
+keeps a client pack closer to the system, which is what preserves the one-update-benefits-every-
+project property. So six pairings exist to be *offered*, and onboarding never requires a choice:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --list-fonts
+```
+
+A pairing carries **three family names and nothing else**. It carries no type scale, and that
+absence is doctrine rather than an omission: `--text-step-*` is a system-owned axis (see the
+table above — the spacing/type scale is never in a pack), so one scale serves every pack and
+every pairing. Precomputing a scale per pairing would fork the very axis the pack model exists to
+keep central, and `palette_candidates.py --check` fails if a pairing ever grows one.
+
+Family availability and licensing are the pack author's check, not a claim from this skill.
+
 ## Chart palette — re-validate per pack
 
 Running the palette validator is **part of creating a pack**, never a one-off inherited from

@@ -33,10 +33,43 @@ else PACK="${CLAUDE_PLUGIN_ROOT}/brands/<pack>"; fi
 python3 "$LINT" "$PACK"
 ```
 
-Refuse to scaffold on a non-zero exit; report which roles are missing. If neither path exists,
-say so and offer to scaffold a new pack by copying `${CLAUDE_PLUGIN_ROOT}/brands/_template` into
-`brands/<pack>` — the template deliberately fails the lint until its palette is validated, which
-is the reminder to run the data-viz validator for this brand.
+Refuse to scaffold on a non-zero exit; report which roles are missing.
+
+### If the pack does not exist yet — offer candidates, never a blank file
+
+Say the pack is missing, then offer the three ways to create one. Do **not** hand over
+`_template` and leave the user inventing hexes: a palette invented on the spot is a palette
+nobody measured, and it ships in the client's colours.
+
+```bash
+CANDIDATES=${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py
+python3 "$CANDIDATES" --list                       # 10 measured starting palettes
+python3 "$CANDIDATES" --emit harbor --out brands/<pack>   # no client palette at all
+python3 "$CANDIDATES" --snap "#RRGGBB" --out brands/<pack> # client HAS a brand colour
+```
+
+- **No usable palette** — walk the decision path in
+  [references/brand.md](../../skills/fidara-design/references/brand.md) (*Starting a pack when the
+  client has no palette*). It is an ordered path: logo colour → does the product recede → hue
+  family → formality. Ask for the client's sector and their logo colour; do not paste the whole
+  catalogue and ask them to browse. Every candidate is already measured against WCAG 1.4.3 in
+  both modes.
+- **Client has brand colours** — `--snap`. It maps their colour onto the role structure, measures
+  it, and where their colour cannot carry a role it names the nearest passing colour of the same
+  hue **with both numbers**. Report those numbers verbatim; the mark keeps their exact colour
+  (WCAG 1.4.3 exempts logotypes), only the `--primary` role moves.
+- **Copying `${CLAUDE_PLUGIN_ROOT}/brands/_template`** is still available for a hand-authored
+  pack. Its worked-example values are measured too, but the moment they are replaced they are not
+  — re-measure with `python3 "$CANDIDATES" --measure brands/<pack>`.
+
+Whichever route, the new pack arrives with `chart_palette_validated: false` and therefore
+**fails the lint on purpose**. That failure is the reminder to run the data-viz palette validator
+against *this* pack's surfaces — it is required even when the chart hues are inherited, because
+changing the palette changes the surface those hues sit on.
+
+**Typefaces are an offer, not a step.** Omitting `fonts` inherits the system stack and that is the
+right default. Mention `python3 "$CANDIDATES" --list-fonts` once; do not make it a question the
+user has to answer before the pack can be created.
 
 ## Idempotency
 

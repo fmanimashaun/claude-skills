@@ -9,6 +9,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
+  subprocess per declared mutation, so it gets slower every time anyone makes the repo safer; at
+  236 mutations it timed out, and a timeout is reported as FAIL — indistinguishable from a real
+  survivor, so the sweep tells a maintainer to fix a checker that was working. **`SLOW_GATES`**
+  declares the allowance next to the gate rather than raising the default for everything, because a
+  gate given ten minutes is a gate that hangs for ten minutes before anyone hears about it. Keyed
+  by gate NAME exactly as `CORPORA_GATES` is, and pinned in the selftest the same way, in three
+  directions: a name matching no gate, a set that grew to cover a check that reads the tree once,
+  and the direction nobody thinks of — an "allowance" that is really a **tightening**. Three
+  declared mutations. Parallelising the checker was tried and **reverted**: it measured ~7% on a
+  machine running other agents' sweeps concurrently, and an unmeasurable speedup is not worth
+  concurrency in the checker every other gate is judged by. The reasoning is recorded on
+  `run_guard` so the next person does not re-derive it.
+- **FIX — the quality-pass worked example restated two gated counts as bare prose numbers, and both
+  had gone stale** (#129). The table said 11 and 10; the sentence three lines below still said 9 and
+  8. `check_shared_shapes.py` could not see it, because it reconciles the *table*. That is a second
+  copy of a number with no arbiter — the exact shape the row above it is about — so the numbers are
+  gone and the sentence points at the table instead. Found by the gate failing on the counts #129
+  legitimately moved (a 12th `check()` harness, a 3rd luminance copy), which is the gate working.
+
 - **FIX — `docs/harness-doctrine.md` carried three stale gap-claims, and one of them told the reader
   to trust it** (found while working #128). §8 said a grep for
   `circuit.?breaker|stop condition|max attempts|bail out` across `plugins/` and `skills/` *"still
@@ -119,6 +139,38 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 - Adding to `SKIP_DIRS` broke the existing `corpora no longer pruned` mutation's anchor, and the
   mutation checker **hard-errored** rather than passing quietly. Both anchors updated; that stale-
   anchor rule is the reason the drift was visible at all.
+- **`check_token_contrast.py` now reads every shipped role-token file, not one** (#129). Its input
+  was a single hardcoded path, so it was a claim about `foundations-tokens.md` wearing the name of
+  a claim about the design system. Both brand packs carried defects it existed to catch (logged
+  under design-flow above). The pack glob is a hard error when it matches nothing — a checker that
+  measured nothing would print the same clean verdict as one that measured everything, which is
+  the skip-as-pass failure this repo keeps paying for. 12 pairs × 3 files = 36 measured, up from 10.
+- **NEW pair: muted text on a muted surface**, in both modes. It is the commonest low-contrast
+  failure in a real UI — helper text, timestamps, table meta — and it was the pair missing from the
+  set. `_template`'s sat at 2.71:1 behind a green sweep.
+- **`--destructive-foreground` on `--destructive` is deliberately still NOT measured**, and this is
+  a decision for the maintainer rather than one a checker should make while implementing an
+  unrelated issue: fidara's shipped `#FFFFFF` on `#EF4444` is **3.76:1**, under 1.4.3, so adding
+  the pair would fail the build on a **brand** colour. Reported on #129 instead. Palettes this repo
+  authors from scratch *are* held to the wider set — `palette_candidates.py`'s `CANDIDATE_PAIRS`
+  includes it, because there is no legacy value there to grandfather.
+- **FIX — the sRGB linearisation breakpoint was WCAG 2.0's `0.03928`; the current normative text
+  uses `0.04045`.** *"if RsRGB <= 0.04045 then R = RsRGB/12.92 else R = ((RsRGB+0.055)/1.055) ^
+  2.4"* — https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html. The correction is
+  proved **immaterial** rather than claimed so: the two disagree only on inputs in
+  (0.03928, 0.04045], and no 8-bit channel lands there (10/255 = 0.0392, 11/255 = 0.0431), which
+  the selftest asserts over all 256 channels. So no committed ratio changed value.
+- **The shipped and canonical contrast implementations are now COMPARED, not merely both present.**
+  `plugins/design-flow/scripts/palette_candidates.py` must carry its own copy — a plugin has to run
+  in a user's clone with nothing installed, and `scripts/` is never distributed — so the selftest
+  imports it and asserts both the **maths** and the **token parser** agree, each with a positive
+  control proving the comparison can detect a disagreement at all. Same discipline
+  `brand_pack_lint --roles-from` applies to the role contract.
+- **New guard in `mutation_check.py` for `check_token_contrast.py`**, which had none: 6 mutations.
+  Two of them exist because the first versions of these fixtures were **tautologies** — "no
+  disagreement" and "no comparison" are the same observation until something forces them apart, and
+  mutation is what found that. Selftest 12 → **29** checks. Two new gates registered
+  (`design-flow palette candidates` and its selftest); sweep 35 → 37.
 
 ### 2026-08-01 — the install block, and a rule that can see it
 
@@ -5354,6 +5406,61 @@ boot/validation path — with a bullet each so the promotion could close them se
   it. `project_gates.py --selftest` validates that a shipped command names a real script and supplies
   any required subcommand; neither of those is wrong here, which is the blind spot: nothing asserts
   that a shipped check's `applies_when` names a path the plugin actually generates.
+- **NEW `palette_candidates.py` — ten measured starting palettes, plus the snap path for a client's
+  own brand colour** (#129). A pack cannot be finished without a palette and a new client routinely
+  arrives with a logo and a vibe, so authoring one by hand was slow and its quality depended on who
+  was doing it that day. **Change type: design/architecture** — the candidate set, the selection
+  path and where it plugs into onboarding are our own brand-pack model, with no upstream; the
+  authority is the maintainer decision recorded on
+  [#129](https://github.com/fmanimashaun/claude-skills/issues/129) and its
+  [coordination comment](https://github.com/fmanimashaun/claude-skills/issues/129#issuecomment-5097854818).
+  The contrast half is split out below and carries citations instead.
+  - **One mechanism, two entry points.** A palette is stored as a handful of anchors and composed
+    through `snap()` into the whole role contract, so "snap the client's colours to our role
+    structure" is not a second feature — it is the same function with anchors derived from their
+    hex. The role names come from `brand_pack_lint.ROLES` rather than a local copy, so a role added
+    to the contract makes the composer fail loudly instead of quietly emitting a pack with a hole.
+  - **140 text pairs measured, none asserted.** 10 candidates × 7 pairs × 2 modes, all ≥ 4.5:1;
+    worst is 5.15:1. `--check` is a gate. A palette that fails contrast is worse than no palette,
+    because it ships in a client's colours and nobody re-checks it.
+  - `--snap "#RRGGBB"` reports the **nearest passing colour of the same hue** with both numbers
+    when a client's colour cannot carry a role, because *"your red is 3.1:1, this one is 4.6:1"* is
+    a conversation and *"it fails"* is an argument. Their **mark keeps their exact colour** — WCAG
+    1.4.3 exempts logotypes; only the `--primary` role moves.
+  - `--measure <pack>` exists because `--emit` writes a pack that then gets **edited**. Without it,
+    the "re-measure this" line the tool writes into every pack it generates would be a
+    claims-vs-enforcement defect authored by the tool itself.
+  - An emitted manifest carries `chart_palette_validated: false` and therefore **fails the pack
+    lint on purpose**: this script has not run the chart validator, and claiming a result it did
+    not produce is the one thing a manifest must never do.
+  - **Six type pairings, offered rather than prompted**, per the maintainer's coordination note:
+    omitting `fonts` inherits the system stack and inheriting is the right default.
+  - **#129 asked for per-pairing fluid type steps and they are deliberately NOT shipped.**
+    `--text-step-*` is a system-owned axis — brand.md's own table puts the spacing/type scale in
+    the "system owns, never in a pack" column — so a scale per pairing would fork the very axis the
+    pack model exists to keep central. A pairing carries three family names and nothing else, and
+    `--check` fails if one ever grows more.
+  - 51 selftest checks, 16 declared mutations. Roughly half break a fixture whose job is to stay
+    **silent**: a tool that rewrites a brand colour which was already fine gets switched off, and
+    then nothing measures the one that was not.
+
+- **FIX — the fidara brand pack still carried both #304 contrast defects, months after #304 was
+  fixed** (#129, found while measuring candidates). `check_token_contrast.py` read exactly one
+  file, `foundations-tokens.md`. The pack `/design-flow:setup fidara` actually reads — the bytes a
+  user's app is built from — had `--primary: #0077CC` at **4.42:1** on `--background`, and a
+  `.dark` block re-pointing `--primary` **without** `--primary-foreground`, leaving white on
+  `#00A3FF` at **2.73:1** on every primary button in dark mode. Those are #304's two defects,
+  verbatim, in the shipped artifact, while the gate written to catch them reported clean over the
+  one file that had been fixed. **Change type: externally verifiable** — WCAG 2.2 SC 1.4.3 (Level
+  AA), 4.5:1 for normal text: https://www.w3.org/TR/WCAG22/#contrast-minimum. Now 4.74:1 and
+  6.30:1, matching the doctrine file exactly.
+
+- **FIX — `_template` failed three text pairs, and it is the file every client pack is copied
+  from** (#129). `--primary` 4.38:1 in light; `--primary` never lifted for dark surfaces (3.94:1 on
+  the page, 3.44:1 on a card, because `.dark` re-pointed it to the same light value); and
+  `--muted-foreground` at **2.71:1**, which is helper text, timestamps and table meta on every
+  screen. A template that ships unreadable defaults teaches the failure to every pack copied from
+  it. Same citation as above; all six light/dark pairs now ≥ 5.17:1.
 
 ### 1.11.0 — 2026-08-01
 
@@ -5710,6 +5817,24 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **`brand.md` — how to start a pack when the client has no palette** (#129). A decision path, not
+  a gallery: logo colour → does the product recede → hue family → formality, stop at the first
+  answer. Plus the snap path for a client who *does* have brand colours, and the statement the
+  issue asked for plainly — this is **a starting point for client onboarding, not a style menu**.
+  **Change type: design/architecture** (the brand-pack model has no upstream); authority is the
+  maintainer decision on [#129](https://github.com/fmanimashaun/claude-skills/issues/129).
+- **The contrast bar in that section is externally verifiable and cited, not asserted.** 4.5:1 per
+  WCAG 2.2 SC 1.4.3 (Level AA), with the 3:1 allowance correctly scoped to large-scale text
+  (≥18pt / ≥14pt bold): https://www.w3.org/TR/WCAG22/#contrast-minimum. It also records what is
+  **not** gated and why: SC 1.4.11 requires 3:1 only of information *required* to identify a
+  component, and its Understanding note states that a control with visible content needs no
+  boundary indication — so gating `--border`/`--input` on a flat ratio would be stricter than the
+  spec, and a rule stricter than the spec is a rule people switch off.
+  https://www.w3.org/TR/WCAG22/#non-text-contrast ·
+  https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html
 
 ### 1.15.0 — 2026-07-29
 - **First increment of Phase 2**, honouring that issue's own instruction to ship one group at a time

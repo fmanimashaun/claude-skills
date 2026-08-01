@@ -15,6 +15,10 @@
   /* accents (Prism facets / product modules) */
   --color-fm-cerulean: #0077CC;  --color-fm-electric: #00A3FF;  --color-fm-cyan: #00D4FF;
   --color-fm-orange:   #FF6B35;  --color-fm-coral:    #FF8C5A;
+  /* cerulean-700 is the TEXT-SAFE step, and the only one --primary may use: #0077CC on
+     --background is 4.42:1, under WCAG 1.4.3's 4.5:1. #0072C4 is 4.66:1. The mark keeps the
+     pure facet hue; the role does not. (#304, re-applied to the pack in #129.) */
+  --color-fm-cerulean-700: #0072C4;
   /* feedback */
   --color-fm-success:  #22C55E;  --color-fm-warning:  #F59E0B;
   --color-fm-error:    #EF4444;  --color-fm-info:     #00A3FF;
@@ -31,7 +35,7 @@
   --background: var(--color-fm-slate-50);   --foreground: var(--color-fm-slate-900);
   --card: #FFFFFF;                          --card-foreground: var(--color-fm-slate-900);
   --popover: #FFFFFF;                       --popover-foreground: var(--color-fm-slate-900);
-  --primary: var(--color-fm-cerulean);      --primary-foreground: #FFFFFF;
+  --primary: var(--color-fm-cerulean-700); --primary-foreground: #FFFFFF;
   --secondary: var(--color-fm-slate-100);   --secondary-foreground: var(--color-fm-slate-900);
   --muted: var(--color-fm-slate-100);       --muted-foreground: var(--color-fm-slate-500);
   --accent: var(--color-fm-slate-100);      --accent-foreground: var(--color-fm-slate-900);
@@ -39,7 +43,7 @@
   --success: var(--color-fm-success);       --warning: var(--color-fm-warning);
   --info: var(--color-fm-info);
   --border: var(--color-fm-slate-200);      --input: var(--color-fm-slate-200);
-  --ring: var(--color-fm-cerulean);
+  --ring: var(--color-fm-cerulean-700);
 }
 
 /* Dark re-points the SURFACE roles only. The feedback roles and --ring legitimately hold one
@@ -53,4 +57,8 @@
   --accent: var(--color-fm-slate-800);      --accent-foreground: var(--color-fm-slate-50);
   --border: var(--color-fm-slate-800);      --input: var(--color-fm-slate-800);
   --primary: var(--color-fm-electric);      /* brand lifts to electric on dark */
+  /* NOT white: white on electric is 2.73:1, and this is the label on every primary button in
+     dark mode. Re-pointing --primary WITHOUT its companion is the #304 defect; it was fixed in
+     foundations-tokens.md and left live in this pack until #129 measured the pack itself. */
+  --primary-foreground: var(--color-fm-navy);
 }
