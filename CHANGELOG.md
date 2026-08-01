@@ -10,6 +10,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **FIX — the publish was not gated, which is the branch that matters.** `gates.yml` shipped hours
+  earlier watching pull requests and pushes to `dev`. It did **not** watch `main`, and `release.yml`
+  had no `needs:` — so **the merge commit that publishes ran zero of the 35 gates.**
+  - The reasoning was already written down and I failed to apply it where it counted: `gates.yml`
+    watches `dev` on the grounds that *a merge commit is content no PR run ever tested*. That is
+    truer of `main`, not less — a clean merge of two clean branches can break a gate reading across
+    both, and here the blast radius is a **published release**, from the branch
+    `/plugin marketplace add` resolves.
+  - `release.yml` now has a `gates` job and the publish declares `needs: gates`. The sweep is
+    **called**, not copied — `gates.yml` gained `workflow_call` — because two copies drift and the
+    one that drifted would be the copy guarding production.
+  - Raised by the maintainer asking what runs at `dev → main`, since that is where deployment
+    happens. It is the second defect in this workflow found by being asked to justify it rather than
+    by any check.
+
 - **The gates run in CI now. Until today they ran nowhere automatically.** Every automated check on a
   pull request in this repo belonged to a **third party** — AccessLint and GitGuardian. Our own
   workflow was `release.yml`, which fires only on a push to `main`, *after* merge, and whose single

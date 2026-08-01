@@ -17,7 +17,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # THE PUBLISH IS GATED. `main` is the install surface -- `/plugin marketplace add` resolves the
+  # default branch -- so a push here IS the deploy, and it must not happen on unproven content.
+  #
+  # The promotion PR runs the sweep too, but that is not sufficient and the reason is the same one
+  # gates.yml already gives for watching `dev`: a merge commit is content no PR run ever tested. A
+  # clean merge of two clean branches can still break a gate that reads across both, and here the
+  # blast radius of that is a published release.
+  gates:
+    uses: ./.github/workflows/gates.yml
+
   release:
+    needs: gates
     # Releases only ever come from main. workflow_dispatch stays available for re-runs,
     # but a dispatch from any other ref must NOT publish a release for that ref's commit.
     if: github.ref == 'refs/heads/main'
