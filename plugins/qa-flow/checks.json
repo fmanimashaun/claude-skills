@@ -1,0 +1,62 @@
+{
+  "plugin": "qa-flow",
+  "comment": [
+    "Checks qa-flow can run against a USER'S repo. Format documented in rails-flow/checks.json.",
+    "Deliberately NOT listed: rendered_conformance and anything else needing a browser. Those need",
+    "Playwright, which is the user's dependency and not installable from here -- and a check that",
+    "silently skips for a missing dependency is worse than no check. They belong in the browser",
+    "pass the agent drives, not in a gate that must be honest without one."
+  ],
+  "checks": [
+    {
+      "id": "qa-evidence",
+      "why": "Evidence whose pages were never validated as the pages under test proves nothing.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/validate_evidence.py",
+        "{match:qa/manual-tests/*.csv}"
+      ],
+      "applies_when": [
+        "qa/manual-tests"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "qa-evidence-manifest",
+      "why": "A long browser run must leave reviewable evidence, not a directory of orphans.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/evidence_manifest.py",
+        "validate",
+        "--manifest",
+        "{match:qa/manual-tests/manifest.json}"
+      ],
+      "applies_when": [
+        "qa/manual-tests"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "route-coverage",
+      "why": "Which routes QA has never touched -- reported, so completeness is never implied.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/route_coverage.py",
+        "report",
+        "--routes",
+        "qa/routes.json",
+        "--fail-on-untested"
+      ],
+      "applies_when": [
+        "qa/routes.json"
+      ],
+      "requires": [
+        "python3"
+      ]
+    }
+  ]
+}

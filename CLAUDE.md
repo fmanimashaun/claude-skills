@@ -202,6 +202,31 @@ accumulates one merge commit per release that `dev` never receives, so `dev` sho
 commits "behind" while being content-identical. Merging `main` back into `dev` to make the
 counter look tidy is what produced 37 no-op merge commits on `dev` earlier; don't.
 
+## The gates run in CI now, and until recently they did not
+
+`.github/workflows/gates.yml` runs the sweep on **every pull request** and on every push to `dev`.
+
+Before it existed, every automated check on a PR here belonged to a **third party** — AccessLint and
+GitGuardian. Our own workflow was `release.yml`, which fires only on a push to `main`, *after* merge,
+and whose single check is the `dist/` drift guard. So the 35 gates this file spends pages on ran
+**nowhere automatically**: they ran when a maintainer remembered to type the command. That is the
+claims-vs-enforcement defect this repo warns about most, sitting in its own infrastructure.
+
+Two design points worth not undoing:
+
+- **It runs `--gates-only`, not `--gates`.** The machine diagnostics ask about a *maintainer's clone*
+  — current branch, stale local `main` ref, `gh` auth, the licensed corpora. None is meaningful on a
+  runner, and failing on them would teach people to ignore a red build, which is worse than no CI.
+  The gates are the opposite: every one is a claim about the repo's **content**, so it holds
+  identically on a runner and on a laptop.
+- **It asserts `node` and `ruby` are present rather than tolerating their absence.** Without them
+  `lint_markdown_code.py` returns exit 3 (INCOMPLETE) and the doctor maps 3 to SKIP — and in CI a
+  skip is indistinguishable from a pass unless something asserts the interpreters exist.
+
+`dist/` drift is checked here **as well as** in `release.yml`, because a diagnostic is not a gate and
+`--gates-only` therefore skips it. Same shape in both files on purpose: **change one, change the
+other**, exactly as with `release_local.sh`.
+
 ## Releases are automated — do NOT run `gh release` by hand
 
 `.github/workflows/release.yml` fires on every push to `main`:

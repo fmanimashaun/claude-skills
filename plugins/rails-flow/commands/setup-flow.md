@@ -426,11 +426,52 @@ on:
   workflow_dispatch: {}                  # on-demand
 ```
 
-Rationale: local gates + qa-flow are primary for `feature → dev`; the hosted CI is the independent
-check at `dev → main`/`main`; `workflow_dispatch` stays as an on-demand escape hatch. Idempotent —
+Rationale: **Actions minutes.** On a private repo the scaffold default can exhaust the quota and
+block merges, and `dev → main` is the gate that matters because it is what the project deploys from.
+
+The rationale this used to give was *"local `bin/ci` hooks + qa-flow already proved it for
+feature → dev"*. **That was an assumption, not a guarantee** — if the agent did not run qa-flow,
+nothing proved anything. The minutes argument stands on its own; the "already proved" claim does
+not, and it is exactly the claims-vs-enforcement shape this toolchain exists to remove. Idempotent —
 if the triggers already match (or the user declined), leave `ci.yml` untouched and say so. (Doctrine:
 rails-8 `testing.md` § *bin/ci*; if the `pipeline` plugin is installed, this aligns with its
 main-only release/build workflows.)
+
+### The doctrine gate — propose it as an approved diff (#334)
+
+At that `dev → main` trigger the project runs **its own** matrix: tests, lint, Brakeman. **None of
+the checks this toolchain ships run there**, so nothing verifies the doctrine before the deploy
+branch moves. Propose one job that runs all of them:
+
+```yaml
+  doctrine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python3 "$CLAUDE_PLUGIN_ROOT/scripts/project_gates.py"
+```
+
+`project_gates.py` discovers which of the shipped checks apply to *this* repo and reports four
+states — **pass / FAIL / not-applicable / ERROR**. A project with no `qa/` directory reports the
+evidence checks as **not applicable**, loudly, and never as a pass: a repo with zero evidence must
+not go the same green as a repo with complete evidence. Run `--list` first to show the user exactly
+what will and will not run in their project, and why.
+
+**The deploy or release job must declare `needs: doctrine`.** This is the part to insist on. A
+parallel job is *advisory* — it can go red after the deploy has already happened, which is a check
+that reports rather than a gate that stops. We learned this in our own repo: the release workflow
+published from `main` with no dependency on the gate sweep, so the promotion PR was verified and the
+merge commit that actually shipped was not.
+
+```yaml
+  deploy:
+    needs: [test, doctrine]
+```
+
+Same approved-diff rule as everything else here: show the change, never rewrite `ci.yml` silently.
+**Idempotent** — if the job is already present and current, say so and change nothing.
 
 While in `ci.yml`, propose the **architecture-graph drift guard** as a separate job (same
 approved-diff rule — never a silent rewrite). It is the mechanical half of
