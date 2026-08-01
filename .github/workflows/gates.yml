@@ -19,6 +19,9 @@ on:
   # break a gate that reads across both.
   push:
     branches: [dev]
+  # Callable, so `release.yml` runs THIS definition rather than a second copy. One sweep, one place:
+  # two copies would drift, and the copy that drifted would be the one guarding production.
+  workflow_call: {}
   workflow_dispatch: {}
 
 permissions:
