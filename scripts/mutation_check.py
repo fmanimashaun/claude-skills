@@ -848,6 +848,36 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #334. Both mutations are ones I ACTUALLY MADE while writing it: a manifest command that cannot
+    # run, and an assertion that looked like it caught that but did not. The second is the reason
+    # this guard exists -- the vacuous version passed a re-introduced bug, and only mutation found it.
+    Guard(
+        name="project_gates",
+        subject="plugins/rails-flow/scripts/project_gates.py",
+        selftest="plugins/rails-flow/scripts/project_gates.py",
+        needs=("plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
+               "plugins/design-flow/checks.json"),
+        mutations=(
+            Mutation(
+                "a not-applicable check is counted as a pass",
+                '        return Result(check, NA, why_not)',
+                '        return Result(check, PASS, why_not)',
+                "an empty glob is n/a, not pass",
+            ),
+            Mutation(
+                "a missing dependency skips instead of failing",
+                '            return Result(check, FAIL, f"`{binary}` is not on PATH, so this check could not run")',
+                '            return Result(check, NA, f"`{binary}` is not on PATH, so this check could not run")',
+                "a missing dependency FAILS rather than skipping",
+            ),
+            Mutation(
+                "the subcommand assertion stops discriminating (the vacuous version)",
+                '    found = re.search(r"\\{([a-z,]+)\\}\\s*\\.\\.\\.", usage)',
+                '    found = None',
+                "a subparser group is detected",
+            ),
+        ),
+    ),
     Guard(
         name="check_guide",
         subject="plugins/rails-flow/scripts/check_guide.py",
