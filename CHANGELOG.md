@@ -1853,7 +1853,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.27.0 — 2026-08-01
 
 - **Input group documented as a Text-input variant, not a new component** (#95, Phase 2). The last
   named Phase-2 family with no contract. **Change type: architecture decision**, recorded here
@@ -4501,6 +4501,38 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.46.0)
+
+> ### Two contrast failures, and only one of them had been reported
+>
+> The reported defect was a link colour at **4.42:1**, a near miss under 1.4.3. Measuring the
+> *adjacent* pairs found a worse one nobody had: `.dark` overrode `--primary` but not
+> `--primary-foreground`, so it inherited white — **2.73:1** on every primary button label in dark
+> mode. Solid-background text, not a near miss.
+>
+> That asymmetry is the release. A person checks the pair they are thinking about; only a script
+> enumerates the rest. There is now a script, and two gates.
+>
+> `fidara-design` changed; `rails-8`, `hotwire` and `code-review` are byte-identical, and no plugin
+> changed at all.
+
+- **FIX — two role-token pairs failed WCAG 1.4.3** (#304). Light `--primary` now points at a new
+  `--color-fm-cerulean-700` (`#0072C4`) → **4.74:1**, and dark `--primary-foreground` is navy →
+  **6.30:1**. The brand hex `#0077CC` is **unchanged**: the Prism mark, `chart-1` and `brand.md` all
+  carry it, and **a logo is not text**, so fixing a text defect by editing a brand asset would have
+  been the wrong lever.
+- **NEW `scripts/check_token_contrast.py`** — measures ten role-token text pairs from the doctrine
+  file, modelling the `.dark`-inherits-from-`:root` cascade that caused the unreported defect. A
+  renamed token **raises** rather than resolving, so a pair that stops being measured cannot read as
+  one that passed. Both regressions proven caught with their exact ratios.
+- **Input group is a Text-input variant, not a new component** (#95). The corpus directory was
+  already claimed by `Text input`; what was missing was the contract, not the row. Adding a component
+  would have been the duplicate mechanism Phase 2's own criteria forbid.
+- **The issue dependency graph is backfilled and valid** (#133). 25 issue bodies carry a `part-of`
+  fence; **no** sequential `depends-on` between phases, because the numbering implies an order the
+  history contradicts — Phase 3 closed while Phase 2 is open. The tool then rejected the issue that
+  *specified* it, whose example fence parsed as four real edges.
 
 ### 2026-08-01 (release v1.45.0)
 
