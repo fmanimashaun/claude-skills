@@ -217,6 +217,12 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Toast / Notification": "## Toast / Notification",
     "Tooltip / Popover": "## Tooltip / Popover",
     "Table (CRUD)": "## Table (CRUD)",
+    # #95's Lists group shipped these three as their own sections rather than as compositions
+    # named only in the `Build from` column. Trailing newline for the same reason as Disclosure
+    # below: "## Stacked list" alone would also match a longer heading.
+    "Stacked list": "## Stacked list\n",
+    "Grid list": "## Grid list\n",
+    "Activity feed / Timeline": "## Activity feed / Timeline\n",
     "Description list": "## Description list\n",
     "Media object": "## Media object\n",
     "Reviews + Rating": "## Reviews + Rating\n",
@@ -346,13 +352,17 @@ ENTRIES: tuple[Entry, ...] = (
       ["application-ui/overlays/drawers"], ["Drawer"],
       "ONE ROW, TWO CONTRACTS: the overlay drawer is a modal dialog and traps focus; the "
       "persistent push drawer is not a dialog and must not"),
-    E("Stacked list", COMPONENT, "derivable", "—",
+    E("Stacked list", COMPONENT, "documented", "—",
       ["application-ui/lists/stacked-lists"], ["List Group"],
-      "a media object in a divide-y container — build on shipped parts, do not re-implement"),
-    E("Grid list", COMPOSITION, "derivable", "—", ["application-ui/lists/grid-lists"], [],
-      "grid-auto + Card; a composition, so likely a recipe rather than a component"),
-    E("Activity feed / Timeline", COMPONENT, "derivable", "—",
-      ["application-ui/lists/feeds"], ["Timeline"]),
+      "role=list is not optional decoration: Preflight unstyles every list and WebKit then drops "
+      "the role. One stretched link per row, or none"),
+    E("Grid list", COMPOSITION, "documented", "—", ["application-ui/lists/grid-lists"], [],
+      "`grid-auto` on the <ul> is safe; role=grid is NOT — APG's Grid is a composite widget with "
+      "roving tabindex, which a wall of cards does not have"),
+    E("Activity feed / Timeline", COMPONENT, "documented", "—",
+      ["application-ui/lists/feeds"], ["Timeline"],
+      "TWO shapes: a static history is an ordinary <ol>, and only scroll-loading content earns "
+      "APG's feed pattern — which is a structure, not a widget"),
     E("Progress bar", COMPONENT, "documented", "—",
       ["application-ui/navigation/progress-bars"], ["Progress"],
       "the Flowbite audit surfaced LABELLED progress bars specifically"),
@@ -602,6 +612,9 @@ USE: dict[str, str] = {
     "Tooltip / Popover": "a supplementary label (Tooltip) or a small rich panel (Popover); never "
         "the only place information appears",
     "Table (CRUD)": "the index of a resource — sortable headers, row actions, select-all",
+    "Stacked list": "any index of records that is not tabular, and the Table's mobile fallback",
+    "Grid list": "an index whose items carry media or several attributes worth scanning at once",
+    "Activity feed / Timeline": "a record's history, or a stream that loads more as you scroll",
     "Description list": "read-only attribute/value pairs on a detail or settings screen",
     "Media object": "any avatar/icon + text row: list items, feeds, comments, notifications",
     "Pagination": "any index over ~25 rows; pair with the Table",
@@ -677,10 +690,11 @@ USE_DEFAULTS: dict[tuple[str, str], str] = {
 # ---------------------------------------------------------------------------------------
 BUILD: dict[str, str] = {
     # derivable — the composition IS the guidance
-    "Stacked list": "Media object rows inside a `divide-y` container",
-    "Grid list": "`grid-auto` of Cards",
-    "Activity feed / Timeline": "Media object rows in a `divide-y` container; the rail is a "
-        "border on the container, not a pseudo-element per row",
+    #
+    # Stacked list, Grid list and Activity feed used to live here. #95's Lists group gave each one
+    # its own `components.md` entry, so they are `documented` now and MUST NOT keep a fallback:
+    # the BUILD-fallback guard below refuses one, because a promoted row that still says "compose
+    # it yourself" sends readers past the doctrine that just landed.
     "Action panel": "Card + Heading (card scale) + Button group",
     "Search input": "the documented Text input, `type=search`, with a leading Lucide icon",
     "Number input": "the documented Text input with `inputmode=numeric`",
@@ -694,7 +708,9 @@ BUILD: dict[str, str] = {
     "Phone input": "the documented Text input with `inputmode=tel`; normalise app-side",
     "Speed dial / FAB cluster": "the page-header actions slot (Heading + Button group), or a "
         "Dropdown for overflow",
-    "Chat bubble": "Media object rows in a `divide-y` container",
+    # Was "Media object rows in a `divide-y` container" — the Stacked list's composition, spelled
+    # out again, and it went stale the moment that row was promoted. Point at the doctrine.
+    "Chat bubble": "the documented Stacked list, without inventing message semantics",
     "Device mockup": "a `frame` at the screenshot's own ratio",
     "Product quickview": "the documented Modal with the product overview blocks inside",
     # Was "`<details>`/`<summary>` groups inside a `stack`, until #142 lands" — a workaround
@@ -1106,9 +1122,15 @@ def render(tw_found: set[str], fb_found: set[str]) -> str:
 
     add("## Derivable — compose it from documented parts")
     add("")
-    add("No dedicated catalogue entry, and none needed: these are compositions. Build from what the")
+    add("**No anatomy of their own, and none needed: these are compositions.** Build from what the")
     add("**Build from** column names rather than inventing markup — that is what keeps a JIT-built")
     add("screen consistent with everything already in the app.")
+    add("")
+    add("A few rows here still carry a `components.md` section (Command palette is the one to know")
+    add("about). That is not a contradiction: the section records the ARIA subtleties of *composing*")
+    add("them, and the row stays `derivable` because there is no anatomy to build straight from. The")
+    add("earlier wording — *\"no dedicated catalogue entry\"* — said something stronger than the file")
+    add("meant, and was already false when it was written.")
     add("")
     add("| Component | Kind | In TW | In FB | Build from | Where / when to use it |")
     add("|---|---|---|---|---|---|")

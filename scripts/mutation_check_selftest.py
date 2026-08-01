@@ -186,20 +186,27 @@ def run() -> int:
                 )
 
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
+    # `subject` and `selftest` are scripts, so they must be FILES. `deps` and `needs` are staged
+    # by copying, and #422 deliberately declared a DIRECTORY there ("a directory, so a new
+    # reference doc is picked up rather than quietly missing") -- which `is_file()` then rejected,
+    # leaving the fix that removed one vacuous guard failing this selftest. Existence is the real
+    # rule for those two, and it still catches the typo this check exists for.
     for real_guard in mc.GUARDS:
         _tick()
-        # `subject`, `selftest` and `deps` are staged with `read_text`/`write_text`, so they must
-        # be FILES. `needs` is staged by `stage_guard`, which branches on `source.is_dir()` and
-        # `copytree`s a directory -- deliberately, so a new reference doc is picked up rather
-        # than quietly missing (#422). Checking all five with `is_file()` therefore rejected the
-        # very shape that fix introduced: `build_coverage` names the `references/` DIRECTORY, and
-        # this selftest failed on `dev` from the moment #422 landed. The two lists are checked
-        # separately so each says what it actually requires.
+        # `subject`, `selftest` and `deps` are Python modules that get IMPORTED, so they must be
+        # files. `needs` is different: it means "stage this beside the mutant", and a guard whose
+        # selftest reads a whole directory of fixtures must be able to declare the directory —
+        # `build_coverage` needs all of `skills/fidara-design/references`, and naming files would
+        # silently miss the next one added, which is the rot that made five guards inert.
+        #
+        # `dev` fixed this concurrently and let `deps` be a directory too. Kept the stricter form:
+        # no guard declares a directory dep, so the two behave identically today, and a dep that
+        # resolves to a directory could never be imported — it is a typo worth catching.
         missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
                    if not (original_repo / p).is_file()]
         missing += [p for p in real_guard.needs if not (original_repo / p).exists()]
         if missing:
-            FAILURES.append(f"{real_guard.name}: declares files that do not exist: {missing}")
+            FAILURES.append(f"{real_guard.name}: declares paths that do not exist: {missing}")
         if not real_guard.mutations:
             FAILURES.append(
                 f"{real_guard.name}: declares no mutations — a guard with an empty list passes "

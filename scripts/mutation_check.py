@@ -454,6 +454,8 @@ GUARDS: tuple[Guard, ...] = (
         name="validate_evidence",
         subject="plugins/qa-flow/scripts/validate_evidence.py",
         selftest="plugins/qa-flow/scripts/validate_evidence_selftest.py",
+        # `plugins/qa-flow`: its selftest reads profile/agent files across the plugin.
+        needs=("plugins/qa-flow",),
         mutations=(
             Mutation(
                 "a Pass on a non-2xx/3xx page is accepted (the #106 defect)",
@@ -1242,7 +1244,16 @@ GUARDS: tuple[Guard, ...] = (
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
         selftest="scripts/maintainer_doctor_selftest.py",
-        needs=(".gitignore",),
+        needs=(
+            # + `scripts`: GATES names ~55 sibling scripts; listing them by hand is the same rot that made check_handoff inert.
+            ".gitignore",
+            "scripts",
+            # ...and `plugins`, because GATES names checkers in BOTH trees. Reaching this second
+            # missing path only after fixing the first is the point of `run_baseline`: an inert
+            # guard hides every downstream problem behind the first one.
+            "plugins",
+            "evals",
+        ),
         mutations=(
             Mutation(
                 "an unignored corpora path stops being reported",
@@ -1350,8 +1361,12 @@ GUARDS: tuple[Guard, ...] = (
         name="project_gates",
         subject="plugins/rails-flow/scripts/project_gates.py",
         selftest="plugins/rails-flow/scripts/project_gates.py",
-        needs=("plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
-               "plugins/design-flow/checks.json"),
+        needs=(
+            # + `plugins`: its selftest resolves every script each checks.json names, across all three plugins.
+            "plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
+               "plugins/design-flow/checks.json",
+            "plugins",
+        ),
         mutations=(
             Mutation(
                 "a not-applicable check is counted as a pass",
@@ -1379,6 +1394,8 @@ GUARDS: tuple[Guard, ...] = (
         name="crawl_report",
         subject="plugins/qa-flow/scripts/crawl_report.py",
         selftest="plugins/qa-flow/scripts/crawl_report.py",
+        # `plugins/qa-flow/scripts/crawl_collector.js`: its selftest asserts the collector ships beside the judge.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "the 200-but-error rule stops firing",
@@ -2236,16 +2253,11 @@ GUARDS: tuple[Guard, ...] = (
         needs=(
             "plugins/rails-flow/reference/model-tiers.md",
             "plugins/rails-flow/commands/handoff.md",
-            "plugins/rails-flow/agents/claude-skills-reporter.md",
-            "plugins/rails-flow/agents/code-reviewer.md",
-            "plugins/rails-flow/agents/design-auditor.md",
-            "plugins/rails-flow/agents/doc-updater.md",
-            "plugins/rails-flow/agents/migration-writer.md",
-            "plugins/rails-flow/agents/pr-reviewer.md",
-            "plugins/rails-flow/agents/rails-developer.md",
-            "plugins/rails-flow/agents/security-auditor.md",
-            "plugins/rails-flow/agents/skill-curator.md",
-            "plugins/rails-flow/agents/test-runner.md",
+            # The DIRECTORY, not ten hand-listed agent files. The list omitted
+            # `claim-verifier.md` when v1.52.0 added it, so the staged mutant lacked an agent the
+            # tier table names -- and `check_handoff` correctly reported a stale row on its own
+            # UNMUTATED baseline. Every mutation then read as "caught" by that, proving nothing.
+            "plugins/rails-flow/agents",
         ),
         mutations=(
             Mutation(
