@@ -49,7 +49,7 @@ attribute.
 - **Turbo 8.0.23** (Jan 2026) — npm `@hotwired/turbo`, Rails gem
   `turbo-rails`. Turbo 8 added morphing page refreshes.
 - **Stimulus 3.2.2** — npm `@hotwired/stimulus`, Rails gem `stimulus-rails`.
-- **Hotwire Native**: iOS **1.2.2**, Android **1.2.5**; web bridge npm
+- **Hotwire Native**: iOS **1.3.0**, Android **1.3.1**; web bridge npm
   `@hotwired/hotwire-native-bridge`. Hotwire Native supersedes the old
   "Turbo Native" + "Strada" pair (Strada lives on as *bridge components*).
 - All are backend-agnostic; in Rails they ship by default via importmap.

@@ -2082,6 +2082,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`hotwire/references/native.md` documented a `RouteDecisionHandler` signature that 1.3.0 broke on
+  both platforms** (#384). §4 told agents to implement `matches(location:…)` / `handle(location:…)`;
+  since **iOS 1.3.0** and **Android 1.3.0** both functions receive the whole `VisitProposal`, so code
+  written from the old paragraph does not compile. **Version boundary:** the documented shape is
+  correct through **iOS ≤1.2.2 / Android ≤1.2.8** and wrong from 1.3.0 on both — §4 now states that
+  inline, the way it already does for `recede_or_redirect_to` at ≥1.2.0. Verified against the release
+  notes ([iOS 1.3.0](https://github.com/hotwired/hotwire-native-ios/releases/tag/1.3.0),
+  [Android 1.3.0](https://github.com/hotwired/hotwire-native-android/releases/tag/1.3.0)) **and the
+  tagged source**, because the notes give prose and this file ships signatures:
+  `RouteDecisionHandler.swift` at `1.3.0` (`matches(proposal:configuration:)`,
+  `handle(proposal:configuration:navigator: Navigating)`, read `proposal.url`) and
+  `Router.kt` at `1.3.1` (`matches(proposal, configuration)`,
+  `handle(proposal, configuration, activity: HotwireActivity)`, read `proposal.location`).
+  Version facts bumped to **iOS 1.3.0 / Android 1.3.1** in `hotwire/SKILL.md` and `README.md`
+  (releases dated 2026-07-07 and 2026-07-27; Android 1.2.6/1.2.7/1.2.8 had also shipped unrecorded).
+- **Reading the same source refuted the two smaller claims in #384 and found a third error the report
+  did not make.** (a) It asked to drop debug logging from "§2's Android knob list" — §2 is the *iOS*
+  section, and `Hotwire.config.debugLoggingEnabled` **still exists on iOS at 1.3.0**
+  (`HotwireConfig.swift:37`), so removing it would have introduced the error it meant to fix. The
+  removal is Android-only, so the note went to §3 instead, where Android's config block previously
+  listed no knobs at all: `Hotwire.config.logger` replaces it, with
+  `logger.logLevel = HotwireLogLevel.DEBUG` for debug output. (b) The file said a custom handler is
+  made by "subclassing" and that registration has "the same shape in Kotlin". Both are wrong at every
+  version: it is a `protocol` (iOS) / nested `interface` (Android), and Kotlin's
+  `Hotwire.registerRouteDecisionHandlers` is **`vararg`**, not the bracketed array iOS takes
+  (`HotwireNavigation.kt`). Android's third `handle` parameter has also always been
+  `activity: HotwireActivity`, never a navigator — the platforms were never the same shape.
+- **Verifying #384 found §2's iOS setup block does not compile — and never did, at any version.**
+  `private let navigator = Navigator()` calls an initializer that does not exist: `Navigator`'s only
+  public initializer is `init(configuration:delegate:)`, and `Navigator.Configuration` requires both
+  `name` and `startLocation` with no defaults (`Navigator.swift` / `Navigator+Configuration.swift`,
+  identical at tags **1.2.2 and 1.3.0**). The block also called `navigator.route(rootURL)` where
+  upstream calls `navigator.start()`. Now matches the official
+  [iOS getting-started](https://native.hotwired.dev/ios/getting-started) verbatim in shape. This is
+  the whole point of *"an issue body is a hypothesis"* cutting both ways: #384 reported a **1.3.0
+  regression** in §4 and re-verified §2 as sound, but the first snippet an agent copies was broken
+  independently of the version bump — a staleness audit is not a correctness audit.
+- **§4's manual-navigation aside over-generalised `animated:`.** It said iOS `route`/`pop`/`clearAll`
+  "each takes `animated: false`"; `route(_:options:parameters:)` has no `animated:` argument at
+  1.2.2 or 1.3.0 — only `pop(animated: true)` and `clearAll(animated: false)` do, with the two
+  differing defaults now stated.
 - **`fidara-design/references/coverage.md` was unreachable from its own `SKILL.md`** (#158) — 230
   lines of component doctrine (every component's guidance state, what to build it from, and which
   surface it belongs on) reachable only via `brand.md` and `marketing-copy.md`. That is depth two,

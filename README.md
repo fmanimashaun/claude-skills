@@ -853,7 +853,7 @@ editing anything under `skills/`, rebuild the packages with
 ## Versioning
 
 Skill content is pinned to **Rails 8.1.3**, **Turbo 8.0.23**, **Stimulus
-3.2.2**, and **Hotwire Native iOS 1.2.2 / Android 1.2.5**, written July 2026.
+3.2.2**, and **Hotwire Native iOS 1.3.0 / Android 1.3.1**, written July 2026.
 The skills instruct Claude to verify versions when the current date is well
 past that — but expect a refresh here when Rails 8.2/9 lands.
 
