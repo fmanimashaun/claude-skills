@@ -81,7 +81,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Stepper / wizard | component | — | ✓ | a multi-step flow: checkout, onboarding, long forms | a display, not a widget: no tablist, no progressbar, no arrow keys. Move focus on advance and then do NOT add a live region — 4.1.3 excludes what a change of context already announced. Also feeds #91's checkout flow, which is inside 3.3.4 (AA) |
 | Table (CRUD) | component | ✓ | ✓ | the index of a resource — sortable headers, row actions, select-all | — |
 | Tabs | component | ✓ | ✓ | switching views of the SAME resource; never as page navigation | — |
-| Text input | component | ✓ | ✓ | single-line entry; the shipped wrapper supplies label, hint and error | floating label is a variant, not a component |
+| Text input | component | ✓ | ✓ | single-line entry; the shipped wrapper supplies label, hint and error | floating label AND prefix/suffix addons are variants, not components — the input-groups corpus directory is claimed here on purpose (#95) |
 | Textarea | component | ✓ | ✓ | multi-line entry; set rows, never a fixed pixel height | — |
 | Toast / Notification | component | ✓ | ✓ | transient confirmation of a completed action; never for errors requiring a decision | — |
 | Toggle / Switch | component | ✓ | ✓ | a setting that applies immediately; if it needs Save, use a Checkbox | — |

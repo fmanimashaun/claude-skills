@@ -1855,6 +1855,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Input group documented as a Text-input variant, not a new component** (#95, Phase 2). The last
+  named Phase-2 family with no contract. **Change type: architecture decision**, recorded here
+  because there is no upstream: APG has no input-group pattern.
+  - **It is not a missing component.** The Tailwind UI `forms/input-groups` corpus directory was
+    already claimed by the `Text input` row, and `forms.md` already mentioned prefix/suffix twice —
+    what was missing was the **contract**, not the row. Giving addons their own component would have
+    been the *duplicate mechanism* Phase 2's own criteria forbid. The `Text input` matrix note now
+    states the claim explicitly so the next reader does not re-litigate it.
+  - Four rules, each with a reason: the **focus ring moves to the wrapper** (`focus-within`), because
+    a ring around half a field is worse than none; a **decorative addon is `aria-hidden`**, or
+    *"Amount"* is announced as *"Amount pound"*; an **interactive addon is not an addon** but a
+    cluster of two focusable things, each needing its own name and touch target; and `f.input_field`
+    rather than hand-rolled anatomy, which is the composed-cluster row of the existing table.
+
 - **FIX — two role-token pairs failed WCAG 1.4.3, and only one of them was reported** (#304).
   **Change type: incorrect doctrine.** Internally measurable, so it is settled by arithmetic against
   our own tokens; the calculator is validated against the two standard controls (`#767676`/white =

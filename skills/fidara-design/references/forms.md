@@ -86,6 +86,43 @@ focus-visible:ring-ring/30 focus-visible:border-ring disabled:opacity-50 min-h-t
   (`size-8 rounded-full border-2`, active `border-primary text-primary`).
 - **range** and **date/time** — native, with two specific exceptions each. Full contracts below.
 
+## Input group — prefix / suffix addons (#95)
+
+**Not a component.** It is a **variant of Text input**, and the distinction is the doctrine: the
+Tailwind UI `forms/input-groups` corpus directory is already claimed by the `Text input` row, and
+giving addons their own component would be the *duplicate mechanism* the component catalog forbids.
+One control, one contract, an optional addon on either side.
+
+```erb
+<%# currency prefix — the addon is INSIDE the bordered box, the input keeps its own focus ring %>
+<div class="cluster rounded-md border border-input bg-background focus-within:ring-2
+            focus-within:ring-ring/30" style="--space: 0">
+  <span class="px-3 text-step--1 text-muted-foreground" aria-hidden="true">£</span>
+  <%= f.input_field :amount, inputmode: "decimal",
+        class: "flex-1 min-w-0 bg-transparent px-0 pe-3 h-9 min-h-touch text-step--1 " \
+               "text-foreground focus-visible:outline-hidden" %>
+</div>
+```
+
+Four rules, each with a reason rather than a preference:
+
+- **The ring moves to the wrapper.** The addon and the control read as one field, so the focus
+  indicator must surround both — `focus-within:ring-2` on the wrapper, and the inner control drops
+  its own ring. Leaving the ring on the input draws a box around half the field.
+- **A decorative addon is `aria-hidden`.** `£` or a `@` glyph is presentation; announcing it turns
+  *"Amount"* into *"Amount pound"*. An addon that carries **meaning** the label does not
+  (`.com`, `USD` where the currency is selectable) is content instead: leave it announced and make
+  sure the label still says what the field is.
+- **An interactive addon is not an addon.** A dropdown or a submit button beside a control is a
+  composed cluster of two focusable things, each with its own name and its own `min-h-touch`. Do not
+  put a `<button>` inside the wrapper and rely on the input's label to name it.
+- **`f.input_field`, never hand-rolled anatomy.** This is the composed-cluster row of the table
+  above — simple_form's control-only helper — so the mandate is satisfied while the wrapper supplies
+  the border. Reaching for `f.label` plus a manual error `<p>` here is what the mandate forbids.
+
+Sizes follow Text input (`h-9` default); the addon inherits the control's `text-step--1`, because it
+is chrome.
+
 ## File upload / Dropzone (#95)
 
 **No APG pattern** — the index lists 30 and there is none for file upload or drag-and-drop. This is a
