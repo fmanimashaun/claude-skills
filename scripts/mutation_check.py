@@ -423,6 +423,12 @@ GUARDS: tuple[Guard, ...] = (
         name="validate_evidence",
         subject="plugins/qa-flow/scripts/validate_evidence.py",
         selftest="plugins/qa-flow/scripts/validate_evidence_selftest.py",
+        # Five profile contracts are cross-checked against the AGENT MARKDOWN that writes them
+        # (a11y-auditor for keyboard/forms/emulation, perf-tester, qa-reporter), and those checks
+        # fail rather than skip when the file is absent -- correctly, since a contract nobody can
+        # find is not a verified contract. The directory, not five names: a sixth profile would
+        # otherwise re-open this silently.
+        needs=("plugins/qa-flow/agents",),
         mutations=(
             Mutation(
                 "a Pass on a non-2xx/3xx page is accepted (the #106 defect)",
@@ -1211,7 +1217,12 @@ GUARDS: tuple[Guard, ...] = (
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
         selftest="scripts/maintainer_doctor_selftest.py",
-        needs=(".gitignore",),
+        # `.gitignore` covers the corpora fixtures. The gate list is the other half: the selftest
+        # asserts every `GATES` entry names a script that EXISTS and that no selftest on disk is
+        # invisible to the sweep, so it needs the three trees the gate list points into. Without
+        # them 55 entries were reported missing, the unmutated selftest exited 1, and all seven
+        # mutations read as caught.
+        needs=(".gitignore", "scripts", "plugins", "evals"),
         mutations=(
             Mutation(
                 "an unignored corpora path stops being reported",
@@ -1319,8 +1330,13 @@ GUARDS: tuple[Guard, ...] = (
         name="project_gates",
         subject="plugins/rails-flow/scripts/project_gates.py",
         selftest="plugins/rails-flow/scripts/project_gates.py",
-        needs=("plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
-               "plugins/design-flow/checks.json"),
+        # The manifests alone were not enough: the selftest's last checks run `--help` on every
+        # command each manifest names and assert each names a real script, so the mutant needs the
+        # SCRIPTS too. Declared as the `plugins` tree rather than three manifests plus their
+        # scripts, because the runner discovers sibling plugins at run time -- a hand-typed list
+        # would go quiet the first time a fourth plugin ships a checks.json, which is precisely the
+        # kind of silent skip #423 registered a gate against.
+        needs=("plugins",),
         mutations=(
             Mutation(
                 "a not-applicable check is counted as a pass",
@@ -1348,6 +1364,10 @@ GUARDS: tuple[Guard, ...] = (
         name="crawl_report",
         subject="plugins/qa-flow/scripts/crawl_report.py",
         selftest="plugins/qa-flow/scripts/crawl_report.py",
+        # Its selftest asserts the collector ships beside its judge and cross-checks the schema
+        # against it -- browser and judge are separate files in separate languages, so nothing else
+        # stops them drifting. Unstaged, that check failed and made all three mutations vacuous.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "the 200-but-error rule stops firing",
@@ -2202,19 +2222,17 @@ GUARDS: tuple[Guard, ...] = (
         # Read, not imported. The selftest's last checks run the REAL tier table against the REAL
         # agents and FAIL rather than skip when absent -- so the mutant needs them, or every
         # mutation reports as "caught by the wrong fixture" and the real signal is buried.
+        #
+        # The agents are named as a DIRECTORY, for the reason build_coverage's `references` is: the
+        # eleven files were hand-typed, `claim-verifier.md` was added later and never appended, and
+        # the staged mutant therefore reconciled a full tier table against ten agents -- reporting
+        # the row for the missing one as stale. `run_baseline` (#422) surfaced it as INERT the day
+        # it landed. A hand-typed list of a directory's contents goes quiet the first time the
+        # directory grows, which is the coverage-gap class inside the harness built to catch it.
         needs=(
             "plugins/rails-flow/reference/model-tiers.md",
             "plugins/rails-flow/commands/handoff.md",
-            "plugins/rails-flow/agents/claude-skills-reporter.md",
-            "plugins/rails-flow/agents/code-reviewer.md",
-            "plugins/rails-flow/agents/design-auditor.md",
-            "plugins/rails-flow/agents/doc-updater.md",
-            "plugins/rails-flow/agents/migration-writer.md",
-            "plugins/rails-flow/agents/pr-reviewer.md",
-            "plugins/rails-flow/agents/rails-developer.md",
-            "plugins/rails-flow/agents/security-auditor.md",
-            "plugins/rails-flow/agents/skill-curator.md",
-            "plugins/rails-flow/agents/test-runner.md",
+            "plugins/rails-flow/agents",
         ),
         mutations=(
             Mutation(
@@ -2525,6 +2543,56 @@ GUARDS: tuple[Guard, ...] = (
            ),
        ),
    ),
+    Guard(
+        name="check_manifest_paths",
+        subject="scripts/check_manifest_paths.py",
+        selftest="scripts/check_manifest_paths.py",   # --selftest lives in the module itself
+        # No `needs`: every fixture builds its own synthetic plugin in a tempdir. A fixture reaching
+        # for the real `plugins/` tree would die here on a missing corpus and read as a caught
+        # mutation, when a crash is not a verdict.
+        mutations=(
+            Mutation(
+                "agreement becomes unconditional, so no manifest path is ever phantom",
+                '    return named.startswith(entry + "/")   '
+                "# the manifest waits on a directory written into",
+                "    return True",
+                "a phantom applies_when path is reported",
+            ),
+            Mutation(
+                "prose leaks into the corpus, so a path mentioned in a sentence vouches for itself",
+                '            out.append((path, [fenced(path.read_text(encoding="utf-8"))]))',
+                '            out.append((path, [path.read_text(encoding="utf-8")]))',
+                "a path named only in prose does not count as agreement",
+            ),
+            Mutation(
+                "docstrings leak in, which is the exact shape that hid `qa/routes.json`",
+                "            and id(n) not in docstrings]",
+                "            ]",
+                "a path named only in a docstring does not count as agreement",
+            ),
+            Mutation(
+                "a bare `dir/*` writer starts vouching for every child name anyone invents",
+                '                    while token.endswith("/*") or token.endswith("/**"):',
+                "                    while False:",
+                "a bare `dir/*` writer does not vouch for an invented child",
+            ),
+            # The two coverage counters. A rule reporting "no findings" over nothing examined is
+            # the vacuous pass this repo keeps hitting, so each half is mutated separately —
+            # one guard for both would let either go quiet behind the other.
+            Mutation(
+                "a manifest declaring no paths stops being reported",
+                "    if not entries:",
+                "    if False:",
+                "a manifest declaring no paths is reported, not passed",
+            ),
+            Mutation(
+                "an empty corpus stops being reported, so a broken scan reads as a clean manifest",
+                "    if not corpus:",
+                "    if False:",
+                "a plugin whose surfaces name no paths is reported",
+            ),
+        ),
+    ),
 )
 
 

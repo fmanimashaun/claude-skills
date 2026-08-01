@@ -17,6 +17,64 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   copying, so existence is the real rule for them — which still catches the typo the check exists for.
   Found running the sweep on a clean `origin/dev`, not on a change.
 
+- **A `checks.json` path that no shipped tool produces is a build failure now, not a permanent
+  skip** (#423). `scripts/check_manifest_paths.py` reconciles every `applies_when` path and every
+  `{match:glob}` in every `plugins/*/checks.json` against the paths that plugin's own scripts,
+  commands, agents and hooks name. Registered in `GATES` as **`checks.json paths`** (the shipped
+  manifests) and **`checks.json paths selftest`** (the rules), for the reason the tell-detector's
+  entry already states: fixtures prove a rule fires and stays silent, only the bare run proves the
+  three manifests we actually ship are true. Its first run found **five** entries across **two**
+  plugins, which is the whole justification for it existing.
+  - **It closes a gap `project gates` could not see.** `project_gates.py --selftest` already asserts
+    every manifest entry names a real *script* and supplies a required subcommand. Nothing asserted
+    the entries name real *artefacts* — and that is the half where "not applicable" hides.
+  - **Prose does not count, and that is the whole design.** `qa/routes.json` was named four times in
+    qa-flow — in a docstring paragraph, in YAML frontmatter and twice in prose — while the file it
+    describes is `qa/reports/routes.json`. A corpus built from "anywhere the string appears" would
+    have read clean over the exact bug it exists for. So the corpus is built only from surfaces
+    something *runs*: Python string constants with docstrings excluded, JS literals with `//`
+    comments excluded, **fenced blocks only** in commands and agents, comment-stripped hook shell.
+    `*_selftest.py` is excluded too — a fixture path is not a shipped writer, and letting one vouch
+    for a phantom is how a test double validates a typo.
+  - **It states what it does not do.** It cannot prove a write happens: most of these artefacts are
+    written by an agent following a fenced command, and no static analysis reaches that. It proves
+    *agreement* — a manifest path that appears nowhere else in the plugin is either a typo or an
+    artefact nobody produces, and both are the same permanent skip. Saying so in the docstring is
+    the point; a checker overclaiming its own guarantee is the class it guards against.
+  - **Coverage is counted in both directions**, because "no findings" over nothing examined is the
+    vacuous pass this repo keeps hitting: a manifest declaring no paths is reported, and so is a
+    plugin whose surfaces name none — the second reported *instead of* failing every entry, since an
+    empty corpus is a defect in the scan, not in the manifest.
+  - **Six declared mutations in `mutation_check.py`**, one per rule and one per coverage counter,
+    each expecting its fixture's own label. The empty-corpus mutation **survived** the first run:
+    the obvious assertion looked for "no shipped script … names", wording the per-entry finding also
+    carries, so the fixture passed with the branch deleted. It now asserts on wording unique to that
+    branch. A coincidental catch is exactly what the `expects` field exists to refuse.
+  - The worked example's shared-shape counts move 12 → 13 and 10 → 11: the new checker uses the same
+    selftest harness and reporter every other script here uses, and it is not exempted from its own
+    measurement. `check_shared_shapes.py` re-derives both, so the number is measured, not restated.
+
+- **FIX — five guards were INERT on `dev`, so 44 mutations were proving nothing** (`Refs #422`).
+  `run_baseline` is what made them visible: it runs each guard's UNMUTATED selftest in the staged
+  tempdir first, and a guard whose staging is incomplete fails there — after which every mutation
+  "passes" by being caught by the breakage instead of by the fixture it names. Found running the
+  sweep on a clean `origin/dev`, not on a change. Every one had the same cause, an incomplete
+  `needs`, and the fix is the same shape #422 already argued for on `build_coverage`:
+  - `check_handoff` (7) — hand-typed **eleven** agent files; `claim-verifier.md` was added later and
+    never appended, so the mutant reconciled a complete tier table against ten agents and reported
+    the eleventh row as stale. Now the `agents` directory.
+  - `validate_evidence` (24) — five profile contracts are cross-checked against the agent markdown
+    that writes them; none of it was staged. Now the `agents` directory.
+  - `project_gates` (3) — its selftest validates every SHIPPED `checks.json`, and no manifest was
+    staged. Now the `plugins` tree, which is also the only declaration that stays true when a fourth
+    plugin ships one.
+  - `crawl_report` (3) — asserts the collector ships beside its judge; the collector was not staged.
+  - `maintainer_doctor` (7) — asserts every `GATES` entry names a script that exists, and 55 of them
+    were absent. Now the three trees the gate list points into.
+  - **The lesson is one line long and this is its second week running:** a hand-typed list of a
+    directory's contents goes quiet the first time the directory grows. `needs` takes directories on
+    purpose; use one.
+
 ### 1.55.0 — 2026-08-01
 
 - **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
@@ -1372,6 +1430,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **Two of rails-flow's five gates were permanent silent skips, for the same reason as qa-flow's**
+  (#423). Found by the reconciliation gate written for the qa-flow half, on its first run —
+  filing them instead of fixing them would have meant registering a gate that fails.
+  - **`human-guide` waited on `docs/guides/` and globbed `docs/guides/*.md`.** No such directory
+    exists anywhere in the toolchain: the artefact is a single file, `docs/GUIDE.md`, written by
+    `/rails-flow:explain` and named as such by `check_guide.py:4`, `doc-updater.md:42` and
+    `explain.md:163`. So `check_guide.py` — the whole of #126 — has never run in a user's repo. Now
+    `{match:docs/GUIDE.md}`, and it passes `--decisions docs/brain/DECISIONS.md` the way
+    `product-brief` already does, so the "cite the decision log, do not restate it" rule is actually
+    exercised rather than silently off.
+  - **`architecture-graph-drift` waited on `docs/architecture.md`.** `architecture_graph.py` writes
+    a *directory* — `docs/architecture/{graph.json,index.html,graph.md}` (`--out` default
+    `docs/architecture`), and its own drift message names `docs/architecture/graph.json`. Now
+    `applies_when: ["app", "docs/architecture/graph.json"]`, which is the artefact `--check`
+    compares.
 
 ### 1.18.0 — 2026-08-01
 
@@ -4394,6 +4470,46 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **Gates in `checks.json` pointed at paths nothing writes, so the validators #114–#120 shipped
+  never ran in a user's repo** (#423). `project_gates.py`'s `applicability()` answers an absent
+  `applies_when` path — and `expand()` an empty `{match:}` glob — with a *reason string*, never a
+  failure. So a gate aimed at a directory nothing produces is **indistinguishable from a gate that
+  correctly found nothing to do**, permanently. That is `gate-that-cannot-fail`, sitting in the
+  manifest that registers the gates.
+  - **`route-coverage` could neither fire nor pass, and both halves were real.** It waited on
+    `qa/routes.json` while `route_coverage.py:377,381` default to `qa/reports/routes.json` and
+    `commands/verify.md:47` writes there — nothing in the plugin produces the file it waited on.
+    Fixing only the path would have turned a silent skip into an **unconditional red build**: the
+    command passed no `--evidence`, so `visited_paths([])` returns `{}`, every route is a gap and
+    `--fail-on-untested` returns 1 regardless of how much QA a project has done. Measured on a
+    one-route fixture with one validated functional CSV — without `--evidence`: `0/1 (0%)`, exit 1;
+    with `--evidence qa/manual-tests --evidence qa/reports`: `1/1 (100%)`, exit 0. Both halves moved
+    together, and `--fail-on-untested` is kept: it is what makes this a gate rather than a print,
+    and with the evidence dirs supplied its verdict is now about the repo instead of about the flag.
+  - **`qa-evidence-manifest` could never fire.** It globbed `qa/manual-tests/manifest.json`;
+    `evidence_manifest.py:147` derives the manifest beside its own append-only log, at
+    `qa/reports/<run>/manifest.json`. Now `{match:qa/reports/*/manifest.json}`, `applies_when`
+    `qa/reports`. #120's validator is finally run by the gate named for it.
+  - **`qa-evidence` was NOT broken — the report was wrong about that one, and about the numbers.**
+    The functional summary and runtime CSVs genuinely land in `qa/manual-tests/`, so the glob fires.
+    What it has is a **coverage gap**, not a phantom path: `validate_evidence.py` carries **eight**
+    profiles and that glob reaches **two**. The other six — a11y, keyboard, forms, emulation, perf,
+    findings — are written to `qa/reports/`. (The report said seven profiles and five missed.) A new
+    `qa-evidence-reports` check globs `{match:qa/reports/*.csv}` so the #114 sampling denominator,
+    the #115 "no verdict on a state nobody triggered" rule and the #118 dedupe guarantee are
+    enforced by the gate rather than when an agent remembers its own bash block.
+  - **Two directories are kept, deliberately, against the issue's suggestion to consolidate.** They
+    mean different things — `qa/manual-tests/` is the browser workspace, `qa/reports/` is where
+    structured report artefacts land — and `route_coverage.py:7` has documented reading both since
+    it shipped. Consolidating would rewrite five agents' evidence contracts and break every existing
+    QA workspace to fix a manifest. The manifest is aligned to the writers instead, which is what
+    the reconciliation gate below can then hold true.
+  - **The prose that misled the manifest is fixed too**, because that class travels in groups:
+    `link_audit.py:13` and `commands/crawl.md:3,39,75` all named `qa/routes.json`, a file
+    `route_coverage.py enumerate` has never written.
 
 ### 1.21.0 — 2026-08-01
 

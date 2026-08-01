@@ -64,8 +64,8 @@ and half of what follows turns on that boundary.
 |---|---|---|
 | `class Unusable(RuntimeError)` | 5 | one plugin |
 | the `json.loads` -> `Unusable` prologue | 5 | one plugin |
-| the `check(label, ok, detail)` selftest harness | 12 | three plugins + non-shipped tooling |
-| the `SELFTEST FAILED --` reporter | 10 | two plugins + non-shipped tooling |
+| the `check(label, ok, detail)` selftest harness | 13 | three plugins + non-shipped tooling |
+| the `SELFTEST FAILED --` reporter | 11 | two plugins + non-shipped tooling |
 | WCAG relative luminance | 3 | two plugins + non-shipped tooling |
 
 <!-- shared-shapes:end -->
