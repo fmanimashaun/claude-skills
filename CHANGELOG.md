@@ -1134,6 +1134,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.14.2 — 2026-08-01
+
+- **FIX — a bare doc pointer is invisible to the lint.** `setup-flow` cited the rails-8 skill's
+  `references/style.md`. Same shape, same fix, same reason.
+
 ### 1.14.1 — 2026-08-01
 
 - **One tier checker now serves every plugin** (#299). `check_handoff.py`'s table markers were
@@ -3160,6 +3165,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.15.1 — 2026-08-01
+
+- **FIX — a bare doc pointer is invisible to the lint.** `a11y-auditor` cited `fidara-design`'s
+  `references/motion.md`; readable, but not in the form `lint_self_consistency.py` validates. Now a
+  full path, so a rename of the target fails a gate instead of rotting silently.
+
 ### 1.15.0 — 2026-08-01
 
 - **Every plugin agent's model pin is now a decision with a named proof** (#299). #127 found that
@@ -3840,7 +3851,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.9.1 — 2026-08-01
 
 - **FIX — two pointers added in v1.9.0 named a directory that does not exist.** `design-auditor`'s
   new Marketing-copy and Visual-assets checklist rows pointed at `references/marketing-copy.md` and
@@ -4556,6 +4567,27 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.47.1)
+
+> ### The same commit got it right three times and wrong twice
+>
+> v1.47.0 wired three references into `/design-flow:component` **as full paths, specifically so the
+> doc-pointer lint would validate them** — and added two more to `design-auditor` that were not, so
+> the lint could not see them. Those two named `plugins/design-flow/references/`, a directory that
+> does not exist. An agent following either found nothing.
+>
+> A rule only protects what is written in the form it recognises, so a half-applied convention reads
+> as covered while leaving a real broken pointer behind. Found by re-reading the shipped tag when
+> asked whether the wiring was actually in place — not by any gate.
+
+- **FIX — two broken pointers in `design-auditor`**, both introduced one release ago. Now full paths.
+- Grepping the pattern found two more bare pointers, in `a11y-auditor` and `setup-flow`. **Not
+  broken** — each names its skill, so a reader resolves them — but invisible to the lint for the
+  same reason. Converted. **65 → 70** pointers validated.
+- `skill-curator`'s bare `references/` is deliberately untouched: it names a *directory convention*,
+  not a file, so there is nothing to resolve. The distinction is the reason this is a fix and not a
+  blanket rewrite.
 
 ### 2026-08-01 (release v1.47.0)
 
