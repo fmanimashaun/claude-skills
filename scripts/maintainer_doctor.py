@@ -165,6 +165,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     ("qa-flow interaction sweep", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--selftest")),
     ("qa-flow visual baselines", ("python3", "plugins/qa-flow/scripts/visual_baseline.py", "--selftest")),
+    ("qa-flow link audit", ("python3", "plugins/qa-flow/scripts/link_audit.py", "--selftest")),
     ("design-flow setup cross-check", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--quiet")),
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
