@@ -124,6 +124,15 @@ Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Interactive,Tab
   the three **individually**: Tab cycles within the layer, `Escape` closes it, focus returns to
   the trigger. None of the three may exceed `Overlays`. Focus-restore failure is the common,
   high-value one; report it separately rather than folding it into a generic "modal" finding.
+  **`Overlays` counts only the patterns APG mandates this for** — a modal dialog, a `role=menu`
+  popup, a combobox popup. An ordinary **disclosure** (an FAQ accordion, a show/hide toggle) and a
+  **standalone listbox** are *not* overlays for this column: APG's
+  [Disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) has no `Escape` row in
+  its Keyboard Interaction table at all, and its
+  [Listbox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/) never mentions `Escape`.
+  Counting them inflates the denominator and files `S1`s against behaviour no spec requires, which
+  is how a whole column stops being read. `interaction_report.py` scopes its
+  `focus-restore-missing` rule the same way — one line, both places.
 - `Skip Link` — `Present`, `Absent`, or `N/A` (is a skip-to-content affordance the first stop?).
 - `Severity` — `S1` / `S2` / `none`, and it is **recomputed** from the counters, so it cannot be
   talked down. Unreachable, missing indicator, or any overlay failure → **S1**. Positive

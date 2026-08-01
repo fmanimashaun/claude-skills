@@ -5,7 +5,7 @@ people, and it carries its own maintenance tooling for you.
 
 - **Distributed (what users install):** the app-builder plugins listed in
   `.claude-plugin/marketplace.json` — `rails-stack` (which bundles the rails-8, hotwire,
-  fidara-design and code-review skills), `rails-flow`, `qa-flow`, `pipeline`, `design-flow`
+  fidara-design, code-review and quality-pass skills), `rails-flow`, `qa-flow`, `pipeline`, `design-flow`
   — plus the `dist/*.skill` packages for claude.ai upload. Keep this list in step with the
   manifest: it omitted `design-flow` for as long as that plugin existed (#203).
   `lint_self_consistency.py`'s `undocumented-plugin` rule catches a plugin named **nowhere**
@@ -382,6 +382,27 @@ The judgement-free half is that linter. **The rest is the `code-review` skill**
 belong where reviewers already look, and it is **shipped doctrine** — the same rules a
 user's `pr-reviewer` applies, so we are held to what we sell. Read it against your own diff
 before asking anyone else to.
+
+### The quality half is a SECOND pass, and it is advisory on purpose
+
+`skills/quality-pass/SKILL.md` (#360) covers what `code-review` deliberately does not: **reuse,
+simplification, efficiency, altitude**. It is shipped doctrine like the rest, and two properties
+are load-bearing rather than stylistic.
+
+- **It is scoped away from bugs, in both directions.** A reviewer hunting correctness and quality
+  in one read does neither well, which is why this is a second file and not five more classes in
+  `code-review`. Each skill says where the other one starts.
+- **It never blocks a merge.** Quality is judgement; a gate on taste gets switched off, and then
+  nothing checks quality at all. That is why the gate this change added is **not** a duplication
+  gate: `scripts/check_shared_shapes.py` refuses only a **number in the worked example
+  disagreeing with the repo** — `claims-vs-enforcement` on our own prose, the same shape as
+  `check_handoff.py` reconciling a tier table against the agents it describes. Do not "strengthen"
+  it into refusing copies; that would contradict the doctrine it guards.
+
+The worked example (`skills/quality-pass/references/worked-example.md`) records the pass's first
+real run and the decision it produced — **not to extract**, with the measurement behind it. Read it
+before proposing a de-duplication here: the textual overlap across those four files was 29% and the
+extractable mechanism about 6%, and the gap between those two numbers is the whole lesson.
 
 Two of its classes exist because we shipped them: a `doctrine-contradiction` told users'
 merge gate to demand ids-only job arguments while `jobs-and-realtime.md:28` says pass

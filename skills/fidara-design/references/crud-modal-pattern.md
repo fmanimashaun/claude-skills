@@ -7,7 +7,9 @@ context. This is the pattern the reference apps use throughout (a persistent
 `<turbo-frame id="modal">`, links carrying `data-turbo-frame="modal"`, a
 `_delete_confirmation_modal`). **Modal and Card are therefore the backbone components** — the
 list is Cards (or a table of `dom_id`-addressable rows), and every mutation happens through a
-Modal. Treat full-page CRUD forms as a defect in a Fidara UI.
+Modal. Treat full-page CRUD forms as a defect in a Fidara UI — with **one** scoped exception, named
+and reasoned at the end of this file. Silence there would leave two shipped rules contradicting each
+other, because the checkout anatomy is a full-page form.
 
 Modal component + `modal_controller` live in
 [component-implementations.md](component-implementations.md); Card in
@@ -150,3 +152,33 @@ restored to the trigger.
   dismissable-layer stack handles nested popovers/dropdowns inside the modal.
 - a11y is inherited from the Modal component (`role="dialog"`, `aria-modal`, labelled title,
   trap + Esc + restore) — don't re-implement it per screen.
+
+## The one exception: the purchase flow is full-page
+
+**The checkout / purchase flow is a full-page, multi-step form, not a modal.** It is the only
+exception in the kit, and it exists for reasons that are properties of the Modal component rather
+than preferences:
+
+- **A modal's dismiss affordances are wrong over a financial commitment.** Esc, a backdrop click and
+  a close button are three ways to lose a part-entered order by accident. The Modal gives you all
+  three and you cannot remove them without breaking the pattern for everything else.
+- **The page behind is the thing being abandoned.** Keeping the shop visible and dimmed behind a
+  purchase is an invitation to click back into it. Checkout strips the shell to the brand mark for
+  the same reason.
+- **The focus trap fights the payment provider.** Card fields are provider-owned iframes
+  (`components.md` → Payment / card entry); a trap that owns focus inside the dialog and an iframe
+  that owns focus inside itself are two managers of one thing.
+- **Steps need addressable state.** A multi-step flow wants a URL per step so a refresh, a back
+  button, or a return from a provider redirect lands somewhere real. The single shared `id="modal"`
+  frame has one address.
+
+**This is our architecture decision, recorded on
+[#91](https://github.com/fmanimashaun/claude-skills/issues/91) — not an upstream rule.** No spec says
+checkout may not be a dialog.
+
+**It does not generalise.** A flow qualifies only if all four above hold; "it is long" or "it has
+steps" is not enough — a long settings form is still a modal, and a multi-step import wizard inside
+the app is still a modal. Edits *within* a purchase — change an address, remove a line — go back to
+the modal pattern, because they are ordinary CRUD on a record the user is already looking at. The
+anatomy is in
+[page-anatomies.md](page-anatomies.md#checkout--the-purchase-flow).
