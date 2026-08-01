@@ -42,11 +42,11 @@ pass.
 The first thing this pass gets wrong is confusing *textual* overlap with *extractable*
 duplication. They differ by a lot, and always in the same direction.
 
-Applied to four files in this repo's own toolchain, **29% of the lines matched at least
-one other file** — and only about **6%** was mechanism a shared module could hold. The
-rest was the language's own boilerplate: imports, decorators, `if __name__ ==
-"__main__":`. A tool that reports the 29% will get you to extract the 6% and call the job
-done.
+Applied to four files in the toolchain of the repository that ships this skill, **29% of
+the lines matched at least one other file** — and only about **6%** was mechanism a shared
+module could hold. The rest was scaffolding the language repeats in every file: imports,
+decorators, the module entry point. A tool reporting the 29% will have you extract the 6%
+and call the job done.
 
 So before proposing an extraction, say **how many lines it removes** and **what it adds**
 (an import, a dependency, a file). If you cannot say the first number, you have not
