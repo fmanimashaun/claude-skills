@@ -254,6 +254,20 @@ are not optional style — they are correctness. Open-redirect protection:
 `redirect_to params[:return_to]` raises unless
 `allow_other_host: true` is explicit — keep it that way.
 
+Two 8.1 framework defaults change what these lines do; both are in
+`auth-security.md` §4 with the reasoning:
+
+- **A path-relative `redirect_to` raises.** `redirect_to "orders/new"` — a `String`
+  starting with neither `/`, `?`, a scheme, nor `//` — is a path-relative redirect;
+  Rails prepends protocol + host with no separator, so it is an injection surface
+  (`redirect_to "@attacker.com"` → `http://yourdomain.com@attacker.com`).
+  `load_defaults 8.1` sets `action_on_path_relative_redirect = :raise`
+  (`ActionController::Redirecting::PathRelativeRedirectError`); the library default is
+  `:log`. Write `redirect_to new_order_path` or at minimum a leading slash.
+- **`render json:` no longer HTML-escapes** (`escape_json_responses = false`). Fine for
+  an `application/json` consumer; never inline that payload into HTML without
+  `json_escape`.
+
 ## 7. Error handling
 
 ```ruby
