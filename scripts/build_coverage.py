@@ -721,11 +721,11 @@ BUILD: dict[str, str] = {
     "Category filters": "the documented `Ui::Disclosure`, one per filter group, inside a `stack` — "
         "`<details>`/`<summary>` only where the group never animates",
     "Store navigation": "the documented navbar / sidebar navigation",
-    # needs doctrine — the nearest safe thing to do TODAY
-    # APG has no command-palette pattern (the Patterns index lists 30, none for it), so this is
-    # a composition
-    # of two documented parts rather than a gap. Keep aria-activedescendant: the input must
-    # hold focus for typing to filter, so moving DOM focus into the results breaks it.
+    # The `Command palette` fallback lived here, with a comment arguing it was "a composition of
+    # two documented parts rather than a gap". True, and beside the point: components.md had
+    # carried `## Command palette` since #95, so the row was `documented` and this fallback was
+    # the stale-BUILD text the guard above exists to refuse — invisible, because that guard only
+    # inspects rows already marked `documented` (#89).
 }
 
 BUILD_DEFAULTS: dict[tuple[str, str], str] = {
