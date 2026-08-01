@@ -7,6 +7,57 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`scripts/check_page_pacing.py` — the pacing doctrine's numbers are measured, not asserted**
+  (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92)). *How a page is paced*
+  states a count taken from `coverage.md`, a band range, and a worked sequence whose entire point is
+  that consecutive bands differ. Each is a claim about the repo, and a claim in prose rots silently
+  — the `claims-vs-enforcement` class. Six rules, every one a **join** rather than a taste:
+  `identical-row-count` (the stated 14 re-measured against `coverage.md`), `band-count` (the table
+  against the range printed above it), `unknown-composition` (a band naming no `coverage.md` row),
+  `unknown-tone` (a tone naming no role in `foundations-tokens.md`'s `@theme inline`),
+  `tone-repeat` and `shape-repeat`. `--selftest`: 21 checks, weighted toward **silence** — a
+  checker that fires on our own shipped sequence is one somebody deletes. Registered as two gates
+  (`page pacing`, `page pacing selftest`) and behind **10 declared mutations**, one of which
+  inverts the tone rule so the silence direction is guarded too.
+  **This is deliberately not a design gate.** Nothing in it judges whether a band sequence is any
+  good; it refuses only a number or a name in shipped doctrine disagreeing with the repo — the same
+  shape as `check_shared_shapes.py` and `check_handoff.py`. `unknown-tone` resolves the vocabulary
+  through the token file rather than a hardcoded `{card, background}`, so the section's *"no new
+  token"* promise is enforced in the file that makes it instead of being another prose guarantee.
+- **Five more mutation guards were INERT — 44 mutations that proved nothing — plus the rule that
+  should have said so.** [#422](https://github.com/fmanimashaun/claude-skills/issues/422) fixed one
+  instance of this a day earlier; these are the rest, found by running the sweep for the work above
+  and fixed here rather than filed, because they are one mechanism and between them they made this
+  branch's own verification unreadable. They surfaced **one at a time**: each repair unmasked the
+  next, since the sweep reports the first failing guard. In every case the **unmutated** selftest
+  already exited 1 in the staged tempdir, so each mutation read as "caught" by a missing file
+  rather than by the fixture named against it. The checker's own INERT control is what says so —
+  it is the reason these were found rather than trusted, and it is worth noticing that the control
+  had been reporting all five since the day it was written.
+  - `check_handoff` (7): `claim-verifier` was added to the tier table and to
+    `plugins/rails-flow/agents/` and never to the guard's `needs`.
+  - `crawl_report` (3): its *"ships beside its judge"* fixture reads `crawl_collector.js`, which
+    three sibling guards already declare and this one did not.
+  - `project_gates` (3): its last checks assert every shipped `checks.json` names a real script.
+  - `maintainer_doctor` (7): its selftest asserts every gate command names a file that exists, and
+    in the staged mutant reported **all but one of them** missing — the one being the subject
+    itself. The guard on the gate sweep was the one proving nothing.
+  - `validate_evidence` (24, the largest): its profile-header checks glob `plugins/qa-flow/agents/`
+    to prove no CSV contract is dead.
+  - **`mutation_check_selftest`'s completeness rule contradicted the stager it audits.** #422 taught
+    `stage()` to `copytree` a directory and left the rule on `is_file()`, so the very `needs` that
+    fixed an inert guard failed the rule asserting its paths are real — a half-taught invariant.
+    `needs` is now checked with `exists()`; `subject`/`selftest`/`deps` stay `is_file()`, because
+    those are modules and a directory there is a different defect.
+
+  Four of the five are declared as **directories**, following the reasoning `build_coverage`'s guard
+  already records: a hand-listed set of files goes quiet the day a fifty-eighth gate, a sixteenth
+  check or a new agent is added, which is the coverage-gap class inside the harness built to catch
+  it. Result: **324 mutations across 29 guards, all caught**, where 44 of them previously could not
+  fail.
+
 ### 1.55.0 — 2026-08-01
 
 - **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
@@ -2322,6 +2373,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **fidara-design: `page-anatomies.md` gains *How a page is paced*** (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92),
+  the Phase-5 *template synthesis* issue — its shippable half only; see Repository hygiene for the
+  gate). The defect is **measurable in our own generated data**: **14** of the 16 marketing-section
+  rows in `references/coverage.md` carry a *byte-identical* `Build from` string (the two exceptions
+  are *Marketing header* and *Footer*). Every row is correct alone; followed literally they compose
+  fourteen identical centred stacks separated by equal whitespace — a page right in every part and
+  flat as a whole. The new section ships the missing layer: a **6–8 band** default sequence with
+  three axis columns (Tone · Columns · Width), and the rules that keep consecutive bands from
+  reading the same — tone alternates at every boundary, consecutive bands never share both Columns
+  and Width, edges come from tone rather than a `border-b`, a `card`-tone band carries no
+  `Ui::Card`, one primary *action* at most once per band, decoration in at most two non-adjacent
+  bands. It **composes only from rows that already exist** and introduces no new token, `@utility`,
+  `brand.json` field, archetype or framework syntax.
+  **Change type: design/architecture** — there is no specification for how many bands a marketing
+  page has or in what order, so `doctrine-verifier` would return INCONCLUSIVE for want of a source;
+  authority is the maintainer decision recorded on
+  [#92](https://github.com/fmanimashaun/claude-skills/issues/92#issuecomment-5152577804). Every
+  claim that *does* have a source is cited to the file carrying it (`foundations-tokens.md`
+  → *Elevation idiom*, `visual-assets.md` §8, `motion.md` §14, the *Settings* nested-card rule), and
+  the one number asserted about ourselves is **measured, not asserted** — see the gate below.
+- **The proposal's "exactly one axis moves per boundary" was weakened deliberately, and it is
+  recorded in the section.** With tone alternating and card grids barred from `card`-tone bands it
+  has no solution at seven bands, and a rule the shipped worked example cannot satisfy is the
+  `gate-that-cannot-fail` class in prose form. The shipped rule — *never share **both** Columns and
+  Width* — is satisfiable, is what the 14 identical rows actually break, and is mechanical.
+- **`Landing` now says it is the spine of that sequence, not a second answer.** Its four sections
+  are bands 1, 2, 5 and 7, so the two are one doctrine rather than two that drift.
 
 ### 1.30.0 — 2026-08-01
 

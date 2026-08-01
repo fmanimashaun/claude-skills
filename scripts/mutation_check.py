@@ -423,6 +423,11 @@ GUARDS: tuple[Guard, ...] = (
         name="validate_evidence",
         subject="plugins/qa-flow/scripts/validate_evidence.py",
         selftest="plugins/qa-flow/scripts/validate_evidence_selftest.py",
+        # Its last checks cross-check every CSV profile header against the agent that must write
+        # it, and glob the agents directory to prove no profile is a dead contract. Undeclared,
+        # they failed in the staged mutant and made all 24 mutations vacuous. A directory, because
+        # the glob is the point: a new agent must be seen without editing this line.
+        needs=("plugins/qa-flow/agents",),
         mutations=(
             Mutation(
                 "a Pass on a non-2xx/3xx page is accepted (the #106 defect)",
@@ -1211,7 +1216,15 @@ GUARDS: tuple[Guard, ...] = (
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
         selftest="scripts/maintainer_doctor_selftest.py",
-        needs=(".gitignore",),
+        # `.gitignore` for the corpora-pattern fixtures, and every tree a GATE points into: the
+        # selftest asserts each of the 57 gate commands names a file that exists, and FAILED with
+        # 55 "missing" in the staged mutant -- so this guard, the one guarding the gate sweep
+        # itself, was INERT. Directories rather than 57 paths, for the reason `build_coverage`
+        # records: a list rots the day a gate is added, and adding a gate is the single most common
+        # change to this file.
+        needs=(".gitignore", "evals", "scripts", "plugins/rails-flow/scripts",
+               "plugins/qa-flow/scripts", "plugins/design-flow/scripts",
+               "plugins/pipeline/scripts"),
         mutations=(
             Mutation(
                 "an unignored corpora path stops being reported",
@@ -1319,8 +1332,17 @@ GUARDS: tuple[Guard, ...] = (
         name="project_gates",
         subject="plugins/rails-flow/scripts/project_gates.py",
         selftest="plugins/rails-flow/scripts/project_gates.py",
+        # The manifests, and the scripts they name: the selftest's last checks assert every shipped
+        # `checks.json` points at a real script, and FAIL rather than skip when one is absent --
+        # which made this guard INERT with the manifests alone. Directories rather than a list of
+        # the fifteen scripts, for the reason `build_coverage` records: a list goes quiet the day a
+        # sixteenth check is added, which is the coverage-gap class inside the harness built to
+        # catch it. Safe against clobbering the mutant: `stage()` copies `needs` and
+        # `apply_mutation` writes the mutated subject afterwards.
         needs=("plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
-               "plugins/design-flow/checks.json"),
+               "plugins/design-flow/checks.json",
+               "plugins/rails-flow/scripts", "plugins/qa-flow/scripts",
+               "plugins/design-flow/scripts"),
         mutations=(
             Mutation(
                 "a not-applicable check is counted as a pass",
@@ -1348,6 +1370,12 @@ GUARDS: tuple[Guard, ...] = (
         name="crawl_report",
         subject="plugins/qa-flow/scripts/crawl_report.py",
         selftest="plugins/qa-flow/scripts/crawl_report.py",
+        # Its `ships beside its judge` fixture asserts the collector is next to the module, and it
+        # FAILS rather than skips when absent -- correctly, since a collector that is not shipped
+        # is the defect. Undeclared here, that made the whole guard INERT. Three sibling guards
+        # (`link_audit`, `interaction_report`, `visual_baseline`) already declare it; this one was
+        # simply missed.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "the 200-but-error rule stops firing",
@@ -1596,6 +1624,84 @@ GUARDS: tuple[Guard, ...] = (
                 'ROOTS = ("plugins", "scripts")',
                 "ROOTS = ()",
                 "the source walk finds the corpus files",
+            ),
+        ),
+    ),
+    # #92 (Phase 5). Same argument as the guard above, one skill along: every mutation here makes a
+    # STALE CLAIM read as a fresh one. Two are structural rather than per-rule — the corpus walk
+    # going vacuous, and the measurement widening from "marketing rows" to "all of them" — because a
+    # gate whose INPUT quietly changed reports clean exactly like a gate over a correct repo. The
+    # last one breaks the checker the other way, so the silence direction has a mutation too: a
+    # pacing gate that fires on our own shipped sequence is a gate someone deletes.
+    Guard(
+        name="check_page_pacing",
+        subject="scripts/check_page_pacing.py",
+        selftest="scripts/check_page_pacing.py",   # --selftest lives in the module itself
+        mutations=(
+            Mutation(
+                "the measured row count stops being compared, so a stale 14 passes",
+                "    if measured != pacing.identical_rows:",
+                "    if False:",
+                "a wrong identical-row count is reported",
+            ),
+            Mutation(
+                "the band range stops bounding the table that prints it",
+                "    if not pacing.band_min <= len(pacing.bands) <= pacing.band_max:",
+                "    if False:",
+                "a band count outside the stated range is reported",
+            ),
+            Mutation(
+                "a band may compose from a row that does not exist",
+                "        if band.composed not in names:",
+                "        if False:",
+                "a band naming no coverage row is reported",
+            ),
+            Mutation(
+                "the tone vocabulary stops being joined to the token file",
+                "        if band.tone not in roles:",
+                "        if False:",
+                "a tone naming no role is reported",
+            ),
+            Mutation(
+                "tone may stop alternating, so bands lose their edges",
+                "        if prev.tone == nxt.tone:",
+                "        if False:",
+                "two consecutive bands on one tone are reported",
+            ),
+            Mutation(
+                "consecutive bands may share a shape — the fourteen-stacks defect itself",
+                "        if prev.shape == nxt.shape:",
+                "        if False:",
+                "two consecutive bands of the same shape are reported",
+            ),
+            # The corpus guard. With headers and separators counted as components, the join is over
+            # rows that are not rows, and a name could match a table heading.
+            Mutation(
+                "the coverage walk stops skipping headers, so the join runs over non-rows",
+                '        if cells[1] in {"Kind", "---"}:',
+                "        if False:",
+                "the coverage walk finds both tables' component rows",
+            ),
+            # The measurement guard. Counting every marketing row instead of the largest identical
+            # group answers a different question, and it drifts in the direction that looks right.
+            Mutation(
+                "the identical-string measurement widens to every marketing row",
+                "    return max(counts.values())",
+                "    return len(marketing)",
+                "the identical-Build-from count is measured over marketing rows only",
+            ),
+            Mutation(
+                "a marked block with no bands parses instead of raising",
+                "    if not bands:",
+                "    if False:",
+                "a marked block with no band rows parsed instead of raising",
+            ),
+            # The silence direction: inverted, the rule fires on the shipped sequence.
+            Mutation(
+                "the tone rule inverts and demands two consecutive bands share a tone",
+                "        if prev.tone == nxt.tone:",
+                "        if prev.tone != nxt.tone:",
+                "a correct section is silent",
             ),
         ),
     ),
@@ -2205,6 +2311,14 @@ GUARDS: tuple[Guard, ...] = (
         needs=(
             "plugins/rails-flow/reference/model-tiers.md",
             "plugins/rails-flow/commands/handoff.md",
+            # `claim-verifier` was added to the tier table and to `agents/` and NOT to this list,
+            # which made the whole guard INERT — the unmutated selftest failed in the staged
+            # tempdir ("names `claim-verifier`, which no agent definition declares"), so all seven
+            # mutations read as caught by a missing file rather than by the fixture named against
+            # them. Exactly the #422 defect, in the next guard along. A new agent means a new line
+            # here; the checker's own INERT detection is what makes forgetting loud instead of
+            # silent, and it is why this was found rather than trusted.
+            "plugins/rails-flow/agents/claim-verifier.md",
             "plugins/rails-flow/agents/claude-skills-reporter.md",
             "plugins/rails-flow/agents/code-reviewer.md",
             "plugins/rails-flow/agents/design-auditor.md",

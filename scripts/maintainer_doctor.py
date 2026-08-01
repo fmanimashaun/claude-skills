@@ -132,6 +132,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # disagreeing with the repo, exactly as the tier gates below reconcile a table against agents.
     ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
     ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
+    # #92 (Phase 5), and the same shape a third time: `page-anatomies.md` -> How a page is paced
+    # states a count measured from `coverage.md`, a band range, and a worked sequence whose whole
+    # point is that consecutive bands differ. NOT a design gate — nothing here judges a sequence.
+    # It refuses a number or a name in shipped doctrine disagreeing with the repo, and it resolves
+    # the band tones through `foundations-tokens.md` so the section's "no new token" promise is
+    # enforced rather than asserted.
+    ("page pacing", ("python3", "scripts/check_page_pacing.py")),
+    ("page pacing selftest", ("python3", "scripts/check_page_pacing.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),

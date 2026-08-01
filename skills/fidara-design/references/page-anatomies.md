@@ -292,10 +292,119 @@ legitimate as a substitute for a primitive that expresses the same intent.
    for anything data-driven; `min-h-touch` on every control; safe-area padding on fixed
    chrome.
 
+## How a page is paced
+
+Everything above says what one **band** contains. Nothing said what the **sequence** of bands looks
+like — and on a marketing page the sequence *is* the design. This section is that sequence, and it
+composes only from rows that already exist: no new token, no new `@utility`, no new archetype.
+
+<!-- page-pacing:begin -->
+
+**The gap is measurable in our own generated data.** In [coverage.md](coverage.md), **14**
+marketing-section rows carry a byte-identical `Build from` string — Bento grid, Blog / article list,
+CTA, Contact, Content / prose, FAQ, Feature, Hero, Logo cloud, Newsletter, Pricing, Stats, Team and
+Testimonial. Every one of those rows is correct on its own. Followed literally they compose
+**fourteen identical centred stacks separated by equal whitespace**: a page right in every part and
+flat as a whole. `scripts/check_page_pacing.py` re-measures that count against `coverage.md`, so it
+is a measurement rather than an assertion.
+
+**6–8 bands** sit between the marketing header and the footer. Fewer says nothing; more is a page
+nobody reaches the end of. The default sequence:
+
+| # | Band | Composed from | Tone | Columns | Width |
+|---|---|---|---|---|---|
+| 1 | Hero — the claim, the lede, the one primary action, a proof strip | Hero section | card | 1 | prose |
+| 2 | Capabilities — 3–6 verb-led cards | Feature section | background | n | shell |
+| 3 | Deep feature — prose beside a product screenshot | Feature section | card | 2 | shell |
+| 4 | Proof — the customer marks, on one line | Logo cloud | background | 1 | shell |
+| 5 | How it works — three numbered steps, as an `<ol>` | Content / prose section | card | 1 | prose |
+| 6 | Objections — the three questions sales actually hears | FAQ section | background | 2 | shell |
+| 7 | Closing CTA — the same action as the hero | CTA section | card | 1 | prose |
+
+<!-- page-pacing:end -->
+
+**Reading the three axis columns.** Each names something already shipped; none is a new knob.
+
+| Column | Values | What they are |
+|---|---|---|
+| **Tone** | `card` · `background` | the role painted on the full-bleed band — `bg-card` / `bg-background` from `foundations-tokens.md` §2 |
+| **Columns** | `1` · `2` · `n` | `stack` · `Layout::Switcher` · `grid-auto`, from `layout-primitives.md` |
+| **Width** | `prose` · `shell` | the utility capping the band's *content*: `prose-measure` (`--width-prose`) or `shell` (`--width-shell`) |
+
+`Composed from` names a row of `coverage.md` verbatim, and the same check reads that join: a band
+naming something that is not a row fails, which is what keeps this table from quietly growing a
+fifteenth section nobody documented.
+
+### The rules
+
+1. **Tone alternates at every boundary.** A marketing page starts on `card` because the stacked
+   shell already paints its root `bg-card` — so the hero meets the header with no seam — and every
+   other band is `background`.
+2. **Consecutive bands never share both Columns and Width.** This is the rule the 14 identical rows
+   break: `1` + `prose` fourteen times running is the flat page. Changing *both* is fine; changing
+   *neither* is the defect.
+   The tempting stronger form — *"exactly one axis moves per boundary"* — **contradicts rule 1
+   outright**, and the proof is one line: if tone must change at every boundary and only one axis
+   may change at a boundary, then tone is the axis that changes every time, so Columns and Width
+   never change at all. "Exactly one axis" plus alternating tone *is* the flat page, arrived at by
+   a rule that sounds stricter. That is why the shipped rule is a floor and not an equality.
+3. **A band's edge comes from its tone, not from a border.** No `border-b` between marketing bands.
+   The 1px edge is chrome — the stacked shell's own header uses it, and `foundations-tokens.md` →
+   *Elevation idiom* measured that a 1px edge plus a minimal shadow is the whole vocabulary.
+4. **A `card`-tone band carries no `Ui::Card`.** A card on a `card` surface has nothing to sit
+   against, and both flatten. This is *Settings*' "never nest a card in a card", lifted from the
+   section to the page: card grids go on a `background` band, which is why band 2 is where it is.
+5. **One primary action for the page, at most once per band.** This reconciles two things already
+   written rather than adding a third: `coverage.md`'s Button row says `primary` **once per view**
+   (one primary *action*, not one button), and *Landing* below says that same CTA appears in the
+   hero, once mid-page, and in the closing band. Two `primary` fills in one band is the violation.
+   Every other action on the page is `secondary` or the Button `link` variant.
+6. **Decoration in at most two bands, and never two adjacent.** `visual-assets.md` §8 already owns
+   the hard part — decoration never goes behind running text, because contrast is measured against
+   what is actually behind the glyphs. The *count* is the new half, and it is the page-level twin of
+   `motion.md` §14: each band is added by someone who only saw their own band.
+7. **Motion is not restated here.** `motion.md` §14 caps a page at one entrance pattern and three
+   animated regions, never two at once. Pacing adds nothing to it.
+
+```erb
+<%# A band is full-bleed, so its tone reaches the viewport edge; the width utility caps the CONTENT
+    inside it, never the band. Band 1 — hero: `card` tone, one column, prose width. %>
+<section class="bg-card section-y">
+  <div class="stack text-center prose-measure mx-auto">
+    <h1 class="text-step-5"><%= t(".claim") %></h1>
+    <p class="text-step-1 text-muted-foreground"><%= t(".lede") %></p>
+    <div class="cluster justify-center"><%# the one primary action %></div>
+  </div>
+</section>
+
+<%# Band 2 — capabilities. Tone flips, and Columns and Width move with it, so the boundary reads
+    without a rule drawn between them. Cards sit on a `background` band, never on a `card` one. %>
+<section class="bg-background section-y" aria-labelledby="capabilities-heading">
+  <div class="shell stack">
+    <h2 id="capabilities-heading" class="text-step-2"><%= t(".capabilities") %></h2>
+    <div class="grid-auto" style="--min: 18rem"><%# 3–6 Ui::Card, verb-led headings %></div>
+  </div>
+</section>
+```
+
+**Every band still needs an `h2`**, visible or `sr-only` — the heading-outline rule under *Landing*
+applies per band, and a page whose bands are distinguished only by colour has no outline at all.
+
+**None of this has an upstream.** There is no specification for how many bands a marketing page has
+or in what order, so this is **ours**, recorded here so it is a decision rather than each author's
+taste — the same footing as `motion.md` §14's region cap. Where a claim above *does* have a source it
+is cited to the file that carries it, and the only number asserted about ourselves (the 14) is
+measured. The band **sequence** is a default, not a law: swap band 4 for *Stats section* or *Testimonial
+section*, or band 6 for a *Pricing section / table* teaser. The rules above do not move.
+
 ## Landing
 
 The one screen that must survive a stranger's first eight seconds. It answers *"why should I care,
 and what do I do next?"* — nothing else.
+
+**This is the spine of the paced sequence above, not a second answer.** Its four sections are bands
+1, 2, 5 and 7 of *How a page is paced*; the bands between them, the tone alternation and the axis
+rules are there, and a real landing page needs all of it.
 
 **Shell: stacked.** No sidebar; there is no app to navigate yet. Marketing pages are the only place
 the stacked shell is the *default* rather than a choice.

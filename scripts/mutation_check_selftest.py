@@ -186,10 +186,19 @@ def run() -> int:
                 )
 
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
+    # `subject`/`selftest`/`deps` are modules, so they must be FILES. `needs` may be a whole
+    # directory -- `stage()` copytree's one -- so it is checked with `exists()`. #422 taught the
+    # stager about directories and left this rule on `is_file()`, so the very `needs` that fixed an
+    # inert guard failed the rule asserting its paths are real. A half-taught invariant.
+    def _absent(rel: str, files_only: bool) -> bool:
+        target = original_repo / rel
+        return not (target.is_file() if files_only else target.exists())
+
     for real_guard in mc.GUARDS:
         _tick()
-        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps,
-                               *real_guard.needs) if not (original_repo / p).is_file()]
+        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
+                   if _absent(p, files_only=True)]
+        missing += [p for p in real_guard.needs if _absent(p, files_only=False)]
         if missing:
             FAILURES.append(f"{real_guard.name}: declares files that do not exist: {missing}")
         if not real_guard.mutations:
