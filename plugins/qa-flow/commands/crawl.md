@@ -19,11 +19,19 @@ If a server is already listening on that port, reuse it rather than starting a s
 ## 2. Collect
 
 ```bash
+npm i -D playwright && npx playwright install chromium   # once, in the project
+
 node "${CLAUDE_PLUGIN_ROOT}/scripts/crawl_collector.js" \
   --base "http://localhost:${PORT:-3000}" \
   --routes / /dashboard /settings \
   --out qa/manual-tests
 ```
+
+**Run it from the repo root.** Playwright is resolved from your **project**, not from the plugin —
+the script lives in the plugin cache, and ESM resolution would otherwise walk `node_modules` from
+*there* and fail with `ERR_MODULE_NOT_FOUND` even with Playwright plainly installed (#356). `NODE_PATH`
+does not help; it has no effect on ESM. If it cannot find Playwright it exits **2** and names the
+directory it looked from.
 
 Writes `qa/manual-tests/crawl.json` and `qa/manual-tests/interactions.json`.
 

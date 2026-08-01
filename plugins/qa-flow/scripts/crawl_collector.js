@@ -17,9 +17,33 @@
 // For theme parity, run design-flow's collector twice (light, then with the `dark` class) and pass
 // both snapshots to theme_parity.py; this file does not re-implement that either.
 
-import { chromium } from 'playwright';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+
+// PLAYWRIGHT IS RESOLVED FROM THE PROJECT, NOT FROM THIS FILE (#356).
+//
+// A bare `import { chromium } from 'playwright'` fails when this script runs from its installed
+// location: ESM resolution walks `node_modules` upward from the SCRIPT, which lives in the plugin
+// cache, and Playwright is installed in the user's project. `NODE_PATH` does not help — it has no
+// effect on ESM resolution at all. The documented invocation therefore failed outright with
+// ERR_MODULE_NOT_FOUND, and the only workaround was copying this file into the project.
+//
+// `createRequire` anchored at the working directory resolves the way the user expects: from their
+// project. The failure message names both the cwd and the fix, because "cannot find package" with
+// Playwright plainly installed is a bewildering thing to be told.
+const projectRequire = createRequire(`${process.cwd()}/`);
+let chromium;
+try {
+  ({ chromium } = await import(pathToFileURL(projectRequire.resolve('playwright')).href));
+} catch (error) {
+  console.error(
+    `Cannot load Playwright from ${process.cwd()}.\n` +
+    `  This script resolves it from your PROJECT, not from the plugin, so run it from the repo\n` +
+    `  root where Playwright is installed:  npm i -D playwright && npx playwright install chromium\n` +
+    `  Original error: ${error.message}`);
+  process.exit(2);
+}
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -193,6 +217,16 @@ for (const route of routes) {
         .join('|'),
       dialogs: document.querySelectorAll('dialog[open],[role="dialog"]').length,
     }));
+    // #357: did NATIVE CONSTRAINT VALIDATION block this? A submit inside a form with an unfilled
+    // `required` field fires no request — correctly — and without this fact the judge sees only
+    // "clicked, nothing happened" and calls a working button dead. Measured here, judged there.
+    const formInvalidBefore = await page.evaluate((i) => {
+      const sel = 'button, a, [role="button"], [role="tab"], [role="menuitem"], summary, [onclick]';
+      const el = document.querySelectorAll(sel)[i];
+      const form = el && el.closest('form');
+      if (!form || typeof form.checkValidity !== 'function') return null;
+      return !form.checkValidity();
+    }, control.index).catch(() => null);
     const after_console = [];
     const onMsg = (m) => after_console.push({ level: m.type(), text: m.text() });
     let requested = false;
@@ -238,6 +272,7 @@ for (const route of routes) {
       disabled: control.disabled,
       exercised,
       reason,
+      constraintBlocked: formInvalidBefore === true,
       effects: after ? {
         domChanged: after.html !== before.html,
         navigated: after.url !== before.url,

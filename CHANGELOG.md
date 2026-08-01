@@ -3383,6 +3383,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+
+### Unreleased
+
+Both of these came from the first run against a real Rails app, which is the run no fixture here
+could substitute for. Both are defects in what shipped.
+
+- **FIX — `[dead-control]` false-positived on every validated form** (#357). A submit inside a form
+  with an unfilled `required` field fires **no request**: the browser blocked it, and doing nothing
+  is *correct*. The judge saw only "clicked, nothing happened" and called a working button dead —
+  reported from a real sign-in whose full flow was verified by hand.
+  - **This is the exact failure the rule was designed around**, and it still shipped. The docstring
+    says a false positive on a working button is what gets a rule switched off; sign-in, sign-up and
+    every validated form would have triggered it, taking every genuine dead control down with it.
+  - The collector now measures `form.checkValidity()` and the judge treats a blocked submit as an
+    **exclusion**, like `disabled` — browser measures, Python judges, as everywhere else. The
+    near-miss is pinned: a submit in a **valid** form is still judged, or the exclusion would gut
+    the rule instead of narrowing it.
+- **FIX — the documented invocation could not run at all** (#356). `crawl_collector.js` is ESM, so
+  `import 'playwright'` walks `node_modules` from the **script's** location — the plugin cache — not
+  the project. It failed with `ERR_MODULE_NOT_FOUND` with Playwright plainly installed, and
+  `NODE_PATH` has no effect on ESM. The only workaround was copying the file into the project.
+  - Playwright is now resolved via `createRequire` anchored at the working directory, and a failure
+    **names the directory it looked in** and the command to fix it, because "cannot find package"
+    when the package is right there is a bewildering thing to be told.
+  - **Third defect this week of the same shape: the thing tested and the thing shipped were
+    different files.** The judges were exercised against fixtures; the collector was never once run
+    from its installed location.
+
 ### 1.19.0 — 2026-08-01
 
 - **Visual regression baselines** (#112). The audit produced 359 screenshots and had nothing to
