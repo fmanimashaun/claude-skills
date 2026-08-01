@@ -186,13 +186,22 @@ def run() -> int:
                 )
 
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
+    # `subject` and `selftest` are scripts, so they must be FILES. `deps` and `needs` are staged
+    # by copying, and #422 deliberately declared a DIRECTORY there ("a directory, so a new
+    # reference doc is picked up rather than quietly missing") -- which `is_file()` then rejected,
+    # leaving the fix that removed one vacuous guard failing this selftest. Existence is the real
+    # rule for those two, and it still catches the typo this check exists for.
     for real_guard in mc.GUARDS:
         _tick()
-        # `subject`, `selftest` and `deps` are Python modules, so they must be FILES. `needs` is
-        # different: it is "stage this beside the mutant", and a guard whose selftest reads a whole
-        # directory of fixtures must be able to declare the directory. `build_coverage` needs all of
-        # `skills/fidara-design/references` — naming files would silently miss the next one added,
-        # which is the failure mode `needs` exists to prevent.
+        # `subject`, `selftest` and `deps` are Python modules that get IMPORTED, so they must be
+        # files. `needs` is different: it means "stage this beside the mutant", and a guard whose
+        # selftest reads a whole directory of fixtures must be able to declare the directory —
+        # `build_coverage` needs all of `skills/fidara-design/references`, and naming files would
+        # silently miss the next one added, which is the rot that made five guards inert.
+        #
+        # `dev` fixed this concurrently and let `deps` be a directory too. Kept the stricter form:
+        # no guard declares a directory dep, so the two behave identically today, and a dep that
+        # resolves to a directory could never be imported — it is a typo worth catching.
         missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
                    if not (original_repo / p).is_file()]
         missing += [p for p in real_guard.needs if not (original_repo / p).exists()]

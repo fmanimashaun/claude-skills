@@ -1379,7 +1379,8 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
     <%# ONE label per navigation landmark, and the word "navigation" is not in it — a screen %>
     <%# reader already says the role, so aria-label="Main navigation" reads twice.           %>
     <nav aria-label="Main" class="hidden md:block">
-      <ul class="cluster" style="--space: var(--space-3xs)">
+      <%# role="list" is not redundant: Preflight unstyles every list and WebKit then drops the role %>
+      <ul role="list" class="cluster" style="--space: var(--space-3xs)">
         <% items.each do |item| %>
           <li><%= link_to item[:label], item[:path],
                     "aria-current": ("page" if current_page?(item[:path])),
@@ -1406,7 +1407,7 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
   <%# Same label as the desktop nav on purpose — `hidden`/`md:hidden` means only one of the two  %>
   <%# is ever in the accessibility tree, so the page never has two navigation landmarks at once. %>
   <nav id="nav-mobile" aria-label="Main" class="md:hidden border-t border-border" hidden>
-    <ul class="stack shell py-2" style="--space: var(--space-3xs)">…</ul>
+    <ul role="list" class="stack shell py-2" style="--space: var(--space-3xs)">…</ul>
   </nav>
 </header>
 ```
@@ -1416,7 +1417,7 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
 <%# its size. Only the DEEPEST active item carries aria-current — ARIA says to mark one element  %>
 <%# in a set, and says nothing about an ancestor section, so marking both is our call to decline. %>
 <nav aria-label="Main" class="stack" style="--space: var(--space-3xs)">
-  <ul class="stack" style="--space: var(--space-3xs)">
+  <ul role="list" class="stack" style="--space: var(--space-3xs)">
     <% sections.each do |section| %>
       <li>
         <% if section[:children].present? %>
@@ -1431,7 +1432,7 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
             <%# link with no accessible name is an unnamed link, so it becomes sr-only, not gone. %>
             <span class="flex-1 text-left <%= "sr-only" if collapsed? %>"><%= section[:label] %></span>
           </button>
-          <ul id="nav-<%= section[:id] %>" class="stack ps-6" <%= "hidden" unless section[:open] %>>…</ul>
+          <ul role="list" id="nav-<%= section[:id] %>" class="stack ps-6" <%= "hidden" unless section[:open] %>>…</ul>
         <% else %>
           <%= link_to section[:path],
                 "aria-current": ("page" if current_page?(section[:path])),
@@ -1492,7 +1493,7 @@ def crumb_link_class = "min-h-touch inline-flex items-center hover:text-foregrou
 ```erb
 <%# breadcrumbs_component.html.erb — separators are markup + aria-hidden, never ::after %>
 <nav aria-label="Breadcrumb">
-  <ol class="cluster text-step--1 text-muted-foreground" style="--space: var(--space-3xs)">
+  <ol role="list" class="cluster text-step--1 text-muted-foreground" style="--space: var(--space-3xs)">
     <% head.each do |c| %>
       <li class="cluster" style="--space: var(--space-3xs)">
         <%= link_to c[:label], c[:href], class: crumb_link_class %>
@@ -1653,6 +1654,84 @@ end
 </div>
 ```
 
+### Stacked list, grid list and feed — recipes, not components
+
+No components: each is shipped parts in a container, and a fourth ViewComponent would only wrap what
+`MediaObject`, `Card` and the primitives already do. The part worth copying exactly is `role="list"` —
+Preflight sets `list-style: none` on every `ol`/`ul`, and WebKit then drops the list role
+(see [components.md](components.md#list-semantics--preflight-unstyles-every-list-and-safari-then-reads-it-as-not-a-list)).
+
+```erb
+<%# Stacked list — rows own nothing; the container owns the separators %>
+<ul role="list" class="stack divide-y divide-border" style="--space: 0">
+  <% invoices.each do |invoice| %>
+    <li class="relative py-3 hover:bg-accent sm:py-4">
+      <%= render Ui::MediaObjectComponent.new(size: :md) do |m| %>
+        <% m.with_media { render Ui::AvatarComponent.new(src: nil, initials: invoice.initials) } %>
+        <% m.with_body do %>
+          <%# the ONE link: stretched over the row, so the accessible name is the title %>
+          <%= link_to invoice.number, invoice_path(invoice),
+                class: "font-medium after:absolute after:inset-0 " \
+                       "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30" %>
+          <p class="text-step--1 text-muted-foreground"><%= invoice.customer_name %></p>
+        <% end %>
+        <% m.with_trailing { render Ui::BadgeComponent.new(variant: :success) { invoice.state } } %>
+      <% end %>
+    </li>
+  <% end %>
+</ul>
+```
+
+```erb
+<%# Grid list — grid-auto on the <ul> itself. Never role="grid" (no roving tabindex here), and never
+    display:contents on the <li> to flatten cards into the grid: that resets the accessible role. %>
+<ul role="list" class="grid-auto" style="--min: 16rem">
+  <% projects.each do |project| %>
+    <li><%= render Ui::CardComponent.new do |c| %>
+      <% c.with_header { tag.h3(link_to(project.name, project_path(project)), class: "text-step-1") } %>
+      <%= project.summary %>
+    <% end %></li>
+  <% end %>
+</ul>
+```
+
+```erb
+<%# Static timeline — an <ol>, because the order is the meaning. The rail is ONE border on the
+    container; the dot sits over it. This is NOT role="feed" — nothing loads on scroll. %>
+<ol role="list" class="stack border-s border-border ps-6" style="--space: var(--space-s)">
+  <% events.each do |event| %>
+    <li class="relative">
+      <span aria-hidden="true"
+            class="absolute -start-[calc(1.5rem+3px)] top-1.5 size-1.5 rounded-full bg-border"></span>
+      <p class="text-step-0"><%= event.summary %></p>
+      <%# machine value on the attribute, human label as the text — ours, no WCAG rule governs this %>
+      <time datetime="<%= event.created_at.iso8601 %>" class="text-step--1 text-muted-foreground">
+        <%= time_ago_in_words(event.created_at) %> ago
+      </time>
+    </li>
+  <% end %>
+</ol>
+```
+
+```erb
+<%# Infinite-scroll feed — the APG pattern in full, and only when scrolling really loads more.
+    aria-busy goes true for the duration of a multi-step DOM update, not per row. %>
+<div role="feed" aria-labelledby="feed-title" aria-busy="<%= @loading %>"
+     <%# page_up/page_down are UNDERSCORED — Stimulus throws "contains unknown key filter" at %>
+     <%# event time on an unmapped name, so `page-down` fails on the first keystroke, not at boot %>
+     data-controller="feed" data-action="keydown.page_down->feed#next keydown.page_up->feed#previous">
+  <% @posts.each_with_index do |post, i| %>
+    <%# <article> already IS role="article"; APG names the role, the element supplies it %>
+    <article aria-labelledby="post-<%= post.id %>-title"
+             aria-describedby="post-<%= post.id %>-body"
+             aria-posinset="<%= i + 1 %>" aria-setsize="<%= @total || -1 %>" tabindex="-1">
+      <h3 id="post-<%= post.id %>-title"><%= post.title %></h3>
+      <div id="post-<%= post.id %>-body"><%= post.body %></div>
+    </article>
+  <% end %>
+</div>
+```
+
 ### Divider — a recipe, not a component
 
 No component: an `<hr>` is already `role="separator"`.
@@ -1672,7 +1751,7 @@ n elements, and no stray rule after the last row.
 
 **Coverage.** With Button + Card (reference-implementation.md) plus the above — including the
 structure & elements group (Heading, Breadcrumbs, Description list, Button group, Media object,
-and Divider as a recipe) — the full catalog
+and Divider plus the three list shapes as recipes) — the full catalog
 from [components.md](components.md) has worked code. Pagination stays the Pagy-based
 `shared/_pagination` partial; CRUD tables stay the `shared/_crud_*` partials — both refactored
 to role tokens (see components.md). Extend any new component by mirroring these exact shapes:
