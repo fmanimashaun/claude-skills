@@ -1570,7 +1570,7 @@ GUARDS: tuple[Guard, ...] = (
         mutations=(
             Mutation(
                 "the count comparison stops comparing, so a stale number passes",
-                "        if rows[shape.label] != len(hits):",
+                "        if want_files != len(hits):",
                 "        if False:",
                 "a wrong count in the table is DRIFT",
             ),
@@ -1613,6 +1613,40 @@ GUARDS: tuple[Guard, ...] = (
                 'ROOTS = ("plugins", "scripts")',
                 "ROOTS = ()",
                 "the source walk finds the corpus files",
+            ),
+            # #398. `reach` is a second, independent claim per row: how many copies share one
+            # install root, which is the ceiling on what extracting the shape could remove. The
+            # file count can be right while it is wrong, so it needs its own mutation.
+            Mutation(
+                "the reach comparison stops comparing, so a stale ceiling passes",
+                "        if want_reach != got_reach:",
+                "        if False:",
+                "a wrong reach in the table is DRIFT",
+            ),
+            # The grouping, not the comparison. A `unit()` that answers the same thing for every
+            # path makes reach == files everywhere: each row stays internally consistent and the
+            # column silently stops meaning "one install root".
+            Mutation(
+                "every path groups into one install root, so reach collapses into the file count",
+                '    if parts[0] == "plugins" and len(parts) > 1:',
+                "    if False:",
+                "every declared shape is measured at its known count and reach in the corpus",
+            ),
+            Mutation(
+                "a plugin directory the manifest never installs stops being reported",
+                "    return sorted(u for u in seen if u.startswith(\"plugins/\") and u not in roots)",
+                "    return []",
+                "a copy under an undeclared plugin directory is reported",
+            ),
+            # Both directions of the manifest read. Returning an empty set instead of raising
+            # would make every measured plugin undeclared -- a rule that fires on everything is a
+            # rule that gets switched off, which is the same defect as one that never fires.
+            Mutation(
+                "an unparseable manifest yields no roots instead of refusing to guess",
+                "        raise Unreadable(f\"{MANIFEST}: not readable as JSON ({exc}), so no install root is known \"\n"
+                "                         \"and `reach` would be grouping by a boundary nothing confirms\") from exc",
+                "        return set()",
+                "an unparseable manifest returned instead of raising",
             ),
         ),
     ),
