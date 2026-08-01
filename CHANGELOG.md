@@ -3281,7 +3281,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.19.0 — 2026-08-01
 
 - **Visual regression baselines** (#112). The audit produced 359 screenshots and had nothing to
   compare them to; capturing evidence is not regression testing, and the comparison is the product.
@@ -4807,6 +4807,26 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.51.0)
+
+> ### Visual regression, and the state that is neither pass nor fail
+>
+> A screen with **no baseline** is `new`. As a pass, a brand-new screen is "visually correct" the day
+> it is written when nothing has been reviewed. As a failure, every new screen breaks the build until
+> someone raises the tolerance to zero effect. It blocks nothing and is counted every run.
+
+- **Nothing can promote a baseline.** The judging path has no write call at all, asserted against the
+  module's own source — an agent that can overwrite a baseline can launder a regression into the new
+  truth in one run. Candidates land in `_candidates/`; promoting one is a human's act.
+- **`--seeded` is the caller's assertion, not the tool's.** The collector freezes motion and the
+  clock itself, but it cannot seed the app's fixtures — so it defaults to **false** and the judge
+  **refuses the run**, which is right for a caller who has not said the data is fixed. A flaky visual
+  check is worse than none: it trains people to ignore the one report that needs eyes.
+- Diffs are computed **in the browser**, where a canvas already exists; decoding PNGs in Python would
+  put a third-party image library inside a gate.
+- **One fixture proved nothing and was caught by mutation** — the longest-prefix tolerance test
+  declared the shorter pattern first, so "last match wins" and "longest match wins" agreed.
 
 ### 2026-08-01 (release v1.50.0)
 
