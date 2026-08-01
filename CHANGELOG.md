@@ -7,7 +7,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-
 ### 2026-08-01 — the install block, and a rule that can see it
 
 - **FIX — `design-flow` was missing from the README's install block** (#203, second occurrence).
@@ -2032,7 +2031,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.29.1 — 2026-08-01
 
 - **`Ui::Logo`'s `size:` raised `NoMethodError` on every input except a SIZE key or a numeric
   string** (#352). `@px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)` contradicts itself on one
@@ -3408,8 +3407,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-
-### Unreleased
+### 1.19.1 — 2026-08-01
 
 Both of these came from the first run against a real Rails app, which is the run no fixture here
 could substitute for. Both are defects in what shipped.
@@ -4239,7 +4237,6 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-
 ### 1.10.1 — 2026-08-01
 
 - **`design-auditor` reports stock LLM phrasing as a count** (#131). Marketing copy using
@@ -4971,6 +4968,37 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.52.1)
+
+> ### Everything here came from running the toolchain against a real Rails app
+>
+> Three defects, none of which any of the 41 gates found — because all three are about **behaviour
+> at run time**, and the gates check content. Two of them made a shipped tool report confidently
+> wrong things; the third raised on code we tell users to copy. The first real app run was worth
+> more than the fixture suite it can't replace.
+
+- **`[dead-control]` false-positived on every validated form** (#357, qa-flow). A submit inside a
+  form with an unfilled `required` field fires no request — the browser blocked it, and doing
+  nothing is *correct*. The collector now records `constraintBlocked` via `form.checkValidity()`
+  and the judge excludes it, as it already did for `disabled`. The near-miss is pinned: a submit in
+  a **valid** form is still judged, so the exclusion cannot swallow the finding it was carved from.
+- **The crawl could not resolve a project's own Playwright** (#356, qa-flow). ESM resolves from the
+  *script's* location, not the working directory, and `NODE_PATH` does not apply to ESM — so the
+  collector never saw a dependency installed in the app it was crawling. Now resolved through
+  `createRequire(process.cwd())`; when it still fails it names the directory and the fix, and exits
+  2 rather than reporting an empty crawl as a clean one.
+- **`Ui::Logo` raised `NoMethodError` on almost every `size:`** (#352, rails-stack). The reference
+  snippet contradicted itself on one line: a `|| size.to_i` fallback and a `clamp(20, 200)` that
+  only mean something if a px number can arrive, behind a `size.to_sym` that raises when one does.
+  Measuring it found a second raise the report missed — `Symbol#to_i` does not exist either, so any
+  key outside `SIZE` raised too, and the fallback only ever worked for a numeric string.
+- **New `unreachable-coercion-fallback` gate** for that class, which `ruby -c` structurally cannot
+  catch: it is valid syntax that raises at run time. Selftest 77 → 85 assertions, mutations 21 → 23.
+- **Two claims in #352 were false** — quoted doctrine that appears nowhere in the skill, and a
+  mirrored call site that does not exist. The defect was real on internal evidence, not the
+  authority the report claimed. Third time this pattern has been recorded (#142, #229, now #352):
+  **an issue body is a hypothesis.**
 
 ### 2026-08-01 (release v1.52.0)
 
