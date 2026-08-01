@@ -441,6 +441,11 @@ DEFAULTS = { variant: :primary, size: :md }
   updates the list via Turbo Stream (`prepend`/`replace dom_id`/`remove dom_id`) + a toast; rows are
   `dom_id`-addressable so streams can target them. No full-page new/edit forms. Full flow:
   [crud-modal-pattern.md](crud-modal-pattern.md).
+- **a11y:** a real `<table>` with `<caption>` (`sr-only` if the heading above already names it) and
+  `<th scope="col">` / `<th scope="row">` — without `scope` a screen reader cannot associate a cell
+  with its header, and a `<div>` grid loses the table semantics entirely. Sortable headers carry
+  `aria-sort` on the sorted column **only**. Row actions need names: an icon-only edit button is
+  `aria-label`-ed with the row's subject, not "Edit".
 - Keep the proven `shared/_crud_table`, `_crud_header`, `_crud_row_actions` partials, refactored to role
   tokens + components. `<table class="w-full text-step--1 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.
@@ -493,6 +498,10 @@ DEFAULTS = { variant: :primary, size: :md }
   notifications. `cluster items-start` of a `frame` (avatar, icon chip, thumbnail) and a `stack gap-1`
   body; the media gets `flex-none`, the body `min-w-0` so long words truncate instead of pushing the
   media off-screen.
+- **a11y:** the media is **decorative by default** — `alt=""` on a thumbnail whose meaning is already
+  in the adjacent text, because "Photo of Ada Lovelace" beside the words "Ada Lovelace" is announced
+  twice. Give it real `alt` only when it carries information the body does not. Responsive: the
+  cluster wraps rather than shrinking the media below its fixed size.
 - **Sizes** follow the media: `sm size-8 · md size-10 · lg size-12` (icon chips use the Card stat
   recipe's `rounded-md bg-primary/10 text-primary`).
 - **a11y:** decorative media takes `alt=""`; meaningful media carries a real `alt`. If the whole object
@@ -668,6 +677,11 @@ DEFAULTS = { variant: :primary, size: :md }
 ## Avatar
 - `Ui::Avatar` (extract it — auctioneer inlines): `rounded-full` image or initials chip
   `bg-primary/10 text-primary`, sizes `sm size-8 / md size-10 / lg size-12`, optional status dot, group/stacked.
+- **a11y:** the image is decorative (`alt=""`) wherever the name is adjacent; the initials chip is
+  `aria-hidden` for the same reason. **The status dot must not be colour-alone** — it is state, and
+  the catalog's own rule forbids colour-only state, so pair it with `sr-only` text ("Online") or
+  `title`. A stacked group is a list: `<ul>` with `sr-only` names, and a `+3` overflow chip that
+  says what it counts.
 
 ## Logo / Brand mark
 - `Ui::Logo` — the ONLY way to render the Prism mark; never hand-roll a text eyebrow (a plain
@@ -690,10 +704,19 @@ DEFAULTS = { variant: :primary, size: :md }
 - Keep the Pagy-based `shared/_pagination`: per-page `<select>`, "Showing X–Y of Z", windowed links + prev/next
   Lucide chevrons, active = `bg-primary/10 text-primary`. Optional `turbo_frame` target. Responsive `flex-col
   md:flex-row`.
+- **a11y:** wrap it in `<nav aria-label="Pagination">` — there is usually more than one landmark of
+  that type on a list screen. **The active page must not be colour-alone**: `aria-current="page"`
+  carries it, and `bg-primary/10 text-primary` is then the visual half rather than the whole signal.
+  Prev/next chevrons are icon-only, so each needs an `sr-only` label, and a disabled edge is
+  `aria-disabled` rather than removed, so the control does not move between pages.
 
 ## Empty state
 - `cover > center > stack`: icon chip `size-16 rounded-full bg-muted`, title, `max-w-md` `text-muted-foreground`
   description, optional primary action (opens in the `modal` frame). One `Ui::EmptyState` component.
+- **a11y:** the icon chip is decoration — `aria-hidden="true"`, never an `alt` describing it. The
+  title is a real heading at the level the surrounding page implies, not a styled `<p>`; an empty
+  state replaces content, so the outline must not lose a level. If it appears after a filter or
+  search, announce it — the region gets `aria-live="polite"`, or the user filters into silence.
 
 ## Forms
 See [forms.md](forms.md).
