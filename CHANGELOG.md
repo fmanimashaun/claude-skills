@@ -3407,6 +3407,69 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Broken links and missing assets are caught now** (#108, epic item E — *"classic, cheap,
+  currently absent"*). Everything the crawl added in 1.17.0–1.18.0 judges the routes **you listed**.
+  Nothing looked at what those pages link **to**, so a footer link to `/pricng` was invisible by
+  construction: the typo is not in `qa/routes.json`, so it is never crawled, never judged, never
+  reported. `crawl_collector.js --links` inventories every `href`, every fragment target and every
+  4xx/5xx sub-resource, then probes each distinct same-origin target **once** — and
+  `link_audit.py` judges it.
+  - **This pays for a carve-out that had no owner.** `interaction_report.py` exempts `a[href]` from
+    `dead-control` because "navigation IS its effect; a crawl that stays on the page cannot observe
+    it" — correct, and it left every link on the site judged by *nothing*. The exclusion is only
+    safe once something else owns link targets.
+  - **A 404 sub-resource is not a failed request**, which is why `crawl.json`'s `failedRequests` did
+    not already cover it: Playwright fires `requestfailed` for network-level failures only — *"HTTP
+    error responses, such as 404 or 503, are still successful responses from HTTP standpoint, so
+    request will complete with `requestfinished`"*
+    ([playwright.dev/docs/api/class-request](https://playwright.dev/docs/api/class-request)). A
+    `<img>` returning a well-formed 404 passes every status check written. Responses are therefore
+    recorded by status, a different mechanism rather than a duplicate one.
+  - **401 and 403 are `unverified`, not broken.** The crawl is unauthenticated, so an auth-gated
+    target is *unknown*; reporting every one as a dead link is how the rule gets switched off within
+    a day, taking every genuine 404 with it. Same for a target no probe reached. Neither is a
+    finding and neither is a pass — both are named on every run. The carve-out is pinned to exactly
+    `{401, 403}` by a near-miss: a 410 is still a broken link.
+  - **`#` and `#top` are silent; `#topic` is not.** Both of the first two are the top of the
+    document with no matching element required, per the HTML Standard's *scroll to the fragment*
+    ([html.spec.whatwg.org](https://html.spec.whatwg.org/multipage/browsing-the-web.html)) — matched
+    case-insensitively and **in full**, so a carve-out on three letters cannot swallow every dead
+    fragment beginning with them. `id` and `a[name]` both count as targets, also per the spec.
+  - **The scheme is read from the start of the `href`, never as a substring** — so
+    `/contact?to=mailto:x@y` is an ordinary internal link and is still judged. That near-miss caught
+    a real case on the first live run.
+  - **One broken target is one finding** (#118), with a page count and up to three example routes.
+    The count is **distinct pages, not occurrences**: a real run recorded the same missing image
+    eight times for one page, because the interaction sweep navigates away and back and each return
+    re-requests it. "8×" for a one-page defect is #118's inflated arithmetic in miniature.
+  - **An inventory with no `base` origin is refused, not judged.** Without it nothing can tell an
+    internal link from a third-party one, and the failure would be *silent*: every external link
+    degrades to "unverified" and the report fills with noise. Same for an inventory with no pages
+    or with no link recorded at all — a collector that inventoried nothing reports zero broken links
+    for the same reason a healthy site does.
+  - 69 fixtures, 8 declared mutations all caught, registered in `GATES` and in `checks.json` so it
+    runs at a project's `dev → main`.
+
+- **FIX — the crawl collector could not launch a browser at all, and `--links` found it** (#356
+  regressed). The fix for #356 resolved Playwright's path from the project correctly and then
+  `await import()`ed it as ESM. `playwright/index.js` is CommonJS, so Node infers its named exports
+  with cjs-module-lexer, and for this package that inference is wrong: the namespace it produces is
+  `clientEventEmitter, default, getPlaywrightVersion, … utils` — **no `chromium`**, which lives on
+  `.default`. The destructure bound `undefined`, the `try` caught nothing because the import
+  *succeeded*, and the script died 60 lines later on `chromium.launch()`. It is now the synchronous
+  `projectRequire('playwright')`, with an explicit exit-2 if the browser is still absent so the
+  symptom is never again an unrelated `TypeError`.
+  - **The documented invocation was unrunnable for the second release running**, and the reason is
+    the one 1.19.1 already wrote down: the collector holds no rule, so nothing tests it, so nobody
+    ran it. Found in ten seconds by pointing it at a real server, which is the only thing that ever
+    finds this.
+  - Also fixed while there: `responses` was attributed to the wrong routes. The listener stayed
+    attached through the interaction sweep, whose force-clicks navigate away and back, so one page's
+    missing image was reported against three routes — our own driving reported as the app's defect.
+    It is detached before the sweep, and `responses` now means "what the page load asked for".
+
 ### 1.19.1 — 2026-08-01
 
 Both of these came from the first run against a real Rails app, which is the run no fixture here

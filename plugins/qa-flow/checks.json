@@ -89,6 +89,21 @@
       ]
     },
     {
+      "id": "link-audit",
+      "why": "A link to a route nobody listed is never crawled, and a 404 sub-resource is not a failed request.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/link_audit.py",
+        "{match:qa/manual-tests/links.json}"
+      ],
+      "applies_when": [
+        "qa/manual-tests"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "visual-regression",
       "why": "A screen with no baseline has never been reviewed; a changed one may be a regression.",
       "command": [
