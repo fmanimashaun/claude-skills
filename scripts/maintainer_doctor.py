@@ -115,8 +115,17 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # inflates the sweep count; GATE names are asserted unique in the selftest now.
     ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
+    # #129 widened its INPUT from the doctrine file to every shipped brand pack, because the #304
+    # fix had been applied to the doctrine file and to neither pack — so the gate read clean over
+    # the one file that was already right while the artifact users install kept the defect.
     ("token contrast", ("python3", "scripts/check_token_contrast.py")),
     ("token contrast selftest", ("python3", "scripts/check_token_contrast.py", "--selftest")),
+    # #129. A candidate palette ships in a client's colours, so "measured, not asserted" is the
+    # whole feature: --check measures all ten against 1.4.3 in both modes.
+    ("design-flow palette candidates",
+     ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
+    ("design-flow palette candidates selftest",
+     ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),

@@ -6,20 +6,35 @@
    1. put the client's palette in @theme (name the primitives however you like — they are
       private to this pack; nothing outside may reference them)
    2. map them onto the role layer below; every role must have a value
-   3. re-point the surface roles under .dark
+   3. re-point the surface roles under .dark — INCLUDING --primary-foreground whenever you
+      re-point --primary, or the label inherits the light value and goes unreadable
    4. run the data-viz palette validator against THIS pack's surface, then set
       chart_palette_validated: true in brand.json
-   5. verify:  python3 scripts/brand_pack_lint.py brands/<slug>                            */
+   5. verify:  python3 scripts/brand_pack_lint.py brands/<slug>
+
+   Not starting from a client palette at all? Don't invent one here — the candidate set is
+   already measured against WCAG 1.4.3 in both modes:
+     python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --list
+     python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --emit harbor --out brands/<slug>
+   Client HAS a brand colour? Snap it to the role structure and get the numbers:
+     python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --snap "#RRGGBB"
+
+   The values below are a WORKED EXAMPLE, and every text pair in them is measured by
+   `scripts/check_token_contrast.py`. Three of them used to fail — a template that ships
+   unreadable defaults teaches the failure to every pack copied from it (#129).           */
 
 @theme {
   /* the client's palette — private primitives */
-  --color-brand-500: #0077CC;   /* primary            */
-  --color-brand-600: #005FA3;   /* primary, pressed   */
+  --color-brand-500: #0B5FA5;   /* primary — text-safe on --background AND under white text */
+  --color-brand-600: #08497F;   /* primary, pressed   */
+  --color-brand-300: #5AB0F5;   /* primary ON DARK — a light step, so the dark surface can be
+                                   its foreground; the light step is unreadable on navy */
   --color-ink-900:   #10151C;   /* darkest text/surface */
   --color-ink-50:    #F7F8FA;   /* lightest surface     */
   --color-ink-100:   #EEF0F4;
   --color-ink-200:   #DDE1E8;
-  --color-ink-400:   #8B93A1;
+  --color-ink-400:   #8B93A1;   /* muted text ON DARK only — 2.71:1 on --muted in light */
+  --color-ink-500:   #5C6472;   /* muted text in LIGHT (5.29:1 on --muted) */
   --color-ink-800:   #1B222C;
   --color-state-error:   #EF4444;
   --color-state-success: #22C55E;
@@ -33,7 +48,7 @@
   --popover: #FFFFFF;                     --popover-foreground: var(--color-ink-900);
   --primary: var(--color-brand-500);      --primary-foreground: #FFFFFF;
   --secondary: var(--color-ink-100);      --secondary-foreground: var(--color-ink-900);
-  --muted: var(--color-ink-100);          --muted-foreground: var(--color-ink-400);
+  --muted: var(--color-ink-100);          --muted-foreground: var(--color-ink-500);
   --accent: var(--color-ink-100);         --accent-foreground: var(--color-ink-900);
   --destructive: var(--color-state-error); --destructive-foreground: #FFFFFF;
   --success: var(--color-state-success);  --warning: var(--color-state-warning);
@@ -50,5 +65,5 @@
   --muted: var(--color-ink-800);          --muted-foreground: var(--color-ink-400);
   --accent: var(--color-ink-800);         --accent-foreground: var(--color-ink-50);
   --border: var(--color-ink-800);         --input: var(--color-ink-800);
-  --primary: var(--color-brand-500);
+  --primary: var(--color-brand-300);      --primary-foreground: var(--color-ink-900);
 }

@@ -824,6 +824,172 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #129. Two subjects, one feature: the CANONICAL contrast instrument in scripts/, and the
+    # SHIPPED one inside design-flow that a user runs on their own pack. They carry the same maths
+    # for a stated reason (a plugin cannot import from maintainer tooling), so the parity fixture
+    # that compares them is itself mutated — a parity check that stopped comparing would let the
+    # two drift in exactly the silence it exists to prevent.
+    Guard(
+        name="check_token_contrast",
+        subject="scripts/check_token_contrast.py",
+        selftest="scripts/check_token_contrast.py",
+        # It reads the doctrine file and every shipped pack, and its parity fixtures import the
+        # shipped module. Without these the mutant dies on a missing file and every mutation reads
+        # as "caught" by a traceback rather than by the fixture named below.
+        needs=("skills/fidara-design/references/foundations-tokens.md",
+               "plugins/design-flow/brands/fidara/theme.css",
+               "plugins/design-flow/brands/_template/theme.css",
+               "plugins/design-flow/scripts/palette_candidates.py",
+               "plugins/design-flow/scripts/brand_pack_lint.py"),
+        mutations=(
+            Mutation(
+                "the gate narrows back to the doctrine file, so the packs go unmeasured (#129)",
+                "    return [repo / TOKENS.relative_to(REPO), *packs]",
+                "    return [repo / TOKENS.relative_to(REPO)]",
+                "every shipped brand pack is measured",
+            ),
+            Mutation(
+                "an empty pack glob becomes a clean pass instead of a hard error",
+                "    if not packs:\n        raise Unparseable(",
+                "    if False:\n        raise Unparseable(",
+                "a tree with no brand pack enumerated sources",
+            ),
+            Mutation(
+                "the sRGB breakpoint reverts to WCAG 2.0's 0.03928",
+                "SRGB_LINEAR_BREAKPOINT = 0.04045",
+                "SRGB_LINEAR_BREAKPOINT = 0.03928",
+                "the sRGB linearisation breakpoint is WCAG 2.2's 0.04045",
+            ),
+            Mutation(
+                "the parity check with the shipped implementation stops comparing",
+                "    return max(abs(left(a, b) - right(a, b)) for a in probes for b in probes)",
+                "    return 0.0",
+                "the parity comparison can actually detect a disagreement",
+            ),
+            Mutation(
+                "the two token parsers may disagree without anyone noticing",
+                "        if ours is None or ours.upper() != value.upper():",
+                "        if False:",
+                "the parser comparison can actually detect a disagreement",
+            ),
+            Mutation(
+                "the muted-text pair is dropped again (it was the missing one, at 2.71:1)",
+                '    ("muted text on a muted surface", "--muted-foreground",   "--muted",      "light"),\n',
+                "",
+                "the muted-text pair is measured in both modes",
+            ),
+        ),
+    ),
+    # The shipped half. Roughly half of these break a fixture whose job is to stay SILENT, because
+    # this tool's whole risk is false positives: a checker that rewrites a client's brand colour
+    # which was already fine gets switched off, and then nothing measures the one that was not.
+    Guard(
+        name="palette_candidates",
+        subject="plugins/design-flow/scripts/palette_candidates.py",
+        selftest="plugins/design-flow/scripts/palette_candidates.py",
+        # It imports its sibling for the ROLE CONTRACT -- that import is the reuse that makes
+        # "the composer covers the whole contract" checkable at all.
+        deps=("plugins/design-flow/scripts/brand_pack_lint.py",),
+        mutations=(
+            Mutation(
+                "the contrast bar stops comparing, so an unreadable palette ships",
+                "    return [row for row in measure(roles) if not row.passes]",
+                "    return []",
+                "a failing candidate is reported, not passed",
+            ),
+            Mutation(
+                "the bar drops to the large-text allowance, grandfathering unreadable body text",
+                "AA_NORMAL = 4.5",
+                "AA_NORMAL = 3.0",
+                "3:1 is the LARGE-text allowance",
+            ),
+            Mutation(
+                "every palette is reported as failing (the false-positive direction)",
+                "        return self.ratio >= AA_NORMAL",
+                "        return False",
+                "a conformant candidate is silent",
+            ),
+            Mutation(
+                "measuring zero pairs reports clean",
+                "    if not CANDIDATE_PAIRS:",
+                "    if False:",
+                "measuring nothing is not a pass",
+            ),
+            Mutation(
+                "the composer may omit a role, so a pack falls back to a stock Tailwind colour",
+                '    missing = [r for r in bpl.ROLES if r not in light]',
+                "    missing = []",
+                "a role added to the contract makes snap() fail loudly",
+            ),
+            Mutation(
+                "a surface role may stay put on dark, so dark mode inherits the light surface",
+                "    unrepointed = [r for r in bpl.DARK_REQUIRED if dark.get(r) == light.get(r)]",
+                "    unrepointed = []",
+                "a dark-required role that does not move makes snap() fail loudly",
+            ),
+            Mutation(
+                "nearest_passing hands back the failing input dressed as a fix",
+                "    if contrast(colour, surface) >= threshold:\n        return colour, contrast(colour, surface)",
+                "    return colour, contrast(colour, surface)",
+                "the nearest alternative actually passes",
+            ),
+            Mutation(
+                "nearest_passing rewrites a brand colour that was already fine",
+                "    if contrast(colour, surface) >= threshold:",
+                "    if False:",
+                "a brand colour that already passes is returned unchanged",
+            ),
+            Mutation(
+                "the search drifts off the client's hue instead of only its lightness",
+                "            candidate = _from_hls(hue, candidate_light, sat)",
+                "            candidate = _from_hls((hue + 0.25) % 1.0, candidate_light, sat)",
+                "the nearest alternative keeps the client's hue",
+            ),
+            Mutation(
+                "a constrained search with no answer returns rather than saying so",
+                '    raise Unusable(\n        f"no {direction} shade of {colour} clears',
+                '    return colour, contrast(colour, surface)\n    raise Unusable(\n        f"no {direction} shade of {colour} clears',
+                "a constrained search with no answer returned instead of raising",
+            ),
+            Mutation(
+                "a pack with no .dark block is measured as though light were both modes",
+                '    if not dark:\n        raise Unusable(f"{theme_css}: no `.dark` block',
+                '    if False:\n        raise Unusable(f"{theme_css}: no `.dark` block',
+                "a pack with no .dark block was read instead of refused",
+            ),
+            Mutation(
+                "`.dark` stops inheriting from `:root` (the #304 mechanism, in the reader)",
+                '    scopes["dark"] = {**scopes["light"], **dark}',
+                '    scopes["dark"] = dict(dark)',
+                "a pack read back off disk measures the same as the model that wrote it",
+            ),
+            Mutation(
+                "an emitted manifest claims the chart validation nobody ran",
+                '        "chart_palette_validated": False,',
+                '        "chart_palette_validated": True,',
+                "the emitted manifest never claims a validation it did not run",
+            ),
+            Mutation(
+                "the catalogue is free to grow into the style menu this must not become",
+                "CATALOGUE_BAND = (8, 12)",
+                "CATALOGUE_BAND = (8, 400)",
+                "the catalogue band is the declared 8-12",
+            ),
+            Mutation(
+                "a type pairing may carry its own fluid type scale, forking a system axis",
+                "    return sorted(slug for slug, pairing in pairings.items()\n"
+                "                  if any(key not in PAIRING_KEYS for key in pairing))",
+                "    return []",
+                "a pairing that DID carry a type scale would be caught",
+            ),
+            Mutation(
+                "an unparseable colour resolves to something arbitrary instead of raising",
+                "    if not isinstance(value, str) or not HEX_RE.match(value.strip()):",
+                "    if False:",
+                "",   # normalise_hex is called everywhere; the module fails hard, which is honest
+            ),
+        ),
+    ),
     Guard(
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
