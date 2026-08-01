@@ -1,6 +1,6 @@
 ---
 description: Crawl every route in a browser and judge it — broken pages, dead controls, theme-only failures. Writes evidence the Python judges grade.
-argument-hint: "[routes...] — defaults to the routes in qa/routes.json"
+argument-hint: "[routes...] — defaults to the routes in qa/reports/routes.json"
 ---
 
 # /qa-flow:crawl — $ARGUMENTS
@@ -36,7 +36,7 @@ directory it looked from.
 
 Writes `qa/manual-tests/crawl.json` and `qa/manual-tests/interactions.json`.
 
-Routes come from `qa/routes.json` when it exists (`route_coverage.py enumerate` builds it) — crawling
+Routes come from `qa/reports/routes.json` when it exists (`route_coverage.py enumerate` builds it) — crawling
 a hand-typed list is how a route nobody remembered stays untested forever.
 
 ## 3. Judge
@@ -72,7 +72,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/link_audit.py" qa/manual-tests/links.json
 ```
 
 **This is the pass that looks at what your pages link TO.** Everything above judges the routes you
-listed; a footer link to `/pricng` is not in `qa/routes.json`, so nothing else ever visits it. The
+listed; a footer link to `/pricng` is not in `qa/reports/routes.json`, so nothing else ever visits it. The
 collector inventories every `href`, every fragment target, and every sub-resource that answered
 4xx/5xx, then probes each distinct **same-origin** target once — once, not once per page, so a
 footer link across 72 pages costs one request.
