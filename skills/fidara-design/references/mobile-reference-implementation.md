@@ -116,7 +116,7 @@ Dense tables scroll poorly on phones; ship a card-stack fallback instead of hori
 
 ```erb
 <table class="hidden md:table w-full text-step--1">…</table>   <%# desktop %>
-<ul class="md:hidden stack" style="--space: var(--space-xs)">  <%# mobile %>
+<ul role="list" class="md:hidden stack" style="--space: var(--space-xs)">  <%# mobile %>
   <% rows.each do |r| %>
     <li class="box bg-card rounded-lg border border-border">
       <dl class="stack" style="--space: var(--space-3xs)">
