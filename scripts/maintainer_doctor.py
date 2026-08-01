@@ -117,6 +117,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
     ("token contrast", ("python3", "scripts/check_token_contrast.py")),
     ("token contrast selftest", ("python3", "scripts/check_token_contrast.py", "--selftest")),
+    # #360, and the same argument one skill along: the quality-pass worked example states how many
+    # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
+    # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
+    # disagreeing with the repo, exactly as the tier gates below reconcile a table against agents.
+    ("shared shapes", ("python3", "scripts/check_shared_shapes.py")),
+    ("shared shapes selftest", ("python3", "scripts/check_shared_shapes.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),

@@ -666,7 +666,9 @@ claude-skills/
 ├── skills/                # bundled into the rails-stack plugin
 │   ├── rails-8/          # SKILL.md + references/  (source of truth)
 │   ├── hotwire/          # SKILL.md + references/
-│   └── fidara-design/    # the Fidara design system: SKILL.md + 7 references
+│   ├── fidara-design/    # the Fidara design system: SKILL.md + 7 references
+│   ├── code-review/      # review doctrine: the claims-vs-enforcement defect classes
+│   └── quality-pass/     # advisory second pass: reuse, simplification, efficiency, altitude
 ├── plugins/               # DISTRIBUTED — the app plugins in marketplace.json
 │   ├── rails-flow/       # agentic build flow: commands + agents + hooks
 │   ├── qa-flow/          # independent QA flow
