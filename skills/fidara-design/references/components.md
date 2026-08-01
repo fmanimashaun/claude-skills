@@ -384,8 +384,16 @@ DEFAULTS = { variant: :primary, size: :md }
   documented `Modal` for the shell, the documented `Combobox` above for the filter and results.
 - **`aria-activedescendant` is effectively mandatory here**, even though both focus models are
   generally allowed: the input must keep focus for typing to filter, so moving DOM focus into the
-  results list would break typing. The "dialog popups move DOM focus" rule applies to *opening the
-  modal*, not to the filtered list inside it.
+  results list would break typing. The required-vs-optional breakdown is in
+  [interaction-stimulus.md](interaction-stimulus.md#combobox--the-two-corrections-that-matter-and-a-version-trap-229).
+- **Two different "focus moves into the dialog" rules meet here, and they are not one rule.** The
+  Combobox pattern's — *"Unlike other combobox popups, dialogs do not support
+  `aria-activedescendant` so DOM focus moves into the dialog from the combobox"* — is about a
+  combobox whose **own popup** carries `role="dialog"`, which is the Date-Picker-Combobox shape.
+  A palette's popup is a listbox or a grid, so that rule never reaches it at all. The outer shell
+  moving focus inward when it opens is the **separate** Dialog (Modal) rule, *"When a dialog opens,
+  focus moves to an element inside the dialog"*, already carried by the Modal entry above. Citing
+  the first to explain the second asserts a combined rule APG does not state.
 - Trigger is a global shortcut (`⌘K` / `Ctrl+K`), so there is no persistently visible field to hang
   `aria-haspopup="dialog"` on — that shape belongs to a Date-Picker-style field that expands, not to
   a palette.

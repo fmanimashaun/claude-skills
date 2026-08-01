@@ -188,8 +188,16 @@ def run() -> int:
     # ---- 6. every guard names a real subject and selftest, and declares mutations ------
     for real_guard in mc.GUARDS:
         _tick()
-        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps,
-                               *real_guard.needs) if not (original_repo / p).is_file()]
+        # `subject`, `selftest` and `deps` are staged with `read_text`/`write_text`, so they must
+        # be FILES. `needs` is staged by `stage_guard`, which branches on `source.is_dir()` and
+        # `copytree`s a directory -- deliberately, so a new reference doc is picked up rather
+        # than quietly missing (#422). Checking all five with `is_file()` therefore rejected the
+        # very shape that fix introduced: `build_coverage` names the `references/` DIRECTORY, and
+        # this selftest failed on `dev` from the moment #422 landed. The two lists are checked
+        # separately so each says what it actually requires.
+        missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
+                   if not (original_repo / p).is_file()]
+        missing += [p for p in real_guard.needs if not (original_repo / p).exists()]
         if missing:
             FAILURES.append(f"{real_guard.name}: declares files that do not exist: {missing}")
         if not real_guard.mutations:

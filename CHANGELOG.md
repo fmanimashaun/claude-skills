@@ -7,6 +7,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`mutation_check --selftest` has failed on `dev` since #422 landed, because that fix
+  contradicted this check** (#89). #422 gave the `build_coverage` guard
+  `needs=("skills/fidara-design/references",)` — a **directory**, deliberately, so a new reference
+  doc is picked up rather than quietly missing — and `stage_guard` branches on `source.is_dir()`
+  to `copytree` exactly that shape. But the selftest validated all five declared paths with
+  `is_file()`, so it rejected the only shape the runtime added support for. `needs` is now checked
+  with `exists()` while `subject`/`selftest`/`deps` keep `is_file()`, since those three are staged
+  with `read_text` and genuinely must be files. Found by running the gate sweep on a clean
+  checkout of `dev`, not by the sweep's own history.
+
 ### 1.55.0 — 2026-08-01
 
 - **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
@@ -2322,6 +2334,43 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`coverage.md` told agents the Command palette had no catalogue entry, and one had shipped
+  since #95** (#89). The row printed under *"Derivable — No dedicated catalogue entry, and none
+  needed"* while `components.md` carried `## Command palette`, so the matrix routed readers past
+  a written entry and gave them a shorter Build-from line in its place — losing the rules only the
+  entry states (no APG pattern covers a command palette; `aria-haspopup="grid"` is needed once the
+  result rows carry icon + label + shortcut). The row is now `documented` with its own evidence
+  string, taking the matrix to **70 documented / 43 derivable / 0 needs doctrine**.
+  **Change type: design/architecture** for the guidance state — it is a claim about our own
+  doctrine, so it is measured against the repo and made re-checkable by the guard below rather
+  than asserted.
+- **The guard that could not have caught it, added** (#89). `verify_shipped_evidence` only ever
+  read this module's own tables: `documented` ⇒ evidence present, and not-`documented` ⇒ no
+  evidence key. Neither looks at the docs for a row that claims nothing, so a row whose entry
+  exists while the matrix denies it was invisible — the one-way `carve-out-without-negative-test`
+  shape that `verify_interaction_claims` was given both directions to avoid in #399, still sitting
+  in the older and larger half. `verify_no_undeclared_entry` closes it, over both catalogue files
+  (`components.md` **and** `forms.md`, which is where half the form controls are catalogued), with
+  six fixtures and three mutations. Two near-miss fixtures pin the match to exact-or-separator in
+  **both** prefix directions, because the way this guard fails is by becoming a false-positive
+  machine somebody then deletes.
+- **A REFUTED APG attribution in `components.md`'s Command palette entry** (#89). It read *"the
+  'dialog popups move DOM focus' rule applies to opening the modal, not to the filtered list
+  inside it"*, merging two separate provisions into one rule APG does not state. The Combobox
+  pattern's *"Unlike other combobox popups, dialogs do not support `aria-activedescendant` so DOM
+  focus moves into the dialog from the combobox"* is scoped to a combobox whose **own popup** is a
+  dialog (the Date-Picker-Combobox shape) and never reaches a palette, whose popup is a listbox or
+  grid; the outer shell's focus-on-open is the separate Dialog (Modal) rule, *"When a dialog opens,
+  focus moves to an element inside the dialog"*. Both now cited apart.
+  https://www.w3.org/WAI/ARIA/apg/patterns/combobox/ ·
+  https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/ (verified 2026-08-01).
+  The entry's other external claims were re-verified and stand: the APG Patterns index carries
+  **30** patterns and none is a command palette (https://www.w3.org/WAI/ARIA/apg/patterns/,
+  counted from the page rather than read off a summary), and `grid` is a valid `aria-haspopup`
+  token in ARIA 1.2 (https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup).
 
 ### 1.30.0 — 2026-08-01
 

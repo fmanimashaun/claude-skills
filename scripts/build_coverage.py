@@ -48,6 +48,7 @@ Stdlib only, no network.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -64,6 +65,21 @@ CORPORA_ROOT = REPO / "design-corpora"
 TW_ROOT = CORPORA_ROOT / "tailwind-ui" / "html" / "components"
 TW_FAMILIES = ("application-ui", "marketing", "ecommerce")
 OUT = REPO / "skills" / "fidara-design" / "references" / "coverage.md"
+# The catalogue proper: the two files that hold per-component entries. `verify_no_undeclared_
+# entry` reads THESE and not the whole blob, because the sentence it enforces is the Derivable
+# table's own "No dedicated CATALOGUE entry".
+#
+# forms.md is in the list because half the form controls are catalogued there and nowhere else
+# -- `## Range input (#95)`, `## Copy to clipboard (#95)`, `## Calendar / Date picker / Time
+# picker (#95)` -- so a components.md-only guard would have a hole exactly the size of the
+# forms family. (Checking components.md alone also made a near-miss fixture VACUOUS: it named
+# `## Range input (#95)` as the prefix hazard, and that heading is in forms.md, so the fixture
+# passed by finding nothing. The mutation harness caught it.)
+#
+# page-anatomies.md is deliberately NOT here. It catalogues page archetypes, not components,
+# and its `## Order history` belongs to the `Order history page archetype` row -- including it
+# would convict the separate `Order history` composition row, which is correct as it stands.
+CATALOGUE_FILES = ("components.md", "forms.md")
 
 # ---------------------------------------------------------------------------------------
 # Flowbite's published catalogue.
@@ -174,6 +190,10 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     # heading, which is how a missing entry could pass (see the Button/Button-group note above).
     "Accordion / Disclosure": "## Disclosure / Accordion\n",
     "Combobox / Autocomplete": "## Combobox / Autocomplete\n",
+    # `derivable` said "no dedicated catalogue entry, and none needed" while components.md had
+    # carried `## Command palette` since #95 -- see `verify_no_undeclared_entry` for why nothing
+    # could catch that, and #89 for the promotion.
+    "Command palette": "## Command palette\n",
     "Progress bar": "## Progress bar\n",
     "Stepper / wizard": "## Stepper / wizard\n",
     "Mega menu / Flyout": "## Mega menu / Flyout\n",
@@ -336,8 +356,12 @@ ENTRIES: tuple[Entry, ...] = (
     E("Progress bar", COMPONENT, "documented", "—",
       ["application-ui/navigation/progress-bars"], ["Progress"],
       "the Flowbite audit surfaced LABELLED progress bars specifically"),
-    E("Command palette", COMPONENT, "derivable", "new controller (filter + list-navigation)",
-      ["application-ui/navigation/command-palettes"], []),
+    E("Command palette", COMPONENT, "documented", "new controller (filter + list-navigation)",
+      ["application-ui/navigation/command-palettes"], [],
+      "a composition WITH its own catalogue entry — Modal shell + editable Combobox, results as a "
+      "listbox or grid popup. No APG pattern covers it (the index lists 30 and none is a command "
+      "palette), so the shape is ours; `aria-haspopup=\"grid\"` is required only if the rows carry "
+      "icon + label + shortcut"),
     E("Combobox / Autocomplete", COMPONENT, "documented", "new controller (filter + list-navigation)",
       ["application-ui/forms/comboboxes"], []),
     E("Action panel", COMPONENT, "derivable", "—", ["application-ui/forms/action-panels"], []),
@@ -686,8 +710,6 @@ BUILD: dict[str, str] = {
     # a composition
     # of two documented parts rather than a gap. Keep aria-activedescendant: the input must
     # hold focus for typing to filter, so moving DOM focus into the results breaks it.
-    "Command palette": "the documented Modal containing the documented Combobox with a "
-        "listbox popup; keep `aria-activedescendant` so typing keeps filtering",
 }
 
 BUILD_DEFAULTS: dict[tuple[str, str], str] = {
@@ -787,6 +809,71 @@ def verify_shipped_evidence() -> list[str]:
     if orphans:
         problems.append(f"DOCUMENTED_EVIDENCE keys matching no row (renamed?): {orphans}")
 
+    return problems
+
+
+def catalogue_headings() -> list[tuple[str, str]] | None:
+    """Every `## ` section title in the catalogue files, as (filename, title).
+
+    None if ANY of them cannot be read: a partial answer here is the `skip != pass` failure --
+    the guard would go quiet about exactly the file that went missing.
+    """
+    found: list[tuple[str, str]] = []
+    for name in CATALOGUE_FILES:
+        path = OUT.parent / name
+        if not path.is_file():
+            return None
+        found += [(name, t) for t in re.findall(r"^## (.+)$", path.read_text(encoding="utf-8"), re.M)]
+    return found
+
+
+def verify_no_undeclared_entry() -> list[str]:
+    """A row that is NOT `documented` must not have a catalogue entry of its own.
+
+    This is the negative direction, and `verify_shipped_evidence` never had it. That guard
+    checks `documented` => evidence present, and `not documented` => no DOCUMENTED_EVIDENCE
+    KEY -- both of which read only this file. Neither notices a row whose entry exists in the
+    docs while the matrix says it does not, because the only way to see that is to look at the
+    docs for a row that claims nothing.
+
+    It is the same one-way `carve-out-without-negative-test` shape `verify_interaction_claims`
+    was given both directions to avoid (#399), in the older and larger half. And it had already
+    let one through: `Command palette` printed under "Derivable -- No dedicated catalogue entry,
+    and none needed" while components.md had shipped `## Command palette` since #95, so the
+    matrix sent agents to compose from Modal + Combobox past a written entry carrying rules the
+    Build-from column does not (no APG pattern; `aria-haspopup="grid"` for icon+label+shortcut
+    rows). A `derivable` row is a promise that reading the entry is unnecessary; when the entry
+    exists, that promise is false.
+    """
+    headings = catalogue_headings()
+    if headings is None:
+        return [
+            "cannot read the catalogue ("
+            + ", ".join(CATALOGUE_FILES)
+            + f") under {OUT.parent} to verify non-`documented` claims"
+        ]
+
+    problems: list[str] = []
+    for entry in ENTRIES:
+        if entry.is_documented:
+            continue
+        for filename, heading in headings:
+            # Exact title, or the title followed by a separator. Both prefix directions are
+            # wrong and each has a fixture: "## Carousel" must not be credited to a
+            # "Carousel / Slider" row, and "## Video player" must not convict a row merely
+            # called "Video". This is the hazard DOCUMENTED_EVIDENCE anchors with a trailing
+            # newline ("## Button" also matches "## Button group"), from the other side --
+            # so it must never be relaxed to a substring test.
+            title = heading.strip()
+            if title.casefold() == entry.name.casefold() or re.match(
+                re.escape(entry.name) + r"\s*[—–\-(]", title, re.I
+            ):
+                problems.append(
+                    f"{entry.name!r} is {entry.status!r}, but {filename} ships "
+                    f"'## {title}' — the Derivable table tells readers no dedicated "
+                    "catalogue entry exists, so they never open the one that does. "
+                    "Promote the row to `documented` with its evidence, or delete the entry"
+                )
     return problems
 
 
@@ -944,6 +1031,7 @@ def verify_totality(tw_found: set[str], fb_found: set[str]) -> None:
         problems.append(f"duplicate canonical names in ENTRIES: {dupes}")
 
     problems.extend(verify_shipped_evidence())
+    problems.extend(verify_no_undeclared_entry())
     problems.extend(verify_interaction_claims())
     problems.extend(verify_cell_text())
 

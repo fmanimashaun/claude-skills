@@ -515,6 +515,105 @@ def run() -> int:
     finally:
         bc.OUT = real_out
 
+    # ---- the negative direction: a non-`documented` row with a catalogue entry ----------
+    # `Command palette` sat in the Derivable table -- under a heading that reads "No dedicated
+    # catalogue entry, and none needed" -- while components.md had shipped `## Command palette`
+    # since #95. Nothing could catch it: verify_shipped_evidence reads only this module's own
+    # tables, so a row claiming nothing was never compared against the docs at all (#89).
+
+    def _undeclared(rows):
+        original = bc.ENTRIES
+        bc.ENTRIES = rows
+        try:
+            return bc.verify_no_undeclared_entry()
+        finally:
+            bc.ENTRIES = original
+
+    # SILENCE, on the real shipped table. This is the fixture that fails the day someone adds a
+    # catalogue entry for a row still printing as `derivable`.
+    _tick()
+    live_entries = bc.verify_no_undeclared_entry()
+    if live_entries:
+        FAILURES.append(
+            "a shipped row is not `documented` while components.md carries its entry:\n"
+            + "\n".join(f"    - {p}" for p in live_entries)
+        )
+
+    _tick()
+    caught = _undeclared((
+        bc.E("Command palette", bc.COMPONENT, "derivable", "n/a", [], [],
+             build="the documented Modal containing the documented Combobox"),
+    ))
+    if not any("components.md ships" in p for p in caught):
+        FAILURES.append(
+            "undeclared-entry guard: a `derivable` row whose catalogue entry exists must be "
+            f"caught, got {caught or 'silence'}"
+        )
+
+    # NEAR MISS, and it is the reason the match is not a substring test. `## Carousel` is the
+    # entry for the `Carousel / Slider` row; it must not also credit -- or convict -- any other
+    # row whose name merely starts with the same word. Without this the guard could be
+    # "strengthened" into a prefix match and start firing on rows that are correct.
+    _tick()
+    quiet_entries = _undeclared((
+        bc.E("Carousel controls", bc.COMPONENT, "derivable", "n/a", [], [],
+             build="the documented Carousel"),
+    ))
+    if quiet_entries:
+        FAILURES.append(
+            "undeclared-entry guard: '## Carousel' must not convict a differently-named row, "
+            f"got {quiet_entries}"
+        )
+
+    # The OTHER prefix direction, and the one a substring match gets wrong: a row whose name is
+    # a prefix of a real heading. `## Video player` is the Video player row's entry; a row
+    # merely called "Video" has no entry and must not be convicted by it. This is the hazard
+    # DOCUMENTED_EVIDENCE anchors with a trailing newline ("## Button" also matches
+    # "## Button group"), checked from the other side.
+    #
+    # The first draft of this fixture named `## Range input (#95)` — which lives in forms.md,
+    # not components.md, so with the guard reading only components.md it passed by matching
+    # NOTHING. A fixture that proves nothing is worse than no fixture; the mutation harness is
+    # what surfaced it, and widening the guard to the real catalogue surface is the other half
+    # of that fix. So the heading named here must be one components.md really carries.
+    _tick()
+    quiet_prefix = _undeclared((
+        bc.E("Video", bc.COMPONENT, "derivable", "n/a", [], [], build="the documented Video player"),
+    ))
+    if quiet_prefix:
+        FAILURES.append(
+            "undeclared-entry guard: '## Video player' must not convict a row named "
+            f"'Video' — the match is not a substring test, got {quiet_prefix}"
+        )
+
+    # forms.md is the OTHER catalogue file, and a guard that silently read only one of the two
+    # would have a hole the size of the forms family. This fixture is what makes reading it a
+    # verified claim rather than a tuple nobody exercises.
+    _tick()
+    caught_forms = _undeclared((
+        bc.E("Error summary", bc.COMPONENT, "derivable", "n/a", [], [], build="an Alert"),
+    ))
+    if not any("forms.md ships" in p for p in caught_forms):
+        FAILURES.append(
+            "undeclared-entry guard: forms.md is a catalogue file too — a `derivable` row whose "
+            f"entry lives there must be caught, got {caught_forms or 'silence'}"
+        )
+
+    # Fail CLOSED when the catalogue cannot be read -- a guard that goes quiet when its input
+    # disappears is the `skip != pass` failure this repo keeps re-learning.
+    _tick()
+    real_out_cat = bc.OUT
+    bc.OUT = Path(tempfile.mkdtemp(prefix="coverage-nocat-")) / "gone" / "coverage.md"
+    try:
+        problems = bc.verify_no_undeclared_entry()
+        if not any("cannot read the catalogue" in p for p in problems):
+            FAILURES.append(
+                "unreadable catalogue: the undeclared-entry guard must fail closed, got "
+                f"{problems or 'silence'}"
+            )
+    finally:
+        bc.OUT = real_out_cat
+
     # ---- a `|` in any cell silently splits the row into an extra column --------------
     # Found by nearly shipping one: the `filter / typeahead` note was first written as
     # ``aria-autocomplete=list|both``, which generated, committed and drift-checked without a
