@@ -614,6 +614,26 @@ detect lifecycle transitions and remember them — they never invoke Claude head
 spend tokens. A dormant GitHub Actions adapter ships as an `.example` for when cloud
 minutes are available.
 
+### Unattended runs stop instead of digging — circuit breakers
+
+A gate says when a stage may *advance*. It says nothing about when to stop **retrying** one,
+and that is what goes wrong on an unattended run: an agent that cannot make progress does not
+idle, it re-pushes the image and redeploys, and every attempt looks like activity in a log.
+
+`scripts/breaker.py` bounds a run against `pipeline/run-ledger.jsonl` — append-only JSONL,
+committed, so a run is a `git diff` rather than a memory. The stages and the limits are declared
+**once**, and `check` reads them back and takes no threshold flags, so a run cannot widen its own
+cap halfway through. It refuses a stage five ways: `already-passed`, `out-of-order` (release
+cannot be attempted until certify passed — gate-skipping, made mechanical), `attempt-cap` (3),
+`no-progress` (2 identical failure signatures), `budget` (120 minutes). Overridable within a
+bounded range, because an override that can be set to infinity is not a breaker.
+
+A failure cannot be recorded without its signature and a stop cannot be recorded without a
+diagnosis. `breaker.py report` derives **complete / partial / stopped** from the ledger and exits
+`0` only for `complete`, so a partial run cannot be relayed as a success by anything reading the
+exit code. Full doctrine, including which of the four forbidden escapes are enforced and which
+stay doctrine: `plugins/pipeline/reference/stop-conditions.md`.
+
 ### Platform note
 
 qa-flow and pipeline hooks are **bash + python3**. On Windows, run Claude Code inside

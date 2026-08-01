@@ -151,6 +151,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                         "--agents", "plugins/pipeline/agents",
                         "--tiers", "plugins/pipeline/reference/model-tiers.md")),
+    # #128, the pipeline half. Its last checks run against the SHIPPED doctrine and the SHIPPED
+    # commands: that reference/stop-conditions.md still states the numbers and the four escapes the
+    # script declares, and that every pipeline surface describing an unattended re-run names the
+    # breaker. Fixtures prove the breakers fire; only those can see the doctrine drifting away from
+    # the code, which is the same defect one level up.
+    ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     ("qa-flow blast radius", ("python3", "plugins/qa-flow/scripts/blast_radius.py", "--selftest")),

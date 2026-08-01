@@ -9,6 +9,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **FIX — `docs/harness-doctrine.md` carried three stale gap-claims, and one of them told the reader
+  to trust it** (found while working #128). §8 said a grep for
+  `circuit.?breaker|stop condition|max attempts|bail out` across `plugins/` and `skills/` *"still
+  returns none"* — it returns **26 hits in five files**, and has since the rails-flow half shipped.
+  §7 said *"#127 is open. Nothing in the repo assembles that today"* — #127 is **closed** and
+  `/rails-flow:handoff` assembles exactly that. §11's table row asserted both issues unshipped.
+  - **A stale gap-claim is as misleading as a stale guarantee, and it survives longer, because
+    nobody re-checks good news.** The three replacement rows in §11 are re-checkable commands rather
+    than sentences, which is what the rest of that table already does and what these three had
+    stopped doing.
+  - §8 now records what shipped and, more usefully, the two places the halves deliberately
+    **differ**: which of the four escapes became mechanical in pipeline and which stayed doctrine,
+    and why escalate-and-continue was not copied into a gated chain.
+  - §8a's deferral of loop breakers to #128 has **expired**, so the decision is re-grounded rather
+    than left resting on a reason that no longer holds: the `topology: loop` marker still owes only
+    `exit:`, because a number in an HTML comment beside an enforced mechanism is a claim nothing
+    makes true.
+- **The gate sweep gains `pipeline stop conditions`** and `mutation_check.py` gains the `breaker`
+  guard (14 mutations). A selftest the sweep never runs makes a clean sweep a claim about work
+  nobody did.
 - **NEW gate `shared shapes`** (`scripts/check_shared_shapes.py`, #360). The `quality-pass` worked
   example states how many files carry each duplicated shape and rests an extraction decision on
   those numbers. A count written in prose rots the first time someone adds a copy, and it rots
@@ -1988,6 +2008,65 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## pipeline (lifecycle orchestrator)
+
+### Unreleased
+
+- **Unattended pipeline runs are bounded by a circuit breaker instead of by hope** (#128, the
+  `comp:pipeline` half; the rails-flow half shipped in rails-flow 1.14.0). The gates said when a
+  stage may *advance*; nothing said when to stop **retrying** one — and this plugin's most
+  autonomous agent, `kamal-configurator`, was told to *"troubleshoot autonomously"* and *"re-run
+  idempotently"* against a **production host** with no bound of any kind. An agent that cannot make
+  progress does not idle here, it re-pushes an image and redeploys, and every attempt looks like
+  activity in a log.
+  - **Change type: architecture / design decision**, per CLAUDE.md's carve-out — the ledger shape,
+    the numbers, and which of #128's escapes become mechanical have no upstream to cite. The one
+    external claim reused (`maxTurns` bounds *turns, not attempts*,
+    [docs](https://code.claude.com/docs/en/sub-agents)) was verified for the rails-flow half and is
+    repeated with its citation, not re-derived. Decision recorded on
+    [#128](https://github.com/fmanimashaun/claude-skills/issues/128#issuecomment-5146943177).
+  - **New `scripts/breaker.py`** over `pipeline/run-ledger.jsonl` — append-only JSONL, committed, so
+    a run is a `git diff` rather than a memory. `start` declares the stages and the limits **once**;
+    `check` reads them back and takes **no threshold flags**, so a run cannot widen its own cap
+    halfway through, and a second `start` over a run that did not end `complete` is refused rather
+    than silently resetting every counter.
+  - **Five refusals, all decidable from the ledger:** `already-passed`, `out-of-order` (gate-skipping
+    made mechanical — `release` cannot be attempted until `certify` passed), `attempt-cap` (3),
+    `no-progress` (2 identical failure signatures), `budget` (120 minutes). Overridable within
+    `1..10` / `2..10` / `1..480`, because **an override that can be set to infinity is not a
+    breaker**. Digits survive signature normalisation on purpose: "3 failures" becoming "1" is
+    progress, and erasing it would stop a converging run.
+  - **A failure cannot be recorded without a signature and a stop cannot be recorded without a
+    diagnosis** — both exit 2. A no-progress detector fed unsigned failures can never fire, which is
+    an unfalsifiable breaker wearing a breaker's clothes.
+  - **`report` derives complete / partial / stopped from the ledger and exits `0` only for
+    `complete`**, so "partial presented as success" is not available to anything that reads the exit
+    code. Exceeding a cap makes a run `stopped` **even if every stage later passed**: crediting the
+    outcome would make the cap advisory.
+  - **Two of #128's four escapes are enforced, two are doctrine, and the file says which.** Test
+    weakening and guardrail disabling involve file edits the ledger cannot see, so they live in the
+    new `reference/stop-conditions.md` — and the selftest asserts that file still carries all four
+    escape strings, all three defaults, and all three allowed ranges the script declares, so doctrine
+    and code cannot drift apart.
+  - **Escalate-and-continue was deliberately NOT copied from the rails-flow half.** Criteria are
+    independent; a gated chain is not. Nothing downstream of a stopped stage is independent of it, so
+    "continuing" is the out-of-order escape under a friendlier name. A stop ends a pipeline run.
+  - **Wired into all four unattended surfaces** — `/pipeline`, `/pipeline:deploy-cloud`,
+    `pipeline-coordinator`, `kamal-configurator` — and the selftest **fails** if a pipeline command or
+    agent describes an unattended re-run without naming the breaker. That rule found its own four
+    subjects on its first run, and a line-based version silently missed `pipeline.md`, where "run the
+    whole pipeline" wraps across two lines; it matches whitespace-normalised text now.
+  - Registered as the gate **`pipeline stop conditions`**. **59 selftest checks** (fires-and-silent
+    per breaker, including the near misses that decide whether it survives: the last attempt before
+    the cap, one minute short of the budget, a shrinking failure count) and **14 declared mutations**,
+    all caught. One fail-open was found by writing them: a ledger with no `started` made the budget
+    rule return silently instead of refusing, on exactly the hand-edited input where it matters most.
+    It is `UNUSABLE` now, with its own fixture and mutation.
+- **FIX — `reference/model-tiers.md` justified both tiers with a premise this release makes false.**
+  It rested on *"this plugin ships no deterministic scripts at all"*; it now ships one. The
+  conclusion is unchanged and the reason is now the honest one — `breaker.py` grades a **run**
+  (attempts, signatures, ordering, budget), never a **judgement**, so it cannot tell that the
+  coordinator picked the wrong stage or that a deploy succeeded against the wrong host. A tier table
+  justified by a false premise is the `doctrine-contradiction` class whatever its conclusion.
 
 ### 1.2.0 — 2026-08-01
 
