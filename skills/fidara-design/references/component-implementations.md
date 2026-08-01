@@ -47,7 +47,10 @@ module Ui
     # pack manifest, so a client brand needs no code change.
     def initialize(variant: :lockup, size: :md, brand_variant: nil)
       @variant = variant.to_sym                        # :mark (prism only) | :lockup (+ wordmark)
-      @px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)   # enforce the 20px minimum
+      # `size:` is a SIZE key OR a px number (brand.md: prism min 20px digital). Branch on the type,
+      # and `to_s` before `to_i`: neither Integer nor Symbol responds to the other branch's method,
+      # so a bare `SIZE[size.to_sym] || size.to_i` raises on BOTH `size: 48` and `size: :xl`.
+      @px = (size.is_a?(Integer) ? size : SIZE[size.to_sym] || size.to_s.to_i).clamp(20, 200)
       brand = Rails.configuration.x.brand              # generated from brands/<pack>/brand.json
       key = (brand_variant || brand.default_variant).to_s
       v = brand.variants[key] || brand.variants[brand.default_variant.to_s]

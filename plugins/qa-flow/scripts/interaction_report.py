@@ -59,6 +59,7 @@ SCHEMA_EXAMPLE = {
     "controls": [{
         "ref": "main > button.filter", "tag": "button", "role": "", "name": "Filter",
         "disabled": False, "href": None, "exercised": True, "reason": None,
+        "constraintBlocked": False,
         "effects": {k: False for k in EFFECT_KEYS},
         "consoleAfter": [{"level": "error", "text": "..."}],
     }],
@@ -104,6 +105,13 @@ def excluded_reason(control: dict) -> str | None:
     """Why this control is not a candidate for `dead-control`, or None if it is."""
     if control.get("disabled"):
         return "disabled — doing nothing is correct"
+    if control.get("constraintBlocked"):
+        # #357. A submit inside a form with an unfilled `required` field fires no request because
+        # the browser blocked it -- doing nothing is CORRECT, exactly like a disabled control.
+        # Reported from a real app: every sign-in, sign-up and validated form false-positived, and
+        # the buttons all worked. A rule that fires on the most common form on the internet is a
+        # rule switched off within a day, which would have cost every genuine dead control too.
+        return "submit blocked by native constraint validation — the form is invalid, so no action is correct"
     if control.get("tag") == "a" and control.get("href"):
         # Navigation is the effect. A sweep that stays on the page cannot observe it, and flagging
         # it would put every link on the site in the report.
@@ -208,6 +216,15 @@ def selftest() -> int:
     # THE EXCLUSIONS.
     check("a disabled control is not dead", rules(ctl(disabled=True)) == [])
     check("a link with href is not dead", rules(ctl(tag="a", href="/next")) == [])
+    # #357, reported from a real app: a submit inside a form with an unfilled `required` field.
+    check("a submit blocked by constraint validation is not dead",
+          rules(ctl(constraintBlocked=True)) == [], f"{rules(ctl(constraintBlocked=True))}")
+    # NEAR MISS: the exclusion must need the FORM to be invalid. A submit in a VALID form that does
+    # nothing is a genuine dead control, and excluding every submit would gut the rule.
+    check("a submit in a VALID form is still judged",
+          rules(ctl(constraintBlocked=False)) == ["dead-control"],
+          "constraintBlocked=False must not exempt anything")
+
     check("a link WITHOUT href is still judged",
           rules(ctl(tag="a", href=None)) == ["dead-control"],
           "an anchor with no href navigates nowhere; it is exactly the dead control to catch")

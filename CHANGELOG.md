@@ -7,7 +7,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-
 ### 2026-08-01 — the install block, and a rule that can see it
 
 - **FIX — `design-flow` was missing from the README's install block** (#203, second occurrence).
@@ -2032,6 +2031,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.29.1 — 2026-08-01
+
+- **`Ui::Logo`'s `size:` raised `NoMethodError` on every input except a SIZE key or a numeric
+  string** (#352). `@px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)` contradicts itself on one
+  line: the `|| size.to_i` fallback and the clamp both say a px number may arrive — and `brand.md`
+  states a *"prism 20px digital"* minimum, which only means anything if one can — but
+  `Integer#to_sym` does not exist, so `size: 48` raised before reaching the branch written for it.
+  Now branches on the type. **Design decision, not a framework claim:** an out-of-range value keeps
+  clamping silently rather than raising, consistent with the `8 → 20` / `999 → 200` behaviour already
+  in the expression. Verified in Ruby across eight inputs; the pre-fix expression raises on three.
+- **Measuring #352 found a second raise the report missed, in the same expression.** `Symbol#to_i`
+  does not exist either, so *any* key absent from `SIZE` — `size: :xl` — raised as well. The
+  fallback only ever worked for the one input nobody writes, a numeric string. Hence `to_s.to_i`.
+- **New `unreachable-coercion-fallback` rule** in `lint_self_consistency.py` — `X.to_sym` guarding a
+  `X.to_i`/`to_f` fallback on the same identifier, across `skills/` and `plugins/` markdown. This is
+  the class `lint_markdown_code.py` **structurally cannot** catch: `ruby -c` accepts it, because it
+  is valid syntax that raises at run time. Backreferenced, so different identifiers (the normal
+  shape) stay silent, and comments are skipped — the doctrine explaining the bug has to quote it.
+  Selftest 77 → 85 assertions; mutations 21 → 23, both new ones caught by their own fixture.
+- **Two claims in #352 were false, and are recorded because the pattern repeats** (#142). It quoted
+  supporting doctrine — *"`:sm`/`:md`/`:lg` from SIZE, **or an integer px**"* — that appears nowhere
+  in the skill: the word "integer" is absent from `fidara-design` entirely. It also placed a mirror
+  of the component in `reference-implementation.md`, which contains no Logo. The defect was real,
+  but on **internal** evidence (the dead fallback, the clamp, `brand.md`'s px minimum), not on the
+  authority the report claimed. An issue body is a hypothesis.
 
 ### 1.29.0 — 2026-08-01
 
@@ -3383,6 +3407,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.19.1 — 2026-08-01
+
+Both of these came from the first run against a real Rails app, which is the run no fixture here
+could substitute for. Both are defects in what shipped.
+
+- **FIX — `[dead-control]` false-positived on every validated form** (#357). A submit inside a form
+  with an unfilled `required` field fires **no request**: the browser blocked it, and doing nothing
+  is *correct*. The judge saw only "clicked, nothing happened" and called a working button dead —
+  reported from a real sign-in whose full flow was verified by hand.
+  - **This is the exact failure the rule was designed around**, and it still shipped. The docstring
+    says a false positive on a working button is what gets a rule switched off; sign-in, sign-up and
+    every validated form would have triggered it, taking every genuine dead control down with it.
+  - The collector now measures `form.checkValidity()` and the judge treats a blocked submit as an
+    **exclusion**, like `disabled` — browser measures, Python judges, as everywhere else. The
+    near-miss is pinned: a submit in a **valid** form is still judged, or the exclusion would gut
+    the rule instead of narrowing it.
+- **FIX — the documented invocation could not run at all** (#356). `crawl_collector.js` is ESM, so
+  `import 'playwright'` walks `node_modules` from the **script's** location — the plugin cache — not
+  the project. It failed with `ERR_MODULE_NOT_FOUND` with Playwright plainly installed, and
+  `NODE_PATH` has no effect on ESM. The only workaround was copying the file into the project.
+  - Playwright is now resolved via `createRequire` anchored at the working directory, and a failure
+    **names the directory it looked in** and the command to fix it, because "cannot find package"
+    when the package is right there is a bewildering thing to be told.
+  - **Third defect this week of the same shape: the thing tested and the thing shipped were
+    different files.** The judges were exercised against fixtures; the collector was never once run
+    from its installed location.
+
 ### 1.19.0 — 2026-08-01
 
 - **Visual regression baselines** (#112). The audit produced 359 screenshots and had nothing to
@@ -4186,7 +4237,6 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-
 ### 1.10.1 — 2026-08-01
 
 - **`design-auditor` reports stock LLM phrasing as a count** (#131). Marketing copy using
@@ -4918,6 +4968,37 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-01 (release v1.52.1)
+
+> ### Everything here came from running the toolchain against a real Rails app
+>
+> Three defects, none of which any of the 41 gates found — because all three are about **behaviour
+> at run time**, and the gates check content. Two of them made a shipped tool report confidently
+> wrong things; the third raised on code we tell users to copy. The first real app run was worth
+> more than the fixture suite it can't replace.
+
+- **`[dead-control]` false-positived on every validated form** (#357, qa-flow). A submit inside a
+  form with an unfilled `required` field fires no request — the browser blocked it, and doing
+  nothing is *correct*. The collector now records `constraintBlocked` via `form.checkValidity()`
+  and the judge excludes it, as it already did for `disabled`. The near-miss is pinned: a submit in
+  a **valid** form is still judged, so the exclusion cannot swallow the finding it was carved from.
+- **The crawl could not resolve a project's own Playwright** (#356, qa-flow). ESM resolves from the
+  *script's* location, not the working directory, and `NODE_PATH` does not apply to ESM — so the
+  collector never saw a dependency installed in the app it was crawling. Now resolved through
+  `createRequire(process.cwd())`; when it still fails it names the directory and the fix, and exits
+  2 rather than reporting an empty crawl as a clean one.
+- **`Ui::Logo` raised `NoMethodError` on almost every `size:`** (#352, rails-stack). The reference
+  snippet contradicted itself on one line: a `|| size.to_i` fallback and a `clamp(20, 200)` that
+  only mean something if a px number can arrive, behind a `size.to_sym` that raises when one does.
+  Measuring it found a second raise the report missed — `Symbol#to_i` does not exist either, so any
+  key outside `SIZE` raised too, and the fallback only ever worked for a numeric string.
+- **New `unreachable-coercion-fallback` gate** for that class, which `ruby -c` structurally cannot
+  catch: it is valid syntax that raises at run time. Selftest 77 → 85 assertions, mutations 21 → 23.
+- **Two claims in #352 were false** — quoted doctrine that appears nowhere in the skill, and a
+  mirrored call site that does not exist. The defect was real on internal evidence, not the
+  authority the report claimed. Third time this pattern has been recorded (#142, #229, now #352):
+  **an issue body is a hypothesis.**
 
 ### 2026-08-01 (release v1.52.0)
 
