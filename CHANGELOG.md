@@ -9,6 +9,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
+  subprocess per declared mutation, so it gets slower every time anyone makes the repo safer; at
+  236 mutations it timed out, and a timeout is reported as FAIL — indistinguishable from a real
+  survivor, so the sweep tells a maintainer to fix a checker that was working. **`SLOW_GATES`**
+  declares the allowance next to the gate rather than raising the default for everything, because a
+  gate given ten minutes is a gate that hangs for ten minutes before anyone hears about it. Keyed
+  by gate NAME exactly as `CORPORA_GATES` is, and pinned in the selftest the same way, in three
+  directions: a name matching no gate, a set that grew to cover a check that reads the tree once,
+  and the direction nobody thinks of — an "allowance" that is really a **tightening**. Three
+  declared mutations. Parallelising the checker was tried and **reverted**: it measured ~7% on a
+  machine running other agents' sweeps concurrently, and an unmeasurable speedup is not worth
+  concurrency in the checker every other gate is judged by. The reasoning is recorded on
+  `run_guard` so the next person does not re-derive it.
+- **FIX — the quality-pass worked example restated two gated counts as bare prose numbers, and both
+  had gone stale** (#129). The table said 11 and 10; the sentence three lines below still said 9 and
+  8. `check_shared_shapes.py` could not see it, because it reconciles the *table*. That is a second
+  copy of a number with no arbiter — the exact shape the row above it is about — so the numbers are
+  gone and the sentence points at the table instead. Found by the gate failing on the counts #129
+  legitimately moved (a 12th `check()` harness, a 3rd luminance copy), which is the gate working.
+
 - **FIX — `docs/harness-doctrine.md` carried three stale gap-claims, and one of them told the reader
   to trust it** (found while working #128). §8 said a grep for
   `circuit.?breaker|stop condition|max attempts|bail out` across `plugins/` and `skills/` *"still

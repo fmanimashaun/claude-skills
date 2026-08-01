@@ -64,9 +64,9 @@ and half of what follows turns on that boundary.
 |---|---|---|
 | `class Unusable(RuntimeError)` | 5 | one plugin |
 | the `json.loads` -> `Unusable` prologue | 5 | one plugin |
-| the `check(label, ok, detail)` selftest harness | 11 | two plugins + non-shipped tooling |
+| the `check(label, ok, detail)` selftest harness | 12 | three plugins + non-shipped tooling |
 | the `SELFTEST FAILED --` reporter | 10 | two plugins + non-shipped tooling |
-| WCAG relative luminance | 2 | one plugin + non-shipped tooling |
+| WCAG relative luminance | 3 | two plugins + non-shipped tooling |
 
 <!-- shared-shapes:end -->
 
@@ -75,9 +75,15 @@ them from the repo and fails when this table disagrees — a count in prose that
 re-reads is the `claims-vs-enforcement` class, and it would be a poor look inside the
 skill next door to the one that names it.
 
-The harness (9) and reporter (8) counts include **that checker's own selftest**, which
-uses the same harness every other script in the repo uses. That is not an oversight and it
-is not excluded: it is the near-miss made concrete. A shared *idiom* — the shape every
+The harness and reporter counts include **that checker's own selftest**, which uses the
+same harness every other script in the repo uses. That is not an oversight and it is not
+excluded: it is the near-miss made concrete.
+
+(Those two counts were restated here as bare numbers, and by the time #129 next touched
+this file both were stale — the table said 11 and 10, the prose still said 9 and 8. The
+gate could not see it, because it reconciles the *table*. Restating a gated number in
+ungated prose gives you a second copy with no arbiter, which is the very thing the row
+above is about, so the numbers are gone and the sentence now points at the table.) A shared *idiom* — the shape every
 selftest in a codebase takes — is not the same thing as a shared *mechanism*, and carving
 the measuring file out of its own measurement is exactly the kind of exemption this repo
 lints for.
@@ -101,13 +107,22 @@ direction — two files in this codebase import a sibling module out of exactly 
 directory. So the import resolves, the objection does not apply, and the honest reason not
 to extract has to be a different one. (It is: see below.)
 
-**`reuse`, near-miss — WCAG relative luminance, twice.** One copy is in a shipped plugin
-script, one in maintainer tooling that never leaves the repository. No import can cross
-that boundary, so duplication is correct. What makes it *safe* is that each copy is tested
-against the standard's own published control value — `#767676` on white is `4.54:1` — so
-they cannot silently diverge. That is the general form: **duplication across an
+**`reuse`, near-miss — WCAG relative luminance, three times.** Two copies are in shipped
+plugin scripts, one in maintainer tooling that never leaves the repository. No import can
+cross that boundary, so duplication is correct. What makes it *safe* is that each copy is
+tested against the standard's own published control value — `#767676` on white is `4.54:1`
+— so they cannot silently diverge. That is the general form: **duplication across an
 uncrossable boundary is fine when both copies answer to the same external arbiter, and a
 defect when the rule is a house rule with no arbiter at all.**
+
+The third copy arrived later (#129, `plugins/design-flow/scripts/palette_candidates.py`)
+and is worth recording, because it tested the rule rather than merely obeying it. Sharing
+the external arbiter is the *minimum*; that copy also has `check_token_contrast.py
+--selftest` import it and assert the two agree to `1e-9` across a probe set, **plus a
+positive control proving the comparison can detect a disagreement at all**. That last part
+is the bit worth copying. A parity assertion with no positive control cannot tell "the two
+agree" from "nothing was compared", and the first draft of that fixture was exactly that
+tautology — caught by mutation, not by review.
 
 **`efficiency` — a set rebuilt once per iteration.** In `theme_parity.compare()`, the
 second loop tested membership against a set comprehension over the *other* snapshot's
