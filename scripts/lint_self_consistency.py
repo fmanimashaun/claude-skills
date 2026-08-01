@@ -676,6 +676,54 @@ def check_v4_outline_none() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_unreachable_coercion_fallback() -> tuple[list[Finding], int]:
+    """`X.to_sym … || X.to_i` -- the guard raises on exactly the input the fallback is for.
+
+    Found by #352, in the `Ui::Logo` reference snippet users copy verbatim:
+
+        @px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)
+
+    The `|| size.to_i` says a number may arrive; `.clamp(20, 200)` says so again, and brand.md
+    states a 20px digital minimum for the prism, which only means something if a px value can be
+    passed. But `Integer#to_sym` does not exist, so `size: 48` raises `NoMethodError` before the
+    fallback it was written for can run. **The expression contradicts itself on one line.**
+
+    Measuring it found a second case the report missed: `Symbol#to_i` does not exist either, so
+    `size: :xl` -- any key not in SIZE -- raised too. The fallback worked only for Strings, which
+    is the one input nobody writes.
+
+    This is the class `lint_markdown_code.py` structurally cannot catch: `ruby -c` accepts it,
+    because it is valid syntax that raises at run time. So it needs a pattern rule, and the pattern
+    is exact rather than heuristic -- two coercions on the same identifier where each is undefined
+    on the type the other implies.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    # Backreference `\1`: only the SAME identifier counts. `SIZE[k.to_sym] || other.to_i` is fine.
+    pattern = re.compile(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)\.to_sym\b[^\n]*\|\|[^\n]*\b\1\.to_(?:i|f)\b")
+    for path in walk(".md"):
+        slug = rel(path).replace("\\", "/")
+        if not (slug.startswith("skills/") or slug.startswith("plugins/")):
+            continue
+        examined += 1
+        for index, line in enumerate(read(path).splitlines(), 1):
+            # Skip Ruby comments. The doctrine explaining this defect necessarily quotes the bad
+            # expression -- the fix for #352 carries it in a comment two lines above the fix, and
+            # the first draft of this rule flagged that comment as the only hit in the repo.
+            if line.lstrip().startswith("#"):
+                continue
+            if pattern.search(line):
+                findings.append(Finding(
+                    "unreachable-coercion-fallback", rel(path), index,
+                    "`to_sym` guards a `to_i`/`to_f` fallback on the same value, so the fallback "
+                    "is unreachable: `Integer#to_sym` and `Symbol#to_i` both raise NoMethodError. "
+                    "Branch on the type first -- `x.is_a?(Integer) ? x : MAP[x.to_sym] || "
+                    "x.to_s.to_i`. See #352",
+                ))
+    return findings, examined
+
+
 def check_uninstallable_plugins() -> tuple[list[Finding], int]:
     """Every declared plugin needs an actual `/plugin install` line in the README.
 
@@ -856,6 +904,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     uninstallable, plugins_installable = check_uninstallable_plugins()
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
     outlines, outlines_examined = check_v4_outline_none()
+    coercions, coercions_examined = check_unreachable_coercion_fallback()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -868,10 +917,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugins_checked_for_install_lines": plugins_installable,
         "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
+        "shipped_docs_scanned_for_coercion_fallbacks": coercions_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root,
+            + pointers + outlines + uninstallable + plugin_root + coercions,
             coverage)
 
 
@@ -1296,6 +1346,36 @@ def selftest() -> int:
     # Scope: this is Tailwind-v4 doctrine WE ship. A plugin or script mentioning it is not a recipe.
     scenario("outside skills/ is out of scope", rule=ON, expect_finding=False,
              files={"plugins/x/commands/c.md": 'class="focus-visible:outline-none"\n'})
+
+    # ---- unreachable-coercion-fallback --------------------------------------------
+    UC = "unreachable-coercion-fallback"
+    scenario("the #352 Logo expression verbatim", rule=UC, expect_finding=True,
+             files={"skills/x/references/t.md":
+                    "      @px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)\n"})
+    scenario("to_f counts too -- same contradiction, different coercion", rule=UC, expect_finding=True,
+             files={"skills/x/references/t.md":
+                    "    @ratio = SCALE[ratio.to_sym] || ratio.to_f\n"})
+    scenario("plugins/ is in scope as well as skills/", rule=UC, expect_finding=True,
+             files={"plugins/x/commands/c.md": "  @px = MAP[size.to_sym] || size.to_i\n"})
+    # The FIX must be silent, or the rule fails the file it was written for.
+    scenario("the type-branching fix is silent", rule=UC, expect_finding=False,
+             files={"skills/x/references/t.md":
+                    "      @px = (size.is_a?(Integer) ? size : SIZE[size.to_sym] || "
+                    "size.to_s.to_i).clamp(20, 200)\n"})
+    # NEAR MISS, and the one that caught a real bug in this rule's first draft: the doctrine
+    # explaining #352 has to quote the broken expression, and it sits two lines from the fix.
+    scenario("a Ruby comment quoting the bad expression is silent", rule=UC, expect_finding=False,
+             files={"skills/x/references/t.md":
+                    "      # a bare `SIZE[size.to_sym] || size.to_i` raises on `size: 48`\n"})
+    # NEAR MISS: different identifiers is the normal, correct shape -- look up by one, fall back
+    # to another. Firing here would flag ordinary code and get the rule switched off.
+    scenario("different identifiers are not a contradiction", rule=UC, expect_finding=False,
+             files={"skills/x/references/t.md": "    @px = SIZE[key.to_sym] || fallback.to_i\n"})
+    # NEAR MISS: `to_sym` alone is the overwhelmingly common case and is perfectly correct.
+    scenario("to_sym with no numeric fallback is silent", rule=UC, expect_finding=False,
+             files={"skills/x/references/t.md": "    @variant, @size = variant.to_sym, size.to_sym\n"})
+    scenario("outside shipped docs is out of scope", rule=UC, expect_finding=False,
+             files={"docs/x.md": "    @px = SIZE[size.to_sym] || size.to_i\n"})
 
     # ---- invisible-character -----------------------------------------------------
     IC = "invisible-character"

@@ -2032,6 +2032,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`Ui::Logo`'s `size:` raised `NoMethodError` on every input except a SIZE key or a numeric
+  string** (#352). `@px = (SIZE[size.to_sym] || size.to_i).clamp(20, 200)` contradicts itself on one
+  line: the `|| size.to_i` fallback and the clamp both say a px number may arrive — and `brand.md`
+  states a *"prism 20px digital"* minimum, which only means anything if one can — but
+  `Integer#to_sym` does not exist, so `size: 48` raised before reaching the branch written for it.
+  Now branches on the type. **Design decision, not a framework claim:** an out-of-range value keeps
+  clamping silently rather than raising, consistent with the `8 → 20` / `999 → 200` behaviour already
+  in the expression. Verified in Ruby across eight inputs; the pre-fix expression raises on three.
+- **Measuring #352 found a second raise the report missed, in the same expression.** `Symbol#to_i`
+  does not exist either, so *any* key absent from `SIZE` — `size: :xl` — raised as well. The
+  fallback only ever worked for the one input nobody writes, a numeric string. Hence `to_s.to_i`.
+- **New `unreachable-coercion-fallback` rule** in `lint_self_consistency.py` — `X.to_sym` guarding a
+  `X.to_i`/`to_f` fallback on the same identifier, across `skills/` and `plugins/` markdown. This is
+  the class `lint_markdown_code.py` **structurally cannot** catch: `ruby -c` accepts it, because it
+  is valid syntax that raises at run time. Backreferenced, so different identifiers (the normal
+  shape) stay silent, and comments are skipped — the doctrine explaining the bug has to quote it.
+  Selftest 77 → 85 assertions; mutations 21 → 23, both new ones caught by their own fixture.
+- **Two claims in #352 were false, and are recorded because the pattern repeats** (#142). It quoted
+  supporting doctrine — *"`:sm`/`:md`/`:lg` from SIZE, **or an integer px**"* — that appears nowhere
+  in the skill: the word "integer" is absent from `fidara-design` entirely. It also placed a mirror
+  of the component in `reference-implementation.md`, which contains no Logo. The defect was real,
+  but on **internal** evidence (the dead fallback, the clamp, `brand.md`'s px minimum), not on the
+  authority the report claimed. An issue body is a hypothesis.
 
 ### 1.29.0 — 2026-08-01
 
