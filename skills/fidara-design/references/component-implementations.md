@@ -1717,7 +1717,9 @@ Preflight sets `list-style: none` on every `ol`/`ul`, and WebKit then drops the 
 <%# Infinite-scroll feed — the APG pattern in full, and only when scrolling really loads more.
     aria-busy goes true for the duration of a multi-step DOM update, not per row. %>
 <div role="feed" aria-labelledby="feed-title" aria-busy="<%= @loading %>"
-     data-controller="feed" data-action="keydown.page-down->feed#next keydown.page-up->feed#previous">
+     <%# page_up/page_down are UNDERSCORED — Stimulus throws "contains unknown key filter" at %>
+     <%# event time on an unmapped name, so `page-down` fails on the first keystroke, not at boot %>
+     data-controller="feed" data-action="keydown.page_down->feed#next keydown.page_up->feed#previous">
   <% @posts.each_with_index do |post, i| %>
     <article role="article" aria-labelledby="post-<%= post.id %>-title"
              aria-describedby="post-<%= post.id %>-body"
