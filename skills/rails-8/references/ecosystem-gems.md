@@ -164,20 +164,52 @@ Pick one; both check on the server, views only *hide* (`policy(...).update?`
 
 Fastest and lightest of the pagination gems; the modern default choice.
 
-```ruby
-# Gemfile: gem "pagy"
-# ApplicationController: include Pagy::Backend
-# ApplicationHelper:    include Pagy::Frontend
+**Checked against pagy 43.6.1.** Version 43 is *"a complete redesign of the legacy code at all
+levels, usage and API included"* and ships **no compatibility shims**, so every pre-43 tutorial you
+will find is wrong on the current gem: `Pagy::Backend`, `Pagy::Frontend` and the `pagy_nav` view
+helper do not exist and raise `NameError`. Pin the major so a future leap cannot land silently:
 
-def index
-  @pagy, @products = pagy(Product.order(:name), limit: 25)
+```ruby
+# Gemfile
+gem "pagy", "~> 43.6"
+```
+
+One module, included where you paginate — there is no longer a separate frontend include:
+
+```ruby
+# app/controllers/application_controller.rb
+class ApplicationController < ActionController::Base
+  include Pagy::Method
 end
 ```
 
+```ruby
+# app/controllers/products_controller.rb
+def index
+  @pagy, @products = pagy(:offset, Product.order(:name), limit: 25)
+end
+```
+
+The **paginator symbol is the first argument** — `:offset`, `:countish`, `:countless`, `:keyset`,
+`:keynav_js`, `:calendar`, plus the search backends. It defaults to `:offset`, but pass it
+explicitly: which technique you paginate with is the decision worth seeing in the diff. `:limit`
+defaults to 20.
+
+Nav and info are **methods on the `@pagy` object**, not helpers:
+
 ```erb
 <%= render @products %>
-<%== pagy_nav(@pagy) %>   <%# note the raw-output %%== %>
+<%== @pagy.series_nav %>   <%# note the raw-output %%== %>
 ```
+
+Also `@pagy.series_nav_js`, `@pagy.input_nav_js` and `@pagy.info_tag`. (`@pagy.limit_tag_js` needs
+a `max_limit:` option on the `pagy` call — without one it raises `Pagy::OptionError`, not a blank
+tag.) A CSS framework is an **argument**, not a different method — `@pagy.series_nav(:bootstrap)`. No
+initializer is required; add `config/initializers/pagy.rb` only to set `Pagy::OPTIONS` globals. The
+default `:pagy` style wants the gem's `pagy.css`; `:bootstrap` and `:bulma` need no stylesheet.
+
+Maintaining a pre-43 app? Pagy publishes a search-and-replace table:
+[Upgrade to 43](https://ddnexus.github.io/pagy/guides/upgrade-guide/).
 
 (kaminari/will_paginate: same job in older codebases — `Product.page(params[:page]).per(25)`; don't migrate working code, just don't start new apps on them.)
 
