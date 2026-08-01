@@ -2031,6 +2031,69 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The purchase flow is documented, and the checkout exception is now stated rather than implied**
+  (Refs #91 — the commerce family, shipped in slices; this is the purchase/checkout slice).
+  `crud-modal-pattern.md` said flatly *"treat full-page CRUD forms as a defect"* while
+  `page-anatomies.md` already shipped a full-page Checkout: two shipped rules contradicting each
+  other, which is the `doctrine-contradiction` class our own `code-review` skill names. The
+  exception is now named, scoped to four conditions that are properties of the Modal component
+  (dismiss affordances over a financial commitment, the page behind being the thing abandoned, the
+  focus trap vs a provider iframe, one address for a multi-step flow), and explicitly non-general.
+  **Architecture decision, not a framework claim** — the authority is the maintainer's own wording
+  in [#91](https://github.com/fmanimashaun/claude-skills/issues/91) (*"checkout is the one legitimate
+  multi-step, full-page flow … state it explicitly so agents don't force it into a modal"*), linked
+  where a citation would go. New `Checkout — the purchase flow` anatomy, new `Payment / card entry`
+  and `Promo / discount code` catalog entries, worked recipes for both.
+  - **The PCI framing in scope changed on 2025-03-31, and the intuitive version is the wrong one.**
+    PCI DSS v4.0.1's January 2025 SAQ A **removed** Requirements 6.4.3 and 11.6.1 (and 12.3.1) as SAQ
+    A line items and replaced them with an eligibility criterion — *"the merchant has confirmed that
+    their site is not susceptible to attacks from scripts that could affect the merchant's e-commerce
+    system(s)"* — which per PCI SSC **FAQ 1588** applies **only** to merchants embedding the
+    provider's payment form in iframe(s) and *"does not apply to … a webpage that redirects
+    customers"*. Writing "your iframe checkout must satisfy 6.4.3 and 11.6.1 under SAQ A" would have
+    been #142's shape exactly: traceable to a real source, wrong today. Sources: PCI SSC blog,
+    [SAQ A updates](https://blog.pcisecuritystandards.org/important-updates-announced-for-merchants-validating-to-self-assessment-questionnaire-a)
+    and [FAQ 1588](https://blog.pcisecuritystandards.org/faq-clarifies-new-saq-a-eligibility-criteria-for-e-commerce-merchants).
+    Version boundary: PCI DSS **v4.0.1**, SAQ A January 2025 revision, effective **31 March 2025**.
+  - **Cited, with the version each claim is true at.** WCAG 2.2 —
+    [3.3.7 Redundant Entry (**A**)](https://www.w3.org/WAI/WCAG22/Understanding/redundant-entry.html),
+    whose Understanding doc's own example is the billing/delivery address checkbox;
+    [3.3.4 Error Prevention (Legal, Financial, Data) (**AA**)](https://www.w3.org/TR/WCAG22/#error-prevention-legal-financial-data),
+    which the review step answers via *Confirmed*;
+    [2.2.1 Timing Adjustable (**A**)](https://www.w3.org/TR/WCAG22/#timing-adjustable) for a cart
+    hold, with a note not to stretch its Real-time Exception (an auction) to a reservation timer;
+    [1.3.5 Identify Input Purpose (**AA**)](https://www.w3.org/WAI/WCAG22/Understanding/identify-input-purpose.html)
+    plus [H98](https://www.w3.org/WAI/WCAG22/Techniques/html/H98)'s scope limit (*"only place
+    requirements on input fields collecting information about the user"*).
+    WHATWG HTML — the `cc-*` autofill names, the fixed token order (`section-*` → `shipping`/`billing`
+    → `home`/`work`/… → field name), and the `type=number` note that names **credit card numbers and
+    US postal codes** as inappropriate. Turbo **8.0.23** — the submitter is auto-disabled for the
+    duration of a submission, `data-turbo-submits-with` supplies the in-flight label,
+    `data-turbo="false"` opts a provider redirect out, and a submission expects **303** / **422**.
+    Tailwind **v4** — `tabular-nums`.
+  - **Two claims in the issue body were verified false and are not implemented** (#142's rule, again).
+    It required money at *"`decimal(15,2)` per the rails-8 doctrine"*: rails-8's actual money doctrine
+    is `ecosystem-gems.md` — *"store integer minor units (`price_cents`) always"* — and the string
+    `decimal(15,2)` appears nowhere in this repo (`models.md` shows `decimal{10,2}` for a generic
+    price). Writing it would have put a storage rule into a **design** skill that contradicts our own
+    **framework** skill. It also required money in `font-mono`, which `brand.md` scopes to *reference
+    numbers, SLA timers, code, timestamps*. Doctrine now says money is `tabular-nums`, an order
+    reference is `font-mono`, and storage is rails-8's call — the discrepancy is flagged on the issue
+    rather than decided silently.
+  - **`Ui::AddressFieldsComponent` was referenced by the Checkout anatomy with no `autocomplete`
+    tokens at all** — a 1.3.5 gap in shipped doctrine, multiplied by every screen that renders an
+    address. It now takes `mode: :shipping | :billing | :none` and emits `billing postal-code`-shaped
+    tokens in the spec's required order. Its call site is updated with it.
+  - **APG has no pattern for a wizard, a checkout or a coupon field** — re-confirmed against the
+    current index, so the multi-step shape reuses the existing `Stepper / wizard` contract (already
+    ours, from #95) instead of a second mechanism, and the promo-code shape is decided as ours. The
+    two HTML-spec rules that settle it: a `<form>`'s content model is *"Flow content, but with no
+    `form` element descendants"*, and *"a form element's default button is the first submit button in
+    tree order"* — so the code entry is a **sibling** form, never nested and never the checkout
+    form's default button.
+
 ### 1.29.1 — 2026-08-01
 
 - **`Ui::Logo`'s `size:` raised `NoMethodError` on every input except a SIZE key or a numeric
