@@ -31,6 +31,52 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   one**: the new `filter / typeahead` note was first written as ``aria-autocomplete=list|both``,
   which generated, committed and drift-checked perfectly happily. Scans every rendered cell —
   component rows, interaction patterns, layout primitives — with fixtures on two of the three.
+- **NEW gate `skill routing` + `skill routing selftest`** (#158) — asserts every file in a shipped
+  skill's `references/` is named by its own `SKILL.md`, that no `SKILL.md` routes to a reference
+  that does not exist, and that no `SKILL.md` body exceeds Claude Code's documented 500-line
+  Level-2 budget. `scripts/check_skill_routing.py`, registered in `GATES`, 15 selftest checks,
+  5 declared mutations in `mutation_check.py`.
+  - **The issue's central premise was REFUTED, and the gate is what survived it.** #158 proposed
+    rebuilding `SKILL.md` as a "capability router" because *"a skill is loaded as a unit, so a task
+    that only needs `jobs-and-realtime.md` still pays for `deployment-kamal.md`"*. The official docs
+    say the opposite: *"Claude reads only the files each task needs. A Skill can include dozens of
+    reference files, but if your task only needs the sales schema, that's the one file Claude loads.
+    The rest stay on the filesystem and **cost zero tokens**"*
+    ([agent-skills/overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)).
+    The domain-split `references/` layout we already have is the documented recommendation
+    (*"Pattern 2: Domain-specific organization"*,
+    [best-practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)).
+    **No router was built** — there is no Claude Code routing/sub-skill mechanism to build one on,
+    and the issue's supporting citation (`npx skills add --full-depth`) is an unrelated third-party
+    registry flag about git-clone freshness, not context depth.
+  - What the issue got right is its last criterion — reachability *"asserted by a script rather than
+    by review"* — and that rests on a claim the docs do make: *"Keep references one level deep from
+    SKILL.md. All reference files should link directly from SKILL.md"*, because *"Claude may
+    partially read files when they're referenced from other referenced files"* (best-practices).
+  - **The precision fixture is the point.** Routing is a `references/<name>` path, not a bare
+    filename: two fidara-design references name `coverage.md` in prose while routing nothing, so a
+    substring test would have called the tree clean and hidden the one real defect. Link syntax is
+    *not* required either — the docs never mandate `[]()`, and demanding it would fail all 19
+    rails-8 dispatch rows for a rule nobody wrote.
+  - Scope is pinned in `SHIPPED_SKILLS` and enforced **by the gate against the real tree**, both
+    directions, so a fifth skill fails the sweep until added deliberately. It is not pinned in the
+    selftest: a scope asserted only over fixtures is a claim about fixtures, and keeping
+    `--selftest` hermetic is what lets the mutation harness run it against a mutated copy.
+- **Agent worktrees are ignored and pruned from every linter.** Claude Code puts background-agent
+  worktrees at `.claude/worktrees/` — **inside the repo**, one full copy each — and
+  `git status --porcelain` collapses the whole tree to a single `?? ` line, so sixteen repo copies
+  looked like nothing at all. That is the untracked-directory trap `CLAUDE.md` already warns about,
+  now sitting one careless `git add` away from committing sixteen copies of the repo.
+- **The linters were reading them.** `.claude` is one of `DEFAULT_ROOTS`, so a sweep went from **129
+  files to 1526** — and the failure mode is worse than slowness: another agent's half-finished edit
+  fails the *maintainer's* gate run, over a file that is not in the maintainer's tree. Pruned by
+  exact name in all three linters, with a `worktrees-notes/` near-miss fixture so the prune cannot
+  widen and go quiet.
+- The ignore pattern is **root-anchored and slash-free**, per #197 — the lesson there being a
+  pattern that was written, believed, and matched nothing.
+- Adding to `SKIP_DIRS` broke the existing `corpora no longer pruned` mutation's anchor, and the
+  mutation checker **hard-errored** rather than passing quietly. Both anchors updated; that stale-
+  anchor rule is the reason the drift was visible at all.
 
 ### 2026-08-01 — the install block, and a rule that can see it
 
@@ -2089,6 +2135,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   lands"*. #142 landed. The existing guard catches exactly this text — but only on `documented`
   rows, and this row is `derivable`, so nothing was watching. Now points at `Ui::Disclosure`, with
   `<details>` kept as the cheap option for groups that never animate, per `components.md`.
+- **`fidara-design/references/coverage.md` was unreachable from its own `SKILL.md`** (#158) — 230
+  lines of component doctrine (every component's guidance state, what to build it from, and which
+  surface it belongs on) reachable only via `brand.md` and `marketing-copy.md`. That is depth two,
+  which the official guidance names as the case that degrades: *"Keep references one level deep from
+  SKILL.md. All reference files should link directly from SKILL.md to ensure Claude reads complete
+  files when needed"* / *"Claude may partially read files when they're referenced from other
+  referenced files ... resulting in incomplete information"*
+  ([agent-skills/best-practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices),
+  fetched 2026-08-01). So an agent building an uncatalogued component could consult the design system
+  and never see the matrix that says what to build it from. Now routed from the **Concrete code**
+  block, and held there by the new `skill routing` gate rather than by review.
+- The other three shipped skills were already clean: 42 reference files across four skills, all
+  routed one level deep, every `SKILL.md` well inside the 500-line Level-2 budget (largest is
+  rails-8 at 227). Verified by running the gate, not by reading.
 
 ### 1.29.1 — 2026-08-01
 
@@ -5069,6 +5129,30 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### Unreleased
+
+- **`claim-verifier` is now actually wired into the flows that claim to use it** (#359). It shipped
+  in v1.52.0 and was referenced from **nowhere** — an agent built because descriptions go unchecked,
+  itself described as wired and never called. `release-manager` runs `extract_claims.py` over the
+  promotion body and hands the list to `claim-verifier` **before** opening the PR, because that body
+  becomes the published release notes and a false sentence there outlives every other kind.
+  `/maintainer-work` does the same, more cheaply, at the `dev` PR.
+- **New `unwired-claim-verifier` rule** makes criterion 5 checkable rather than prose. It is
+  deliberately narrow: it verifies the wiring exists, not that anyone reads the verdict — whether a
+  maintainer obeys it is not mechanically knowable, and pretending otherwise would be the same
+  defect one level up. It also fails a flow that names the agent **without** `extract_claims.py`,
+  since gathering the claim list by judgement is the half #359 proved cannot be relied on.
+- **Criterion 3 was declined, not skipped, and the reversal is already recorded.** It asked for
+  `claim-verifier` to be pinned to a model different from the session. `reference/model-tiers.md`
+  argues the opposite for a *shipped* agent: a pin spends a stranger's money on our authority, and a
+  value outside their `availableModels` is skipped anyway. A pin cannot buy a second opinion, only a
+  cost. So it stays `inherit`, the caller obtains independence via a per-invocation model or
+  `CLAUDE_CODE_SUBAGENT_MODEL`, and the agent must state which model it ran as.
+- **A fixture here was vacuous and a mutation caught it.** The wiring rule has two branches; asserting
+  only that *something* fired could not tell them apart, so disabling the first branch left the
+  `elif` to fire and the mutant survived. Fixtures now assert the message, not the boolean.
+- Self-consistency selftest 98 → **103** assertions; mutations 27 → **28**.
 
 ### 2026-08-01 (release v1.54.0)
 

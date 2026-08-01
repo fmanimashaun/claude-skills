@@ -89,6 +89,12 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the wiring rule stops noticing a flow that never calls claim-verifier",
+                '        if "claim-verifier" not in body:',
+                "        if False:",
+                "a flow that never names claim-verifier",
+            ),
+            Mutation(
                 "the schema-parity rule stops noticing an undocumented field",
                 "        missing = sorted(f for f in fields if f not in documented)",
                 "        missing = []",
@@ -137,9 +143,15 @@ GUARDS: tuple[Guard, ...] = (
                 "bleed into each other",
             ),
             Mutation(
-                "corpora no longer pruned from the walk",
+                "agent worktrees are no longer pruned, so a sweep reads other agents' copies",
+                ', "design-corpora", "worktrees"}',
                 ', "design-corpora"}',
-                "}",
+                "another agent's copy",
+            ),
+            Mutation(
+                "corpora no longer pruned from the walk",
+                '"design-corpora", "worktrees"}',
+                '"worktrees"}',
                 "not ours to enforce",
             ),
             Mutation(
@@ -1563,6 +1575,48 @@ GUARDS: tuple[Guard, ...] = (
                 'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b")',
                 'UNRESOLVED_RE = re.compile(r"\\b(TBD|TODO|FIXME|\\?\\?\\?)\\b", re.I)',
                 "the word todo in prose",
+            ),
+        ),
+    ),
+    # #158. The routing regex is the mutation that matters here. Its whole job is telling a real
+    # dispatch entry apart from prose that happens to name the file, and getting that wrong in the
+    # LOOSE direction is silent: every reference looks routed and the gate reports clean forever.
+    # That is precisely how `fidara-design/references/coverage.md` hid at depth 2 while two other
+    # reference files name it in passing.
+    Guard(
+        name="check_skill_routing",
+        subject="scripts/check_skill_routing.py",
+        selftest="scripts/check_skill_routing.py",
+        mutations=(
+            Mutation(
+                "the `references/` anchor becomes optional, so prose naming a file counts as routing",
+                'REF_PATH_RE = re.compile(r"(?:\\./)?references/([A-Za-z0-9._-]+\\.md)")',
+                'REF_PATH_RE = re.compile(r"(?:\\./)?(?:references/)?([A-Za-z0-9._-]+\\.md)")',
+                "a bare prose mention is NOT routing",
+            ),
+            Mutation(
+                "the unrouted rule stops reporting, so an orphaned reference is clean",
+                "    for missing in sorted(present - routed):",
+                "    for missing in []:",
+                "an unrouted reference is a finding",
+            ),
+            Mutation(
+                "the dead-link rule stops reporting, so a router pointing at nothing is clean",
+                "    for dead in sorted(routed - present):",
+                "    for dead in []:",
+                "a dead reference link is a finding",
+            ),
+            Mutation(
+                "the Level-2 budget goes off-by-one and fires on a compliant 500-line body",
+                "    if line_count > MAX_SKILL_LINES:",
+                "    if line_count >= MAX_SKILL_LINES:",
+                "a body exactly AT the budget is silent",
+            ),
+            Mutation(
+                "a skill directory with no SKILL.md becomes a silent skip instead of an error",
+                '        raise Unreadable(f"{name}/: no SKILL.md")',
+                "        return [], 0",
+                "skipped instead of raising",
             ),
         ),
     ),
