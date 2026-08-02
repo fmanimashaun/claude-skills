@@ -4769,7 +4769,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.22.0 — 2026-08-02
 
 - **`crawl_collector.js` silently ignored unknown flags and ran a default crawl** (#447). `--help`
   was not a flag it knew, so it **crawled** and wrote two files into the caller's working tree.
@@ -6831,6 +6831,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.57.0)
+
+> ### Three settings that looked honoured and were not
+>
+> All three shipped, all three read as working, and none of them did anything. A gate that is merely
+> absent is visible; one that appears wired is not.
+
+- **`links.check_external` was a switch nothing was wired to.** The scaffolded config shipped it and
+  the prose said *"enable it for a deliberate link audit"* — but `link_audit.py` counts external
+  targets and has **no code path that fetches one**. Removed; the docs now say what the tool does. A
+  new `unhonoured-config-toggle` rule refuses a scaffolded boolean no script reads, scoped to
+  booleans because string keys are often agent-applied and widening it would flag a real consumer.
+- **`crawl_collector.js` ignored unknown flags and ran a default crawl** (#447). `--help` crawled
+  and wrote two files into the caller's tree; `--visualise` produced a clean-looking run with visual
+  capture silently **off**, so the output read as evidence for something never measured. Flags are
+  enumerated now, unknown ones exit 2 naming the offender.
+- **Boot-error triage was a prose table an agent was told to eyeball.** `classify_boot_failure.py`
+  applies it: five categories matching signatures a runtime prints verbatim, **fixed order so the
+  specific cause beats incidental noise**, and `application-error` as an honest fallback rather than
+  a shrug. It prints the next action; it does not decide it.
+- **Playwright is now installable and the collector was run for the first time.** That settled a
+  claim previously only relayed: `await import()` of Playwright really does yield
+  `chromium: undefined` — it lives on `.default` — so the v1.52.1 fix was broken and shipped that
+  way for two releases. The current `projectRequire()` form is verified working, and the collector
+  plus `crawl_report.py` and `link_audit.py` are now proven end-to-end against a live browser.
+- Gate sweep **60 → 61**; self-consistency selftest 105 → **117**.
 
 ### 2026-08-02 (release v1.56.2)
 
