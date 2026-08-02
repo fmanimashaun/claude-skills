@@ -2489,6 +2489,35 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The page-pacing doctrine shipped a rule the corpus refutes** (Refs #92). Rule 1 required tone to
+  alternate *at every boundary* and rule 3 forbade a border — so at our own token values the two
+  together specified a boundary carried by a **1.053:1** step (`--background` `#F8F9FB` /
+  `--card` `#FFFFFF`) with nothing else marking it. Of six marketing templates studied, one
+  alternates at **none** of its four boundaries, and the smallest step where tone genuinely carries
+  a boundary is **24× ours**. Rule 1 is now stated as **continuity**, with rule 2 owning the
+  boundary — which is what a reader actually perceives at that contrast.
+- **Rule 3 becomes conditional rather than absolute.** Its authority was the *Elevation idiom*
+  measurement, which is about elevation **within** a page and was lifted to page scale without
+  re-checking. A template with a numerically identical step — ΔL 0.0177 against our 0.0181 — draws a
+  hairline at exactly its two such boundaries and at **none** of the four where the step is 0.775.
+  Where a boundary must carry tone alone, a border is now the honest fix rather than a violation.
+- **Proof moves from band 4 to band 2**, resolving a file that contradicted itself: the band table
+  said 4 while its own worked ERB said *"proof immediately under the fold line"*. Four of the six
+  templates put proof at position 1–2.
+- **6–8 bands is scoped to the product-landing genre**, and *"more is a page nobody reaches the end
+  of"* is withdrawn — a conference page runs 5 and a long-form sales page runs 12, where the length
+  *is* the product.
+- **The inset rounded panel is named as a second legitimate band form.** The doctrine described
+  full-bleed as the only shape; it is the default, not the only one.
+- **Rule 2's argument had to be repaired, not just kept.** It proved the stronger "exactly one axis"
+  form wrong *by appeal to rule 1's every-boundary requirement* — so correcting rule 1 would have
+  left a stale proof behind. Reworded to survive the correction; the conclusion is unchanged.
+- The brand-filled punctuation band the corpus also uses is **deliberately not adopted here**: it is
+  a colour decision, and brand packs own colour, so it belongs against the pack contract rather than
+  smuggled into pacing doctrine.
+
+### Unreleased
+
 The **audit half** of #95. Its writing half is done — `coverage.md` reports **0 `needs doctrine`**
 rows — so what was left was the four acceptance criteria the issue states *per group*, none of which
 anything checked. Three failed. Change type: **no `doctrine-verifier` verdict is involved.** Every
