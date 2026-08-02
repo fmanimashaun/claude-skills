@@ -68,9 +68,20 @@ launching** and just liveness-check that URL (an already-running or staging targ
    up=0; for i in $(seq 1 <boot_timeout>); do
      curl -fsS -o /dev/null "http://localhost:<port><health>" && { up=1; break; }; sleep 1; done
    ```
-   Never came up → **FAIL: "app did not boot within <n>s."** Print the tail of
-   `qa/reports/smoke-boot.log` and **classify it per the triage table below** — STOP. This is the
-   "build not testable" signal.
+   Never came up → **FAIL: "app did not boot within <n>s."** Classify it — do not eyeball the
+   table:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/classify_boot_failure.py" qa/reports/smoke-boot.log
+   ```
+
+   It prints the category, the signature it matched, the next action, and the log tail. Report all
+   four — STOP. This is the "build not testable" signal.
+
+   The table below is what the script encodes; read it to argue with a verdict, not to produce one.
+   An unrecognised log classifies as **application-error**, which is a real answer rather than a
+   shrug: it is the common case and the one that files a bug instead of sending someone off to fix
+   their toolchain.
 
 5. **Hit the key routes** — for each in `app.routes`, capture the status, allowing
    `route_timeout` for the first hit; **5xx = FAIL**, 2xx/3xx pass, 4xx noted:
