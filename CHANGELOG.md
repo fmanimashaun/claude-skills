@@ -4769,6 +4769,64 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.22.0 — 2026-08-02
+
+- **`crawl_collector.js` silently ignored unknown flags and ran a default crawl** (#447). `--help`
+  was not a flag it knew, so it **crawled** and wrote two files into the caller's working tree.
+  Found by installing Playwright and actually running it — the first time this repo has been able to
+  exercise the collector at all.
+- **The quiet-typo case is why this is a bug and not a missing `--help`.** `--visualise` instead of
+  `--visual` produced a complete, clean-looking crawl with visual capture **off**, and nothing said a
+  flag had been ignored — so the run read as evidence for something it never measured. Same shape as
+  #112's `ignored: []` and the `links.check_external` toggle nothing honoured.
+- Accepted flags are now enumerated; anything else exits **2** naming the offender, and `--help`
+  prints usage and exits 0. Exit 2 rather than 1 because a bad flag is a caller error, not a
+  finding — the line every other qa-flow script draws.
+- **Verified behaviourally, not by inspection**: `--help` → 0, `--visualise` → 2, neither writing a
+  file, and a real two-route crawl against a live server still produces `crawl.json`,
+  `interactions.json` and `links.json` that `crawl_report.py` and `link_audit.py` both accept.
+
+- **NEW `classify_boot_failure.py`** — #110's boot-error triage was a **prose table an agent was
+  told to eyeball** (`smoke.md`: *"classify it per the triage table below"*), and nothing applied it.
+  The table's own paragraph makes the argument for classifying — *"a wall of stack trace is not a
+  diagnosis, and the categories below have genuinely different owners"* — which is an argument for
+  classifying, not for doing it by hand. Five categories, each matching signatures a runtime prints
+  **verbatim**.
+- **Order is fixed, not most-matches-wins**, and that is the whole difference between this and a
+  keyword soup. A boot log routinely carries several signatures — a missing module often also prints
+  a frame naming the runtime version — so counting matches would let incidental noise outvote the
+  specific cause. Categories are tried most-specific first, first hit wins, and a fixture asserts it
+  with a log containing **both**.
+- **`application-error` is the fallback and that is a real answer, not a shrug.** It is the common
+  case, and the one that files a bug rather than sending someone to fix their toolchain; guessing a
+  more specific category on weak evidence points the reader at somebody else's problem.
+- What stays judgement stays judgement: the script prints the table's **next action**, it does not
+  decide it. Exit is **0 on every classification** — a non-zero code would carry no information,
+  because the caller already knows the app did not boot.
+- 14 selftest checks across 5 categories; 2 declared mutations — one reversing the order, one
+  emptying the table — each caught by its own fixture.
+
+- **`links.check_external` was a switch nothing was wired to** (Refs #108). The scaffolded config
+  shipped it as `false` and the prose told the reader to *"enable it for a deliberate link audit"* —
+  but `link_audit.py` **counts** external targets and has no code path that fetches one, so setting
+  it `true` changed nothing while the documentation said otherwise. Removed, and both docs now state
+  what the tool does: external targets are counted, never fetched, and there is no switch. If
+  fetching is built, the switch returns **with** the code.
+- **A dead toggle is worse than an absent feature**, which is why this is a fix and not a tidy-up: an
+  absent feature is visible, whereas a toggle makes the reader believe they opted in and stop
+  looking. Same shape as #112's `ignored: []` (advertised by the schema, hardcoded empty by the
+  collector) and #423's five gates waiting on paths nothing writes.
+- **New `unhonoured-config-toggle` rule** — a boolean a plugin scaffolds must be read by one of that
+  plugin's own scripts. Deliberately scoped to **booleans**: a string or list key is often applied by
+  an agent rather than a script (`runtime.ignore` really is honoured by `functional-tester`), so
+  widening it would flag a real consumer and get the rule switched off. A boolean exists to change
+  behaviour, and behaviour lives in code.
+- **The rule is preventive, and its coverage counter says so honestly.** Removing the only offending
+  toggle leaves **0 examined** in the live tree — the vacuous-pass shape this repo keeps finding,
+  caught here by the counter itself. Four fixtures carry the whole proof, plus a mutation that
+  widens it past booleans and is caught by the near-miss.
+- Self-consistency selftest 105 → **117**; mutations 32 → **33**.
+
 ### 1.21.2 — 2026-08-02
 
 - **#115's sixth criterion is now asserted rather than pointed at** (#424). *"Modal-CRUD variant
@@ -6773,6 +6831,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.57.0)
+
+> ### Three settings that looked honoured and were not
+>
+> All three shipped, all three read as working, and none of them did anything. A gate that is merely
+> absent is visible; one that appears wired is not.
+
+- **`links.check_external` was a switch nothing was wired to.** The scaffolded config shipped it and
+  the prose said *"enable it for a deliberate link audit"* — but `link_audit.py` counts external
+  targets and has **no code path that fetches one**. Removed; the docs now say what the tool does. A
+  new `unhonoured-config-toggle` rule refuses a scaffolded boolean no script reads, scoped to
+  booleans because string keys are often agent-applied and widening it would flag a real consumer.
+- **`crawl_collector.js` ignored unknown flags and ran a default crawl** (#447). `--help` crawled
+  and wrote two files into the caller's tree; `--visualise` produced a clean-looking run with visual
+  capture silently **off**, so the output read as evidence for something never measured. Flags are
+  enumerated now, unknown ones exit 2 naming the offender.
+- **Boot-error triage was a prose table an agent was told to eyeball.** `classify_boot_failure.py`
+  applies it: five categories matching signatures a runtime prints verbatim, **fixed order so the
+  specific cause beats incidental noise**, and `application-error` as an honest fallback rather than
+  a shrug. It prints the next action; it does not decide it.
+- **Playwright is now installable and the collector was run for the first time.** That settled a
+  claim previously only relayed: `await import()` of Playwright really does yield
+  `chromium: undefined` — it lives on `.default` — so the v1.52.1 fix was broken and shipped that
+  way for two releases. The current `projectRequire()` form is verified working, and the collector
+  plus `crawl_report.py` and `link_audit.py` are now proven end-to-end against a live browser.
+- Gate sweep **60 → 61**; self-consistency selftest 105 → **117**.
 
 ### 2026-08-02 (release v1.56.2)
 

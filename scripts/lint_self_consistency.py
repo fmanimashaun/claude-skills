@@ -726,6 +726,63 @@ def check_unwired_claim_verifier() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_unhonoured_config_toggle() -> tuple[list[Finding], int]:
+    """A boolean config key a plugin scaffolds must be read by one of that plugin's scripts.
+
+    `links.check_external: false` shipped in qa-flow's scaffolded config with prose telling the
+    reader to "enable it for a deliberate link audit". Nothing read it. `link_audit.py` counts
+    external targets and has no code path that fetches one, so setting it `true` changed nothing
+    while the documentation said otherwise.
+
+    That is worse than an absent feature. An absent feature is visible; a dead toggle makes a reader
+    believe they have opted in, and they stop looking. It is the same shape as #112's `ignored: []`,
+    which the schema advertised while the collector hardcoded the empty list -- and as the five
+    `checks.json` gates in #423 that waited on paths nothing writes.
+
+    Scoped to BOOLEANS on purpose. A string or list key is often consumed by an agent rather than a
+    script -- `runtime.ignore` is applied by `functional-tester`, which is a real consumer this rule
+    must not flag. A boolean is different: it exists to change behaviour, and behaviour lives in
+    code. Widening this to every key would make it fire on the agent-applied ones and get switched
+    off, which is the failure mode the rule is about.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    root = ROOT / "plugins"
+    if not root.is_dir():
+        return findings, examined
+    for command in sorted(root.glob("*/commands/setup*.md")):
+        plugin_dir = command.parent.parent
+        scripts = "\n".join(
+            read(path) for path in plugin_dir.glob("scripts/*")
+            if path.is_file() and path.suffix in {".py", ".js"})
+        if not scripts:
+            continue
+        body, in_yaml = read(command), False
+        for number, line in enumerate(body.splitlines(), 1):
+            if re.match(r"^\s*```ya?ml", line):
+                in_yaml = True
+                continue
+            if in_yaml and re.match(r"^\s*```\s*$", line):
+                in_yaml = False
+                continue
+            if not in_yaml:
+                continue
+            match = re.match(r"^\s*([a-z_][a-z0-9_]*):\s*(?:true|false)\b", line)
+            if not match:
+                continue
+            examined += 1
+            key = match.group(1)
+            if not re.search(rf"[\"']{re.escape(key)}[\"']", scripts):
+                findings.append(Finding(
+                    "unhonoured-config-toggle", rel(command), number,
+                    f"scaffolds `{key}` as a boolean, but no script in {plugin_dir.name} reads it -- "
+                    f"flipping it changes nothing while the config says it will. Wire it or remove "
+                    f"it; a dead toggle is worse than an absent feature because the reader believes "
+                    f"they opted in",
+                ))
+    return findings, examined
+
+
 def check_findings_schema_drift() -> tuple[list[Finding], int]:
     """qa-flow's reporter must document the SAME record fields `findings.py` enforces (#138).
 
@@ -1128,6 +1185,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     coercions, coercions_examined = check_unreachable_coercion_fallback()
     topologies, topologies_examined = check_undeclared_topology()
     schema, schema_examined = check_findings_schema_drift()
+    toggles, toggles_examined = check_unhonoured_config_toggle()
     unwired, unwired_examined = check_unwired_claim_verifier()
     ci_gates, ci_gates_examined = check_ci_gate_without_test_step()
     coverage = {
@@ -1145,6 +1203,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_docs_scanned_for_coercion_fallbacks": coercions_examined,
         "multi_agent_commands_checked_for_topology": topologies_examined,
         "findings_schema_fields_compared": schema_examined,
+        "scaffolded_boolean_toggles": toggles_examined,
         "flows_checked_for_claim_verifier": unwired_examined,
         "shipped_ci_run_examples": ci_gates_examined,
         **call_coverage,
@@ -1672,6 +1731,40 @@ def selftest() -> int:
             failures.append(f"{UCV} / {label}: expected silence, got {messages[:80]}")
         if expect is not None and expect not in messages:
             failures.append(f"{UCV} / {label}: expected a finding saying {expect!r}, got {messages[:80]!r}")
+
+    # ---- unhonoured-config-toggle --------------------------------------------------
+    # This rule reads real repo paths, so `scenario()`'s synthetic tree cannot drive it. Exercised
+    # directly. It matters more than usual that these fixtures are thorough: the live tree now has
+    # ZERO boolean toggles (the one that existed was the dead one this rule was written for), so the
+    # coverage counter honestly reports 0 examined and the rule is purely preventive. Fixtures are
+    # the only thing standing between it and a rule that could never fire.
+    UCT = "unhonoured-config-toggle"
+    checks += 1
+    if check_unhonoured_config_toggle()[0]:
+        failures.append(f"{UCT}: the shipped tree already fails this rule")
+    _r = ROOT
+    import tempfile as _t3
+    for label, yaml_line, script_body, expect in (
+        ("a toggle no script reads", "  check_external: false\n", "x = 1\n", True),
+        ("a toggle a script reads is silent", "  check_external: false\n",
+         'cfg.get("check_external")\n', False),
+        # A STRING key is often agent-applied -- `runtime.ignore` really is honoured by
+        # functional-tester -- so widening past booleans would flag a real consumer.
+        ("a non-boolean key is out of scope", "  ignore: [foo]\n", "x = 1\n", False),
+        ("a key outside the yaml fence is not config", "", "x = 1\n", False),
+    ):
+        checks += 1
+        root = Path(_t3.mkdtemp(prefix="toggle-"))
+        (root / "plugins/qa/commands").mkdir(parents=True)
+        (root / "plugins/qa/scripts").mkdir(parents=True)
+        fence = f"```yaml\nlinks:\n{yaml_line}```\n" if yaml_line else "check_external: false\n"
+        (root / "plugins/qa/commands/setup-qa.md").write_text(fence, encoding="utf-8")
+        (root / "plugins/qa/scripts/a.py").write_text(script_body, encoding="utf-8")
+        ROOT = root
+        got, _ = check_unhonoured_config_toggle()
+        ROOT = _r
+        if bool(got) != expect:
+            failures.append(f"{UCT} / {label}: expected {'a finding' if expect else 'silence'}")
 
     # ---- findings-schema-drift -----------------------------------------------------
     # This rule reads two REAL repo paths rather than a synthetic tree, so `scenario()` (which

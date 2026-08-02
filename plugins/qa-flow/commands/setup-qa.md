@@ -67,7 +67,6 @@ app:                                 # how /qa-flow:smoke boots the app (stack-a
 runtime:                             # browser console/network capture (#109)
   ignore: []                         # substrings matched on message or resource URL
 links:                               # link/anchor audit during the crawl (#113)
-  check_external: false              # external targets are slow and flaky — opt in
 coverage:                            # route coverage denominator (#119)
   exclude: []                        # substrings: health endpoints, dev-only, ActiveStorage
   authenticated_prefixes: []         # e.g. /admin — declared, never guessed from the path
@@ -120,10 +119,15 @@ on exactly the routes that matter most. `exclude` drops health endpoints, dev-on
 framework-mounted paths — and the excluded set is **always printed**, even when empty, because a
 suppression that leaves no trace turns a coverage number into a lie.
 
-**`links.check_external`** is `false` deliberately. Internal links and `#fragment` targets are
-always checked — they are fast, deterministic, and ours to fix. External targets are neither: a
-gate that fails because someone else's site was down teaches people to ignore it. Enable it for a
-deliberate link audit, where timeouts are reported as informational rather than failures.
+**External targets are counted, never fetched, and there is no switch.** Internal links and
+`#fragment` targets are always checked — fast, deterministic, and ours to fix. External ones are
+none of those: a gate that fails because someone else's site was down teaches people to ignore it.
+
+This used to be documented as a `links.check_external` toggle. **Nothing read it** — `link_audit.py`
+counts external targets and has no code path that fetches one, so setting it `true` changed nothing
+while telling a reader it would. A config key the scaffolder writes and no code honours is worse
+than an absent feature, because the reader believes they have opted in. If fetching is ever built,
+the switch comes back with the code, not before it.
 
 ## 3. Provision the chosen tools
 

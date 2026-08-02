@@ -164,10 +164,10 @@ fonts and script chunks, so do **not** re-crawl for them. This pass is about `a[
    for servers that reject HEAD). Non-2xx/3xx is a finding.
 3. **Fragments** — for `#id` links, confirm the id exists on the destination page. A link to a
    heading that was renamed is dead in the way that matters to a reader, and it returns 200.
-4. **External targets** — **off by default** (`links.check_external: false`): they are slow and
-   flaky, and a QA gate that fails because someone else's site was down teaches people to
-   ignore it. When enabled, cache per target and treat **timeouts as informational**, never as
-   failures.
+4. **External targets** — **counted, never fetched.** They are slow and flaky, and a QA gate that
+   fails because someone else's site was down teaches people to ignore it. There is no switch: the
+   `links.check_external` key this line used to name was read by nothing, so it promised an opt-in
+   that did not exist. Report the count; do not treat it as coverage.
 5. **Skip** `mailto:` and `tel:`. Report `target="_blank"` without `rel="noopener"` as **S3** —
    a real defect, not worth blocking on.
 

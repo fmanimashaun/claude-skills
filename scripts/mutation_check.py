@@ -89,6 +89,12 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the toggle rule widens past booleans and flags agent-applied keys",
+                '            match = re.match(r"^\\s*([a-z_][a-z0-9_]*):\\s*(?:true|false)\\b", line)',
+                '            match = re.match(r"^\\s*([a-z_][a-z0-9_]*):", line)',
+                "a non-boolean key is out of scope",
+            ),
+            Mutation(
                 "the wiring rule stops noticing a flow that never calls claim-verifier",
                 '        if "claim-verifier" not in body:',
                 "        if False:",
@@ -1407,6 +1413,25 @@ GUARDS: tuple[Guard, ...] = (
     ),
     # #105. The first mutation is the whole point of the file: a 200 that renders an error is the
     # page every status check calls healthy, so the rule that catches it must be proven to fire.
+    Guard(
+        name="classify_boot_failure",
+        subject="plugins/qa-flow/scripts/classify_boot_failure.py",
+        selftest="plugins/qa-flow/scripts/classify_boot_failure.py",
+        mutations=(
+            Mutation(
+                "category order stops mattering, so incidental noise can outvote the real cause",
+                "    for name, patterns, action in CATEGORIES:",
+                "    for name, patterns, action in reversed(CATEGORIES):",
+                "the specific cause wins over incidental noise",
+            ),
+            Mutation(
+                "everything classifies as an application error",
+                "    for name, patterns, action in CATEGORIES:",
+                "    for name, patterns, action in []:",
+                "EADDRINUSE",
+            ),
+        ),
+    ),
     Guard(
         name="crawl_report",
         subject="plugins/qa-flow/scripts/crawl_report.py",
