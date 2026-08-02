@@ -4956,6 +4956,18 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **A shipped S3 rule that could never fire, because neither attribute it reads was recorded**
+  (Refs #108). `functional-tester.md:171` grades `target="_blank"` without `rel="noopener"` as S3,
+  and the crawl collector's link inventory recorded `href` and `text` — not `target`, not `rel`. So
+  the rule was doctrine every downstream agent was told to apply against data that did not exist.
+  The collector now records both as **raw attributes**, and `link_audit.py` judges them: `rel` is
+  **split on whitespace**, never substring-matched, so a `noopenerfoo` typo does not pass as safe,
+  and `noreferrer` satisfies the rule because it severs the same handle. Judged **before** the
+  external short-circuit — an external target is precisely where a `window.opener` handle is worth
+  reporting — and **after** the `mailto:`/`tel:` skip the rule itself specifies. Proven against a
+  real Chromium run over a five-link page, not only fixtures: one leak reported, `noopener` and
+  `noreferrer` silent, `mailto` skipped. 10 fixtures, 4 declared mutations.
+
 - **The highest severity in our own taxonomy was the one category nothing could observe** (Refs
   #108). `functional-tester.md:95` prescribes `page.on('pageerror')` and `:105` grades an uncaught
   exception **S1** — *"the page is broken even though it rendered"* — and the collector had **zero**

@@ -497,6 +497,13 @@ for (const route of routes) {
         href: el.getAttribute('href'),
         resolved: el.href,
         text: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 60),
+        // #108 residual: `functional-tester.md:171` grades `target="_blank"` without
+        // `rel="noopener"` as S3, and neither attribute was recorded — so a rule we ship
+        // could never fire. RAW attributes, like `href` above: the judge needs what the
+        // author wrote. `rel` is a space-separated token list, so it is split in the judge
+        // rather than string-matched here, where `noopenerfoo` would wrongly pass.
+        target: el.getAttribute('target'),
+        rel: el.getAttribute('rel'),
       })),
     }));
     linkPages.push({
