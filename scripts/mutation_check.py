@@ -457,10 +457,27 @@ GUARDS: tuple[Guard, ...] = (
         # `plugins/qa-flow`: its selftest reads profile/agent files across the plugin.
         needs=("plugins/qa-flow",),
         mutations=(
+            # #424: the modal-CRUD 422 assertion, and the carve-out that lets a valid modal row
+            # exist at all. Both directions, because widening the carve-out is how it goes quiet.
+            Mutation(
+                "the modal-CRUD 422 assertion stops firing",
+                '    elif surface == "modal" and exercised:',
+                "    elif False:",
+                "modal CRUD that navigated instead of re-rendering",
+            ),
+            Mutation(
+                "the 422 carve-out widens past modal rows, so any non-2xx passes",
+                '    modal_422 = row.get("Surface", "").lower() == "modal" and row["HTTP"].strip() == "422"',
+                "    modal_422 = True",
+                "exercised a form on a 500",
+            ),
             Mutation(
                 "a Pass on a non-2xx/3xx page is accepted (the #106 defect)",
-                "elif not _http_ok(row[\"HTTP\"]):",
-                "elif False:",
+                # Anchor updated by #424: the `elif` became an `if` with the modal-422 carve-out
+                # beside it. The stale-anchor rule caught the drift rather than letting this
+                # mutation quietly stop mutating anything.
+                'if row["HTTP"] and not _http_ok(row["HTTP"]) and not modal_422:',
+                "if False:",
                 "not the page under test",
             ),
             Mutation(

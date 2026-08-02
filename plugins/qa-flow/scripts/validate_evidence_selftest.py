@@ -821,18 +821,18 @@ def run() -> int:
     # in BOTH directions.
     # ======================================================================================
     fm = {"header": FORMS_HEADER}
-    # Column order: Form,Route,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,
+    # Column order: Form,Route,Surface,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,
     #               Submit Mode,Invalid Marked,Message Linked,Announced,Values Retained,
     #               Colour Only,Severity,Evidence,Notes
     FORMS_CLEAN = (
-        "signup,/signup,Exercised,200,https://a/signup,https://a/signup,heading 'Sign up',6,0,0,"
+        "signup,/signup,page,Exercised,200,https://a/signup,https://a/signup,heading 'Sign up',6,0,0,"
         "dry-run,Not run,Not run,Not run,Not run,Not run,none,,"
     )
 
     expect_clean("forms: clean dry-run inspection", f"{FORMS_CLEAN}\n", **fm)
     expect_clean(
         "forms: an empty submit whose error contract fully holds",
-        "login,/login,Exercised,200,https://a/login,https://a/login,heading 'Sign in',3,0,0,empty,"
+        "login,/login,page,Exercised,200,https://a/login,https://a/login,heading 'Sign in',3,0,0,empty,"
         "Pass,Pass,Pass,Pass,Pass,none,qa/reports/forms/login.png,\n",
         **fm,
     )
@@ -840,13 +840,13 @@ def run() -> int:
     # -- THE headline rule, in both directions --
     expect_findings(
         "forms: verdicts on an error state a dry-run never triggered",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,dry-run,"
         "Pass,Pass,Pass,Pass,Pass,none,,\n",
         contains="never submitted an invalid form", count=5, **fm,
     )
     expect_findings(
         "forms: submitted an invalid form but recorded no verdict",
-        "login,/login,Exercised,200,https://a/l,https://a/l,heading 'L',3,0,0,empty,"
+        "login,/login,page,Exercised,200,https://a/l,https://a/l,heading 'L',3,0,0,empty,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="the error contract is the reason for submitting", count=5, **fm,
     )
@@ -854,7 +854,7 @@ def run() -> int:
     # and must not be flagged. Without this the rule would force fabricated verdicts.
     expect_clean(
         "forms: 'valid' mode legitimately reports Not run for the error contract",
-        "search,/search,Exercised,200,https://a/s,https://a/s,heading 'S',2,0,0,valid,"
+        "search,/search,page,Exercised,200,https://a/s,https://a/s,heading 'S',2,0,0,valid,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         **fm,
     )
@@ -862,34 +862,81 @@ def run() -> int:
     # -- the destructive carve-out leaves a trace --
     expect_findings(
         "forms: destructive form skipped with no trace",
-        "delete-account,/settings,Exercised,200,https://a/set,https://a/set,heading 'Set',4,0,0,"
+        "delete-account,/settings,page,Exercised,200,https://a/set,https://a/set,heading 'Set',4,0,0,"
         "skipped-destructive,Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="naming the pattern that matched", count=1, **fm,
     )
     expect_clean(
         "forms: destructive skip that names what matched",
-        "delete-account,/settings,Exercised,200,https://a/set,https://a/set,heading 'Set',4,0,0,"
+        "delete-account,/settings,page,Exercised,200,https://a/set,https://a/set,heading 'Set',4,0,0,"
         "skipped-destructive,Not run,Not run,Not run,Not run,Not run,none,,"
         "matched destructive pattern /delete/\n",
+        **fm,
+    )
+
+    # -- #115 criterion 6, made mechanical by #424: the modal-CRUD 422 re-render ------------
+    # It shipped as a POINTER at `functional-tester`, which never specified it, so the criterion
+    # was asserted nowhere for three releases. These fixtures are what make it real.
+    expect_findings(
+        "forms: modal CRUD that navigated instead of re-rendering",
+        "edit,/invoices,modal,Exercised,422,https://a/invoices,https://a/invoices/1/edit,"
+        "heading 'Edit',4,0,0,invalid,Fail,Pass,Pass,Pass,Pass,S1,e.png,navigated away\n",
+        contains="navigated", count=1, **fm,
+    )
+    expect_findings(
+        "forms: modal CRUD on a status Turbo will not reframe",
+        "edit,/invoices,modal,Exercised,200,https://a/invoices,https://a/invoices,"
+        "heading 'Edit',4,0,0,invalid,Fail,Pass,Pass,Pass,Pass,S1,e.png,200 not 422\n",
+        contains="not 422", count=1, **fm,
+    )
+    expect_findings(
+        "forms: a row that does not say which surface it exercised",
+        # 200 rather than 422 on purpose: a 422 row with no Surface ALSO trips the status rule,
+        # because the modal carve-out correctly refuses to apply to a row that never said it
+        # was a modal. Isolating the surface finding is what makes this fixture about one thing.
+        "edit,/invoices,,Exercised,200,https://a/invoices,https://a/invoices,"
+        "heading 'Edit',4,0,0,invalid,Fail,Pass,Pass,Pass,Pass,S1,e.png,no surface\n",
+        contains="no Surface", count=1, **fm,
+    )
+    # The SILENT half, which is what keeps the rule usable.
+    expect_clean(
+        "forms: modal CRUD that re-rendered into the frame on 422",
+        "edit,/invoices,modal,Exercised,422,https://a/invoices,https://a/invoices,"
+        "heading 'Edit',4,0,0,invalid,Fail,Pass,Pass,Pass,Pass,S1,e.png,re-rendered in frame\n",
+        **fm,
+    )
+    # NEAR MISS: a PAGE form legitimately navigates and legitimately is not 422. Firing here would
+    # flag every ordinary full-page CRUD failure in the corpus.
+    expect_clean(
+        "forms: a page form may navigate and need not be 422",
+        "signup,/signup,page,Exercised,200,https://a/signup,https://a/signup/errors,"
+        "heading 'Sign up',4,0,0,invalid,Fail,Pass,Pass,Pass,Pass,S1,e.png,full page re-render\n",
+        **fm,
+    )
+    # NEAR MISS: a modal row that never submitted an invalid form has no 422 to assert.
+    expect_clean(
+        "forms: an unexercised modal row asserts nothing about 422",
+        "edit,/invoices,modal,Exercised,200,https://a/invoices,https://a/invoices,"
+        "heading 'Edit',4,0,0,dry-run,Not run,Not run,Not run,Not run,Not run,none,,not submitted\n",
         **fm,
     )
 
     # -- label arithmetic --
     expect_findings(
         "forms: more unlabelled controls than the form has",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',3,5,0,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',3,5,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,S1,e.png,five unlabelled\n",
         contains="more controls lack a label", count=1, **fm,
     )
     expect_findings(
         "forms: a form with zero controls is not a form under test",
-        "ghost,/g,Exercised,200,https://a/g,https://a/g,heading 'G',0,0,0,dry-run,"
+        "ghost,/g,page,Exercised,200,https://a/g,https://a/g,heading 'G',0,0,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="not a form under test", count=1, **fm,
     )
     expect_findings(
         "forms: more required-unexposed controls than the form has",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',3,0,7,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',3,0,7,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,S2,e.png,seven required\n",
         contains="more controls are required", count=1, **fm,
     )
@@ -901,26 +948,26 @@ def run() -> int:
     # A severity with NOTHING behind it is still caught: see "gating counters at 0" below.
     expect_clean(
         "forms: required-unexposed escalated to S1 is conservative, not a defect",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,2,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,2,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,S1,e.png,two required inputs\n",
         **fm,
     )
     expect_findings(
         "forms: severity with every gating counter at 0",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,S1,e.png,nothing actually wrong\n",
         contains="all 0", count=1, **fm,
     )
     expect_clean(
         "forms: required-unexposed correctly graded S2",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,2,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,2,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,S2,e.png,email and password lack aria-required\n",
         **fm,
     )
     # An unlabelled control outranks an unexposed-required one, so a row carrying both is S1.
     expect_clean(
         "forms: unlabelled outranks required-unexposed when both are present",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,1,2,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,1,2,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,S1,e.png,one unlabelled and two unexposed\n",
         **fm,
     )
@@ -930,26 +977,26 @@ def run() -> int:
     #    callers only.
     expect_findings(
         "forms: missing the Controls denominator",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',,0,0,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',,0,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="no Controls count", count=1, **fm,
     )
     expect_findings(
         "forms: placeholder instead of an Unlabelled count",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,n/a,0,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,n/a,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="records no number", count=1, **fm,
     )
     expect_findings(
         "forms: negative counter",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,-2,0,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,-2,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="is negative", count=1, **fm,
     )
 
     expect_clean(
         "forms: unlabelled controls correctly graded S1 (3.3.2 / 4.1.2 are Level A)",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,2,0,dry-run,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,2,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,S1,e.png,date and tel inputs have no label\n",
         **fm,
     )
@@ -957,25 +1004,25 @@ def run() -> int:
     # -- the grade cannot be talked down --
     expect_findings(
         "forms: aria-invalid failure called clean",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
         "Fail,Pass,Pass,Pass,Pass,none,,\n",
         contains="is S1", count=1, **fm,
     )
     expect_findings(
         "forms: colour-only error state downgraded to S2 (1.4.1 is Level A)",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
         "Pass,Pass,Pass,Pass,Fail,S2,e.png,error shown in red only\n",
         contains="is S1", count=1, **fm,
     )
     expect_findings(
         "forms: lost input values called clean",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,invalid,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,invalid,"
         "Pass,Pass,Pass,Fail,Pass,none,,\n",
         contains="is S2", count=1, **fm,
     )
     expect_clean(
         "forms: value loss correctly graded S2",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,invalid,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,invalid,"
         "Pass,Pass,Pass,Fail,Pass,S2,e.png,email cleared on re-render\n",
         **fm,
     )
@@ -983,37 +1030,37 @@ def run() -> int:
     # -- vocabulary and omission --
     expect_findings(
         "forms: no Submit Mode -- nothing decides which verdicts are permitted",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="no Submit Mode", count=1, **fm,
     )
     expect_findings(
         "forms: invented Submit Mode",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,poked,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,poked,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="is not one of", count=1, **fm,
     )
     expect_findings(
         "forms: missing a contract verdict",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
         ",Pass,Pass,Pass,Pass,none,,\n",
         contains="no Invalid Marked verdict", count=1, **fm,
     )
     expect_findings(
         "forms: invented contract verdict",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
         "Mostly,Pass,Pass,Pass,Pass,none,,\n",
         contains="is not one of Pass / Fail / Not run", count=1, **fm,
     )
     expect_findings(
         "forms: S1 without evidence of the error state",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
         "Fail,Pass,Pass,Pass,Pass,S1,,aria-invalid never set\n",
         contains="S1 without an Evidence path", count=1, **fm,
     )
     expect_findings(
         "forms: graded but no control named",
-        "signup,/signup,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
+        "signup,/signup,page,Exercised,200,https://a/s,https://a/s,heading 'S',6,0,0,empty,"
         "Fail,Pass,Pass,Pass,Pass,S1,e.png,\n",
         contains="without Notes naming the control", count=1, **fm,
     )
@@ -1021,13 +1068,13 @@ def run() -> int:
     # -- shared page-identity rules reach this profile too --
     expect_findings(
         "forms: exercised a form on a 500",
-        "signup,/signup,Exercised,500,https://a/s,https://a/s,heading 'S',6,0,0,dry-run,"
+        "signup,/signup,page,Exercised,500,https://a/s,https://a/s,heading 'S',6,0,0,dry-run,"
         "Not run,Not run,Not run,Not run,Not run,none,,\n",
         contains="not the page under test", count=1, **fm,
     )
     expect_clean(
         "forms: Blocked form records what it saw",
-        "signup,/signup,Blocked,404,https://a/s,https://a/s,,,,,,,,,,,,,"
+        "signup,/signup,page,Blocked,404,https://a/s,https://a/s,,,,,,,,,,,,,"
         "Form absent on this build; not exercised\n",
         **fm,
     )
