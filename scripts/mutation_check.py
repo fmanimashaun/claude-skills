@@ -1610,19 +1610,71 @@ GUARDS: tuple[Guard, ...] = (
                 '    if False:',
                 "a probe with focusRestored=null is not judged clean",
             ),
-            # Ordering, not presence: moving the call BELOW the exclusions silently drops every
+            # Ordering, not presence: moving the calls BELOW the exclusions silently drops every
             # overlay opened by a link -- which is a large share of the real ones.
             Mutation(
                 "the dismissal is judged after the exclusions, so links lose their overlays",
                 '        judge_dismissal(result, ref, control)\n'
+                '        judge_containment(result, ref, control)\n'
                 '        if excluded_reason(control):\n'
                 '            result.excluded += 1\n'
                 '            continue',
                 '        if excluded_reason(control):\n'
                 '            result.excluded += 1\n'
                 '            continue\n'
-                '        judge_dismissal(result, ref, control)',
+                '        judge_dismissal(result, ref, control)\n'
+                '        judge_containment(result, ref, control)',
                 "a link with href is still judged on focus restore",
+            ),
+            # #114's overlay criterion (a), the half that stayed an agent-typed number for eight
+            # releases. Every mutation below except the last two makes the rule fire MORE, and the
+            # scope guard is the one that decides whether it is usable: APG specifies the OPPOSITE
+            # of containment for menus and comboboxes, so a rule that ignores modality files S1s
+            # against behaviour the spec describes the other way.
+            Mutation(
+                "the modality scope guard goes, so every non-modal dialog is judged on containment",
+                "    if not is_modal(containment):",
+                "    if False:",
+                "that leaks Tab is NOT a finding",
+            ),
+            Mutation(
+                "modality is read by attribute PRESENCE, so aria-modal=\"false\" reads as modal",
+                '    return str(containment.get("ariaModal") or "").strip().lower() == "true"',
+                '    return containment.get("ariaModal") is not None',
+                "is_modal reads aria-modal by VALUE, not by presence",
+            ),
+            Mutation(
+                "the backward direction is dropped, so half of APG's mandate stops being checked",
+                '    leaked = [name for name, escaped in (("Tab", forward), ("Shift+Tab", backward)) if escaped]',
+                '    leaked = [name for name, escaped in (("Tab", forward),) if escaped]',
+                "Shift+Tab alone leaking is still a finding",
+            ),
+            Mutation(
+                "a walk that never completed is graded instead of named",
+                "    if forward is None or backward is None:",
+                "    if False:",
+                "a walk with forwardEscaped=null is not judged clean",
+            ),
+            Mutation(
+                "a layer the walk could not start in is judged anyway",
+                '    if not containment.get("containerFound"):',
+                "    if False:",
+                "a dialog that opened without taking focus is not judged contained",
+            ),
+            Mutation(
+                "the empty-layer guard goes, so a modal with nothing tabbable reports as leaky",
+                '    if not containment.get("tabbables"):',
+                "    if False:",
+                "a modal with no tabbable element inside is not a containment finding",
+            ),
+            # The vacuous-pass mutation. Nothing about the OUTPUT changes -- the same findings are
+            # printed -- but the denominator beside them goes to zero, so a sweep that walked
+            # nothing becomes indistinguishable from an app with no leaky modals.
+            Mutation(
+                "the containment denominator stops counting, so a vacuous pass reads as a clean one",
+                "    result.containment_judged += 1",
+                "    pass",
+                "counts toward the denominator",
             ),
             # The syntax gate's own negative test. `node --check <path>` exits 0 on a broken ESM
             # file, so this gate is one careless edit away from being unable to fail at all.
