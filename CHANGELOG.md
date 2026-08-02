@@ -2487,6 +2487,25 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`<section>` is a landmark only when you name it — practised in 16 of 18 places, stated in
+  none** (Refs #91). *ARIA in HTML* (W3C) gives `<section>` `role=region` **"if the `section`
+  element has an accessible name"** and `role=generic` otherwise — `generic` being exactly what a
+  `<div>` exposes, so an unnamed `<section>` is inert markup that reads as structure. The skill
+  already obeyed this everywhere except two hero bands, where it is deliberate: a hero's heading
+  is the page's `<h1>`, so naming the region repeats the page title and adds a navigation target
+  pointing where the reader already stands. Sixteen correct instances are not evidence the
+  seventeenth will be, so the rule is now written in `page-anatomies.md` and held by
+  `scripts/check_section_landmarks.py`, with the two heroes declared **by exact tag** rather than
+  inferred — a carve-out that recognised its own exception by pattern would exempt every future
+  violation that looked similar. A declared exemption matching nothing is itself reported.
+
+- **The ecommerce composition recipe produced a block that was not navigable** (Refs #91). Every
+  promo section in the corpus is a `<section aria-labelledby>`; the `Build from` string shared by
+  nine ecommerce rows said *"Card + Heading + Description list / Table inside `grid-auto`"* and
+  named no landmark, so an agent following it shipped a `div`. The recipe now carries it.
+
 ### 1.32.0 — 2026-08-02
 
 - **The page-pacing doctrine shipped a rule the corpus refutes** (Refs #92). Rule 1 required tone to

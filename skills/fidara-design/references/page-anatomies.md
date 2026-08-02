@@ -299,6 +299,38 @@ legitimate as a substitute for a primitive that expresses the same intent.
    for anything data-driven; `min-h-touch` on every control; safe-area padding on fixed
    chrome.
 
+## `<section>` is a landmark only when you name it
+
+**Verified**, not assumed. *ARIA in HTML* (W3C) gives `<section>` an implicit
+`role=region` **"if the `section` element has an accessible name"**, and `role=generic`
+otherwise. `generic` is what a `<div>` exposes. So an unnamed `<section>` is a `<div>` that
+*reads* like structure — it adds no landmark, appears in no rotor, and cannot be skipped to.
+
+This file already practises the rule in **16 of its 18** `<section>` elements, and had never
+stated it. A convention that is followed everywhere and written nowhere is one careless edit from
+being false, and no agent reading it can tell which case they are in — so it is doctrine now, and
+`scripts/check_section_landmarks.py` holds it true.
+
+**Name a band when it is a destination.** `aria-labelledby` pointing at the band's own `<h2>` is
+the default, because the visible heading and the landmark name should not be allowed to drift
+apart. `aria-label` only where there is no visible heading to point at.
+
+```erb
+<section class="bg-background section-y" aria-labelledby="capabilities-heading">
+  <h2 id="capabilities-heading" class="text-step-3"><%= t(".capabilities") %></h2>
+```
+
+**The hero is the one deliberate exception, and it is unnamed on purpose.** Its heading is the
+page's `<h1>`, so a region named from it announces the page title a second time and adds a
+navigation target that goes where the reader already is. Write the hero as a bare `<section>` —
+or a `<div>`; they expose identically — and do not name it to satisfy a linter. The gate knows
+about this exception by name rather than by guessing, so a *new* bare `<section>` still fails.
+
+**Do not reach for `<nav>` unless it wraps a set of navigation links.** A promo band that happens
+to contain three links is not navigation; a rail of offer categories is. When you do use more than
+one `<nav>` on a page, each needs its own accessible name, or the rotor lists two entries called
+"navigation".
+
 ## How a page is paced
 
 Everything above says what one **band** contains. Nothing said what the **sequence** of bands looks
