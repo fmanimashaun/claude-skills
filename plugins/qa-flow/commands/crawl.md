@@ -63,6 +63,25 @@ This is the *measured* half of something `a11y-auditor` already reports. That ag
 `Restore Failures` per overlay in its CSV and `validate_evidence.py` gates the CSV's arithmetic —
 but that number is the agent's own claim. This one asks the browser.
 
+### Focus containment, which is narrower still
+
+Before pressing Escape the collector walks `Tab` and then `Shift+Tab` from inside the open layer
+and records whether focus ever lands on a real element outside it, restoring focus afterwards so
+the Escape probe sees the state it would have seen anyway. `focus-not-contained` fires on that —
+and **only for a layer the runtime says is modal**, i.e. `aria-modal="true"` or a `<dialog>` opened
+with `showModal()` (the CSS `:modal` match, which `show()` never produces).
+
+That is narrower than the Escape rule on purpose. APG mandates containment in its **Dialog (Modal)**
+pattern and specifies the *opposite* for the other two: `Tab` on a menu moves focus out and closes
+it, and a combobox keeps DOM focus on the input with its popup excluded from the tab sequence. A
+containment rule that ignored modality would file `S1`s against both.
+
+**Out of scope here means not checked, not permitted.** APG's Dialog (Modal) pattern says in its own
+About section that non-modal dialogs contain their tab sequence too — there is just no APG pattern
+page and no runtime flag to check a non-modal one against. The run prints how many modal layers it
+actually walked, because no findings over no walked layers is a statement about the sweep and not
+about the app.
+
 ## 4. Broken links and missing assets (opt in with `--links`)
 
 ```bash

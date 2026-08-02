@@ -249,6 +249,155 @@ const progress = (route, state, detail) => {
   console.error(`  [${completed}/${routes.length}] ${state.padEnd(8)} ${route}${detail ? ` — ${detail}` : ''}`);
 };
 
+// ---- what an "open overlay" is, in ONE place --------------------------------------------------
+//
+// `before` and `after` used to carry two hand-copied duplicates of this object, which is how the
+// two defects below sat in it: they must ask the identical question or every `effects` field is a
+// comparison between two different measurements.
+//
+// A DIALOG THAT IS PRESENT IS NOT A DIALOG THAT IS OPEN (found by running this against a fixture,
+// not by reading it). The count was `document.querySelectorAll('dialog[open],[role="dialog"]')`,
+// i.e. PRESENCE — so the overwhelmingly common real-world modal, a `role="dialog"` div that sits in
+// the DOM from page load and is revealed by toggling `hidden` or a class, never changed the count.
+// `dialogAppeared` therefore stayed false, and the whole Escape / focus-restore probe never ran on
+// it. Measured on a Flowbite-shaped fixture: presence 3 -> 3 -> 3 while visibility went 0 -> 1 -> 0.
+// The rule reported nothing and nothing said it had examined nothing, which is the vacuous pass
+// this repo keeps finding. `checkVisibility()` is the platform's own answer to the question, with
+// `!hidden` behind it for an engine that lacks it.
+//
+// `[role="alertdialog"]` joins the selector for the same reason: APG's Alert and Message Dialogs
+// pattern is a dialog, and leaving it out silently exempted every confirm-before-delete overlay.
+const CONTAINER_SEL = 'dialog[open],[role="dialog"],[role="alertdialog"]';
+
+const snapshot = (page) => page.evaluate((sel) => ({
+  html: document.body.innerHTML.length,
+  url: location.href,
+  active: document.activeElement?.outerHTML?.slice(0, 80) || '',
+  aria: Array.from(document.querySelectorAll('[aria-expanded],[aria-selected],[aria-pressed]'))
+    .map((e) => `${e.getAttribute('aria-expanded')}${e.getAttribute('aria-selected')}${e.getAttribute('aria-pressed')}`)
+    .join('|'),
+  dialogs: Array.from(document.querySelectorAll(sel))
+    .filter((el) => (el.checkVisibility ? el.checkVisibility() : !el.hidden)).length,
+}), CONTAINER_SEL);
+
+// ---- focus containment probe (#114, criterion (a): "Tab cycles WITHIN the layer") -------------
+//
+// MEASUREMENT ONLY, like everything else here. It records what the container IS -- its role, its
+// `aria-modal` string, whether it is in the native top layer -- and whether Tab left it. Which of
+// those shapes owes containment at all is APG's question, and APG citations live in
+// interaction_report.py where a fixture can reach them.
+//
+// WHY THE CONTAINER IS "THE ONE HOLDING FOCUS". A dialog that opened is not necessarily the layer
+// the user is in, and there is no way to hold a reference to "the element that just appeared"
+// without either tagging the DOM (which a MutationObserver in the app would see) or diffing two
+// element handles per control. `document.activeElement.closest(...)` is neither, and it is the
+// only definition under which the walk below means anything: containment is a statement about
+// where focus can go FROM INSIDE the layer, so a probe that starts outside measures nothing.
+//
+// The cost is one honest blind spot, and it is reported rather than absorbed: a modal that opens
+// without moving focus into itself yields `containerFound: false`, and the judge names that as
+// unmeasured. That is a DIFFERENT defect (initial focus placement) with no rule here yet, and
+// laundering it into a containment verdict would report the wrong cause.
+//
+// PRESSING TAB IS AN ACTION, so as with Escape the collector scopes WHEN, not WHAT: the walk runs
+// only where the dismissal probe already runs -- a dialog appeared or the trigger's own
+// `aria-expanded` flipped true. Wider than the judged set on purpose.
+//
+// NON-DESTRUCTIVE BY CONSTRUCTION. Focus is returned to the element it started on after each
+// direction, so the Escape/focus-restore probe that runs next sees exactly the state it would
+// have seen had this never run. Without that, our own Tab presses could manufacture a
+// `focus-restore-missing` on a working overlay.
+const TABBABLE_SEL = 'a[href],area[href],button,input,select,textarea,summary,iframe,' +
+                     '[tabindex],[contenteditable=""],[contenteditable="true"]';
+// One more press than there are tabbable elements is what proves a WRAP rather than a run of
+// lucky stops; the cap keeps a layer with hundreds of controls from dominating the sweep.
+const TAB_CAP = 30;
+
+async function measureContainment(page) {
+  const handle = await page.evaluateHandle((sel) => {
+    const active = document.activeElement;
+    return (active && active.closest) ? active.closest(sel) : null;
+  }, CONTAINER_SEL).catch(() => null);
+  const container = handle ? handle.asElement() : null;
+  const blank = {
+    containerFound: false,
+    containerRole: null,
+    ariaModal: null,
+    nativeModal: null,
+    tabbables: null,
+    tabsPressed: 0,
+    forwardEscaped: null,
+    backwardEscaped: null,
+  };
+  if (!container) return blank;
+
+  const shape = await container.evaluate((el, tabbable) => ({
+    // The tag wins over the attribute: `<dialog role="alertdialog">` is still a dialog element.
+    containerRole: el.tagName.toLowerCase() === 'dialog'
+      ? 'dialog'
+      : (el.getAttribute('role') || ''),
+    // RAW. `aria-modal` defaults to false, so absent / "" / "false" are all not-modal -- and that
+    // reading is the judge's, not this file's.
+    ariaModal: el.getAttribute('aria-modal'),
+    // The native top layer: true only for a `<dialog>` opened with showModal(). `null` where the
+    // engine does not know the selector, which must not read as "not modal".
+    nativeModal: (() => { try { return el.matches(':modal'); } catch { return null; } })(),
+    tabbables: Array.from(el.querySelectorAll(tabbable)).filter((n) =>
+      !n.disabled && n.getAttribute('tabindex') !== '-1'
+      && n.getAttribute('aria-hidden') !== 'true').length,
+  }), TABBABLE_SEL).catch(() => null);
+  if (!shape) return blank;
+
+  const start = await page.evaluateHandle(() => document.activeElement).catch(() => null);
+  const steps = Math.min(Math.max(shape.tabbables, 1) + 1, TAB_CAP);
+  const restore = async () => {
+    const el = start ? start.asElement() : null;
+    if (el) await el.evaluate((node) => node.focus && node.focus()).catch(() => {});
+  };
+  // `document.body` IS NOT AN ESCAPE, and getting this wrong would have reported a false
+  // containment failure on every correctly-implemented native modal in existence. Measured, not
+  // assumed: Chromium's own cycle for a `showModal()` dialog with two buttons walks
+  // `one -> two -> BODY -> one`, because the wrap point parks focus on the document rather than on
+  // an element. `activeElement` is `body` there — outside the container by `contains()`, and yet
+  // focus has not left the layer. A genuinely leaky overlay lands on a real element instead: the
+  // same fixture's untrapped `aria-modal` div went `alpha -> beta -> BUTTON "open non-modal"`.
+  // So an escape is focus arriving on a REAL element outside the container.
+  const walk = async (key) => {
+    for (let i = 0; i < steps; i += 1) {
+      await page.keyboard.press(key);
+      const escaped = await container.evaluate((el) => {
+        const active = document.activeElement;
+        if (!active || active === document.body || active === document.documentElement) return false;
+        return !(el === active || el.contains(active));
+      });
+      if (escaped) return true;
+    }
+    return false;
+  };
+
+  let forwardEscaped = null;
+  let backwardEscaped = null;
+  try {
+    forwardEscaped = await walk('Tab');
+    await restore();
+    backwardEscaped = await walk('Shift+Tab');
+    await restore();
+  } catch {
+    // A probe that threw recorded nothing. Left NULL, never `false`: the judge reads `false` as
+    // "measured and contained", which would launder an unrun check into a pass.
+    forwardEscaped = null;
+    backwardEscaped = null;
+    await restore();
+  }
+  return {
+    containerFound: true,
+    ...shape,
+    tabsPressed: steps,
+    forwardEscaped,
+    backwardEscaped,
+  };
+}
+
 for (const route of routes) {
   const page = await browser.newPage(
     VISUAL ? { viewport: VIEWPORT, deviceScaleFactor: SCALE } : {});
@@ -464,15 +613,7 @@ for (const route of routes) {
   }, MAX_CONTROLS);
 
   for (const control of found) {
-    const before = await page.evaluate(() => ({
-      html: document.body.innerHTML.length,
-      url: location.href,
-      active: document.activeElement?.outerHTML?.slice(0, 80) || '',
-      aria: Array.from(document.querySelectorAll('[aria-expanded],[aria-selected],[aria-pressed]'))
-        .map((e) => `${e.getAttribute('aria-expanded')}${e.getAttribute('aria-selected')}${e.getAttribute('aria-pressed')}`)
-        .join('|'),
-      dialogs: document.querySelectorAll('dialog[open],[role="dialog"]').length,
-    }));
+    const before = await snapshot(page);
     // #357: did NATIVE CONSTRAINT VALIDATION block this? A submit inside a form with an unfilled
     // `required` field fires no request — correctly — and without this fact the judge sees only
     // "clicked, nothing happened" and calls a working button dead. Measured here, judged there.
@@ -509,15 +650,7 @@ for (const route of routes) {
       reason = String(error.message || error).slice(0, 120);
     }
 
-    const after = exercised ? await page.evaluate(() => ({
-      html: document.body.innerHTML.length,
-      url: location.href,
-      active: document.activeElement?.outerHTML?.slice(0, 80) || '',
-      aria: Array.from(document.querySelectorAll('[aria-expanded],[aria-selected],[aria-pressed]'))
-        .map((e) => `${e.getAttribute('aria-expanded')}${e.getAttribute('aria-selected')}${e.getAttribute('aria-pressed')}`)
-        .join('|'),
-      dialogs: document.querySelectorAll('dialog[open],[role="dialog"]').length,
-    })).catch(() => null) : null;
+    const after = exercised ? await snapshot(page).catch(() => null) : null;
 
     // ---- dismissal probe: an overlay that opened must hand focus back (#105, criterion 4) -----
     //
@@ -540,6 +673,7 @@ for (const route of routes) {
     // `closedOnEscape` and `focusRestored` are `null` when the probe itself failed -- never
     // `false`, which the judge would read as a real failure rather than as an unrun check.
     let dismiss = null;
+    let containment = null;
     if (exercised && after && handle) {
       const probe = await handle.evaluate((el) => ({
         expandedAfter: el.getAttribute('aria-expanded'),
@@ -554,11 +688,12 @@ for (const route of routes) {
       const dialogAppeared = after.dialogs > before.dialogs;
       const expandedFlipped = !!probe && expandedBefore !== 'true' && probe.expandedAfter === 'true';
       if (probe && (dialogAppeared || expandedFlipped)) {
+        // BEFORE Escape, because the layer has to still be open. See measureContainment.
+        containment = await measureContainment(page);
         await page.keyboard.press('Escape').catch(() => {});
         await page.waitForTimeout(150);
         const closedOnEscape = await (dialogAppeared
-          ? page.evaluate(() => document.querySelectorAll('dialog[open],[role="dialog"]').length)
-            .then((n) => n <= before.dialogs)
+          ? snapshot(page).then((now) => now.dialogs <= before.dialogs)
           : handle.evaluate((el) => el.getAttribute('aria-expanded') !== 'true')
         ).catch(() => null);
         // Identity, not a selector match: `el === document.activeElement` is the only thing that
@@ -598,6 +733,7 @@ for (const route of routes) {
         dialogOpened: after.dialogs > before.dialogs,
       } : {},
       dismiss,
+      containment,
       consoleAfter: after_console,
     });
 
