@@ -1499,6 +1499,21 @@ GUARDS: tuple[Guard, ...] = (
         needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
+                # The dangerous direction for a de-duplicator: merging defects that are not the
+                # same one. Grouping on the rule alone would hide every distinct error behind
+                # whichever fired first.
+                "grouping drops `detail`, so two different errors merge under one rule name",
+                "        routes = out.setdefault((f.rule, f.detail), [])",
+                "        routes = out.setdefault((f.rule, f.rule), [])",
+                "same rule, different detail stays two groups",
+            ),
+            Mutation(
+                "a route repeating within a group is counted twice, inflating the spread claim",
+                "        if f.route not in routes:",
+                "        if True:",
+                "one route counted once per group",
+            ),
+            Mutation(
                 "uncaught exceptions stop being reported, so an S1 category goes unobserved again",
                 '    for error in page.get("pageErrors", []) or []:',
                 "    for error in []:",
@@ -1533,6 +1548,19 @@ GUARDS: tuple[Guard, ...] = (
         selftest="plugins/qa-flow/scripts/theme_parity.py",
         mutations=(
             Mutation(
+                # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
+                "grouping drops `detail`, so two different defects merge under one rule name",
+                "        refs = out.setdefault((f.rule, f.detail), [])",
+                "        refs = out.setdefault((f.rule, f.rule), [])",
+                "same rule, different detail stays two groups",
+            ),
+            Mutation(
+                "a repeated ref is counted twice, inflating the occurrence claim",
+                "        if f.ref not in refs:",
+                "        if True:",
+                "a repeated ref is counted once",
+            ),
+            Mutation(
                 "parity becomes a second contrast checker, firing on both-themes-bad",
                 '                if (l_ratio >= AA_NORMAL) != (d_ratio >= AA_NORMAL):',
                 '                if (l_ratio >= AA_NORMAL) or not (d_ratio >= AA_NORMAL):',
@@ -1565,6 +1593,19 @@ GUARDS: tuple[Guard, ...] = (
         # reason.
         needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
+            Mutation(
+                # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
+                "grouping drops `detail`, so two different defects merge under one rule name",
+                "        refs = out.setdefault((f.rule, f.detail), [])",
+                "        refs = out.setdefault((f.rule, f.rule), [])",
+                "same rule, different detail stays two groups",
+            ),
+            Mutation(
+                "a repeated ref is counted twice, inflating the occurrence claim",
+                "        if f.ref not in refs:",
+                "        if True:",
+                "a repeated ref is counted once",
+            ),
             Mutation(
                 "an effect kind is dropped, so a working control reports dead",
                 'EFFECT_KEYS = ("domChanged", "navigated", "requested", "focusMoved", "ariaChanged", "dialogOpened")',

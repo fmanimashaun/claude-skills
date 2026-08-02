@@ -4956,6 +4956,21 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **Three judges reported a shared-layout defect once per page** (Refs #108, item J — *"I
+  reported 773 defects that were ~18 repeated across pages"*). `crawl_report`,
+  `interaction_report` and `theme_parity` each printed one line per finding, so a broken control
+  in a layout was reported as many times as there are routes. They now group on the **exact
+  `(rule, detail)` pair** and print the spread: `(on 6 page(s), e.g. …)`. Exact-match is the
+  point — a detail carrying per-instance counts does **not** group, because a de-duplicator that
+  merges two different defects to make a shorter report is worse than no grouping at all, and
+  that is the failure each judge's fixtures and declared mutations pin. `--json` still carries
+  **every** occurrence, so nothing machine-readable was traded for readability. The summary line
+  reports both numbers — *"2 distinct finding(s) across 7 occurrence(s)"* — because the
+  occurrence count is what says a defect is systemic rather than local. Verified against a real
+  six-page Chromium crawl: 7 occurrences, 2 lines, all 7 still in the JSON. The helper is
+  **deliberately duplicated** across the three, which are standalone by design so an agent can
+  run one file; see `quality-pass/references/worked-example.md` on extracting ten lines.
+
 - **The "don't start a second server" guard could not fire in the case that does the damage**
   (Refs #108). The reuse probe was `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so an app
   that is **up with a failing health endpoint** was indistinguishable from an empty port (exit 22
