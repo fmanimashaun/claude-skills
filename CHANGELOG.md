@@ -4954,6 +4954,70 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.24.0 — 2026-08-02
+
+- **Route coverage read only the CSV evidence, so a crawled route counted as never touched**
+  (Refs #108). `ROUTE_SOURCES` enumerated the validated profiles and nothing else; `crawl.json`
+  and `links.json` were not read, and that omission was **nowhere stated** — which is what made
+  it a defect rather than a decision. The fix is deliberately *not* to fold them into `covered`:
+  a crawl loads a route and grades it for HTTP status, console errors and uncaught exceptions,
+  but nothing asserts the page did its job, so counting it would be SKIP-is-not-a-PASS wearing a
+  percentage — inflating the one number the tool exists to keep honest, on exactly the routes
+  nobody wrote a test for. They are a **third state** instead: still a gap, flagged
+  `crawled, unasserted`, carried in `--json` and the trend line, and printed **even when zero**
+  so the count cannot be confused with one nobody computed. Non-GET routes are excluded — a
+  crawler navigates with `page.goto`, so a GET of `/users/7` is not a visit to
+  `DELETE /users/:id`; that error was caught by this change's own fixture and fixed in the code
+  rather than in the expectation. 9 fixtures (61 → 70 checks), 3 declared mutations.
+
+- **Three judges reported a shared-layout defect once per page** (Refs #108, item J — *"I
+  reported 773 defects that were ~18 repeated across pages"*). `crawl_report`,
+  `interaction_report` and `theme_parity` each printed one line per finding, so a broken control
+  in a layout was reported as many times as there are routes. They now group on the **exact
+  `(rule, detail)` pair** and print the spread: `(on 6 page(s), e.g. …)`. Exact-match is the
+  point — a detail carrying per-instance counts does **not** group, because a de-duplicator that
+  merges two different defects to make a shorter report is worse than no grouping at all, and
+  that is the failure each judge's fixtures and declared mutations pin. `--json` still carries
+  **every** occurrence, so nothing machine-readable was traded for readability. The summary line
+  reports both numbers — *"2 distinct finding(s) across 7 occurrence(s)"* — because the
+  occurrence count is what says a defect is systemic rather than local. Verified against a real
+  six-page Chromium crawl: 7 occurrences, 2 lines, all 7 still in the JSON. The helper is
+  **deliberately duplicated** across the three, which are standalone by design so an agent can
+  run one file; see `quality-pass/references/worked-example.md` on extracting ten lines.
+
+- **The "don't start a second server" guard could not fire in the case that does the damage**
+  (Refs #108). The reuse probe was `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so an app
+  that is **up with a failing health endpoint** was indistinguishable from an empty port (exit 22
+  vs exit 7; both merely "non-zero" to an `if`). Measured, not assumed. The probe now reads
+  curl's `http_code`, which is `000` only when no HTTP response arrived, so anything speaking
+  HTTP is reused whatever it thinks of its own health. Booting a second server into a build
+  cache the first one holds is precisely the corruption the step exists to prevent.
+
+- **A shipped S3 rule that could never fire, because neither attribute it reads was recorded**
+  (Refs #108). `functional-tester.md:171` grades `target="_blank"` without `rel="noopener"` as S3,
+  and the crawl collector's link inventory recorded `href` and `text` — not `target`, not `rel`. So
+  the rule was doctrine every downstream agent was told to apply against data that did not exist.
+  The collector now records both as **raw attributes**, and `link_audit.py` judges them: `rel` is
+  **split on whitespace**, never substring-matched, so a `noopenerfoo` typo does not pass as safe,
+  and `noreferrer` satisfies the rule because it severs the same handle. Judged **before** the
+  external short-circuit — an external target is precisely where a `window.opener` handle is worth
+  reporting — and **after** the `mailto:`/`tel:` skip the rule itself specifies. Proven against a
+  real Chromium run over a five-link page, not only fixtures: one leak reported, `noopener` and
+  `noreferrer` silent, `mailto` skipped. 10 fixtures, 4 declared mutations.
+
+- **The highest severity in our own taxonomy was the one category nothing could observe** (Refs
+  #108). `functional-tester.md:95` prescribes `page.on('pageerror')` and `:105` grades an uncaught
+  exception **S1** — *"the page is broken even though it rendered"* — and the collector had **zero**
+  such listeners. It watched `console` and `requestfailed` only.
+- **Proven against a real browser, not reasoned about.** A page whose `<h1>` renders *"Looks fine"*
+  while a script throws `TypeError` was previously indistinguishable from a clean one. Now:
+  collector records it, `crawl_report.py` grades `uncaught-exception`, exit 1.
+- **Kept distinct from `console-error` deliberately.** An uncaught exception is not a console
+  message and Chromium does not reliably surface one as such — folding them together would make the
+  judge infer severity from how a log line happens to be worded.
+- 4 new fixtures including the one that carries the point (a page that renders correctly *and*
+  throws is not clean), plus a declared mutation that stops the rule reporting and is caught by it.
+
 ### 1.23.0 — 2026-08-02
 
 - **The destructive-form safety rule pointed at config that did not exist** (#461). `a11y-auditor.md`
@@ -6217,6 +6281,16 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.12.1 — 2026-08-02
+
+- **The "don't start a second server" guard could not fire in the case that does the damage**
+  (Refs #108). The reuse probe was `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so an app
+  that is **up with a failing health endpoint** was indistinguishable from an empty port (exit 22
+  vs exit 7; both merely "non-zero" to an `if`). Measured, not assumed. The probe now reads
+  curl's `http_code`, which is `000` only when no HTTP response arrived, so anything speaking
+  HTTP is reused whatever it thinks of its own health. The stale branch also printed *"nothing on
+  the port"* — false, and it sent the operator to boot a server already running.
+
 ### 1.12.0 — 2026-08-01
 
 - **NEW `/design-flow:variants <brief> [--variants N]` — N brand-conformant compositions of one
@@ -7113,6 +7187,52 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.59.0)
+
+> ### Two shipped rules that could never fire, and a coverage number that under-reported
+>
+> This release completes EPIC #108. Its most useful output was negative: an audit of the QA
+> harness found **two rules we ship** — one graded S1, one S3 — reading fields **no collector
+> recorded**. The doctrine was written, correct, and inert. Everything here was verified against
+> a real Chromium run rather than fixtures alone.
+
+- **The highest severity in our own taxonomy was the one thing nothing could observe** (#108).
+  `functional-tester.md:95` prescribes `page.on('pageerror')` and `:105` grades an uncaught
+  exception **S1** — *"the page is broken even though it rendered"*. The collector never
+  registered the listener, so the S1 category could not fire on any run. Now captured and judged.
+
+- **An S3 rule read two attributes nothing recorded** (#108). `functional-tester.md:171` grades
+  `target="_blank"` without `rel="noopener"` as S3; the link inventory captured `href` and `text`
+  only. Both attributes are now recorded **raw** and judged in Python: `rel` is **split on
+  whitespace**, so a `noopenerfoo` typo does not pass as safe, and `noreferrer` satisfies the
+  rule because it severs the same handle. Judged before the external short-circuit — an external
+  target is exactly where a `window.opener` handle is worth reporting.
+
+- **The "never launch a second server" guard could not fire in the case that does the damage**
+  (#108). The reuse probe used `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so a server
+  **up with a failing health endpoint** was indistinguishable from an empty port (exit 22 vs 7).
+  It then started a second dev server into a build cache the first one held, which is the
+  corruption the step exists to prevent. Grepping the pattern found the same bug in design-flow,
+  where the else-branch printed *"nothing on the port"* — false, and it sent the operator to boot
+  a server already running. The two `curl -fsS` sites that are *wait-for-healthy* loops were
+  correctly left alone.
+
+- **Three judges reported a shared-layout defect once per page** (#108, item J — *"773 defects
+  that were ~18 repeated"*). All four judges now group on the **exact** `(rule, detail)` pair, so
+  a detail carrying per-instance counts still does not group: a de-duplicator that merges two
+  distinct defects to make a shorter report is worse than none. `--json` keeps every occurrence
+  and the summary prints both counts.
+
+- **Route coverage never read the crawl** (#108). A route the crawler loaded and graded counted
+  as *never touched*, and the omission was stated nowhere — which made it a defect rather than a
+  decision. Fixed as a **third state**, not by widening `covered`: a crawl grades errors but
+  asserts nothing, so counting it would be SKIP-is-not-a-PASS wearing a percentage. Non-GET
+  routes are excluded, because a crawler navigates with `page.goto` — a GET of `/users/7` is not
+  a visit to `DELETE /users/:id`. That false claim was caught by the change's own fixture.
+
+**Versions:** qa-flow 1.23.0 → **1.24.0**, design-flow 1.12.0 → **1.12.1**.
+**Gates:** 61/61. **Mutation check:** 368 mutations across 31 guards, all caught.
 
 ### 2026-08-02 (release v1.58.0)
 

@@ -735,6 +735,27 @@ GUARDS: tuple[Guard, ...] = (
         deps=("plugins/qa-flow/scripts/validate_evidence.py",),
         mutations=(
             Mutation(
+                # The whole reason the third state exists: folding a crawl visit into `covered`
+                # would inflate the one number this tool keeps honest, on exactly the routes
+                # nobody wrote a test for.
+                "a crawl visit is folded into `covered`, inflating the coverage percentage",
+                "    seen = visited_paths(evidence)",
+                "    seen = {**visited_paths(evidence), **visit_only_paths(evidence)}",
+                "a crawl visit changed the coverage arithmetic",
+            ),
+            Mutation(
+                "the GET-only carve-out goes, so a DELETE route is claimed as crawl-visited",
+                "                  if c.covered and not c.route.destructive}",
+                "                  if c.covered}",
+                "a destructive route was claimed as crawled",
+            ),
+            Mutation(
+                "the third-state line is suppressed when zero, so nobody can tell it ran",
+                '    print(f"  of those, {len(crawled)} visited by a crawl but never asserted, "',
+                '    print("") if False else print(f"  of those, {max(len(crawled), 1)} visited by a crawl but never asserted, "',
+                "the third-state line must print even when the count is zero",
+            ),
+            Mutation(
                 ":id matches greedily, over-crediting coverage",
                 'out.append(r"[^/]+")',
                 'out.append(r".+")',
@@ -1499,6 +1520,27 @@ GUARDS: tuple[Guard, ...] = (
         needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
+                # The dangerous direction for a de-duplicator: merging defects that are not the
+                # same one. Grouping on the rule alone would hide every distinct error behind
+                # whichever fired first.
+                "grouping drops `detail`, so two different errors merge under one rule name",
+                "        routes = out.setdefault((f.rule, f.detail), [])",
+                "        routes = out.setdefault((f.rule, f.rule), [])",
+                "same rule, different detail stays two groups",
+            ),
+            Mutation(
+                "a route repeating within a group is counted twice, inflating the spread claim",
+                "        if f.route not in routes:",
+                "        if True:",
+                "one route counted once per group",
+            ),
+            Mutation(
+                "uncaught exceptions stop being reported, so an S1 category goes unobserved again",
+                '    for error in page.get("pageErrors", []) or []:',
+                "    for error in []:",
+                "an uncaught exception is reported",
+            ),
+            Mutation(
                 "the 200-but-error rule stops firing",
                 '    for pattern in ERROR_PAGE_MARKERS:',
                 '    for pattern in []:',
@@ -1526,6 +1568,19 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/qa-flow/scripts/theme_parity.py",
         selftest="plugins/qa-flow/scripts/theme_parity.py",
         mutations=(
+            Mutation(
+                # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
+                "grouping drops `detail`, so two different defects merge under one rule name",
+                "        refs = out.setdefault((f.rule, f.detail), [])",
+                "        refs = out.setdefault((f.rule, f.rule), [])",
+                "same rule, different detail stays two groups",
+            ),
+            Mutation(
+                "a repeated ref is counted twice, inflating the occurrence claim",
+                "        if f.ref not in refs:",
+                "        if True:",
+                "a repeated ref is counted once",
+            ),
             Mutation(
                 "parity becomes a second contrast checker, firing on both-themes-bad",
                 '                if (l_ratio >= AA_NORMAL) != (d_ratio >= AA_NORMAL):',
@@ -1559,6 +1614,19 @@ GUARDS: tuple[Guard, ...] = (
         # reason.
         needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
+            Mutation(
+                # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
+                "grouping drops `detail`, so two different defects merge under one rule name",
+                "        refs = out.setdefault((f.rule, f.detail), [])",
+                "        refs = out.setdefault((f.rule, f.rule), [])",
+                "same rule, different detail stays two groups",
+            ),
+            Mutation(
+                "a repeated ref is counted twice, inflating the occurrence claim",
+                "        if f.ref not in refs:",
+                "        if True:",
+                "a repeated ref is counted once",
+            ),
             Mutation(
                 "an effect kind is dropped, so a working control reports dead",
                 'EFFECT_KEYS = ("domChanged", "navigated", "requested", "focusMoved", "ariaChanged", "dialogOpened")',
@@ -1938,6 +2006,31 @@ GUARDS: tuple[Guard, ...] = (
                 "    match = SCHEME.match(href.strip())",
                 '    match = re.search(r"([a-zA-Z][a-zA-Z0-9+.\\-]*):", href.strip())',
                 "an href CONTAINING 'mailto:' in a query is still judged",
+            ),
+            Mutation(
+                "the rel test becomes a substring match, so a `noopenerfoo` typo passes as safe",
+                '                if not tokens & {"noopener", "noreferrer"}:',
+                '                if "noopener" not in str(link.get("rel") or "").lower():',
+                "a lookalike rel token does not satisfy it",
+            ),
+            Mutation(
+                # This one fires MORE, and on the single most common spelling of the fix.
+                "`split()` goes, so the whole rel is one token and `noopener noreferrer` reports a leak",
+                '                tokens = {tok for tok in str(link.get("rel") or "").lower().split() if tok}',
+                '                tokens = {str(link.get("rel") or "").lower()}',
+                "rel='noopener noreferrer' satisfies the rule",
+            ),
+            Mutation(
+                "`noreferrer` stops counting, so a correctly-severed link reports a leak",
+                '                if not tokens & {"noopener", "noreferrer"}:',
+                '                if not tokens & {"noopener"}:',
+                "rel='noreferrer' satisfies the rule",
+            ),
+            Mutation(
+                "the opener rule moves out of reach, where a real leak can never be reported",
+                '            if str(link.get("target") or "").lower() == "_blank":',
+                "            if False:",
+                "target=_blank with no rel is an opener leak",
             ),
             Mutation(
                 "the top-of-document carve-out goes, so every `#` and `#top` reports dead",

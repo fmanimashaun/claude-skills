@@ -37,10 +37,19 @@ launching** and just liveness-check that URL (an already-running or staging targ
 2. **Probe before you launch — never start a second server.** If the port already answers,
    reuse it and say so:
    ```bash
-   if curl -fsS -o /dev/null --max-time 5 "http://localhost:<port><health>"; then
-     REUSED=1; echo "reusing the server already on <port> — not launching a second"
-   fi
+   CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:<port><health>" 2>/dev/null)
+   case "$CODE" in
+     ''|000) : ;;   # nothing answered on the port — safe to launch
+     *) REUSED=1; echo "reusing the server on <port> (health answered $CODE) — not launching a second" ;;
+   esac
    ```
+   **Ask "did anything answer", not "did it answer healthily".** `curl -f` exits non-zero on
+   4xx/5xx, so a server that is **up with a failing health endpoint** looks identical to an empty
+   port (exit 22 vs 7 — both just "non-zero" to an `if`). That is the one case where the probe
+   most needs to fire: it launches the second server into a build cache the first one is using.
+   `%{http_code}` separates them — `000` means no HTTP response reached us, anything else means
+   something is listening and speaking HTTP, whatever it thinks of its own health.
+
    Two dev servers against one project directory contend over the same build cache
    (`.next/`, `tmp/cache`) and can corrupt it. A reused server is also **not yours to kill**:
    skip teardown for it, and say in the report that the app was already running, since it may

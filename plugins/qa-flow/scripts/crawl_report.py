@@ -76,6 +76,23 @@ ERROR_PAGE_MARKERS = (
 CONSOLE_FATAL = ("error",)
 
 
+MAX_EXAMPLES = 3
+
+
+def _grouped(findings):
+    """[( (rule, detail), [route, ...] ), ...] in first-seen order, routes de-duplicated.
+
+    First-seen order, not sorted: the judge already emits in route order, and re-sorting by
+    rule name would put an S1 uncaught exception below a cosmetic S3 purely alphabetically.
+    """
+    out: dict[tuple[str, str], list[str]] = {}
+    for f in findings:
+        routes = out.setdefault((f.rule, f.detail), [])
+        if f.route not in routes:
+            routes.append(f.route)
+    return list(out.items())
+
+
 @dataclass
 class Finding:
     route: str
@@ -138,6 +155,14 @@ def judge_page(page: dict) -> list[Finding]:
             out.append(Finding(route, "console-error",
                                str(message.get("text", ""))[:120] or "(no text)"))
 
+    # An uncaught exception is S1 in `functional-tester.md:105` — "the page is broken even though it
+    # rendered" — and until the collector gained a `pageerror` listener nothing could observe the
+    # highest severity in our own taxonomy. Kept distinct from `console-error`: a page can render a
+    # correct-looking DOM while throwing, which is exactly the case a console scan misses.
+    for error in page.get("pageErrors", []) or []:
+        out.append(Finding(route, "uncaught-exception",
+                           f"{error.get('name', 'Error')}: {str(error.get('message', ''))[:100]}"))
+
     for failed in page.get("failedRequests", []) or []:
         out.append(Finding(route, "failed-request",
                            f"{failed.get('method', '?')} {str(failed.get('url', '?'))[:80]} "
@@ -183,13 +208,24 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"routes": result.routes, "skipped": result.skipped,
                           "findings": [f.__dict__ for f in result.findings]}, indent=2))
     else:
-        for f in result.findings:
-            print(f"  [{f.rule}] {f.route} — {f.detail}")
+        # #108 item J: one line per (rule, route) is how a 72-page crawl reports 773 "defects"
+        # that are 18 repeated by a shared layout. Identical (rule, detail) IS the same defect,
+        # so grouping on the exact pair never merges two different ones — and the `--json` path
+        # above still carries every occurrence, so nothing machine-readable is lost.
+        for (rule, detail), routes in _grouped(result.findings):
+            if len(routes) == 1:
+                print(f"  [{rule}] {routes[0]} — {detail}")
+            else:
+                print(f"  [{rule}] {detail} (on {len(routes)} page(s), "
+                      f"e.g. {', '.join(routes[:MAX_EXAMPLES])})")
         for s in result.skipped:
             print(f"  [skipped] {s}")
         judged = result.routes - len(result.skipped)
-        print(f"\n{judged} route(s) judged, {len(result.findings)} finding(s), "
-              f"{len(result.skipped)} not reached.")
+        distinct = len(_grouped(result.findings))
+        # BOTH numbers, always. The occurrence count is what tells you a defect is systemic
+        # rather than local, and printing only the distinct count would hide exactly that.
+        print(f"\n{judged} route(s) judged, {distinct} distinct finding(s) across "
+              f"{len(result.findings)} occurrence(s), {len(result.skipped)} not reached.")
         if result.skipped:
             # Said every time. A route the crawl never reached verified nothing, and a summary that
             # lets it read as clean is the defect this whole toolchain keeps re-learning.
@@ -238,6 +274,17 @@ def selftest() -> int:
 
     check("a console error fires",
           "console-error" in rules({**ok_page, "console": [{"level": "error", "text": "boom"}]}))
+    check("an uncaught exception is reported",
+          "uncaught-exception" in rules({**ok_page,
+              "pageErrors": [{"name": "TypeError", "message": "null.f is not a function"}]}))
+    # THE POINT of the rule: the page renders correctly and still throws. A DOM-only or
+    # console-only check calls this clean.
+    check("a page that renders fine but throws is not clean",
+          rules({**ok_page, "pageErrors": [{"name": "TypeError", "message": "x"}]}) != [])
+    check("no pageErrors key is silent, not an error",
+          "uncaught-exception" not in rules(ok_page))
+    check("an empty pageErrors list is silent",
+          "uncaught-exception" not in rules({**ok_page, "pageErrors": []}))
     check("a console WARNING stays silent",
           "console-error" not in rules({**ok_page, "console": [{"level": "warning", "text": "meh"}]}),
           "warnings are noise in every real app; firing on them makes the rule unread")
@@ -248,6 +295,28 @@ def selftest() -> int:
     r = judge([{"route": "/admin", "skipped": "auth required"}])
     check("a skipped route is not judged clean", r.skipped and not r.findings, f"{r}")
     check("a skipped route is named", "auth required" in r.skipped[0], f"{r.skipped}")
+
+    # ---- #108 item J: grouping repeats WITHOUT merging distinct defects ------------------
+    F = Finding
+    same = [F("/a", "console-error", "TypeError: x"), F("/b", "console-error", "TypeError: x"),
+            F("/c", "console-error", "TypeError: x")]
+    g = _grouped(same)
+    check("three pages sharing one defect collapse to one group", len(g) == 1, f"{g}")
+    check("the group keeps every route", g[0][1] == ["/a", "/b", "/c"], f"{g}")
+    # THE FAILURE THAT WOULD MATTER: merging two defects that only share a rule name.
+    diff = [F("/a", "console-error", "TypeError: x"), F("/b", "console-error", "RangeError: y")]
+    check("same rule, different detail stays two groups", len(_grouped(diff)) == 2,
+          f"{_grouped(diff)}")
+    same_detail = [F("/a", "console-error", "boom"), F("/a", "uncaught-exception", "boom")]
+    check("same detail, different rule stays two groups", len(_grouped(same_detail)) == 2,
+          f"{_grouped(same_detail)}")
+    # A route repeated within one rule (two console errors of the same text on one page) is one
+    # page, not two -- otherwise "on 2 page(s)" would be a false claim about spread.
+    dup = [F("/a", "console-error", "boom"), F("/a", "console-error", "boom")]
+    check("one route counted once per group", _grouped(dup)[0][1] == ["/a"], f"{_grouped(dup)}")
+    check("first-seen order is preserved, not sorted",
+          [k[1] for k, _ in _grouped(diff)] == ["TypeError: x", "RangeError: y"], f"{_grouped(diff)}")
+    check("no findings groups to nothing", _grouped([]) == [], f"{_grouped([])}")
 
     # AN UNUSABLE CRAWL IS NOT A CLEAN CRAWL -- three ways in.
     # THE COLLECTOR MUST EMIT EVERY FIELD THIS SCHEMA DECLARES. Object shorthand counts:

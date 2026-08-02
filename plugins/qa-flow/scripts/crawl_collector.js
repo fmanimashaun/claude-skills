@@ -419,9 +419,20 @@ for (const route of routes) {
     }
   }
   const console_ = [];
+  const pageErrors = [];
   const failed = [];
   const errorResponses = [];
   page.on('console', (m) => console_.push({ level: m.type(), text: m.text() }));
+  // UNCAUGHT EXCEPTIONS (#108 residual). `functional-tester.md:95` prescribes `page.on('pageerror')`
+  // and `:105` grades an uncaught exception **S1** — "the page is broken even though it rendered".
+  // The collector listened for `console` and `requestfailed` and not for this, so the highest
+  // severity in our own taxonomy was the one category nothing could observe.
+  //
+  // NOT folded into `console`: an uncaught exception is not a console message and Chromium does not
+  // reliably surface one as such. Kept separate so the judge can grade it as the doctrine says,
+  // rather than inferring severity from how a log line happens to be worded.
+  page.on('pageerror', (e) =>
+    pageErrors.push({ name: e.name || 'Error', message: String(e.message || e).slice(0, 300) }));
   page.on('requestfailed', (r) =>
     failed.push({ method: r.method(), url: r.url(), failure: r.failure()?.errorText || 'failed' }));
   // Registered BEFORE `goto`, or the document's own response is missed, and DETACHED before the
@@ -450,6 +461,7 @@ for (const route of routes) {
       // <title> may still say the app's name.
       h1: await page.evaluate(() => document.querySelector('h1')?.textContent?.trim() || ''),
       console: console_,
+      pageErrors,
       failedRequests: failed,
       skipped: null,
     };
@@ -485,6 +497,13 @@ for (const route of routes) {
         href: el.getAttribute('href'),
         resolved: el.href,
         text: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 60),
+        // #108 residual: `functional-tester.md:171` grades `target="_blank"` without
+        // `rel="noopener"` as S3, and neither attribute was recorded — so a rule we ship
+        // could never fire. RAW attributes, like `href` above: the judge needs what the
+        // author wrote. `rel` is a space-separated token list, so it is split in the judge
+        // rather than string-matched here, where `noopenerfoo` would wrongly pass.
+        target: el.getAttribute('target'),
+        rel: el.getAttribute('rel'),
       })),
     }));
     linkPages.push({
