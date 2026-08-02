@@ -2476,6 +2476,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The coverage matrix now reports #91's slice-2 work, which it had been silently under-reporting**
+  (Refs #91). Four catalogue entries and two archetypes shipped in v1.55.0 with **no `ENTRIES` rows**,
+  so the matrix described a smaller system than the one we ship. That was deliberate, not an
+  oversight: regenerating `coverage.md` needs the licensed corpora, and committing rows without
+  regenerating leaves a stale matrix that fails the drift gate on the next maintainer's machine —
+  the "damage still landed elsewhere" shape `CLAUDE.md` records. Cleared here on a corpora-attached
+  machine, with both artifacts regenerated. **118 rows from 93 TW + 63 FB.**
+- **`Number input` was flipped, not duplicated.** Slice 2 shipped `## Seat / quantity selector`, and
+  Flowbite's `Number Input` was already claimed by the existing `derivable` row — the totality guard
+  allows exactly one claimant, so a second row would have failed rather than added. Its `BUILD`
+  fallback is deleted too: a `documented` row carrying one is precisely what `verify_shipped_evidence`
+  refuses.
+- **No row invented for "Invoice / statement"** — it is the existing `Detail anatomy`, and a row for
+  it would have misreported the matrix in the opposite direction.
+- Every one of the six evidence strings was checked against the shipped headings **before** being
+  trusted (each found exactly once). That is the trap that failed this repo twice at promotion time,
+  on Checkout and on Navigation, where a slice improved the structure and falsified the row.
+
 ### 1.31.0 — 2026-08-02
 
 - **fidara-design: `page-anatomies.md` gains *How a page is paced*** (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92),
