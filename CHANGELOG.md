@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 1.57.2 — 2026-08-02
 
 - **CI actions were pinned to majors running the deprecated Node 20.** `actions/checkout@v4` and
   `actions/setup-python@v5` target node20, which GitHub now force-runs on node24 and will eventually
@@ -6863,6 +6863,17 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.57.2)
+
+- **CI actions were pinned to majors running the deprecated Node 20.** `actions/checkout@v4` and
+  `actions/setup-python@v5` target node20, which GitHub force-runs on node24 and will eventually
+  stop supporting; both workflows printed the deprecation on every run. Bumped to **v7**, which is
+  what `releases/latest` reports — the deprecation notice itself implies v5/v6 and is behind, so the
+  versions were checked against the API rather than taken from the warning.
+- Applied to **both** `gates.yml` and `release.yml`. Those are deliberate mirrors, and bumping only
+  the PR path would have left the **publish** path on a runtime the rest had moved off — the kind of
+  gap nobody notices until a release fails. Verified on the PR's own run: **0 deprecation warnings**.
 
 ### 2026-08-02 (release v1.57.1)
 
