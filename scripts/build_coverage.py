@@ -252,6 +252,13 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Checkbox": "### Checkbox / Radio / Switch",
     "Radio group": "### Checkbox / Radio / Switch",
     "Toggle / Switch": "### Checkbox / Radio / Switch",
+    # #91 slice 2. Trailing newline where a shorter heading would otherwise prefix-match.
+    "Plan comparison / feature matrix": "## Plan comparison / feature matrix\n",
+    "Number input":                     "## Seat / quantity selector\n",
+    "Saved payment methods":            "## Saved payment methods\n",
+    "Subscription state and dunning":   "## Subscription state and dunning\n",
+    "Plans page archetype":             "## Plans — compare and switch\n",
+    "Billing page archetype":           "## Billing\n",
 }
 
 
@@ -378,7 +385,17 @@ ENTRIES: tuple[Entry, ...] = (
     E("File upload / Dropzone", COMPONENT, "documented", "new controller (drag + drop)", [],
       ["File Input"], "the native input stays VISIBLE — hiding it behind the dropzone fails WCAG 2.5.7"),
     E("Search input", COMPONENT, "derivable", "—", [], ["Search Input"]),
-    E("Number input", COMPONENT, "derivable", "—", [], ["Number Input"]),
+    # #91 slice 2 shipped `## Seat / quantity selector`, so this FLIPS to documented rather than
+    # gaining a competing row: Flowbite's `Number Input` is already claimed here and the totality
+    # guard allows exactly one claimant.
+    E("Number input", COMPONENT, "documented", "—", [], ["Number Input"]),
+    # #91 slice 2 — plans/pricing and billing. No corpus directory maps to any of these, so the
+    # upstream columns stay empty; they are ours, not a classification of someone else's kit.
+    E("Plan comparison / feature matrix", COMPONENT, "documented", "—", [], []),
+    E("Saved payment methods", COMPOSITION, "documented", "—", [], []),
+    E("Subscription state and dunning", COMPOSITION, "documented", "—", [], []),
+    E("Plans page archetype", ARCHETYPE, "documented", "—", [], []),
+    E("Billing page archetype", ARCHETYPE, "documented", "—", [], []),
     E("Range input", COMPONENT, "documented", "—", [], ["Range"],
       "native `input type=range` already IS role=slider; custom only for two thumbs"),
     E("Status indicator / dot", COMPONENT, "derivable", "—", [], ["Indicators"],
@@ -697,7 +714,6 @@ BUILD: dict[str, str] = {
     # it yourself" sends readers past the doctrine that just landed.
     "Action panel": "Card + Heading (card scale) + Button group",
     "Search input": "the documented Text input, `type=search`, with a leading Lucide icon",
-    "Number input": "the documented Text input with `inputmode=numeric`",
     "Status indicator / dot": "Badge, or a `size-2 rounded-full` span plus `sr-only` text — "
         "never colour alone",
     "Keyboard key (KBD)": "`<kbd>` with muted role tokens at `--text-step--1`",
