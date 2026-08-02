@@ -331,6 +331,64 @@ to contain three links is not navigation; a rail of offer categories is. When yo
 one `<nav>` on a page, each needs its own accessible name, or the rotor lists two entries called
 "navigation".
 
+## The footer, and the surfaces the law puts in it
+
+### `<footer>` is `contentinfo` only at the top level — and our own band rule can take that away
+
+**Verified.** *ARIA in HTML* (W3C): a `footer` gets `role=contentinfo` *"if not a descendant of an
+`article`, `aside`, `main`, `nav` or `section` element, or an element with `role=article`,
+`complementary`, `main`, `navigation` or `region`"* — **"otherwise, `role=generic`"**.
+
+Read that against the rule above, which tells you to wrap a band in `<section aria-labelledby>`.
+Put the page footer inside one and its landmark **silently disappears**: no `contentinfo`, no rotor
+entry, nothing to jump to. The two rules interact, so they are stated together.
+
+**The page footer is a sibling of `<main>`, never a child of a band.** `scripts/check_section_landmarks.py`
+enforces it — the same join, on the same markup, so neither rule can drift from the other.
+
+```erb
+<main id="main">…bands…</main>
+
+<%# OUTSIDE every band. Its link list is NOT a <nav> — see components.md → Navigation, which
+    quotes the HTML spec: "The footer element alone is sufficient for such cases." %>
+<footer class="stack section-y">
+  <ul role="list" class="cluster">
+    <li><%= link_to t(".privacy"), privacy_path %></li>
+    <li><%= link_to t(".terms"), terms_path %></li>
+    <li><%= button_to t(".cookie_settings"), cookie_settings_path, class: "link" %></li>
+  </ul>
+</footer>
+```
+
+### Which surfaces, and whose decision that is
+
+**Ours:** the footer is where a privacy policy, terms, a way to reopen cookie settings, and a
+contact route live, and a checkout **repeats** the terms link at the point of commitment rather
+than relying on the footer — a page whose whole job is *"how do I pay?"* should not send the
+reader to the bottom of the document to find what they are agreeing to.
+
+**Not ours, and we do not pretend otherwise:** *which* surfaces a given product in a given
+jurisdiction is required to carry. That is the operator's decision with their own advice. This
+file describes the **UI contract** for surfaces you have decided to ship — it is not a compliance
+checklist, and a design system that shipped one would be asserting something it cannot verify.
+
+### Consent is a dialog you already have, not a bespoke banner
+
+APG has **no** consent or cookie-banner pattern — checked, not assumed. So this is **ours**: a
+consent surface that blocks the page is a **modal dialog** and takes the contract we already
+document — focus moved in, focus trapped, `aria-modal` **and** `inert` together, focus restored to
+the trigger on dismissal. Build it from `Modal`. One that does not block the page is a `Drawer` or
+a `region`, and then it must not steal focus on load.
+
+**A pre-ticked box is not consent.** **Verified** — GDPR Recital 32: *"Silence, pre-ticked boxes or
+inactivity should not therefore constitute consent"*, which must instead be *"a clear affirmative
+act"*. The UI consequences are mechanical: never render the box `checked`, never treat closing the
+dialog as acceptance, and never make the accept path shorter than the decline path — an "Accept
+all" button beside a "Manage preferences" link is a shorter path, not an equal one.
+
+**One checkbox per thing consented to.** A single box covering terms *and* marketing email is not
+specific, and Recital 32 asks for a *specific* indication. Two boxes, or one box and one opt-in.
+
 ## How a page is paced
 
 Everything above says what one **band** contains. Nothing said what the **sequence** of bands looks

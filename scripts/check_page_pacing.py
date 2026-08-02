@@ -30,6 +30,32 @@ WHY THE VOCABULARY IS JOINED, NOT LISTED. `unknown-tone` resolves each Tone thro
 section promises it introduces no new token; a hardcoded pair would let a future edit add
 `bg-surface` to the table and pass, which is the promise going unenforced in the file that makes it.
 
+FOUR RULES DELIBERATELY NOT ADDED (#476), and the measurement that decided each. An external
+catalogue names four more "monotony" axes that look like they belong beside the two repeat rules
+above. None of them earns a gate here, and the reasons differ:
+
+  LAY-017  layout family repeated > 2x. MEASURED AGAINST OUR OWN TABLE AND REJECTED: the shipped
+           band sequence uses shape ('1', 'prose') for 3 of its 7 bands -- hero, a prose band and
+           the closing band legitimately share the shape for centred prose. Their threshold would
+           flag our own correct doctrine, which is the definition of a rule that is not a join.
+           A gate needing a carve-out on the first real input is taste wearing a count.
+
+  LAY-015  repeated closing CTA. REJECTED AS A DOCTRINE CONTRADICTION: `page-anatomies.md` states
+           the opposite and gives its reason -- *"One primary action, repeated ... The same CTA
+           appears in the hero, once mid-page, and in the closing band"*, because the failure is
+           two COMPETING primary actions, not one repeated. Adopting it would have this gate
+           enforce against the file it exists to reconcile.
+
+  VIS-012  surface and elevation monotony, and
+  LAY-024  divider monotony. REJECTED AS UNMEASURABLE HERE: their own detection is *"remove them
+           and see whether structure survives"*, which is a judgement, and neither surface
+           treatment nor divider style appears in the band table this gate reads. There is no
+           column to join against.
+
+Recorded rather than re-litigated, for the same reason `marketing-copy.md` §6 lists what it
+deliberately did not write: an idea that looks obviously good gets proposed again every few months
+unless the measurement that killed it is written next to the code.
+
 Exit codes:  0 the doctrine matches the repo * 1 it does not * 2 a file could not be read or parsed
 
 Stdlib only, no network.
@@ -455,6 +481,27 @@ def selftest() -> int:
             failures.append(f"{label} parsed instead of raising")
         except Unreadable:
             pass
+
+    # The docstring's LAY-017 rejection rests on a NUMBER about this repo -- "3 of its 7 bands".
+    # An unchecked number in a rationale rots exactly like an unchecked number in doctrine, and
+    # then the decision reads as authoritative while being false. Re-derive it. If the band table
+    # legitimately changes, this fails and the RATIONALE gets rewritten -- which is the point:
+    # the measurement is what makes the rejection honest, so it must survive with the table.
+    import collections as _c
+    try:
+        _bands = declared(DOC.read_text(encoding="utf-8")).bands
+        _top = max(_c.Counter(b.shape for b in _bands).values())
+        check("the LAY-017 rejection's measurement still holds",
+              (_top, len(_bands)) == (3, 7),
+              f"docstring says 3 of 7; the table now has {_top} of {len(_bands)} -- "
+              f"rewrite the rationale, do not just change the number")
+    except Exception as exc:  # noqa: BLE001 -- ANY failure must be a verdict, never a crash.
+        # Deliberately broad. A mutation elsewhere in this file can make `declared` raise, or
+        # leave no bands for `max()`; if that propagates, the selftest dies before it prints a
+        # single verdict and every OTHER fixture looks like it went quiet. A crash is not a
+        # verdict -- the harness cannot tell one from a broken selftest.
+        check("the LAY-017 rejection's measurement still holds", False,
+              f"could not re-derive it: {type(exc).__name__}: {exc}")
 
     if failures:
         print(f"SELFTEST FAILED -- {len(failures)} of {n} checks:", file=sys.stderr)
