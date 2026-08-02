@@ -4954,7 +4954,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.24.0 — 2026-08-02
 
 - **Route coverage read only the CSV evidence, so a crawled route counted as never touched**
   (Refs #108). `ROUTE_SOURCES` enumerated the validated profiles and nothing else; `crawl.json`
@@ -6281,7 +6281,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.12.1 — 2026-08-02
 
 - **The "don't start a second server" guard could not fire in the case that does the damage**
   (Refs #108). The reuse probe was `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so an app
@@ -7187,6 +7187,52 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.59.0)
+
+> ### Two shipped rules that could never fire, and a coverage number that under-reported
+>
+> This release completes EPIC #108. Its most useful output was negative: an audit of the QA
+> harness found **two rules we ship** — one graded S1, one S3 — reading fields **no collector
+> recorded**. The doctrine was written, correct, and inert. Everything here was verified against
+> a real Chromium run rather than fixtures alone.
+
+- **The highest severity in our own taxonomy was the one thing nothing could observe** (#108).
+  `functional-tester.md:95` prescribes `page.on('pageerror')` and `:105` grades an uncaught
+  exception **S1** — *"the page is broken even though it rendered"*. The collector never
+  registered the listener, so the S1 category could not fire on any run. Now captured and judged.
+
+- **An S3 rule read two attributes nothing recorded** (#108). `functional-tester.md:171` grades
+  `target="_blank"` without `rel="noopener"` as S3; the link inventory captured `href` and `text`
+  only. Both attributes are now recorded **raw** and judged in Python: `rel` is **split on
+  whitespace**, so a `noopenerfoo` typo does not pass as safe, and `noreferrer` satisfies the
+  rule because it severs the same handle. Judged before the external short-circuit — an external
+  target is exactly where a `window.opener` handle is worth reporting.
+
+- **The "never launch a second server" guard could not fire in the case that does the damage**
+  (#108). The reuse probe used `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so a server
+  **up with a failing health endpoint** was indistinguishable from an empty port (exit 22 vs 7).
+  It then started a second dev server into a build cache the first one held, which is the
+  corruption the step exists to prevent. Grepping the pattern found the same bug in design-flow,
+  where the else-branch printed *"nothing on the port"* — false, and it sent the operator to boot
+  a server already running. The two `curl -fsS` sites that are *wait-for-healthy* loops were
+  correctly left alone.
+
+- **Three judges reported a shared-layout defect once per page** (#108, item J — *"773 defects
+  that were ~18 repeated"*). All four judges now group on the **exact** `(rule, detail)` pair, so
+  a detail carrying per-instance counts still does not group: a de-duplicator that merges two
+  distinct defects to make a shorter report is worse than none. `--json` keeps every occurrence
+  and the summary prints both counts.
+
+- **Route coverage never read the crawl** (#108). A route the crawler loaded and graded counted
+  as *never touched*, and the omission was stated nowhere — which made it a defect rather than a
+  decision. Fixed as a **third state**, not by widening `covered`: a crawl grades errors but
+  asserts nothing, so counting it would be SKIP-is-not-a-PASS wearing a percentage. Non-GET
+  routes are excluded, because a crawler navigates with `page.goto` — a GET of `/users/7` is not
+  a visit to `DELETE /users/:id`. That false claim was caught by the change's own fixture.
+
+**Versions:** qa-flow 1.23.0 → **1.24.0**, design-flow 1.12.0 → **1.12.1**.
+**Gates:** 61/61. **Mutation check:** 368 mutations across 31 guards, all caught.
 
 ### 2026-08-02 (release v1.58.0)
 
