@@ -1499,6 +1499,12 @@ GUARDS: tuple[Guard, ...] = (
         needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
+                "uncaught exceptions stop being reported, so an S1 category goes unobserved again",
+                '    for error in page.get("pageErrors", []) or []:',
+                "    for error in []:",
+                "an uncaught exception is reported",
+            ),
+            Mutation(
                 "the 200-but-error rule stops firing",
                 '    for pattern in ERROR_PAGE_MARKERS:',
                 '    for pattern in []:',

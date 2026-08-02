@@ -4954,6 +4954,21 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The highest severity in our own taxonomy was the one category nothing could observe** (Refs
+  #108). `functional-tester.md:95` prescribes `page.on('pageerror')` and `:105` grades an uncaught
+  exception **S1** — *"the page is broken even though it rendered"* — and the collector had **zero**
+  such listeners. It watched `console` and `requestfailed` only.
+- **Proven against a real browser, not reasoned about.** A page whose `<h1>` renders *"Looks fine"*
+  while a script throws `TypeError` was previously indistinguishable from a clean one. Now:
+  collector records it, `crawl_report.py` grades `uncaught-exception`, exit 1.
+- **Kept distinct from `console-error` deliberately.** An uncaught exception is not a console
+  message and Chromium does not reliably surface one as such — folding them together would make the
+  judge infer severity from how a log line happens to be worded.
+- 4 new fixtures including the one that carries the point (a page that renders correctly *and*
+  throws is not clean), plus a declared mutation that stops the rule reporting and is caught by it.
+
 ### 1.23.0 — 2026-08-02
 
 - **The destructive-form safety rule pointed at config that did not exist** (#461). `a11y-auditor.md`
