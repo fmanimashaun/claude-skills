@@ -84,9 +84,16 @@ stay visible while working. This is the default for authenticated app UI.
 
 - **Rail** — brand mark top, primary nav, account menu pinned bottom via `mt-auto`.
   Nav items are `text-step--1` with `min-h-touch`.
-- **Mobile** — the rail becomes a drawer. `Layout::SidebarComponent` owns the
-  disclosure; do not hand-roll a second one. The trigger lives in the mobile top bar,
-  is icon-only, and therefore needs `sr-only` text (`components.md` → Navigation — sidebar / vertical).
+- **Mobile** — **render both, do not morph one.** An overlay drawer below `lg` and the persistent
+  `<nav>` rail at `lg` and up, as two elements. The overlay is the documented `Ui::Modal` positioned
+  to an edge, on the `modal` controller; `Layout::SidebarComponent`'s `sidebar` controller
+  **collapses the rail and nothing else**. This entry used to say the rail *"becomes"* a drawer and
+  that `SidebarComponent` *"owns the disclosure"* (#95), which was the same conflation
+  `interaction-stimulus.md` records correcting once already — and it named a disclosure that
+  component does not contain. Toggling `aria-modal` and a focus trap by media query changes the
+  role under the user; full contract in `components.md` → Drawer / off-canvas. The trigger lives in
+  the mobile top bar, is icon-only, and therefore needs `sr-only` text (`components.md` →
+  Navigation — sidebar / vertical).
 - **Brand mark** — rail top on desktop, mobile top bar centre or left. Never both at once.
 - **Scroll containment** — the rail and `<main>` scroll independently. Both need
   `min-h-0` alongside `overflow-y-auto`; a flex/grid child will not scroll without it

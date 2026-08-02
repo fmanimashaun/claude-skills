@@ -39,6 +39,9 @@ WHAT IT CHECKS
   broken-doc-pointer          a documented path to one of OUR files that does not resolve: an
                               agent is told to read doctrine that cannot be opened, and the
                               pointer still reads as authoritative
+  controller-inventory-gap    markup in the fidara-design docs naming a Stimulus controller the
+                              controller inventory omits — the reader inherits a dependency the
+                              doctrine never told them to build
 
 Deliberately narrow. Both rules are mechanical with no judgement, so a finding is
 always real. Classes that need judgement (a docstring promising behaviour the code
@@ -373,6 +376,109 @@ def check_component_call_sites() -> tuple[list[Finding], int]:
             "checked, so a wrong signature here is invisible",
         ))
     return findings, len(top)
+
+
+# ---------------------------------------------------------------------------
+# Rule: controller-inventory-gap
+# ---------------------------------------------------------------------------
+#
+# fidara-design tells a reader which Stimulus controllers exist, in one inventory under
+# `## Controller conventions`, and separately hands them markup carrying `data-controller="…"`.
+# Nothing reconciled the two, and they had drifted badly: the inventory said `carousel` was
+# "the only new controller the #95 rows need" while the shipped snippets prescribed `dropzone`,
+# `clipboard`, `combobox`, `disclosure` and `feed` by name (#95). An agent copying a snippet
+# then has to write a controller the doctrine never told it existed -- and for `dropzone` the
+# doctrine also warns that none of the four mixins covers a gesture, so the missing entry is
+# where the hard part was.
+#
+# ONE DIRECTION ONLY, deliberately. Markup naming a controller the inventory omits is the
+# defect: the reader is left with an unspecified dependency. The reverse -- an inventory entry
+# with no snippet -- is ordinary, because the list also names controllers that live in the apps
+# (`search`, `multistep`, `countdown`) and appear in no reference markup at all. A rule firing
+# on those would be the false-positive kind that gets a linter switched off.
+
+_CONTROLLER_REFS = "skills/fidara-design/references"
+_CONTROLLER_INVENTORY = f"{_CONTROLLER_REFS}/interaction-stimulus.md"
+_CONTROLLER_INVENTORY_HEADING = "## Controller conventions"
+
+_DATA_CONTROLLER_ATTR = re.compile(r'data-controller~?=\s*(?:"([^"]*)"|([^\s">]+))')
+_ERB_TAG = re.compile(r"<%=?-?(.*?)-?%>", re.S)
+_QUOTED_LITERAL = re.compile(r"""['"]([^'"]+)['"]""")
+# Fenced blocks come out of the section before its code spans are read, and that one line carries
+# BOTH reasons the naive version was wrong.
+#
+#   * The off-by-one. A ``` fence is three backticks, so the span pattern pairs the third with the
+#     closing fence's first and every span after it captures the PROSE BETWEEN spans instead of the
+#     spans. This rule's first run read an inventory of 38 healthy-looking entries containing not
+#     one controller name, and it was visible only because the rule then fired on all 18.
+#   * The leniency. A name inside a fenced EXAMPLE is a perfectly well-formed code span, so
+#     `dropzone` merely discussed in a snippet would count as the inventory naming it -- silencing
+#     a real finding. The rule must read the inventory's prose, not its examples.
+#
+# Excluding `\n` from the span pattern also kills the first of those, and it was written that way
+# at first. It is not here, because with fences already gone it is a defence no fixture and no
+# mutation can distinguish from its absence -- and per this file's own thesis, a guard nothing can
+# fail is not a guard. One line, one fixture each way, one mutation.
+_FENCE = re.compile(r"^```.*?^```", re.M | re.S)
+_BACKTICKED = re.compile(r"`([^`]+)`")
+_CONTROLLER_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
+
+
+def controller_names(value: str) -> set[str]:
+    """The controller names in one `data-controller` attribute value.
+
+    ERB is read as a SEPARATE half rather than stripped or tokenised whole, because both
+    shortcuts are wrong in opposite directions. `data-controller="theme <%= 'native-bridge' if
+    native_app? %>"` is a real line in mobile-reference-implementation.md: tokenising the raw
+    value accepts `if` as a controller, and deleting the ERB loses `native-bridge` entirely. So
+    outside ERB a bare token counts, and inside ERB only a string literal does.
+    """
+    names: set[str] = set()
+    for erb in _ERB_TAG.findall(value):
+        names |= {m for m in _QUOTED_LITERAL.findall(erb) if _CONTROLLER_NAME.match(m)}
+    names |= {t for t in _ERB_TAG.sub(" ", value).split() if _CONTROLLER_NAME.match(t)}
+    return names
+
+
+def check_controller_inventory() -> tuple[list[Finding], int]:
+    """Every controller the fidara-design docs prescribe is named in the inventory."""
+    inventory_path = ROOT / _CONTROLLER_INVENTORY
+    refs = ROOT / _CONTROLLER_REFS
+    if not inventory_path.is_file() or not refs.is_dir():
+        return [], 0
+
+    body = read(inventory_path)
+    start = body.find(_CONTROLLER_INVENTORY_HEADING)
+    if start < 0:
+        # Fail LOUD, not quiet. A renamed heading would otherwise silence the rule while
+        # leaving its coverage number looking healthy -- `skip` is not `pass`.
+        return [Finding(
+            "controller-inventory-gap", _CONTROLLER_INVENTORY, 0,
+            f"no {_CONTROLLER_INVENTORY_HEADING!r} section — the rule cannot find the inventory "
+            "it reconciles markup against, so every controller below is unchecked",
+        )], 0
+    end = body.find("\n## ", start + len(_CONTROLLER_INVENTORY_HEADING))
+    section = _FENCE.sub("", body[start: end if end > 0 else len(body)])
+    inventory = {t for t in _BACKTICKED.findall(section) if _CONTROLLER_NAME.match(t)}
+
+    prescribed: dict[str, tuple[str, int]] = {}
+    for path in sorted(refs.glob("*.md")):
+        for line_no, line in enumerate(read(path).splitlines(), 1):
+            for quoted, bare in _DATA_CONTROLLER_ATTR.findall(line):
+                for name in controller_names(quoted or bare):
+                    prescribed.setdefault(name, (rel(path), line_no))
+
+    findings = [
+        Finding(
+            "controller-inventory-gap", where, line_no,
+            f"`data-controller` names {name!r}, which the {_CONTROLLER_INVENTORY_HEADING!r} "
+            "inventory never mentions — a reader copying this markup inherits a controller the "
+            "doctrine does not admit exists, and no mixin is named for it",
+        )
+        for name, (where, line_no) in sorted(prescribed.items())
+        if name not in inventory
+    ]
+    return findings, len(prescribed)
 
 
 # ---------------------------------------------------------------------------
@@ -1188,6 +1294,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     toggles, toggles_examined = check_unhonoured_config_toggle()
     unwired, unwired_examined = check_unwired_claim_verifier()
     ci_gates, ci_gates_examined = check_ci_gate_without_test_step()
+    controllers, controllers_examined = check_controller_inventory()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1206,11 +1313,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         "flows_checked_for_claim_verifier": unwired_examined,
         "shipped_ci_run_examples": ci_gates_examined,
+        "stimulus_controllers_prescribed": controllers_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates,
+            + ci_gates + controllers,
             coverage)
 
 
@@ -2005,6 +2113,75 @@ def selftest() -> int:
     scenario("a user-project skills path is not ours", rule=P, expect_finding=False,
              files={"plugins/rails-flow/commands/curate.md":
                     "distils docs into `.claude/skills/domain/SKILL.md` in the user's repo\n"})
+
+    # -- controller-inventory-gap (#95) ---------------------------------------
+    CI = "controller-inventory-gap"
+    REFS = "skills/fidara-design/references"
+
+    def _inventory(*names: str) -> str:
+        # The helper's own fenced example prescribes `dropdown`, and the rule reads every
+        # reference doc including this one — so the helper lists it, rather than each scenario
+        # having to remember a controller it is not about.
+        listed = ", ".join(f"`{n}`" for n in ("dropdown", *names))
+        return (
+            "# Interaction\n\n## Per-component behavior contract\n\nprose\n\n"
+            "## Controller conventions (mirror the markup ergonomics)\n\n"
+            "```erb\n<div data-controller=\"dropdown\">…</div>\n```\n\n"
+            f"Reuse the proven controllers already in the apps: {listed}.\n\n"
+            "## Real-time & data (standardize)\n\nprose\n"
+        )
+
+    scenario("markup names a controller the inventory omits", rule=CI, expect_finding=True,
+             files={f"{REFS}/interaction-stimulus.md": _inventory("modal", "dropdown"),
+                    f"{REFS}/forms.md": '<div data-controller="dropzone">…</div>\n'})
+    scenario("...and is silent once the inventory names it", rule=CI, expect_finding=False,
+             files={f"{REFS}/interaction-stimulus.md": _inventory("modal", "dropdown", "dropzone"),
+                    f"{REFS}/forms.md": '<div data-controller="dropzone">…</div>\n'})
+    # The fence bug this rule found in itself: a ``` fence is three backticks, so a
+    # newline-tolerant span pattern pairs off by one and the inventory comes back full of prose and
+    # empty of names. Every fixture's inventory sits AFTER a fenced block for that reason.
+    scenario("a fenced block before the list does not blind the reader", rule=CI,
+             expect_finding=False,
+             files={f"{REFS}/interaction-stimulus.md": _inventory("modal", "dropdown", "toast"),
+                    f"{REFS}/component-implementations.md":
+                        '<div data-controller="toast" data-toast-timeout-value="5000">…</div>\n'})
+    # ...and the other half: a name inside a fenced EXAMPLE is a well-formed code span, so without
+    # stripping fences it would count as "the inventory names it" and silence a real finding. The
+    # inventory prose here lists only `dropdown`; `dropzone` appears solely inside the example.
+    scenario("a name mentioned inside an example does not count as listed", rule=CI,
+             expect_finding=True,
+             files={f"{REFS}/interaction-stimulus.md":
+                        "# Interaction\n\n## Controller conventions (mirror the markup ergonomics)\n\n"
+                        "```ruby\n# the `dropzone` controller is discussed here, not declared\n```\n\n"
+                        "Reuse the proven controllers already in the apps: `dropdown`.\n\n"
+                        "## Real-time & data (standardize)\n\nprose\n",
+                    f"{REFS}/forms.md": '<div data-controller="dropzone">…</div>\n'})
+    # ERB, both directions in one fixture. `native-bridge` is a string literal and IS a
+    # controller; `if` and `native_app?` are Ruby and are not. Tokenising the raw attribute
+    # accepts `if`; deleting the ERB loses `native-bridge`. Only `if` is left out of the
+    # inventory, so silence here proves the extractor did not invent it.
+    scenario("ERB contributes its string literals and not its keywords", rule=CI,
+             expect_finding=False,
+             files={f"{REFS}/interaction-stimulus.md": _inventory("theme", "native-bridge"),
+                    f"{REFS}/mobile-reference-implementation.md":
+                        "<body data-controller=\"theme <%= 'native-bridge' if native_app? %>\">\n"})
+    scenario("...and the ERB literal is still required to be listed", rule=CI, expect_finding=True,
+             files={f"{REFS}/interaction-stimulus.md": _inventory("theme"),
+                    f"{REFS}/mobile-reference-implementation.md":
+                        "<body data-controller=\"theme <%= 'native-bridge' if native_app? %>\">\n"})
+    # A renamed heading must fail LOUD. Silence there would leave the coverage number healthy
+    # while the rule checked nothing — `skip` is not `pass`.
+    scenario("a renamed inventory heading fails loud", rule=CI, expect_finding=True,
+             files={f"{REFS}/interaction-stimulus.md":
+                        "# Interaction\n\n## Controllers we use\n\n`modal`\n",
+                    f"{REFS}/forms.md": '<div data-controller="modal">…</div>\n'})
+    # NEAR MISS: the rule is one-directional on purpose. An inventory entry with no markup is
+    # ordinary — `search`, `multistep` and `countdown` live in the apps and appear in no snippet
+    # — and firing on them is how a linter earns its way to being switched off.
+    scenario("an inventory entry with no markup is not a finding", rule=CI, expect_finding=False,
+             files={f"{REFS}/interaction-stimulus.md":
+                        _inventory("modal", "search", "multistep", "countdown"),
+                    f"{REFS}/forms.md": '<div data-controller="modal">…</div>\n'})
 
     print(f"ran {checks} self-consistency assertion(s)")
     if failures:
