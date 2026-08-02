@@ -89,6 +89,12 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                "the toggle rule widens past booleans and flags agent-applied keys",
+                '            match = re.match(r"^\\s*([a-z_][a-z0-9_]*):\\s*(?:true|false)\\b", line)',
+                '            match = re.match(r"^\\s*([a-z_][a-z0-9_]*):", line)',
+                "a non-boolean key is out of scope",
+            ),
+            Mutation(
                 "the wiring rule stops noticing a flow that never calls claim-verifier",
                 '        if "claim-verifier" not in body:',
                 "        if False:",

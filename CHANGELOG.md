@@ -4769,6 +4769,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **`links.check_external` was a switch nothing was wired to** (Refs #108). The scaffolded config
+  shipped it as `false` and the prose told the reader to *"enable it for a deliberate link audit"* —
+  but `link_audit.py` **counts** external targets and has no code path that fetches one, so setting
+  it `true` changed nothing while the documentation said otherwise. Removed, and both docs now state
+  what the tool does: external targets are counted, never fetched, and there is no switch. If
+  fetching is built, the switch returns **with** the code.
+- **A dead toggle is worse than an absent feature**, which is why this is a fix and not a tidy-up: an
+  absent feature is visible, whereas a toggle makes the reader believe they opted in and stop
+  looking. Same shape as #112's `ignored: []` (advertised by the schema, hardcoded empty by the
+  collector) and #423's five gates waiting on paths nothing writes.
+- **New `unhonoured-config-toggle` rule** — a boolean a plugin scaffolds must be read by one of that
+  plugin's own scripts. Deliberately scoped to **booleans**: a string or list key is often applied by
+  an agent rather than a script (`runtime.ignore` really is honoured by `functional-tester`), so
+  widening it would flag a real consumer and get the rule switched off. A boolean exists to change
+  behaviour, and behaviour lives in code.
+- **The rule is preventive, and its coverage counter says so honestly.** Removing the only offending
+  toggle leaves **0 examined** in the live tree — the vacuous-pass shape this repo keeps finding,
+  caught here by the counter itself. Four fixtures carry the whole proof, plus a mutation that
+  widens it past booleans and is caught by the near-miss.
+- Self-consistency selftest 105 → **117**; mutations 32 → **33**.
+
 ### 1.21.2 — 2026-08-02
 
 - **#115's sixth criterion is now asserted rather than pointed at** (#424). *"Modal-CRUD variant
