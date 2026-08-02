@@ -2487,6 +2487,180 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.32.0 — 2026-08-02
+
+- **The page-pacing doctrine shipped a rule the corpus refutes** (Refs #92). Rule 1 required tone to
+  alternate *at every boundary* and rule 3 forbade a border — so at our own token values the two
+  together specified a boundary carried by a **1.053:1** step (`--background` `#F8F9FB` /
+  `--card` `#FFFFFF`) with nothing else marking it. Of six marketing templates studied, one
+  alternates at **none** of its four boundaries, and the smallest step where tone genuinely carries
+  a boundary is **24× ours**. Rule 1 is now stated as **continuity**, with rule 2 owning the
+  boundary — which is what a reader actually perceives at that contrast.
+- **Rule 3 becomes conditional rather than absolute.** Its authority was the *Elevation idiom*
+  measurement, which is about elevation **within** a page and was lifted to page scale without
+  re-checking. A template with a numerically identical step — ΔL 0.0177 against our 0.0181 — draws a
+  hairline at exactly its two such boundaries and at **none** of the four where the step is 0.775.
+  Where a boundary must carry tone alone, a border is now the honest fix rather than a violation.
+- **Proof moves from band 4 to band 2**, resolving a file that contradicted itself: the band table
+  said 4 while its own worked ERB said *"proof immediately under the fold line"*. Four of the six
+  templates put proof at position 1–2.
+- **6–8 bands is scoped to the product-landing genre**, and *"more is a page nobody reaches the end
+  of"* is withdrawn — a conference page runs 5 and a long-form sales page runs 12, where the length
+  *is* the product.
+- **The inset rounded panel is named as a second legitimate band form.** The doctrine described
+  full-bleed as the only shape; it is the default, not the only one.
+- **Rule 2's argument had to be repaired, not just kept.** It proved the stronger "exactly one axis"
+  form wrong *by appeal to rule 1's every-boundary requirement* — so correcting rule 1 would have
+  left a stale proof behind. Reworded to survive the correction; the conclusion is unchanged.
+- The brand-filled punctuation band the corpus also uses is **deliberately not adopted here**: it is
+  a colour decision, and brand packs own colour, so it belongs against the pack contract rather than
+  smuggled into pacing doctrine.
+
+The **audit half** of #95. Its writing half is done — `coverage.md` reports **0 `needs doctrine`**
+rows — so what was left was the four acceptance criteria the issue states *per group*, none of which
+anything checked. Three failed. Change type: **no `doctrine-verifier` verdict is involved.** Every
+claim corrected here is a claim fidara-design makes about **itself**, refuted by fidara-design's own
+shipped files, so the authority is measurement against those files and each measurement now has a
+script behind it (`CLAUDE.md` → *Measure anything measurable*). No new framework API is introduced
+anywhere in it: every replacement reuses a recipe already shipped elsewhere in the same skill.
+
+- **AC4 "no duplicate mechanisms" failed on the example the issue itself names** (Refs #95).
+  `components.md` → Toast / Notification says the Toast mechanism *"replaces the duplicate
+  `_flash`/`_flash_messages` pair"*, and `reference-implementation.md`'s base layout went on
+  rendering `shared/flash_messages` inside `<main>` — the eliminated half of the pair, shipped in
+  the same skill as its own replacement, in the file whose name says it is the reference. Removed;
+  flash goes to `#toasts` via Turbo Stream and nowhere else.
+- **The same block dropped all three things `page-anatomies.md` says a shell may not drop**
+  (Refs #95). No skip link — **WCAG 2.4.1 Bypass Blocks is Level A**, and `page-anatomies.md` and
+  `components.md` both already say so — a `<main>` with neither `id="main"` nor `tabindex="-1"`, so
+  the link would have had nothing focusable to land on, and `#toasts` **without `aria-live`**, which
+  `interaction-stimulus.md` refuses in terms: *"do not 'simplify' this by deleting the container's
+  `aria-live` on the strength of the toast having a role."* Three of the four copies of that
+  container appears in the docs carried it; this one did not. Fixed against the recipes already shipped in
+  `component-implementations.md`, not against new markup.
+- **AC3 "no new bespoke controllers where a mixin fits" was answered by a sentence that was false**
+  (Refs #95). `interaction-stimulus.md` said `carousel` was *"the only new controller the #95 rows
+  need"* while the snippets around it prescribed `dropzone` and `clipboard` (forms.md) and
+  `combobox`, `disclosure` and `feed` (component-implementations.md) — five more, for #95 rows
+  alone. Replaced by the measured inventory: a table of the **twelve** controllers the reference
+  docs name beyond the ten already in the apps, each with what it drives and which mixins it
+  composes. `dropzone` is the one that mattered most to state, because the same file warns that
+  **none of the four mixins is a gesture mixin**.
+- **`controller-inventory-gap`, so that table cannot drift again** — a new
+  `lint_self_consistency.py` rule reconciling every `data-controller=` in the fidara-design
+  references (18 today) against the inventory. One-directional on purpose: markup naming an
+  unlisted controller is a reader inheriting an unspecified dependency, while a listed controller
+  with no snippet is ordinary (`search`, `multistep`, `countdown` live in the apps). Its ERB half
+  reads string literals only — `data-controller="theme <%= 'native-bridge' if native_app? %>"`
+  names two controllers, and `if` is not one of them, which tokenising the raw attribute would have
+  claimed and deleting the ERB would have missed. **The rule found a bug in itself on first run:**
+  a ``` fence is three backticks, so the span pattern paired off by one from there and returned an
+  inventory of 38 healthy-looking entries containing not one controller name — visible only because
+  the rule then fired on all 18 controllers at once. **Then `mutation_check.py` refused the first
+  fix for carrying two defences that could not both be load-bearing.** Excluding newlines from a
+  span and stripping fences each kill that off-by-one, so whichever ran second survived every
+  mutation. Only fence-stripping also stops a name inside a fenced *example* counting as "listed",
+  so that is the one that stayed, with a fixture in each direction. A guard nothing can fail is not
+  a guard, and here the gate said so about our own fix.
+- **AC1's evidence table stopped letting one doc vouch for two rows** (Refs #95). `Select` and
+  `Textarea` both cited `### Field anatomy` — the simple_form **wrapper**, generic to every field,
+  which would still be there after every trace of either control was deleted — and `Checkbox`,
+  `Radio group` and `Toggle / Switch` all cited one heading. `verify_interaction_claims` has refused
+  a reused probe since it was written (*"one doc cannot be evidence for two different mechanisms"*)
+  and `DOCUMENTED_EVIDENCE`, which decides 79 rows rather than 9, had no such rule — while its own
+  Navigation comment records this exact defect being fixed by hand for two rows. The guard is
+  **substring, not equality**, because `"## Button"` also occurs inside `"## Button group"`: that
+  near-miss is what the table's hand-added trailing newlines defend against, and it is now a gate
+  instead of a convention someone remembers.
+- **No new doctrine was written to satisfy the table.** The five rows point at the text stating each
+  control's own recipe — four of them a bullet in forms.md's `## Controls` — because non-heading
+  evidence is the established shape for recipe-shaped rows (`divide-y divide-border`,
+  `@utility frame`) and a control-specific string is harder to satisfy by accident than a heading,
+  not easier. Checkbox and radio keep one shared bullet, because radio really is a one-word delta
+  (`rounded-full`) from the checkbox; splitting the doc to give the table a heading each would have
+  been the tail wagging the dog.
+- **Two more AC4 duplicates, found by grepping for the pattern rather than stopping at the first**
+  (Refs #95) — `CLAUDE.md` says that class travels in groups, and it did.
+  - `page-anatomies.md` said the mobile rail *"becomes"* a drawer and that
+    `Layout::SidebarComponent` *"owns the disclosure"*. `components.md` → Drawer / off-canvas says
+    **"render both, do not morph one"** and makes the overlay a `Ui::Modal`; `interaction-stimulus.md`
+    records correcting this exact conflation once already (*"`sidebar` is collapse only"*); and the
+    shipped `SidebarComponent` contains **no disclosure and no drawer** — it is a two-column flex
+    primitive. The correction had landed in two files and missed the third.
+  - `forms.md` → Error summary prescribed hand-rolled markup (`box` + `border-destructive` +
+    `role="alert"`) for the block `page-anatomies.md` specifies as `Ui::Alert intent: :error` on two
+    separate anatomies. Now the component, which is also the file that forbids hand-rolling — and
+    `AlertComponent#role` already returns `alert` for `:error`, so the hand-written attribute was
+    redundant here and wrong on any other intent.
+- **`Action panel` was left `derivable`, deliberately.** Its `Build from` works (Card + Heading +
+  Button group), so writing an entry to tick an unticked box would add surface nobody asked for.
+- #95 stays **open**: its five groups are a checklist, and an umbrella is not closed by the
+  promotion that ships one slice of it.
+- **fidara-design: the commerce family's catalog and cart slice** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)) — the browse → select → cart path,
+  taken as one group because it is one mechanism: a catalog card **cannot** carry an add-to-basket
+  button (the `<a>` content model forbids an interactive descendant, and the stretched-link overlay
+  covers a sibling), which is *why* quick-view exists, which is what fills the cart, which is what the
+  drawer shows. Four catalogue entries in `components.md` — **Product card**, **Filter panel**,
+  **Quick view**, **Cart drawer and cart line** — plus a markup section in
+  `component-implementations.md`. **No new ViewComponent class**: every piece composes Card, Grid list,
+  Disclosure, Modal, Media object and Empty state, which is #91's "no duplicate mechanisms" criterion.
+  It also closes two dangling references — `components.md` already cited *"a cart line"* and *"the cart
+  total"* with no entry behind either.
+  **Change type: split.** The **framework claims** are CONFIRMED against the version in scope and cited
+  in place: [WAI-ARIA 1.2](https://www.w3.org/TR/wai-aria-1.2/#aria-selected) (REC 2023-06-06) for
+  `aria-selected`'s supported roles and `role="status"`'s implicit `polite`+`atomic`;
+  [ARIA in HTML](https://www.w3.org/TR/html-aria/#el-button) (REC 2026-04-15); the
+  [APG pattern index](https://www.w3.org/WAI/ARIA/apg/patterns/) (30 patterns — the negative for
+  filter, product card, gallery, drawer and cart) plus its
+  [Dialog](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/),
+  [Disclosure](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) and
+  [Carousel](https://www.w3.org/WAI/ARIA/apg/patterns/carousel/) patterns; WHATWG HTML (Living
+  Standard, 2026-07-20) for the [`<a>` content model](https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element),
+  [`<s>` vs `<del>`](https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-s-element) and
+  [`inert`](https://html.spec.whatwg.org/multipage/interaction.html#the-inert-attribute); WCAG 2.2
+  1.4.1 (A), 2.4.4 (A), [2.4.11](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html)
+  (AA, new in 2.2), 2.5.8 (AA), 3.2.2 (A), 3.3.4 (AA), 3.3.6 (AAA) and
+  [4.1.3](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) (AA); Turbo 8.0.23. The
+  **design/architecture** half — one link per card, quick-view is never the product page, drawer and
+  page both exist, `aria-modal`+`inert` together, our stricter `aria-controls` — has no upstream, so its
+  authority is the [maintainer decision recorded on #91](https://github.com/fmanimashaun/claude-skills/issues/91#issuecomment-5156613111).
+- **One verdict came back INCONCLUSIVE and doctrine says so rather than inventing a citation** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)). **Is removing a line from an open
+  cart inside 3.3.4?** No W3C text decides it: the criterion covers *"modify or delete user-controllable
+  data in data storage systems"*, while its Understanding document narrows the intent to *"prevent mass
+  loss of data"* and excludes *"the simple creation or editing of … records"*. Decision (recorded on the
+  issue, per CLAUDE.md): **a cart line is draft data — removal is immediate and reversible.**
+  `crud-modal-pattern.md` gains *A confirmation is for what cannot be undone*, which scopes the
+  previously unscoped destructive-action rule to **reversibility rather than destructiveness** — the
+  condition its own worked example already stated (*"This can't be undone"*) and the rule did not. The
+  undo is written as a contract, not a softer option, because **no specification requires an undo
+  anywhere**: 3.3.4 offers Reversible / Checked / Confirmed as alternatives and 3.3.6 is Level AAA.
+- **Two defects in already-shipped doctrine, found by grepping the pattern** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)). (1) `page-anatomies.md` told every
+  agent that product-gallery *"thumbnails are buttons in a group, with the active one announced as
+  selected"* — `aria-selected` is scoped by ARIA 1.2 to `gridcell`/`option`/`row`/`tab` and is not in
+  `button`'s supported set, so that shipped an attribute invalid in both ARIA 1.2 and *ARIA in HTML*
+  which announces nothing. Fixed **by reuse**: a thumbnail that *picks* an image is the documented
+  Carousel's **Tabbed** style, where `role="tab"` makes `aria-selected` legal — and the distinction is
+  now written down (a thumbnail that **opens** a viewer is a `button`; one that **selects** is a `tab`).
+  (2) `Seat / quantity selector` and `Promo / discount code` both rested "never submit on change" on
+  **3.2.2 On Input**, which is narrower than that: it forbids a change of *context*, and WCAG states
+  *"a change of content is not always a change of context"*. A total restreamed in place without moving
+  focus is permitted. **The rules stand; their authority was wrong**, and both now say the money carries
+  them. The neighbouring `Stepper` citation was checked and left alone — advancing a step moves focus,
+  so there 3.2.2 genuinely applies.
+- **No coverage `ENTRIES` rows, and the gap is disclosed rather than left to be found** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)). `coverage.md` and
+  `docs/coverage.html` need the licensed corpora to regenerate, so committing rows here would fail the
+  drift gate on the next maintainer's machine. **`verify_no_undeclared_entry` cannot see this gap**: it
+  matches on row name, and the four new headings are named differently from the four `derivable` rows
+  they back — the same shape as the `Command palette` row that guard was written for, in the half it
+  does not cover. The exact flip (four rows, two `BUILD` deletions, four evidence strings, each checked
+  against the shipped headings and found exactly once) is
+  [on the issue](https://github.com/fmanimashaun/claude-skills/issues/91#issuecomment-5156613111) for a
+  corpora-attached follow-up.
+
 ### 1.31.1 — 2026-08-02
 
 - **The coverage matrix now reports #91's slice-2 work, which it had been silently under-reporting**
@@ -4780,6 +4954,82 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.23.0 — 2026-08-02
+
+- **The destructive-form safety rule pointed at config that did not exist** (#461). `a11y-auditor.md`
+  said *"never submit a form matching **the configured** destructive pattern"*, while `setup-qa.md`
+  scaffolded no `forms:` block and no script read one. Every auditor invented the list — for forms
+  that delete data or take payment, where an under-inclusive guess submits a destructive form and an
+  over-inclusive one silently drops coverage. `forms.destructive` is now scaffolded with a
+  documented default and the doctrine names the real key.
+- Third instance of a shipped reference with no referent, after #445 (a toggle nothing honoured) and
+  #423 (gates waiting on paths nothing writes) — but the first where the missing thing was a
+  **safety** carve-out.
+- **A gate for that class was written and then withdrawn, which is the more useful record.** A rule
+  refusing a dotted `group.key` no scaffolded config defines produced **6 findings, all false
+  positives**: `registry.username` belongs to Kamal's `config/deploy.yml` rather than ours,
+  `blast_radius.py` is a *filename* whose stem happens to match a config group, and the
+  `links.check_external` prose names the removed key deliberately, to explain that it is gone. By
+  this repo's own standard a rule that cries wolf gets switched off, so it is not shipped. My own
+  near-miss fixture was vacuous too — it used `report.py`, where `report` is not a group, so it
+  passed without exercising the filename case at all.
+
+- **Nothing measured focus containment, and the overlay probe never ran on the commonest modal**
+  (#458, the last unmechanised third of the closed #114; `Refs #108`). #114's overlay criterion is
+  three assertions — *"(a) Tab cycles within the layer, (b) Escape closes it, (c) focus returns to
+  the trigger"*. (b) and (c) became mechanical in `286b73a`; (a) stayed a number an agent typed
+  into the `Trap Failures` column, whose arithmetic `validate_evidence.py:624` checks and whose
+  truth nothing did. The collector now walks `Tab` then `Shift+Tab` from inside the open layer and
+  `interaction_report.py` judges `focus-not-contained`.
+- **Scoped to runtime-modal layers only, and the wording of that scope is load-bearing.** APG
+  mandates containment in its
+  [Dialog (Modal)](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) pattern — *"If focus is
+  on the last tabbable element inside the dialog, moves focus to the first tabbable element inside
+  the dialog"* — and specifies the **opposite** for the two other overlays the Escape rule covers:
+  *"Tab: … move focus out of the `menu` or `menubar`, and close all menus and submenus"*
+  ([Menubar](https://www.w3.org/WAI/ARIA/apg/patterns/menubar/)) and *"DOM Focus is maintained on
+  the combobox"* with the popup *"excluded from the page Tab sequence"*
+  ([Combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/)). Modality is read from the
+  runtime — `aria-modal="true"` by **value**, or the `:modal` match that `showModal()` sets and
+  `show()` never does ([HTML Standard](https://html.spec.whatwg.org/multipage/semantics-other.html#pseudo-classes)).
+  Verified against the live specs on 2026-08-02.
+- **An out-of-scope verdict says NOT CHECKED, never "exempt"**, and a fixture pins the wording.
+  The verification's most useful output was negative: APG's Dialog (Modal) About section says
+  *"Like non-modal dialogs, modal dialogs contain their tab sequence"*, so "APG exempts non-modal
+  dialogs" would have been a false claim about the spec shipped as doctrine. There is no APG
+  pattern page for a non-modal dialog and no runtime flag marking one — nothing to check against,
+  which is a statement about measurability, not permission.
+- **`a11y-auditor.md` said all three overlay assertions applied to all three patterns**, so it was
+  telling auditors to file S1 `Trap Failures` against menus and comboboxes for doing what APG asks.
+  Corrected with the citations: `Trap Failures` is bounded by the **modal dialogs** among
+  `Overlays`, not by `Overlays`.
+- **Two collector defects found by running it, not by reading it** (headless Chromium, six-case
+  fixture). Both would have shipped as false results on the most common correct implementations.
+  - *A dialog that is present is not a dialog that is open.* Overlays were counted by
+    `querySelectorAll('dialog[open],[role="dialog"]')` — presence — so a `role="dialog"` div that
+    lives in the DOM and is revealed by toggling `hidden` (Flowbite, Tailwind UI, most component
+    libraries) never changed the count, and **the whole Escape / focus-restore probe never ran on
+    it**. Measured: presence `3 → 3 → 3` while visibility went `0 → 1 → 0`. Now counted with
+    `checkVisibility()`, and `[role="alertdialog"]` joins the selector — its omission exempted every
+    confirm-before-delete overlay.
+  - *`document.body` is not outside the layer.* Chromium's cycle for a `showModal()` dialog with two
+    buttons is `one → two → BODY → one`; the wrap point parks focus on the document. Treating that
+    as an escape would have reported a containment failure on **every correct native modal**. A
+    genuinely leaky overlay lands on a real element instead — the same fixture's untrapped
+    `aria-modal` div went `alpha → beta → BUTTON "open non-modal"`.
+- **The probe is non-destructive**: focus returns to where it started after each direction, so the
+  Escape/restore probe that runs next sees the state it would have seen. Without that, our own Tab
+  presses could manufacture a `focus-restore-missing` on a working overlay.
+- **False-positive guards, each with its own fixture**: a modal holding no tabbable element is
+  reported unjudged rather than leaky (there is no cycle to walk); a dialog that opened without
+  moving focus into itself is named as unmeasured rather than graded, because that is a *different*
+  defect; an unrun walk is `null`, never `false`.
+- **A denominator is printed even at zero** — *"N modal layer(s) walked for focus containment"* —
+  because no findings over no walked layers is a statement about the sweep, not about the app.
+- 113 selftest checks (up from 68) and 17 declared mutations, all caught. Two of the new fixtures
+  had to be rewritten after the mutation checker correctly refused them: they indexed `findings[0]`,
+  so the mutant crashed before any labelled assertion could report.
+
 ### 1.22.1 — 2026-08-02
 
 - **A killed crawl produced nothing at all** (#451, the collector half of the closed #111). The
@@ -6863,6 +7113,39 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.58.0)
+
+> ### Doctrine that was measured against reality for the first time
+>
+> Three of these were found by *running* something rather than reading it: a browser against the
+> licensed templates, Playwright against our own overlay probe, and a grep against a config key
+> nobody had defined. Each contradicted doctrine we had already shipped.
+
+- **The page-pacing rules contradicted the corpus** (#92, now complete). Rule 1 required tone to
+  alternate at *every* boundary and rule 3 forbade a border — so at our own token values the pair
+  specified a boundary carried by a **1.053:1** step with nothing else marking it. Of six marketing
+  templates studied, one alternates at **none** of its four boundaries; the smallest step where tone
+  genuinely carries a boundary is **24× ours**. Rule 1 is now continuity, rule 2 owns the boundary,
+  rule 3 is conditional, Proof moves to band 2 (resolving a file that contradicted its own prose),
+  6–8 bands is scoped to a genre, and the inset panel is named as a second band form.
+- **The overlay probe never ran on the commonest modal there is** (#458). Overlays were counted by
+  *presence*, so a `role="dialog"` revealed by toggling `hidden` — every component library — never
+  registered as opened, and the shipped Escape and focus-restore rules silently skipped it.
+  Presence measured `3→3→3` while visibility went `0→1→0`.
+- **Shipped doctrine mandated findings against spec-correct behaviour.** `a11y-auditor.md` told
+  auditors to assert Tab-containment on menus and comboboxes; **APG specifies the opposite** — Tab
+  exits and closes a menu. Confirmed against the live pattern, corrected with citations.
+- **A safety rule pointed at config that did not exist** (#461). *"Never submit a form matching the
+  configured destructive pattern"* — and nothing configured one. Third instance of a reference with
+  no referent, and the first guarding forms that delete data or take payment.
+- **#95's audit half had three of four criteria failing**, including on the example the issue itself
+  names, plus five controllers beyond the "only new controller" claim. `aria-selected` on a `button`
+  — invalid in ARIA 1.2 — was corrected by reuse rather than invention.
+- **The catalog and cart slice** (#91), including a card that cannot hold the button it wants: the
+  `<a>` content model forbids an interactive descendant, which is *why* quick-view exists.
+- Gate sweep **61**. A gate for the config-reference class was written and **withdrawn** — six
+  findings, all false positives, and a rule that cries wolf gets switched off.
 
 ### 2026-08-02 (release v1.57.2)
 

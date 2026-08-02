@@ -124,15 +124,33 @@ Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Interactive,Tab
   the three **individually**: Tab cycles within the layer, `Escape` closes it, focus returns to
   the trigger. None of the three may exceed `Overlays`. Focus-restore failure is the common,
   high-value one; report it separately rather than folding it into a generic "modal" finding.
-  **`Overlays` counts only the patterns APG mandates this for** — a modal dialog, a `role=menu`
-  popup, a combobox popup. An ordinary **disclosure** (an FAQ accordion, a show/hide toggle) and a
-  **standalone listbox** are *not* overlays for this column: APG's
+  **`Overlays` counts only the patterns APG mandates the ESCAPE behaviour for** — a modal dialog,
+  a `role=menu` popup, a combobox popup. An ordinary **disclosure** (an FAQ accordion, a show/hide
+  toggle) and a **standalone listbox** are *not* overlays for this column: APG's
   [Disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) has no `Escape` row in
   its Keyboard Interaction table at all, and its
   [Listbox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/) never mentions `Escape`.
   Counting them inflates the denominator and files `S1`s against behaviour no spec requires, which
   is how a whole column stops being read. `interaction_report.py` scopes its
   `focus-restore-missing` rule the same way — one line, both places.
+- **`Trap Failures` is narrower than the other two, and this file used to say it was not.** Only a
+  **modal dialog** owes focus containment. APG's
+  [Dialog (Modal) pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) mandates it —
+  *"If focus is on the last tabbable element inside the dialog, moves focus to the first tabbable
+  element inside the dialog"*, and the mirror row for `Shift + Tab`. For the other two overlays APG
+  specifies the **opposite**: on a menu, *"Tab: … move focus out of the `menu` or `menubar`, and
+  close all menus and submenus"* ([Menu and Menubar](https://www.w3.org/WAI/ARIA/apg/patterns/menubar/)),
+  and a [combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) keeps *"DOM Focus … on the
+  combobox"* with its popup *"excluded from the page Tab sequence"*. So a `Trap Failure` counted
+  against a menu or a combobox is an `S1` filed against behaviour the spec asks for.
+  `Trap Failures` must therefore be ≤ the modal dialogs among `Overlays`, not ≤ `Overlays`.
+- **Do not eyeball it.** Containment is now measured: the crawl collector walks `Tab` and
+  `Shift+Tab` from inside the open layer and `interaction_report.py` reports
+  `focus-not-contained`. Take `Trap Failures` from that run. Note that a modal it reports as
+  **out of scope** was *not checked* — it is not a pass, and it is not a claim that APG permits
+  the behaviour; APG's own Dialog (Modal) About section says non-modal dialogs contain their tab
+  sequence too. There is simply no APG pattern and no runtime flag to check a non-modal one
+  against.
 - `Skip Link` — `Present`, `Absent`, or `N/A` (is a skip-to-content affordance the first stop?).
 - `Severity` — `S1` / `S2` / `none`, and it is **recomputed** from the counters, so it cannot be
   talked down. Unreachable, missing indicator, or any overlay failure → **S1**. Positive
@@ -157,7 +175,7 @@ The WCAG floor here is low, which is why these are S1 and not style notes: **3.3
 Instructions (A)**, **4.1.2 Name, Role, Value (A)**, **3.3.1 Error Identification (A)** and
 **1.4.1 Use of Color (A)**; **3.3.3 Error Suggestion** is AA.
 
-**Safety.** Never submit a form matching the configured destructive pattern (delete / cancel /
+**Safety.** Never submit a form matching **`forms.destructive`** in `qa/config.yml` (delete / cancel /
 pay); default to `dry-run` for anything unrecognised. Valid-submit testing is opt-in and only
 for non-destructive, idempotent endpoints.
 

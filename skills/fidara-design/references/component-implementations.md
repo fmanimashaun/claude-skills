@@ -1060,6 +1060,171 @@ end
 </div>
 ```
 
+## Catalog and cart — markup, because the markup is what is invalid
+
+No `Ui::ProductCardComponent`, no `Ui::FilterPanelComponent`, no `Ui::CartDrawerComponent`. Every piece
+below is a documented component already in this file — Card, Grid list, Disclosure, Modal, Media object,
+Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` nested inside an `<a>`, an
+`aria-selected` on a role that does not support it, and a live region that announces a bare number.
+
+```erb
+<%# ---- PRODUCT CARD. The link and the button are SIBLINGS. Nesting the button inside the ---- %>
+<%# link violates the <a> content model ("no interactive content descendant") -- and the %>
+<%# stretched overlay would cover it anyway, so a grid card carries the link ALONE and the %>
+<%# add-to-basket lives in the quick view. components.md -> Product card. %>
+<li class="relative">
+  <%= render Ui::CardComponent.new do |c| %>
+    <% c.with_media { image_tag product.image_url, alt: "", class: "frame" } %>
+    <h3 class="text-step-1">
+      <%# ONE link: the image is alt="" because this text already names the product. %>
+      <%= link_to product.name, product_path(product), class: "after:absolute after:inset-0" %>
+    </h3>
+
+    <p class="tabular-nums">
+      <% if product.reduced? %>
+        <%# <s> is the element the HTML Standard names for a superseded price -- NOT <del>, %>
+        <%# which marks a document edit. The strikethrough announces nothing by itself. %>
+        <s><span class="sr-only">Was</span> <%= product.formatted_list_price %></s>
+        <span class="sr-only">Now</span>
+      <% end %>
+      <%= product.formatted_price %>
+    </p>
+
+    <%# Stock is a WORD (1.4.1). The dot is decoration and says so. %>
+    <p class="cluster text-step--1">
+      <span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>
+      <%= product.stock_label %>
+    </p>
+  <% end %>
+</li>
+
+<%# ---- FILTER PANEL. A GET form with a real submit, so the state ends up in the URL. ---- %>
+<%# One Ui::Disclosure per group: role=button + aria-expanded are APG's whole mandate, and %>
+<%# there are NO arrow keys on a disclosure. aria-controls is optional in APG and required %>
+<%# by us, because the panel is not adjacent to its trigger in a wide sidebar. %>
+<form method="get" class="stack" aria-label="Filter products">
+  <% facets.each do |facet| %>
+    <%= render Ui::DisclosureComponent.new(id: "facet-#{facet.slug}") do |d| %>
+      <% d.with_trigger_content { facet.name } %>
+      <% d.with_panel_content do %>
+        <fieldset class="stack">
+          <legend class="sr-only"><%= facet.name %></legend>
+          <% facet.options.each do |option| %>
+            <%# min-h-touch clears 2.5.8 outright rather than arguing about the Spacing exception. %>
+            <label class="cluster min-h-touch">
+              <%= check_box_tag "#{facet.slug}[]", option.value, option.selected? %>
+              <%= option.label %>
+            </label>
+          <% end %>
+        </fieldset>
+      <% end %>
+    <% end %>
+  <% end %>
+  <%= submit_tag "Apply filters" %>
+</form>
+
+<%# The COUNT is the status message; the grid is not. Understanding 4.1.3 excludes the result %>
+<%# list by name, so role="status" here would announce every card on every filter change. %>
+<p role="status" class="text-step--1 text-muted-foreground"><%= pluralize(count, "product") %></p>
+
+<%# ---- PRODUCT GALLERY. The thumbnail strip PICKS an image, so it is the Carousel's ---- %>
+<%# Tabbed style: role=tab in a tablist, one tab stop, arrows between thumbnails. A plain %>
+<%# <button> cannot carry aria-selected -- ARIA 1.2 scopes it to gridcell/option/row/tab. %>
+<%# (A thumbnail that OPENS a lightbox is the other case, and that one IS a button.) %>
+<div role="tablist" aria-label="Product images" class="cluster" data-controller="carousel">
+  <% images.each_with_index do |image, i| %>
+    <button role="tab" id="thumb-<%= i %>" aria-controls="image-<%= i %>"
+            aria-selected="<%= i.zero? %>" tabindex="<%= i.zero? ? 0 : -1 %>"
+            class="frame min-h-touch" data-carousel-target="picker">
+      <%= image_tag image.thumb_url, alt: "" %>
+    </button>
+  <% end %>
+</div>
+<% images.each_with_index do |image, i| %>
+  <%# A tabpanel drops aria-roledescription entirely -- do not carry "slide" over. %>
+  <div role="tabpanel" id="image-<%= i %>" aria-labelledby="thumb-<%= i %>"
+       data-carousel-target="slide" <%= "hidden" unless i.zero? %>>
+    <%= image_tag image.url, alt: image.description, class: "frame" %>
+  </div>
+<% end %>
+
+<%# ---- CART DRAWER. The documented Modal at an edge. aria-modal is a CLAIM; `inert` on ---- %>
+<%# the page behind is the mechanism that makes it true, and it is also what keeps the %>
+<%# drawer clear of 2.4.11 -- nothing behind an inert subtree can take focus at all. %>
+<%= render Ui::ModalComponent.new(size: :sm, placement: :right) do |m| %>
+  <% m.with_title { "Basket" } %>
+
+  <% if lines.any? %>
+    <ul role="list" class="stack divide-y divide-border">
+      <% lines.each do |line| %>
+        <li id="<%= dom_id(line) %>">
+          <%= render Ui::MediaObjectComponent.new(size: :sm) do |o| %>
+            <% o.with_media { image_tag line.image_url, alt: "" } %>
+            <% o.with_body do %>
+              <%= link_to line.name, product_path(line.product) %>
+              <span class="tabular-nums"><%= line.formatted_unit_price %></span>
+            <% end %>
+            <% o.with_trailing do %>
+              <%# Quantity is the documented Seat / quantity selector: visible label, explicit %>
+              <%# Update, server-side clamp. No submit-on-change -- see components.md for why %>
+              <%# that rule is OURS and not 3.2.2's. %>
+              <%= simple_form_for line, url: cart_line_path(line) do |f| %>
+                <%= f.input :quantity, as: :integer, input_html: { min: 1, class: "min-h-touch" } %>
+                <%= f.submit "Update" %>
+              <% end %>
+              <%# Names the ITEM, not the row number. min-h-touch, because an icon-only x is %>
+              <%# a 2.5.8 target and "Inline" does not cover a block control in a list row. %>
+              <%= button_to cart_line_path(line), method: :delete,
+                    class: "min-h-touch",
+                    aria: { label: "Remove #{line.name}, #{line.variant}" } do %>
+                <span class="with-icon" aria-hidden="true"><%= lucide_icon("x") %></span>
+              <% end %>
+            <% end %>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+
+    <%# role="status" carries polite AND atomic, so this announces "Total 52.00" and not "52.00". %>
+    <%# WCAG's own Understanding 4.1.3 uses a shopping cart as the worked example for exactly %>
+    <%# this failure. ONE region for the money: not the badge, not each line. %>
+    <p id="cart-total" role="status" class="cluster justify-between">
+      <span>Total</span><span class="tabular-nums"><%= formatted_total %></span>
+    </p>
+    <%= link_to "View basket", cart_path %>
+    <%= link_to "Checkout", checkout_path %>
+  <% else %>
+    <%# The drawer's empty branch is the Empty state recipe above, rendered from its own %>
+    <%# partial -- not a bespoke paragraph, and not a second layout for the small surface. %>
+    <%= render "carts/empty" %>
+  <% end %>
+<% end %>
+```
+
+**One response updates the badge, the line and the total, because stream targets resolve
+document-wide.** Turbo looks the target up with `ownerDocument.getElementById`, not within the
+submitting frame, so the header badge and a drawer that live in different parts of the layout are both
+addressable by `dom_id` from one render. Note the count while you are here: Turbo 8 has **eight** stream
+actions — `append`, `prepend`, `replace`, `update`, `remove`, `before`, `after`, `refresh` — and `morph`
+is a `method:` modifier on three of them, never a ninth action name.
+
+```ruby
+# CartLinesController#destroy — remove the row, restate the money, and offer the undo.
+# The undo is what pays for skipping the confirmation modal (crud-modal-pattern.md), so the
+# route has to exist before this doctrine is worth following.
+def destroy
+  @line = current_cart.lines.find(params[:id])
+  @line.destroy!
+  render turbo_stream: [
+    turbo_stream.remove(dom_id(@line)),
+    turbo_stream.replace("cart-total", partial: "carts/total", locals: { cart: current_cart }),
+    turbo_stream.replace("cart-badge", partial: "carts/badge", locals: { cart: current_cart }),
+    turbo_stream.prepend("toasts", ToastComponent.new(
+      intent: :success, message: "Removed #{@line.name}", undo_path: restore_cart_line_path(@line)))
+  ]
+end
+```
+
 ## Payment container and promo code — recipes, not components
 
 Neither is a ViewComponent, and for opposite reasons. The **payment container** has no content of its

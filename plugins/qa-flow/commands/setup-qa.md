@@ -67,6 +67,9 @@ app:                                 # how /qa-flow:smoke boots the app (stack-a
 runtime:                             # browser console/network capture (#109)
   ignore: []                         # substrings matched on message or resource URL
 links:                               # link/anchor audit during the crawl (#113)
+forms:                               # form-submission safety (#461)
+  destructive: [delete, remove, destroy, cancel, deactivate, close-account, pay, charge, refund,
+                subscribe, unsubscribe, transfer, send]
 coverage:                            # route coverage denominator (#119)
   exclude: []                        # substrings: health endpoints, dev-only, ActiveStorage
   authenticated_prefixes: []         # e.g. /admin — declared, never guessed from the path
@@ -118,6 +121,20 @@ whether a route needs authentication is not guessable from its path, and a heuri
 on exactly the routes that matter most. `exclude` drops health endpoints, dev-only routes and
 framework-mounted paths — and the excluded set is **always printed**, even when empty, because a
 suppression that leaves no trace turns a coverage number into a lie.
+
+**`forms.destructive` is the list a form is never submitted against**, and it exists because the
+rule used to say *"the configured destructive pattern"* while nothing configured one (#461). Every
+auditor invented their own, so two runs against the same app could disagree about whether a form was
+safe to submit — for forms that delete data or take payment.
+
+The default above is a starting point, not a claim of completeness: **it is matched against the
+form's action, id and submit-button text, case-insensitively, as substrings.** Add your own verbs
+before the first run; an under-inclusive list submits a destructive form, an over-inclusive one
+silently drops coverage, and only the second leaves a trace.
+
+The trace is enforced: a `skipped-destructive` row whose `Notes` do not name the pattern that
+matched is refused by `validate_evidence.py`. A form skipped without a trace is indistinguishable
+from one that passed.
 
 **External targets are counted, never fetched, and there is no switch.** Internal links and
 `#fragment` targets are always checked — fast, deterministic, and ours to fix. External ones are

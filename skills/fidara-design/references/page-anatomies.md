@@ -84,9 +84,16 @@ stay visible while working. This is the default for authenticated app UI.
 
 - **Rail** — brand mark top, primary nav, account menu pinned bottom via `mt-auto`.
   Nav items are `text-step--1` with `min-h-touch`.
-- **Mobile** — the rail becomes a drawer. `Layout::SidebarComponent` owns the
-  disclosure; do not hand-roll a second one. The trigger lives in the mobile top bar,
-  is icon-only, and therefore needs `sr-only` text (`components.md` → Navigation — sidebar / vertical).
+- **Mobile** — **render both, do not morph one.** An overlay drawer below `lg` and the persistent
+  `<nav>` rail at `lg` and up, as two elements. The overlay is the documented `Ui::Modal` positioned
+  to an edge, on the `modal` controller; `Layout::SidebarComponent`'s `sidebar` controller
+  **collapses the rail and nothing else**. This entry used to say the rail *"becomes"* a drawer and
+  that `SidebarComponent` *"owns the disclosure"* (#95), which was the same conflation
+  `interaction-stimulus.md` records correcting once already — and it named a disclosure that
+  component does not contain. Toggling `aria-modal` and a focus trap by media query changes the
+  role under the user; full contract in `components.md` → Drawer / off-canvas. The trigger lives in
+  the mobile top bar, is icon-only, and therefore needs `sr-only` text (`components.md` →
+  Navigation — sidebar / vertical).
 - **Brand mark** — rail top on desktop, mobile top bar centre or left. Never both at once.
 - **Scroll containment** — the rail and `<main>` scroll independently. Both need
   `min-h-0` alongside `overflow-y-auto`; a flex/grid child will not scroll without it
@@ -308,15 +315,20 @@ Testimonial. Every one of those rows is correct on its own. Followed literally t
 flat as a whole. `scripts/check_page_pacing.py` re-measures that count against `coverage.md`, so it
 is a measurement rather than an assertion.
 
-**6–8 bands** sit between the marketing header and the footer. Fewer says nothing; more is a page
-nobody reaches the end of. The default sequence:
+**6–8 bands** sit between the marketing header and the footer, **for a product landing page**.
+Fewer says nothing.
+
+That range is a genre default, not a law, and the corpus refutes the stronger version: a
+single-event conference page runs **5** bands and a long-form sales page runs **12** — where the
+length *is* the product. The earlier clause "more is a page nobody reaches the end of" is withdrawn:
+it was an assertion about readers that the templates disprove. The default sequence:
 
 | # | Band | Composed from | Tone | Columns | Width |
 |---|---|---|---|---|---|
-| 1 | Hero — the claim, the lede, the one primary action, a proof strip | Hero section | card | 1 | prose |
-| 2 | Capabilities — 3–6 verb-led cards | Feature section | background | n | shell |
-| 3 | Deep feature — prose beside a product screenshot | Feature section | card | 2 | shell |
-| 4 | Proof — the customer marks, on one line | Logo cloud | background | 1 | shell |
+| 1 | Hero — the claim, the lede, the one primary action | Hero section | card | 1 | prose |
+| 2 | Proof — the customer marks, on one line | Logo cloud | background | 1 | shell |
+| 3 | Capabilities — 3–6 verb-led cards | Feature section | card | n | shell |
+| 4 | Deep feature — prose beside a product screenshot | Feature section | background | 2 | shell |
 | 5 | How it works — three numbered steps, as an `<ol>` | Content / prose section | card | 1 | prose |
 | 6 | Objections — the three questions sales actually hears | FAQ section | background | 2 | shell |
 | 7 | Closing CTA — the same action as the hero | CTA section | card | 1 | prose |
@@ -337,20 +349,45 @@ fifteenth section nobody documented.
 
 ### The rules
 
-1. **Tone alternates at every boundary.** A marketing page starts on `card` because the stacked
-   shell already paints its root `bg-card` — so the hero meets the header with no seam — and every
-   other band is `background`.
+1. **Tone alternates for continuity, not to mark the boundary.** A marketing page starts on `card`
+   because the stacked shell already paints its root `bg-card` — so the hero meets the header with
+   no seam — and every other band is `background`.
+
+   **What this rule is not.** It does not carry the boundary, and the reason is measured: the
+   `--background`/`--card` pair is `#F8F9FB`/`#FFFFFF`, a contrast of **1.053:1**. A step that small
+   is a change of surface, not a signal that a new section began — **rule 2 is what a reader
+   actually perceives as the boundary.** Of six marketing templates studied, one alternates at
+   **none** of its four boundaries, and the smallest step where tone genuinely carries a boundary is
+   **24× ours**. Stated as an every-boundary requirement this rule was refuted; stated as continuity
+   it is true and useful.
 2. **Consecutive bands never share both Columns and Width.** This is the rule the 14 identical rows
    break: `1` + `prose` fourteen times running is the flat page. Changing *both* is fine; changing
    *neither* is the defect.
-   The tempting stronger form — *"exactly one axis moves per boundary"* — **contradicts rule 1
-   outright**, and the proof is one line: if tone must change at every boundary and only one axis
-   may change at a boundary, then tone is the axis that changes every time, so Columns and Width
-   never change at all. "Exactly one axis" plus alternating tone *is* the flat page, arrived at by
-   a rule that sounds stricter. That is why the shipped rule is a floor and not an equality.
-3. **A band's edge comes from its tone, not from a border.** No `border-b` between marketing bands.
-   The 1px edge is chrome — the stacked shell's own header uses it, and `foundations-tokens.md` →
+   The tempting stronger form — *"exactly one axis moves per boundary"* — is still wrong, and the
+   argument survives rule 1's correction with a word changed. While tone alternates band to band, an
+   "exactly one axis" rule spends that one axis on tone at every boundary, so Columns and Width
+   never change at all: the stricter-sounding rule *is* the flat page. That is why the shipped rule
+   is a floor and not an equality.
+   **And why it carries the boundary at all**: at a 1.053:1 tone step, shape is the only axis a
+   reader can perceive. A template with a wider palette can lean on tone and ignore this rule; we
+   cannot, which is precisely why ours is narrower than theirs.
+3. **A band's edge comes from its tone, not from a border — conditional on rule 2 holding.** No
+   `border-b` between marketing bands *while consecutive bands differ in Columns or Width*. The 1px
+   edge is chrome — the stacked shell's own header uses it, and `foundations-tokens.md` →
    *Elevation idiom* measured that a 1px edge plus a minimal shadow is the whole vocabulary.
+
+   **Why conditional rather than absolute.** That measurement is about elevation *within* a page; it
+   was lifted to page scale without re-checking whether a 1.053:1 tone step carries the load there.
+   One studied template has a numerically identical step — ΔL 0.0177 against our 0.0181, the same
+   1.053:1 — and draws a hairline at exactly its two such boundaries and at **none** of the four
+   where the step is 0.775. That is the correct response to a narrow palette, not something we would
+   decline to copy. Where a boundary must carry tone alone, a border is the honest fix.
+
+   **And a band has two legitimate forms, not one.** The worked ERB below shows the full-bleed form,
+   whose tone reaches the viewport edge. The **inset rounded panel** — a `shell`-width block with a
+   large radius, sitting on the page tone rather than replacing it — is equally valid and is what
+   the studied templates reach for at their strongest tone events. Full-bleed is the default here,
+   not the only shape.
 4. **A `card`-tone band carries no `Ui::Card`.** A card on a `card` surface has nothing to sit
    against, and both flatten. This is *Settings*' "never nest a card in a card", lifted from the
    section to the page: card grids go on a `background` band, which is why band 2 is where it is.
@@ -587,7 +624,9 @@ dump of the catalogue.
 ```
 
 **A category tile's image is never the label.** `alt=""` on the image and the name as real text, or the
-tile announces as an unlabelled link.
+tile announces as an unlabelled link. The reel's cards are the
+[Product card](components.md#product-card) entry — one link each, and no add-to-basket button inside
+one, which is a content-model rule rather than a preference.
 
 ## Category
 
@@ -613,10 +652,14 @@ A filtered, sorted list. Answers *"which of these?"*
 
 **Filters must be a form that works without JavaScript.** Enhance with Turbo, but the `GET` submit is
 the baseline: filter state then lives in the URL, which makes results shareable, back-button-correct,
-and reachable by anyone whose JS failed to load.
+and reachable by anyone whose JS failed to load. The panel itself — the per-group disclosures, the
+mobile drawer, the applied-filter chips — is [Filter panel](components.md#filter-panel), and it is the
+same mechanism the CRUD index uses.
 
 **Announce the result count.** After a filter changes, a sighted user sees the grid redraw; nobody else
-does. A `role="status"` line carrying "24 products" is the whole fix.
+does. A `role="status"` line carrying "24 products" is the whole fix. Note which half is covered:
+Understanding 4.1.3 says *"the list of results obtained from a search are not considered a status
+update"* while *"'18 results returned'"* is — so the count gets the role and the grid never does.
 
 **Paginate by default; do not infinite-scroll.** Infinite scroll breaks the back button, strands
 keyboard users before the footer, and has no addressable position. If you must, provide a "load more"
@@ -633,7 +676,9 @@ One item. Answers *"is this the right thing, and can I buy it?"*
   <div class="grid-auto items-start" style="--min: 20rem">
     <div class="stack" aria-label="Product images">
       <%# each image needs alt describing THE PRODUCT, not "product image 2" %>
-      <%# thumbnails are buttons in a group, with the active one announced as selected %>
+      <%# the thumbnail strip is the Carousel's TABBED picker: role="tab" in a tablist, one tab %>
+      <%# stop, arrows between thumbnails, each image a tabpanel. A plain button cannot carry %>
+      <%# aria-selected — components.md → Image gallery / Lightbox says why. %>
     </div>
 
     <div class="stack" style="--space: var(--space-s)">
@@ -700,7 +745,17 @@ quantity and the total changes silently, so the consequence of the edit must be 
 announces as **"52.00"**, the number without its label. This is the single most-missed thing in commerce
 a11y, and the one with a direct revenue cost.
 
-**An empty basket is a page, not a blank.** Say it is empty and give one route back to browsing.
+**An empty basket is a page, not a blank.** Say it is empty and give one route back to browsing. It is
+the documented `Ui::EmptyState`, not a bespoke paragraph.
+
+**The drawer is the other half of this anatomy, and it is a different surface rather than a smaller
+one.** A slide-over cart keeps the customer in the catalog; this page is the addressable, printable,
+full-width view a checkout starts from, and it is where the promo code belongs. Both render the same
+lines and the same summary, so the line rules — the naming of a remove control, the live-region total,
+what happens when a quantity changes, and why removal is an undo rather than a confirmation — live in
+one place: [Cart drawer and cart line](components.md#cart-drawer-and-cart-line). Do not restate them
+per surface, and do not build a second dialog for the drawer; it is the documented Modal at
+`placement: :right`.
 
 ## Checkout — the purchase flow
 
