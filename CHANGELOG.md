@@ -4769,7 +4769,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.22.1 — 2026-08-02
 
 - **A killed crawl produced nothing at all** (#451, the collector half of the closed #111). The
   collector accumulated every route in memory and wrote once at the end, so a run killed at route 40
@@ -6852,6 +6852,24 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.57.1)
+
+- **A killed crawl produced nothing at all** (#451 — the collector half of the closed #111, filed as
+  its own issue so the work has a findable trail). The collector accumulated every route in memory
+  and wrote once at the end: a run killed at route 40 of 50 left **no file**, and was silent
+  throughout. Both were #111's original complaints; its agent-facing half shipped and this half
+  did not.
+- **Measured, not argued** — same server, same routes, same kill point: `dev`'s collector produced
+  **0 files**; this one leaves **4 routes recorded** plus an abort record naming the 2 unreached.
+- The append file is a **sidecar**: `crawl.json`, `interactions.json` and `links.json` keep their
+  exact contracts, because three judges read them and buying crash-safety by changing those would
+  trade one defect for a wider one. JSONL rather than JSON because a partial JSONL still parses
+  line-by-line. Progress on **stderr**, so the stdout summary a caller may parse stays parseable.
+- **SIGINT/SIGTERM only.** An uncaught exception is deliberately unhandled: it means the collector
+  itself is broken, and a tidy abort summary would disguise that as an orderly stop.
+- **Resume is not done and not implied.** The append file makes it possible; its semantics are a
+  separate decision.
 
 ### 2026-08-02 (release v1.57.0)
 
