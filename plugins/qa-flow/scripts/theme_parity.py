@@ -52,6 +52,29 @@ class Unusable(RuntimeError):
     """The pair cannot be compared -- reported, never treated as parity."""
 
 
+MAX_EXAMPLES = 3
+
+
+def _grouped(findings):
+    """[( (rule, detail), [ref, ...] ), ...] in first-seen order, refs de-duplicated.
+
+    #108 item J. A defect in a SHARED LAYOUT is found once per page, so one line per finding
+    reports a single broken control 72 times. `ref` here is `"<route> <selector>"`, so the
+    refs differ even when the defect does not — grouping is on `(rule, detail)`, which is the
+    part that is genuinely the same. Details carrying per-instance counts therefore do not
+    group, and that is correct: it never merges two defects to make a shorter report.
+
+    Deliberately duplicated across the judges rather than extracted. They are standalone by
+    design — an agent runs one file — and a shared module would trade that for ten lines.
+    """
+    out: dict[tuple[str, str], list[str]] = {}
+    for f in findings:
+        refs = out.setdefault((f.rule, f.detail), [])
+        if f.ref not in refs:
+            refs.append(f.ref)
+    return list(out.items())
+
+
 @dataclass
 class Finding:
     ref: str
@@ -284,6 +307,24 @@ def selftest() -> int:
             failures.append("a document with no elements parsed as a snapshot")
         except Unusable:
             pass
+
+    # ---- #108 item J: collapse a shared-layout defect, never merge two distinct ones -------
+    G = Finding
+    shared = [G("/a nav>a", "RULE", "DETAIL"), G("/b nav>a", "RULE", "DETAIL"),
+              G("/c nav>a", "RULE", "DETAIL")]
+    check("one defect across three pages collapses to one group", len(_grouped(shared)) == 1,
+          f"{_grouped(shared)}")
+    check("the group keeps every ref",
+          _grouped(shared)[0][1] == ["/a nav>a", "/b nav>a", "/c nav>a"], f"{_grouped(shared)}")
+    # THE FAILURE THAT WOULD MATTER: a shorter report that hid a defect.
+    two = [G("/a x", "RULE", "DETAIL"), G("/b x", "RULE", "OTHER DETAIL")]
+    check("same rule, different detail stays two groups", len(_grouped(two)) == 2, f"{_grouped(two)}")
+    two_rules = [G("/a x", "RULE", "DETAIL"), G("/a x", "OTHER RULE", "DETAIL")]
+    check("same detail, different rule stays two groups", len(_grouped(two_rules)) == 2,
+          f"{_grouped(two_rules)}")
+    dup = [G("/a x", "RULE", "DETAIL"), G("/a x", "RULE", "DETAIL")]
+    check("a repeated ref is counted once", _grouped(dup)[0][1] == ["/a x"], f"{_grouped(dup)}")
+    check("no findings groups to nothing", _grouped([]) == [], f"{_grouped([])}")
 
     if failures:
         print(f"SELFTEST FAILED -- {len(failures)} of {n} checks:", file=sys.stderr)
