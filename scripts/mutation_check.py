@@ -1964,6 +1964,12 @@ GUARDS: tuple[Guard, ...] = (
         name="check_page_pacing",
         subject="scripts/check_page_pacing.py",
         selftest="scripts/check_page_pacing.py",   # --selftest lives in the module itself
+        # The LAY-017 fixture (#476) re-derives its measurement from the REAL band table, so the
+        # doc has to be staged. Without it the baseline selftest fails in the tempdir and every
+        # mutation below is INERT -- which run_baseline reported rather than passing silently.
+        needs=("skills/fidara-design/references/page-anatomies.md",
+               "skills/fidara-design/references/coverage.md",
+               "skills/fidara-design/references/foundations-tokens.md"),
         mutations=(
             Mutation(
                 "the measured row count stops being compared, so a stale 14 passes",
