@@ -26,7 +26,7 @@
 // For theme parity, run design-flow's collector twice (light, then with the `dark` class) and pass
 // both snapshots to theme_parity.py; this file does not re-implement that either.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -200,6 +200,55 @@ mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch();
 const shots = [];
 
+// DURABILITY AND PROGRESS (#451). The run used to accumulate every route in memory and write once
+// at the end, so a crawl killed at route 40 of 50 produced NOTHING — not a partial file, no file —
+// and was silent throughout. Both were #111's complaints; its agent-facing half shipped and this
+// half did not.
+//
+// The append file is a SIDECAR, not a replacement. `crawl.json`, `interactions.json` and
+// `links.json` keep their exact contracts because three judges read them; changing those to get
+// crash-safety would trade one defect for a wider one.
+//
+// JSONL, appended per route: a partial file is still parseable line-by-line, which is the whole
+// point. A partial JSON array is not.
+mkdirSync(outDir, { recursive: true });
+const progressPath = `${outDir}/crawl-progress.jsonl`;
+writeFileSync(progressPath, '');
+let completed = 0;
+
+// SUMMARY ON ABORT (#451). Without this a killed run leaves a progress file whose last line is a
+// route that succeeded — indistinguishable from a run that finished early on purpose. Naming the
+// unreached routes is what makes partial output usable rather than merely present.
+//
+// SIGINT and SIGTERM only. An uncaught exception is deliberately NOT handled here: it means the
+// collector itself is broken, and a summary that made that look like an orderly stop would hide it.
+let aborted = false;
+const abortSummary = (signal) => {
+  if (aborted) return;
+  aborted = true;
+  const reached = new Set(pages.map((entry) => entry.route));
+  const unreached = routes.filter((route) => !reached.has(route));
+  appendFileSync(progressPath, JSON.stringify({
+    aborted: signal, completed, total: routes.length, unreached,
+  }) + '\n');
+  console.error(`\n  ABORTED on ${signal} after ${completed}/${routes.length} route(s). ` +
+    `Unreached: ${unreached.length ? unreached.join(', ') : '(none)'}`);
+  console.error(`  Partial results are in ${progressPath} — one JSON object per line.`);
+  process.exit(2);
+};
+process.on('SIGINT', () => abortSummary('SIGINT'));
+process.on('SIGTERM', () => abortSummary('SIGTERM'));
+
+// stderr, not stdout: stdout carries the final summary a caller may parse, and interleaving
+// progress into it would make that unparseable. stderr is also unbuffered here, which is the
+// difference between a live counter and a wall of text at EOF.
+const progress = (route, state, detail) => {
+  completed += 1;
+  appendFileSync(progressPath,
+    JSON.stringify({ route, state, detail: detail || null, at: new Date().toISOString() }) + '\n');
+  console.error(`  [${completed}/${routes.length}] ${state.padEnd(8)} ${route}${detail ? ` — ${detail}` : ''}`);
+};
+
 for (const route of routes) {
   const page = await browser.newPage(
     VISUAL ? { viewport: VIEWPORT, deviceScaleFactor: SCALE } : {});
@@ -261,6 +310,7 @@ for (const route of routes) {
     record = { route, skipped: String(error.message || error).slice(0, 200) };
   }
   pages.push(record);
+  progress(route, record.skipped ? 'skipped' : 'ok', record.skipped);
 
   if (record.skipped) { await page.close(); continue; }
 
