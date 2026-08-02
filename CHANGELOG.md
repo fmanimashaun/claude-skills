@@ -2487,6 +2487,89 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+The **audit half** of #95. Its writing half is done — `coverage.md` reports **0 `needs doctrine`**
+rows — so what was left was the four acceptance criteria the issue states *per group*, none of which
+anything checked. Three failed. Change type: **no `doctrine-verifier` verdict is involved.** Every
+claim corrected here is a claim fidara-design makes about **itself**, refuted by fidara-design's own
+shipped files, so the authority is measurement against those files and each measurement now has a
+script behind it (`CLAUDE.md` → *Measure anything measurable*). No new framework API is introduced
+anywhere in it: every replacement reuses a recipe already shipped elsewhere in the same skill.
+
+- **AC4 "no duplicate mechanisms" failed on the example the issue itself names** (Refs #95).
+  `components.md` → Toast / Notification says the Toast mechanism *"replaces the duplicate
+  `_flash`/`_flash_messages` pair"*, and `reference-implementation.md`'s base layout went on
+  rendering `shared/flash_messages` inside `<main>` — the eliminated half of the pair, shipped in
+  the same skill as its own replacement, in the file whose name says it is the reference. Removed;
+  flash goes to `#toasts` via Turbo Stream and nowhere else.
+- **The same block dropped all three things `page-anatomies.md` says a shell may not drop**
+  (Refs #95). No skip link — **WCAG 2.4.1 Bypass Blocks is Level A**, and `page-anatomies.md` and
+  `components.md` both already say so — a `<main>` with neither `id="main"` nor `tabindex="-1"`, so
+  the link would have had nothing focusable to land on, and `#toasts` **without `aria-live`**, which
+  `interaction-stimulus.md` refuses in terms: *"do not 'simplify' this by deleting the container's
+  `aria-live` on the strength of the toast having a role."* Three of the four copies of that
+  container appears in the docs carried it; this one did not. Fixed against the recipes already shipped in
+  `component-implementations.md`, not against new markup.
+- **AC3 "no new bespoke controllers where a mixin fits" was answered by a sentence that was false**
+  (Refs #95). `interaction-stimulus.md` said `carousel` was *"the only new controller the #95 rows
+  need"* while the snippets around it prescribed `dropzone` and `clipboard` (forms.md) and
+  `combobox`, `disclosure` and `feed` (component-implementations.md) — five more, for #95 rows
+  alone. Replaced by the measured inventory: a table of the **twelve** controllers the reference
+  docs name beyond the ten already in the apps, each with what it drives and which mixins it
+  composes. `dropzone` is the one that mattered most to state, because the same file warns that
+  **none of the four mixins is a gesture mixin**.
+- **`controller-inventory-gap`, so that table cannot drift again** — a new
+  `lint_self_consistency.py` rule reconciling every `data-controller=` in the fidara-design
+  references (18 today) against the inventory. One-directional on purpose: markup naming an
+  unlisted controller is a reader inheriting an unspecified dependency, while a listed controller
+  with no snippet is ordinary (`search`, `multistep`, `countdown` live in the apps). Its ERB half
+  reads string literals only — `data-controller="theme <%= 'native-bridge' if native_app? %>"`
+  names two controllers, and `if` is not one of them, which tokenising the raw attribute would have
+  claimed and deleting the ERB would have missed. **The rule found a bug in itself on first run:**
+  a ``` fence is three backticks, so the span pattern paired off by one from there and returned an
+  inventory of 38 healthy-looking entries containing not one controller name — visible only because
+  the rule then fired on all 18 controllers at once. **Then `mutation_check.py` refused the first
+  fix for carrying two defences that could not both be load-bearing.** Excluding newlines from a
+  span and stripping fences each kill that off-by-one, so whichever ran second survived every
+  mutation. Only fence-stripping also stops a name inside a fenced *example* counting as "listed",
+  so that is the one that stayed, with a fixture in each direction. A guard nothing can fail is not
+  a guard, and here the gate said so about our own fix.
+- **AC1's evidence table stopped letting one doc vouch for two rows** (Refs #95). `Select` and
+  `Textarea` both cited `### Field anatomy` — the simple_form **wrapper**, generic to every field,
+  which would still be there after every trace of either control was deleted — and `Checkbox`,
+  `Radio group` and `Toggle / Switch` all cited one heading. `verify_interaction_claims` has refused
+  a reused probe since it was written (*"one doc cannot be evidence for two different mechanisms"*)
+  and `DOCUMENTED_EVIDENCE`, which decides 79 rows rather than 9, had no such rule — while its own
+  Navigation comment records this exact defect being fixed by hand for two rows. The guard is
+  **substring, not equality**, because `"## Button"` also occurs inside `"## Button group"`: that
+  near-miss is what the table's hand-added trailing newlines defend against, and it is now a gate
+  instead of a convention someone remembers.
+- **No new doctrine was written to satisfy the table.** The five rows point at the text stating each
+  control's own recipe — four of them a bullet in forms.md's `## Controls` — because non-heading
+  evidence is the established shape for recipe-shaped rows (`divide-y divide-border`,
+  `@utility frame`) and a control-specific string is harder to satisfy by accident than a heading,
+  not easier. Checkbox and radio keep one shared bullet, because radio really is a one-word delta
+  (`rounded-full`) from the checkbox; splitting the doc to give the table a heading each would have
+  been the tail wagging the dog.
+- **Two more AC4 duplicates, found by grepping for the pattern rather than stopping at the first**
+  (Refs #95) — `CLAUDE.md` says that class travels in groups, and it did.
+  - `page-anatomies.md` said the mobile rail *"becomes"* a drawer and that
+    `Layout::SidebarComponent` *"owns the disclosure"*. `components.md` → Drawer / off-canvas says
+    **"render both, do not morph one"** and makes the overlay a `Ui::Modal`; `interaction-stimulus.md`
+    records correcting this exact conflation once already (*"`sidebar` is collapse only"*); and the
+    shipped `SidebarComponent` contains **no disclosure and no drawer** — it is a two-column flex
+    primitive. The correction had landed in two files and missed the third.
+  - `forms.md` → Error summary prescribed hand-rolled markup (`box` + `border-destructive` +
+    `role="alert"`) for the block `page-anatomies.md` specifies as `Ui::Alert intent: :error` on two
+    separate anatomies. Now the component, which is also the file that forbids hand-rolling — and
+    `AlertComponent#role` already returns `alert` for `:error`, so the hand-written attribute was
+    redundant here and wrong on any other intent.
+- **`Action panel` was left `derivable`, deliberately.** Its `Build from` works (Card + Heading +
+  Button group), so writing an entry to tick an unticked box would add surface nobody asked for.
+- #95 stays **open**: its five groups are a checklist, and an umbrella is not closed by the
+  promotion that ships one slice of it.
+
 ### 1.31.1 — 2026-08-02
 
 - **The coverage matrix now reports #91's slice-2 work, which it had been silently under-reporting**

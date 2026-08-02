@@ -244,14 +244,34 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Prose / long-form type": "--text-step",
     "Frame (aspect-ratio media)": "@utility frame",
     "Center / container": "@utility center",
-    # form controls
+    # form controls.
+    #
+    # These five used to point at two shared headings -- Select+Textarea at `### Field anatomy`,
+    # and Checkbox+Radio+Switch at `### Checkbox / Radio / Switch` -- which is the defect the
+    # Navigation note above records, unfixed in the larger half of the table (#95). Two things
+    # were wrong with it. Either row could be credited by the other's doc, so deleting the switch
+    # recipe left `Toggle / Switch` passing on the checkbox's markup; and worse, `### Field
+    # anatomy` is the simple_form WRAPPER, which is generic to every field and says nothing about
+    # a select or a textarea at all -- both rows were `documented` on the strength of a section
+    # that would still be there after every trace of either control was deleted.
+    #
+    # So each now points at the text that states THAT control's own recipe, which for four of the
+    # five is a bullet in forms.md's `## Controls` -- the catalogue of form controls, one bullet
+    # per control. Non-heading evidence is the established shape for rows whose doctrine is a
+    # recipe rather than a section (see `divide-y divide-border`, `@utility frame` above), not a
+    # weakening of it: a shorter, control-specific string is harder to satisfy by accident than a
+    # heading, not easier. `verify_shipped_evidence` now refuses a reused string outright.
     "Form layout": "## Forms",
     "Text input": "### Input recipe (helper)",
-    "Select": "### Field anatomy",
-    "Textarea": "### Field anatomy",
-    "Checkbox": "### Checkbox / Radio / Switch",
-    "Radio group": "### Checkbox / Radio / Switch",
-    "Toggle / Switch": "### Checkbox / Radio / Switch",
+    "Select": "**select** — native first, styled to match",
+    "Textarea": "textarea `min-h-[…]`, no fixed height",
+    # Checkbox and radio genuinely share one bullet and one ERB block, because radio is written as
+    # a one-word delta from the checkbox (`rounded-full`). Splitting the DOC to give the table a
+    # heading each would be the tail wagging the dog, so the two rows point at the checkbox-only
+    # and radio-only fragments of the shared text instead.
+    "Checkbox": "check_box_tag",
+    "Radio group": "(radio `rounded-full`)",
+    "Toggle / Switch": "**switch/toggle** — `Ui::Switch`",
     # #91 slice 2. Trailing newline where a shorter heading would otherwise prefix-match.
     "Plan comparison / feature matrix": "## Plan comparison / feature matrix\n",
     "Number input":                     "## Seat / quantity selector\n",
@@ -789,6 +809,50 @@ def reference_blob() -> str:
     )
 
 
+def verify_evidence_is_not_shared() -> list[str]:
+    """No two `documented` rows may be vouched for by the same piece of doc.
+
+    `verify_interaction_claims` has refused a reused probe since it was written -- *"one doc cannot
+    be evidence for two different mechanisms"* -- and the same rule was never applied to
+    DOCUMENTED_EVIDENCE, which is the table that decides 79 rows rather than 9. It was not
+    theoretical there either: the Navigation note in DOCUMENTED_EVIDENCE records this exact defect
+    being fixed by hand for two rows in #95, while five form-control rows went on sharing two
+    strings. Either row of a sharing pair can be credited by the other's doc, so deleting one
+    control's doctrine entirely leaves its row green.
+
+    The check is **substring, not equality**, because the equality case is only the loud half.
+    `"## Button"` also occurs inside `"## Button group"`, so a Button row whose entry had been
+    deleted would still find its evidence in the Button-group heading. That hazard is real enough
+    that the table already carries hand-added trailing newlines against it, in two separate
+    comments -- which is a convention someone has to remember. This makes it a gate instead.
+    """
+    problems: list[str] = []
+    documented = {e.name for e in ENTRIES if e.is_documented}
+    pairs = sorted(
+        (a, b)
+        for a in documented
+        for b in documented
+        if a < b
+        and DOCUMENTED_EVIDENCE.get(a, "").strip()
+        and DOCUMENTED_EVIDENCE.get(b, "").strip()
+        and (
+            DOCUMENTED_EVIDENCE[a] in DOCUMENTED_EVIDENCE[b]
+            or DOCUMENTED_EVIDENCE[b] in DOCUMENTED_EVIDENCE[a]
+        )
+    )
+    for a, b in pairs:
+        relation = "share the evidence" if DOCUMENTED_EVIDENCE[a] == DOCUMENTED_EVIDENCE[b] else (
+            "have evidence where one contains the other:"
+        )
+        problems.append(
+            f"{a!r} and {b!r} {relation} {DOCUMENTED_EVIDENCE[a]!r} / "
+            f"{DOCUMENTED_EVIDENCE[b]!r} — one doc cannot be evidence for two rows, so deleting "
+            "either row's doctrine would leave the other one vouching for it. Point each at text "
+            "unique to that row, or anchor the shorter string with a trailing newline"
+        )
+    return problems
+
+
 def verify_shipped_evidence() -> list[str]:
     """A `shipped` row must cite a string that really occurs in the shipped docs."""
     problems: list[str] = []
@@ -814,6 +878,8 @@ def verify_shipped_evidence() -> list[str]:
                 f"{entry.name!r} is {entry.status!r} but has a DOCUMENTED_EVIDENCE entry — only "
                 "shipped rows cite doc evidence"
             )
+
+    problems += verify_evidence_is_not_shared()
 
     # A `documented` row must not still carry a BUILD fallback. BUILD is "the nearest safe thing
     # to do until the entry lands"; once it HAS landed, that text tells readers to go build the

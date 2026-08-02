@@ -368,8 +368,17 @@ doctrine says so; do not cite a spec for them.
 
 ## Error summary
 
-Above the form when submit fails: `box` + `border-destructive bg-destructive/5` + a `stack`
-list; link each item to its field id. `role="alert"`.
+Above the form when submit fails: **the documented `Ui::Alert` at `intent: :error`**, with a
+`stack` list inside it linking each item to its field id.
+
+**Not hand-rolled markup, and this entry used to be exactly that** (#95) — `box` +
+`border-destructive bg-destructive/5` + `role="alert"`, written out here while
+`page-anatomies.md` prescribes `Ui::Alert intent: :error` for the same surface on two separate
+anatomies. Two recipes for one block is the duplicate mechanism the catalog forbids, and the
+hand-rolled one silently re-derived what the component already does: `AlertComponent#role`
+returns `alert` for `:error` (and `status` otherwise), so writing `role="alert"` by hand is
+either redundant or, on a different intent, wrong. The component takes block content, so the
+list of field links goes straight inside it.
 
 ## Layout
 

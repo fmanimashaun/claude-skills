@@ -292,6 +292,41 @@ def run() -> int:
         evidence=dict(SYNTH_EVIDENCE, **{"Ghost Component": "## Button\n"}),
     )
 
+    # ---- two rows may not be vouched for by one piece of doc ---------------------------
+    # The interaction half has refused a reused probe since it was written; the component
+    # half did not, and five form-control rows shared two strings under it (#95). Both the
+    # equality case and the substring case are fixtures, because the substring case is the
+    # quiet one -- "## Button" is satisfied by the Button GROUP heading, which is the exact
+    # near-miss the trailing-newline convention exists to prevent by hand.
+    expect_error(
+        "two documented rows sharing one evidence string",
+        COMPLETE,
+        contains="one doc cannot be evidence for two rows",
+        evidence={"Button": "## Button\n", "Badge": "## Button\n"},
+    )
+    expect_error(
+        "one row's evidence contained inside another's",
+        COMPLETE,
+        contains="one contains the other",
+        evidence={"Button": "## Button", "Badge": "## Button group\n"},
+    )
+    # SILENCE: distinct strings that merely share words are fine, and so is a `derivable`
+    # row -- the guard must not reach across the documented/derivable line to invent a pair.
+    expect_ok(
+        "distinct evidence strings that share words",
+        COMPLETE,
+        evidence={"Button": "## Button\n", "Badge": "## Badge / Tag / Chip"},
+    )
+    expect_ok(
+        "a derivable row cannot collide with a documented one",
+        (
+            COMPLETE[0],
+            bc.E("Badge", bc.COMPONENT, "derivable", build="Button with a status token",
+                 tw=["application-ui/elements/badges"], fb=["Badge"]),
+        ),
+        evidence=BUTTON_ONLY,
+    )
+
     # ---- a promoted row must not keep its "until the entry lands" fallback -------------
     # Invisible in the rendered table (documented rows print `—` in that column), so only a
     # guard finds it. The Combobox entry outlived its own row's promotion this way (#95).

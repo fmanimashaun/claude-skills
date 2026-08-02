@@ -228,22 +228,54 @@ export default class extends Controller {
 ```erb
 <%# application shell — Layout::Sidebar + header, content in a Center that scrolls %>
 <body class="min-h-svh bg-background text-foreground antialiased" data-controller="theme">
+  <%# FIRST in <body>, before the header — WCAG 2.4.1 is Level A. Full recipe: %>
+  <%# component-implementations.md -> Skip link. %>
+  <a href="#main"
+     class="fixed left-2 -top-16 z-[100] focus-visible:top-2 rounded-md bg-primary px-4 py-2
+            text-step--1 font-medium text-primary-foreground
+            focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30
+            focus-visible:ring-offset-2">Skip to main content</a>
   <%= render(Layout::SidebarComponent.new(side_width: "18rem")) do |s| %>
     <% s.with_sidebar { render "shared/nav_links" } %>
     <% s.with_main do %>
       <%= render "shared/header" %>
-      <main class="flex-1 overflow-y-auto">
+      <main id="main" tabindex="-1" class="flex-1 overflow-y-auto">
         <div class="center" style="--gutter: var(--space-m)">
-          <%= render "shared/flash_messages" %>
+          <%# NO flash partial here — flash output goes to #toasts below, via Turbo Stream. %>
           <%= yield %>
         </div>
       </main>
     <% end %>
   <% end %>
   <turbo-frame id="modal"></turbo-frame>   <%# the shared modal frame — all CRUD renders here %>
-  <div id="toasts" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none"></div>
+  <div id="toasts" aria-live="polite"
+       class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none"></div>
 </body>
 ```
+
+**Three things this block may not drop.** All three were already requirements stated elsewhere in
+this skill — `page-anatomies.md` → *The contract every shell keeps* for the first two,
+`components.md` → Toast / Notification for the third — and the layout a reader actually copies
+violated all three (#95). Each one fails in a screen that is not this one, which is why a shell is
+the wrong place to economise.
+
+- **The skip link, and the `<main>` that receives it.** WCAG **2.4.1 Bypass Blocks is Level A**, so
+  the link is an obligation rather than a nicety — and `id="main"` alone does not finish the job.
+  A plain `<main>` is not focusable, so HTML's scroll-to-the-fragment steps fall back to the
+  viewport and focus never reaches the region; **`tabindex="-1"` is the mechanism** that makes the
+  link do anything. The two are one fix, not two.
+- **`aria-live="polite"` on `#toasts`.** The container is the live region, not the toast: a region
+  must be in the DOM before content is inserted into it. `interaction-stimulus.md` →
+  *Loading, progress and busy state* says in terms *"do not 'simplify' this by deleting the
+  container's `aria-live` on the strength of the toast having a role"*. Note what that does **not**
+  claim: whether an inserted `role="status"` node announces on its own is something no source we
+  could find settles either way, so the container is not a belt-and-braces extra — it is the half
+  the doctrine is willing to stand behind. Bare `aria-live` is correct **here specifically**,
+  because `aria-atomic="false"` is what stops every toast already on screen being re-announced.
+- **No second flash surface.** `components.md` → Toast / Notification says the Toast mechanism
+  *"replaces the duplicate `_flash`/`_flash_messages` pair"*, and this block went on rendering
+  `shared/flash_messages` inside `<main>` anyway — the eliminated half of the pair, shipped beside
+  its own replacement. Flash goes to `#toasts` via Turbo Stream, and nowhere else.
 
 That empty `<turbo-frame id="modal">` is load-bearing: **CRUD is modal-driven and in-page** —
 create/edit/delete render into it and update the list via Turbo Stream, never a full-page

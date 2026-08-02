@@ -390,15 +390,41 @@ Reuse the proven controllers already in the apps: `modal`, `dropdown`, `tabs`, `
 `theme` (dark toggle + localStorage), `toast`, `search` (debounced), `multistep`,
 `form_validation`, `countdown`. Refactor them onto the four mixins so behavior is consistent.
 
+**Everything else the reference docs prescribe by name, you will have to write** — and this list is
+the whole of it, so a component that needs a controller not below is a component whose behavior
+nobody has specified yet:
+
+| controller | drives | composes |
+|---|---|---|
+| `dismiss` | Alert, Toast | dismissable-layer |
+| `disclosure` | Accordion, mobile nav, filter groups | — (the contract is in this file, #142) |
+| `combobox` | Combobox / Autocomplete, and the Command palette inside `modal` | list-navigation + anchored-position |
+| `tooltip` | Tooltip / Popover | dismissable-layer + anchored-position |
+| `switch` | Toggle / Switch | — |
+| `dropzone` | File upload | — (gesture; see the abandonment contract above) |
+| `clipboard` | Copy to clipboard | — |
+| `feed` | Activity feed, `role="feed"` shape only | — |
+| `carousel` | Carousel, and the Lightbox inside `modal` | list-navigation |
+| `payment-element` | Payment / card entry (the PSP's own element) | — |
+| `native-bridge`, `bridge--button` | Hotwire Native surfaces (mobile.md) | — |
+
 - **`sidebar` is collapse only — the overlay drawer is `modal`.** This entry used to read "`sidebar`
   (drawer + collapse)", conflating the two shapes the drawer contract above separates: the persistent
   panel is *not a dialog* and must not trap focus, while the overlay drawer is a modal dialog and must.
   One controller doing both is how a persistent sidebar acquires `aria-modal` and a focus trap it should
   never have. `sidebar` collapses and expands; `modal` (focus-trap + dismissable) drives the overlay,
   positioned to an edge.
-- **`carousel` is new** — the only new controller the #95 rows need, built on the mixins. Prev/next plus,
-  *only if it auto-rotates*, play/pause and stop-on-hover/focus. The lightbox composes it inside `modal`
-  rather than adding a controller of its own.
+- **`carousel`** — prev/next plus, *only if it auto-rotates*, play/pause and stop-on-hover/focus. The
+  lightbox composes it inside `modal` rather than adding a controller of its own.
+- **This bullet used to say `carousel` was "the only new controller the #95 rows need", and the docs
+  around it already said otherwise (#95).** The shipped snippets prescribe `dropzone` and `clipboard`
+  in forms.md, and `combobox`, `disclosure` and `feed` in component-implementations.md — five more
+  controllers for #95 rows alone, every one of them named in markup a reader is told to copy. Anyone
+  who believed the sentence would have gone hunting for a mixin that covers drag-and-drop and found
+  none, because **none of the four is a gesture mixin** (see the contract above). The table is now
+  reconciled against every `data-controller=` the reference docs contain by
+  `scripts/lint_self_consistency.py` (`controller-inventory-gap`), so the inventory cannot silently
+  fall behind the markup again.
 
 ## Real-time & data (standardize)
 

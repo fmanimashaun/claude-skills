@@ -131,6 +131,49 @@ GUARDS: tuple[Guard, ...] = (
                 "different identifiers are not a contradiction",
             ),
             Mutation(
+                "the controller-inventory rule stops comparing markup against the inventory",
+                "        if name not in inventory\n",
+                "        if False\n",
+                "markup names a controller the inventory omits",
+            ),
+            Mutation(
+                "the ERB half is dropped, so a controller named in a literal goes unseen",
+                "    for erb in _ERB_TAG.findall(value):\n"
+                "        names |= {m for m in _QUOTED_LITERAL.findall(erb) if _CONTROLLER_NAME.match(m)}\n",
+                "",
+                "the ERB literal is still required to be listed",
+            ),
+            Mutation(
+                "the raw attribute is tokenised, so Ruby keywords become controllers",
+                '    names |= {t for t in _ERB_TAG.sub(" ", value).split() if _CONTROLLER_NAME.match(t)}',
+                "    names |= {t for t in value.split() if _CONTROLLER_NAME.match(t)}",
+                "ERB contributes its string literals and not its keywords",
+            ),
+            Mutation(
+                "fences are left in, so backtick pairing walks off by one across the section",
+                '    section = _FENCE.sub("", body[start: end if end > 0 else len(body)])',
+                "    section = body[start: end if end > 0 else len(body)]",
+                "a fenced block before the list does not blind the reader",
+            ),
+            # The two halves of that one line need separate mutations, because removing the call
+            # trips only the off-by-one fixture: with the inventory destroyed, a rule that fires
+            # too much still satisfies a fixture expecting a finding. Stripping the fence MARKERS
+            # while keeping their bodies leaves pairing intact and isolates the other half.
+            Mutation(
+                "only the fence markers go, so a name in an EXAMPLE counts as one in the inventory",
+                '_FENCE = re.compile(r"^```.*?^```", re.M | re.S)',
+                '_FENCE = re.compile(r"^```[^\\n]*$", re.M)',
+                "a name mentioned inside an example does not count as listed",
+            ),
+            Mutation(
+                "a renamed inventory heading goes quiet instead of loud",
+                '        return [Finding(\n'
+                '            "controller-inventory-gap", _CONTROLLER_INVENTORY, 0,\n',
+                "        return [], 0\n        _unreachable = [Finding(\n"
+                '            "controller-inventory-gap", _CONTROLLER_INVENTORY, 0,\n',
+                "a renamed inventory heading fails loud",
+            ),
+            Mutation(
                 "the coercion rule stops skipping Ruby comments",
                 '            if line.lstrip().startswith("#"):\n                continue\n',
                 "            if False:\n                continue\n",
