@@ -81,12 +81,17 @@ place an app's launch is described, and `/qa-flow:smoke` already reads it. Probe
 
 ```bash
 PORT="$(python3 -c 'import re,sys;m=re.search(r"^\s+port:\s*(\d+)",open("qa/qa.config.yml").read(),re.M);print(m.group(1) if m else 3000)' 2>/dev/null || echo 3000)"
-if curl -fsS -o /dev/null --max-time 5 "http://localhost:${PORT}/up"; then
-  echo "reusing the server already on ${PORT} — not launching a second"
-else
-  echo "nothing on ${PORT}: boot it with qa/qa.config.yml app.start, then re-run"
-fi
+CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${PORT}/up" 2>/dev/null)
+case "$CODE" in
+  ''|000) echo "nothing answered on ${PORT}: boot it with qa/qa.config.yml app.start, then re-run" ;;
+  *) echo "reusing the server on ${PORT} (/up answered ${CODE}) — not launching a second" ;;
+esac
 ```
+
+Probe for **an answer**, not a healthy one. `curl -f` exits non-zero on 4xx/5xx, so an app that is
+up but whose `/up` returns 500 is indistinguishable from an empty port — and the branch above would
+then print *"nothing on ${PORT}"*, which is false, and send you to boot a server already running.
+`%{http_code}` is `000` only when no HTTP response arrived.
 
 No `app:` block? Infer the Rails default (`bin/dev`, port 3000, `/up`) and say so.
 

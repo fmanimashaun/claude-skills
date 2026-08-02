@@ -4956,6 +4956,14 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **The "don't start a second server" guard could not fire in the case that does the damage**
+  (Refs #108). The reuse probe was `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so an app
+  that is **up with a failing health endpoint** was indistinguishable from an empty port (exit 22
+  vs exit 7; both merely "non-zero" to an `if`). Measured, not assumed. The probe now reads
+  curl's `http_code`, which is `000` only when no HTTP response arrived, so anything speaking
+  HTTP is reused whatever it thinks of its own health. Booting a second server into a build
+  cache the first one holds is precisely the corruption the step exists to prevent.
+
 - **A shipped S3 rule that could never fire, because neither attribute it reads was recorded**
   (Refs #108). `functional-tester.md:171` grades `target="_blank"` without `rel="noopener"` as S3,
   and the crawl collector's link inventory recorded `href` and `text` — not `target`, not `rel`. So
@@ -6243,6 +6251,16 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **The "don't start a second server" guard could not fire in the case that does the damage**
+  (Refs #108). The reuse probe was `curl -fsS`, and `-f` exits non-zero on 4xx/5xx — so an app
+  that is **up with a failing health endpoint** was indistinguishable from an empty port (exit 22
+  vs exit 7; both merely "non-zero" to an `if`). Measured, not assumed. The probe now reads
+  curl's `http_code`, which is `000` only when no HTTP response arrived, so anything speaking
+  HTTP is reused whatever it thinks of its own health. The stale branch also printed *"nothing on
+  the port"* — false, and it sent the operator to boot a server already running.
 
 ### 1.12.0 — 2026-08-01
 
