@@ -2487,7 +2487,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.32.0 — 2026-08-02
 
 - **The page-pacing doctrine shipped a rule the corpus refutes** (Refs #92). Rule 1 required tone to
   alternate *at every boundary* and rule 3 forbade a border — so at our own token values the two
@@ -2515,8 +2515,6 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 - The brand-filled punctuation band the corpus also uses is **deliberately not adopted here**: it is
   a colour decision, and brand packs own colour, so it belongs against the pack contract rather than
   smuggled into pacing doctrine.
-
-### Unreleased
 
 The **audit half** of #95. Its writing half is done — `coverage.md` reports **0 `needs doctrine`**
 rows — so what was left was the four acceptance criteria the issue states *per group*, none of which
@@ -4956,7 +4954,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.23.0 — 2026-08-02
 
 - **The destructive-form safety rule pointed at config that did not exist** (#461). `a11y-auditor.md`
   said *"never submit a form matching **the configured** destructive pattern"*, while `setup-qa.md`
@@ -4975,8 +4973,6 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   this repo's own standard a rule that cries wolf gets switched off, so it is not shipped. My own
   near-miss fixture was vacuous too — it used `report.py`, where `report` is not a group, so it
   passed without exercising the filename case at all.
-
-### Unreleased
 
 - **Nothing measured focus containment, and the overlay probe never ran on the commonest modal**
   (#458, the last unmechanised third of the closed #114; `Refs #108`). #114's overlay criterion is
@@ -7117,6 +7113,39 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.58.0)
+
+> ### Doctrine that was measured against reality for the first time
+>
+> Three of these were found by *running* something rather than reading it: a browser against the
+> licensed templates, Playwright against our own overlay probe, and a grep against a config key
+> nobody had defined. Each contradicted doctrine we had already shipped.
+
+- **The page-pacing rules contradicted the corpus** (#92, now complete). Rule 1 required tone to
+  alternate at *every* boundary and rule 3 forbade a border — so at our own token values the pair
+  specified a boundary carried by a **1.053:1** step with nothing else marking it. Of six marketing
+  templates studied, one alternates at **none** of its four boundaries; the smallest step where tone
+  genuinely carries a boundary is **24× ours**. Rule 1 is now continuity, rule 2 owns the boundary,
+  rule 3 is conditional, Proof moves to band 2 (resolving a file that contradicted its own prose),
+  6–8 bands is scoped to a genre, and the inset panel is named as a second band form.
+- **The overlay probe never ran on the commonest modal there is** (#458). Overlays were counted by
+  *presence*, so a `role="dialog"` revealed by toggling `hidden` — every component library — never
+  registered as opened, and the shipped Escape and focus-restore rules silently skipped it.
+  Presence measured `3→3→3` while visibility went `0→1→0`.
+- **Shipped doctrine mandated findings against spec-correct behaviour.** `a11y-auditor.md` told
+  auditors to assert Tab-containment on menus and comboboxes; **APG specifies the opposite** — Tab
+  exits and closes a menu. Confirmed against the live pattern, corrected with citations.
+- **A safety rule pointed at config that did not exist** (#461). *"Never submit a form matching the
+  configured destructive pattern"* — and nothing configured one. Third instance of a reference with
+  no referent, and the first guarding forms that delete data or take payment.
+- **#95's audit half had three of four criteria failing**, including on the example the issue itself
+  names, plus five controllers beyond the "only new controller" claim. `aria-selected` on a `button`
+  — invalid in ARIA 1.2 — was corrected by reuse rather than invention.
+- **The catalog and cart slice** (#91), including a card that cannot hold the button it wants: the
+  `<a>` content model forbids an interactive descendant, which is *why* quick-view exists.
+- Gate sweep **61**. A gate for the config-reference class was written and **withdrawn** — six
+  findings, all false positives, and a rule that cries wolf gets switched off.
 
 ### 2026-08-02 (release v1.57.2)
 
