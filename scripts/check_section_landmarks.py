@@ -45,6 +45,17 @@ SKILL = ROOT / "skills" / "fidara-design" / "references"
 
 # `<section` up to its closing `>`, tolerating newlines inside the tag.
 SECTION = re.compile(r"<section\b[^>]*>", re.S)
+
+# `<footer>` gets `role=contentinfo` only when it is NOT inside sectioning content -- otherwise
+# `role=generic` (ARIA in HTML). Our own band rule tells authors to wrap bands in `<section>`, so
+# a page footer placed inside one silently loses its landmark. The two rules interact, so one file
+# holds both: they cannot drift apart if they are the same join over the same markup.
+SECTIONING = ("section", "article", "aside", "main", "nav")
+TAG = re.compile(rf"<(/?)({'|'.join(SECTIONING)}|footer)\b", re.I)
+
+# A footer legitimately nested inside an <article> is an article's footer, and generic is correct
+# for it. Declared by exact opening tag, like the heroes -- never inferred.
+NESTED_FOOTER_EXEMPTIONS: dict[str, tuple[str, ...]] = {}
 # `\b` is NOT enough: it matches between the `-` and the `a` of `data-aria-label`, so a
 # `data-` prefixed attribute counted as an accessible name. Caught by this gate's own
 # fixture. Require the attribute to START a token.
@@ -77,12 +88,44 @@ EXEMPTION_REASON = (
 )
 
 
+# ERB and HTML COMMENTS ARE NOT MARKUP. The doctrine beside this gate writes "its link list is NOT
+# a `<nav>`" inside an ERB comment, and the tag walk counted that as an open <nav> that never
+# closed -- so the footer beneath it reported as nested. Blanked rather than deleted, preserving
+# length and newlines, so every reported line number stays true.
+NON_MARKUP = re.compile(r"<%.*?%>|<!--.*?-->", re.S)
+
+
+def strip_non_markup(body: str) -> str:
+    return NON_MARKUP.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), body)
+
+
+def nested_footers(body: str) -> list[tuple[int, str, str]]:
+    """[(char offset, the footer's opening tag, the sectioning ancestor it sits in)]."""
+    out: list[tuple[int, str, str]] = []
+    stack: list[str] = []
+    for m in TAG.finditer(body):
+        closing, tag = bool(m.group(1)), m.group(2).lower()
+        if tag == "footer":
+            if not closing and stack:
+                end = body.find(">", m.start())
+                out.append((m.start(), body[m.start():end + 1] if end != -1 else "<footer>",
+                            stack[-1]))
+            continue
+        if closing:
+            if stack and stack[-1] == tag:
+                stack.pop()
+        else:
+            stack.append(tag)
+    return out
+
+
 def scan(text: str, stem: str) -> tuple[list[str], int, int]:
     """(findings, total sections, exemptions actually used). Fenced code only."""
     findings: list[str] = []
     exempt = HERO_EXEMPTIONS.get(stem, ())
     total = used = 0
-    for offset, body in code_blocks(text):
+    for offset, raw in code_blocks(text):
+        body = strip_non_markup(raw)
         for match in SECTION.finditer(body):
             total += 1
             tag = match.group(0)
@@ -95,6 +138,15 @@ def scan(text: str, stem: str) -> tuple[list[str], int, int]:
             findings.append(
                 f"{stem}.md:{line}: bare <section> exposes role=generic, not region -- name it "
                 f"with aria-labelledby, or use <div>. {tag[:72]}"
+            )
+        for offset_c, tag, parent in nested_footers(body):
+            if tag in NESTED_FOOTER_EXEMPTIONS.get(stem, ()):
+                continue
+            line = offset + body.count("\n", 0, offset_c) + 1
+            findings.append(
+                f"{stem}.md:{line}: <footer> inside <{parent}> exposes role=generic, not "
+                f"contentinfo -- a page footer is a sibling of <main>, never a child of a band. "
+                f"{tag[:56]}"
             )
     return findings, total, used
 
@@ -201,6 +253,39 @@ def selftest() -> int:
         stale, _ = run([f])
         check("a declared exemption matching nothing is reported",
               any("matched no" in s for s in stale), f"{stale}")
+
+    # ---- nested <footer> loses contentinfo (#475) ----------------------------------------
+    check("a top-level footer is silent",
+          not scan(fenced("<main>x</main>\n<footer>y</footer>"), "x")[0])
+    for parent in ("section", "article", "aside", "main", "nav"):
+        # The section case is NAMED, so only the footer rule is under test here -- a bare one
+        # would fire both and the count assertion would stop meaning anything.
+        opener = '<section aria-label="a">' if parent == "section" else f"<{parent}>"
+        d = scan(fenced(f"{opener}<footer>y</footer></{parent}>"), "x")[0]
+        check(f"a footer inside <{parent}> is reported", len(d) == 1, f"{d}")
+        check(f"the finding names <{parent}> as the ancestor", d and parent in d[0], f"{d}")
+    # A CLOSED ancestor is not an ancestor. Getting this wrong would flag every page footer that
+    # follows a band, which is the shape our own doctrine prescribes.
+    check("a footer AFTER a closed section is silent",
+          not scan(fenced("<section aria-label=a>x</section>\n<footer>y</footer>"), "x")[0])
+    check("nesting two deep still resolves to the innermost",
+          "section" in (scan(fenced("<main><section aria-label=a><footer>y</footer>"
+                                    "</section></main>"), "x")[0] or [""])[0])
+
+    # COMMENTS ARE NOT MARKUP -- the bug this gate's own doctrine triggered.
+    erb = fenced('<%# its link list is NOT a <nav> %>\n<footer>y</footer>')
+    check("an ERB comment naming <nav> does not open one", not scan(erb, "x")[0], f"{scan(erb,'x')[0]}")
+    html = fenced('<!-- <section> in a comment -->\n<footer>y</footer>')
+    check("an HTML comment naming <section> does not open one", not scan(html, "x")[0])
+    check("a bare <section> INSIDE a comment is not a finding",
+          not scan(fenced('<%# <section class="x"> %>'), "x")[0])
+    # Blanking must preserve line numbers, or every finding after a comment points at the wrong line.
+    # MULTI-LINE on purpose: deleting a single-line comment removes no newline, so a one-line
+    # fixture cannot tell blanking from deletion and the mutation would survive it.
+    numbered = fenced('<%# a comment\n    spanning two lines %>\n<section class="p">')
+    check("a line number after a comment is still correct",
+          (scan(numbered, "x")[0] or [""])[0].split(":")[1:2] == ["4"],
+          f"{scan(numbered, 'x')[0]}")
 
     # THE REAL FILES must pass, or the doctrine this gate was written beside is already false.
     real, count = run(sorted(SKILL.glob("*.md")))
