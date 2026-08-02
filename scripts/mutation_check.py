@@ -735,6 +735,27 @@ GUARDS: tuple[Guard, ...] = (
         deps=("plugins/qa-flow/scripts/validate_evidence.py",),
         mutations=(
             Mutation(
+                # The whole reason the third state exists: folding a crawl visit into `covered`
+                # would inflate the one number this tool keeps honest, on exactly the routes
+                # nobody wrote a test for.
+                "a crawl visit is folded into `covered`, inflating the coverage percentage",
+                "    seen = visited_paths(evidence)",
+                "    seen = {**visited_paths(evidence), **visit_only_paths(evidence)}",
+                "a crawl visit changed the coverage arithmetic",
+            ),
+            Mutation(
+                "the GET-only carve-out goes, so a DELETE route is claimed as crawl-visited",
+                "                  if c.covered and not c.route.destructive}",
+                "                  if c.covered}",
+                "a destructive route was claimed as crawled",
+            ),
+            Mutation(
+                "the third-state line is suppressed when zero, so nobody can tell it ran",
+                '    print(f"  of those, {len(crawled)} visited by a crawl but never asserted, "',
+                '    print("") if False else print(f"  of those, {max(len(crawled), 1)} visited by a crawl but never asserted, "',
+                "the third-state line must print even when the count is zero",
+            ),
+            Mutation(
                 ":id matches greedily, over-crediting coverage",
                 'out.append(r"[^/]+")',
                 'out.append(r".+")',

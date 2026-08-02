@@ -4956,6 +4956,20 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **Route coverage read only the CSV evidence, so a crawled route counted as never touched**
+  (Refs #108). `ROUTE_SOURCES` enumerated the validated profiles and nothing else; `crawl.json`
+  and `links.json` were not read, and that omission was **nowhere stated** — which is what made
+  it a defect rather than a decision. The fix is deliberately *not* to fold them into `covered`:
+  a crawl loads a route and grades it for HTTP status, console errors and uncaught exceptions,
+  but nothing asserts the page did its job, so counting it would be SKIP-is-not-a-PASS wearing a
+  percentage — inflating the one number the tool exists to keep honest, on exactly the routes
+  nobody wrote a test for. They are a **third state** instead: still a gap, flagged
+  `crawled, unasserted`, carried in `--json` and the trend line, and printed **even when zero**
+  so the count cannot be confused with one nobody computed. Non-GET routes are excluded — a
+  crawler navigates with `page.goto`, so a GET of `/users/7` is not a visit to
+  `DELETE /users/:id`; that error was caught by this change's own fixture and fixed in the code
+  rather than in the expectation. 9 fixtures (61 → 70 checks), 3 declared mutations.
+
 - **Three judges reported a shared-layout defect once per page** (Refs #108, item J — *"I
   reported 773 defects that were ~18 repeated across pages"*). `crawl_report`,
   `interaction_report` and `theme_parity` each printed one line per finding, so a broken control
