@@ -587,7 +587,9 @@ dump of the catalogue.
 ```
 
 **A category tile's image is never the label.** `alt=""` on the image and the name as real text, or the
-tile announces as an unlabelled link.
+tile announces as an unlabelled link. The reel's cards are the
+[Product card](components.md#product-card) entry — one link each, and no add-to-basket button inside
+one, which is a content-model rule rather than a preference.
 
 ## Category
 
@@ -613,10 +615,14 @@ A filtered, sorted list. Answers *"which of these?"*
 
 **Filters must be a form that works without JavaScript.** Enhance with Turbo, but the `GET` submit is
 the baseline: filter state then lives in the URL, which makes results shareable, back-button-correct,
-and reachable by anyone whose JS failed to load.
+and reachable by anyone whose JS failed to load. The panel itself — the per-group disclosures, the
+mobile drawer, the applied-filter chips — is [Filter panel](components.md#filter-panel), and it is the
+same mechanism the CRUD index uses.
 
 **Announce the result count.** After a filter changes, a sighted user sees the grid redraw; nobody else
-does. A `role="status"` line carrying "24 products" is the whole fix.
+does. A `role="status"` line carrying "24 products" is the whole fix. Note which half is covered:
+Understanding 4.1.3 says *"the list of results obtained from a search are not considered a status
+update"* while *"'18 results returned'"* is — so the count gets the role and the grid never does.
 
 **Paginate by default; do not infinite-scroll.** Infinite scroll breaks the back button, strands
 keyboard users before the footer, and has no addressable position. If you must, provide a "load more"
@@ -633,7 +639,9 @@ One item. Answers *"is this the right thing, and can I buy it?"*
   <div class="grid-auto items-start" style="--min: 20rem">
     <div class="stack" aria-label="Product images">
       <%# each image needs alt describing THE PRODUCT, not "product image 2" %>
-      <%# thumbnails are buttons in a group, with the active one announced as selected %>
+      <%# the thumbnail strip is the Carousel's TABBED picker: role="tab" in a tablist, one tab %>
+      <%# stop, arrows between thumbnails, each image a tabpanel. A plain button cannot carry %>
+      <%# aria-selected — components.md → Image gallery / Lightbox says why. %>
     </div>
 
     <div class="stack" style="--space: var(--space-s)">
@@ -700,7 +708,17 @@ quantity and the total changes silently, so the consequence of the edit must be 
 announces as **"52.00"**, the number without its label. This is the single most-missed thing in commerce
 a11y, and the one with a direct revenue cost.
 
-**An empty basket is a page, not a blank.** Say it is empty and give one route back to browsing.
+**An empty basket is a page, not a blank.** Say it is empty and give one route back to browsing. It is
+the documented `Ui::EmptyState`, not a bespoke paragraph.
+
+**The drawer is the other half of this anatomy, and it is a different surface rather than a smaller
+one.** A slide-over cart keeps the customer in the catalog; this page is the addressable, printable,
+full-width view a checkout starts from, and it is where the promo code belongs. Both render the same
+lines and the same summary, so the line rules — the naming of a remove control, the live-region total,
+what happens when a quantity changes, and why removal is an undo rather than a confirmation — live in
+one place: [Cart drawer and cart line](components.md#cart-drawer-and-cart-line). Do not restate them
+per surface, and do not build a second dialog for the drawer; it is the documented Modal at
+`placement: :right`.
 
 ## Checkout — the purchase flow
 

@@ -145,13 +145,46 @@ restored to the trigger.
   a **toast**.
 - **Failure re-renders the form into the modal frame at HTTP 422** with inline field errors;
   the modal stays open.
-- **Destructive actions get a confirmation modal**, not just `turbo-confirm`.
+- **Destructive actions get a confirmation modal**, not just `turbo-confirm` — scoped as below.
 - **The list is Cards or `dom_id` rows.** Rows/cards must be individually addressable so
   streams can target them. Host card lists in `grid-auto`.
 - **One modal at a time** — the single shared `id="modal"` frame enforces this; the
   dismissable-layer stack handles nested popovers/dropdowns inside the modal.
 - a11y is inherited from the Modal component (`role="dialog"`, `aria-modal`, labelled title,
   trap + Esc + restore) — don't re-implement it per screen.
+
+### A confirmation is for what cannot be undone
+
+The delete rule above was written unscoped, and the worked example above it says *"This can't be
+undone"* — which is the actual condition, stated in the fixture and not in the rule. Left that way it
+reads as *every* removal gets a dialog, and an agent building a basket then puts "Are you sure you want
+to remove Blue T-shirt?" in front of a customer six times. Confirmation fatigue is not a smaller defect
+than a missing confirmation; it is the one that teaches people to click through the dialog that mattered.
+
+**The condition is reversibility, not destructiveness.**
+
+| | Confirmation modal | Immediate + undo |
+|---|---|---|
+| Deleting an invoice, a member, a saved payment method | **yes** — the record is gone | no |
+| Cancelling a subscription | **yes** — access ends on a date | no |
+| Removing a line from an open cart, clearing a filter, dismissing a draft | no | **yes** |
+
+**Where a specification decides this, follow it; where none does, this is the decision.** Deleting a
+stored record is inside WCAG 3.3.4 Error Prevention (Legal, Financial, Data) (**Level AA**) — its
+Understanding document's own example is *"deleting a record of past invoices"* — and
+`components.md` → Saved payment methods already applies it. A **cart line is genuinely undecided by the
+sources**: the same document narrows the intent to *"prevent mass loss of data such as deleting a file
+or record"* and excludes *"the simple creation or editing of documents, records or other data"*, and no
+W3C text rules on an open cart either way. That verdict was INCONCLUSIVE, so the position is **our
+decision, recorded on [#91](https://github.com/fmanimashaun/claude-skills/issues/91)**: a cart line is
+draft data, removal is immediate, and the undo is what pays for skipping the dialog.
+
+**"Immediate + undo" is a contract, not a softer option.** It means the toast carries a real control
+that restores the line — same position, same quantity — and that the server can honour it. A toast
+reading "Removed" with no way back is worse than the dialog it replaced, because it took the
+confirmation away and gave nothing in return. No specification requires an undo anywhere (3.3.4 offers
+**Reversible / Checked / Confirmed** as alternatives, and 3.3.6 is Level AAA), so this is a promise we
+are choosing to make and must therefore keep.
 
 ## The one exception: the purchase flow is full-page
 

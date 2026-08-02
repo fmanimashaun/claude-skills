@@ -235,6 +235,23 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Two things here are ours, not the spec's:** using a dialog rather than a full-page route (decided,
   because it keeps the grid's scroll position), and the dialog's name string — use the image's caption or
   alt text so it names the picture rather than repeating "Image viewer".
+- **A thumbnail that OPENS a viewer and a thumbnail that SELECTS which image is shown are different
+  controls, and only one of them is a `button`.** The grid above opens a dialog, so its thumbnails are
+  buttons and carry no selection state. A **product gallery** — thumbnail strip under a main image, no
+  dialog — is the other case: the thumbnail *is* the picker, and that is the documented
+  [Carousel](#carousel)'s **Tabbed** style, which APG defines as *"basic controls plus a single tab stop
+  for slide picker controls implemented using the tabs pattern"* and binds to the Tabs keyboard model
+  (*"If tab elements are used for slide picker controls, they implement the keyboard interaction defined
+  in the Tabs Pattern"*). One tab stop for the strip, Left/Right between thumbnails, each image a
+  `tabpanel` with **no** `aria-roledescription` — the Carousel entry's one easy-to-miss difference.
+- **`aria-selected` on a plain button is not conformant, and "announce the active thumbnail as selected"
+  is how that gets shipped.** ARIA 1.2 lists `aria-selected` as *"Used in Roles: `gridcell`, `option`,
+  `row`, `tab`"* (inheriting into `columnheader`, `rowheader`, `treeitem`); the `button` role's supported
+  set is `aria-disabled`, `aria-haspopup`, `aria-expanded`, `aria-pressed`, and `aria-selected` is not a
+  global. *ARIA in HTML* allows it on a `<button>` **only** where the role has been overridden to one
+  that supports it. So the picker's active thumbnail is `role="tab"` with `aria-selected="true"`, as the
+  Tabs pattern requires — **not** a button with `aria-selected` bolted on, which is invalid in both
+  documents and announces nothing.
 
 ## Video player
 - **No APG pattern, and therefore no upstream keyboard model.** The index lists 30 patterns and none
@@ -879,6 +896,200 @@ see [Activity feed / Timeline](#activity-feed--timeline).
 - **Responsive:** the rating is a `cluster` and never wraps mid-row — set `flex-none` on it so a long
   author name cannot break the stars across two lines.
 
+## Product card
+- **No new mechanism: the grid is the documented [Grid list](#grid-list) and the card is the documented
+  [Card](#card).** What this entry owns is the four decisions a catalog card gets wrong — how many links
+  it has, where the add-to-basket control may live, how a reduced price is marked, and how stock reads
+  without colour. **No APG pattern covers it**: the index lists 30 and none is a card, a product grid or
+  a gallery, so every rule below is either an HTML/WCAG citation or ours, and says which.
+- **The "Add to basket" button must not be inside the link — and that is invalid HTML, not a styling
+  problem.** The `<a>` element's content model is *"Transparent, but there must be no interactive
+  content descendant, a element descendant, or descendant with the `tabindex` attribute specified"*, and
+  the **interactive content** category names `button` unconditionally. So `<a …><button>Add to
+  basket</button></a>` is a content-model violation whatever it looks like. Keeping them **siblings** and
+  stretching the link (the [Stacked list](#stacked-list) recipe) fixes the markup and leaves the pointer
+  problem that entry already states: *the stretched overlay covers every sibling*, so the button under it
+  cannot be clicked. Both roads are closed, which is the finding, not a nuisance.
+- **So a card in a catalog grid carries ONE link and no second control — and that is why
+  [Quick view](#quick-view) exists.** A grid that needs an add-to-basket affordance gets it from the
+  quick-view dialog, not from a control wedged into the card. **This is our decision** (recorded on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)); the HTML rule above forces the shape,
+  it does not name the alternative.
+- **Two links to one product — the image and the title — is NOT a 2.4.4 failure, and calling it one is
+  the usual overstatement.** 2.4.4 Link Purpose (In Context) (**Level A**) asks only that *"the purpose
+  of each link can be determined from the link text alone or from the link text together with its
+  programmatically determined link context"*, and Understanding 2.4.4 counts *"the same sentence,
+  paragraph, list item, or table cell as the link"* as that context — which a card supplies. It is
+  conformant and still worse: two tab stops and two link-list entries for one destination, which is why
+  technique **H2** is *"Combining adjacent image and text links for the same resource"*. **Ours: one
+  link, `alt=""` on the image**, because the title beside it already carries the name.
+- **A reduced price is two prices and a word, and `<s>` is the element the HTML Standard names for
+  exactly this case.** *"The `s` element represents contents that are no longer accurate or no longer
+  relevant"* — and the spec's own worked example is a recommended retail price superseded by a sale
+  price. **Not `<del>`**, which *"represents a removal from the document"*, i.e. a tracked edit; the
+  spec draws that line itself (*"The `s` element is not appropriate when indicating document edits"*).
+  Wrap the pair in `sr-only` "was" / "now": a strikethrough is a visual convention that announces
+  nothing on its own.
+- **Colour carries neither the reduction nor the stock state.** 1.4.1 Use of Color (**Level A**):
+  *"Color is not used as the only visual means of conveying information, indicating an action, prompting
+  a response, or distinguishing a visual element."* A sale price that differs from the old one only in
+  hue, and an in-stock dot that is green rather than grey, are the two failures a product grid ships.
+  Stock is a word — "In stock", "2 left", "Out of stock" — and the dot is decoration beside it.
+- **Money is `tabular-nums`, never `font-mono`** ([brand.md](brand.md#money-is-tabular-nums-not---font-mono-91)).
+  In a grid this is the visible half of the rule: a column of prices whose digits do not line up is the
+  first thing that reads as unfinished.
+- **Variants:** `plain` (card on the page background) · `bordered` (the Card's own `border-border`) ·
+  `compact` (no media, for a reel). **States** live on the `<li>`: `hover:bg-accent`, the link's
+  `focus-visible` ring, and `aria-disabled` plus the "Out of stock" word for an unbuyable item — never
+  a `disabled` card, which removes it from the tab order and hides the reason.
+- **Responsive:** none. `grid-auto` with `--min: 15rem` *is* the behaviour ([Grid list](#grid-list)); a
+  product grid needs no breakpoint and no second column count.
+
+## Filter panel
+- **No APG pattern, and the index is how that is checkable** — 30 patterns, none of which is a filter,
+  a faceted search or a filter sidebar. The nearest shipped mechanisms are the
+  [Disclosure](#disclosure--accordion) (one per group) and the [Modal](#modal--dialog) at an edge (the
+  mobile drawer), and both are used unchanged.
+- **One mechanism, two hosts.** The catalog filter sidebar and the [Table (CRUD)](#table-crud) index
+  filter are the same panel with different fields; they do not get two implementations. What differs is
+  where the result count lands — a grid of [Product cards](#product-card) here, table rows there.
+- **It is a `GET` form with a submit, and that is the baseline rather than the enhancement.** Filter
+  state then lives in the URL, so a filtered view is shareable, back-button-correct, and survives a
+  failed script. Enhance with Turbo afterwards; never start from a Stimulus controller that mutates a
+  list and leaves the address bar behind.
+- **One [Disclosure](#disclosure--accordion) per filter group, and APG's mandate is smaller than people
+  build.** The pattern requires exactly three things — *"The element that shows and hides the content
+  has role `button`"*, `aria-expanded` *"set to true"* when open and *"false"* when closed, and for
+  keys, **`Enter` and `Space` only**. `aria-controls` is *"Optionally"* in APG's own wording; **our
+  contract requires it anyway** and says so, because the panel is not adjacent to its trigger on a wide
+  sidebar. **There are no arrow keys on a disclosure** — a filter group is not a menu and not a listbox,
+  and adding a roving tabindex here is the most common over-build.
+- **Below `lg` the panel is the documented Modal at `placement: :left`, not a reflowed sidebar.** That is
+  the [Drawer](#drawer--off-canvas) contract in full — dialog role, name, focus trap, `Esc`, restore —
+  and `component-implementations.md` already ships that exact markup with `Filters` as its title. Render
+  both and let the breakpoint choose; do not toggle `aria-modal` by media query.
+- **The result count is a status message; the results are not.** 4.1.3 Status Messages (**Level AA**)
+  covers content *"presented to the user by assistive technologies without receiving focus"*, and
+  Understanding 4.1.3 draws the line for this exact surface: *"the list of results obtained from a search
+  are not considered a status update and thus are not covered by this success criterion. However, brief
+  text messages displayed about the completion or status of the search, such as 'Searching…', '18 results
+  returned' or 'No results returned' would be status updates."* So `role="status"` goes on the
+  "24 products" line — **not** on the grid, which would announce every card on every filter change.
+- **Filtering into nothing is an [Empty state](#empty-state), and that entry already requires the
+  announcement** — do not add a second live region beside the count for it.
+- **Applied filters are dismissible [Badges](#badge--tag--chip), each naming its own filter.**
+  `aria-label="Remove filter: Blue"`, not "Remove" six times. A "Clear all" is a separate control and is
+  not one of the chips.
+- **2.5.8 Target Size (Minimum) is AA and a dense checkbox column is where it fails.** The criterion is
+  *"at least 24 by 24 CSS pixels"* with five exceptions, and only two are ever reachable here:
+  **Spacing** — *"Undersized targets … are positioned so that if a 24 CSS pixel diameter circle is
+  centered on the bounding box of each, the circles do not intersect another target"* — and
+  **Equivalent**. *Inline* does not apply (a checkbox row is a block target) and neither does *Essential*.
+  Give rows `min-h-touch` and stop reasoning about circles.
+- **Responsive:** the sidebar is a `grid-auto items-start` column beside the results at `lg` and up, and
+  the drawer below it. The count and the sort control stay with the results in both.
+
+## Quick view
+- **The documented [Modal](#modal--dialog) with product content inside it. Nothing here is new**, which
+  is the point: no `Ui::QuickViewComponent`, no second dialog implementation, no second focus trap.
+- **It is never a substitute for the product page.** A dialog has no address, so a quick view cannot be
+  shared, linked, bookmarked, or reached by the back button, and a customer who wants the full
+  description has nowhere to go. **Ours** (recorded on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)): the dialog carries a summary and the
+  buy control, and always carries a "Full details" link to the real route. A quick view that is the only
+  way to see a product is a routing defect wearing a dialog.
+- **This is where a grid's add-to-basket control lives**, for the content-model reason in
+  [Product card](#product-card). The card opens the dialog; the dialog holds the variant fieldsets, the
+  [Seat / quantity selector](#seat--quantity-selector) and the submit.
+- **The dialog contract is APG's, unchanged**, and one line of it is routinely dropped: *"It is strongly
+  recommended that the tab sequence of all dialogs include a visible element with role `button` that
+  closes the dialog, such as a close icon or cancel button."* Focus returns *"to the element that invoked
+  the dialog"* — the card's link, not the grid.
+- **One modal frame means one layer.** The shared `id="modal"` frame ([crud-modal-pattern.md](crud-modal-pattern.md))
+  holds a quick view exactly as it holds an edit form, so a quick view cannot open a second dialog inside
+  itself; a variant that needs its own screen is the product page.
+- **Name the dialog with the product**, not with "Quick view" — six identical dialog names in a session
+  is the same defect as six "Remove" buttons.
+- **Responsive:** below `sm` the modal is `full`; a quick view that scrolls a phone screen twice has
+  become the product page and should be a link instead.
+
+## Cart drawer and cart line
+- **The drawer is the documented [Modal](#modal--dialog) at `placement: :right` — one dialog
+  implementation, one trap, one `Esc`** ([Drawer / off-canvas](#drawer--off-canvas)). **No APG pattern
+  names a drawer or a cart**; the borrowed contract is Dialog (Modal), and the 30-pattern index is how
+  that negative stays checkable.
+- **A cart panel that is not a real modal fails a criterion that is new in WCAG 2.2, so "just slide a
+  panel over the page" is not the cheap option.** 2.4.11 Focus Not Obscured (Minimum) (**Level AA**):
+  *"When a user interface component receives keyboard focus, the component is not entirely hidden due to
+  author-created content."* Leave the page behind tabbable and the next `Tab` lands on a control the
+  panel is covering — the criterion's exact failure. A correctly modal drawer never reaches it, because
+  nothing behind the panel is focusable at all.
+- **`aria-modal` is a claim; `inert` is the mechanism — ship both.** APG permits `aria-modal="true"` only
+  when *"Application code prevents all users from interacting in any way with content outside of it"*,
+  and the attribute itself does nothing to bring that about. The HTML Standard's `inert` does: on an
+  inert subtree *"Hit-testing must act as if the 'pointer-events' CSS property were set to 'none'"*, and
+  *"user agents do not expose the inert nodes to accessibility APIs or assistive technologies"*. APG's
+  pattern text never mentions `inert` — it discusses `aria-modal` replacing `aria-hidden` — so pairing
+  the two is **ours**, and it is what makes APG's own precondition true.
+- **The total is a live region, and WCAG's Understanding document uses a shopping cart as its worked
+  example — this is not an analogy we invented.** 4.1.3 (**AA**): *"An example would be a shopping cart
+  which updates text from reading '0 items' to '3 items'… where only the number in this string was coded
+  as an updated chunk of content, the resulting experience for screen reader users could be to only hear
+  'three'… In such situations, marking the entire '3 items' string as the status text would normally be a
+  better solution… it would also be a courtesy to add offscreen text such as 'in shopping cart'."* Use
+  `role="status"`, which carries `aria-live="polite"` **and** `aria-atomic="true"` implicitly; a bare
+  `aria-live` defaults `aria-atomic` to false, and then *"assistive technologies will only present the
+  changed node to the user"* — the bare "three" the example describes. **One region for the money**: the
+  total, not the badge and not each line.
+- **Quantity is the [Seat / quantity selector](#seat--quantity-selector), unchanged** — same element,
+  same visible label, same `+`/`−` naming, same server-side clamp. Do not restate its rules here.
+- **"Never submit on change" is OUR rule here, and 3.2.2 is a narrower criterion than it is usually made
+  to carry.** 3.2.2 On Input (**Level A**) forbids an automatic **change of context**, and WCAG defines
+  that as a change of *"user agent; viewport; focus; content that changes the meaning of the web page"*,
+  adding that *"a change of content is not always a change of context"*. A quantity edit that streams a
+  new total into place without moving focus is a change of **content**, so 3.2.2 is not what forbids it —
+  **the money is**, which is the same reason the [Promo / discount code](#promo--discount-code) entry
+  gives. Where 3.2.2 genuinely bites is the version that re-renders the row and drops focus, and that one
+  is a defect for its own reason.
+- **A remove control names what it removes**, exactly as [Saved payment methods](#saved-payment-methods)
+  requires: `aria-label="Remove Blue T-shirt, medium"`, never the row number and never six identical
+  "Remove"s. It is also a 2.5.8 target: an icon-only `×` takes `min-h-touch` or clears the **Spacing**
+  exception, and *Inline* does not apply to a block control in a list row.
+- **Removing a cart line gets an undo, not a confirmation dialog — and no source decides this, so we
+  do.** 3.3.4 Error Prevention (Legal, Financial, Data) (**AA**) covers pages that *"modify or delete
+  user-controllable data in data storage systems"*, and its Understanding document then narrows the
+  intent to *"prevent mass loss of data such as deleting a file or record"*, explicitly excluding *"the
+  simple creation or editing of documents, records or other data"* — with *"deleting a record of past
+  invoices"* as the in-scope example. An open cart sits between the two and **no W3C document rules on
+  it**; the verdict was INCONCLUSIVE, so the position is a maintainer decision recorded on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91): **a cart line is draft data, so removal
+  is immediate and reversible**, and the confirmation modal that
+  [crud-modal-pattern.md](crud-modal-pattern.md#a-confirmation-is-for-what-cannot-be-undone) requires for
+  destructive actions is scoped away from it there. **The price of that decision is that the undo must
+  really exist** — a toast that says "Removed" with no way back is the version that fails the customer.
+- **No specification requires an undo anywhere, and two criteria are miscited for it.** 3.3.4 offers
+  **Reversible / Checked / Confirmed** as *alternatives* — Confirmed satisfies it without any undo — and
+  3.3.6 Error Prevention (All) has the same three-way test at **Level AAA**, which is not our baseline.
+  So the undo above is a design choice we are making, not a conformance obligation, and doctrine should
+  not dress it as one.
+- **An empty cart is the documented [Empty state](#empty-state)** — in the drawer as well as on the page,
+  with one route back to browsing. Not a blank panel, and not the drawer refusing to open.
+- **The drawer and the [Cart page](page-anatomies.md#cart) both exist, and neither replaces the other.**
+  The drawer is a preview that keeps the customer in the catalog; the page is the addressable, printable,
+  full-width view a checkout starts from, and it is where a promo code belongs
+  ([Promo / discount code](#promo--discount-code)). **Ours.** The drawer therefore always contains a link
+  to the page as well as the checkout CTA.
+- **One Turbo Stream response updates the badge, the line and the total — and it is eight actions, not
+  nine.** Turbo 8's stream actions are `append`, `prepend`, `replace`, `update`, `remove`, `before`,
+  `after` and `refresh`; **`morph` is a `method="morph"` modifier on `replace`/`update`/`refresh`, never
+  an action name** (Turbo's own handbook prose says "nine actions" in one paragraph and "eight" two
+  paragraphs later — the reference page and `stream_actions.js` agree on eight). Targets resolve
+  **document-wide**, not within the submitting frame, so a header badge, a drawer line and a summary
+  total are all addressable from one response by `dom_id`.
+- **Responsive:** the drawer is `max-w-sm` and full-height at every width; below `sm` it is the Modal's
+  `full` size. The cart *page* keeps its two-column `grid-auto` and collapses to one — the summary below
+  the lines, never beside them at that width.
+
 ## Payment / card entry
 - **The card fields are not yours to build.** Card number, expiry and security code are rendered by
   the payment provider — a hosted page you redirect to, or provider-owned iframe(s) you embed. What
@@ -974,8 +1185,11 @@ see [Activity feed / Timeline](#activity-feed--timeline).
   Redundant Entry (A) is about the same information *"required to be entered again in the same
   process"*, and a code silently dropped between steps is exactly that.
 - **Ours: no auto-apply on blur or on keystroke.** Applying a discount changes a financial total, so
-  it is an explicit press. This is the same reasoning the Stepper entry gives for not auto-advancing,
-  and it avoids 3.2.2 On Input rather than papering over it with an advisory.
+  it is an explicit press. Be precise about what carries that rule: the **money** does, not 3.2.2 On
+  Input. A total restreamed in place without moving focus is a change of *content*, and WCAG says
+  *"a change of content is not always a change of context"* — the boundary is stated once, in
+  [Cart drawer and cart line](#cart-drawer-and-cart-line). The [Stepper](#stepper--wizard) is the case
+  where 3.2.2 genuinely applies, because advancing a step moves focus.
 - `cluster` of a labelled `text` input (`uppercase` styling only — never `text-transform` on the
   value you send) and a `secondary` Button. The label is visible; "Promo code" as a placeholder is the
   usual failure and disappears the moment anyone types.
@@ -1069,11 +1283,17 @@ see [Activity feed / Timeline](#activity-feed--timeline).
   needs an accessible name that says what it changes ("Increase quantity, Blue T-shirt"), and both
   need `min-h-touch`. They never replace the input — a keyboard user typing `12` must not have to
   press a button twelve times.
-- **Never submit on change.** 3.2.2 On Input (**Level A**): *"Changing the setting of any user
-  interface component does not automatically cause a change of context unless the user has been
-  advised of the behavior before using the component."* Changing a seat count changes what the
-  customer pays, so it is an explicit press — the same rule the Stepper and the promo field follow,
-  and the same reason: avoid the class rather than paper over it with an advisory.
+- **Never submit on change — and this is ours, because 3.2.2 does not reach as far as it looks.** The
+  criterion (**Level A**) reads *"Changing the setting of any user interface component does not
+  automatically cause a change of context unless the user has been advised of the behavior before using
+  the component"*, and **change of context** is defined narrowly: *"user agent; viewport; focus; content
+  that changes the meaning of the web page"*, with *"a change of content is not always a change of
+  context"* stated outright. A seat count that streams a new total into place without moving focus is a
+  change of content, so 3.2.2 permits it. **We forbid it anyway because it changes what the customer
+  pays** — the same rule the promo field follows, for the same reason. The
+  [Stepper](#stepper--wizard) is the neighbouring case where 3.2.2 *does* apply, because advancing a
+  step moves focus; the boundary is stated once in
+  [Cart drawer and cart line](#cart-drawer-and-cart-line).
 - **`min`, `max` and `step` are submission-time gates, not input-time barriers — and the spec is
   explicit about which.** They produce the validity states *"suffering from an underflow"*,
   *"suffering from an overflow"* and *"suffering from a step mismatch"*, each defined in terms of a

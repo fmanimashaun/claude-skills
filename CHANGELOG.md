@@ -2487,6 +2487,73 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **fidara-design: the commerce family's catalog and cart slice** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)) — the browse → select → cart path,
+  taken as one group because it is one mechanism: a catalog card **cannot** carry an add-to-basket
+  button (the `<a>` content model forbids an interactive descendant, and the stretched-link overlay
+  covers a sibling), which is *why* quick-view exists, which is what fills the cart, which is what the
+  drawer shows. Four catalogue entries in `components.md` — **Product card**, **Filter panel**,
+  **Quick view**, **Cart drawer and cart line** — plus a markup section in
+  `component-implementations.md`. **No new ViewComponent class**: every piece composes Card, Grid list,
+  Disclosure, Modal, Media object and Empty state, which is #91's "no duplicate mechanisms" criterion.
+  It also closes two dangling references — `components.md` already cited *"a cart line"* and *"the cart
+  total"* with no entry behind either.
+  **Change type: split.** The **framework claims** are CONFIRMED against the version in scope and cited
+  in place: [WAI-ARIA 1.2](https://www.w3.org/TR/wai-aria-1.2/#aria-selected) (REC 2023-06-06) for
+  `aria-selected`'s supported roles and `role="status"`'s implicit `polite`+`atomic`;
+  [ARIA in HTML](https://www.w3.org/TR/html-aria/#el-button) (REC 2026-04-15); the
+  [APG pattern index](https://www.w3.org/WAI/ARIA/apg/patterns/) (30 patterns — the negative for
+  filter, product card, gallery, drawer and cart) plus its
+  [Dialog](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/),
+  [Disclosure](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) and
+  [Carousel](https://www.w3.org/WAI/ARIA/apg/patterns/carousel/) patterns; WHATWG HTML (Living
+  Standard, 2026-07-20) for the [`<a>` content model](https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-a-element),
+  [`<s>` vs `<del>`](https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-s-element) and
+  [`inert`](https://html.spec.whatwg.org/multipage/interaction.html#the-inert-attribute); WCAG 2.2
+  1.4.1 (A), 2.4.4 (A), [2.4.11](https://www.w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum.html)
+  (AA, new in 2.2), 2.5.8 (AA), 3.2.2 (A), 3.3.4 (AA), 3.3.6 (AAA) and
+  [4.1.3](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) (AA); Turbo 8.0.23. The
+  **design/architecture** half — one link per card, quick-view is never the product page, drawer and
+  page both exist, `aria-modal`+`inert` together, our stricter `aria-controls` — has no upstream, so its
+  authority is the [maintainer decision recorded on #91](https://github.com/fmanimashaun/claude-skills/issues/91#issuecomment-5156613111).
+- **One verdict came back INCONCLUSIVE and doctrine says so rather than inventing a citation** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)). **Is removing a line from an open
+  cart inside 3.3.4?** No W3C text decides it: the criterion covers *"modify or delete user-controllable
+  data in data storage systems"*, while its Understanding document narrows the intent to *"prevent mass
+  loss of data"* and excludes *"the simple creation or editing of … records"*. Decision (recorded on the
+  issue, per CLAUDE.md): **a cart line is draft data — removal is immediate and reversible.**
+  `crud-modal-pattern.md` gains *A confirmation is for what cannot be undone*, which scopes the
+  previously unscoped destructive-action rule to **reversibility rather than destructiveness** — the
+  condition its own worked example already stated (*"This can't be undone"*) and the rule did not. The
+  undo is written as a contract, not a softer option, because **no specification requires an undo
+  anywhere**: 3.3.4 offers Reversible / Checked / Confirmed as alternatives and 3.3.6 is Level AAA.
+- **Two defects in already-shipped doctrine, found by grepping the pattern** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)). (1) `page-anatomies.md` told every
+  agent that product-gallery *"thumbnails are buttons in a group, with the active one announced as
+  selected"* — `aria-selected` is scoped by ARIA 1.2 to `gridcell`/`option`/`row`/`tab` and is not in
+  `button`'s supported set, so that shipped an attribute invalid in both ARIA 1.2 and *ARIA in HTML*
+  which announces nothing. Fixed **by reuse**: a thumbnail that *picks* an image is the documented
+  Carousel's **Tabbed** style, where `role="tab"` makes `aria-selected` legal — and the distinction is
+  now written down (a thumbnail that **opens** a viewer is a `button`; one that **selects** is a `tab`).
+  (2) `Seat / quantity selector` and `Promo / discount code` both rested "never submit on change" on
+  **3.2.2 On Input**, which is narrower than that: it forbids a change of *context*, and WCAG states
+  *"a change of content is not always a change of context"*. A total restreamed in place without moving
+  focus is permitted. **The rules stand; their authority was wrong**, and both now say the money carries
+  them. The neighbouring `Stepper` citation was checked and left alone — advancing a step moves focus,
+  so there 3.2.2 genuinely applies.
+- **No coverage `ENTRIES` rows, and the gap is disclosed rather than left to be found** (Refs
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91)). `coverage.md` and
+  `docs/coverage.html` need the licensed corpora to regenerate, so committing rows here would fail the
+  drift gate on the next maintainer's machine. **`verify_no_undeclared_entry` cannot see this gap**: it
+  matches on row name, and the four new headings are named differently from the four `derivable` rows
+  they back — the same shape as the `Command palette` row that guard was written for, in the half it
+  does not cover. The exact flip (four rows, two `BUILD` deletions, four evidence strings, each checked
+  against the shipped headings and found exactly once) is
+  [on the issue](https://github.com/fmanimashaun/claude-skills/issues/91#issuecomment-5156613111) for a
+  corpora-attached follow-up.
+
 ### 1.31.1 — 2026-08-02
 
 - **The coverage matrix now reports #91's slice-2 work, which it had been silently under-reporting**
