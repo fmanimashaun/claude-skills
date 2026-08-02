@@ -4771,6 +4771,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`crawl_collector.js` silently ignored unknown flags and ran a default crawl** (#447). `--help`
+  was not a flag it knew, so it **crawled** and wrote two files into the caller's working tree.
+  Found by installing Playwright and actually running it — the first time this repo has been able to
+  exercise the collector at all.
+- **The quiet-typo case is why this is a bug and not a missing `--help`.** `--visualise` instead of
+  `--visual` produced a complete, clean-looking crawl with visual capture **off**, and nothing said a
+  flag had been ignored — so the run read as evidence for something it never measured. Same shape as
+  #112's `ignored: []` and the `links.check_external` toggle nothing honoured.
+- Accepted flags are now enumerated; anything else exits **2** naming the offender, and `--help`
+  prints usage and exits 0. Exit 2 rather than 1 because a bad flag is a caller error, not a
+  finding — the line every other qa-flow script draws.
+- **Verified behaviourally, not by inspection**: `--help` → 0, `--visualise` → 2, neither writing a
+  file, and a real two-route crawl against a live server still produces `crawl.json`,
+  `interactions.json` and `links.json` that `crawl_report.py` and `link_audit.py` both accept.
+
 - **NEW `classify_boot_failure.py`** — #110's boot-error triage was a **prose table an agent was
   told to eyeball** (`smoke.md`: *"classify it per the triage table below"*), and nothing applied it.
   The table's own paragraph makes the argument for classifying — *"a wall of stack trace is not a

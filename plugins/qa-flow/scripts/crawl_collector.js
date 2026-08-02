@@ -76,6 +76,48 @@ if (!chromium) {
   process.exit(2);
 }
 
+// FLAG VALIDATION (#447). Parsing was `argv.includes('--visual')` plus an indexOf lookup, so any
+// unrecognised argument was silently discarded and the run proceeded with defaults. `--help`
+// therefore ran a crawl and wrote two files into the caller's working tree.
+//
+// The quiet-typo case is the one that matters: `--visualise` produced a complete, clean-looking
+// crawl with visual capture off, and nothing in the output said a flag had been ignored — so the
+// run read as evidence for something it never measured. Same shape as #112's `ignored: []` and the
+// `links.check_external` toggle that nothing honoured.
+const VALUED_FLAGS = ['base', 'out', 'routes', 'max-controls', 'baselines', 'masks', 'theme'];
+const BOOLEAN_FLAGS = ['visual', 'links', 'seeded'];
+const USAGE = [
+  'crawl_collector.js — measure routes and controls for the qa-flow judges.',
+  '',
+  '  --base URL            base URL (default http://localhost:$PORT or :3000)',
+  '  --out DIR             output directory (default qa/manual-tests)',
+  '  --routes P [P...]     routes to visit (default /)',
+  '  --max-controls N      cap on controls exercised per route (default 40)',
+  '  --baselines DIR       visual baseline directory (default qa/baselines)',
+  '  --masks FILE          JSON of selectors to mask, from visual_baseline.py --masks',
+  '  --theme NAME          colour scheme to emulate',
+  '  --visual              capture screenshots against the baselines',
+  '  --links               inventory hrefs, fragments and 4xx/5xx sub-resources',
+  '  --seeded              declare the app was seeded',
+  '  --help                print this and exit 0',
+  '',
+  'Exit: 0 measured · 2 unusable (bad flag, unreadable input, no browser)',
+].join('\n');
+
+if (process.argv.includes('--help')) {
+  console.log(USAGE);
+  process.exit(0);
+}
+
+// Exit 2, not 1: a bad flag is a caller error, not a finding. Every other qa-flow script draws that
+// line the same way, and collapsing them sends someone hunting a defect that is not there.
+const KNOWN_FLAGS = new Set([...VALUED_FLAGS, ...BOOLEAN_FLAGS].map((f) => `--${f}`));
+const unknownFlags = process.argv.slice(2).filter((a) => a.startsWith('--') && !KNOWN_FLAGS.has(a));
+if (unknownFlags.length) {
+  console.error(`Unknown flag(s): ${unknownFlags.join(', ')}\n\n${USAGE}`);
+  process.exit(2);
+}
+
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   if (i === -1) return fallback;
