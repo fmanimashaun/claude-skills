@@ -4749,7 +4749,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.21.2 — 2026-08-02
 
 - **#115's sixth criterion is now asserted rather than pointed at** (#424). *"Modal-CRUD variant
   asserts 422 re-render inside the modal"* shipped as a **pointer** at `functional-tester`, which
@@ -6753,6 +6753,26 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.56.1)
+
+- **#115's sixth criterion was pointed at, never asserted** (#424). *"Modal-CRUD variant asserts 422
+  re-render inside the modal"* shipped as a pointer at `functional-tester`, which contains **zero**
+  occurrences of `422`, `modal`, `dialog`, `CRUD` or `re-render`. Asserted nowhere for three
+  releases; the doctrine it meant lives in another component (`crud-modal-pattern.md:146`).
+- **Why it was never implemented is the more useful half: the forms profile could not express a
+  valid modal row at all.** An `Exercised` row had to be 2xx/3xx while the doctrine *requires* 422 —
+  Turbo replaces a frame only on that status. Anyone recording the row #115 asks for would have been
+  told it was `Blocked`. The criterion was not forgotten; it was unimplementable in the schema meant
+  to carry it.
+- A `modal` row that exercised an invalid submit must now carry HTTP 422 **and** must not have
+  navigated — a differing Requested/Final URL means the modal was destroyed and the user's input
+  with it, which renders as a **pass** to any check that only asks whether an error appeared.
+- The carve-out is narrow on purpose — **422 only, modal only**, and a 422 row that does not declare
+  `Surface: modal` gets no exemption, pinned by a fixture because widening is how carve-outs fail.
+- Selftest 247 → **253**, mutations 24 → **26**. Two existing guards caught drift during the work:
+  the agent-header cross-check refused the new column until the agent doc documented it, and the
+  stale-anchor rule caught a mutation the edit had invalidated.
 
 ### 2026-08-02 (release v1.56.0)
 
