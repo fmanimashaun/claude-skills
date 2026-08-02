@@ -41,6 +41,50 @@ Exclusions differ from `dead-control` on purpose: a link with an `href` is exemp
 navigation cannot be observed from a sweep that stays on the page, but its focus restore *can* be —
 so the dismissal is judged even for controls `dead-control` skips.
 
+THE THIRD HALF IS FOCUS CONTAINMENT, and it had the same problem one layer along. #114's overlay
+criterion is three assertions — *"(a) Tab cycles within the layer, (b) Escape closes it, (c) focus
+returns to the trigger"* — and (b) and (c) became mechanical above while (a) stayed a number an
+agent types into the `Trap Failures` column of a CSV. `validate_evidence.py` checks that number's
+arithmetic; nothing has ever compared it to a browser. So the collector now walks Tab and Shift+Tab
+from inside the layer and records whether focus ever lands on a real element outside it.
+
+WHERE THAT RULE MAY FIRE IS NARROWER THAN THE COLUMN, and the scope note has to be worded carefully,
+because the obvious wording is false. Verified against the live APG (2026-08-02):
+
+  * **Dialog (Modal) — REQUIRED, and it is the only formal mandate.** "Tab: ... If focus is on the
+    last tabbable element inside the dialog, moves focus to the first tabbable element inside the
+    dialog", and the mirror-image row for Shift + Tab.
+  * **Menu / Menu Button — NOT containment.** The opposite, in fact: "Tab: ... move focus out of the
+    `menu` or `menubar`, and close all menus and submenus", and "Tab and Shift + Tab do not move
+    focus among the items in the menu."
+  * **Combobox — NOT containment.** "DOM Focus is maintained on the combobox and the assistive
+    technology focus is moved within the listbox using `aria-activedescendant`", and the popup and
+    its descendants are "excluded from the page Tab sequence". (A combobox whose popup is itself a
+    dialog is APG's own stated exception; it is not special-cased here because the dialog it opens
+    is judged on its own merits.)
+  * **Disclosure — nothing.** Its Keyboard Interaction table is Enter and Space and no more.
+
+That matters beyond this file: `Overlays` in the keyboard CSV is the denominator for `Escape
+Failures` and `Restore Failures` — which APG *does* mandate for all three patterns — but it is the
+wrong denominator for `Trap Failures`, which only the dialog owes. a11y-auditor.md said all three
+applied to all three patterns, and that was wrong in the direction that files S1s against behaviour
+APG explicitly describes the other way.
+
+**WHAT AN OUT-OF-SCOPE VERDICT HERE MEANS IS "NOT CHECKED", NOT "EXEMPT"** — the distinction is the
+verification's most useful output. It is tempting to write "APG exempts non-modal dialogs from
+containment"; APG says the reverse, in the Dialog (Modal) pattern's own About section: *"Like
+non-modal dialogs, modal dialogs contain their tab sequence."* There is simply no APG pattern page
+for a non-modal dialog and no platform state that marks one, so there is nothing to check it
+against. Scoping to runtime modality is a statement about what is **measurable**, not a claim that
+the rest is permitted.
+
+MODALITY IS READ FROM THE RUNTIME, NEVER FROM THE MARKUP'S INTENT: `:modal` (true only for a
+`<dialog>` opened with `showModal()` — the HTML Standard's "is modal" flag, which `show()` never
+sets) or `aria-modal="true"`. And APG mandates the *behaviour*, not the mechanism — it never
+mentions traps, `showModal`, or JS at all — so pressing Tab and watching where focus lands is a
+valid test whichever way containment was implemented. A native modal usually passes for free,
+because the HTML Standard makes everything outside the top dialog `inert`.
+
 That defect is only visible by *using* the control and observing whether anything changed. So the
 browser activates each one and records what happened; every verdict about what counts as "something
 happened" is here.
@@ -102,6 +146,13 @@ SCHEMA_EXAMPLE = {
             "dialogOpened": True, "haspopup": None, "triggerRole": "", "popupRole": None,
             "closedOnEscape": True, "focusRestored": False,
         },
+        # null unless a layer opened. RAW again: `ariaModal` is the attribute STRING and
+        # `nativeModal` the `:modal` match, because "is this modal" is the judged question.
+        "containment": {
+            "containerFound": True, "containerRole": "dialog", "ariaModal": "true",
+            "nativeModal": False, "tabbables": 4, "tabsPressed": 5,
+            "forwardEscaped": True, "backwardEscaped": False,
+        },
         "consoleAfter": [{"level": "error", "text": "..."}],
     }],
 }
@@ -109,6 +160,9 @@ SCHEMA_EXAMPLE = {
 # proves the key exists, and an empty `dismiss` object would satisfy it while the rule went quiet.
 DISMISS_KEYS = ("dialogOpened", "haspopup", "triggerRole", "popupRole",
                 "closedOnEscape", "focusRestored")
+# Same argument, same reason, for the containment probe.
+CONTAINMENT_KEYS = ("containerFound", "containerRole", "ariaModal", "nativeModal",
+                    "tabbables", "tabsPressed", "forwardEscaped", "backwardEscaped")
 COLLECTOR = "crawl_collector.js"
 
 
@@ -135,6 +189,12 @@ class Judged:
     dismiss_out_of_scope: list[str] = field(default_factory=list)
     dismiss_unjudged: list[str] = field(default_factory=list)
     dismiss_judged: int = 0
+    # The same three-way split for containment, and for the same reason. `containment_judged` is
+    # the DENOMINATOR: "0 findings" over 0 walked layers is the vacuous pass, and without a counter
+    # printed beside it there is nothing to tell the two apart.
+    containment_out_of_scope: list[str] = field(default_factory=list)
+    containment_unjudged: list[str] = field(default_factory=list)
+    containment_judged: int = 0
 
 
 def load(path: Path) -> list[dict]:
@@ -220,6 +280,71 @@ def judge_dismissal(result: Judged, ref: str, control: dict) -> None:
             f"{kind} closed on Escape but focus did not return to the trigger"))
 
 
+def is_modal(containment: dict) -> bool:
+    """Is this layer modal AT RUNTIME? The only two facts the platform actually exposes.
+
+    `:modal` is true only for a `<dialog>` opened with `showModal()`; `show()` never sets the HTML
+    Standard's "is modal" flag, so a `show()`-opened dialog is correctly not modal here. Anything
+    else is read from `aria-modal`, whose DEFAULT IS FALSE -- so absent, `""` and `"false"` are all
+    not-modal, exactly as with `aria-invalid` elsewhere in this plugin. A check that merely found
+    the attribute would call every dialog modal.
+    """
+    if containment.get("nativeModal") is True:
+        return True
+    return str(containment.get("ariaModal") or "").strip().lower() == "true"
+
+
+def judge_containment(result: Judged, ref: str, control: dict) -> None:
+    """Judge the Tab walk for one control. Silent when no layer opened."""
+    containment = control.get("containment")
+    if not isinstance(containment, dict) or not containment:
+        return
+    if not containment.get("containerFound"):
+        # Two very different causes, kept apart. A disclosure genuinely has no dialog; a dialog
+        # that opened without moving focus into itself is a DIFFERENT defect (initial focus
+        # placement, which has no rule here yet) and calling it a containment pass would be a lie.
+        if (control.get("dismiss") or {}).get("dialogOpened"):
+            result.containment_unjudged.append(
+                f"{ref}: a dialog opened but focus was not inside it, so the walk had nowhere to "
+                "start -- unmeasured, and NOT a contained layer")
+        else:
+            result.containment_out_of_scope.append(
+                f"{ref}: no dialog container -- APG specifies Tab containment for its Dialog "
+                "pattern, and states the opposite for menus and comboboxes")
+        return
+
+    kind = containment.get("containerRole") or "(no role)"
+    if not is_modal(containment):
+        result.containment_out_of_scope.append(
+            f"{ref}: {kind} is not modal at runtime (aria-modal="
+            f"{containment.get('ariaModal')!r}, :modal={containment.get('nativeModal')!r}) -- "
+            "NOT CHECKED rather than exempt: APG has no non-modal dialog pattern to check against")
+        return
+    if not containment.get("tabbables"):
+        # There is no cycle to walk. Tab from a modal holding no tabbable element leaves by
+        # definition, and firing here would report the emptiest overlays as the most broken.
+        result.containment_unjudged.append(
+            f"{ref}: modal {kind} has no tabbable element inside it, so there is no tab sequence "
+            "to contain")
+        return
+
+    forward, backward = containment.get("forwardEscaped"), containment.get("backwardEscaped")
+    if forward is None or backward is None:
+        result.containment_unjudged.append(f"{ref}: modal {kind} -- the containment walk did not "
+                                           "complete")
+        return
+    result.containment_judged += 1
+    leaked = [name for name, escaped in (("Tab", forward), ("Shift+Tab", backward)) if escaped]
+    if leaked:
+        # ONE finding per layer however many directions leaked: an overlay cannot fail the same
+        # assertion twice, which is the rule `validate_evidence.py` applies to the same column.
+        result.findings.append(Finding(
+            ref, "focus-not-contained",
+            f"modal {kind}: {' and '.join(leaked)} moved focus to an element outside the layer "
+            f"({containment.get('tabsPressed')} press(es) over "
+            f"{containment.get('tabbables')} tabbable element(s) inside)"))
+
+
 def judge(controls: list[dict]) -> Judged:
     result = Judged()
     for control in controls:
@@ -232,6 +357,7 @@ def judge(controls: list[dict]) -> Judged:
         # entirely observable dismissal, and exempting it would lose the overlays most worth
         # checking.
         judge_dismissal(result, ref, control)
+        judge_containment(result, ref, control)
         if excluded_reason(control):
             result.excluded += 1
             continue
@@ -327,6 +453,9 @@ def main(argv: list[str] | None = None) -> int:
                           "dismissJudged": result.dismiss_judged,
                           "dismissOutOfScope": result.dismiss_out_of_scope,
                           "dismissUnjudged": result.dismiss_unjudged,
+                          "containmentJudged": result.containment_judged,
+                          "containmentOutOfScope": result.containment_out_of_scope,
+                          "containmentUnjudged": result.containment_unjudged,
                           "findings": [f.__dict__ for f in result.findings]}, indent=2))
     else:
         for f in result.findings:
@@ -337,15 +466,30 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  [dismissal out of scope] {s}")
         for s in result.dismiss_unjudged:
             print(f"  [dismissal not judged] {s}")
+        for s in result.containment_out_of_scope:
+            print(f"  [containment out of scope] {s}")
+        for s in result.containment_unjudged:
+            print(f"  [containment not judged] {s}")
         print(f"\n{result.exercised} control(s) exercised, {len(result.findings)} finding(s), "
               f"{result.excluded} excluded by rule, {len(result.not_exercised)} not exercised.")
         print(f"{result.dismiss_judged} overlay dismissal(s) judged, "
               f"{len(result.dismiss_out_of_scope)} out of scope, "
               f"{len(result.dismiss_unjudged)} not judged.")
+        # Printed unconditionally, at zero as loudly as at fifty: a containment rule reporting no
+        # findings over no walked layers reads exactly like a clean app unless the denominator is
+        # on the page next to it.
+        print(f"{result.containment_judged} modal layer(s) walked for focus containment, "
+              f"{len(result.containment_out_of_scope)} out of scope, "
+              f"{len(result.containment_unjudged)} not judged.")
         if result.not_exercised:
             print("A control that was never activated is NOT a working control.")
         if result.dismiss_unjudged:
             print("An overlay whose dismissal could not be observed is NOT a passing overlay.")
+        if result.containment_unjudged:
+            print("A layer whose tab sequence could not be walked is NOT a contained layer.")
+        if result.containment_judged == 0:
+            print("NO modal layer was walked. Zero containment findings here is a statement about "
+                  "the sweep, not about the app.")
     return 1 if result.findings else 0
 
 
@@ -489,6 +633,136 @@ def selftest() -> int:
           tuple(RESTORE_REQUIRED) == ("dialog", "menu", "combobox"),
           f"{RESTORE_REQUIRED} — adding a pattern here needs a citation, not a guess")
 
+    # ---- FOCUS CONTAINMENT (#114, overlay criterion (a)) --------------------------------------
+    #
+    # Every value in the IN-SCOPE and OUT-OF-SCOPE fixtures below was MEASURED by running the
+    # shipped collector against a six-case page in headless Chromium, not reasoned about. Two of
+    # them are the reason the collector looks the way it does, and both would have shipped as
+    # false positives on the commonest correct implementations:
+    #
+    #   * a `showModal()` dialog with two buttons cycles `one -> two -> BODY -> one` in Chromium,
+    #     so `document.body` had to stop counting as an escape;
+    #   * a `role="dialog"` div that lives in the DOM and is revealed by toggling `hidden` never
+    #     changed the collector's dialog count, so the probe never ran on the shape every component
+    #     library ships.
+    def con(**kw):
+        base = {"containerFound": True, "containerRole": "dialog", "ariaModal": "true",
+                "nativeModal": False, "tabbables": 3, "tabsPressed": 4,
+                "forwardEscaped": False, "backwardEscaped": False}
+        base.update(kw)
+        return base
+
+    check("no layer opened means no containment verdict",
+          rules(working()) == [] and judge([working()]).containment_judged == 0,
+          "a control that opened nothing must not be walked")
+
+    # IN SCOPE — the one pattern APG mandates containment for, reached both ways.
+    for label, attrs in (("aria-modal=\"true\"", {"ariaModal": "true", "nativeModal": False}),
+                         ("a native showModal() dialog", {"ariaModal": None, "nativeModal": True})):
+        leaky = working(containment=con(forwardEscaped=True, **attrs))
+        check(f"a modal declared by {label} that leaks Tab fires focus-not-contained",
+              rules(leaky) == ["focus-not-contained"], f"{rules(leaky)}")
+        tight = working(containment=con(**attrs))
+        check(f"a modal declared by {label} that contains Tab is silent",
+              rules(tight) == [], f"{rules(tight)}")
+        check(f"and the contained {label} counts toward the denominator",
+              judge([tight]).containment_judged == 1, f"{judge([tight]).containment_judged}")
+
+    back_only = working(containment=con(backwardEscaped=True))
+    check("Shift+Tab alone leaking is still a finding",
+          rules(back_only) == ["focus-not-contained"],
+          "APG mandates the wrap in BOTH directions; checking Tab only halves the rule")
+    # Guarded, never indexed blindly. When the direction pair is broken this list is EMPTY, and an
+    # IndexError aborts the run before any labelled assertion reports -- which the mutation checker
+    # refuses to count as a catch, correctly. The same footgun the not-exercised fixture hit above.
+    back_detail = next((f.detail for f in judge([back_only]).findings), "")
+    check("and the detail names the direction that leaked",
+          "Shift+Tab" in back_detail and "Tab and" not in back_detail, f"{back_detail!r}")
+    both = working(containment=con(forwardEscaped=True, backwardEscaped=True))
+    check("a layer leaking BOTH ways is ONE finding, not two",
+          rules(both) == ["focus-not-contained"],
+          "an overlay cannot fail the same assertion twice — the rule validate_evidence applies "
+          "to this very column")
+
+    # OUT OF SCOPE — the half that decides whether this rule is usable at all. Menus and comboboxes
+    # are not merely unmentioned by APG: it specifies the OPPOSITE behaviour for both.
+    for label, attrs in (("a non-modal role=dialog (aria-modal absent)", {"ariaModal": None}),
+                         ('aria-modal=""', {"ariaModal": ""}),
+                         ('aria-modal="false"', {"ariaModal": "false"}),
+                         ("a native dialog opened with show(), not showModal()",
+                          {"ariaModal": None, "nativeModal": False})):
+        c = working(containment=con(forwardEscaped=True, backwardEscaped=True, **attrs))
+        check(f"{label} that leaks Tab is NOT a finding", rules(c) == [], f"{rules(c)}")
+        check(f"and {label} is reported out of scope rather than silently dropped",
+              len(judge([c]).containment_out_of_scope) == 1,
+              f"{judge([c]).containment_out_of_scope}")
+        check(f"and {label} is NOT counted as judged",
+              judge([c]).containment_judged == 0, f"{judge([c]).containment_judged}")
+    # The out-of-scope wording is load-bearing: APG's Dialog (Modal) About section says non-modal
+    # dialogs contain their tab sequence TOO, so "exempt" would be a false claim about the spec.
+    nm = next(iter(judge([working(containment=con(ariaModal=None, forwardEscaped=True))])
+                   .containment_out_of_scope), "")
+    check("an out-of-scope layer says NOT CHECKED, never that APG exempts it",
+          "NOT CHECKED" in nm and "exempt" not in nm.replace("rather than exempt", ""),
+          f"{nm!r}")
+
+    # No container at all: a disclosure owes nothing, and it must not read as a walked layer.
+    disc = working(containment=con(containerFound=False, containerRole=None, ariaModal=None,
+                                   nativeModal=None, tabbables=None, tabsPressed=0,
+                                   forwardEscaped=None, backwardEscaped=None))
+    check("a disclosure with no dialog container is not a finding", rules(disc) == [], f"{rules(disc)}")
+    check("and it is out of scope, not unjudged",
+          len(judge([disc]).containment_out_of_scope) == 1
+          and not judge([disc]).containment_unjudged, f"{judge([disc])}")
+
+    # A DIALOG THAT OPENED BUT NEVER TOOK FOCUS is a different defect, and must not be laundered
+    # into either verdict. It is unmeasured, and it is named.
+    nofocus = working(
+        dismiss=dis(dialogOpened=True),
+        containment=con(containerFound=False, containerRole=None, ariaModal=None, nativeModal=None,
+                        tabbables=None, tabsPressed=0, forwardEscaped=None, backwardEscaped=None))
+    r = judge([nofocus])
+    check("a dialog that opened without taking focus is not judged contained",
+          not [f for f in r.findings if f.rule == "focus-not-contained"]
+          and len(r.containment_unjudged) == 1, f"{r.containment_unjudged}")
+    check("and it is not counted as judged", r.containment_judged == 0, f"{r.containment_judged}")
+
+    # AN UNRUN WALK IS NOT A PASS — same contract as the dismissal probe.
+    for label, attrs in (("forwardEscaped", {"forwardEscaped": None}),
+                         ("backwardEscaped", {"backwardEscaped": None})):
+        r = judge([working(containment=con(**attrs))])
+        check(f"a walk with {label}=null is not judged clean",
+              not r.findings and len(r.containment_unjudged) == 1, f"{r}")
+        check(f"and a null {label} is not counted as judged",
+              r.containment_judged == 0, f"{r.containment_judged}")
+
+    # A modal holding nothing tabbable has no cycle to walk, and Tab leaves it by definition.
+    # Firing here would report the emptiest overlays as the most broken.
+    r = judge([working(containment=con(tabbables=0, forwardEscaped=True, backwardEscaped=True))])
+    check("a modal with no tabbable element inside is not a containment finding",
+          not r.findings and len(r.containment_unjudged) == 1, f"{r}")
+
+    # An unexercised control opened nothing, so its walk must not be invented.
+    r = judge([ctl(exercised=False, reason="obscured", containment=con(forwardEscaped=True))])
+    check("an unexercised control is not walked",
+          not r.findings and not r.containment_out_of_scope and not r.containment_unjudged, f"{r}")
+
+    # The exclusions must not reach the walk either, for the reason they do not reach the
+    # dismissal: a link that opens a modal is one of the overlays most worth checking.
+    link = ctl(tag="a", href="/next", effects={**{k: False for k in EFFECT_KEYS}, "domChanged": True},
+               containment=con(forwardEscaped=True))
+    check("a link with href is still walked for containment",
+          rules(link) == ["focus-not-contained"], f"{rules(link)}")
+
+    check("is_modal reads aria-modal by VALUE, not by presence",
+          is_modal({"ariaModal": "true"}) and not is_modal({"ariaModal": "false"})
+          and not is_modal({"ariaModal": ""}) and not is_modal({"ariaModal": None}),
+          "aria-modal defaults to false; a presence check would call every dialog modal")
+    check("is_modal treats :modal as authoritative on its own",
+          is_modal({"nativeModal": True, "ariaModal": None})
+          and not is_modal({"nativeModal": False, "ariaModal": None}),
+          "showModal() sets the HTML Standard's `is modal` flag; show() never does")
+
     check("a console error on activate fires",
           "error-on-activate" in rules(ctl(effects={**{k: False for k in EFFECT_KEYS},
                                                     "domChanged": True},
@@ -518,6 +792,25 @@ def selftest() -> int:
             check(f"the collector measures dismiss.{key}",
                   re.search(rf"(?m)^\s*{key}\s*[,:]", js) is not None,
                   f"{COLLECTOR} never sets {key}; without it the focus-restore rule cannot fire")
+        for key in CONTAINMENT_KEYS:
+            check(f"the collector measures containment.{key}",
+                  re.search(rf"(?m)^\s*{key}\s*[,:]", js) is not None,
+                  f"{COLLECTOR} never sets {key}; without it the containment rule cannot fire")
+        # THE TRIGGER-CONDITION REGRESSION, pinned. Counting dialogs by PRESENCE instead of
+        # visibility is what kept the whole overlay probe off the shape every component library
+        # ships -- a `role="dialog"` div toggled by `hidden`. It reads as a harmless selector and
+        # silently empties both rules, so the fix is asserted here rather than trusted to memory.
+        check("the collector counts open overlays by VISIBILITY, not by presence",
+              "checkVisibility" in js,
+              f"{COLLECTOR} is back to counting dialogs that merely exist, so a hidden-toggled "
+              "modal never registers as opened and no overlay rule ever runs on it")
+        check("and the overlay selector includes alertdialog",
+              'role="alertdialog"' in js,
+              "every confirm-before-delete overlay is an alertdialog; omitting it exempts them")
+        check("the containment walk does not treat document.body as an escape",
+              "document.body" in js and "documentElement" in js,
+              "Chromium parks focus on BODY at a native modal's wrap point, so without this every "
+              "correct showModal() dialog reports a containment failure")
 
     # ---- THE COLLECTOR SYNTAX GATE MUST BE ABLE TO FAIL ----------------------------------------
     #

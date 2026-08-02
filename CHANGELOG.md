@@ -4780,6 +4780,64 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Nothing measured focus containment, and the overlay probe never ran on the commonest modal**
+  (#458, the last unmechanised third of the closed #114; `Refs #108`). #114's overlay criterion is
+  three assertions — *"(a) Tab cycles within the layer, (b) Escape closes it, (c) focus returns to
+  the trigger"*. (b) and (c) became mechanical in `286b73a`; (a) stayed a number an agent typed
+  into the `Trap Failures` column, whose arithmetic `validate_evidence.py:624` checks and whose
+  truth nothing did. The collector now walks `Tab` then `Shift+Tab` from inside the open layer and
+  `interaction_report.py` judges `focus-not-contained`.
+- **Scoped to runtime-modal layers only, and the wording of that scope is load-bearing.** APG
+  mandates containment in its
+  [Dialog (Modal)](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) pattern — *"If focus is
+  on the last tabbable element inside the dialog, moves focus to the first tabbable element inside
+  the dialog"* — and specifies the **opposite** for the two other overlays the Escape rule covers:
+  *"Tab: … move focus out of the `menu` or `menubar`, and close all menus and submenus"*
+  ([Menubar](https://www.w3.org/WAI/ARIA/apg/patterns/menubar/)) and *"DOM Focus is maintained on
+  the combobox"* with the popup *"excluded from the page Tab sequence"*
+  ([Combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/)). Modality is read from the
+  runtime — `aria-modal="true"` by **value**, or the `:modal` match that `showModal()` sets and
+  `show()` never does ([HTML Standard](https://html.spec.whatwg.org/multipage/semantics-other.html#pseudo-classes)).
+  Verified against the live specs on 2026-08-02.
+- **An out-of-scope verdict says NOT CHECKED, never "exempt"**, and a fixture pins the wording.
+  The verification's most useful output was negative: APG's Dialog (Modal) About section says
+  *"Like non-modal dialogs, modal dialogs contain their tab sequence"*, so "APG exempts non-modal
+  dialogs" would have been a false claim about the spec shipped as doctrine. There is no APG
+  pattern page for a non-modal dialog and no runtime flag marking one — nothing to check against,
+  which is a statement about measurability, not permission.
+- **`a11y-auditor.md` said all three overlay assertions applied to all three patterns**, so it was
+  telling auditors to file S1 `Trap Failures` against menus and comboboxes for doing what APG asks.
+  Corrected with the citations: `Trap Failures` is bounded by the **modal dialogs** among
+  `Overlays`, not by `Overlays`.
+- **Two collector defects found by running it, not by reading it** (headless Chromium, six-case
+  fixture). Both would have shipped as false results on the most common correct implementations.
+  - *A dialog that is present is not a dialog that is open.* Overlays were counted by
+    `querySelectorAll('dialog[open],[role="dialog"]')` — presence — so a `role="dialog"` div that
+    lives in the DOM and is revealed by toggling `hidden` (Flowbite, Tailwind UI, most component
+    libraries) never changed the count, and **the whole Escape / focus-restore probe never ran on
+    it**. Measured: presence `3 → 3 → 3` while visibility went `0 → 1 → 0`. Now counted with
+    `checkVisibility()`, and `[role="alertdialog"]` joins the selector — its omission exempted every
+    confirm-before-delete overlay.
+  - *`document.body` is not outside the layer.* Chromium's cycle for a `showModal()` dialog with two
+    buttons is `one → two → BODY → one`; the wrap point parks focus on the document. Treating that
+    as an escape would have reported a containment failure on **every correct native modal**. A
+    genuinely leaky overlay lands on a real element instead — the same fixture's untrapped
+    `aria-modal` div went `alpha → beta → BUTTON "open non-modal"`.
+- **The probe is non-destructive**: focus returns to where it started after each direction, so the
+  Escape/restore probe that runs next sees the state it would have seen. Without that, our own Tab
+  presses could manufacture a `focus-restore-missing` on a working overlay.
+- **False-positive guards, each with its own fixture**: a modal holding no tabbable element is
+  reported unjudged rather than leaky (there is no cycle to walk); a dialog that opened without
+  moving focus into itself is named as unmeasured rather than graded, because that is a *different*
+  defect; an unrun walk is `null`, never `false`.
+- **A denominator is printed even at zero** — *"N modal layer(s) walked for focus containment"* —
+  because no findings over no walked layers is a statement about the sweep, not about the app.
+- 113 selftest checks (up from 68) and 17 declared mutations, all caught. Two of the new fixtures
+  had to be rewritten after the mutation checker correctly refused them: they indexed `findings[0]`,
+  so the mutant crashed before any labelled assertion could report.
+
 ### 1.22.1 — 2026-08-02
 
 - **A killed crawl produced nothing at all** (#451, the collector half of the closed #111). The
