@@ -138,6 +138,14 @@ def judge_page(page: dict) -> list[Finding]:
             out.append(Finding(route, "console-error",
                                str(message.get("text", ""))[:120] or "(no text)"))
 
+    # An uncaught exception is S1 in `functional-tester.md:105` — "the page is broken even though it
+    # rendered" — and until the collector gained a `pageerror` listener nothing could observe the
+    # highest severity in our own taxonomy. Kept distinct from `console-error`: a page can render a
+    # correct-looking DOM while throwing, which is exactly the case a console scan misses.
+    for error in page.get("pageErrors", []) or []:
+        out.append(Finding(route, "uncaught-exception",
+                           f"{error.get('name', 'Error')}: {str(error.get('message', ''))[:100]}"))
+
     for failed in page.get("failedRequests", []) or []:
         out.append(Finding(route, "failed-request",
                            f"{failed.get('method', '?')} {str(failed.get('url', '?'))[:80]} "
@@ -238,6 +246,17 @@ def selftest() -> int:
 
     check("a console error fires",
           "console-error" in rules({**ok_page, "console": [{"level": "error", "text": "boom"}]}))
+    check("an uncaught exception is reported",
+          "uncaught-exception" in rules({**ok_page,
+              "pageErrors": [{"name": "TypeError", "message": "null.f is not a function"}]}))
+    # THE POINT of the rule: the page renders correctly and still throws. A DOM-only or
+    # console-only check calls this clean.
+    check("a page that renders fine but throws is not clean",
+          rules({**ok_page, "pageErrors": [{"name": "TypeError", "message": "x"}]}) != [])
+    check("no pageErrors key is silent, not an error",
+          "uncaught-exception" not in rules(ok_page))
+    check("an empty pageErrors list is silent",
+          "uncaught-exception" not in rules({**ok_page, "pageErrors": []}))
     check("a console WARNING stays silent",
           "console-error" not in rules({**ok_page, "console": [{"level": "warning", "text": "meh"}]}),
           "warnings are noise in every real app; firing on them makes the rule unread")
