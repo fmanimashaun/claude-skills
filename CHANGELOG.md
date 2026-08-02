@@ -2476,7 +2476,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.31.1 — 2026-08-02
 
 - **The coverage matrix now reports #91's slice-2 work, which it had been silently under-reporting**
   (Refs #91). Four catalogue entries and two archetypes shipped in v1.55.0 with **no `ENTRIES` rows**,
@@ -6773,6 +6773,23 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.56.2)
+
+- **The coverage matrix was under-reporting what we ship** (Refs #91). Four catalogue entries and two
+  archetypes shipped in v1.55.0 with no `ENTRIES` rows, so the matrix described a smaller system than
+  the repo contains. Deliberate rather than careless: regenerating needs the licensed corpora, and
+  committing rows without regenerating leaves a stale matrix that fails the drift gate **on someone
+  else's machine**. The exact edit was written onto the issue and left for a corpora-attached
+  follow-up; this is it. **118 rows from 93 TW + 63 FB**, both artifacts regenerated.
+- **`Number input` was flipped, not duplicated** — Flowbite's `Number Input` was already claimed, and
+  the totality guard allows exactly one claimant, so a second row would have failed rather than
+  added. Its `BUILD` fallback went with it: a `documented` row carrying one is what
+  `verify_shipped_evidence` refuses.
+- **No row invented for "Invoice / statement"** — it is the existing `Detail anatomy`. A row there
+  would have inflated the matrix, which is the direction nobody checks.
+- All six evidence strings were verified against the shipped headings before being trusted, each
+  found exactly once — the trap that broke two promotions earlier today.
 
 ### 2026-08-02 (release v1.56.1)
 
