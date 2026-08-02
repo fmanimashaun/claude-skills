@@ -175,7 +175,7 @@ The WCAG floor here is low, which is why these are S1 and not style notes: **3.3
 Instructions (A)**, **4.1.2 Name, Role, Value (A)**, **3.3.1 Error Identification (A)** and
 **1.4.1 Use of Color (A)**; **3.3.3 Error Suggestion** is AA.
 
-**Safety.** Never submit a form matching the configured destructive pattern (delete / cancel /
+**Safety.** Never submit a form matching **`forms.destructive`** in `qa/config.yml` (delete / cancel /
 pay); default to `dry-run` for anything unrecognised. Valid-submit testing is opt-in and only
 for non-destructive, idempotent endpoints.
 

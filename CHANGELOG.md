@@ -4782,6 +4782,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The destructive-form safety rule pointed at config that did not exist** (#461). `a11y-auditor.md`
+  said *"never submit a form matching **the configured** destructive pattern"*, while `setup-qa.md`
+  scaffolded no `forms:` block and no script read one. Every auditor invented the list — for forms
+  that delete data or take payment, where an under-inclusive guess submits a destructive form and an
+  over-inclusive one silently drops coverage. `forms.destructive` is now scaffolded with a
+  documented default and the doctrine names the real key.
+- Third instance of a shipped reference with no referent, after #445 (a toggle nothing honoured) and
+  #423 (gates waiting on paths nothing writes) — but the first where the missing thing was a
+  **safety** carve-out.
+- **A gate for that class was written and then withdrawn, which is the more useful record.** A rule
+  refusing a dotted `group.key` no scaffolded config defines produced **6 findings, all false
+  positives**: `registry.username` belongs to Kamal's `config/deploy.yml` rather than ours,
+  `blast_radius.py` is a *filename* whose stem happens to match a config group, and the
+  `links.check_external` prose names the removed key deliberately, to explain that it is gone. By
+  this repo's own standard a rule that cries wolf gets switched off, so it is not shipped. My own
+  near-miss fixture was vacuous too — it used `report.py`, where `report` is not a group, so it
+  passed without exercising the filename case at all.
+
+### Unreleased
+
 - **Nothing measured focus containment, and the overlay probe never ran on the commonest modal**
   (#458, the last unmechanised third of the closed #114; `Refs #108`). #114's overlay criterion is
   three assertions — *"(a) Tab cycles within the layer, (b) Escape closes it, (c) focus returns to
