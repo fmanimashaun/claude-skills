@@ -1908,6 +1908,58 @@ GUARDS: tuple[Guard, ...] = (
     # them" — because a gate whose INPUT quietly changed reports clean exactly like a gate over a
     # correct repo. The last one breaks the checker the other way, so the silence direction has a
     # mutation too: a pacing gate that fires on our own shipped sequence is a gate someone deletes.
+    # #91. The rule was PRACTISED in 16 of 18 sections and stated nowhere, so the mutations ask
+    # the two questions that matter: can it still fire, and can prose make it fire wrongly.
+    Guard(
+        name="check_section_landmarks",
+        subject="scripts/check_section_landmarks.py",
+        selftest="scripts/check_section_landmarks.py",
+        needs=("skills/fidara-design/references",),
+        mutations=(
+            Mutation(
+                "the name test accepts any aria-* attribute, so aria-hidden passes as a name",
+                'NAMED = re.compile(r"(?<![-\\w])aria-(?:label|labelledby)\\s*=", re.I)',
+                'NAMED = re.compile(r"(?<![-\\w])aria-[a-z]+\\s*=", re.I)',
+                "'<section aria-hidden=\"true\">' does not name the section",
+            ),
+            Mutation(
+                # A `data-` prefixed attribute is not an ARIA attribute. `\b` matched inside
+                # `data-aria-label`; this gate's own fixture caught it.
+                "the token boundary relaxes, so data-aria-label counts as an accessible name",
+                'NAMED = re.compile(r"(?<![-\\w])aria-(?:label|labelledby)\\s*=", re.I)',
+                'NAMED = re.compile(r"\\baria-(?:label|labelledby)\\s*=", re.I)',
+                "'<section data-aria-label=\"x\">' does not name the section",
+            ),
+            Mutation(
+                "the exemption matches by prefix, so any hero-ish tag is waved through",
+                "            if tag in exempt:",
+                "            if any(tag.startswith(e[:20]) for e in exempt):",
+                "a lookalike hero tag still fails",
+            ),
+            Mutation(
+                "prose is scanned as markup, making the gate unpassable beside its own doctrine",
+                "    for offset, body in code_blocks(text):",
+                "    for offset, body in [(0, text)]:",
+                "a bare <section> in PROSE is not a finding",
+            ),
+            Mutation(
+                # `return [] or [...]` would be a NO-OP -- `[]` is falsy, so `or` yields the
+                # comprehension. Mutate the pattern to one that cannot match instead.
+                "the fence pattern matches nothing, so every file reports clean",
+                'FENCE = re.compile(r"^(?P<t>`{3,})',
+                'FENCE = re.compile(r"^(?P<t>`{99,})',
+                # Killing the extractor makes the very FIRST fixture fail, before the one that
+                # probes `code_blocks` directly. That earlier fixture is the honest expectation.
+                "a bare section is a finding",
+            ),
+            Mutation(
+                "a stale exemption stops being reported, so a carve-out outlives its markup",
+                "        if declared and used < declared:",
+                "        if False:",
+                "a declared exemption matching nothing is reported",
+            ),
+        ),
+    ),
     Guard(
         name="check_page_pacing",
         subject="scripts/check_page_pacing.py",

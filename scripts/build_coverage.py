@@ -769,8 +769,12 @@ BUILD_DEFAULTS: dict[tuple[str, str], str] = {
         "Buttons for CTAs — no bespoke section CSS",
     (ARCHETYPE, "marketing"): "the marketing header + stacked sections inside `center`; "
         "`cover > center > stack` for a single-focus page",
+    # The landmark is part of the recipe, not an afterthought: every promo section in the corpus
+    # is a `<section aria-labelledby>`, and this recipe produced a `div`. An unnamed `<section>`
+    # is `role=generic` (ARIA in HTML), so a band built from the old string was not navigable.
     (COMPOSITION, "ecommerce"): "Card + Heading + Description list / Table inside `grid-auto` "
-        "or `Switcher`",
+        "or `Switcher`; wrap as `<section aria-labelledby>` when the block is a destination — "
+        "unnamed, a `<section>` is `role=generic`",
     (ARCHETYPE, "ecommerce"): "a stacked-shell page: Heading block, then the commerce blocks in "
         "`grid-auto`",
     (COMPONENT, "ecommerce"): "Card + Badge + Button group; prices on the fluid type scale",
