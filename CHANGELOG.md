@@ -6730,6 +6730,39 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## Repository / marketplace
 
+### 2026-08-02 (release v1.56.0)
+
+> ### A release about gates that were green over things they could not see
+>
+> Three checkers here reported clean while structurally unable to read what they guard. None was
+> red. That is the harder failure to notice, and each was found by a control rather than by review.
+
+- **Five of twenty-eight mutation guards were INERT** — `validate_evidence`, `maintainer_doctor`,
+  `project_gates`, `crawl_report`, `check_handoff`. Each one's **unmutated** selftest already failed
+  in the staged tempdir, so every mutation beneath it read as "caught" by that breakage rather than
+  by the fixture it names. `validate_evidence` alone had 24 proving nothing. That is the harness
+  which validates every other gate in this repo, and it was green. Now **318 mutations, 0 inert.**
+- **The cause was hand-listed files rotting.** `check_handoff` staged ten rails-flow agents by name;
+  v1.52.0 added an eleventh, so the mutant lacked an agent its own tier table names. Fixed by
+  declaring directories. `maintainer_doctor` took **three rounds** — `scripts`, then `plugins`, then
+  `evals` — because an inert guard hides every later missing path behind the first.
+- **The shared-shapes gate was green over two tables it could not read.** A merge unioned a
+  3-column form with a 4-column one; `ROW` needs two adjacent digit columns, so every stale row was
+  skipped **silently**. Measured: `dev`'s own gate, in a `dev` checkout, printed *"matches the
+  repo"* over a block holding two tables. A multi-table block is now a hard error.
+- **Five `checks.json` gates waited on paths nothing writes** (#423) — permanently "not applicable",
+  never run in a user's repo. That included `human-guide`, so `check_guide.py` — the whole of #126 —
+  had never executed for anyone. `check_manifest_paths.py` now reconciles every declared path
+  against what each plugin's own scripts write.
+- **The coverage matrix said Command palette had no catalogue entry, and one had shipped** (#95) —
+  agents were routed past written doctrine to a one-line summary.
+- **#398 answered "no."** The selftest harness stays one copy per install root: no module reaches
+  more than 5 of 12 copies, the saving is under 1% of the file set against 298 call sites, and what
+  makes the copies acceptable is a shared **control** — the mutation checker — not a shared module.
+- New page-pacing doctrine (#92), the list family and plans/billing (#95, #91), money typography
+  settled at its source, and the generated-layout `test/` contradiction fixed (#395).
+- Gate sweep **56 → 60**.
+
 ### 2026-08-01 (release v1.55.0)
 
 > ### The largest release here, and most of it exists because things were checked rather than assumed
