@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-02 (v1.61.0)
 
 - **Four "monotony" gate rules considered and rejected, each with the measurement that killed it**
   (Refs #476). An external catalogue names four repetition axes that look like they belong beside
@@ -2511,7 +2511,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.34.0 — 2026-08-02
 
 - **Legal, privacy and consent surfaces — the one subject the doctrine had nothing on** (Refs
   #475). Found by auditing against an external catalogue: of its 110 named failure modes this was
@@ -7258,6 +7258,43 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.61.0)
+
+> ### The one subject we had nothing on, and four rules we decided not to write
+>
+> Both halves come from auditing our design doctrine against an external catalogue of 110 named
+> failure modes. Of those 110, exactly **one** was a clean zero for us. The rest of the audit's
+> value was negative — including four rules that looked obviously worth adding until they were
+> measured.
+
+- **Legal, privacy and consent surfaces** (#475). `grep -ril "privacy polic|cookie consent|consent
+  banner"` over `skills/` and `plugins/` returned **0 files**, while v1.60.0 had just shipped
+  checkout and billing. Three parts, with the change type split:
+  - **Verified** — *ARIA in HTML* (W3C) gives `<footer>` `role=contentinfo` *"if not a descendant
+    of an `article`, `aside`, `main`, `nav` or `section` element"*, **"otherwise `role=generic`"**.
+    That interacts with the band rule shipped in v1.60.0, which tells authors to wrap bands in
+    `<section>`: put the page footer inside one and the landmark **silently disappears**. Both
+    rules are enforced by the **same join in the same file** so they cannot drift apart.
+  - **Verified** — GDPR Recital 32: *"Silence, pre-ticked boxes or inactivity should not therefore
+    constitute consent"*, which must be *"a clear affirmative act"*. Never render the box
+    `checked`, never treat dismissal as acceptance, one checkbox per thing consented to.
+  - **Ours** — that a consent surface is the **modal dialog we already document** rather than a
+    bespoke banner (APG has no consent pattern; checked, not assumed), and that *which* surfaces a
+    jurisdiction requires is the operator's decision. A design system shipping a compliance
+    checklist would assert what it cannot verify.
+
+- **Four monotony rules considered and rejected, each with its measurement** (#476). `LAY-017`
+  (a layout family repeated more than twice) was **measured against our own table and rejected**:
+  the shipped band sequence uses one shape for **3 of its 7** bands, because the hero, a prose band
+  and the closing band legitimately share the shape for centred prose — so their threshold flags
+  our own correct doctrine. `LAY-015` (repeated closing CTA) **contradicts** shipped doctrine that
+  prescribes the repeat and gives its reason. `VIS-012` and `LAY-024` have no column to join
+  against. Recorded in the gate's docstring, with the number **re-derived by a fixture** rather
+  than asserted.
+
+**Versions:** rails-stack 1.33.0 → **1.34.0**.
+**Gates:** 63/63. **Mutation check:** 377 mutations across 32 guards, all caught.
 
 ### 2026-08-02 (release v1.60.0)
 
