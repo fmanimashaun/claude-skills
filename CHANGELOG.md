@@ -7,6 +7,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **CI actions were pinned to majors running the deprecated Node 20.** `actions/checkout@v4` and
+  `actions/setup-python@v5` target node20, which GitHub now force-runs on node24 and will eventually
+  stop supporting — both workflows printed the deprecation on every run. Bumped to **v7** for both,
+  which is what `releases/latest` actually reports; the deprecation notice implies v5/v6, so the
+  versions were checked against the API rather than inferred from the warning text.
+- Changed in **both** `gates.yml` and `release.yml`. Those two files are deliberate mirrors —
+  `CLAUDE.md` says change one, change the other — and a bump applied to only one would have left the
+  publish path on a runtime the PR path had already left behind.
+
 ### 1.56.0 — 2026-08-02
 
 - **`scripts/check_page_pacing.py` — the pacing doctrine's numbers are measured, not asserted**
