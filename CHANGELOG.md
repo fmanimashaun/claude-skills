@@ -2487,6 +2487,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Legal, privacy and consent surfaces — the one subject the doctrine had nothing on** (Refs
+  #475). Found by auditing against an external catalogue: of its 110 named failure modes this was
+  our only clean zero (`grep -ril "privacy polic|cookie consent|consent banner"` → **0 files**),
+  while #91 had just shipped checkout and billing. Three parts, and the change type differs per
+  part:
+  - **Verified.** *ARIA in HTML* (W3C) gives `<footer>` `role=contentinfo` *"if not a descendant
+    of an `article`, `aside`, `main`, `nav` or `section` element"* — **"otherwise `role=generic`"**.
+    That interacts with the band rule shipped in v1.60.0, which tells authors to wrap bands in
+    `<section>`: put the page footer inside one and the landmark silently disappears. The two
+    rules are stated together and enforced by the **same** join in
+    `scripts/check_section_landmarks.py`, so they cannot drift apart.
+  - **Verified.** GDPR Recital 32: *"Silence, pre-ticked boxes or inactivity should not therefore
+    constitute consent"*, which must be *"a clear affirmative act"*. The UI consequences are
+    mechanical — never render the box `checked`, never treat dismissal as acceptance, one checkbox
+    per thing consented to.
+  - **Ours.** That a consent surface is a **modal dialog we already document** (focus trapped,
+    `aria-modal` + `inert`, focus restored) rather than a bespoke banner — APG has no consent
+    pattern, checked rather than assumed. And the boundary: *which* surfaces a jurisdiction
+    requires is the operator's decision. A design system that shipped a compliance checklist would
+    be asserting something it cannot verify.
+
+  The gate grew a second rule and two bugs of its own, both caught by its fixtures: an ERB comment
+  reading *"its link list is NOT a `<nav>`"* opened an element that never closed, so the footer
+  below it reported as nested; and blanking comments had to preserve newlines, or every line
+  number after one is wrong. 25 → 42 fixtures, 6 → 10 mutations.
+
 ### 1.33.0 — 2026-08-02
 
 - **`<section>` is a landmark only when you name it — practised in 16 of 18 places, stated in
