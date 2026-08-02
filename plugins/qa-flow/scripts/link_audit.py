@@ -272,6 +272,22 @@ def judge(doc: dict) -> Judged:
             if scheme is not None and scheme not in NAVIGATIONAL_SCHEMES:
                 result.non_navigational += 1
                 continue
+            # `target="_blank"` without `rel="noopener"` — S3 per `functional-tester.md:171`, and
+            # until the collector recorded these attributes (#108 residual) this shipped rule could
+            # never fire. Placed AFTER the mailto:/tel: skip the rule itself specifies, and BEFORE
+            # the external `continue`, because an external target is exactly where it matters: the
+            # opened page gets a `window.opener` handle back into ours.
+            #
+            # `rel` is a space-separated token list, so it is split rather than substring-matched —
+            # `rel="noopenerfoo"` is not `noopener`. `noreferrer` also severs the handle, so it
+            # satisfies the rule; grading it a defect would be wrong.
+            if str(link.get("target") or "").lower() == "_blank":
+                tokens = {tok for tok in str(link.get("rel") or "").lower().split() if tok}
+                if not tokens & {"noopener", "noreferrer"}:
+                    found.add("opener-leak", resolved or href or "(no href)",
+                              'target="_blank" without rel="noopener" — the opened page keeps a '
+                              "window.opener handle back into this one", route)
+
             if not resolved:
                 unknown.add("unresolved-href", href or "(empty href)",
                             "the collector recorded no resolved URL", route)
@@ -379,10 +395,10 @@ def selftest() -> int:
 
     BASE = "http://localhost:3000"
 
-    def link(href, resolved=None, text="Go"):
+    def link(href, resolved=None, text="Go", target=None, rel=None):
         return {"href": href,
                 "resolved": resolved if resolved is not None else f"{BASE}{href}",
-                "text": text}
+                "text": text, "target": target, "rel": rel}
 
     def doc(pages, targets=()):
         return {"schema": SCHEMA, "base": BASE, "pages": list(pages), "targets": list(targets)}
@@ -471,6 +487,31 @@ def selftest() -> int:
     dext = doc([page(links=[link("https://example.com/x", resolved="https://example.com/x")])])
     check("another origin is not probed or judged", rules(dext) == [], f"{rules(dext)}")
     check("another origin is counted", judge(dext).external == 1, f"{judge(dext).external}")
+
+    # ---- opener-leak (#108 residual): the rule existed and could never fire ----------------
+    ext = "https://example.com/x"
+    blank = doc([page(links=[link(ext, resolved=ext, target="_blank")])])
+    check("target=_blank with no rel is an opener leak",
+          "opener-leak" in rules(blank), f"{rules(blank)}")
+    # It must fire on an EXTERNAL target especially — that is where a window.opener handle is
+    # handed to somebody else — so it is judged before the external short-circuit.
+    check("an external _blank is still judged, not skipped as external",
+          judge(blank).external == 1 and "opener-leak" in rules(blank))
+    for ok_rel in ("noopener", "noreferrer", "noopener noreferrer", "NOOPENER"):
+        d = doc([page(links=[link(ext, resolved=ext, target="_blank", rel=ok_rel)])])
+        check(f"rel={ok_rel!r} satisfies the rule", "opener-leak" not in rules(d), f"{rules(d)}")
+    # A token list is SPLIT, not substring-matched: `noopenerfoo` is not `noopener`.
+    dfoo = doc([page(links=[link(ext, resolved=ext, target="_blank", rel="noopenerfoo")])])
+    check("a lookalike rel token does not satisfy it",
+          "opener-leak" in rules(dfoo), f"{rules(dfoo)}")
+    # NEAR MISSES: firing on either would flag most links on most pages.
+    check("a link with no target is silent",
+          "opener-leak" not in rules(doc([page(links=[link("/a")])])))
+    dself = doc([page(links=[link("/a", target="_self")])])
+    check("target=_self is silent", "opener-leak" not in rules(dself), f"{rules(dself)}")
+    dmail = doc([page(links=[link("mailto:x@y.z", resolved="", target="_blank")])])
+    check("mailto is skipped before the rule, as the rule itself says",
+          "opener-leak" not in rules(dmail), f"{rules(dmail)}")
     dproto = doc([page(links=[link("//cdn.example.com/a.js", resolved="https://cdn.example.com/a.js")])])
     check("a protocol-relative URL to another host is external",
           judge(dproto).external == 1, f"{judge(dproto)}")

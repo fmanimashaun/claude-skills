@@ -1946,6 +1946,31 @@ GUARDS: tuple[Guard, ...] = (
                 "an href CONTAINING 'mailto:' in a query is still judged",
             ),
             Mutation(
+                "the rel test becomes a substring match, so a `noopenerfoo` typo passes as safe",
+                '                if not tokens & {"noopener", "noreferrer"}:',
+                '                if "noopener" not in str(link.get("rel") or "").lower():',
+                "a lookalike rel token does not satisfy it",
+            ),
+            Mutation(
+                # This one fires MORE, and on the single most common spelling of the fix.
+                "`split()` goes, so the whole rel is one token and `noopener noreferrer` reports a leak",
+                '                tokens = {tok for tok in str(link.get("rel") or "").lower().split() if tok}',
+                '                tokens = {str(link.get("rel") or "").lower()}',
+                "rel='noopener noreferrer' satisfies the rule",
+            ),
+            Mutation(
+                "`noreferrer` stops counting, so a correctly-severed link reports a leak",
+                '                if not tokens & {"noopener", "noreferrer"}:',
+                '                if not tokens & {"noopener"}:',
+                "rel='noreferrer' satisfies the rule",
+            ),
+            Mutation(
+                "the opener rule moves out of reach, where a real leak can never be reported",
+                '            if str(link.get("target") or "").lower() == "_blank":',
+                "            if False:",
+                "target=_blank with no rel is an opener leak",
+            ),
+            Mutation(
                 "the top-of-document carve-out goes, so every `#` and `#top` reports dead",
                 "            if fragment.lower() in TOP_FRAGMENTS:",
                 "            if False:",
