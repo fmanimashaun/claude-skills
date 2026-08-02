@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 1.56.0 — 2026-08-02
 
 - **`scripts/check_page_pacing.py` — the pacing doctrine's numbers are measured, not asserted**
   (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92)). *How a page is paced*
@@ -1498,7 +1498,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.18.1 — 2026-08-02
 
 - **Two of rails-flow's five gates were permanent silent skips, for the same reason as qa-flow's**
   (#423). Found by the reconciliation gate written for the qa-flow half, on its first run —
@@ -2476,7 +2476,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.31.0 — 2026-08-02
 
 - **fidara-design: `page-anatomies.md` gains *How a page is paced*** (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92),
   the Phase-5 *template synthesis* issue — its shippable half only; see Repository hygiene for the
@@ -4749,7 +4749,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.21.1 — 2026-08-02
 
 - **Gates in `checks.json` pointed at paths nothing writes, so the validators #114–#120 shipped
   never ran in a user's repo** (#423). `project_gates.py`'s `applicability()` answers an absent
