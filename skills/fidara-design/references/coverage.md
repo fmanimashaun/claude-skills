@@ -30,9 +30,9 @@ builder refuses to emit a row that lacks it.
 |---|---|
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
-| fidara rows | 113 |
-| — `documented` | 73 |
-| — `derivable` from documented parts | 40 |
+| fidara rows | 118 |
+| — `documented` | 79 |
+| — `derivable` from documented parts | 39 |
 | — `needs doctrine` (tracked writing gap) | 0 |
 
 `Kind` is `primitive` · `component` · `composition` · `page archetype`. `In TW` / `In FB`
@@ -72,7 +72,9 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Modal / Dialog | component | ✓ | ✓ | a focused create/edit/confirm step; never for content a page can hold | — |
 | Navigation — header / navbar | component | ✓ | ✓ | the app's top bar in the stacked shell | — |
 | Navigation — sidebar / vertical | component | ✓ | ✓ | the app's primary rail in the sidebar/multi-column shells | — |
+| Number input | component | — | ✓ | an authenticated app screen, inside one of the three shells | — |
 | Pagination | component | ✓ | ✓ | any index over ~25 rows; pair with the Table | — |
+| Plan comparison / feature matrix | component | — | — | an authenticated app screen, inside one of the three shells | — |
 | Progress bar | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | the Flowbite audit surfaced LABELLED progress bars specifically |
 | Radio group | component | ✓ | ✓ | one choice from 2–5 visible options, in a fieldset | — |
 | Range input | component | — | ✓ | an authenticated app screen, inside one of the three shells | native `input type=range` already IS role=slider; custom only for two thumbs |
@@ -91,9 +93,12 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Tooltip / Popover | component | — | ✓ | a supplementary label (Tooltip) or a small rich panel (Popover); never the only place information appears | — |
 | Video player | component | — | ✓ | marketing and docs surfaces; inside a `frame` so layout never shifts | no APG pattern, so the keyboard model is the UA's and not ours; `kind=captions` is not `kind=subtitles`; and an autoplaying video is governed by WCAG 2.2.2 (A), not by reduced-motion |
 | Grid list | composition | ✓ | — | an index whose items carry media or several attributes worth scanning at once | `grid-auto` on the <ul> is safe; role=grid is NOT — APG's Grid is a composite widget with roving tabindex, which a wall of cards does not have |
+| Saved payment methods | composition | — | — | a region of an app screen, inside one of the three shells | — |
 | Stat tile | composition | ✓ | — | the metric row at the top of a dashboard, one metric per Card | page-anatomies composes these from Card, one metric each — deliberately not a new component |
+| Subscription state and dunning | composition | — | — | a region of an app screen, inside one of the three shells | — |
 | About page archetype | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | — |
 | Auth page archetype (sign-in / sign-up / reset) | page archetype | ✓ | — | a whole app screen | uses the cover > center > stack recipe for true vertical centering, not bare center |
+| Billing page archetype | page archetype | — | — | a whole app screen | — |
 | Cart page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Category page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Checkout page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
@@ -104,6 +109,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Multi-column shell | page archetype | ✓ | — | screens needing a contextual aside beside the main region | — |
 | Order detail page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Order history page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
+| Plans page archetype | page archetype | — | — | a whole app screen | — |
 | Pricing page archetype | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | — |
 | Product page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Settings anatomy | page archetype | ✓ | — | grouped preference forms | — |
@@ -136,7 +142,6 @@ meant, and was already false when it was written.
 | Category filters | component | ✓ | — | the documented `Ui::Disclosure`, one per filter group, inside a `stack` — `<details>`/`<summary>` only where the group never animates | a commerce surface (catalog, product, cart, checkout) |
 | Chat bubble | component | — | ✓ | Media object rows in a `divide-y` container — the same shape, without inventing message semantics | a messaging, comment or activity thread — not general app screens |
 | Device mockup | component | — | ✓ | a `frame` at the screenshot's own ratio | marketing surfaces only, to frame a product screenshot |
-| Number input | component | — | ✓ | the documented Text input with `inputmode=numeric` | an authenticated app screen, inside one of the three shells |
 | Phone input | component | — | ✓ | a text input with `inputmode=tel` and app-side normalisation, using the shipped field anatomy | any form collecting a telephone number |
 | Product list / grid | component | ✓ | — | Card + Badge + Button group; prices on the fluid type scale | a commerce surface (catalog, product, cart, checkout) |
 | Product quickview | component | ✓ | — | the documented Modal with the product overview blocks inside | a commerce surface (catalog, product, cart, checkout) |
