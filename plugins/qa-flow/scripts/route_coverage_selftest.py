@@ -311,8 +311,77 @@ def run() -> int:
     lines = [json.loads(x) for x in trend.read_text(encoding="utf-8").splitlines()]
     if len(lines) != 2:
         FAILURES.append(f"trend: expected 2 appended runs, got {len(lines)}")
-    elif lines[0] != {"routes": 2, "covered": 1, "untested": 1, "excluded": 0, "percent": 50}:
+    elif lines[0] != {"routes": 2, "covered": 1, "untested": 1, "crawled_unasserted": 0,
+                      "excluded": 0, "percent": 50}:
         FAILURES.append(f"trend: wrong arithmetic recorded: {lines[0]}")
+
+    # ---- #108 residual: crawl visits are a THIRD state, never folded into `covered` ---------
+    crawl_dir = work / "crawled"
+    crawl_dir.mkdir()
+    (crawl_dir / "crawl.json").write_text(json.dumps({"pages": [
+        {"route": "/users"}, {"route": "http://localhost:3000/users/7"},
+        {"route": "/reports"}]}) + "\n",
+        encoding="utf-8")
+    _tick()
+    vo = rc.visit_only_paths([crawl_dir])
+    if set(vo) != {"/users", "/users/7", "/reports"}:
+        FAILURES.append(f"visit_only_paths: expected both routes, got {sorted(vo)}")
+    _tick()
+    if vo and next(iter(vo.values())) != {"crawl.json"}:
+        FAILURES.append(f"visit_only_paths: must attribute the artifact, got {vo}")
+
+    # THE WHOLE POINT: the percentage must not move. A crawl visit is not an assertion, and a
+    # coverage number that counts one is the SKIP-is-not-a-PASS defect wearing a percentage.
+    # A SEPARATE routes file, so the arithmetic pinned above is not perturbed. `GET /users` is
+    # the crawlable gap; `DELETE /users/:id` is the destructive one that must NOT be claimed.
+    routes2 = work / "routes2.json"
+    routes2.write_text(json.dumps({"routes": [
+        {"verb": "GET", "pattern": "/", "controller": "home#index", "area": "home"},
+        {"verb": "GET", "pattern": "/reports", "controller": "reports#index",
+         "area": "reports"},
+        {"verb": "DELETE", "pattern": "/users/:id", "controller": "users#destroy",
+         "area": "users"},
+    ]}) + "\n", encoding="utf-8")
+    _tick()
+    args2 = _a.Namespace(routes=str(routes2), evidence=[str(ev), str(crawl_dir)],
+                         config=str(cfg), trend=None, json=True, fail_on_untested=False)
+    with contextlib.redirect_stdout(io.StringIO()) as cap2:
+        rc.cmd_report(args2)
+    body = cap2.getvalue()
+    payload = json.loads(body[body.index("{"):])
+    if payload["covered"] != 1 or payload["untested"] != 2 or payload["percent"] != 33:
+        FAILURES.append(f"a crawl visit changed the coverage arithmetic: {payload}")
+    _tick()
+    if payload["crawled_unasserted"] != ["GET /reports"]:
+        FAILURES.append(f"the crawled gap, and ONLY it, must be named: "
+                        f"{payload['crawled_unasserted']}")
+    _tick()
+    flags = {g["route"]: g.get("crawled") for g in payload["gaps"]}
+    if flags.get("GET /reports") is not True:
+        FAILURES.append(f"the crawled gap must be FLAGGED, not silently reclassified: {flags}")
+    # A GET crawl of /users/7 must NOT be claimed as a visit to `DELETE /users/:id`. The crawler
+    # navigates with page.goto, which is a GET; claiming otherwise is a false statement about
+    # the riskiest routes on the list.
+    _tick()
+    if flags.get("DELETE /users/:id") is not False:
+        FAILURES.append(f"a destructive route was claimed as crawled: {flags}")
+    _tick()
+    if "crawled, unasserted" not in body:
+        FAILURES.append("the human listing must flag the crawled gap too, not only --json")
+    # A run with no crawl artifact at all must still print the line -- a number that appears only
+    # when non-zero cannot be told from a number nobody computed.
+    _tick()
+    args3 = _a.Namespace(routes=str(routes_json), evidence=[str(ev)], config=str(cfg),
+                         trend=None, json=False, fail_on_untested=False)
+    with contextlib.redirect_stdout(io.StringIO()) as cap3:
+        rc.cmd_report(args3)
+    if "0 visited by a crawl but never asserted" not in cap3.getvalue():
+        FAILURES.append("the third-state line must print even when the count is zero")
+    # An unreadable or non-crawl JSON is skipped, never guessed at.
+    _tick()
+    (crawl_dir / "links.json").write_text("not json at all", encoding="utf-8")
+    if set(rc.visit_only_paths([crawl_dir])) != {"/users", "/users/7", "/reports"}:
+        FAILURES.append("an unreadable artifact must be skipped, not crash the run")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

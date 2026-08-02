@@ -54,6 +54,21 @@ ROUTE_SOURCES: dict[str, tuple[str, ...]] = {
     "perf": ("Route", "Requested URL", "Final URL"),
 }
 
+# Artifacts that record a VISIT but no assertion (#108 residual). Route coverage only ever read
+# the CSV evidence profiles, so a route the crawler loaded, judged and found clean counted as
+# "never touched" -- and that omission was nowhere stated, which is the part that made it a defect
+# rather than a decision.
+#
+# The fix is NOT to fold these into `covered`. A crawl loads a route and grades it for HTTP status,
+# console errors and uncaught exceptions; nothing asserts the page did its job. Counting that as
+# coverage is SKIP-is-not-a-PASS wearing a percentage: it would inflate the one number this tool
+# exists to keep honest, and inflate it exactly on the routes nobody wrote a test for. So they form
+# a THIRD state, reported beside the gaps and never merged into them.
+VISIT_ONLY_ARTIFACTS: dict[str, str] = {
+    "crawl.json": "loaded and graded for errors, but nothing asserted the page works",
+    "links.json": "visited to inventory its links",
+}
+
 # Profiles that must NOT contribute coverage, and why. `findings` carries `Example Routes`, but
 # those are up to three EXAMPLES of a deduplicated defect -- counting them would credit coverage
 # for routes nobody visited and inflate the number this tool exists to make honest.
@@ -210,6 +225,30 @@ def visited_paths(evidence_dirs: list[Path]) -> dict[str, set[str]]:
     return seen
 
 
+def visit_only_paths(evidence_dirs: list[Path]) -> dict[str, set[str]]:
+    """Routes a crawl artifact records having LOADED. Never merged with `visited_paths`."""
+    seen: dict[str, set[str]] = {}
+    for directory in evidence_dirs:
+        if not directory.is_dir():
+            continue
+        for name in VISIT_ONLY_ARTIFACTS:
+            for path in sorted(directory.rglob(name)):
+                try:
+                    doc = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue  # not a crawl artifact, or unreadable -- never guessed at
+                if not isinstance(doc, dict):
+                    continue
+                for page in doc.get("pages") or []:
+                    if not isinstance(page, dict):
+                        continue
+                    raw = str(page.get("route") or "")
+                    candidate = normalise(re.sub(r"^[a-z]+://[^/]+", "", raw.strip()))
+                    if candidate.startswith("/"):
+                        seen.setdefault(candidate, set()).add(name)
+    return seen
+
+
 @dataclass
 class Coverage:
     route: Route
@@ -315,13 +354,29 @@ def cmd_report(args: argparse.Namespace) -> int:
     auth_prefixes = [str(x) for x in config.get("authenticated_prefixes", [])]
 
     kept, dropped = excluded(routes, exclusions)
-    seen = visited_paths([Path(d) for d in args.evidence])
+    evidence = [Path(d) for d in args.evidence]
+    seen = visited_paths(evidence)
     coverage = attribute(kept, seen)
     gaps = sorted((c for c in coverage if not c.covered), key=lambda c: priority(c, auth_prefixes))
     covered = [c for c in coverage if c.covered]
 
+    # THE THIRD STATE. A gap that a crawl loaded is still a gap -- `crawled` is a strict subset
+    # of `gaps`, never added to `covered` -- but it is a different KIND of gap, and saying so is
+    # what stops "untested" reading as "unvisited".
+    # `destructive` is excluded: a crawler navigates with `page.goto`, which is a GET. A DELETE
+    # route whose path happens to match a crawled URL was NOT visited, and saying it was would be
+    # a false claim about the riskiest routes on the list. Caught by this tool's own fixture,
+    # which crawled `/users/7` and saw `DELETE /users/:id` light up.
+    visit_only = {c.route.key for c in attribute(kept, visit_only_paths(evidence))
+                  if c.covered and not c.route.destructive}
+    crawled = [c for c in gaps if c.route.key in visit_only]
+
     pct = (len(covered) * 100 // len(kept)) if kept else 0
     print(f"route coverage: {len(covered)}/{len(kept)} ({pct}%) — {len(gaps)} untested")
+    # Printed unconditionally, including the 0 case: a number that appears only when non-zero
+    # cannot be read as "the crawler reached nothing" versus "nobody looked".
+    print(f"  of those, {len(crawled)} visited by a crawl but never asserted, "
+          f"{len(gaps) - len(crawled)} never reached at all")
 
     # Suppression stays visible, always -- including when nothing was excluded.
     print(f"excluded by config: {len(dropped)}")
@@ -340,6 +395,8 @@ def cmd_report(args: argparse.Namespace) -> int:
                 flags.append("non-GET")
             if any(cov.route.pattern.startswith(p) for p in auth_prefixes):
                 flags.append("authenticated")
+            if cov.route.key in visit_only:
+                flags.append("crawled, unasserted")
             suffix = f"  ({', '.join(flags)})" if flags else ""
             print(f"    {cov.route.key}{suffix}")
 
@@ -349,14 +406,17 @@ def cmd_report(args: argparse.Namespace) -> int:
         with trend.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({
                 "routes": len(kept), "covered": len(covered),
-                "untested": len(gaps), "excluded": len(dropped), "percent": pct,
+                "untested": len(gaps), "crawled_unasserted": len(crawled),
+                "excluded": len(dropped), "percent": pct,
             }) + "\n")
 
     if args.json:
         print(json.dumps({
             "total": len(kept), "covered": len(covered), "untested": len(gaps),
             "excluded": [r.key for r in dropped], "percent": pct,
-            "gaps": [{"route": c.route.key, "area": c.route.area} for c in gaps],
+            "crawled_unasserted": sorted(visit_only),
+            "gaps": [{"route": c.route.key, "area": c.route.area,
+                      "crawled": c.route.key in visit_only} for c in gaps],
             "attribution": {c.route.key: c.by for c in covered},
         }, indent=2))
 
