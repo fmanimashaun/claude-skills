@@ -4771,6 +4771,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **NEW `classify_boot_failure.py`** — #110's boot-error triage was a **prose table an agent was
+  told to eyeball** (`smoke.md`: *"classify it per the triage table below"*), and nothing applied it.
+  The table's own paragraph makes the argument for classifying — *"a wall of stack trace is not a
+  diagnosis, and the categories below have genuinely different owners"* — which is an argument for
+  classifying, not for doing it by hand. Five categories, each matching signatures a runtime prints
+  **verbatim**.
+- **Order is fixed, not most-matches-wins**, and that is the whole difference between this and a
+  keyword soup. A boot log routinely carries several signatures — a missing module often also prints
+  a frame naming the runtime version — so counting matches would let incidental noise outvote the
+  specific cause. Categories are tried most-specific first, first hit wins, and a fixture asserts it
+  with a log containing **both**.
+- **`application-error` is the fallback and that is a real answer, not a shrug.** It is the common
+  case, and the one that files a bug rather than sending someone to fix their toolchain; guessing a
+  more specific category on weak evidence points the reader at somebody else's problem.
+- What stays judgement stays judgement: the script prints the table's **next action**, it does not
+  decide it. Exit is **0 on every classification** — a non-zero code would carry no information,
+  because the caller already knows the app did not boot.
+- 14 selftest checks across 5 categories; 2 declared mutations — one reversing the order, one
+  emptying the table — each caught by its own fixture.
+
 - **`links.check_external` was a switch nothing was wired to** (Refs #108). The scaffolded config
   shipped it as `false` and the prose told the reader to *"enable it for a deliberate link audit"* —
   but `link_audit.py` **counts** external targets and has no code path that fetches one, so setting
