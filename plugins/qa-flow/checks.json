@@ -5,7 +5,15 @@
     "Deliberately NOT listed: rendered_conformance and anything else needing a browser. Those need",
     "Playwright, which is the user's dependency and not installable from here -- and a check that",
     "silently skips for a missing dependency is worse than no check. They belong in the browser",
-    "pass the agent drives, not in a gate that must be honest without one."
+    "pass the agent drives, not in a gate that must be honest without one.",
+    "",
+    "EVIDENCE LIVES IN TWO DIRECTORIES, and every path here must name the one that applies (#423).",
+    "qa/manual-tests/ is the browser workspace -- the crawl's JSON and the per-run summary/runtime",
+    "CSVs. qa/reports/ is where the structured report artefacts land: the a11y, keyboard, forms,",
+    "emulation and perf page CSVs, the deduped findings CSV, the route table, and one directory per",
+    "manifested run. A path aimed at the wrong one is NOT a failure -- project_gates.py reports an",
+    "absent path as not-applicable -- so it is a permanent silent skip. scripts/check_manifest_paths.py",
+    "reconciles every path below against the paths this plugin's own scripts and commands name."
   ],
   "checks": [
     {
@@ -24,6 +32,21 @@
       ]
     },
     {
+      "id": "qa-evidence-reports",
+      "why": "The a11y, keyboard, forms, emulation, perf and findings profiles write to qa/reports/, so the glob above reaches none of them.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/validate_evidence.py",
+        "{match:qa/reports/*.csv}"
+      ],
+      "applies_when": [
+        "qa/reports"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "qa-evidence-manifest",
       "why": "A long browser run must leave reviewable evidence, not a directory of orphans.",
       "command": [
@@ -31,10 +54,10 @@
         "{plugin}/scripts/evidence_manifest.py",
         "validate",
         "--manifest",
-        "{match:qa/manual-tests/manifest.json}"
+        "{match:qa/reports/*/manifest.json}"
       ],
       "applies_when": [
-        "qa/manual-tests"
+        "qa/reports"
       ],
       "requires": [
         "python3"
@@ -48,11 +71,15 @@
         "{plugin}/scripts/route_coverage.py",
         "report",
         "--routes",
-        "qa/routes.json",
+        "qa/reports/routes.json",
+        "--evidence",
+        "qa/manual-tests",
+        "--evidence",
+        "qa/reports",
         "--fail-on-untested"
       ],
       "applies_when": [
-        "qa/routes.json"
+        "qa/reports/routes.json"
       ],
       "requires": [
         "python3"

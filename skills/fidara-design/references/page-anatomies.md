@@ -292,10 +292,119 @@ legitimate as a substitute for a primitive that expresses the same intent.
    for anything data-driven; `min-h-touch` on every control; safe-area padding on fixed
    chrome.
 
+## How a page is paced
+
+Everything above says what one **band** contains. Nothing said what the **sequence** of bands looks
+like — and on a marketing page the sequence *is* the design. This section is that sequence, and it
+composes only from rows that already exist: no new token, no new `@utility`, no new archetype.
+
+<!-- page-pacing:begin -->
+
+**The gap is measurable in our own generated data.** In [coverage.md](coverage.md), **14**
+marketing-section rows carry a byte-identical `Build from` string — Bento grid, Blog / article list,
+CTA, Contact, Content / prose, FAQ, Feature, Hero, Logo cloud, Newsletter, Pricing, Stats, Team and
+Testimonial. Every one of those rows is correct on its own. Followed literally they compose
+**fourteen identical centred stacks separated by equal whitespace**: a page right in every part and
+flat as a whole. `scripts/check_page_pacing.py` re-measures that count against `coverage.md`, so it
+is a measurement rather than an assertion.
+
+**6–8 bands** sit between the marketing header and the footer. Fewer says nothing; more is a page
+nobody reaches the end of. The default sequence:
+
+| # | Band | Composed from | Tone | Columns | Width |
+|---|---|---|---|---|---|
+| 1 | Hero — the claim, the lede, the one primary action, a proof strip | Hero section | card | 1 | prose |
+| 2 | Capabilities — 3–6 verb-led cards | Feature section | background | n | shell |
+| 3 | Deep feature — prose beside a product screenshot | Feature section | card | 2 | shell |
+| 4 | Proof — the customer marks, on one line | Logo cloud | background | 1 | shell |
+| 5 | How it works — three numbered steps, as an `<ol>` | Content / prose section | card | 1 | prose |
+| 6 | Objections — the three questions sales actually hears | FAQ section | background | 2 | shell |
+| 7 | Closing CTA — the same action as the hero | CTA section | card | 1 | prose |
+
+<!-- page-pacing:end -->
+
+**Reading the three axis columns.** Each names something already shipped; none is a new knob.
+
+| Column | Values | What they are |
+|---|---|---|
+| **Tone** | `card` · `background` | the role painted on the full-bleed band — `bg-card` / `bg-background` from `foundations-tokens.md` §2 |
+| **Columns** | `1` · `2` · `n` | `stack` · `Layout::Switcher` · `grid-auto`, from `layout-primitives.md` |
+| **Width** | `prose` · `shell` | the utility capping the band's *content*: `prose-measure` (`--width-prose`) or `shell` (`--width-shell`) |
+
+`Composed from` names a row of `coverage.md` verbatim, and the same check reads that join: a band
+naming something that is not a row fails, which is what keeps this table from quietly growing a
+fifteenth section nobody documented.
+
+### The rules
+
+1. **Tone alternates at every boundary.** A marketing page starts on `card` because the stacked
+   shell already paints its root `bg-card` — so the hero meets the header with no seam — and every
+   other band is `background`.
+2. **Consecutive bands never share both Columns and Width.** This is the rule the 14 identical rows
+   break: `1` + `prose` fourteen times running is the flat page. Changing *both* is fine; changing
+   *neither* is the defect.
+   The tempting stronger form — *"exactly one axis moves per boundary"* — **contradicts rule 1
+   outright**, and the proof is one line: if tone must change at every boundary and only one axis
+   may change at a boundary, then tone is the axis that changes every time, so Columns and Width
+   never change at all. "Exactly one axis" plus alternating tone *is* the flat page, arrived at by
+   a rule that sounds stricter. That is why the shipped rule is a floor and not an equality.
+3. **A band's edge comes from its tone, not from a border.** No `border-b` between marketing bands.
+   The 1px edge is chrome — the stacked shell's own header uses it, and `foundations-tokens.md` →
+   *Elevation idiom* measured that a 1px edge plus a minimal shadow is the whole vocabulary.
+4. **A `card`-tone band carries no `Ui::Card`.** A card on a `card` surface has nothing to sit
+   against, and both flatten. This is *Settings*' "never nest a card in a card", lifted from the
+   section to the page: card grids go on a `background` band, which is why band 2 is where it is.
+5. **One primary action for the page, at most once per band.** This reconciles two things already
+   written rather than adding a third: `coverage.md`'s Button row says `primary` **once per view**
+   (one primary *action*, not one button), and *Landing* below says that same CTA appears in the
+   hero, once mid-page, and in the closing band. Two `primary` fills in one band is the violation.
+   Every other action on the page is `secondary` or the Button `link` variant.
+6. **Decoration in at most two bands, and never two adjacent.** `visual-assets.md` §8 already owns
+   the hard part — decoration never goes behind running text, because contrast is measured against
+   what is actually behind the glyphs. The *count* is the new half, and it is the page-level twin of
+   `motion.md` §14: each band is added by someone who only saw their own band.
+7. **Motion is not restated here.** `motion.md` §14 caps a page at one entrance pattern and three
+   animated regions, never two at once. Pacing adds nothing to it.
+
+```erb
+<%# A band is full-bleed, so its tone reaches the viewport edge; the width utility caps the CONTENT
+    inside it, never the band. Band 1 — hero: `card` tone, one column, prose width. %>
+<section class="bg-card section-y">
+  <div class="stack text-center prose-measure mx-auto">
+    <h1 class="text-step-5"><%= t(".claim") %></h1>
+    <p class="text-step-1 text-muted-foreground"><%= t(".lede") %></p>
+    <div class="cluster justify-center"><%# the one primary action %></div>
+  </div>
+</section>
+
+<%# Band 2 — capabilities. Tone flips, and Columns and Width move with it, so the boundary reads
+    without a rule drawn between them. Cards sit on a `background` band, never on a `card` one. %>
+<section class="bg-background section-y" aria-labelledby="capabilities-heading">
+  <div class="shell stack">
+    <h2 id="capabilities-heading" class="text-step-2"><%= t(".capabilities") %></h2>
+    <div class="grid-auto" style="--min: 18rem"><%# 3–6 Ui::Card, verb-led headings %></div>
+  </div>
+</section>
+```
+
+**Every band still needs an `h2`**, visible or `sr-only` — the heading-outline rule under *Landing*
+applies per band, and a page whose bands are distinguished only by colour has no outline at all.
+
+**None of this has an upstream.** There is no specification for how many bands a marketing page has
+or in what order, so this is **ours**, recorded here so it is a decision rather than each author's
+taste — the same footing as `motion.md` §14's region cap. Where a claim above *does* have a source it
+is cited to the file that carries it, and the only number asserted about ourselves (the 14) is
+measured. The band **sequence** is a default, not a law: swap band 4 for *Stats section* or *Testimonial
+section*, or band 6 for a *Pricing section / table* teaser. The rules above do not move.
+
 ## Landing
 
 The one screen that must survive a stranger's first eight seconds. It answers *"why should I care,
 and what do I do next?"* — nothing else.
+
+**This is the spine of the paced sequence above, not a second answer.** Its four sections are bands
+1, 2, 5 and 7 of *How a page is paced*; the bands between them, the tone alternation and the axis
+rules are there, and a real landing page needs all of it.
 
 **Shell: stacked.** No sidebar; there is no app to navigate yet. Marketing pages are the only place
 the stacked shell is the *default* rather than a choice.
@@ -564,7 +673,8 @@ A mutable list. Answers *"what am I about to buy, and can I still change it?"*
 <div class="grid-auto items-start" style="--min: 18rem">
   <div class="stack">
     <h1 class="text-step-3">Basket</h1>
-    <ul class="stack divide-y divide-border">
+    <ul role="list" class="stack divide-y divide-border">
+      <%# the Stacked list recipe (components.md); role="list" because Preflight unstyles it %>
       <%# per line: Ui::MediaObject — image, name (a link back), variant, unit price %>
       <%# quantity: labelled number input, "Update" reachable without JS %>
       <%# remove: an accessible name that NAMES THE ITEM — see below %>
@@ -608,7 +718,7 @@ claiming another flow qualifies; almost none do.
 ```erb
 <div class="center stack" style="--measure: 34rem">
   <%# brand mark only. No nav, no promotions, no newsletter — the shell is deliberately stripped %>
-  <ol class="cluster text-step--1" aria-label="Checkout progress">
+  <ol role="list" class="cluster text-step--1" aria-label="Checkout progress">
     <%# Contact → Delivery → Payment → Review. The Stepper contract, not a tablist — components.md %>
   </ol>
 
@@ -667,10 +777,11 @@ times."* Do not reach for the **Real-time Exception** — its example is an auct
 to the time limit is possible"*, which a reservation timer you chose the length of is not.
 
 **Money is `tabular-nums`; the order reference is `font-mono`.** They are different jobs and
-[brand.md](brand.md) scopes `--font-mono` to *reference numbers, SLA timers, code, timestamps* — not
-to money. `tabular-nums` is what makes a column of totals align in the interface face. Storage is the
-rails-8 skill's call, not this one: `ecosystem-gems.md` says store integer minor units
-(`price_cents`), so never round a float into a total you display.
+[brand.md](brand.md#money-is-tabular-nums-not---font-mono-91) scopes `--font-mono` to *reference
+numbers, SLA timers, code, timestamps* — not to money. `tabular-nums` is what makes a column of totals
+align in the interface face; that section carries the full rule, including the pack-font condition the
+utility silently depends on. Storage is the rails-8 skill's call, not this one: `ecosystem-gems.md`
+says store integer minor units (`price_cents`), so never round a float into a total you display.
 
 **The confirmation is the last step of this flow, not a toast.** Land on a real page with the order
 reference as text (`font-mono`), what was bought, what was charged, where it is going, and what
@@ -697,7 +808,7 @@ One order. Answers *"what did I buy, and where is it?"* The `Detail` anatomy wit
     <div class="cluster"><%# invoice download, reorder, support %></div>
   </header>
 
-  <ol class="stack" aria-label="Order progress">
+  <ol role="list" class="stack" aria-label="Order progress">
     <%# an ordered list because the sequence IS the meaning; the current step is marked in text %>
   </ol>
 
@@ -731,3 +842,137 @@ A list of records. Answers *"what have I bought?"*
 more often than not, and a horizontally scrolling table hides the total — the one column that matters.
 
 **An empty state names the action.** "No orders yet" plus a route to the storefront.
+
+## Plans — compare and switch
+
+The signed-in half of pricing. Answers *"what am I on, what else is there, and what changes if I
+move?"* Those are three questions the marketing [Pricing](#pricing) page never has to answer, because
+it has no current plan to compare against — which is why this is a separate anatomy and not a
+variant of that one.
+
+The grid itself is the
+[Plan comparison / feature matrix](components.md#plan-comparison--feature-matrix) entry; what this
+anatomy adds is **state** — which plan is current, what a change costs, and when it takes effect.
+
+```erb
+<div class="stack">
+  <header class="stack" style="--space: var(--space-2xs)">
+    <h1 class="text-step-3">Plan</h1>
+    <%# current plan, renewal date and seat count as TEXT — this page's first job is to say %>
+    <%# where the reader already stands, before offering anywhere else to go %>
+  </header>
+
+  <%# billing period: Ui::ButtonGroup kind: :select — a radiogroup, not styling. It changes the %>
+  <%# PRICES shown, so the price region carries role="status"; the toggle itself does not %>
+
+  <div class="grid-auto items-start" style="--min: 17rem">
+    <%# one Ui::Card per plan. The current plan says "Current plan" in text and its action is %>
+    <%# aria-disabled, not a no-op "Choose". The recommended plan carries a Ui::Badge %>
+  </div>
+
+  <%# the feature matrix below the cards — the cards are for choosing, the matrix for checking %>
+</div>
+```
+
+**Say where the reader already is, first.** A plan page that opens on a grid of options makes the
+customer hunt for their own row. Current plan, price, renewal date and seat count go above the grid
+as text.
+
+**The current plan is not a choice.** Mark it in text — a tint or a ring is the same colour-alone
+failure as any other status — and make its action `aria-disabled` rather than removing it, so the
+cards do not change shape between plans. A removed button also moves every other card's action to a
+different place on the page.
+
+**A change is a modal, not a second checkout.** Run it against the four conditions in
+[crud-modal-pattern.md](crud-modal-pattern.md#worked-negative-a-plan-change-is-a-modal-and-money-is-not-the-test)
+before reaching for a full-page flow: a plan change fails three of them. The exception is a change
+that must collect a **new** payment instrument, which hands off to
+[Checkout](#checkout--the-purchase-flow) because a provider iframe inside a focus trap is the failure
+the exception exists to avoid.
+
+**The confirmation states the money, the date, and the remainder — in that order.** "£X from today",
+"£X from the renewal date", and what happens to the period already paid for. Whether the arithmetic is
+proration, credit or neither is the app's billing rule, not this kit's — but the number the user will
+be charged must appear before they press, not after.
+
+**Which of these confirmations WCAG actually compels is worth being exact about.** **Cancelling** is
+inside 3.3.4 (Error Prevention — Legal, Financial, Data, **AA**) on its *"legal commitments or
+financial transactions"* clause, and that is a direct application of the trigger rather than a
+spec-named example. **A downgrade is not settled by the text**: it modifies user-controllable data,
+but the Understanding document narrows the SC away from *"the simple creation or editing of documents,
+records or other data"* and toward preventing *"mass loss of data"*, and a downgrade is neither a
+deletion nor irreversible. **So the downgrade confirmation is ours, not WCAG's** — we require it
+because the customer cannot otherwise see what they are giving up, which is a product argument and is
+stated as one. Do not cite 3.3.4 for it.
+
+**A downgrade removes things; name them.** List what stops working and what happens to data over the
+new limit. This is the one screen where the interface knows the consequence and the user does not.
+
+**Cancelling is not a plan card.** It is a separate, quieter control below the grid — a real
+destructive confirmation naming the date access ends, never an eighth card in the grid competing with
+the seven that take money.
+
+## Billing
+
+The account's money surface. Answers *"am I paid up, what am I paying with, and where are my
+invoices?"* Three regions, one page — this is the [Settings](#settings) anatomy with billing
+sections, not a new shell.
+
+```erb
+<div class="stack">
+  <h1 class="text-step-3">Billing</h1>
+
+  <%# 1. STATE — first, because a past-due account makes the rest of the page beside the point. %>
+  <%#    A past-due notice lives in the READING ORDER here, not behind role="alert" — see %>
+  <%#    components.md → Subscription state and dunning for why that distinction matters %>
+  <section class="box stack" aria-labelledby="subscription-heading">
+    <h2 id="subscription-heading" class="text-step-1">Subscription</h2>
+    <%# Ui::DescriptionList layout: :inline — plan, status (badge + text), renews on, seats %>
+  </section>
+
+  <%# 2. PAYMENT METHODS — components.md → Saved payment methods %>
+  <section class="box stack" aria-labelledby="methods-heading">
+    <h2 id="methods-heading" class="text-step-1">Payment methods</h2>
+  </section>
+
+  <%# 3. INVOICES — a Ui::Table on wide screens, Ui::Card stack on narrow, same as Order history %>
+  <section class="stack" aria-labelledby="invoices-heading">
+    <h2 id="invoices-heading" class="text-step-1">Invoices</h2>
+    <%# per row: number (a link, font-mono), date, amount (tabular-nums), status, download %>
+    <nav aria-label="Pagination">…</nav>
+  </section>
+</div>
+```
+
+**Order the page by urgency, not by tidiness.** State first, method second, history last. A customer
+opening this page in response to a failed-payment email is looking for one thing, and it is not the
+invoice archive.
+
+**Section per `box`, save per section** — inherited from [Settings](#settings), and it matters more
+here: one page-wide save over a payment method and a plan is a single button that could do two
+irreversible things.
+
+**Never a full card number, anywhere on this page.** Brand plus last four, from the provider's token
+— the full number should not be in your database to render. Full rule in
+[components.md](components.md#saved-payment-methods).
+
+**An empty invoice list is a real state.** A trial account has no invoices and that is not an error;
+`Ui::EmptyState` saying so beats an empty table with headers.
+
+## Invoice / statement
+
+**This is the [Detail](#detail) anatomy, and reaching for a fourth anatomy here would be the
+duplication this file exists to prevent.** One record, a breadcrumb, a header with the reference and
+a status badge, a description list, a table of line items. Three things differ, and only these three:
+
+**It is immutable, so there is no edit affordance.** An invoice is a record of something that already
+happened. The actions slot holds download, print and "pay now" — never "edit". A Detail screen whose
+actions slot opens a modal is the default; this is the one that must not.
+
+**The reference is `font-mono` and every amount is `tabular-nums`** — different jobs, and the split
+is [brand.md](brand.md)'s, not a preference. `INV-0142` is a reference number; `£1,204.00` is money.
+
+**Print is the same template, not a second design.** A receipt, a PDF and the screen are one view
+with `print:` variants — hide the app chrome, show the full URL of anything that was a link, and let
+the line-item table run to its natural length rather than paginating in CSS. Two templates drift, and
+the one nobody looks at is the one the customer forwards to their accounts department.

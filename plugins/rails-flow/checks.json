@@ -7,6 +7,9 @@
     "",
     "applies_when: every path must exist in the user's repo, or the check reports NOT APPLICABLE",
     "with that reason. An empty list means it always applies. Not-applicable is never a pass.",
+    "A path nothing writes is therefore a PERMANENT not-applicable -- a gate that cannot fail, and",
+    "indistinguishable from one that correctly found nothing to do. scripts/check_manifest_paths.py",
+    "reconciles every path below against the paths this plugin's own scripts and commands name (#423).",
     "requires: executables that must be on PATH. Missing is a FAILURE, not a skip -- in CI a skip",
     "is indistinguishable from a pass unless something asserts the dependency is there."
   ],
@@ -35,15 +38,15 @@
     {
       "id": "human-guide",
       "why": "A guide whose steps nobody can re-run is a sentiment.",
-      "command": ["python3", "{plugin}/scripts/check_guide.py", "{match:docs/guides/*.md}"],
-      "applies_when": ["docs/guides"],
+      "command": ["python3", "{plugin}/scripts/check_guide.py", "{match:docs/GUIDE.md}", "--decisions", "docs/brain/DECISIONS.md"],
+      "applies_when": ["docs/GUIDE.md"],
       "requires": ["python3"]
     },
     {
       "id": "architecture-graph-drift",
       "why": "The graph is regenerated at session end; a stale one describes an app that no longer exists.",
       "command": ["python3", "{plugin}/scripts/architecture_graph.py", "--check"],
-      "applies_when": ["app", "docs/architecture.md"],
+      "applies_when": ["app", "docs/architecture/graph.json"],
       "requires": ["python3"]
     }
   ]

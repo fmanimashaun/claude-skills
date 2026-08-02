@@ -1124,10 +1124,10 @@ is that nothing card-shaped reaches your DOM, params or logs; each of those undo
 </aside>
 ```
 
-**Money is `tabular-nums`; a reference is `font-mono`.** `--font-mono` is scoped by `brand.md` to
-reference numbers, timers, code and timestamps — an order number is one, a total is not. What a
-column of totals needs is figures of equal width, which is what `tabular-nums` gives in the interface
-face.
+**Money is `tabular-nums`; a reference is `font-mono`.** `--font-mono` is scoped by
+[brand.md](brand.md#money-is-tabular-nums-not---font-mono-91) to reference numbers, timers, code and
+timestamps — an order number is one, a total is not. What a column of totals needs is figures of equal
+width, which is what `tabular-nums` gives in the interface face.
 
 **The double-submit guard is server-side, and the button state is not it.** Turbo already disables the
 submitter for the duration of the submission, so you get that for free and it protects nothing a
@@ -1154,6 +1154,97 @@ end
 
 `status: :see_other` because Turbo *"expects the server to return an HTTP 303 redirect response"*
 after a form submission; a validation failure re-renders at **422** instead.
+
+## Plans and billing — markup, because the semantics are the component
+
+There is no `Ui::PlanMatrixComponent` and no `Ui::PaymentMethodListComponent`, and writing either
+would wrap native markup in Ruby without adding a decision. What goes wrong on these surfaces is the
+markup itself: header association, a glyph's accessible name, and which element a money-committing
+choice is made with.
+
+```erb
+<%# A PLAIN <table>. No role="table", no role="grid" -- the element already exposes both, and %>
+<%# hand-writing the roles is how you lose the ones you forgot (components.md -> Plan comparison). %>
+<table class="w-full text-step--1 text-left">
+  <caption class="sr-only">Plan comparison</caption>
+  <thead>
+    <tr>
+      <th scope="col">Feature</th>
+      <%# one per plan. scope="col" is sufficient while the header row is FLAT: add a header %>
+      <%# spanning two plan columns and this becomes headers/id (H43), not more scope. %>
+      <th scope="col">Starter</th>
+      <th scope="col">Team</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-border">
+    <tr>
+      <th scope="row" class="font-normal">Audit log</th>
+      <%# The glyph is decoration; the sr-only text carries the MEANING, never the shape. %>
+      <%# "check mark" is the shape and tells the reader nothing about the plan. %>
+      <td><span aria-hidden="true">✓</span><span class="sr-only">Included</span></td>
+      <td><span aria-hidden="true">—</span><span class="sr-only">Not included</span></td>
+    </tr>
+  </tbody>
+</table>
+```
+
+**The price region is the live region, not the period toggle.** Flipping monthly/annual changes
+numbers elsewhere on the page; put `role="status"` on the region holding them, exactly as the cart
+total does — polite and atomic in one attribute, so the announcement carries the label with the
+figure.
+
+```erb
+<%# The toggle is a radiogroup (Ui::ButtonGroup kind: :select). It reports; the prices announce. %>
+<p role="status" class="cluster justify-between">
+  <span>Team</span><span class="tabular-nums">£24.00 / user / month</span>
+</p>
+```
+
+**Choosing the default card is a form control, not a view switcher.** The `role="radiogroup"` Button
+group exists for switching what you are looking at; this changes which instrument gets charged, so it
+is a real `fieldset` of native radios.
+
+```erb
+<%# Native radios: no roving tabindex to write, no aria-checked to keep in sync, and the group %>
+<%# posts with the form. The brand mark is non-text content, so it carries its own name -- and %>
+<%# "ending 4242" is visible text, because "Card" is not a name when there are four of them. %>
+<%= simple_form_for @billing, url: default_payment_method_path do |f| %>
+  <fieldset class="stack divide-y divide-border">
+    <legend class="text-step--1 text-muted-foreground">Default payment method</legend>
+    <% @methods.each do |m| %>
+      <div class="cluster justify-between py-2">
+        <%= f.radio_button :default_method_id, m.id, class: "min-h-touch" %>
+        <%= f.label "default_method_id_#{m.id}", class: "cluster" do %>
+          <span class="with-icon" role="img" aria-label="<%= m.brand %>"><%# brand mark %></span>
+          <span>ending <%= m.last4 %></span>
+          <span class="text-step--1 text-muted-foreground">Expires <%= m.expiry %></span>
+        <% end %>
+        <%# Names the card, not the row: four icon-only buttons otherwise announce identically. %>
+        <%= button_to "Remove", payment_method_path(m), method: :delete,
+              form: { data: { turbo_frame: "modal" } },
+              aria: { label: "Remove #{m.brand} ending #{m.last4}" } %>
+      </div>
+    <% end %>
+  </fieldset>
+  <%= f.submit "Save" %>
+<% end %>
+```
+
+**A past-due notice that is already true at page load is ordinary content, not a live region.**
+
+```erb
+<%# NOT role="alert": APG says screen readers do not announce alerts present before load %>
+<%# completes, so an alert here is loud in the design and silent in a screen reader. A real %>
+<%# heading at the top of the reading order is what everyone actually reaches. %>
+<section class="box stack border-l-4 border-destructive" aria-labelledby="past-due">
+  <h2 id="past-due" class="text-step-1">We could not charge your card</h2>
+  <p><%# the amount, and the date access changes — both, or it is not a dunning notice %></p>
+  <%# exactly ONE primary control %>
+</section>
+```
+
+Use `role="alert"` for the other case — a retry that fails while the customer is watching — and stream
+it in, so the region's content genuinely changes after load.
 
 ## Call sites — the invocation for every documented component
 
@@ -1209,9 +1300,13 @@ Note the slot-setter names — `renders_many :items` gives the **singular** `wit
 <% end %>
 
 <%# Description list — `values` is an Array so one label can carry several <dd>s %>
+<%# `mono:` is for REFERENCES, `numeric:` for MONEY — the two are not interchangeable, and an %>
+<%# invoice summary is the row where both appear. Passing both on one value raises. %>
 <%= render Ui::DescriptionListComponent.new(layout: :inline) do |l| %>
   <% l.with_row(label: "Billing email", value: account.billing_email) %>
   <% l.with_row(label: "Tax IDs", values: account.tax_ids, mono: true) %>
+  <% l.with_row(label: "Invoice", value: invoice.reference, mono: true) %>
+  <% l.with_row(label: "Total", value: invoice.formatted_total, numeric: true) %>
 <% end %>
 
 <%# Button group — `kind:` picks the ELEMENT (group vs radiogroup), not a style %>
@@ -1379,7 +1474,8 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
     <%# ONE label per navigation landmark, and the word "navigation" is not in it — a screen %>
     <%# reader already says the role, so aria-label="Main navigation" reads twice.           %>
     <nav aria-label="Main" class="hidden md:block">
-      <ul class="cluster" style="--space: var(--space-3xs)">
+      <%# role="list" is not redundant: Preflight unstyles every list and WebKit then drops the role %>
+      <ul role="list" class="cluster" style="--space: var(--space-3xs)">
         <% items.each do |item| %>
           <li><%= link_to item[:label], item[:path],
                     "aria-current": ("page" if current_page?(item[:path])),
@@ -1406,7 +1502,7 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
   <%# Same label as the desktop nav on purpose — `hidden`/`md:hidden` means only one of the two  %>
   <%# is ever in the accessibility tree, so the page never has two navigation landmarks at once. %>
   <nav id="nav-mobile" aria-label="Main" class="md:hidden border-t border-border" hidden>
-    <ul class="stack shell py-2" style="--space: var(--space-3xs)">…</ul>
+    <ul role="list" class="stack shell py-2" style="--space: var(--space-3xs)">…</ul>
   </nav>
 </header>
 ```
@@ -1416,7 +1512,7 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
 <%# its size. Only the DEEPEST active item carries aria-current — ARIA says to mark one element  %>
 <%# in a set, and says nothing about an ancestor section, so marking both is our call to decline. %>
 <nav aria-label="Main" class="stack" style="--space: var(--space-3xs)">
-  <ul class="stack" style="--space: var(--space-3xs)">
+  <ul role="list" class="stack" style="--space: var(--space-3xs)">
     <% sections.each do |section| %>
       <li>
         <% if section[:children].present? %>
@@ -1431,7 +1527,7 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
             <%# link with no accessible name is an unnamed link, so it becomes sr-only, not gone. %>
             <span class="flex-1 text-left <%= "sr-only" if collapsed? %>"><%= section[:label] %></span>
           </button>
-          <ul id="nav-<%= section[:id] %>" class="stack ps-6" <%= "hidden" unless section[:open] %>>…</ul>
+          <ul role="list" id="nav-<%= section[:id] %>" class="stack ps-6" <%= "hidden" unless section[:open] %>>…</ul>
         <% else %>
           <%= link_to section[:path],
                 "aria-current": ("page" if current_page?(section[:path])),
@@ -1492,7 +1588,7 @@ def crumb_link_class = "min-h-touch inline-flex items-center hover:text-foregrou
 ```erb
 <%# breadcrumbs_component.html.erb — separators are markup + aria-hidden, never ::after %>
 <nav aria-label="Breadcrumb">
-  <ol class="cluster text-step--1 text-muted-foreground" style="--space: var(--space-3xs)">
+  <ol role="list" class="cluster text-step--1 text-muted-foreground" style="--space: var(--space-3xs)">
     <% head.each do |c| %>
       <li class="cluster" style="--space: var(--space-3xs)">
         <%= link_to c[:label], c[:href], class: crumb_link_class %>
@@ -1551,16 +1647,27 @@ module Ui
 
     class RowComponent < ViewComponent::Base
       # `values` is an Array so one label can carry several <dd>s — no list inside a <dd>.
-      def initialize(label:, values: nil, value: nil, mono: false)
+      #
+      # `mono:` and `numeric:` are DIFFERENT JOBS and the row that needs both is common:
+      # an invoice summary carries a reference (mono) and a total (numeric) side by side.
+      # brand.md scopes --font-mono to references/timers/code/timestamps, so money takes
+      # `tabular-nums` instead -- equal digit widths in the interface face, not a face swap.
+      # Passing both on one value is a contradiction rather than a combination, so it raises.
+      def initialize(label:, values: nil, value: nil, mono: false, numeric: false)
+        raise ArgumentError, "a value is a reference or a figure, not both" if mono && numeric
         @label = label
         @values = Array(values || value)
-        @mono = mono
+        @mono, @numeric = mono, numeric
       end
       attr_reader :label, :values
 
       # A blank <dd> reads as a rendering bug, so absence is stated.
       def blank? = @values.compact_blank.empty?
-      def value_class = "text-step-0 text-foreground#{' font-mono' if @mono}"
+
+      def value_class
+        ["text-step-0 text-foreground",
+         ("font-mono" if @mono), ("tabular-nums" if @numeric)].compact.join(" ")
+      end
     end
   end
 end
@@ -1653,6 +1760,84 @@ end
 </div>
 ```
 
+### Stacked list, grid list and feed — recipes, not components
+
+No components: each is shipped parts in a container, and a fourth ViewComponent would only wrap what
+`MediaObject`, `Card` and the primitives already do. The part worth copying exactly is `role="list"` —
+Preflight sets `list-style: none` on every `ol`/`ul`, and WebKit then drops the list role
+(see [components.md](components.md#list-semantics--preflight-unstyles-every-list-and-safari-then-reads-it-as-not-a-list)).
+
+```erb
+<%# Stacked list — rows own nothing; the container owns the separators %>
+<ul role="list" class="stack divide-y divide-border" style="--space: 0">
+  <% invoices.each do |invoice| %>
+    <li class="relative py-3 hover:bg-accent sm:py-4">
+      <%= render Ui::MediaObjectComponent.new(size: :md) do |m| %>
+        <% m.with_media { render Ui::AvatarComponent.new(src: nil, initials: invoice.initials) } %>
+        <% m.with_body do %>
+          <%# the ONE link: stretched over the row, so the accessible name is the title %>
+          <%= link_to invoice.number, invoice_path(invoice),
+                class: "font-medium after:absolute after:inset-0 " \
+                       "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30" %>
+          <p class="text-step--1 text-muted-foreground"><%= invoice.customer_name %></p>
+        <% end %>
+        <% m.with_trailing { render Ui::BadgeComponent.new(variant: :success) { invoice.state } } %>
+      <% end %>
+    </li>
+  <% end %>
+</ul>
+```
+
+```erb
+<%# Grid list — grid-auto on the <ul> itself. Never role="grid" (no roving tabindex here), and never
+    display:contents on the <li> to flatten cards into the grid: that resets the accessible role. %>
+<ul role="list" class="grid-auto" style="--min: 16rem">
+  <% projects.each do |project| %>
+    <li><%= render Ui::CardComponent.new do |c| %>
+      <% c.with_header { tag.h3(link_to(project.name, project_path(project)), class: "text-step-1") } %>
+      <%= project.summary %>
+    <% end %></li>
+  <% end %>
+</ul>
+```
+
+```erb
+<%# Static timeline — an <ol>, because the order is the meaning. The rail is ONE border on the
+    container; the dot sits over it. This is NOT role="feed" — nothing loads on scroll. %>
+<ol role="list" class="stack border-s border-border ps-6" style="--space: var(--space-s)">
+  <% events.each do |event| %>
+    <li class="relative">
+      <span aria-hidden="true"
+            class="absolute -start-[calc(1.5rem+3px)] top-1.5 size-1.5 rounded-full bg-border"></span>
+      <p class="text-step-0"><%= event.summary %></p>
+      <%# machine value on the attribute, human label as the text — ours, no WCAG rule governs this %>
+      <time datetime="<%= event.created_at.iso8601 %>" class="text-step--1 text-muted-foreground">
+        <%= time_ago_in_words(event.created_at) %> ago
+      </time>
+    </li>
+  <% end %>
+</ol>
+```
+
+```erb
+<%# Infinite-scroll feed — the APG pattern in full, and only when scrolling really loads more.
+    aria-busy goes true for the duration of a multi-step DOM update, not per row. %>
+<div role="feed" aria-labelledby="feed-title" aria-busy="<%= @loading %>"
+     <%# page_up/page_down are UNDERSCORED — Stimulus throws "contains unknown key filter" at %>
+     <%# event time on an unmapped name, so `page-down` fails on the first keystroke, not at boot %>
+     data-controller="feed" data-action="keydown.page_down->feed#next keydown.page_up->feed#previous">
+  <% @posts.each_with_index do |post, i| %>
+    <%# <article> already IS role="article"; APG names the role, the element supplies it %>
+    <article aria-labelledby="post-<%= post.id %>-title"
+             aria-describedby="post-<%= post.id %>-body"
+             aria-posinset="<%= i + 1 %>" aria-setsize="<%= @total || -1 %>" tabindex="-1">
+      <h3 id="post-<%= post.id %>-title"><%= post.title %></h3>
+      <div id="post-<%= post.id %>-body"><%= post.body %></div>
+    </article>
+  <% end %>
+</div>
+```
+
 ### Divider — a recipe, not a component
 
 No component: an `<hr>` is already `role="separator"`.
@@ -1672,7 +1857,7 @@ n elements, and no stray rule after the last row.
 
 **Coverage.** With Button + Card (reference-implementation.md) plus the above — including the
 structure & elements group (Heading, Breadcrumbs, Description list, Button group, Media object,
-and Divider as a recipe) — the full catalog
+and Divider plus the three list shapes as recipes) — the full catalog
 from [components.md](components.md) has worked code. Pagination stays the Pagy-based
 `shared/_pagination` partial; CRUD tables stay the `shared/_crud_*` partials — both refactored
 to role tokens (see components.md). Extend any new component by mirroring these exact shapes:

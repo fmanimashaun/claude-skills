@@ -7,6 +7,141 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 1.56.0 — 2026-08-02
+
+- **`scripts/check_page_pacing.py` — the pacing doctrine's numbers are measured, not asserted**
+  (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92)). *How a page is paced*
+  states a count taken from `coverage.md`, a band range, and a worked sequence whose entire point is
+  that consecutive bands differ. Each is a claim about the repo, and a claim in prose rots silently
+  — the `claims-vs-enforcement` class. Six rules, every one a **join** rather than a taste:
+  `identical-row-count` (the stated 14 re-measured against `coverage.md`), `band-count` (the table
+  against the range printed above it), `unknown-composition` (a band naming no `coverage.md` row),
+  `unknown-tone` (a tone naming no role in `foundations-tokens.md`'s `@theme inline`),
+  `tone-repeat` and `shape-repeat`. `--selftest`: 21 checks, weighted toward **silence** — a
+  checker that fires on our own shipped sequence is one somebody deletes. Registered as two gates
+  (`page pacing`, `page pacing selftest`) and behind **10 declared mutations**, one of which
+  inverts the tone rule so the silence direction is guarded too.
+  **This is deliberately not a design gate.** Nothing in it judges whether a band sequence is any
+  good; it refuses only a number or a name in shipped doctrine disagreeing with the repo — the same
+  shape as `check_shared_shapes.py` and `check_handoff.py`. `unknown-tone` resolves the vocabulary
+  through the token file rather than a hardcoded `{card, background}`, so the section's *"no new
+  token"* promise is enforced in the file that makes it instead of being another prose guarantee.
+- **DECISION — the selftest harness stays one copy per install root; it is not extracted and not
+  vendored** (#398). This is an **architecture/distribution decision**, not a framework claim, so
+  the authority is the maintainer decision recorded on
+  [#398](https://github.com/fmanimashaun/claude-skills/issues/398) rather than a `doctrine-verifier`
+  citation — and the numbers behind it are measured against the repo, not asserted. The reasoning
+  now lives in `skills/quality-pass/references/worked-example.md` so the next reader inherits it
+  instead of re-measuring, which was the issue's own acceptance criterion.
+  - **The boundary is `${CLAUDE_PLUGIN_ROOT}`, not file absence.** The marketplace is one git repo,
+    so an install may hold every plugin tree on disk; what a plugin is *given* is its own root. No
+    `.py` under `plugins/` resolves a path above its own plugin (`parents[2]` and higher: zero
+    occurrences), so the harness copies partition into four disjoint install roots and no module
+    reaches past the largest.
+  - **The arithmetic.** A shared harness must be an object (`check()` mutates closure state, the
+    reporter reads it): ~16 lines, and each caller nets 10. Across all four roots that is ~44 lines
+    out of 6,016 — under 1% — against 298 call sites to rewrite and 10 `mutation_check.py` guards
+    gaining a `deps=` entry over 81 declared mutations. Vendoring is worse still: a build step plus
+    a drift gate larger than the duplication it polices, turning twelve honest copies into four
+    that *claim* to be one.
+  - **What makes the copies acceptable is a shared control, not a shared module** —
+    `scripts/mutation_check.py` proves these selftests can fail. It covers ten of twelve;
+    `extract_claims.py` and `findings.py` ship a `--selftest` no guard mutates, named in the
+    write-up as a mutation-coverage gap rather than rounded away.
+- **NEW `reach` column in the gated shared-shapes table**, and it is the point of the change:
+  `files` says how much duplication exists, `reach` says how much of it a module could ever remove.
+  `check_shared_shapes.py` derives it as the largest single install root holding the shape, and
+  cross-checks that grouping against `marketplace.json` — if `plugins/<name>` ever stops being where
+  a plugin is installed from, the column would be counting a boundary nobody ships, and that now
+  fails rather than rots. Four new fixtures (a wrong reach with a right file count; a copy under an
+  undeclared plugin; two silence controls) and four new declared mutations, including one that
+  collapses the grouping without changing any file count. The corpus gained a second plugin so that
+  mutation is *distinguishable* — with one plugin, "grouped by plugin" and "all of `plugins/` as one
+  lump" give the same answer and the break would have been caught by a coincidental fixture.
+- **FIX — `run_baseline` was reporting five INERT guards and the sweep had been red since it
+  landed; 44 mutations were passing vacuously** (found while working #398, follows #422). #422 added
+  the control and fixed the one instance it was written for. The control immediately found four
+  more, plus a sixth defect that made its own selftest unpassable — *"when you find one instance,
+  grep for the pattern"*, from `code-review`, and nobody did.
+  - `check_handoff` — its `needs` **enumerated** ten agent files, and an eleventh (`claim-verifier`)
+    had shipped. Now the `agents` directory, exactly as #422 did for `references`.
+  - `validate_evidence` (24 mutations) — cross-checks every evidence contract against the agent
+    documenting it; `needs=("plugins/qa-flow/agents",)`.
+  - `maintainer_doctor` (7) — a fixture asserts every gate in `GATES` names a real script, and
+    `GATES` spans the whole toolchain, so the mutant needs it. Directories, not the ~50 paths
+    `GATES` names today. `dist` too, or the packaged-skill check SKIPs, and a skip in a staged
+    tempdir is indistinguishable from a pass.
+  - `project_gates` (3) — the scripts its three `checks.json` manifests name.
+  - `crawl_report` (3) — `crawl_collector.js`, which its three sibling qa-flow judges all declared
+    and it did not.
+  - `mutation_check --selftest` itself asserted every declared path `is_file()`, which **#422's own
+    directory-valued `needs` made false** — a gate that could not be satisfied by the feature it was
+    checking. Split: modules keep `is_file()`, `needs` gets `exists()`, and both directions are now
+    fixtures (a directory is accepted; an absent path is still reported), because relaxing an
+    assertion is how one stops asserting.
+- **FIX — the same stale-restated-number defect the 1.55.0 entry below claims to have fixed was
+  still live 70 lines further down the same file** (#398). The decision section said the harness had
+  "**nine** copies spanning **two** plugins" and that a module "reaches **four** of the nine"; the
+  gated table said twelve across three plugins plus tooling, with a reach of five. Three wrong
+  numbers in one sentence — and it is the sentence #398 was filed from, so the question was framed
+  against figures that had already moved. The 1.55.0 fix patched the instance three lines under the
+  table and did not grep for the pattern, which is the failure mode `code-review` names. Digits
+  gone; the sentence points at the table.
+- **FIX — `mutation_check`'s own selftest rejected the declaration #422 had just added.** Rule 6 asserts
+  every guard names paths that exist, and tested all four fields with `is_file()`. #422 deliberately gave
+  the `build_coverage` guard a **directory** (*"a directory, so a new reference doc is picked up rather
+  than quietly missing"*), so the commit that removed one vacuous guard left `dev`'s `mutation check` gate
+  failing. `subject` and `selftest` are scripts and still must be files; `deps` and `needs` are staged by
+  copying, so existence is the real rule for them — which still catches the typo the check exists for.
+  Found running the sweep on a clean `origin/dev`, not on a change.
+
+- **A `checks.json` path that no shipped tool produces is a build failure now, not a permanent
+  skip** (#423). `scripts/check_manifest_paths.py` reconciles every `applies_when` path and every
+  `{match:glob}` in every `plugins/*/checks.json` against the paths that plugin's own scripts,
+  commands, agents and hooks name. Registered in `GATES` as **`checks.json paths`** (the shipped
+  manifests) and **`checks.json paths selftest`** (the rules), for the reason the tell-detector's
+  entry already states: fixtures prove a rule fires and stays silent, only the bare run proves the
+  three manifests we actually ship are true. Its first run found **five** entries across **two**
+  plugins, which is the whole justification for it existing.
+  - **It closes a gap `project gates` could not see.** `project_gates.py --selftest` already asserts
+    every manifest entry names a real *script* and supplies a required subcommand. Nothing asserted
+    the entries name real *artefacts* — and that is the half where "not applicable" hides.
+  - **Prose does not count, and that is the whole design.** `qa/routes.json` was named four times in
+    qa-flow — in a docstring paragraph, in YAML frontmatter and twice in prose — while the file it
+    describes is `qa/reports/routes.json`. A corpus built from "anywhere the string appears" would
+    have read clean over the exact bug it exists for. So the corpus is built only from surfaces
+    something *runs*: Python string constants with docstrings excluded, JS literals with `//`
+    comments excluded, **fenced blocks only** in commands and agents, comment-stripped hook shell.
+    `*_selftest.py` is excluded too — a fixture path is not a shipped writer, and letting one vouch
+    for a phantom is how a test double validates a typo.
+  - **It states what it does not do.** It cannot prove a write happens: most of these artefacts are
+    written by an agent following a fenced command, and no static analysis reaches that. It proves
+    *agreement* — a manifest path that appears nowhere else in the plugin is either a typo or an
+    artefact nobody produces, and both are the same permanent skip. Saying so in the docstring is
+    the point; a checker overclaiming its own guarantee is the class it guards against.
+  - **Coverage is counted in both directions**, because "no findings" over nothing examined is the
+    vacuous pass this repo keeps hitting: a manifest declaring no paths is reported, and so is a
+    plugin whose surfaces name none — the second reported *instead of* failing every entry, since an
+    empty corpus is a defect in the scan, not in the manifest.
+  - **Six declared mutations in `mutation_check.py`**, one per rule and one per coverage counter,
+    each expecting its fixture's own label. The empty-corpus mutation **survived** the first run:
+    the obvious assertion looked for "no shipped script … names", wording the per-entry finding also
+    carries, so the fixture passed with the branch deleted. It now asserts on wording unique to that
+    branch. A coincidental catch is exactly what the `expects` field exists to refuse.
+  - The worked example's shared-shape counts move 12 → 13 and 10 → 11: the new checker uses the same
+    selftest harness and reporter every other script here uses, and it is not exempted from its own
+    measurement. `check_shared_shapes.py` re-derives both, so the number is measured, not restated.
+
+- **NOTE — five guards were INERT on `dev` (`check_handoff`, `validate_evidence`, `project_gates`,
+  `crawl_report`, `maintainer_doctor`), so 44 mutations proved nothing.** Fixed on `dev` by #429,
+  which carried no CHANGELOG entry, so the record is here. Found independently twice in one evening —
+  by #429 and by #423's branch, both by running the sweep on a clean `origin/dev` rather than on a
+  change — and both arrived at the same fix, so the merge simply takes #429's. Worth recording
+  because the cause was identical in all five and is now on its second week: **a hand-typed list of a
+  directory's contents goes quiet the first time the directory grows.** `run_baseline` (#422) is what
+  made it visible at all — without that control, a guard whose staging is incomplete is
+  indistinguishable from one whose fixtures all work. `needs` takes directories; use one.
+
 ### 1.55.0 — 2026-08-01
 
 - **`mutation coverage` outgrew the doctor's flat 180s timeout** (#129). The gate spawns one
@@ -1363,6 +1498,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.18.1 — 2026-08-02
+
+- **Two of rails-flow's five gates were permanent silent skips, for the same reason as qa-flow's**
+  (#423). Found by the reconciliation gate written for the qa-flow half, on its first run —
+  filing them instead of fixing them would have meant registering a gate that fails.
+  - **`human-guide` waited on `docs/guides/` and globbed `docs/guides/*.md`.** No such directory
+    exists anywhere in the toolchain: the artefact is a single file, `docs/GUIDE.md`, written by
+    `/rails-flow:explain` and named as such by `check_guide.py:4`, `doc-updater.md:42` and
+    `explain.md:163`. So `check_guide.py` — the whole of #126 — has never run in a user's repo. Now
+    `{match:docs/GUIDE.md}`, and it passes `--decisions docs/brain/DECISIONS.md` the way
+    `product-brief` already does, so the "cite the decision log, do not restate it" rule is actually
+    exercised rather than silently off.
+  - **`architecture-graph-drift` waited on `docs/architecture.md`.** `architecture_graph.py` writes
+    a *directory* — `docs/architecture/{graph.json,index.html,graph.md}` (`--out` default
+    `docs/architecture`), and its own drift message names `docs/architecture/graph.json`. Now
+    `applies_when: ["app", "docs/architecture/graph.json"]`, which is the artefact `--check`
+    compares.
+
 ### 1.18.0 — 2026-08-01
 
 - **A vague ask now becomes a buildable brief, and the brief is an index over its sources rather
@@ -2322,6 +2475,290 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.31.0 — 2026-08-02
+
+- **fidara-design: `page-anatomies.md` gains *How a page is paced*** (Refs [#92](https://github.com/fmanimashaun/claude-skills/issues/92),
+  the Phase-5 *template synthesis* issue — its shippable half only; see Repository hygiene for the
+  gate). The defect is **measurable in our own generated data**: **14** of the 16 marketing-section
+  rows in `references/coverage.md` carry a *byte-identical* `Build from` string (the two exceptions
+  are *Marketing header* and *Footer*). Every row is correct alone; followed literally they compose
+  fourteen identical centred stacks separated by equal whitespace — a page right in every part and
+  flat as a whole. The new section ships the missing layer: a **6–8 band** default sequence with
+  three axis columns (Tone · Columns · Width), and the rules that keep consecutive bands from
+  reading the same — tone alternates at every boundary, consecutive bands never share both Columns
+  and Width, edges come from tone rather than a `border-b`, a `card`-tone band carries no
+  `Ui::Card`, one primary *action* at most once per band, decoration in at most two non-adjacent
+  bands. It **composes only from rows that already exist** and introduces no new token, `@utility`,
+  `brand.json` field, archetype or framework syntax.
+  **Change type: design/architecture** — there is no specification for how many bands a marketing
+  page has or in what order, so `doctrine-verifier` would return INCONCLUSIVE for want of a source;
+  authority is the maintainer decision recorded on
+  [#92](https://github.com/fmanimashaun/claude-skills/issues/92#issuecomment-5152577804). Every
+  claim that *does* have a source is cited to the file carrying it (`foundations-tokens.md`
+  → *Elevation idiom*, `visual-assets.md` §8, `motion.md` §14, the *Settings* nested-card rule), and
+  the one number asserted about ourselves is **measured, not asserted** — see the gate below.
+- **The proposal's "exactly one axis moves per boundary" was rejected, and the reason is in the
+  section.** It **contradicts the tone rule outright**: if tone must change at every boundary and
+  only one axis may change, tone is the axis that changes every time, so Columns and Width never
+  change at all — the stricter-sounding rule *is* the flat page. The shipped rule is a floor rather
+  than an equality: never share **both** Columns and Width, which is exactly what the 14 identical
+  rows break, and which a script can decide.
+- **`Landing` now says it is the spine of that sequence, not a second answer.** Its four sections
+  are bands 1, 2, 5 and 7, so the two are one doctrine rather than two that drift.
+- **`fidara-design` — plans/pricing and billing, the second slice of the commerce family** (#91).
+  Two page anatomies (**Plans — compare and switch**, **Billing**) plus **Invoice / statement**, which
+  is deliberately *not* a fourth anatomy: it is the shipped `Detail` anatomy with the only three
+  differences named (immutable, so no edit affordance; the money/reference type split; print is the
+  same template). Four catalogue entries — **Plan comparison / feature matrix**, **Seat / quantity
+  selector**, **Saved payment methods**, **Subscription state and dunning** — plus worked markup for
+  the matrix, the default-method radio group and the past-due notice.
+  Externally verifiable claims, each cited at the version in scope:
+  WCAG 2.2 [1.1.1 (A)](https://www.w3.org/TR/WCAG22/#non-text-content) with the
+  [non-text-content definition](https://www.w3.org/TR/WCAG22/#dfn-non-text-content),
+  [1.3.1 (A)](https://www.w3.org/TR/WCAG22/#info-and-relationships) via
+  [H63](https://www.w3.org/WAI/WCAG22/Techniques/html/H63) /
+  [H43](https://www.w3.org/WAI/WCAG22/Techniques/html/H43) /
+  [H39](https://www.w3.org/WAI/WCAG22/Techniques/html/H39),
+  [1.4.1 (A)](https://www.w3.org/TR/WCAG22/#use-of-color),
+  [1.4.10 (AA)](https://www.w3.org/TR/WCAG22/#reflow),
+  [3.2.2 (A)](https://www.w3.org/TR/WCAG22/#on-input),
+  [3.3.4 (AA)](https://www.w3.org/TR/WCAG22/#error-prevention-legal-financial-data);
+  [ARIA 1.2 `aria-sort`](https://www.w3.org/TR/wai-aria-1.2/#aria-sort);
+  APG [Table](https://www.w3.org/WAI/ARIA/apg/patterns/table/),
+  [Grid](https://www.w3.org/WAI/ARIA/apg/patterns/grid/) and
+  [Alert](https://www.w3.org/WAI/ARIA/apg/patterns/alert/);
+  [ARIA in HTML](https://www.w3.org/TR/html-aria/) for `input type=number` → `spinbutton`;
+  WHATWG HTML for the [`type=number` note](https://html.spec.whatwg.org/multipage/input.html#number-state-(type=number)),
+  the underflow/overflow/step-mismatch validity states, `<caption>` and
+  [`download`](https://html.spec.whatwg.org/multipage/links.html#downloading-resources);
+  **PCI DSS v4.0.1 (June 2024) Requirement 3.4.1** quoted from the standard itself for PAN masking,
+  with the scope condition stated rather than assumed — a tokenised merchant is outside it only
+  because no code path touches a raw PAN, not because the requirement exempts them.
+- **A source conflict recorded instead of resolved by fiat** (#91). Whether `role="alert"` is
+  announced for a banner already present at page load has **no normative answer**: ARIA 1.2 (the
+  Recommendation) is silent on load timing, [ARIA 1.3](https://www.w3.org/TR/wai-aria-1.3/) is a
+  *Working Draft* and says an alert is announced *"when the alert is rendered on the page"*, while
+  [APG](https://www.w3.org/WAI/ARIA/apg/patterns/alert/) reports the measured opposite — *"at this
+  time, screen readers do not inform users of alerts that are present on the page before page load
+  completes."* Doctrine states the disagreement and then decides: a state true at load goes in the
+  reading order, `role="alert"` is reserved for a change during the session. No MUST is claimed in
+  either direction.
+- **`type="number"` for a seat count is a decision between two live sources, and both are named**
+  (#91). The HTML Standard's spinbox test leaves quantities in — its own `min`/`max` example is
+  `<input name="quantity" … type="number" min="1">` — while the **GOV.UK Design System** currently
+  says *"Do not use `<input type="number">` unless your user research shows that there's a need for
+  it"*, with no carve-out for incrementable numbers, citing the wheel-scroll hazard. That hazard is
+  real and unspecified: an [open WHATWG issue](https://github.com/whatwg/html/issues/10911), and
+  **Firefox disabled the behaviour by default in 130**
+  ([bug 1741469](https://bugzilla.mozilla.org/show_bug.cgi?id=1741469)). The entry picks
+  `type="number"`, says why, and marks `inputmode="numeric"` a legitimate Project Override — rather
+  than citing one source and omitting the other.
+- **The money-typography question the checkout slice escalated is now settled, at the source** (#91).
+  `brand.md` gains **Money is `tabular-nums`, not `--font-mono`**: the ruling stands, and it is now
+  backed by mechanism rather than by a scope list. `tabular-nums` maps to the OpenType `tnum` feature
+  ([CSS Fonts 3 §tabular-nums](https://www.w3.org/TR/css-fonts-3/#tabular-nums), W3C Recommendation
+  2018-09-20; [CSS Fonts 4](https://www.w3.org/TR/css-fonts-4/#valdef-font-variant-numeric-tabular-nums)
+  repeats it verbatim), and the spec **forbids synthesis** when a font lacks it — *"no attempt is made
+  to synthesize the feature except where explicitly defined for specific properties"*
+  ([§feature-precedence](https://www.w3.org/TR/css-fonts-3/#feature-precedence)), and
+  `font-variant-numeric` is not among the exempt properties. So the rule carries a **pack-font
+  condition**: measured against the font binaries, Bricolage Grotesque implements `tnum` functionally;
+  Newsreader and Overpass Mono register it inertly, being tabular already. `brand_pack_lint.py` cannot
+  check this — a pack declares a family *name*, not a *binary* — so overriding `fonts.sans` is the one
+  override carrying a manual check, and doctrine says so rather than implying a gate exists.
+  **Change type: design/architecture** for the choice itself (no W3C or WHATWG document takes a
+  position on monospace versus tabular figures for currency); authority is the maintainer decision on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91).
+- **`components.md` → Description list contradicted that ruling, and the shipped component could not
+  obey it** (#91). The entry said *"money and identifiers in `font-mono`"* while `page-anatomies.md`
+  and `component-implementations.md` already said money is `tabular-nums` — a `doctrine-contradiction`
+  inside one skill, which an agent building an invoice row would have resolved the wrong way. Fixed at
+  both ends: the entry now names two options, and `Ui::DescriptionListComponent::RowComponent` gains
+  `numeric:` beside `mono:` (passing both raises), because the ruling was previously unimplementable in
+  the component the ruling is about — `claims-vs-enforcement` on our own doctrine.
+- **A plan change is a modal, and `crud-modal-pattern.md` now says so with the reasoning** (#91). The
+  checkout exception's four conditions are run against a plan change as a worked negative: it fails
+  three, so it is ordinary CRUD on a subscription record. The one case that flips it — a change that
+  must collect a *new* payment instrument — hands off to Checkout, because a provider iframe inside a
+  focus trap is the failure the exception exists to avoid. Written down because "money ⇒ full page" is
+  the reasonable wrong reading of the exception, and it would produce a new full-page flow every
+  release. **Change type: design/architecture**; authority is the maintainer decision on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91).
+- **Five negatives recorded so they are not reinvented** (#91). (a) **1.4.10 Reflow explicitly permits
+  horizontally scrolling a data table** — its Note 2 names *"data tables (not individual cells) … It is
+  acceptable to provide two-dimensional scrolling for such parts of the content"* — so our card-stack
+  preference is ergonomics and must never be cited as conformance. (b) **No spec requires any markup on
+  a currency amount**: WCAG 2.2 does not contain the word "currency", and neither `<data>` nor `<bdi>`
+  carries a currency example in the HTML Standard. (c) **Stating "(PDF, 240 KB)" on a download link is
+  not a WCAG requirement at any level and not a technique for 2.4.4 either, sufficient or advisory**;
+  G201, usually cited for it, is about opening new windows. (d) **A plan downgrade is not settled by
+  3.3.4's text** — the Understanding document narrows the SC away from *"the simple creation or editing
+  of … records"* — so our downgrade confirmation is recorded as a product decision, while cancelling
+  and deleting a stored payment method remain squarely inside the criterion. (e) The `✓`-needs-a-name
+  rule follows from WCAG's *definition* of non-text content — *"or where the sequence is not expressing
+  something in human language"* — and is stated that way, because WCAG's note names ASCII art,
+  emoticons and leetspeak, not symbol glyphs. The #142 discipline throughout: cite what the source
+  says, not what it is taken to say.
+- **Not done in this slice, and deliberately** (#91): no rows were added to
+  `scripts/build_coverage.py`'s `ENTRIES` for the four new catalogue entries and three anatomies.
+  `coverage.md` and `docs/coverage.html` can only be regenerated with the licensed corpora attached,
+  and committing an `ENTRIES` change without regenerating them would leave a stale matrix that fails
+  the drift gate on the next maintainer's machine — the exact "damage still landed elsewhere" shape
+  CLAUDE.md records for the corpora exemption. The rows and their evidence strings are listed on
+  [#91](https://github.com/fmanimashaun/claude-skills/issues/91) for a corpora-attached follow-up.
+
+- **The generated-layout tree listed `test/` in the file that mandates `--skip-test` fifty lines
+  above it** (#395). §1 of `project-setup.md` says the framework's test scaffolding "must never be
+  generated"; §2's tree then listed `test/` as part of what a generated app contains, so an agent
+  reading the tree as the map of a scaffolded app believed a directory §1 guarantees is absent.
+  Verified: `--skip-test` skips `build(:test)` outright, so none of `test/test_helper.rb`,
+  `test/fixtures/files/`, `test/controllers/`, `test/mailers/`, `test/models/`, `test/helpers/` or
+  `test/integration/` is written, and `capybara`/`selenium-webdriver` leave the `Gemfile` with it
+  ([`app_generator.rb`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/app_generator.rb)
+  `create_test_files`,
+  [`Gemfile.tt`](https://github.com/rails/rails/blob/8-1-stable/railties/lib/rails/generators/rails/app/templates/Gemfile.tt),
+  both gated on `depends_on_system_test?`; fetched 2026-08-01). **The row was also wrong on its own
+  terms, before `--skip-test` is considered**: `def test` creates no `test/jobs/`, and `test/system/`
+  + `test/application_system_test_case.rb` are written only when `--devcontainer` is *also* passed
+  (`build(:system_test)` is called unconditionally but its body is `if devcontainer? &&
+  depends_on_system_test?`). So the row is gone rather than corrected, and the note replacing it says
+  what is absent, what takes its place (`spec/`, from `rspec:install`), the two consequences already
+  documented elsewhere, and — because a deletion invites a restoration — not to add it back from
+  memory. Version boundary: Rails **8.1** (`8-1-stable`, = 8.1.3.1); the flag's behaviour is not new
+  in 8.1, the contradiction was with our own doctrine.
+- **The issue's stated consequence for mailer previews was REFUTED, and the real defect is a
+  different one** (#395). The report reasoned that previews at `test/mailers/previews/` would leave
+  `/rails/mailers` "silently empty" because rspec-rails does not change `preview_paths`. Both halves
+  are wrong, and the corrected doctrine had to be written from the sources rather than from the
+  issue. (a) Rails' railtie adds its default as a **union** — `options.preview_paths |=
+  ["#{Rails.root}/test/mailers/previews"]` — so that path is in the search list whether or not the
+  directory exists, and a preview hand-written there *does* render
+  ([`railtie.rb`](https://github.com/rails/rails/blob/8-1-stable/actionmailer/lib/action_mailer/railtie.rb)).
+  (b) rspec-rails **does** set the path: its `rspec_rails.action_mailer` initializer runs `before:
+  "action_mailer.set_configs"` and appends `"#{Rails.root}/spec/mailers/previews"`, and
+  `rails g mailer` writes the preview file there
+  ([`rspec-rails.rb`](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec-rails.rb),
+  [`mailer_generator.rb`](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/generators/rspec/mailer/mailer_generator.rb)).
+  So the harm was not an empty page but doctrine naming a directory the mandated scaffold does not
+  create — telling an agent to hand-build the `test/` tree §1 promises will not exist, in a second
+  location from where the generator on line 14 of the same file actually writes. `mail-storage-richtext.md`
+  §1 now states `spec/mailers/previews/` with the mechanism behind it.
+- **`config_default_preview_path` guards on `.empty?`, so *appending* a preview path also drops the
+  `spec/` default** (found while verifying #395). Not in the report, and the non-obvious half: because
+  rspec-rails only supplies its default *"unless `options.preview_paths.empty?`"*, any app-level touch
+  of the setting — `<<` included, not just assignment — suppresses `spec/mailers/previews` silently.
+  The guidance therefore names both paths in the worked example rather than showing the guides' bare
+  append. Assignment is called out separately as unable to *remove* Rails' `test/` entry, since the
+  railtie unions it back afterwards. Also recorded: `show_previews` defaults to
+  `Rails.env.development?`, and `preview_path` **singular** is not a Rails 8 setting — deprecated in
+  **7.1**, removed in **7.2**
+  ([Action Mailer CHANGELOG](https://github.com/rails/rails/blob/v7.2.0/actionmailer/CHANGELOG.md)).
+  Change type: framework claim, CONFIRMED verdict; sources above fetched 2026-08-01.
+- **fidara-design: the list family is documented — Stacked list, Grid list, Activity feed / Timeline**
+  (Refs #95, the Phase-2 umbrella's *Lists + data display* group). All three were `derivable` rows whose
+  entire guidance was one **Build from** cell (*"Media object rows inside a `divide-y` container"*), while
+  the group's acceptance criterion asks for variant × size × state, an a11y contract and responsive rules.
+  `coverage.md` **69 → 72 `documented`**, 44 → 41 derivable. Verified against
+  [APG Patterns index](https://www.w3.org/WAI/ARIA/apg/patterns/) (still **30**, re-counted),
+  [Feed](https://www.w3.org/WAI/ARIA/apg/patterns/feed/), [`feed`](https://www.w3.org/TR/wai-aria-1.2/#feed),
+  [Grid](https://www.w3.org/WAI/ARIA/apg/patterns/grid/), [Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/),
+  ARIA 1.2 [`list`](https://www.w3.org/TR/wai-aria-1.2/#list) / [`listitem`](https://www.w3.org/TR/wai-aria-1.2/#listitem),
+  and WCAG 2.2 [1.3.1](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html) (A) and
+  [2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) (AA).
+- **Three ARIA patterns are near-misses for a list of records and every one of them is wrong — stated
+  with the quote that rules it out.** **Listbox**: *"it does not provide an accessible way to present a
+  list of interactive elements, such as links, buttons, or checkboxes"*, which is what a record row is.
+  **Grid**: *"A grid is a composite widget so it: Always contains multiple focusable elements … Requires
+  the author to provide code that manages focus movement inside it"* — a wall of cards has no roving
+  tabindex, so `role="grid"` announces a keyboard model that does not exist. **Feed**: scoped to
+  *"a dynamic list of articles that often appears to scroll infinitely"*, so a fixed-length history is
+  not one. Plain `list`/`listitem` is the answer, and *"Authors **MUST** ensure elements whose role is
+  listitem are contained in, or owned by, an element whose role is list"*.
+- **FIX — every list this kit ships loses its list semantics in Safari, and two things we already
+  ship are what cause it.** Tailwind v4's Preflight sets `ol, ul, menu { list-style: none }`
+  ([Preflight](https://tailwindcss.com/docs/preflight)), and WebKit then drops the role **on purpose** —
+  *"This was a purposeful change due to rampant 'list'-itis by web developers… If you want to override
+  the heuristic, you can add `role=list`"* ([WebKit 170179](https://bugs.webkit.org/show_bug.cgi?id=170179),
+  resolved as a duplicate of 134187, unretracted through the tracker's last activity in January 2023 and
+  still reproducing in independent testing on Safari 15.6–17). Tailwind's **own** docs carry the fix
+  verbatim — *"Unstyled lists are not announced as lists by VoiceOver… add a `list` role to the element"* —
+  which is the citation used, because it is first-party to the framework we ship. The criterion is
+  **1.3.1 Info and Relationships (Level A)**, and the markup passes its technique **H48** while the
+  accessibility tree does not, so nothing in the HTML looks wrong.
+  - **Nine shipped markup sites and six prose rules were emitting bare lists** and now carry
+    `role="list"`: the cart lines, the checkout and order-progress `<ol>`s, the mobile card-stack
+    fallback, the navbar / mobile-nav / rail / nested-section lists, the Breadcrumbs `<ol>`, and the prose
+    prescribing a bare `<ul>` or `<ol>` for the rail, the Stepper, the avatar group, the Breadcrumbs row
+    and the mega-menu columns (twice). Found by grepping the pattern rather than fixing the one
+    instance, per CLAUDE.md.
+  - **A claim I expected to make was REFUTED, and shipping it would have misdirected people.**
+    `display: flex` / `display: grid` **on the list element itself** does *not* break list semantics in
+    current Safari, Chrome or Firefox — so `stack`, `cluster` and `grid-auto` on a `<ul>` are all safe.
+    The real hazard is `display: contents` used to flatten a `<ul>` wrapper so its `<li>`s become grid
+    items, which resets the accessible role; MDN's answer is `subgrid`
+    ([Grid layout and accessibility](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout/Accessibility)).
+    The broader claim is written down as the thing *not* to believe.
+- **The feed entry states which document binds, because APG and core ARIA disagree in strength.** APG
+  states `aria-posinset`/`aria-setsize` flatly; ARIA 1.2 says authors **MAY**. We bind to the APG pattern
+  and say so. Two negatives are recorded the #142 way: **`aria-level` is not part of the Feed pattern**
+  (it is a `listitem` property, and it appears nowhere in the pattern), and **`role="feed"` takes no
+  `role="list"`** — `feed` is a subclass of `list` whose required owned elements are `article`.
+- **Three claims are OURS and say so, because the gate found no upstream** (design decisions under
+  CLAUDE.md's *What the gate covers* carve-out, recorded on
+  [#95](https://github.com/fmanimashaun/claude-skills/issues/95)): (1) applying Tailwind's `<ul>`-shaped
+  callout to `<ol>` as well; (2) the one-stretched-link-per-row rule, and the corollary that a row with a
+  second control must not use it, because the overlay covers its siblings; (3) `<time datetime>` with a
+  relative label — **no WCAG criterion governs relative versus absolute time, and none mandates `<time>`**.
+  Likewise **no success criterion requires `aria-posinset`/`aria-setsize`** outside the feed pattern, so
+  the entry scopes them to virtualised lists rather than implying an obligation.
+- **FIX — the Media object entry carried its `a11y` bullet twice**, with the decorative-`alt` rule stated
+  in both and the responsive rule buried inside the first. Merged; the `Responsive:` bullet now holds the
+  responsive rule, like every other entry in the file.
+- **FIX — `coverage.md`'s derivable section said something stronger than it meant, and was already false.**
+  *"No dedicated catalogue entry, and none needed"* — while Command palette, a derivable row, has had a
+  `components.md` section since #229. The distinction the file actually draws is **anatomy**, not the
+  existence of a section, so it now says that and names the exception instead of contradicting it.
+- **FIX — `Chat bubble`'s `Build from` re-spelled the Stacked list's composition** instead of pointing at
+  it, so it went stale the moment that row was promoted. Same defect the promoted-row guard exists for,
+  in the half it does not cover (`derivable` rows).
+- **FIX — `fidara-design/SKILL.md` advertised "~16 catalog components"; the catalog holds well over twice
+  that.** Replaced with a pointer to `coverage.md`, which a script regenerates — a count restated in prose
+  beside a generated one is a second copy with no arbiter, which is how it drifted.
+- **`coverage.md` told agents the Command palette had no catalogue entry, and one had shipped
+  since #95** (#89). The row printed under *"Derivable — No dedicated catalogue entry, and none
+  needed"* while `components.md` carried `## Command palette`, so the matrix routed readers past
+  a written entry and gave them a shorter Build-from line in its place — losing the rules only the
+  entry states (no APG pattern covers a command palette; `aria-haspopup="grid"` is needed once the
+  result rows carry icon + label + shortcut). The row is now `documented` with its own evidence
+  string, taking the matrix to **73 documented / 40 derivable / 0 needs doctrine**.
+  **Change type: design/architecture** for the guidance state — it is a claim about our own
+  doctrine, so it is measured against the repo and made re-checkable by the guard below rather
+  than asserted.
+- **The guard that could not have caught it, added** (#89). `verify_shipped_evidence` only ever
+  read this module's own tables: `documented` ⇒ evidence present, and not-`documented` ⇒ no
+  evidence key. Neither looks at the docs for a row that claims nothing, so a row whose entry
+  exists while the matrix denies it was invisible — the one-way `carve-out-without-negative-test`
+  shape that `verify_interaction_claims` was given both directions to avoid in #399, still sitting
+  in the older and larger half. `verify_no_undeclared_entry` closes it, over both catalogue files
+  (`components.md` **and** `forms.md`, which is where half the form controls are catalogued), with
+  six fixtures and three mutations. Two near-miss fixtures pin the match to exact-or-separator in
+  **both** prefix directions, because the way this guard fails is by becoming a false-positive
+  machine somebody then deletes.
+- **A REFUTED APG attribution in `components.md`'s Command palette entry** (#89). It read *"the
+  'dialog popups move DOM focus' rule applies to opening the modal, not to the filtered list
+  inside it"*, merging two separate provisions into one rule APG does not state. The Combobox
+  pattern's *"Unlike other combobox popups, dialogs do not support `aria-activedescendant` so DOM
+  focus moves into the dialog from the combobox"* is scoped to a combobox whose **own popup** is a
+  dialog (the Date-Picker-Combobox shape) and never reaches a palette, whose popup is a listbox or
+  grid; the outer shell's focus-on-open is the separate Dialog (Modal) rule, *"When a dialog opens,
+  focus moves to an element inside the dialog"*. Both now cited apart.
+  https://www.w3.org/WAI/ARIA/apg/patterns/combobox/ ·
+  https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/ (verified 2026-08-01).
+  The entry's other external claims were re-verified and stand: the APG Patterns index carries
+  **30** patterns and none is a command palette (https://www.w3.org/WAI/ARIA/apg/patterns/,
+  counted from the page rather than read off a summary), and `grid` is a valid `aria-haspopup`
+  token in ARIA 1.2 (https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup).
 
 ### 1.30.0 — 2026-08-01
 
@@ -4312,6 +4749,46 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## qa-flow (independent QA plugin)
 
+### 1.21.1 — 2026-08-02
+
+- **Gates in `checks.json` pointed at paths nothing writes, so the validators #114–#120 shipped
+  never ran in a user's repo** (#423). `project_gates.py`'s `applicability()` answers an absent
+  `applies_when` path — and `expand()` an empty `{match:}` glob — with a *reason string*, never a
+  failure. So a gate aimed at a directory nothing produces is **indistinguishable from a gate that
+  correctly found nothing to do**, permanently. That is `gate-that-cannot-fail`, sitting in the
+  manifest that registers the gates.
+  - **`route-coverage` could neither fire nor pass, and both halves were real.** It waited on
+    `qa/routes.json` while `route_coverage.py:377,381` default to `qa/reports/routes.json` and
+    `commands/verify.md:47` writes there — nothing in the plugin produces the file it waited on.
+    Fixing only the path would have turned a silent skip into an **unconditional red build**: the
+    command passed no `--evidence`, so `visited_paths([])` returns `{}`, every route is a gap and
+    `--fail-on-untested` returns 1 regardless of how much QA a project has done. Measured on a
+    one-route fixture with one validated functional CSV — without `--evidence`: `0/1 (0%)`, exit 1;
+    with `--evidence qa/manual-tests --evidence qa/reports`: `1/1 (100%)`, exit 0. Both halves moved
+    together, and `--fail-on-untested` is kept: it is what makes this a gate rather than a print,
+    and with the evidence dirs supplied its verdict is now about the repo instead of about the flag.
+  - **`qa-evidence-manifest` could never fire.** It globbed `qa/manual-tests/manifest.json`;
+    `evidence_manifest.py:147` derives the manifest beside its own append-only log, at
+    `qa/reports/<run>/manifest.json`. Now `{match:qa/reports/*/manifest.json}`, `applies_when`
+    `qa/reports`. #120's validator is finally run by the gate named for it.
+  - **`qa-evidence` was NOT broken — the report was wrong about that one, and about the numbers.**
+    The functional summary and runtime CSVs genuinely land in `qa/manual-tests/`, so the glob fires.
+    What it has is a **coverage gap**, not a phantom path: `validate_evidence.py` carries **eight**
+    profiles and that glob reaches **two**. The other six — a11y, keyboard, forms, emulation, perf,
+    findings — are written to `qa/reports/`. (The report said seven profiles and five missed.) A new
+    `qa-evidence-reports` check globs `{match:qa/reports/*.csv}` so the #114 sampling denominator,
+    the #115 "no verdict on a state nobody triggered" rule and the #118 dedupe guarantee are
+    enforced by the gate rather than when an agent remembers its own bash block.
+  - **Two directories are kept, deliberately, against the issue's suggestion to consolidate.** They
+    mean different things — `qa/manual-tests/` is the browser workspace, `qa/reports/` is where
+    structured report artefacts land — and `route_coverage.py:7` has documented reading both since
+    it shipped. Consolidating would rewrite five agents' evidence contracts and break every existing
+    QA workspace to fix a manifest. The manifest is aligned to the writers instead, which is what
+    the reconciliation gate below can then hold true.
+  - **The prose that misled the manifest is fixed too**, because that class travels in groups:
+    `link_audit.py:13` and `commands/crawl.md:3,39,75` all named `qa/routes.json`, a file
+    `route_coverage.py enumerate` has never written.
+
 ### 1.21.0 — 2026-08-01
 
 - **Broken links and missing assets are caught now** (#108, epic item E — *"classic, cheap,
@@ -6252,6 +6729,39 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.56.0)
+
+> ### A release about gates that were green over things they could not see
+>
+> Three checkers here reported clean while structurally unable to read what they guard. None was
+> red. That is the harder failure to notice, and each was found by a control rather than by review.
+
+- **Five of twenty-eight mutation guards were INERT** — `validate_evidence`, `maintainer_doctor`,
+  `project_gates`, `crawl_report`, `check_handoff`. Each one's **unmutated** selftest already failed
+  in the staged tempdir, so every mutation beneath it read as "caught" by that breakage rather than
+  by the fixture it names. `validate_evidence` alone had 24 proving nothing. That is the harness
+  which validates every other gate in this repo, and it was green. Now **318 mutations, 0 inert.**
+- **The cause was hand-listed files rotting.** `check_handoff` staged ten rails-flow agents by name;
+  v1.52.0 added an eleventh, so the mutant lacked an agent its own tier table names. Fixed by
+  declaring directories. `maintainer_doctor` took **three rounds** — `scripts`, then `plugins`, then
+  `evals` — because an inert guard hides every later missing path behind the first.
+- **The shared-shapes gate was green over two tables it could not read.** A merge unioned a
+  3-column form with a 4-column one; `ROW` needs two adjacent digit columns, so every stale row was
+  skipped **silently**. Measured: `dev`'s own gate, in a `dev` checkout, printed *"matches the
+  repo"* over a block holding two tables. A multi-table block is now a hard error.
+- **Five `checks.json` gates waited on paths nothing writes** (#423) — permanently "not applicable",
+  never run in a user's repo. That included `human-guide`, so `check_guide.py` — the whole of #126 —
+  had never executed for anyone. `check_manifest_paths.py` now reconciles every declared path
+  against what each plugin's own scripts write.
+- **The coverage matrix said Command palette had no catalogue entry, and one had shipped** (#95) —
+  agents were routed past written doctrine to a one-line summary.
+- **#398 answered "no."** The selftest harness stays one copy per install root: no module reaches
+  more than 5 of 12 copies, the saving is under 1% of the file set against 298 call sites, and what
+  makes the copies acceptable is a shared **control** — the mutation checker — not a shared module.
+- New page-pacing doctrine (#92), the list family and plans/billing (#95, #91), money typography
+  settled at its source, and the generated-layout `test/` contradiction fixed (#395).
+- Gate sweep **56 → 60**.
 
 ### 2026-08-01 (release v1.55.0)
 

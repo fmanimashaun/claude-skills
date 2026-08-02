@@ -288,6 +288,12 @@ GUARDS: tuple[Guard, ...] = (
         name="build_coverage",
         subject="scripts/build_coverage.py",
         selftest="scripts/build_coverage_selftest.py",
+        # The selftest's evidence guards read every doc under `references/` -- `verify_shipped_
+        # evidence` and `verify_interaction_claims` both resolve it from the SUBJECT's location, so
+        # a staged mutant with no `references/` made the unmutated selftest exit 1 and every
+        # mutation vacuously "caught". A directory, so a new reference doc is picked up rather than
+        # quietly missing. `run_baseline` is what now proves this is sufficient.
+        needs=("skills/fidara-design/references",),
         mutations=(
             Mutation(
                 "the totality guard stops naming unclassified corpus entries",
@@ -302,7 +308,13 @@ GUARDS: tuple[Guard, ...] = (
                 "        | (set(BUILD) & {e.name for e in ENTRIES if e.is_documented})\n"
                 "    )",
                 "    stale = []",
-                "still carrying a BUILD fallback",
+                # The FIXTURE's label, not the guard's message. With `stale = []` the guard never
+                # emits its message at all, so `expect_error` reports "expected BuildError, mapping
+                # was accepted" under this label -- and the old `expects` ("still carrying a BUILD
+                # fallback", one word off the label's "its") matched nothing. It only ever passed
+                # because the whole selftest was failing for want of the reference docs; the
+                # baseline control above is what made it visible.
+                "a documented row still carrying its BUILD fallback",
             ),
             Mutation(
                 "the stale-fallback guard keys on the NAME instead of the status",
@@ -326,6 +338,72 @@ GUARDS: tuple[Guard, ...] = (
                 "    if needs:\n",
                 "    if True:\n",
                 "yet the Tracked table header was still emitted",
+            ),
+            # `verify_interaction_claims` shipped in #399 with selftest fixtures and no mutations,
+            # which is the gap this block closes: a fixture proves a guard fires TODAY, a mutation
+            # proves the fixture would notice if the guard stopped firing. Both DIRECTIONS get one,
+            # because the guard's whole point is that a one-way rule would have caught none of the
+            # four stale rows it was written for -- and a mutation on only the `shipped` half would
+            # reproduce that blind spot in the meta-check.
+            Mutation(
+                "the interaction guard stops flagging a `planned` row whose contract HAS landed",
+                "        elif status.strip() != \"shipped\" and present:",
+                "        elif False:",
+                "the contract landed and the status was never flipped",
+            ),
+            Mutation(
+                "the interaction guard stops flagging a `shipped` row with no doc behind it",
+                "        if status.strip() == \"shipped\" and not present:",
+                "        if False:",
+                "does not appear in any reference doc",
+            ),
+            Mutation(
+                "one document is allowed to vouch for two different interaction patterns",
+                "        if probe in seen:",
+                "        if False:",
+                "share the probe",
+            ),
+            # `verify_no_undeclared_entry` (#89) is the negative direction the component half
+            # never had. Both of its halves get a mutation for the same reason the interaction
+            # guard's do -- and the second is the more important one here, because the way this
+            # guard fails is not by going quiet but by becoming a false-positive machine that
+            # someone then deletes.
+            # Each `expects` is the FIXTURE's own label, never the guard's message -- with the
+            # guard neutered it emits no message at all, so matching on it would match nothing
+            # and every mutation would read as caught-by-something-else (#422).
+            Mutation(
+                "a `derivable` row is allowed to have a catalogue entry again",
+                "        if entry.is_documented:\n            continue",
+                "        if True:\n            continue",
+                "a `derivable` row whose catalogue entry exists must be caught",
+            ),
+            Mutation(
+                "the catalogue match widens to a substring, convicting correct rows",
+                "            if title.casefold() == entry.name.casefold() or re.match(\n"
+                "                re.escape(entry.name) + r\"\\s*[—–\\-(]\", title, re.I\n"
+                "            ):",
+                "            if entry.name.casefold() in title.casefold():",
+                "must not convict a row named",
+            ),
+            # forms.md is the second catalogue file, and dropping it is silent: nothing else in
+            # the run reads it, so without this the tuple could shrink to one file and the guard
+            # would keep passing while blind to the whole forms family.
+            Mutation(
+                "the guard stops reading forms.md, blinding it to the forms family",
+                'CATALOGUE_FILES = ("components.md", "forms.md")',
+                'CATALOGUE_FILES = ("components.md",)',
+                "forms.md is a catalogue file too",
+            ),
+            # `verify_cell_text` likewise. The interaction half is mutated rather than the ENTRIES
+            # half because that is the loop the near-miss was found in: the note that nearly shipped
+            # a broken table was an interaction note.
+            Mutation(
+                "the pipe guard stops reading interaction notes, so a `|` splits the row again",
+                "    for name, status, note, _probe in INTERACTION_PATTERNS:\n"
+                "        scan(f\"interaction pattern {name!r}\", name, status, note)",
+                "    for name, status, note, _probe in ():\n"
+                "        scan(f\"interaction pattern {name!r}\", name, status, note)",
+                "a `|` inside an interaction note was not flagged",
             ),
         ),
     ),
@@ -376,6 +454,8 @@ GUARDS: tuple[Guard, ...] = (
         name="validate_evidence",
         subject="plugins/qa-flow/scripts/validate_evidence.py",
         selftest="plugins/qa-flow/scripts/validate_evidence_selftest.py",
+        # `plugins/qa-flow`: its selftest reads profile/agent files across the plugin.
+        needs=("plugins/qa-flow",),
         mutations=(
             Mutation(
                 "a Pass on a non-2xx/3xx page is accepted (the #106 defect)",
@@ -1164,7 +1244,16 @@ GUARDS: tuple[Guard, ...] = (
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
         selftest="scripts/maintainer_doctor_selftest.py",
-        needs=(".gitignore",),
+        needs=(
+            # + `scripts`: GATES names ~55 sibling scripts; listing them by hand is the same rot that made check_handoff inert.
+            ".gitignore",
+            "scripts",
+            # ...and `plugins`, because GATES names checkers in BOTH trees. Reaching this second
+            # missing path only after fixing the first is the point of `run_baseline`: an inert
+            # guard hides every downstream problem behind the first one.
+            "plugins",
+            "evals",
+        ),
         mutations=(
             Mutation(
                 "an unignored corpora path stops being reported",
@@ -1272,8 +1361,12 @@ GUARDS: tuple[Guard, ...] = (
         name="project_gates",
         subject="plugins/rails-flow/scripts/project_gates.py",
         selftest="plugins/rails-flow/scripts/project_gates.py",
-        needs=("plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
-               "plugins/design-flow/checks.json"),
+        needs=(
+            # + `plugins`: its selftest resolves every script each checks.json names, across all three plugins.
+            "plugins/rails-flow/checks.json", "plugins/qa-flow/checks.json",
+               "plugins/design-flow/checks.json",
+            "plugins",
+        ),
         mutations=(
             Mutation(
                 "a not-applicable check is counted as a pass",
@@ -1301,6 +1394,8 @@ GUARDS: tuple[Guard, ...] = (
         name="crawl_report",
         subject="plugins/qa-flow/scripts/crawl_report.py",
         selftest="plugins/qa-flow/scripts/crawl_report.py",
+        # `plugins/qa-flow/scripts/crawl_collector.js`: its selftest asserts the collector ships beside the judge.
+        needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
             Mutation(
                 "the 200-but-error rule stops firing",
@@ -1506,7 +1601,7 @@ GUARDS: tuple[Guard, ...] = (
         mutations=(
             Mutation(
                 "the count comparison stops comparing, so a stale number passes",
-                "        if rows[shape.label] != len(hits):",
+                "        if want_files != len(hits):",
                 "        if False:",
                 "a wrong count in the table is DRIFT",
             ),
@@ -1549,6 +1644,118 @@ GUARDS: tuple[Guard, ...] = (
                 'ROOTS = ("plugins", "scripts")',
                 "ROOTS = ()",
                 "the source walk finds the corpus files",
+            ),
+            # #398. `reach` is a second, independent claim per row: how many copies share one
+            # install root, which is the ceiling on what extracting the shape could remove. The
+            # file count can be right while it is wrong, so it needs its own mutation.
+            Mutation(
+                "the reach comparison stops comparing, so a stale ceiling passes",
+                "        if want_reach != got_reach:",
+                "        if False:",
+                "a wrong reach in the table is DRIFT",
+            ),
+            # The grouping, not the comparison. A `unit()` that answers the same thing for every
+            # path makes reach == files everywhere: each row stays internally consistent and the
+            # column silently stops meaning "one install root".
+            Mutation(
+                "every path groups into one install root, so reach collapses into the file count",
+                '    if parts[0] == "plugins" and len(parts) > 1:',
+                "    if False:",
+                "every declared shape is measured at its known count and reach in the corpus",
+            ),
+            Mutation(
+                "a plugin directory the manifest never installs stops being reported",
+                "    return sorted(u for u in seen if u.startswith(\"plugins/\") and u not in roots)",
+                "    return []",
+                "a copy under an undeclared plugin directory is reported",
+            ),
+            # Both directions of the manifest read. Returning an empty set instead of raising
+            # would make every measured plugin undeclared -- a rule that fires on everything is a
+            # rule that gets switched off, which is the same defect as one that never fires.
+            Mutation(
+                "an unparseable manifest yields no roots instead of refusing to guess",
+                "        raise Unreadable(f\"{MANIFEST}: not readable as JSON ({exc}), so no install root is known \"\n"
+                "                         \"and `reach` would be grouping by a boundary nothing confirms\") from exc",
+                "        return set()",
+                "an unparseable manifest returned instead of raising",
+            ),
+        ),
+    ),
+    # #92 (Phase 5). Same argument as `check_shared_shapes` above, one skill along: every mutation
+    # here makes a STALE CLAIM read as a fresh one. Two are structural rather than per-rule — the
+    # corpus walk going vacuous, and the measurement widening from "marketing rows" to "all of
+    # them" — because a gate whose INPUT quietly changed reports clean exactly like a gate over a
+    # correct repo. The last one breaks the checker the other way, so the silence direction has a
+    # mutation too: a pacing gate that fires on our own shipped sequence is a gate someone deletes.
+    Guard(
+        name="check_page_pacing",
+        subject="scripts/check_page_pacing.py",
+        selftest="scripts/check_page_pacing.py",   # --selftest lives in the module itself
+        mutations=(
+            Mutation(
+                "the measured row count stops being compared, so a stale 14 passes",
+                "    if measured != pacing.identical_rows:",
+                "    if False:",
+                "a wrong identical-row count is reported",
+            ),
+            Mutation(
+                "the band range stops bounding the table that prints it",
+                "    if not pacing.band_min <= len(pacing.bands) <= pacing.band_max:",
+                "    if False:",
+                "a band count outside the stated range is reported",
+            ),
+            Mutation(
+                "a band may compose from a row that does not exist",
+                "        if band.composed not in names:",
+                "        if False:",
+                "a band naming no coverage row is reported",
+            ),
+            Mutation(
+                "the tone vocabulary stops being joined to the token file",
+                "        if band.tone not in roles:",
+                "        if False:",
+                "a tone naming no role is reported",
+            ),
+            Mutation(
+                "tone may stop alternating, so bands lose their edges",
+                "        if prev.tone == nxt.tone:",
+                "        if False:",
+                "two consecutive bands on one tone are reported",
+            ),
+            Mutation(
+                "consecutive bands may share a shape — the fourteen-stacks defect itself",
+                "        if prev.shape == nxt.shape:",
+                "        if False:",
+                "two consecutive bands of the same shape are reported",
+            ),
+            # The corpus guard. With headers and separators counted as components, the join is over
+            # rows that are not rows, and a name could match a table heading.
+            Mutation(
+                "the coverage walk stops skipping headers, so the join runs over non-rows",
+                '        if cells[1] in {"Kind", "---"}:',
+                "        if False:",
+                "the coverage walk finds both tables' component rows",
+            ),
+            # The measurement guard. Counting every marketing row instead of the largest identical
+            # group answers a different question, and it drifts in the direction that looks right.
+            Mutation(
+                "the identical-string measurement widens to every marketing row",
+                "    return max(counts.values())",
+                "    return len(marketing)",
+                "the identical-Build-from count is measured over marketing rows only",
+            ),
+            Mutation(
+                "a marked block with no bands parses instead of raising",
+                "    if not bands:",
+                "    if False:",
+                "a marked block with no band rows parsed instead of raising",
+            ),
+            # The silence direction: inverted, the rule fires on the shipped sequence.
+            Mutation(
+                "the tone rule inverts and demands two consecutive bands share a tone",
+                "        if prev.tone == nxt.tone:",
+                "        if prev.tone != nxt.tone:",
+                "a correct section is silent",
             ),
         ),
     ),
@@ -2155,19 +2362,21 @@ GUARDS: tuple[Guard, ...] = (
         # Read, not imported. The selftest's last checks run the REAL tier table against the REAL
         # agents and FAIL rather than skip when absent -- so the mutant needs them, or every
         # mutation reports as "caught by the wrong fixture" and the real signal is buried.
+        #
+        # The agents are named as a DIRECTORY, for the reason build_coverage's `references` is: the
+        # eleven files were hand-typed, `claim-verifier.md` was added later and never appended, and
+        # the staged mutant therefore reconciled a full tier table against ten agents -- reporting
+        # the row for the missing one as stale. `run_baseline` (#422) surfaced it as INERT the day
+        # it landed. A hand-typed list of a directory's contents goes quiet the first time the
+        # directory grows, which is the coverage-gap class inside the harness built to catch it.
         needs=(
             "plugins/rails-flow/reference/model-tiers.md",
             "plugins/rails-flow/commands/handoff.md",
-            "plugins/rails-flow/agents/claude-skills-reporter.md",
-            "plugins/rails-flow/agents/code-reviewer.md",
-            "plugins/rails-flow/agents/design-auditor.md",
-            "plugins/rails-flow/agents/doc-updater.md",
-            "plugins/rails-flow/agents/migration-writer.md",
-            "plugins/rails-flow/agents/pr-reviewer.md",
-            "plugins/rails-flow/agents/rails-developer.md",
-            "plugins/rails-flow/agents/security-auditor.md",
-            "plugins/rails-flow/agents/skill-curator.md",
-            "plugins/rails-flow/agents/test-runner.md",
+            # The DIRECTORY, not ten hand-listed agent files. The list omitted
+            # `claim-verifier.md` when v1.52.0 added it, so the staged mutant lacked an agent the
+            # tier table names -- and `check_handoff` correctly reported a stale row on its own
+            # UNMUTATED baseline. Every mutation then read as "caught" by that, proving nothing.
+            "plugins/rails-flow/agents",
         ),
         mutations=(
             Mutation(
@@ -2478,11 +2687,83 @@ GUARDS: tuple[Guard, ...] = (
            ),
        ),
    ),
+    Guard(
+        name="check_manifest_paths",
+        subject="scripts/check_manifest_paths.py",
+        selftest="scripts/check_manifest_paths.py",   # --selftest lives in the module itself
+        # No `needs`: every fixture builds its own synthetic plugin in a tempdir. A fixture reaching
+        # for the real `plugins/` tree would die here on a missing corpus and read as a caught
+        # mutation, when a crash is not a verdict.
+        mutations=(
+            Mutation(
+                "agreement becomes unconditional, so no manifest path is ever phantom",
+                '    return named.startswith(entry + "/")   '
+                "# the manifest waits on a directory written into",
+                "    return True",
+                "a phantom applies_when path is reported",
+            ),
+            Mutation(
+                "prose leaks into the corpus, so a path mentioned in a sentence vouches for itself",
+                '            out.append((path, [fenced(path.read_text(encoding="utf-8"))]))',
+                '            out.append((path, [path.read_text(encoding="utf-8")]))',
+                "a path named only in prose does not count as agreement",
+            ),
+            Mutation(
+                "docstrings leak in, which is the exact shape that hid `qa/routes.json`",
+                "            and id(n) not in docstrings]",
+                "            ]",
+                "a path named only in a docstring does not count as agreement",
+            ),
+            Mutation(
+                "a bare `dir/*` writer starts vouching for every child name anyone invents",
+                '                    while token.endswith("/*") or token.endswith("/**"):',
+                "                    while False:",
+                "a bare `dir/*` writer does not vouch for an invented child",
+            ),
+            # The two coverage counters. A rule reporting "no findings" over nothing examined is
+            # the vacuous pass this repo keeps hitting, so each half is mutated separately —
+            # one guard for both would let either go quiet behind the other.
+            Mutation(
+                "a manifest declaring no paths stops being reported",
+                "    if not entries:",
+                "    if False:",
+                "a manifest declaring no paths is reported, not passed",
+            ),
+            Mutation(
+                "an empty corpus stops being reported, so a broken scan reads as a clean manifest",
+                "    if not corpus:",
+                "    if False:",
+                "a plugin whose surfaces name no paths is reported",
+            ),
+        ),
+    ),
 )
 
 
+def stage(guard: Guard, workdir: Path) -> Path:
+    """Copy subject + selftest + deps + needs into `workdir`, UNMUTATED. Returns the entry point.
+
+    Mirrors the repo layout rather than flattening, so `parents[1]`-relative reads still work.
+    """
+    for relative in {guard.subject, guard.selftest, *guard.deps}:
+        target = workdir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((REPO / relative).read_text(encoding="utf-8"), encoding="utf-8")
+    for relative in guard.needs:
+        source, target = REPO / relative, workdir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # A whole directory, not just a file: `build_coverage_selftest` reads EVERY doc under
+        # `references/`, and naming the 19 of them here would go quiet the day a 20th is added --
+        # the coverage-gap class, in the harness that exists to catch it.
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        else:
+            shutil.copyfile(source, target)
+    return workdir / guard.selftest
+
+
 def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
-    """Copy subject + selftest + deps into `workdir`, with the mutation applied.
+    """Stage the guard into `workdir`, with the mutation applied to the subject.
 
     Raises if the anchor is absent or non-unique: a mutation that did not apply produces a mutant
     identical to the original, which passes and reads exactly like a caught mutation.
@@ -2499,17 +2780,44 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
     if mutated == source:
         raise RuntimeError(f"{guard.name} / {mutation.name}: replacement changed nothing")
 
-    # Mirror the repo layout rather than flattening, so `parents[1]`-relative reads still work.
-    for relative in {guard.subject, guard.selftest, *guard.deps}:
-        target = workdir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text((REPO / relative).read_text(encoding="utf-8"), encoding="utf-8")
-    for relative in guard.needs:
-        target = workdir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(REPO / relative, target)
+    entry = stage(guard, workdir)
     (workdir / guard.subject).write_text(mutated, encoding="utf-8")
-    return workdir / guard.selftest
+    return entry
+
+
+def run_baseline(guard: Guard) -> list[str]:
+    """The control: the UNMUTATED selftest must PASS in the same staged tempdir.
+
+    Without this, `run_guard`'s "returncode != 0 means caught" reads a guard that cannot pass at
+    all as a guard that catches everything. That is not hypothetical -- it was true of
+    `build_coverage` for as long as its selftest read the reference docs, which are not part of
+    the subject: the staged mutant had no `references/`, the unmutated selftest already exited 1,
+    and all of its mutations were therefore "caught" without the mutation doing anything. A
+    gate-that-cannot-fail inside the meta-gate whose whole job is proving gates can fail.
+
+    Run once per guard rather than once per mutation: staging is identical, and the cost is one
+    selftest run against N.
+    """
+    workdir = Path(tempfile.mkdtemp(prefix=f"mutbase-{guard.name}-"))
+    try:
+        entry = stage(guard, workdir)
+        argv = [sys.executable, str(entry)]
+        if guard.selftest == guard.subject:
+            argv.append("--selftest")
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            return [
+                f"{guard.name}: INERT — the UNMUTATED selftest already fails in the staged "
+                f"tempdir (exit {result.returncode}), so every mutation below is 'caught' whether "
+                "or not it breaks anything. Add what it reads to the guard's `needs`.\n"
+                + "\n".join(f"      {line}" for line in
+                            (result.stdout + result.stderr).strip().splitlines()[-6:])
+            ]
+    except subprocess.TimeoutExpired:
+        return [f"{guard.name}: the unmutated baseline timed out"]
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    return []
 
 
 def run_guard(guard: Guard) -> list[str]:
@@ -2523,7 +2831,10 @@ def run_guard(guard: Guard) -> list[str]:
     ~7% on a machine that was running other agents' sweeps at the same time. An unmeasurable
     speedup is not worth adding concurrency to the checker every other gate is judged by.
     """
-    problems: list[str] = []
+    # The baseline runs the UNMUTATED selftest first. Without it a guard whose staged copy is
+    # missing a dependency fails for that reason alone, and every mutation then reads as "caught"
+    # by the breakage rather than by a fixture -- which is exactly what `build_coverage` was doing.
+    problems: list[str] = run_baseline(guard)
     for mutation in guard.mutations:
         workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
         try:

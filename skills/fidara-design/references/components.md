@@ -330,7 +330,7 @@ DEFAULTS = { variant: :primary, size: :md }
   longer valid. A hover menu that closes when the pointer crosses a 4px gap fails *hoverable*, and it
   is the most common way this is got wrong.
 - Panel `bg-popover text-popover-foreground rounded-md border border-border shadow-md`, laid out with
-  `grid-auto`; columns are a `<ul>` each with a heading. Behavior: the **disclosure** mixin
+  `grid-auto`; columns are a `<ul role="list">` each with a heading. Behavior: the **disclosure** mixin
   (`aria-expanded` + dismissable-layer), **not** the `dropdown` controller.
 
 **Three things here are ours, and are labelled as ours rather than cited:**
@@ -339,7 +339,7 @@ DEFAULTS = { variant: :primary, size: :md }
   close after ~240ms, so a pointer crossing the nav does not flash every panel — a convention, not a
   requirement. Hover is an *enhancement*: the button must work on click and on `Enter`/`Space` first.
 - **Column grouping.** APG's examples are single-column and say nothing about columns, `role="group"`,
-  or headings. A heading element per column followed by a plain `<ul>` is enough; do not invent
+  or headings. A heading element per column followed by a plain `<ul role="list">` is enough; do not invent
   `aria-labelledby` group semantics and attribute them to APG. And **do not announce column or item
   counts** — no guidance exists for it, and it is noise.
 - **What it becomes on a small viewport.** No upstream at all. Ours: the mega menu collapses into the
@@ -384,8 +384,16 @@ DEFAULTS = { variant: :primary, size: :md }
   documented `Modal` for the shell, the documented `Combobox` above for the filter and results.
 - **`aria-activedescendant` is effectively mandatory here**, even though both focus models are
   generally allowed: the input must keep focus for typing to filter, so moving DOM focus into the
-  results list would break typing. The "dialog popups move DOM focus" rule applies to *opening the
-  modal*, not to the filtered list inside it.
+  results list would break typing. The required-vs-optional breakdown is in
+  [interaction-stimulus.md](interaction-stimulus.md#combobox--the-two-corrections-that-matter-and-a-version-trap-229).
+- **Two different "focus moves into the dialog" rules meet here, and they are not one rule.** The
+  Combobox pattern's — *"Unlike other combobox popups, dialogs do not support
+  `aria-activedescendant` so DOM focus moves into the dialog from the combobox"* — is about a
+  combobox whose **own popup** carries `role="dialog"`, which is the Date-Picker-Combobox shape.
+  A palette's popup is a listbox or a grid, so that rule never reaches it at all. The outer shell
+  moving focus inward when it opens is the **separate** Dialog (Modal) rule, *"When a dialog opens,
+  focus moves to an element inside the dialog"*, already carried by the Modal entry above. Citing
+  the first to explain the second asserts a combined rule APG does not state.
 - Trigger is a global shortcut (`⌘K` / `Ctrl+K`), so there is no persistently visible field to hang
   `aria-haspopup="dialog"` on — that shape belongs to a Date-Picker-style field that expands, not to
   a palette.
@@ -506,9 +514,11 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   traps focus, the persistent rail is a `<nav>` and must not.
 - **Landmark and label** per [the rules above](#the-nav-landmark--the-naming-rules-every-navigation-region-here-follows):
   `<nav aria-label="Main">`, one label, no "navigation" in it.
-- **A `<ul>` inside, and that is ours.** Nothing upstream requires a list — ARIA calls a navigation
-  landmark *"a collection of navigational elements (usually links)"* and stops there. We use `<ul>` so
-  the rail announces its size, which is most of what a rail buys over scattered links.
+- **A `<ul role="list">` inside, and that is ours.** Nothing upstream requires a list — ARIA calls a
+  navigation landmark *"a collection of navigational elements (usually links)"* and stops there. We use
+  `<ul>` so the rail announces its size, which is most of what a rail buys over scattered links — and the
+  explicit role is what keeps that true once Preflight unstyles it, per
+  [List semantics](#list-semantics--preflight-unstyles-every-list-and-safari-then-reads-it-as-not-a-list).
 - **`aria-current="page"` on exactly one element** — ARIA: *"Authors SHOULD only mark one element in a
   set of elements as current with aria-current."* **Mark the deepest active item and nothing else.**
   Whether an ancestor *section* may also carry it is a question **ARIA does not answer** — we looked,
@@ -568,7 +578,7 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **Behavior:** the `tabs` controller on the **list-navigation** mixin.
 
 ## Breadcrumbs
-- `<nav aria-label="Breadcrumb">` → `<ol class="cluster">` of items at `text-step--1
+- `<nav aria-label="Breadcrumb">` → `<ol role="list" class="cluster">` of items at `text-step--1
   text-muted-foreground`; the **current page is the last item, `aria-current="page"`, not a link**,
   and takes `text-foreground`. Separators are decorative (Lucide `chevron-right`, `aria-hidden="true"`)
   and live in the markup, never as a CSS `::after` — a screen reader should hear "Invoices, INV-042",
@@ -595,13 +605,179 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   tokens + components. `<table class="w-full text-step--1 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.
 - **Responsive:** wrap in `overflow-x-auto` (horizontal scroll). For dense data on small screens prefer a
-  **card-stack** fallback (`hidden md:table` + a `md:hidden` list of `box`/`stack` rows) — pick per table and
-  state it; don't leave scroll as the only mobile story.
+  **card-stack** fallback (`hidden md:table` + a `md:hidden` [Stacked list](#stacked-list)) — pick per table
+  and state it; don't leave scroll as the only mobile story.
+
+## Stacked list
+- **The dominant list idiom, and it introduces no new component:** `<ul role="list">` of `<li>` rows, each a
+  [Media object](#media-object), with `divide-y divide-border` on the container so the container owns the
+  separators (never an `<hr>` between rows — see [Divider](#divider)). Reach for it for any index of records
+  that is not tabular: inboxes, member lists, invoices on a phone, search results.
+- **Three plausible ARIA patterns are all the wrong one, and picking any of them makes the list worse.**
+  The APG index lists 30 patterns and none is a list of records; the near misses fail for stated reasons:
+  - **Listbox** is for selectable options, and APG rules it out in terms that describe this row exactly:
+    *"if an option contains a semantic element, such as a heading, screen reader users will not have access
+    to the semantics … Because of these traits of the listbox widget, it does not provide an accessible way
+    to present a list of interactive elements, such as links, buttons, or checkboxes."*
+    ([Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/))
+  - **Grid** is a composite widget — see [Grid list](#grid-list) for the quote — so it promises arrow-key
+    navigation this list does not have.
+  - **Feed** is scoped to content that loads as you scroll; see
+    [Activity feed / Timeline](#activity-feed--timeline).
+  So the roles are the plain ones: ARIA 1.2 `list` + `listitem`, where *"Authors **MUST** ensure elements
+  whose role is listitem are contained in, or owned by, an element whose role is list"*
+  ([`listitem`](https://www.w3.org/TR/wai-aria-1.2/#listitem)). Native `<ul>`/`<li>` gives you both — as long
+  as you keep them, which is what the next section is about.
+- **Variants:** `plain` (rows on the page background) · `card` (the whole list inside a `Ui::Card`, so the
+  border and `rounded-lg` come from the Card, not from the list) · `separated` (each row its own Card in a
+  `stack` — no `divide-y`, because the gap is the separator). **Sizes** are the Media object's `sm/md/lg`;
+  the list adds only row padding (`py-3 sm:py-4`). **States** live on the row: `hover:bg-accent`,
+  `focus-visible` ring, `aria-current="true"` for the selected row in a list/detail pane, `aria-disabled`.
+- **A clickable row is ONE link, and this is where the pattern usually breaks.** Ours: wrap the row's title
+  in the `<a>` and stretch it over the row (`relative` on the `<li>`, `after:absolute after:inset-0` on the
+  link), so the accessible name is the title rather than "link" repeated n times. **The stretched overlay
+  covers every sibling**, so a row that also needs a button or a second link must not use it — give that row
+  an ordinary title link and put the actions in the Media object's `trailing` slot.
+- **2.5.8 Target Size (Minimum) is AA and the row itself will pass; the kebab inside it is what fails.** A row
+  with normal padding clears 24 × 24 CSS px easily. An icon-only overflow button in the `trailing` slot does
+  not, unless it takes `min-h-touch` or clears the **Spacing** exception — *"Undersized targets … are
+  positioned so that if a 24 CSS pixel diameter circle is centered on the bounding box of each, the circles
+  do not intersect another target"*
+  ([2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)). The **Inline** exception
+  does not apply: a list row is a block target, not a word in a sentence.
+- **The zero-row branch is [Empty state](#empty-state), not an empty `<ul>`** — required, like every index.
+- **Responsive:** none needed. The row is a Media object, which *never stacks*; the container is a `stack`,
+  which needs no breakpoint. What changes on a phone is what you put in `trailing` — one thing, or nothing.
+
+### List semantics — Preflight unstyles every list, and Safari then reads it as "not a list"
+
+**Every `<ul>` and `<ol>` in this kit carries an explicit `role="list"`.** That looks redundant and is not,
+because two things we already ship combine to remove the semantics:
+
+- **Tailwind v4's Preflight resets them.** *"Ordered and unordered lists are unstyled by default, with no
+  bullets or numbers"* — `ol, ul, menu { list-style: none; }`
+  ([Preflight](https://tailwindcss.com/docs/preflight)). Every list in the kit is in that state, since we
+  never re-add markers.
+- **WebKit then drops the list role, deliberately.** It is not a bug awaiting a fix: *"This was a purposeful
+  change due to rampant 'list'-itis by web developers… If you want to override the heuristic, you can add
+  `role=list`"* ([WebKit 170179](https://bugs.webkit.org/show_bug.cgi?id=170179), resolved as a duplicate of
+  134187, unretracted through the tracker's last activity in January 2023 and still reproducing in
+  independent testing on Safari 15.6–17).
+- **Tailwind says the same thing in its own docs**, which is the citation to use because it is first-party to
+  the framework we ship: *"Unstyled lists are not announced as lists by VoiceOver. If your content is truly a
+  list but you would like to keep it unstyled, add a `list` role to the element"* — with `<ul role="list">`
+  as the worked example (same Preflight page).
+
+The criterion behind it is **1.3.1 Info and Relationships (Level A)** — *"Information, structure, and
+relationships conveyed through presentation can be programmatically determined or are available in text"* —
+whose sufficient technique **H48** is literally *using `ol`, `ul` and `dl` for lists*
+([1.3.1](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html)). Preflight makes the
+markup pass H48 while the accessibility tree does not, which is the worst of the two failure modes: nothing
+in the HTML looks wrong.
+
+**Tailwind's callout is written for `<ul>`; applying it to `<ol>` as well is ours** — Preflight resets both,
+and the WebKit heuristic keys on the missing marker. `list` is the implicit role of both elements, so the
+attribute restores rather than changes anything.
+
+**What does NOT break list semantics, so do not "fix" it:** `display: flex` and `display: grid` **on the list
+element itself** are safe in current Safari, Chrome and Firefox — so `stack`, `cluster` and `grid-auto` on a
+`<ul>` are all fine. The real hazard is a different one and it is worth naming, because the flattening
+instinct is strong in grid layouts: **`display: contents` on a wrapper resets its accessible role**, and MDN
+warns against exactly the shape that tempts you here — *"where you have a `<ul>` element inside a grid
+container, that `ul` becomes a grid item — the child `<li>` elements do not"*; the answer is `subgrid`, not
+flattening ([Grid layout and accessibility](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout/Accessibility)).
+
+**On a list, `aria-posinset` / `aria-setsize` are required by nothing, and are ours when used.** No WCAG
+success criterion mentions them; on a list they are merely `listitem`-supported ARIA properties
+([`listitem`](https://www.w3.org/TR/wai-aria-1.2/#listitem)). Add them only where DOM order is not the set
+order — a virtualised or windowed list — and never as decoration on a complete one. **A feed is the
+exception**, and it is the pattern rather than WCAG that asks:
+see [Activity feed / Timeline](#activity-feed--timeline).
+
+## Grid list
+- **A composition, not a component:** `<ul role="list" class="grid-auto">` of `<li>` [Card](#card)s. `--min:
+  16rem` is the default (`12rem` for a row of stat tiles, per [data-viz.md](data-viz.md)). One `grid-auto`
+  and no breakpoints — `auto-fit`/`minmax` is the responsive behaviour, per
+  [layout-primitives.md](layout-primitives.md).
+- **Never `role="grid"`.** APG's Grid is a widget, not a layout: *"A grid widget is a container that enables
+  users to navigate the information or interactive elements it contains using directional navigation keys,
+  such as arrow keys, Home, and End"*, and *"A grid is a composite widget so it: Always contains multiple
+  focusable elements. Only one of the focusable elements contained by the grid is included in the page tab
+  sequence. Requires the author to provide code that manages focus movement inside it."*
+  ([Grid](https://www.w3.org/WAI/ARIA/apg/patterns/grid/)). A wall of cards has none of that, so the role
+  would announce a keyboard model that does not exist. The pattern's own note that *"using the grid role on
+  an element does not necessarily imply that its visual presentation is tabular"* is the reverse implication
+  and does not license it either.
+- **`display: grid` on the `<ul>` is safe; flattening it is not** — see
+  [List semantics](#list-semantics--preflight-unstyles-every-list-and-safari-then-reads-it-as-not-a-list)
+  above. Put `grid-auto` on the `<ul>`; do not reach for `display: contents` on the `<li>`s to promote card
+  internals into the grid.
+- **One link per card, same stretched-link rule as the [Stacked list](#stacked-list)** — a card with both a
+  title link and a footer action does not get the stretch.
+- **a11y:** the card's own heading is `card` scale, i.e. `<h3>` under a section `<h2>`
+  ([Heading blocks](#heading-blocks-page--section--card)) — never a level chosen to match the size.
+- **Choosing between this and the [Stacked list](#stacked-list):** cards when each item has media or ≥3
+  attributes worth scanning in parallel; rows when the list is long and the eye scans one column. A grid of
+  text-only cards is a stacked list that wastes the width.
+
+## Activity feed / Timeline
+- **Two shapes, and only one of them has an upstream pattern.** Get this wrong in either direction and you
+  either ship a keyboard contract nobody implemented or omit one that is mandated.
+- **A record's history — fixed length, no scroll-loading — is NOT the APG Feed pattern.** The pattern scopes
+  itself to the opposite thing: *"A feed is a section of a page that automatically loads new sections of
+  content as the user scrolls … a dynamic list of articles that often appears to scroll infinitely"*
+  ([Feed](https://www.w3.org/WAI/ARIA/apg/patterns/feed/)), and the role definition is built on the same
+  property — *"A scrollable list of articles where scrolling may cause articles to be added to or removed
+  from either end of the list"* ([`feed`](https://www.w3.org/TR/wai-aria-1.2/#feed)). So a status history is
+  the [Stacked list](#stacked-list) with a rail, in an **`<ol role="list">`** — an `<ol>` because the order
+  is the meaning, the same reasoning as the [Stepper](#stepper--wizard). Rows are Media objects wherever an
+  actor or an icon is shown, and a plain `stack` of text + timestamp where they are not.
+- **The rail is a border on the container, not a pseudo-element per row.** `border-s border-border` on the
+  `<ol>` with the row's dot marker positioned over it — n rows, one line, and nothing to clean up after the
+  last entry.
+- **An infinite-scroll feed IS the Feed pattern, in full.** *"The feature that most distinguishes feed from
+  other ARIA patterns … is that a feed is a structure, not a widget."* Then:
+  `role="feed"` on the container with a name (`aria-labelledby`, else `aria-label`); `role="article"` on each
+  entry, each with `aria-labelledby`; `aria-describedby` per entry, which APG marks *"optional but strongly
+  recommended"*; `aria-posinset` and `aria-setsize` per entry (`-1` where the total is undetermined); and
+  `aria-busy` on the container *"when article elements are being added to or removed from the feed container,
+  and if the operation requires multiple DOM operations"*.
+- **Which document binds, because the two disagree in strength.** APG states `aria-posinset`/`aria-setsize`
+  flatly; **core ARIA 1.2 says authors MAY** set them. **We bind to the APG pattern** — if you are using the
+  role you are taking the pattern, and the position properties are the only thing that makes a windowed feed
+  countable. That choice is ours; the looser reading is legitimate and cited above.
+- **`role="feed"` is not a `<ul>` of `<li>`s, and takes no `role="list"`.** `feed` is a subclass of `list`
+  whose *required owned elements are `article`* — so the children are articles, not listitems, and the
+  [List semantics](#list-semantics--preflight-unstyles-every-list-and-safari-then-reads-it-as-not-a-list)
+  rule above does not apply to it.
+- **`aria-level` is NOT part of this pattern** — we checked, and it appears nowhere in it. It is a `listitem`
+  property, and carrying it over from a nested list is the plausible-looking error to avoid.
+- **Keyboard, and its caveat, both from APG:** *"The feed pattern is not based on a desktop GUI widget so the
+  feed role is not associated with any well-established keyboard conventions."* When focus is inside the
+  feed: `Page Down` → next article, `Page Up` → previous article, `Control + End` → the first focusable
+  element after the feed, `Control + Home` → the first focusable element before it. APG marks none of these
+  optional; it also gives them no widget precedent, so implement them and do not expect users to know them.
+- **Entries arriving by Turbo Stream are not a feed.** The pattern's trigger is *scrolling*. A broadcast
+  `prepend` into a plain list is a content change, so it needs a polite live region — the
+  [Toast](#toast--notification) mechanism, or `role="status"` on a count — not `role="feed"`.
+  **Scroll-driven pagination is the branch that earns the role.** Pick one; never both.
+- **Timestamps: `<time datetime="…">` carrying the machine-readable value, with a human relative label
+  ("3 hours ago") as its text — and that is ours.** No WCAG criterion governs relative versus absolute time,
+  and none mandates `<time>`; we looked. The reason is practical: a relative label alone is unresolvable once
+  it is stale or read out of context.
+- **Responsive:** the rail and dot stay; the timestamp moves from the `trailing` slot to under the body below
+  `sm` rather than shrinking the body — a two-word column is not worth a column.
 
 ## Description list
 - **The one mechanism for label/value pairs** — record details, summaries, review steps. `<dl>` with
-  `<dt>` at `text-step--1 text-muted-foreground` and `<dd>` at `text-step-0 text-foreground`; money
-  and identifiers in `font-mono` so columns align.
+  `<dt>` at `text-step--1 text-muted-foreground` and `<dd>` at `text-step-0 text-foreground`.
+- **Identifiers are `font-mono`; money is `tabular-nums` — two options, not one.** This entry used to
+  say "money and identifiers in `font-mono`", which contradicted the rule
+  [brand.md](brand.md#money-is-tabular-nums-not---font-mono-91) states at the source: `--font-mono` is
+  scoped to reference numbers, timers, code and timestamps, and money is not one of them. An invoice
+  row is the surface where both appear side by side, so `Ui::DescriptionList` carries `mono:` for the
+  reference **and** `numeric:` for the amount. Reaching for `mono:` on a total is the mistake this
+  bullet exists to stop.
 - **Layouts:** `stacked` (`<dt>` above `<dd>`, one column — the mobile default and fine everywhere),
   `inline` (label left, value right: `cluster justify-between` per row, `divide-y divide-border` on
   the list), `grid` (multi-column via `grid-auto`, `--min: 16rem`, for wide summaries). Choose by
@@ -639,25 +815,23 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   shared-edge affordance that made it a group.
 
 ## Media object
-- Fixed-size media beside flowing content — the building block of stacked lists, feeds, comments and
-  notifications. `cluster items-start` of a `frame` (avatar, icon chip, thumbnail) and a `stack gap-1`
-  body; the media gets `flex-none`, the body `min-w-0` so long words truncate instead of pushing the
-  media off-screen.
-- **a11y:** the media is **decorative by default** — `alt=""` on a thumbnail whose meaning is already
-  in the adjacent text, because "Photo of Ada Lovelace" beside the words "Ada Lovelace" is announced
-  twice. Give it real `alt` only when it carries information the body does not. Responsive: the
-  cluster wraps rather than shrinking the media below its fixed size.
+- Fixed-size media beside flowing content — the row of the [Stacked list](#stacked-list), the
+  [Activity feed](#activity-feed--timeline), comments and notifications. `cluster items-start` of a
+  `frame` (avatar, icon chip, thumbnail) and a `stack gap-1` body; the media gets `flex-none`, the body
+  `min-w-0` so long words truncate instead of pushing the media off-screen.
 - **Sizes** follow the media: `sm size-8 · md size-10 · lg size-12` (icon chips use the Card stat
   recipe's `rounded-md bg-primary/10 text-primary`).
-- **a11y:** decorative media takes `alt=""`; meaningful media carries a real `alt`. If the whole object
-  is a link, wrap once and keep the media inside that link rather than nesting two links to the same place.
-- **Responsive:** never stacks — the side-by-side relationship *is* the pattern. If the body needs full
-  width on a phone, it was a Card, not a media object.
+- **a11y:** the media is **decorative by default** — `alt=""` on a thumbnail whose meaning is already in
+  the adjacent text, because "Photo of Ada Lovelace" beside the words "Ada Lovelace" is announced twice.
+  Give it real `alt` only when it carries information the body does not. If the whole object is a link,
+  wrap once and keep the media inside that link rather than nesting two links to the same place.
+- **Responsive:** never stacks — the side-by-side relationship *is* the pattern; the cluster wraps rather
+  than shrinking the media below its fixed size. If the body needs full width on a phone, it was a Card,
+  not a media object.
 
 ## Reviews + Rating
-- **Two different things in one row, and they have different contracts.** The **review list** is
-  documented **Media object** rows in a `divide-y` container — avatar, author, date, body — and adds
-  nothing new. The **rating** is the part with an a11y contract, and it splits again into a
+- **Two different things in one row, and they have different contracts.** The **review list** is the
+  documented [Stacked list](#stacked-list) — avatar, author, date, body — and adds nothing new. The **rating** is the part with an a11y contract, and it splits again into a
   **read-only average** and an **interactive picker**. Do not give them the same markup.
 - **No APG rating pattern.** The index lists 30 and none is a rating; `w3c/aria-practices`
   `content/patterns` has no `rating` directory. So nothing here is "per the APG".
@@ -808,6 +982,196 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **Responsive:** the cluster wraps to two rows on a narrow viewport rather than shrinking the input
   below its `min-h-touch` height.
 
+## Plan comparison / feature matrix
+- **One mechanism for two surfaces.** The marketing [Pricing](page-anatomies.md#pricing) page and the
+  signed-in [Plans](page-anatomies.md#plans--compare-and-switch) page render the same matrix; only the
+  surrounding state differs. Building a second one is the duplication this catalogue exists to stop.
+- **No APG pattern, and the two table-shaped ones tell you to stay native.** The index lists 30;
+  "comparison", "pricing" and "matrix" are not among them. APG's **Table** is *"a static tabular
+  structure … it is not an interactive widget"*, and **Grid** is *"particularly useful if the tabular
+  information is editable or interactive"*. A plan matrix is neither. So: a plain `<table>` with **no**
+  `role="table"`, no `role="grid"`, no ARIA row/cell roles — the native element already exposes them,
+  and adding the roles by hand is how you lose the ones you forgot. Escalate to `grid` only if cells
+  become editable or need arrow-key traversal.
+- **`scope` is sufficient until a header spans, and then it stops being sufficient.** H63 is *"sufficient
+  … for making information and relationships conveyed through presentation programmatically
+  determinable"* (SC 1.3.1, **Level A**) and its own note draws the line: *"For simple tables that have
+  the headers in the first row or column, it is sufficient to simply use the `th` elements without
+  `scope`. For complex tables use `id`s and `headers`."* H43's trigger is exact — *"used when data cells
+  are associated with more than one row and/or one column header."* A flat matrix (feature names down,
+  plan names across) is `scope="row"` + `scope="col"`. Add one grouping header spanning two plan
+  columns and you are in H43: `headers`/`id`, not more `scope`.
+- **A `✓` cell needs a text alternative, and the reason is not "it's an icon".** It needs one even as
+  the literal character U+2713, because WCAG's definition of non-text content is a two-branch test:
+  *"any content that is not a sequence of characters that can be programmatically determined **or where
+  the sequence is not expressing something in human language**"*. A tick meaning "included" is a
+  character used pictorially, not linguistically — the same branch that catches emoticons and ASCII
+  art — so **SC 1.1.1 (Level A)** applies. Pair the glyph with `sr-only` text carrying the *meaning*
+  ("Included" / "Not included"), never the shape ("check mark"). Same reasoning as
+  [Reviews + Rating](#reviews--rating); 1.4.1 enters only if a colour, not a glyph, is what
+  distinguishes the two states.
+  **Boundary worth recording:** WCAG's note names ASCII art, emoticons and leetspeak — it does not
+  name symbol glyphs. This follows from the definition's second clause by direct analogy, and is
+  stated that way rather than as a criterion that names checkmarks.
+- **1.1.1 and 1.3.1 are different failures and neither covers the other.** 1.1.1 asks whether the cell
+  has an equivalent name; 1.3.1 asks whether that cell is associated with its feature row and its plan
+  column. A matrix can announce "Included" perfectly and still be useless because nothing says
+  *included in what, on which plan*.
+- **The recommended plan needs a non-colour signal.** 1.4.1 Use of Color (**Level A**): *"Color is not
+  used as the only visual means of conveying information."* A ring or tint on the recommended card,
+  with no label, is the Understanding document's own failure shape (*"knowing whether an outline is
+  green for valid or red for invalid"*). A `Ui::Badge` reading "Recommended" is what carries the
+  meaning; the tint is then reinforcement. The identical rule governs a subscription status chip —
+  the word, not the hue.
+- **`aria-sort` on at most one header, and only if the matrix really sorts.** ARIA: *"Authors SHOULD
+  only apply this property to table headers or grid headers"* and *"For each table or grid, authors
+  SHOULD apply `aria-sort` to only one header at a time."* A plan matrix normally sorts by nothing.
+- **`<caption>` is optional in HTML and sufficient for 1.3.1 (H39).** Use it — `sr-only` if the design
+  has no visible title — because a table announced with no name is one of several on a billing page.
+- **Responsive — and here the honest answer is that WCAG permits both.** 1.4.10 Reflow (**AA**)
+  excepts *"parts of the content which require two-dimensional layout"*, and its Note 2 names them:
+  *"data tables (not individual cells) … It is acceptable to provide two-dimensional scrolling for
+  such parts of the content."* So **horizontal scroll of a wide matrix does not fail 1.4.10**, and any
+  doctrine implying it does is wrong. Our preference for a card-stack fallback on phones
+  (`mobile.md`) is **ergonomics — ours — not conformance**; say which you chose and why, and do not
+  cite a criterion for it. Below the fold on a phone, prefer one column per plan stacked in full over
+  a matrix scrolled sideways: the reader is comparing, and a comparison you have to scroll to make is
+  not one.
+
+## Seat / quantity selector
+- **`type="number"` is defensible here, and it is the same spec note that made it wrong for a card.**
+  The HTML Standard's test is whether a spinbox would make sense: it rules out input that *"happens to
+  only consist of numbers but isn't strictly speaking a number"*, naming card numbers and postal codes.
+  A seat count is strictly speaking a number, and the spec's own worked example for `min`/`max` is
+  literally `<input name="quantity" required type="number" min="1" value="1">`. **Stated precisely: the
+  spec names the exclusions, not the inclusions; this applies its stated test and leans on its own
+  quantity example, rather than claiming HTML names seats.** See
+  [Payment / card entry](#payment--card-entry) for the other half of the note.
+- **There is a real disagreement here, and blending the two sources is the failure.** The **GOV.UK
+  Design System** takes the opposite default: *"Do not use `<input type="number">` unless your user
+  research shows that there's a need for it. With `<input type="number">` there's a risk of users
+  accidentally incrementing a number when they're trying to do something else — for example, scroll up
+  or down the page."* That hazard is real rather than theoretical: wheel-scroll-changes-the-value is
+  **not in any spec** (it is an open WHATWG issue), Chrome and Safari do it, and **Firefox disabled it
+  by default in 130** for exactly this reason. GOV.UK's current page gives no carve-out for
+  incrementable numbers — the only exception is research-gated. **Ours: `type="number"` for a seat or
+  quantity count, because the spinbox is genuinely useful there and the value is bounded and visible on
+  the same screen as the total it changes — but if a project's own research says otherwise, `type=text`
+  with `inputmode="numeric"` is a legitimate override, and it is a Project Override rather than a
+  defect.** What is not legitimate is citing one source and pretending the other does not exist.
+- **Add no ARIA.** `input type=number` already has the implicit ARIA role `spinbutton`, and *ARIA in
+  HTML* allows *"No `role` other than `spinbutton`, which is NOT RECOMMENDED"*. Writing
+  `role="spinbutton"` restates what the element gives you and is the first thing to go stale.
+- **A visible `<label>`, always.** "Qty" as a placeholder disappears on the first keystroke, and a
+  bare number beside a product name announces as nothing. Use the shipped field anatomy
+  ([forms.md](forms.md)) so label, hint and error markup match every other field.
+- **`+` / `−` buttons are optional and, if present, are named.** They are icon-only controls: each
+  needs an accessible name that says what it changes ("Increase quantity, Blue T-shirt"), and both
+  need `min-h-touch`. They never replace the input — a keyboard user typing `12` must not have to
+  press a button twelve times.
+- **Never submit on change.** 3.2.2 On Input (**Level A**): *"Changing the setting of any user
+  interface component does not automatically cause a change of context unless the user has been
+  advised of the behavior before using the component."* Changing a seat count changes what the
+  customer pays, so it is an explicit press — the same rule the Stepper and the promo field follow,
+  and the same reason: avoid the class rather than paper over it with an advisory.
+- **`min`, `max` and `step` are submission-time gates, not input-time barriers — and the spec is
+  explicit about which.** They produce the validity states *"suffering from an underflow"*,
+  *"suffering from an overflow"* and *"suffering from a step mismatch"*, each defined in terms of a
+  value the control **already has** — so the UA lets the out-of-range value be typed and then refuses
+  the submission. (Only `type=range` clamps; the number state has no such step.) A `max` reflecting a
+  licence ceiling therefore shapes the control and blocks the honest path, and defends nothing against
+  a request that never touches your form. **The server clamps.** Same reasoning as the idempotency key
+  in
+  [component-implementations.md](component-implementations.md#payment-container-and-promo-code--recipes-not-components):
+  a client-side constraint is feedback, never the guard.
+- **The recalculated figure is the announcement.** Changing seats changes a total elsewhere on the
+  page; `role="status"` goes on the total, not on the input — polite and atomic together, so the
+  announcement carries "Total £240.00" and not a bare "240.00". One live region for the money; do not
+  add a second on the field.
+- **Responsive:** the input keeps `min-h-touch` and does not shrink below it to fit a `+`/`−` pair; on
+  a narrow viewport the cluster wraps instead.
+
+## Saved payment methods
+- **You will not have a full card number to render, and that is the design working.** The provider
+  returns a token plus a brand and last four; nothing card-shaped reaches your DOM, params or logs
+  ([Payment / card entry](#payment--card-entry)). Where a system *does* hold a PAN, PCI DSS v4.0.1
+  Requirement **3.4.1** is the ceiling: *"PAN is masked when displayed (the BIN and last four digits
+  are the maximum number of digits to be displayed), such that only personnel with a legitimate
+  business need can see more than the BIN and last four digits of the PAN."* Note what that permits —
+  BIN **and** last four is the maximum, so showing last four alone is comfortably inside it.
+- **"We use a processor, so 3.4.1 doesn't apply" is true only under a condition worth naming.** The
+  requirement has no carve-out for tokenised merchants; what puts a saved-card list outside its reach
+  is that such a system never handles a PAN at all. **If any code path — server or client — receives,
+  forwards or briefly holds the raw number before tokenising it, that path is in scope and 3.4.1
+  governs anywhere it might display more.** A redirect or provider-iframe integration keeps you out;
+  a "collect then forward" one does not. **Framing, not a compliance determination** — scope is your
+  acquirer's and QSA's call, the same boundary the payment entry draws.
+- **A card brand rendered as a mark still needs its name.** An `<svg>` logo is unambiguously non-text
+  content under 1.1.1 (**Level A**): give it an accessible name that is the brand ("Visa"), and let the
+  visible text carry "ending 4242". "Card" is not a name when there are four of them.
+- **The default method is a single-select of real radios, not a widget.** `fieldset` + `legend`
+  ("Default payment method") with native `<input type="radio">` per card. This is deliberately *not*
+  the `role="radiogroup"` Button group: that one is for switching a view, and this one changes which
+  instrument gets charged. A control that commits money is a form control.
+- **A remove control names the card it removes.** `aria-label="Remove Visa ending 4242"` — the same
+  rule as a cart line, and for the same reason: four icon-only `×` buttons all announce as "button".
+- **Removing a saved method is inside 3.3.4** (Error Prevention — Legal, Financial, Data, **Level
+  AA**), which covers pages that *"cause legal commitments or financial transactions for the user to
+  occur, that modify or delete user-controllable data in data storage systems"*. Deleting a stored
+  record is the clean case — the Understanding document's own example is *"deleting a record of past
+  invoices"*. Satisfy **Confirmed** with a confirmation that says what stops — "this is the card your
+  Team plan is billed to" — not a generic "Are you sure?". Removing a spare card still needs the
+  criterion met; what changes is how much the confirmation has to say.
+- **Adding a method is the provider's surface, not a form you build.** It reuses the payment container
+  contract in full, including the rule that the accessible name must be set *inside* the frame.
+- **An expiring card is a text state, not a red border.** "Expires 04/26 — expiring soon" beside the
+  card; colour may reinforce it and may not carry it (1.4.1).
+
+## Subscription state and dunning
+- **The state is a word. The colour is decoration.** Active, past due, cancelled, trialling — each
+  renders as text inside a `Ui::Badge`, because 1.4.1 Use of Color (**Level A**) forbids colour as
+  *"the only visual means of conveying information"*. Three identically-shaped chips differing only in
+  hue is the failure, and it is the most common one on a billing page.
+- **A past-due banner rendered with the page must not rely on `role="alert"` to be heard — and this
+  one is a decision, because the sources disagree.** APG documents the behaviour: *"at this time,
+  screen readers do not inform users of alerts that are present on the page before page load
+  completes."* **ARIA 1.3 says close to the opposite** — *"The exception to this live region convention
+  is `alert` … its content is announced by assistive technology when the alert is rendered on the page
+  and when the content changes"* — but ARIA 1.3 is a **Working Draft**, ARIA 1.2 (the Recommendation)
+  is silent on load timing, and APG's sentence is a report of what screen readers *do*, hedged with
+  *"at this time"* precisely because it is empirical. **There is no normative MUST here in either
+  direction; do not write one.** Ours: a state that is already true when the page loads belongs in the
+  **reading order** — a real heading and text at the top of the page, which everyone reaches
+  regardless of which document turns out to describe the future. Reserve `role="alert"` for a state
+  that *changes* while the user is on the page: a retry that fails, a payment that clears. The failure
+  this avoids is a banner that is loud in the design and silent in a screen reader.
+- **An alert never takes focus.** APG: *"Because alerts are intended to provide important and
+  potentially time-sensitive information without interfering with the user's ability to continue
+  working, it is crucial they do not affect keyboard focus."* Moving focus to a dunning banner
+  interrupts whatever the customer was doing to fix it.
+- **Four things or it is not a dunning notice: what happened, how much, by when, and one action.** "We
+  could not charge your card", the amount, the date access changes, and a single primary control that
+  fixes it. A notice without the deadline is an anxiety generator; a notice with three equal buttons is
+  a decision the customer cannot make.
+- **The retry schedule is billing logic, not UI doctrine.** How many times a provider retries and over
+  how many days belongs to the app and its processor. What this kit fixes is that the *current* state
+  is always readable on the billing page — never only in an email, which is the one surface you cannot
+  guarantee arrived.
+- **A cancelled subscription still has a page.** It says when access ends (or ended) and offers one
+  route back. An account that cancels and then sees an empty billing page cannot resubscribe.
+- **Downloading an invoice needs no format-and-size announcement, and no technique asks for one.**
+  Stating "(PDF, 240 KB)" is **not a WCAG requirement at any level, and not a sufficient or advisory
+  technique for 2.4.4 either** — the criterion asks only that the link's purpose be determinable, which
+  "Invoice INV-0142" already satisfies. (G201, often cited here, is about warning before opening a new
+  window; it says nothing about file metadata.) Write it if the design wants it; do not cite a
+  criterion for it, and do not let a checklist demand it.
+- **`download` is same-origin in practice.** The attribute *"indicates that the author intends the
+  hyperlink to be used for downloading a resource"*, and its value names the suggested filename — but
+  *"in cross-origin situations, the `download` attribute has to be combined with the
+  `Content-Disposition` HTTP header … with the attachment disposition type"*, or the browser navigates
+  instead. An invoice served from a signed cloud-storage URL is the cross-origin case, so the header
+  is the server's job, not a markup fix.
+
 ## Toast / Notification
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
   `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
@@ -859,7 +1223,7 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   wrong element to use for something that is just a gauge, as opposed to task progress."* **Neither
   names steppers**, so neither settles it — but a step list whose completed entries are clickable is
   not read-only, so we decline both.
-- **Markup: an `<ol>` always; `<nav aria-label="Progress">` only when the steps are really links.**
+- **Markup: an `<ol role="list">` always; `<nav aria-label="Progress">` only when the steps are really links.**
   Ours. An ordered sequence is an ordered list. The landmark is conditional because a stepper's future
   steps are usually not navigable, and a landmark whose contents lead nowhere is noise. (Breadcrumb's
   *"contained within a navigation landmark region"* is real but **not transferable** — a breadcrumb is
@@ -928,8 +1292,8 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **a11y:** the image is decorative (`alt=""`) wherever the name is adjacent; the initials chip is
   `aria-hidden` for the same reason. **The status dot must not be colour-alone** — it is state, and
   the catalog's own rule forbids colour-only state, so pair it with `sr-only` text ("Online") or
-  `title`. A stacked group is a list: `<ul>` with `sr-only` names, and a `+3` overflow chip that
-  says what it counts.
+  `title`. A stacked group is a list: `<ul role="list">` with `sr-only` names, and a `+3` overflow chip
+  that says what it counts.
 
 ## Logo / Brand mark
 - `Ui::Logo` — the ONLY way to render the Prism mark; never hand-roll a text eyebrow (a plain
