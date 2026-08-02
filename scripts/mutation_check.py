@@ -351,6 +351,22 @@ GUARDS: tuple[Guard, ...] = (
                 "",   # any failure counts: removing the entry point breaks many fixtures
             ),
             Mutation(
+                "two rows may again be vouched for by one piece of doc (#95)",
+                "    problems += verify_evidence_is_not_shared()\n",
+                "",
+                "two documented rows sharing one evidence string",
+            ),
+            # The substring half needs its own mutation: equality alone still catches the loud
+            # case, so `"## Button"` silently satisfied by the Button-GROUP heading would go
+            # unguarded on a rule that only compared for equality.
+            Mutation(
+                "the shared-evidence guard drops to equality and misses the prefix case",
+                "            DOCUMENTED_EVIDENCE[a] in DOCUMENTED_EVIDENCE[b]\n"
+                "            or DOCUMENTED_EVIDENCE[b] in DOCUMENTED_EVIDENCE[a]\n",
+                "            DOCUMENTED_EVIDENCE[a] == DOCUMENTED_EVIDENCE[b]\n",
+                "one row's evidence contained inside another's",
+            ),
+            Mutation(
                 "a promoted row keeps its stale BUILD fallback unnoticed (#95)",
                 "    stale = sorted(\n"
                 "        {e.name for e in ENTRIES if e.is_documented and e.build.strip()}\n"
