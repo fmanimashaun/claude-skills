@@ -140,6 +140,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # enforced rather than asserted.
     ("page pacing", ("python3", "scripts/check_page_pacing.py")),
     ("page pacing selftest", ("python3", "scripts/check_page_pacing.py", "--selftest")),
+    ("section landmarks", ("python3", "scripts/check_section_landmarks.py")),
+    ("section landmarks selftest",
+     ("python3", "scripts/check_section_landmarks.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),

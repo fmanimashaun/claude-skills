@@ -2487,6 +2487,25 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.33.0 — 2026-08-02
+
+- **`<section>` is a landmark only when you name it — practised in 16 of 18 places, stated in
+  none** (Refs #91). *ARIA in HTML* (W3C) gives `<section>` `role=region` **"if the `section`
+  element has an accessible name"** and `role=generic` otherwise — `generic` being exactly what a
+  `<div>` exposes, so an unnamed `<section>` is inert markup that reads as structure. The skill
+  already obeyed this everywhere except two hero bands, where it is deliberate: a hero's heading
+  is the page's `<h1>`, so naming the region repeats the page title and adds a navigation target
+  pointing where the reader already stands. Sixteen correct instances are not evidence the
+  seventeenth will be, so the rule is now written in `page-anatomies.md` and held by
+  `scripts/check_section_landmarks.py`, with the two heroes declared **by exact tag** rather than
+  inferred — a carve-out that recognised its own exception by pattern would exempt every future
+  violation that looked similar. A declared exemption matching nothing is itself reported.
+
+- **The ecommerce composition recipe produced a block that was not navigable** (Refs #91). Every
+  promo section in the corpus is a `<section aria-labelledby>`; the `Build from` string shared by
+  nine ecommerce rows said *"Card + Heading + Description list / Table inside `grid-auto`"* and
+  named no landmark, so an agent following it shipped a `div`. The recipe now carries it.
+
 ### 1.32.0 — 2026-08-02
 
 - **The page-pacing doctrine shipped a rule the corpus refutes** (Refs #92). Rule 1 required tone to
@@ -7187,6 +7206,41 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-02 (release v1.60.0)
+
+> ### A rule followed in sixteen places and written in none
+>
+> Completes EPIC #89 — the whole kit transformation — and #91, its commerce phase. The slice that
+> closed it went looking for four missing catalogue entries and found instead that they should not
+> exist, plus one rule the skill had been obeying without ever stating.
+
+- **`<section>` is a landmark only when you name it** (#91). **Verified** against *ARIA in HTML*
+  (W3C): `<section>` takes `role=region` **"if the `section` element has an accessible name"**, and
+  `role=generic` otherwise — `generic` being exactly what a `<div>` exposes. So an unnamed
+  `<section>` is inert markup that reads as structure: no landmark, no rotor entry, nothing to skip
+  to. `page-anatomies.md` already obeyed this in **16 of its 18** sections and said so nowhere,
+  which is `claims-vs-enforcement` inverted — a practice with no claim and no gate. Now stated, and
+  held by `scripts/check_section_landmarks.py` (25 fixtures, 6 mutations; 61 → 63 gates). The two
+  hero bands are a **deliberate** exception — a hero's heading is the page's `<h1>`, so naming the
+  region repeats the page title and points the reader where they already are — and they are
+  declared **by exact opening tag**, never inferred, because a carve-out that recognised its own
+  exception by pattern would exempt every future lookalike. A declared exemption matching nothing
+  is itself reported.
+
+- **The ecommerce composition recipe produced a block that was not navigable** (#91). Every promo
+  section in the corpus is a `<section aria-labelledby>`; the `Build from` string shared by **nine**
+  coverage rows named no landmark, so an agent following it shipped a `div`. The recipe carries it
+  now.
+
+- **Four catalogue entries deliberately not written** (#91, #89). Trust/support was the last
+  commerce slice, and the honest answer was that most of it earns no entry: across the eight
+  incentive files in the corpus there are **zero interactive elements** and the only ARIA is
+  `aria-hidden` on decorative icons — already `Card + Heading + text` in a grid. Declining to
+  restate a composition we ship is the *"no duplicate mechanisms"* criterion working, not a gap.
+
+**Versions:** rails-stack 1.32.0 → **1.33.0**.
+**Gates:** 63/63. **Mutation check:** 374 mutations across 32 guards, all caught.
 
 ### 2026-08-02 (release v1.59.0)
 
