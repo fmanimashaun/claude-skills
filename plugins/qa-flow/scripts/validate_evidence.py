@@ -735,6 +735,12 @@ KEYBOARD = Profile(
 # `aria-invalid="true"` was not something this change verified, so it is not asserted either way.
 # ---------------------------------------------------------------------------------------
 FORM_MODES = frozenset({"dry-run", "empty", "invalid", "valid", "skipped-destructive"})
+
+# Where the form lives. #115's sixth criterion -- "modal-CRUD variant asserts 422 re-render inside
+# the modal" -- shipped as a POINTER at `functional-tester`, which never specified it (#424). The
+# doctrine it meant is `crud-modal-pattern.md`: failure re-renders the form INTO the modal frame.
+# A row cannot assert that without saying which surface it exercised, so the surface is a column.
+FORM_SURFACES = frozenset({"page", "modal"})
 # The modes that actually submit something invalid, and therefore DO observe the error contract.
 ERROR_EXERCISING_MODES = frozenset({"empty", "invalid"})
 # The error-contract columns, and the severity a Fail in each forces.
@@ -823,6 +829,36 @@ def _forms_extra(row: dict[str, str], where: str, status: str) -> list[str]:
             )
         verdicts[column] = 1 if raw == "fail" else 0
 
+    # #115 criterion 6, made mechanical (#424). A CRUD form in a modal must fail by re-rendering
+    # INTO the modal frame -- `crud-modal-pattern.md:146`. Two things distinguish that from a
+    # full-page failure, and both are already recorded here: the status is 422, and the URL does
+    # not move. A navigation means the modal was destroyed and the user lost their input, which is
+    # the defect the criterion exists to catch; it renders as a "pass" to any check that only looks
+    # at whether an error appeared.
+    surface = row.get("Surface", "").lower()
+    if not surface:
+        findings.append(
+            f"{where}: no Surface ({'/'.join(sorted(FORM_SURFACES))}) -- a modal form and a page "
+            "form fail differently, so a row that does not say which cannot assert either"
+        )
+    elif surface not in FORM_SURFACES:
+        findings.append(
+            f"{where}: Surface {row['Surface']!r} is not one of {'/'.join(sorted(FORM_SURFACES))}"
+        )
+    elif surface == "modal" and exercised:
+        http = row.get("HTTP", "").strip()
+        if http and http != "422":
+            findings.append(
+                f"{where}: modal CRUD returned HTTP {http}, not 422 -- Turbo replaces a frame only "
+                "on 422, so any other status leaves the modal showing stale content"
+            )
+        requested, final = row.get("Requested URL", "").strip(), row.get("Final URL", "").strip()
+        if requested and final and requested != final:
+            findings.append(
+                f"{where}: modal CRUD navigated ({requested} -> {final}) instead of re-rendering "
+                "into the frame -- the modal was destroyed and the user's input with it"
+            )
+
     graded = {column: value for column, value in counts.items() if column != "Controls"}
     graded.update(verdicts)
     findings.extend(_check_severity(
@@ -854,6 +890,7 @@ FORMS = Profile(
     columns=(
         "Form",
         "Route",
+        "Surface",
         "Status",
         "HTTP",
         "Requested URL",
@@ -1788,7 +1825,14 @@ def check_row(row: dict[str, str], line: int, profile: Profile) -> list[str]:
         findings.append(
             f"{where}: {label} without an HTTP status recorded from the navigation response"
         )
-    elif not _http_ok(row["HTTP"]):
+    # A modal CRUD failure is the ONE case where a non-2xx status is the page under test rather
+    # than an error page instead of it: Turbo replaces a frame only on 422, so the doctrine at
+    # `crud-modal-pattern.md:146` REQUIRES the status this rule otherwise rejects. Until #424 the
+    # forms profile could not express a valid modal row at all, which is the likeliest reason
+    # #115's sixth criterion was never implemented — the profile refused its own requirement.
+    # Deliberately narrow: 422 only, modal only. Every other non-2xx is still Blocked.
+    modal_422 = row.get("Surface", "").lower() == "modal" and row["HTTP"].strip() == "422"
+    if row["HTTP"] and not _http_ok(row["HTTP"]) and not modal_422:
         findings.append(
             f"{where}: {label} on HTTP {row['HTTP']} -- a non-2xx/3xx page was not the page "
             f"under test; this is Blocked, not {label}"

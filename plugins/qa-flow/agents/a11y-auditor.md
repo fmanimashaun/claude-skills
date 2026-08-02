@@ -162,7 +162,7 @@ pay); default to `dry-run` for anything unrecognised. Valid-submit testing is op
 for non-destructive, idempotent endpoints.
 
 ```csv
-Form,Route,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,Required Unexposed,Submit Mode,Invalid Marked,Message Linked,Announced,Values Retained,Colour Only,Severity,Evidence,Notes
+Form,Route,Surface,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,Required Unexposed,Submit Mode,Invalid Marked,Message Linked,Announced,Values Retained,Colour Only,Severity,Evidence,Notes
 ```
 
 - `Status` — `Exercised`, `Blocked`, or `Out of Scope`.
@@ -181,8 +181,17 @@ Form,Route,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabelled,Req
   `Values Retained` fail → **S2**. (A required control that *has* a label is still operable and
   announced — it just does not say it is mandatory — so it ranks below one with no name at all.)
 
-For a form inside a modal, the CRUD expectation is a **422 re-render inside the modal** with
-inline errors — assert it as `functional-tester` specifies it rather than restating it here.
+For a form inside a modal, record `Surface: modal` and the CRUD expectation is a **422 re-render
+inside the modal frame** with inline errors. The doctrine is
+`skills/fidara-design/references/crud-modal-pattern.md:146` — *failure re-renders the form into the
+modal frame* — not `functional-tester`, which never specified it (#424: that pointer was dangling
+for three releases, and the criterion it stood in for was therefore asserted nowhere).
+
+`validate_evidence.py` now checks it rather than trusting the row: a `modal` row that exercised an
+invalid submit must carry **HTTP 422** (Turbo replaces a frame only on 422; any other status leaves
+the modal showing stale content) and must **not** have navigated — a differing Requested/Final URL
+means the modal was destroyed and the user's input with it. That failure renders as a "pass" to any
+check that only asks whether an error appeared.
 
 Validate both artifacts before reporting, same contract and same exit codes as the audit log:
 
