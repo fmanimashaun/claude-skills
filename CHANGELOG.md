@@ -7,6 +7,30 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Four "monotony" gate rules considered and rejected, each with the measurement that killed it**
+  (Refs #476). An external catalogue names four repetition axes that look like they belong beside
+  `check_page_pacing.py`'s existing `tone-repeat` / `shape-repeat`. None earns a gate, for three
+  different reasons — recorded in the gate's own docstring so the idea is not re-proposed:
+  - **`LAY-017`** (a layout family repeated more than twice) was **measured against our own table
+    and rejected**: the shipped band sequence uses one shape for **3 of its 7** bands, because the
+    hero, a prose band and the closing band legitimately share the shape for centred prose. Their
+    threshold would flag our own correct doctrine — a gate needing a carve-out on its first real
+    input is taste wearing a count.
+  - **`LAY-015`** (repeated closing CTA) is a **doctrine contradiction**: `page-anatomies.md` says
+    the opposite with its reason — the failure is two *competing* primary actions, not one
+    repeated — so adopting it would have the gate enforce against the file it reconciles.
+  - **`VIS-012`/`LAY-024`** (surface and divider monotony) are **unmeasurable here**: their own
+    detection is *"remove them and see"*, and neither appears as a column in the band table.
+
+  The rationale's own number is re-derived by a fixture rather than asserted, because an unchecked
+  number in a rationale rots exactly like one in doctrine and then reads as authoritative while
+  being false. Two things that fixture exposed: it must convert **any** exception into a verdict,
+  since a crash makes every other fixture look like it went quiet; and reading the real doc means
+  the guard must **declare** it in `needs=`, which `run_baseline` caught by reporting all ten
+  mutations INERT instead of passing them.
+
 ### 1.57.2 — 2026-08-02
 
 - **CI actions were pinned to majors running the deprecated Node 20.** `actions/checkout@v4` and
