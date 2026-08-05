@@ -89,6 +89,20 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #483. The controller shipped orphaned in every scaffolded app, and the CRUD
+                # pattern's three `turbo_stream.prepend("toasts", ...)` call sites had no target.
+                "the component check goes, so a controller may ship with no component",
+                '        if re.search(rf"\\b{re.escape(component)}\\b", body):',
+                "        if True:",
+                "a controller whose component is not scaffolded",
+            ),
+            Mutation(
+                "pairing stops being discovered, so every controller demands a component",
+                '            prescribed |= {n for n in re.findall(r"`([a-z][a-z-]*)`", line) if n in implemented}',
+                '            prescribed |= {n for n in re.findall(r"`([a-z][a-z-]*)`", line)}',
+                "an unpaired controller needs no component",
+            ),
+            Mutation(
                 # #489. The file is what /maintainer-setup-intake provisions FROM, so a missing
                 # entry means the label is never created on a fresh clone.
                 "the shipped-vs-declared join goes, so a component with no label passes",
