@@ -8,7 +8,9 @@ description: >
   the token architecture (brand primitives → semantic roles → fluid scale), the layout
   primitives you compose instead of ad-hoc flex/grid, the component catalog with
   variant/size/state, the Stimulus interaction patterns, and the responsive doctrine.
-  Consistency is enforced here, not left to taste.
+  Consistency is enforced here, not left to taste — and **art direction** is taught rather than
+  left undefined: visual hierarchy, per-surface aesthetic intent, and the difference between a
+  surface that is correct and one that is considered.
 ---
 
 # Fidara Design System
@@ -96,6 +98,13 @@ actually fills the large visual area of a hero, a feature band, a split sign-in 
 hierarchy (product screenshot → data-viz → brand-geometric decoration → illustration, last), the
 CSS recipes deriving decoration from the brand's own geometry, the deterministic screenshot capture
 recipe, and the per-surface prescriptions for the pages with nothing to screenshot.
+[references/art-direction.md](references/art-direction.md) is the **craft layer** — the creative
+hat *inside* the system. Every other reference answers *"is this correct?"*; this one answers
+*"is this considered, or mechanically assembled?"* One focal point per surface, a different
+aesthetic brief per surface class (marketing = emotion, dense app = clarity), and one bounded,
+sanctioned way to break the grid for a hero moment without forking the token contract. It is
+**advisory** — `design-auditor` is the gate, `design-critic` is the lens.
+
 [references/marketing-copy.md](references/marketing-copy.md) is the **copy layer** for marketing
 surfaces — what each section *says*, not how it is laid out: a per-section contract (the job the
 copy does, its shape, its failure mode), the length caps derived from the shipped measures, and the

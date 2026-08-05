@@ -76,6 +76,12 @@ def code_blocks(text: str) -> list[tuple[int, str]]:
 # number, so the exemption survives edits above it and does NOT survive a change to the tag
 # itself -- adding a class is fine, quietly turning it into a different element is not.
 HERO_EXEMPTIONS: dict[str, tuple[str, ...]] = {
+    # Both worked examples in `art-direction.md` are marketing HERO bands carrying the page's
+    # `<h1>` — the identical case the exemption was written for, in a second file. Declared rather
+    # than the rule widened: a per-file list is what keeps a new bare `<section>` elsewhere failing.
+    "art-direction": (
+        '<section class="bg-card section-y">',
+    ),
     "page-anatomies": (
         '<section class="bg-card section-y">',
         '<section class="stack text-center" style="--space: var(--space-s)">',
