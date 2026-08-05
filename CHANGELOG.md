@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-05 (v1.62.0)
 
 - **The label taxonomy's source of truth was four components behind the repo** (Refs #489).
   `.github/labels.yml` is what `/maintainer-setup-intake` provisions **from**, and it declared 7
@@ -1565,7 +1565,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.18.2 — 2026-08-05
 
 - **The same defect, in a second plugin** (Refs #490). `pr-comments.md:41` folds an out-of-scope
   review comment into the user's tracker with `--label "from-pr-review"`, which no setup step
@@ -5066,7 +5066,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.24.1 — 2026-08-05
 
 - **The scaffold provisioned everything the flow consumes except the labels it files with** (Refs
   #487). `qa-reporter` files every defect with `--label "qa,from-qa,severity:sN"`, and
@@ -7312,6 +7312,45 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-05 (release v1.62.0)
+
+> ### Two plugins filed issues with labels no setup created — so the reports were lost, not mislabelled
+>
+> `gh issue create` **errors and creates nothing** on an unknown label; it does not fall back to an
+> unlabelled issue. Both defects therefore dropped a report at the exact moment the flow claimed to
+> capture it. Two identical instances in two plugins is a class, so both are now enforced by a join
+> rather than found by grep.
+
+- **qa-flow filed every defect with labels the scaffold never created** (#487). `qa-reporter` uses
+  `--label "qa,from-qa,severity:sN"` and `gh label create` appeared **nowhere** in the plugin, so the
+  first real defect of any run was lost. `setup-qa` now provisions them idempotently — and **all four**
+  severities, not the two that appear as literals: `verify.md` files `severity:sN` for whatever grade
+  the defect earned and the ladder in `qa-lead.md` runs S1–S4, so an S3 finding would have failed at
+  the `gh` call. Also clarified a sentence that conflated two deliberately separate vocabularies: the
+  findings **record** field is `P1`/`P2`/`P3` (shared with rails-flow, gated by `findings.py`), the
+  issue **label** is `severity:s1`…`s4`.
+
+- **The same defect in rails-flow** (#490). `pr-comments` folds an out-of-scope review comment into
+  the user's tracker with `--label "from-pr-review"`, which no setup created — so the item vanished
+  and the instruction to *"reply on the thread with the new issue link"* could not be followed. Found
+  by grepping the pattern after confirming #487. `claude-skills-reporter` is unaffected: its labels
+  target the upstream tracker with `--repo`, where the taxonomy is somebody else's.
+
+- **The label taxonomy's own source of truth was four components behind** (#489).
+  `.github/labels.yml` is what `/maintainer-setup-intake` provisions **from**, and it declared 7
+  `comp:*` for 9 live ones — `comp:fidara-design` and `comp:design-flow` were in active use on four
+  open issues while undeclared. Writing the **join** instead of patching the two found two *more*
+  missing from the file **and** GitHub (`comp:code-review`, `comp:quality-pass`). Same blind spot as
+  #203, where CLAUDE.md's plugin list omitted `design-flow` for as long as it existed.
+
+**Two new gates**, both pure file joins with no `gh` call, because a gate that needs network fails on
+a runner for reasons unrelated to the repo: `unprovisioned-label` (a plugin filing against the user's
+own repo with a label its setup never creates) and `undeclared-component-label` (`skills/*/` and
+`plugins/*/` reconciled against the yaml, in both directions). 18 fixtures, 8 mutations.
+
+**Versions:** qa-flow 1.24.0 → **1.24.1**, rails-flow 1.18.1 → **1.18.2**.
+**Gates:** 63/63. **Mutation check:** 389 mutations across 32 guards, all caught.
 
 ### 2026-08-02 (release v1.61.0)
 
