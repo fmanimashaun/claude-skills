@@ -3,6 +3,7 @@
 ## Contents
 1. The built-in authentication generator (8.x)
 2. Extending auth: registration, remember-me, roles
+2a. Password policy — what NIST requires, and the rule it forbids
 3. Authorization the Rails way
 4. Security checklist (from the official Security guide)
 
@@ -104,7 +105,7 @@ class RegistrationsController < ApplicationController
   end
 end
 # User: validates :email_address, presence: true, uniqueness: true  (+ DB unique index)
-#       validates :password, length: { minimum: 12 }, allow_nil: true
+#       password policy: see §2a — do NOT copy a bare `length: { minimum: 12 }`
 ```
 
 Email confirmation: `generates_token_for :email_verification, expires_in:
@@ -112,6 +113,132 @@ Email confirmation: `generates_token_for :email_verification, expires_in:
 with a boolean/enum on `users` (`admin:boolean`, or
 `enum :role, { member: 0, admin: 1 }`) — no gem needed. OAuth/SSO: add
 `omniauth` on top of the same Session model when genuinely required.
+
+## 2a. Password policy — what NIST requires, and the rule it forbids
+
+`has_secure_password` gives you bcrypt, the `password`/`password_confirmation` virtuals, and a
+validation *"that the password does not exceed the maximum allowed bytes for BCrypt (72 bytes)"*. It
+gives you **no strength policy at all**, so a fresh app accepts `a` as a password. Adding one is
+therefore an obligation, and the shape of it is not a matter of taste.
+
+### The one rule everybody adds, that you must not add
+
+**Do NOT require a mixture of character types.** *NIST SP 800-63B* is explicit, and it is a
+prohibition rather than a preference:
+
+> "Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures of
+> different character types) for passwords."
+
+This is the single most common thing a team bolts on, and it makes passwords *worse*: it pushes users
+toward `Passw0rd!` — short, predictable, and in every breach corpus — and away from a long passphrase
+that is stronger by every measure. If a reviewer asks for "at least one uppercase, one digit and one
+symbol", the answer is this citation.
+
+### What is actually required
+
+| requirement | strength | source |
+|---|---|---|
+| minimum **15** characters where the password is the *only* factor | **SHALL** | SP 800-63B |
+| minimum **8** where it is one factor of *multi*-factor | **SHALL** | SP 800-63B |
+| compare against a blocklist of known compromised / commonly used passwords, on establish **and** change | **SHALL** | SP 800-63B |
+| permit a maximum of at least **64** characters | SHOULD | SP 800-63B |
+| **no** periodic forced rotation | **SHALL NOT** | SP 800-63B |
+
+A Rails app with the generated session auth and no second factor is the **single-factor** case, so
+the floor is **15**, not the 12 that reads as generous. Force a change only on evidence of
+compromise, never on a schedule.
+
+**The maximum is already handled — do not add a second validator.** `has_secure_password` validates
+the bcrypt 72-**byte** ceiling for you. Note that 64 *characters* is not 72 *bytes*: a passphrase in
+a non-Latin script can exceed 72 bytes well under 64 characters, so the honest message on that
+failure is about bytes, not "too long".
+
+### Where it is enforced, and where it must not be
+
+```ruby
+# app/models/user.rb
+class User < ApplicationRecord
+  has_secure_password
+
+  # `allow_nil: true` so ordinary updates (changing an email, a role) do not demand the password
+  # again. `has_secure_password` still requires presence on create, so this does not open a hole.
+  validates :password, length: { minimum: 15 }, allow_nil: true
+  validate  :password_not_compromised, if: -> { password.present? }
+
+  private
+
+  def password_not_compromised
+    return unless PasswordBlocklist.include?(password)
+    errors.add(:password, :compromised)
+  end
+end
+```
+
+**Write paths only — registration and password reset.** Never on sign-in. Sign-in calls
+`User.authenticate_by`, which verifies the stored digest; re-validating strength there would lock out
+every account created before the policy existed, which is a self-inflicted outage rather than a
+security gain. Tighten the floor and let existing users through until they next set a password.
+
+### The blocklist is the requirement people skip
+
+`SHALL`, not `SHOULD` — and it is the half that actually stops the passwords that get used. Two
+implementations, and the trade-off is real:
+
+- **A local list** (the top ~10k–100k breached passwords, shipped as a file). No network, no latency,
+  no third party in the auth path, and it works in a validator. This is the default.
+- **A range API** (Pwned Passwords k-anonymity: send the first 5 hex characters of the SHA-1, match
+  the suffix locally). Vastly larger corpus; the full password never leaves the process. But it puts a
+  network call on a write path, so it needs a timeout and a decision about what happens when the
+  service is unreachable — **fail open or fail closed, chosen deliberately and written down.** A
+  silent `rescue` that lets everything through is the `gate-that-cannot-fail` defect in your auth.
+
+Whichever you choose, compare case-insensitively and after normalising whitespace, or `PASSWORD1`
+walks past a list containing `password1`.
+
+### Specs (pure matchers, no browser)
+
+```ruby
+RSpec.describe User do
+  it "rejects a password under the single-factor floor" do
+    user = build(:user, password: "a" * 14, password_confirmation: "a" * 14)
+    expect(user).not_to be_valid
+    expect(user.errors[:password]).to be_present
+  end
+
+  it "accepts a long passphrase with no symbols or digits" do
+    phrase = "correct horse battery staple wharf"
+    expect(build(:user, password: phrase, password_confirmation: phrase)).to be_valid
+  end
+
+  it "rejects a known-compromised password even when it is long enough" do
+    weak = "password12345678"
+    expect(build(:user, password: weak, password_confirmation: weak)).not_to be_valid
+  end
+
+  it "does not demand the password on an unrelated update" do
+    user = create(:user)
+    expect(user.update(email_address: "new@example.com")).to be true
+  end
+
+  # THE REGRESSION THAT MATTERS: raising the floor must not lock out existing accounts.
+  it "still authenticates a digest that predates the policy" do
+    user = create(:user, password: "short-legacy", password_confirmation: "short-legacy")
+    user.update_column(:password_digest, BCrypt::Password.create("short-legacy"))
+    expect(User.authenticate_by(email_address: user.email_address,
+                                password: "short-legacy")).to eq(user)
+  end
+end
+```
+
+The second example is the one that documents the policy: a passphrase with no digit and no symbol is
+**valid**, and a spec asserting otherwise is asserting the rule NIST forbids.
+
+### The UI half
+
+A live strength meter is worth having, but **it may not render a character-class checklist** — that
+is the prohibited rule wearing a progress indicator, and it teaches the user that `Passw0rd!` beats a
+passphrase. What it can honestly show: length progress toward the floor, the confirmation-match
+state, and the server's blocklist verdict. See `fidara-design` → forms for the component contract.
 
 ## 3. Authorization the Rails way
 
