@@ -64,7 +64,12 @@ which report, and the promotion can no longer say what it shipped.
   source-of-truth + the open-issue signal; file findings as issues (don't fix in place).
 
 Agents backing them (in `.claude/agents/`): `issue-triager`, `doctrine-verifier`,
-`skill-doctor`, `plugin-doctor`, `release-manager`. A SessionStart hook
+`skill-doctor`, `plugin-doctor`, `release-manager`. One maintainer **skill** in
+`.claude/skills/`: `parallel-session-lane`, the operating protocol when several sessions run
+against this repo at once — confirm your worktree, take one coherent slice, stay in your plugin
+lane, review your own diff first. It exists because each of those was violated in a real session:
+a wrong-worktree edit put one session's uncommitted work on another's release branch, and an
+"idle" heuristic deleted three live worktrees. A SessionStart hook
 (`.claude/hooks/scripts/maintainer-status.sh`, wired in `.claude/settings.json`) surfaces
 the open-issue count each session — read-only, fails open if `gh` is absent.
 
