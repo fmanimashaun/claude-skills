@@ -200,6 +200,36 @@ Playwright-MCP session state — console logs + page-snapshot `.yml`s the functi
 never commit), and `node_modules` are gitignored; commit configs, specs, seed, and the stamp
 path is NOT gitignored (the gate reads it from the repo).
 
+### Create the defect labels — the flow cannot file without them
+
+Every defect the QA flow files carries `--label "qa,from-qa,severity:sN"`, and
+`gh issue create` **errors and creates nothing** when a label does not exist — it does not fall
+back to an unlabelled issue. So without this step the first real defect is **lost**, not
+mislabelled. Run it now, and again on any re-run (it is idempotent):
+
+```bash
+gh label create qa       --color 0E8A16 --description "Raised by the QA flow" --force
+gh label create from-qa  --color 0E8A16 --description "Filed by qa-reporter, not a human" --force
+gh label create severity:s1 --color B60205 --description "Data loss, security, core blocked" --force
+gh label create severity:s2 --color D93F0B --description "Broken feature, no workaround" --force
+gh label create severity:s3 --color FBCA04 --description "Workaround exists, or serious a11y" --force
+gh label create severity:s4 --color C2E0C6 --description "Cosmetic" --force
+```
+
+**All four severities, not only the two that appear as literals.** `verify.md` files
+`severity:sN` for whatever grade the defect earned, and the ladder in `qa-lead.md` runs S1–S4, so
+an S3 finding fails at `gh issue create` if only `s1`/`s2` exist. `--force` makes a re-run update
+the colour instead of failing on "already exists".
+
+**These are the QA severity labels (`s1`…`s4`), which are not the findings-record `severity`
+field (`P1`/`P2`/`P3`).** Two vocabularies on purpose: the record schema is shared with
+rails-flow and gated by `findings.py`, while the ladder above is qa-flow's filing severity. Do not
+"unify" them — the gate will fail.
+
+If `gh` is unauthenticated, say so and skip: this step needs network and auth, and a setup that
+dies here would block a workspace that is otherwise complete. Name it as **not done** rather than
+letting it read as done.
+
 ## 6. Tool checklist (report, don't auto-install)
 
 List only the tools the chosen config needs, and which are present vs missing:

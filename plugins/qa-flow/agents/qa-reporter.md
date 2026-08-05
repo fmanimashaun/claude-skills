@@ -37,7 +37,10 @@ Append one JSONL record per defect to `docs/qa/<date>/findings.jsonl` before wri
 
 Fields: **required** `id`, `pass`, `severity`, `category`, `file`, `signature`, `issue` ·
 **optional** `line`, `repro`, `fix_options`, `caused_by`, `blocks`, `duplicate_of`.
-`severity` is `P1`/`P2`/`P3` — map `S1`/`S2` to `P1`/`P2` when filing the issue.
+`severity` is `P1`/`P2`/`P3` **in this record** — map the QA ladder's `S1`…`S4` onto it when
+you write the record. That is *not* the issue **label**, which is `severity:s1`…`s4` (see the
+filing command below): the record schema is shared with rails-flow and gated by `findings.py`,
+while the label carries the QA grade. Two vocabularies, deliberately.
 
 That is the same list `rails-flow/scripts/findings.py` enforces, and `findings-schema-drift` fails
 the build if this section and that script ever disagree. Where rails-flow is installed alongside
