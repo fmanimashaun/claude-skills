@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-05 (v1.63.0)
 
 - **`parallel-session-lane` — the protocol for running several sessions against this repo at once.**
   A maintainer skill in `.claude/skills/`, so it ships to nobody through the marketplace and arrives
@@ -22,8 +22,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   onboarding story — it now resolves the primary checkout from `git worktree list` instead. And it is
   named in CLAUDE.md's `.claude/` inventory, because a component in neither the inventory nor a gate
   is exactly how `design-flow` fell out of the plugin list for as long as it existed (#203, #489).
-
-### Unreleased
 
 - **`orphaned-controller` — a scaffold may not prescribe a controller without its component** (Refs
   #483). **The pairing is discovered, not listed:** a controller is paired iff
@@ -6432,7 +6430,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.12.2 — 2026-08-05
 
 - **Three Stimulus controllers shipped orphaned, and the CRUD success path had no target** (Refs
   #483). `/design-flow:setup` listed the `toast` controller in step 4 while step 3's component list
@@ -7354,6 +7352,42 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-05 (release v1.63.0)
+
+> ### The third variant of one class: a scaffold that provisions everything except what the flow consumes
+>
+> After #487 (qa-flow labels) and #490 (rails-flow labels) last release, this is the same shape in
+> design-flow — and the worst of the three, because the missing piece was the target of the CRUD
+> pattern's own success path.
+
+- **Three Stimulus controllers shipped orphaned, and every CRUD success dropped its feedback**
+  (#483). `/design-flow:setup` listed the `toast` controller while its component list omitted the
+  component it drives — and pointed at `reference-implementation.md` as *canonical for steps 3–4*,
+  which carries both. The enumeration contradicted its own declared source, and agents follow the
+  enumeration. `crud-modal-pattern.md` emits every success with
+  `turbo_stream.prepend("toasts", ToastComponent.new(...))` at **three** call sites, so with no
+  `#toasts` container the target did not exist. Writing the **join** rather than patching the report
+  found `dropdown` and `tabs` in the same state, which the report did not mention.
+
+  Two corrections to the report worth recording: there is **no `Ui::Toast`** in `components.md` — the
+  component lives in `component-implementations.md` under `## Toast`, so implementing the name as
+  filed would have invented one; and `aria-live` belongs on the **container**, which must be in the
+  DOM before content is inserted, with `role="status"` on the toast and nothing beside it.
+
+- **`parallel-session-lane`**, a maintainer skill for running several sessions against this repo at
+  once — confirm your worktree, one coherent slice, stay in your plugin lane, review your own diff
+  first. In `.claude/skills/`, so it ships to nobody and arrives automatically on a clone. Its "never
+  work here" rule named an absolute home directory, which is wrong on every machine but one; it now
+  resolves the primary checkout from `git worktree list`.
+
+**A third gate**, `orphaned-controller`, which **discovers** the pairing instead of listing it: a
+controller is paired iff `component-implementations.md` has a `## <Titlecase>` section, so `sidebar`
+and `theme` are silent with no exemption. Verified against the pre-fix scaffold rather than assumed —
+4 examined, **3** reported.
+
+**Versions:** design-flow 1.12.1 → **1.12.2**.
+**Gates:** 63/63. **Mutation check:** 391 mutations across 32 guards, all caught.
 
 ### 2026-08-05 (release v1.62.0)
 
