@@ -1241,6 +1241,52 @@ _CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
 _CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
 
 
+def check_undeclared_component_label() -> tuple[list[Finding], int]:
+    """Every shipped skill and plugin needs a `comp:` label in `.github/labels.yml`.
+
+    #489. That file is the source of truth `/maintainer-setup-intake` provisions FROM, and it had
+    drifted two labels behind the live tracker: `comp:fidara-design` and `comp:design-flow` existed
+    on GitHub and sat on four open issues while being undeclared -- so a fresh clone would never
+    create them, and `gh issue create --label comp:design-flow` fails outright. Auditing it for this
+    rule found two MORE that were missing from both the file and GitHub (`code-review`,
+    `quality-pass`), which is the difference between a grep and a join.
+
+    Deliberately a pure FILE join -- `skills/*/` and `plugins/*/` against the yaml -- with no `gh`
+    call. A gate that needs network and auth fails on a runner for reasons unrelated to the repo,
+    and teaches people to ignore a red build.
+
+    `rails-stack` is excluded: it is the bundle that ships the skills, and each skill already has
+    its own label, so a `comp:rails-stack` would be a second name for the same problem. It was
+    tried on a real issue in this tracker and rejected by `gh` for not existing.
+    """
+    findings: list[Finding] = []
+    labels_file = ROOT / ".github" / "labels.yml"
+    if not labels_file.is_file():
+        return findings, 0
+    declared = set(re.findall(r"comp:([a-z0-9-]+)", read(labels_file)))
+    # Non-component labels that legitimately have no directory. Declared, so a typo in the yaml
+    # cannot hide here -- an unknown extra is reported below.
+    NON_DIRECTORY = {"packaging", "marketplace"}
+    BUNDLE = {"rails-stack"}
+    shipped = {d.name for d in (ROOT / "skills").glob("*") if d.is_dir()} | \
+              {d.name for d in (ROOT / "plugins").glob("*") if d.is_dir()}
+    shipped -= BUNDLE
+    examined = len(shipped) + len(declared)
+    for name in sorted(shipped - declared):
+        findings.append(Finding(
+            "undeclared-component-label", ".github/labels.yml", 0,
+            f"no `comp:{name}` declared, but `{name}` is a shipped skill or plugin. "
+            f"/maintainer-setup-intake provisions from this file, so on a fresh clone that label "
+            f"is never created and `gh issue create --label comp:{name}` fails outright."))
+    for name in sorted(declared - shipped - NON_DIRECTORY):
+        findings.append(Finding(
+            "undeclared-component-label", ".github/labels.yml", 0,
+            f"declares `comp:{name}`, which is neither a directory under skills/ or plugins/ nor "
+            f"one of the non-directory labels {sorted(NON_DIRECTORY)}. Either it is a typo or a "
+            f"component was removed and its label outlived it."))
+    return findings, examined
+
+
 def _command_blocks(text: str, command: str) -> list[tuple[int, str]]:
     """[(line number where `command` starts, the whole shell command)].
 
@@ -1377,6 +1423,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     ci_gates, ci_gates_examined = check_ci_gate_without_test_step()
     controllers, controllers_examined = check_controller_inventory()
     labels, labels_examined = check_unprovisioned_label()
+    comp_labels, comp_labels_examined = check_undeclared_component_label()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1397,11 +1444,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_ci_run_examples": ci_gates_examined,
         "stimulus_controllers_prescribed": controllers_examined,
         "issue_labels_resolved_or_templated": labels_examined,
+        "component_labels_reconciled": comp_labels_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels,
+            + ci_gates + controllers + labels + comp_labels,
             coverage)
 
 
@@ -1437,6 +1485,35 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- undeclared-component-label (#489) --------------------------------
+    UCL = "undeclared-component-label"
+    YML = ('- name: "comp:alpha"\n  color: "1f6feb"\n  description: "x"\n'
+           '- name: "comp:packaging"\n  color: "1f6feb"\n  description: "x"\n'
+           '- name: "comp:marketplace"\n  color: "1f6feb"\n  description: "x"\n')
+    scenario("a skill with no comp label", rule=UCL, expect_finding=True,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+                    "skills/beta/SKILL.md": "x\n"})
+    scenario("a plugin with no comp label", rule=UCL, expect_finding=True,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+                    "plugins/gamma/commands/a.md": "x\n"})
+    scenario("every shipped component declared is silent", rule=UCL, expect_finding=False,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n"})
+    # THE OTHER DIRECTION: a label whose component is gone, or whose name is a typo.
+    scenario("a declared label with no directory is reported", rule=UCL, expect_finding=True,
+             files={".github/labels.yml": YML + '- name: "comp:ghost"\n  color: "x"\n',
+                    "skills/alpha/SKILL.md": "x\n"})
+    # The non-directory labels are legitimately directory-less and must NOT be reported...
+    scenario("packaging and marketplace are exempt", rule=UCL, expect_finding=False,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n"})
+    # ...and `rails-stack` is the bundle, not a component: each skill carries its own label.
+    scenario("the rails-stack bundle needs no label of its own", rule=UCL, expect_finding=False,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+                    "plugins/rails-stack/commands/a.md": "x\n"})
+    # No labels.yml at all: report nothing rather than every component. A missing FILE is a
+    # different problem from a missing entry, and conflating them would fire 11 findings at once.
+    scenario("no labels.yml is silent", rule=UCL, expect_finding=False,
+             files={"skills/alpha/SKILL.md": "x\n"})
 
     # -- unprovisioned-label (#487, #490) ---------------------------------
     UPL = "unprovisioned-label"

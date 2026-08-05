@@ -9,6 +9,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The label taxonomy's source of truth was four components behind the repo** (Refs #489).
+  `.github/labels.yml` is what `/maintainer-setup-intake` provisions **from**, and it declared 7
+  `comp:*` labels for 9 live ones: `comp:fidara-design` and `comp:design-flow` existed on GitHub and
+  sat on four open issues while being undeclared, so a fresh clone would never create them — and
+  `gh issue create --label comp:design-flow` fails outright. Writing the **join** rather than
+  patching the two found two *more* absent from the file **and** from GitHub (`comp:code-review`,
+  `comp:quality-pass`); both are now created. `undeclared-component-label` reconciles `skills/*/` and
+  `plugins/*/` against the yaml in **both** directions, so a component with no label and a label
+  whose component was deleted both fail. Deliberately a pure **file** join with no `gh` call — a gate
+  needing network and auth fails on a runner for reasons unrelated to the repo, which teaches people
+  to ignore a red build. `rails-stack` is excluded as the bundle that ships the skills, each of which
+  carries its own label. 7 fixtures, 4 mutations.
+
+  Same blind spot as #203, where CLAUDE.md's plugin list omitted `design-flow` for as long as the
+  plugin existed: the design half of the toolchain keeps being missed by the lists that enumerate
+  components. That is now two enumerations gated instead of remembered.
+
 - **`unprovisioned-label` — the join that finds the third instance** (Refs #487, #490). Two
   identical defects in two plugins is a class, so it is now enforced rather than grepped:
   `lint_self_consistency.py` fails when a plugin files with `--label X` against the **user's own**
