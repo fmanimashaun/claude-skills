@@ -89,6 +89,34 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #487/#490. The rule exists because `gh issue create` errors on an unknown label,
+                # so a lost defect report is the failure it prevents.
+                "the created-label set is ignored, so every provisioned label reports missing",
+                "                        if token not in created:",
+                "                        if True:",
+                "the same label created in the same plugin",
+            ),
+            Mutation(
+                "the --repo scope test moves back to one line, mis-flagging an upstream call",
+                '                if "--repo" in block:',
+                '                if "--repo" in block.splitlines()[-1]:',
+                "an upstream --repo call is out of scope",
+            ),
+            Mutation(
+                "placeholders stop being templates, so `severity:sN` is demanded literally",
+                "                        if placeholder.search(token):",
+                "                        if False:",
+                "placeholder 'severity:sN' is not judged",
+            ),
+            Mutation(
+                "the comma list stops splitting, so a bad token hides behind a good one",
+                '                    for token in (tok.strip() for tok in raw.split(",")):',
+                "                    for token in [raw.strip()]:",
+                # The unsplit token still looks missing, so the FIRING fixture passes anyway; the
+                # silence fixture is what actually catches it.
+                "every token provisioned is silent",
+            ),
+            Mutation(
                 "the toggle rule widens past booleans and flags agent-applied keys",
                 '            match = re.match(r"^\\s*([a-z_][a-z0-9_]*):\\s*(?:true|false)\\b", line)',
                 '            match = re.match(r"^\\s*([a-z_][a-z0-9_]*):", line)',

@@ -520,6 +520,29 @@ seconds-long job. Two setup details worth stating to the user:
 - `generated_at`/`commit` are excluded from the digest, so this never fails merely because
   someone re-ran the generator.
 
+## 8b. Issue labels the flow files with
+
+`/rails-flow:pr-comments` folds an out-of-scope review comment into the tracker with
+`--label "from-pr-review"`. `gh issue create` **errors and creates nothing** when a label does not
+exist — it does not fall back to an unlabelled issue — so without this the item is **lost**, and
+the instruction to reply on the thread with the new issue link cannot be followed. Create it now,
+idempotently:
+
+```bash
+gh label create from-pr-review --color 5319E7 \
+  --description "Raised in PR review, deferred out of scope" --force
+```
+
+`--force` makes a re-run update the description rather than fail on "already exists".
+
+This does **not** cover the labels `claude-skills-reporter` passes — those go to the **upstream**
+tracker with `--repo`, where the taxonomy is somebody else's to provision. `scripts/lint_self_consistency.py`'s
+`unprovisioned-label` rule draws exactly that line, so a new `--label` against the user's own repo
+fails the build until a setup step creates it.
+
+If `gh` is unauthenticated, say so and skip — name it **not done** rather than letting a complete
+report imply it happened.
+
 ## 9. Report
 
 List created files, the detected Project Overrides, and any ambiguity you need the user to
