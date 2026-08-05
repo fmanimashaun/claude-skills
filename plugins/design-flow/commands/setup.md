@@ -90,7 +90,8 @@ authored; `git status` after.
    `grid-auto`, `frame`, `cover`, `reel`, `with-icon`.
 3. **Base ViewComponents** (`app/components/`): `Layout::Sidebar`, `Layout::Switcher`,
    `Layout::Container`, and `Ui::Button`, `Ui::Card`, `Ui::Badge`, `Ui::Alert`, `Ui::Modal`,
-   `Ui::Avatar`, `Ui::EmptyState`, **`Ui::Logo`** — each with the variant/size/state map + slots
+   `Ui::Avatar`, `Ui::EmptyState`, **`Ui::Logo`**, **`Ui::Toast`**, **`Ui::Dropdown`**,
+   `Ui::Tabs` — each with the variant/size/state map + slots
    from components.md. (If the project doesn't use ViewComponent yet, add the gem, or fall back to
    the helper-DSL variant — ask which.)
    **`Ui::Logo`** renders the Prism mark/lockup (`variant: :mark|:lockup`, `size: :sm|:md|:lg`
@@ -104,6 +105,30 @@ authored; `git status` after.
 4. **Stimulus mixins + controllers** (interaction-stimulus.md): the four mixins (list-navigation,
    focus-trap+restore, dismissable-layer, anchored-position) and the `modal`/`dropdown`/`tabs`/
    `sidebar`/`theme`/`toast` controllers built on them.
+   **A controller without its component is dead code.** Every controller here except `sidebar` and
+   `theme` drives a component in step 3 — `toast`, `dropdown` and `tabs` were shipped orphaned
+   (#483), and `scripts/lint_self_consistency.py`'s `orphaned-controller` rule now fails the build
+   if that recurs.
+4b. **The `#toasts` container, in the layout** (`reference-implementation.md` →
+   *Three things this block may not drop*):
+
+   ```erb
+   <turbo-frame id="modal"></turbo-frame>
+   <div id="toasts" aria-live="polite"
+        class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none"></div>
+   ```
+
+   **Not optional, and not cosmetic.** `crud-modal-pattern.md` emits every success with
+   `turbo_stream.prepend("toasts", ToastComponent.new(...))` — three call sites in the doctrine — so
+   without this `div` the target does not exist and **every CRUD success path silently drops its
+   feedback**. `aria-live` belongs on the **container**, which must be in the DOM before content is
+   inserted into it; the individual toast carries `role="status"` and nothing beside it. Do not move
+   the attribute onto the toast, and do not add a second flash surface: routing flash through Turbo
+   Stream **replaces** the `_flash`/`_flash_messages` partial pair rather than sitting beside it.
+
+   So the layout renders **no flash partial**. A scaffold that leaves one in ships two notification
+   surfaces, and the inline one is permanent — which is how a project ends up with all-permanent
+   notices and no auto-dismiss anywhere.
 
 Use **[references/reference-implementation.md](../../skills/fidara-design/references/reference-implementation.md)**
 as the canonical source for steps 3–4: copy the ViewComponent pattern (Button/Card shown) and

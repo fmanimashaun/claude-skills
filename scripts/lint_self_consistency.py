@@ -1241,6 +1241,49 @@ _CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
 _CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
 
 
+def check_orphaned_controller() -> tuple[list[Finding], int]:
+    """A scaffold prescribes a Stimulus controller whose paired component it never scaffolds.
+
+    #483. `/design-flow:setup` listed the `toast` controller and omitted the component it drives,
+    so the controller shipped as dead code in every scaffolded app -- and `crud-modal-pattern.md`
+    emits every CRUD success with `turbo_stream.prepend("toasts", ToastComponent.new(...))`, so the
+    feedback was dropped silently rather than merely un-styled. Writing the join found `dropdown`
+    and `tabs` in the same state, which the report did not mention.
+
+    THE PAIRING IS DISCOVERED, NOT LISTED. A controller `c` is paired iff
+    `component-implementations.md` has a `## <Titlecase(c)>` implementation section. That is why
+    `sidebar` and `theme` are silent without an exemption: neither has one, because neither drives
+    a component. A hardcoded pair list would need editing every time a component is added, and the
+    edit nobody makes is the bug this rule exists to catch.
+    """
+    findings: list[Finding] = []
+    impls = ROOT / "skills" / "fidara-design" / "references" / "component-implementations.md"
+    setup = ROOT / "plugins" / "design-flow" / "commands" / "setup.md"
+    if not impls.is_file() or not setup.is_file():
+        return findings, 0
+
+    implemented = {m.lower() for m in re.findall(r"(?m)^##\s+([A-Z][A-Za-z]+)", read(impls))}
+    body = read(setup)
+    # The controller list is a slash-separated run of backticked names, e.g.
+    # `modal`/`dropdown`/`tabs`/`sidebar`/`theme`/`toast`.
+    prescribed: set[str] = set()
+    for line in body.splitlines():
+        if "controllers built on them" in line or "/`" in line:
+            prescribed |= {n for n in re.findall(r"`([a-z][a-z-]*)`", line) if n in implemented}
+    examined = len(prescribed)
+    for name in sorted(prescribed):
+        component = f"Ui::{name.capitalize()}"
+        if re.search(rf"\b{re.escape(component)}\b", body):
+            continue
+        findings.append(Finding(
+            "orphaned-controller", rel(setup), 1,
+            f"scaffolds the {name!r} controller but never scaffolds {component}, which "
+            f"component-implementations.md implements under `## {name.capitalize()}`. The "
+            f"controller ships as dead code, and any doctrine that targets the component renders "
+            f"nothing."))
+    return findings, examined
+
+
 def check_undeclared_component_label() -> tuple[list[Finding], int]:
     """Every shipped skill and plugin needs a `comp:` label in `.github/labels.yml`.
 
@@ -1424,6 +1467,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     controllers, controllers_examined = check_controller_inventory()
     labels, labels_examined = check_unprovisioned_label()
     comp_labels, comp_labels_examined = check_undeclared_component_label()
+    orphans, orphans_examined = check_orphaned_controller()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1445,11 +1489,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "stimulus_controllers_prescribed": controllers_examined,
         "issue_labels_resolved_or_templated": labels_examined,
         "component_labels_reconciled": comp_labels_examined,
+        "scaffolded_controllers_paired": orphans_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels,
+            + ci_gates + controllers + labels + comp_labels + orphans,
             coverage)
 
 
@@ -1485,6 +1530,28 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- orphaned-controller (#483) ---------------------------------------
+    OC = "orphaned-controller"
+    IMPL = "## Toast\ncode\n\n## Modal\ncode\n"
+    def _setup(line: str) -> dict:
+        return {"skills/fidara-design/references/component-implementations.md": IMPL,
+                "plugins/design-flow/commands/setup.md": line}
+    scenario("a controller whose component is not scaffolded", rule=OC, expect_finding=True,
+             files=_setup("the `modal`/`toast` controllers built on them.\n`Ui::Modal`\n"))
+    scenario("both components scaffolded is silent", rule=OC, expect_finding=False,
+             files=_setup("the `modal`/`toast` controllers built on them.\n`Ui::Modal` `Ui::Toast`\n"))
+    # A controller with NO implementation section is not paired -- `sidebar` and `theme` are real
+    # cases, and exempting them by name would need editing whenever a component is added.
+    scenario("an unpaired controller needs no component", rule=OC, expect_finding=False,
+             files=_setup("the `theme`/`sidebar` controllers built on them.\n"))
+    scenario("...even alongside a paired one that IS scaffolded", rule=OC, expect_finding=False,
+             files=_setup("the `theme`/`modal` controllers built on them.\n`Ui::Modal`\n"))
+    # Missing either file must not crash, and must not report a clean scan of nothing.
+    scenario("no implementations file is silent", rule=OC, expect_finding=False,
+             files={"plugins/design-flow/commands/setup.md": "the `toast` controllers\n"})
+    scenario("no setup file is silent", rule=OC, expect_finding=False,
+             files={"skills/fidara-design/references/component-implementations.md": IMPL})
 
     # -- undeclared-component-label (#489) --------------------------------
     UCL = "undeclared-component-label"

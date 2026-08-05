@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`orphaned-controller` — a scaffold may not prescribe a controller without its component** (Refs
+  #483). **The pairing is discovered, not listed:** a controller is paired iff
+  `component-implementations.md` has a `## <Titlecase>` section for it, which is why `sidebar` and
+  `theme` are silent with no exemption — neither drives a component. A hardcoded pair list would
+  need editing whenever a component is added, and the edit nobody makes is the bug the rule exists
+  to catch. Verified against the pre-fix scaffold rather than assumed: it examines 4 paired
+  controllers and reports **3**. 6 fixtures, 2 mutations.
+
 ### 2026-08-05 (v1.62.0)
 
 - **The label taxonomy's source of truth was four components behind the repo** (Refs #489).
@@ -6405,6 +6415,22 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **Three Stimulus controllers shipped orphaned, and the CRUD success path had no target** (Refs
+  #483). `/design-flow:setup` listed the `toast` controller in step 4 while step 3's component list
+  omitted the component it drives — and pointed at `reference-implementation.md` as *canonical for
+  steps 3–4*, which carries both. The enumeration and its own canonical source disagreed, and agents
+  follow the enumeration. **Worse than dead code:** `crud-modal-pattern.md` emits every success with
+  `turbo_stream.prepend("toasts", ToastComponent.new(...))` — three call sites in the doctrine — so
+  with no `#toasts` container in the layout, **every CRUD success silently dropped its feedback**.
+  Writing the join instead of patching the report found `dropdown` and `tabs` in the same state,
+  which #483 did not mention. The scaffold now prescribes `Ui::Toast`, `Ui::Dropdown`, `Ui::Tabs` and
+  the `#toasts` container, with `aria-live` on the **container** (it must be in the DOM before
+  content is inserted) and `role="status"` on the toast — plus the rule that Turbo-Stream flash
+  **replaces** the `_flash` partial pair rather than sitting beside it, which is how a project ends
+  up with two notification surfaces and no auto-dismiss anywhere.
 
 ### 1.12.1 — 2026-08-02
 
