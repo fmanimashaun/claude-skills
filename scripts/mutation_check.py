@@ -89,6 +89,32 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #489. The file is what /maintainer-setup-intake provisions FROM, so a missing
+                # entry means the label is never created on a fresh clone.
+                "the shipped-vs-declared join goes, so a component with no label passes",
+                "    for name in sorted(shipped - declared):",
+                "    for name in []:",
+                "a skill with no comp label",
+            ),
+            Mutation(
+                "the reverse direction goes, so a label outliving its component passes",
+                "    for name in sorted(declared - shipped - NON_DIRECTORY):",
+                "    for name in []:",
+                "a declared label with no directory is reported",
+            ),
+            Mutation(
+                "the bundle stops being excluded, demanding a duplicate comp:rails-stack",
+                "    shipped -= BUNDLE",
+                "    shipped -= set()",
+                "the rails-stack bundle needs no label of its own",
+            ),
+            Mutation(
+                "the non-directory exemption goes, so packaging and marketplace report",
+                'NON_DIRECTORY = {"packaging", "marketplace"}',
+                "NON_DIRECTORY = set()",
+                "packaging and marketplace are exempt",
+            ),
+            Mutation(
                 # #487/#490. The rule exists because `gh issue create` errors on an unknown label,
                 # so a lost defect report is the failure it prevents.
                 "the created-label set is ignored, so every provisioned label reports missing",
