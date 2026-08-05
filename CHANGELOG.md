@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-05 (v1.64.0)
+
+- **`password-floor-drift`** (Refs #484) — the floor §2a *states* must equal the one its worked
+  example *enforces*, because the reader copies the example. **Deliberately not a prose rule:** the
+  obvious gate greps for "at least one uppercase" and would fire on the sentence that **forbids** it
+  — the same mention-versus-prescription false positive as #491, which I hit two releases ago and
+  filed rather than repeat. A number-to-number join has no such ambiguity. Drift **above** the floor
+  is reported too: two numbers for one rule is the defect, not the direction. 7 fixtures, 2 mutations.
+
 ### 2026-08-05 (v1.63.0)
 
 - **`parallel-session-lane` — the protocol for running several sessions against this repo at once.**
@@ -2575,6 +2584,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.35.0 — 2026-08-05
+
+- **A password policy, and the rule the report asked for that NIST forbids** (Refs #484). A fresh
+  Rails app accepts `a` as a password: `has_secure_password` gives bcrypt, the virtuals and a
+  72-**byte** ceiling, and no strength policy at all. The doctrine's only mention was a
+  **commented-out** `length: { minimum: 12 }` hint. `auth-security.md` §2a is now real doctrine —
+  and **half of what the issue proposed is refuted**, which is the more valuable half of the verdict.
+
+  **Verified against NIST SP 800-63B.** The issue asked for *"EITHER character-class composition OR
+  a breach check"*. They are not alternatives: composition is *"Verifiers and CSPs **SHALL NOT**
+  impose other composition rules (e.g., requiring mixtures of different character types)"*, and the
+  compromised-password blocklist is a **SHALL**. So the section states the prohibition first, with
+  the citation, because "at least one uppercase, one digit and one symbol" is the single most common
+  thing a team bolts on and it makes passwords *worse* — it pushes users to `Passw0rd!` and away from
+  a passphrase. The floor is **15** for single-factor (8 under MFA), the max is already validated by
+  Rails so we do not re-add it, and rotation is **SHALL NOT**. Enforced on write paths only with
+  `allow_nil: true`; never on sign-in, where `authenticate_by` verifies a digest that may predate the
+  policy — re-validating there is a self-inflicted outage, and a spec pins that regression.
+
+  The blocklist section states the local-list-vs-range-API trade-off honestly, including that a
+  silent `rescue` around a network check is `gate-that-cannot-fail` **in your auth**.
 
 ### 1.34.0 — 2026-08-02
 
@@ -7352,6 +7383,41 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-05 (release v1.64.0)
+
+> ### The most useful output of a verification is sometimes a refusal
+>
+> A report asked for a password policy offering *"either character-class composition or a breach
+> check"*. NIST prohibits the first and mandates the second. Shipping the contract as filed would have
+> made every downstream agent enforce a rule the primary authority forbids — and would have built a
+> UI whose whole job was to display it.
+
+- **A production password policy, and the rule the report asked for that NIST forbids** (#484). A
+  fresh Rails app accepts `a` as a password: `has_secure_password` gives bcrypt, the virtuals and a
+  72-**byte** ceiling, and no strength policy. The doctrine's only mention was a **commented-out**
+  `length: { minimum: 12 }`. `auth-security.md` §2a is now real doctrine, and it leads with the
+  prohibition:
+
+  > "Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures of
+  > different character types) for passwords." — NIST SP 800-63B
+
+  …because *"at least one uppercase, one digit and one symbol"* is the most common thing a team bolts
+  on and it makes passwords **worse**, pushing users toward `Passw0rd!` and away from a passphrase.
+  The compromised-password blocklist is the **SHALL** people skip. Floor **15** single-factor (8 under
+  MFA), not 12; the maximum is already validated by Rails so we do not re-add it; rotation is
+  **SHALL NOT**. Write paths only with `allow_nil: true`, and **never on sign-in**, where
+  `authenticate_by` verifies a digest that may predate the policy — re-validating there is a
+  self-inflicted outage, and a spec pins that regression. Another spec asserts a passphrase with no
+  digit and no symbol is **valid**, because a spec claiming otherwise asserts the forbidden rule.
+
+**`password-floor-drift`** reconciles the floor the section *states* against the one its worked example
+*enforces*, since the reader copies the example. **Deliberately not a prose rule** — a grep for
+"at least one uppercase" fires on the sentence that *forbids* it, which is the mention-versus-
+prescription false positive filed as #491 two releases ago rather than worked around.
+
+**Versions:** rails-stack 1.34.0 → **1.35.0**.
+**Gates:** 63/63. **Mutation check:** 393 mutations across 32 guards, all caught.
 
 ### 2026-08-05 (release v1.63.0)
 

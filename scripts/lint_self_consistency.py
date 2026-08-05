@@ -1241,6 +1241,44 @@ _CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
 _CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
 
 
+def check_password_floor() -> tuple[list[Finding], int]:
+    """The password floor §2a STATES must equal the one its own worked example enforces.
+
+    #484. The section cites NIST SP 800-63B's `SHALL` of 15 characters for a single-factor password
+    and then ships a `validates :password, length: { minimum: N }` a reader copies verbatim. Two
+    numbers about the same rule, in one file, is how a relaxed example outlives a table nobody
+    re-read -- and this doctrine's *previous* state was exactly that failure: a commented
+    `minimum: 12` hint with no stated floor at all.
+
+    DELIBERATELY NOT A PROSE RULE. The obvious gate here would grep for composition rules
+    ("at least one uppercase"), and it would fire on the sentence that FORBIDS them -- the same
+    mention-versus-prescription false positive as #491. A number-to-number join has no such
+    ambiguity, so that is what this checks and all it checks.
+    """
+    doc = ROOT / "skills" / "rails-8" / "references" / "auth-security.md"
+    if not doc.is_file():
+        return [], 0
+    body = read(doc)
+    stated = re.search(r"minimum \*\*(\d+)\*\* characters where the password is the \*only\* factor",
+                       body)
+    enforced = re.findall(r"validates :password, length: \{ minimum: (\d+) \}", body)
+    if not stated:
+        return [Finding(
+            "password-floor-drift", rel(doc), 0,
+            "no stated single-factor minimum found in the policy table -- the rule the worked "
+            "example enforces has nothing to be reconciled against, so a relaxed example would "
+            "pass unnoticed")], 0
+    floor = int(stated.group(1))
+    findings = [
+        Finding("password-floor-drift", rel(doc), 0,
+                f"the policy table states a {floor}-character single-factor floor, but a worked "
+                f"example enforces `minimum: {n}`. A reader copies the example, so the example is "
+                f"the doctrine -- make them agree.")
+        for n in enforced if int(n) != floor
+    ]
+    return findings, len(enforced) + 1
+
+
 def check_orphaned_controller() -> tuple[list[Finding], int]:
     """A scaffold prescribes a Stimulus controller whose paired component it never scaffolds.
 
@@ -1468,6 +1506,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     labels, labels_examined = check_unprovisioned_label()
     comp_labels, comp_labels_examined = check_undeclared_component_label()
     orphans, orphans_examined = check_orphaned_controller()
+    pw_floor, pw_floor_examined = check_password_floor()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1490,11 +1529,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "issue_labels_resolved_or_templated": labels_examined,
         "component_labels_reconciled": comp_labels_examined,
         "scaffolded_controllers_paired": orphans_examined,
+        "password_floor_claims_reconciled": pw_floor_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans,
+            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor,
             coverage)
 
 
@@ -1530,6 +1570,30 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- password-floor-drift (#484) --------------------------------------
+    PF = "password-floor-drift"
+    STATED = "| minimum **15** characters where the password is the *only* factor | SHALL |\n"
+    DOCP = "skills/rails-8/references/auth-security.md"
+    scenario("a worked example below the stated floor", rule=PF, expect_finding=True,
+             files={DOCP: STATED + "validates :password, length: { minimum: 12 }\n"})
+    scenario("the example matching the stated floor is silent", rule=PF, expect_finding=False,
+             files={DOCP: STATED + "validates :password, length: { minimum: 15 }\n"})
+    # ABOVE the floor is still drift: two numbers for one rule, and the reader copies the example.
+    scenario("an example ABOVE the stated floor is also drift", rule=PF, expect_finding=True,
+             files={DOCP: STATED + "validates :password, length: { minimum: 20 }\n"})
+    # A stated floor with NO example is fine; an example with no stated floor is not, because then
+    # nothing reconciles it and a relaxed example passes unnoticed.
+    scenario("a stated floor with no example is silent", rule=PF, expect_finding=False,
+             files={DOCP: STATED})
+    scenario("an example with no stated floor is reported", rule=PF, expect_finding=True,
+             files={DOCP: "validates :password, length: { minimum: 15 }\n"})
+    scenario("no auth doc at all is silent", rule=PF, expect_finding=False,
+             files={"README.md": "x\n"})
+    # Several examples, one of them wrong -- the bad one must not hide behind the good ones.
+    scenario("one wrong example among correct ones still fires", rule=PF, expect_finding=True,
+             files={DOCP: STATED + "validates :password, length: { minimum: 15 }\n"
+                                   "validates :password, length: { minimum: 8 }\n"})
 
     # -- orphaned-controller (#483) ---------------------------------------
     OC = "orphaned-controller"
