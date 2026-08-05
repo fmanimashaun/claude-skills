@@ -7,6 +7,38 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-05 (v1.62.0)
+
+- **The label taxonomy's source of truth was four components behind the repo** (Refs #489).
+  `.github/labels.yml` is what `/maintainer-setup-intake` provisions **from**, and it declared 7
+  `comp:*` labels for 9 live ones: `comp:fidara-design` and `comp:design-flow` existed on GitHub and
+  sat on four open issues while being undeclared, so a fresh clone would never create them — and
+  `gh issue create --label comp:design-flow` fails outright. Writing the **join** rather than
+  patching the two found two *more* absent from the file **and** from GitHub (`comp:code-review`,
+  `comp:quality-pass`); both are now created. `undeclared-component-label` reconciles `skills/*/` and
+  `plugins/*/` against the yaml in **both** directions, so a component with no label and a label
+  whose component was deleted both fail. Deliberately a pure **file** join with no `gh` call — a gate
+  needing network and auth fails on a runner for reasons unrelated to the repo, which teaches people
+  to ignore a red build. `rails-stack` is excluded as the bundle that ships the skills, each of which
+  carries its own label. 7 fixtures, 4 mutations.
+
+  Same blind spot as #203, where CLAUDE.md's plugin list omitted `design-flow` for as long as the
+  plugin existed: the design half of the toolchain keeps being missed by the lists that enumerate
+  components. That is now two enumerations gated instead of remembered.
+
+- **`unprovisioned-label` — the join that finds the third instance** (Refs #487, #490). Two
+  identical defects in two plugins is a class, so it is now enforced rather than grepped:
+  `lint_self_consistency.py` fails when a plugin files with `--label X` against the **user's own**
+  repo and no `gh label create X` exists in that plugin. Scope is the difficult part and is drawn
+  three ways — a call carrying `--repo` targets the upstream tracker and is exempt; a label created
+  in a *different* plugin does not count, because plugins install independently; and placeholders
+  (`severity:sN`, `<comp:*>`) are **counted in the coverage line rather than judged**, since
+  demanding a literal `sN` would be a false positive and dropping them silently would let a family
+  go unchecked. The `--repo` test reads the whole **command block**, not one line: the real upstream
+  call puts `--repo` on line 1 and `--label` on line 3, and the first version of this rule flagged
+  it — a defect caught because the docstring promised block scoping the code did not do. 11
+  fixtures, 4 mutations.
+
 ### 2026-08-02 (v1.61.0)
 
 - **Four "monotony" gate rules considered and rejected, each with the measurement that killed it**
@@ -1532,6 +1564,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.18.2 — 2026-08-05
+
+- **The same defect, in a second plugin** (Refs #490). `pr-comments.md:41` folds an out-of-scope
+  review comment into the user's tracker with `--label "from-pr-review"`, which no setup step
+  created — so the item was lost and the instruction to *"reply on the thread with the new issue
+  link"* could not be followed. Found by grepping the pattern after confirming #487, per CLAUDE.md.
+  `setup-flow` §8b now creates it. The labels `claude-skills-reporter` passes are **not** affected:
+  they target the upstream tracker with `--repo`, where the taxonomy is somebody else's.
 
 ### 1.18.1 — 2026-08-02
 
@@ -5025,6 +5066,19 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.24.1 — 2026-08-05
+
+- **The scaffold provisioned everything the flow consumes except the labels it files with** (Refs
+  #487). `qa-reporter` files every defect with `--label "qa,from-qa,severity:sN"`, and
+  `gh label create` appeared **nowhere** in the plugin. `gh issue create` **errors and creates
+  nothing** on an unknown label — it does not fall back to an unlabelled issue — so the first real
+  defect was **lost**, not mislabelled. `setup-qa` §5 now creates them idempotently (`--force`), and
+  creates **all four** severities rather than the two that appear as literals: `verify.md` files
+  `severity:sN` for whatever grade the defect earned and the ladder in `qa-lead.md` runs S1–S4, so
+  an S3 finding would have failed at the `gh` call. Also clarified `qa-reporter.md:40`, which
+  conflated two deliberately different vocabularies — the findings **record** field is `P1`/`P2`/`P3`
+  (shared with rails-flow, gated by `findings.py`), the issue **label** is `severity:s1`…`s4`.
+
 ### 1.24.0 — 2026-08-02
 
 - **Route coverage read only the CSV evidence, so a crawled route counted as never touched**
@@ -7258,6 +7312,45 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-05 (release v1.62.0)
+
+> ### Two plugins filed issues with labels no setup created — so the reports were lost, not mislabelled
+>
+> `gh issue create` **errors and creates nothing** on an unknown label; it does not fall back to an
+> unlabelled issue. Both defects therefore dropped a report at the exact moment the flow claimed to
+> capture it. Two identical instances in two plugins is a class, so both are now enforced by a join
+> rather than found by grep.
+
+- **qa-flow filed every defect with labels the scaffold never created** (#487). `qa-reporter` uses
+  `--label "qa,from-qa,severity:sN"` and `gh label create` appeared **nowhere** in the plugin, so the
+  first real defect of any run was lost. `setup-qa` now provisions them idempotently — and **all four**
+  severities, not the two that appear as literals: `verify.md` files `severity:sN` for whatever grade
+  the defect earned and the ladder in `qa-lead.md` runs S1–S4, so an S3 finding would have failed at
+  the `gh` call. Also clarified a sentence that conflated two deliberately separate vocabularies: the
+  findings **record** field is `P1`/`P2`/`P3` (shared with rails-flow, gated by `findings.py`), the
+  issue **label** is `severity:s1`…`s4`.
+
+- **The same defect in rails-flow** (#490). `pr-comments` folds an out-of-scope review comment into
+  the user's tracker with `--label "from-pr-review"`, which no setup created — so the item vanished
+  and the instruction to *"reply on the thread with the new issue link"* could not be followed. Found
+  by grepping the pattern after confirming #487. `claude-skills-reporter` is unaffected: its labels
+  target the upstream tracker with `--repo`, where the taxonomy is somebody else's.
+
+- **The label taxonomy's own source of truth was four components behind** (#489).
+  `.github/labels.yml` is what `/maintainer-setup-intake` provisions **from**, and it declared 7
+  `comp:*` for 9 live ones — `comp:fidara-design` and `comp:design-flow` were in active use on four
+  open issues while undeclared. Writing the **join** instead of patching the two found two *more*
+  missing from the file **and** GitHub (`comp:code-review`, `comp:quality-pass`). Same blind spot as
+  #203, where CLAUDE.md's plugin list omitted `design-flow` for as long as it existed.
+
+**Two new gates**, both pure file joins with no `gh` call, because a gate that needs network fails on
+a runner for reasons unrelated to the repo: `unprovisioned-label` (a plugin filing against the user's
+own repo with a label its setup never creates) and `undeclared-component-label` (`skills/*/` and
+`plugins/*/` reconciled against the yaml, in both directions). 18 fixtures, 8 mutations.
+
+**Versions:** qa-flow 1.24.0 → **1.24.1**, rails-flow 1.18.1 → **1.18.2**.
+**Gates:** 63/63. **Mutation check:** 389 mutations across 32 guards, all caught.
 
 ### 2026-08-02 (release v1.61.0)
 

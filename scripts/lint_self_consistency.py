@@ -1241,6 +1241,133 @@ _CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
 _CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
 
 
+def check_undeclared_component_label() -> tuple[list[Finding], int]:
+    """Every shipped skill and plugin needs a `comp:` label in `.github/labels.yml`.
+
+    #489. That file is the source of truth `/maintainer-setup-intake` provisions FROM, and it had
+    drifted two labels behind the live tracker: `comp:fidara-design` and `comp:design-flow` existed
+    on GitHub and sat on four open issues while being undeclared -- so a fresh clone would never
+    create them, and `gh issue create --label comp:design-flow` fails outright. Auditing it for this
+    rule found two MORE that were missing from both the file and GitHub (`code-review`,
+    `quality-pass`), which is the difference between a grep and a join.
+
+    Deliberately a pure FILE join -- `skills/*/` and `plugins/*/` against the yaml -- with no `gh`
+    call. A gate that needs network and auth fails on a runner for reasons unrelated to the repo,
+    and teaches people to ignore a red build.
+
+    `rails-stack` is excluded: it is the bundle that ships the skills, and each skill already has
+    its own label, so a `comp:rails-stack` would be a second name for the same problem. It was
+    tried on a real issue in this tracker and rejected by `gh` for not existing.
+    """
+    findings: list[Finding] = []
+    labels_file = ROOT / ".github" / "labels.yml"
+    if not labels_file.is_file():
+        return findings, 0
+    declared = set(re.findall(r"comp:([a-z0-9-]+)", read(labels_file)))
+    # Non-component labels that legitimately have no directory. Declared, so a typo in the yaml
+    # cannot hide here -- an unknown extra is reported below.
+    NON_DIRECTORY = {"packaging", "marketplace"}
+    BUNDLE = {"rails-stack"}
+    shipped = {d.name for d in (ROOT / "skills").glob("*") if d.is_dir()} | \
+              {d.name for d in (ROOT / "plugins").glob("*") if d.is_dir()}
+    shipped -= BUNDLE
+    examined = len(shipped) + len(declared)
+    for name in sorted(shipped - declared):
+        findings.append(Finding(
+            "undeclared-component-label", ".github/labels.yml", 0,
+            f"no `comp:{name}` declared, but `{name}` is a shipped skill or plugin. "
+            f"/maintainer-setup-intake provisions from this file, so on a fresh clone that label "
+            f"is never created and `gh issue create --label comp:{name}` fails outright."))
+    for name in sorted(declared - shipped - NON_DIRECTORY):
+        findings.append(Finding(
+            "undeclared-component-label", ".github/labels.yml", 0,
+            f"declares `comp:{name}`, which is neither a directory under skills/ or plugins/ nor "
+            f"one of the non-directory labels {sorted(NON_DIRECTORY)}. Either it is a typo or a "
+            f"component was removed and its label outlived it."))
+    return findings, examined
+
+
+def _command_blocks(text: str, command: str) -> list[tuple[int, str]]:
+    """[(line number where `command` starts, the whole shell command)].
+
+    A shell command spans lines via trailing `\\`, and its flags are spread across them. Reading
+    one line at a time is why the first version of `unprovisioned-label` would have mis-scoped an
+    upstream call: `--repo` on line 1, `--label` on line 3.
+    """
+    out: list[tuple[int, str]] = []
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        if command in lines[index]:
+            start = index
+            parts = [lines[index]]
+            while parts[-1].rstrip().endswith("\\") and index + 1 < len(lines):
+                index += 1
+                parts.append(lines[index])
+            out.append((start + 1, "\n".join(parts)))
+        index += 1
+    return out
+
+
+def check_unprovisioned_label() -> tuple[list[Finding], int]:
+    """A plugin files an issue with `--label X` against the USER's repo, and no setup creates X.
+
+    #487 and #490 were the same defect in two plugins: `gh issue create --label` **errors and
+    creates nothing** when the label does not exist -- it does not degrade to an unlabelled issue.
+    So the defect report, or the reviewer's out-of-scope finding, is silently LOST at exactly the
+    moment the flow claims to capture it. Two instances found by hand; this is the join that finds
+    the third.
+
+    SCOPE, and it is the whole difficulty. A call carrying `--repo` targets the **upstream**
+    tracker (claude-skills), whose taxonomy is provisioned by our own intake command and is not
+    this plugin's business -- `claude-skills-reporter.md` correctly passes `<comp:*>`/`<type:*>`
+    there. Only calls against the user's own repo are judged.
+
+    PLACEHOLDERS ARE COUNTED, NOT JUDGED. `severity:sN` is a template, not a label; demanding a
+    literal `sN` would be a false positive, and quietly dropping it would let a whole family go
+    unchecked. They are reported in the coverage line instead, so a run cannot imply it resolved
+    something it skipped.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    root = ROOT / "plugins"
+    if not root.is_dir():
+        return findings, examined
+
+    label_flag = re.compile(r"--label\s+[\"']([^\"']+)[\"']")
+    placeholder = re.compile(r"[<>*]|\bs?N\b")
+
+    for plugin in sorted(p for p in root.iterdir() if p.is_dir()):
+        body_by_path = {path: read(path)
+                        for path in sorted(plugin.rglob("*.md"))}
+        created = set()
+        for text in body_by_path.values():
+            created |= set(re.findall(r"gh label create\s+([^\s\\]+)", text))
+        for path, text in body_by_path.items():
+            for line_no, block in _command_blocks(text, "gh issue create"):
+                # `--repo` is judged over the WHOLE BLOCK, not the one line. The real call in
+                # `claude-skills-reporter.md` puts `--repo <upstream>` on the first line and
+                # `--label` on the third; a per-line test would read the label line as
+                # user's-own-repo and flag a correctly-scoped upstream call.
+                if "--repo" in block:
+                    continue
+                for raw in label_flag.findall(block):
+                    for token in (tok.strip() for tok in raw.split(",")):
+                        if not token:
+                            continue
+                        examined += 1
+                        if placeholder.search(token):
+                            continue
+                        if token not in created:
+                            findings.append(Finding(
+                                "unprovisioned-label", rel(path), line_no,
+                                f"files with --label {token!r} against the user's own repo, and no "
+                                f"`gh label create {token}` exists anywhere in {plugin.name}. "
+                                f"`gh issue create` ERRORS on an unknown label, so the issue is "
+                                f"never created -- the report is lost, not mislabelled."))
+    return findings, examined
+
+
 def check_ci_gate_without_test_step() -> tuple[list[Finding], int]:
     """A shipped `CI.run` example must run a test suite (#391).
 
@@ -1295,6 +1422,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     unwired, unwired_examined = check_unwired_claim_verifier()
     ci_gates, ci_gates_examined = check_ci_gate_without_test_step()
     controllers, controllers_examined = check_controller_inventory()
+    labels, labels_examined = check_unprovisioned_label()
+    comp_labels, comp_labels_examined = check_undeclared_component_label()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1314,11 +1443,13 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "flows_checked_for_claim_verifier": unwired_examined,
         "shipped_ci_run_examples": ci_gates_examined,
         "stimulus_controllers_prescribed": controllers_examined,
+        "issue_labels_resolved_or_templated": labels_examined,
+        "component_labels_reconciled": comp_labels_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers,
+            + ci_gates + controllers + labels + comp_labels,
             coverage)
 
 
@@ -1354,6 +1485,74 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- undeclared-component-label (#489) --------------------------------
+    UCL = "undeclared-component-label"
+    YML = ('- name: "comp:alpha"\n  color: "1f6feb"\n  description: "x"\n'
+           '- name: "comp:packaging"\n  color: "1f6feb"\n  description: "x"\n'
+           '- name: "comp:marketplace"\n  color: "1f6feb"\n  description: "x"\n')
+    scenario("a skill with no comp label", rule=UCL, expect_finding=True,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+                    "skills/beta/SKILL.md": "x\n"})
+    scenario("a plugin with no comp label", rule=UCL, expect_finding=True,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+                    "plugins/gamma/commands/a.md": "x\n"})
+    scenario("every shipped component declared is silent", rule=UCL, expect_finding=False,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n"})
+    # THE OTHER DIRECTION: a label whose component is gone, or whose name is a typo.
+    scenario("a declared label with no directory is reported", rule=UCL, expect_finding=True,
+             files={".github/labels.yml": YML + '- name: "comp:ghost"\n  color: "x"\n',
+                    "skills/alpha/SKILL.md": "x\n"})
+    # The non-directory labels are legitimately directory-less and must NOT be reported...
+    scenario("packaging and marketplace are exempt", rule=UCL, expect_finding=False,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n"})
+    # ...and `rails-stack` is the bundle, not a component: each skill carries its own label.
+    scenario("the rails-stack bundle needs no label of its own", rule=UCL, expect_finding=False,
+             files={".github/labels.yml": YML, "skills/alpha/SKILL.md": "x\n",
+                    "plugins/rails-stack/commands/a.md": "x\n"})
+    # No labels.yml at all: report nothing rather than every component. A missing FILE is a
+    # different problem from a missing entry, and conflating them would fire 11 findings at once.
+    scenario("no labels.yml is silent", rule=UCL, expect_finding=False,
+             files={"skills/alpha/SKILL.md": "x\n"})
+
+    # -- unprovisioned-label (#487, #490) ---------------------------------
+    UPL = "unprovisioned-label"
+    FILE = 'gh issue create --title "x" --label "from-qa"\n'
+    scenario("a label nothing creates", rule=UPL, expect_finding=True,
+             files={"plugins/x/commands/a.md": FILE})
+    scenario("the same label created in the same plugin", rule=UPL, expect_finding=False,
+             files={"plugins/x/commands/a.md": FILE,
+                    "plugins/x/commands/setup.md": "gh label create from-qa --color 0E8A16\n"})
+    # A label created in ANOTHER plugin does not help: plugins install independently.
+    scenario("created in a different plugin does not count", rule=UPL, expect_finding=True,
+             files={"plugins/x/commands/a.md": FILE,
+                    "plugins/y/commands/setup.md": "gh label create from-qa\n"})
+    # SCOPE: an upstream call is somebody else's taxonomy. The `--repo` sits on the FIRST line and
+    # the `--label` on the third -- a per-line test flagged this, which is why blocks are parsed.
+    scenario("an upstream --repo call is out of scope", rule=UPL, expect_finding=False,
+             files={"plugins/x/commands/a.md":
+                    'gh issue create --repo <upstream> \\\n  --title "t" \\\n'
+                    '  --label "type:bug"\n'})
+    scenario("...and it is the BLOCK that exempts it, not the word appearing anywhere in the file",
+             rule=UPL, expect_finding=True,
+             files={"plugins/x/commands/a.md":
+                    "Elsewhere we use --repo for upstream.\n\n" + FILE})
+    # Placeholders are templates, not labels -- demanding a literal `sN` is a false positive.
+    for token in ("severity:sN", "<comp:*>", "type:*"):
+        scenario(f"placeholder {token!r} is not judged", rule=UPL, expect_finding=False,
+                 files={"plugins/x/commands/a.md":
+                        f'gh issue create --title "x" --label "{token}"\n'})
+    # A comma list is split, and ONE bad token in it is enough.
+    scenario("one bad token in a comma list still fires", rule=UPL, expect_finding=True,
+             files={"plugins/x/commands/a.md": 'gh issue create --label "qa,from-qa"\n',
+                    "plugins/x/commands/setup.md": "gh label create qa\n"})
+    scenario("every token provisioned is silent", rule=UPL, expect_finding=False,
+             files={"plugins/x/commands/a.md": 'gh issue create --label "qa,from-qa"\n',
+                    "plugins/x/commands/setup.md":
+                    "gh label create qa\ngh label create from-qa\n"})
+    # No plugins dir at all must not crash or claim a clean scan.
+    scenario("a tree with no plugins is silent", rule=UPL, expect_finding=False,
+             files={"README.md": "nothing here\n"})
 
     # -- dead-settings-key ------------------------------------------------
     scenario(
