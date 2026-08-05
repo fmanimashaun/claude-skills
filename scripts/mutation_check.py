@@ -89,6 +89,20 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #484. Two numbers for one rule in one file is how a relaxed example
+                # outlives a table nobody re-read.
+                "the floor comparison inverts, so only a MATCHING example is reported",
+                '        for n in enforced if int(n) != floor',
+                '        for n in enforced if int(n) == floor',
+                "a worked example below the stated floor",
+            ),
+            Mutation(
+                "a missing stated floor stops being reported, so nothing reconciles the example",
+                '    if not stated:',
+                '    if False:',
+                "an example with no stated floor is reported",
+            ),
+            Mutation(
                 # #483. The controller shipped orphaned in every scaffolded app, and the CRUD
                 # pattern's three `turbo_stream.prepend("toasts", ...)` call sites had no target.
                 "the component check goes, so a controller may ship with no component",
