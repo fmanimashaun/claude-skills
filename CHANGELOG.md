@@ -9,6 +9,22 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`parallel-session-lane` — the protocol for running several sessions against this repo at once.**
+  A maintainer skill in `.claude/skills/`, so it ships to nobody through the marketplace and arrives
+  automatically for anyone who clones. Five steps, each written from a session that went wrong:
+  confirm your worktree (a wrong-worktree edit once put one session's uncommitted work onto
+  another's release branch), read CLAUDE.md, take **one** coherent slice and say which assigned
+  issues you left out, stay inside `plugins/<yours>/**` with no drive-by fixes, and review your own
+  diff against `code-review` **before** opening the PR.
+
+  Two things fixed on the way in: the "never work here" rule named an **absolute home directory**,
+  which is wrong on every machine but one and directly contradicts this repo's fresh-clone
+  onboarding story — it now resolves the primary checkout from `git worktree list` instead. And it is
+  named in CLAUDE.md's `.claude/` inventory, because a component in neither the inventory nor a gate
+  is exactly how `design-flow` fell out of the plugin list for as long as it existed (#203, #489).
+
+### Unreleased
+
 - **`orphaned-controller` — a scaffold may not prescribe a controller without its component** (Refs
   #483). **The pairing is discovered, not listed:** a controller is paired iff
   `component-implementations.md` has a `## <Titlecase>` section for it, which is why `sidebar` and
