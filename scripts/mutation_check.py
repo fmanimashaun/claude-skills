@@ -89,6 +89,19 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # A manual error made twice in three releases; a join should catch it, not a human.
+                "the duplicate count relaxes, so two Unreleased headings pass",
+                '        if len(lines) > 1:',
+                "        if len(lines) > 2:",
+                "two Unreleased headings in one section",
+            ),
+            Mutation(
+                "the heading test becomes a substring match, so prose counts as a heading",
+                '        elif line.strip() == "### Unreleased" and section:',
+                '        elif "### Unreleased" in line and section:',
+                "prose mentioning the string is not counted",
+            ),
+            Mutation(
                 # #513. Nothing can declare this pairing in a manifest, so the check has to
                 # live in the command or the doctrine is simply absent at runtime.
                 "the stop-instruction check goes, so a command may read an absent skill",

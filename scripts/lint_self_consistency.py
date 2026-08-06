@@ -1256,6 +1256,40 @@ _CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
 _CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
 
 
+def check_duplicate_unreleased() -> tuple[list[Finding], int]:
+    """At most one `### Unreleased` per `## component` section of the CHANGELOG.
+
+    A manual error I made twice in three releases, both times the same way: two changes each insert
+    their bullet using the same `## <section>\n\n` anchor, so the second opens its own `### Unreleased`
+    heading above the first. Nothing broke either time -- the promotion pre-flight counts headings and
+    would have caught it -- but it should not need catching by a human reading a number, and a repeated
+    manual error that a join can detect is exactly what belongs in a gate rather than in a habit.
+
+    Counts HEADING LINES, not the substring: this file's own prose mentions `### Unreleased` while
+    describing the rule that forbids a stray one, and a substring count made an earlier arm fail on it.
+    """
+    doc = ROOT / "CHANGELOG.md"
+    if not doc.is_file():
+        return [], 0
+    findings: list[Finding] = []
+    section = None
+    counts: dict[str, list[int]] = {}
+    for line_no, line in enumerate(read(doc).splitlines(), 1):
+        if line.startswith("## "):
+            section = line[3:].strip()
+        elif line.strip() == "### Unreleased" and section:
+            counts.setdefault(section, []).append(line_no)
+    for name, lines in counts.items():
+        if len(lines) > 1:
+            findings.append(Finding(
+                "duplicate-unreleased", "CHANGELOG.md", lines[1],
+                f"section {name!r} has {len(lines)} `### Unreleased` headings (lines "
+                f"{', '.join(map(str, lines))}) -- two inserts used the same anchor, so the second "
+                f"opened its own. Collapse them: one Unreleased per component, or the arm converts "
+                f"one and leaves the other's notes out of the release."))
+    return findings, len(counts)
+
+
 def check_undeclared_skill_dependency() -> tuple[list[Finding], int]:
     """A command that reads a skill from ANOTHER plugin must check the skill is there.
 
@@ -1563,6 +1597,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     orphans, orphans_examined = check_orphaned_controller()
     pw_floor, pw_floor_examined = check_password_floor()
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
+    dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1587,11 +1622,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_controllers_paired": orphans_examined,
         "password_floor_claims_reconciled": pw_floor_examined,
         "commands_reading_a_foreign_skill": skill_dep_examined,
+        "changelog_sections_with_unreleased": dup_unrel_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep,
+            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel,
             coverage)
 
 
@@ -1627,6 +1663,22 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- duplicate-unreleased ---------------------------------------------
+    DUP = "duplicate-unreleased"
+    scenario("two Unreleased headings in one section", rule=DUP, expect_finding=True,
+             files={"CHANGELOG.md": "## qa-flow\n\n### Unreleased\n\n- a\n\n### Unreleased\n\n- b\n"})
+    scenario("one per section is silent", rule=DUP, expect_finding=False,
+             files={"CHANGELOG.md": "## qa-flow\n\n### Unreleased\n\n- a\n\n## design-flow\n\n"
+                                    "### Unreleased\n\n- b\n"})
+    scenario("no Unreleased at all is silent", rule=DUP, expect_finding=False,
+             files={"CHANGELOG.md": "## qa-flow\n\n### 1.0.0\n\n- a\n"})
+    # PROSE MENTIONING IT IS NOT A HEADING -- this file's own docs discuss `### Unreleased`, and an
+    # earlier arm failed because a substring count caught the sentence describing the rule.
+    scenario("prose mentioning the string is not counted", rule=DUP, expect_finding=False,
+             files={"CHANGELOG.md": "## qa-flow\n\n### Unreleased\n\n- a stray `### Unreleased` "
+                                    "heading means notes vanish\n"})
+    scenario("no CHANGELOG is silent", rule=DUP, expect_finding=False, files={"README.md": "x\n"})
 
     # -- undeclared-skill-dependency (#513) -------------------------------
     USD_ = "undeclared-skill-dependency"
