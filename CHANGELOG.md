@@ -2624,6 +2624,40 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Generated assets enter the hierarchy as two cost-ordered tiers** (Refs #507). The asset ladder now
+  runs: **1** product screenshot · **2** brand-geometric decoration from `brand.json` · **3** a
+  *designed graphic* exported from a brand template · **4** a *generated illustration* from a metered
+  model · **5** commissioned. The ordering principle becomes *specificity first, then cost*, and the
+  distinction between the two new tiers is the load-bearing part: **tier 3 inherits the brand, tier 4
+  is prompted toward it and may miss** — a design tool assembles from parts you gave it, a diffusion
+  model invents. If the asset can be *composed*, composing it is both cheaper and more faithful, so
+  tier 4 is genuinely last-resort rather than the default anyone reaches for.
+
+  **Tier 3 is exported assets only — never a page.** A design tool that can build whole pages must not
+  be used to: its page output cannot be exported as code (formats are PDF, JPG, PNG, PPTX, GIF, MP4,
+  CSV — verified, no HTML), it uses none of our role tokens, and no gate we ship can see it. A page
+  authored there is a fork of the design system, which this file's own *"a pack is a theme, not a
+  fork"* rule already forbids. Layout stays in Rails views built from primitives.
+
+  **Tier 4's ceiling must refuse**, checked before the call that would cross it, with an unset ceiling
+  meaning *refuse* rather than unlimited — a budget defaulting to infinity is not a budget. And where a
+  provider bills all-or-nothing, a failed generation is free but a **completed-but-unusable one is paid
+  for**, so the prompt is composed from the surface class and the brand pack rather than improvised.
+
+  **The drift hazard is named, not gated.** Tier 2 derives identity from `brand.json`; tier 3 inherits
+  it from an external brand kit. Two sources of truth for one brand, on adjacent surfaces.
+  **`brand.json` is authoritative** — it is the copy under version control and under gate — and the
+  external kit is a mirror to be checked. Nothing can compare them today, because the kit lives behind
+  a connector, and saying so is more honest than implying a check exists.
+
+- **§10 reconciled rather than contradicted** (Refs #507). It said the system *"produces nothing"* —
+  true when v1.66.0 shipped it, false now. Rewritten, keeping the half that survives generation and
+  matters more with it: **the improvisation ban.** A provider that is present but misconfigured is a
+  *new* way to end up with nothing, and the answer is unchanged — satisfy from tiers 1–2, or say so and
+  stop.
+
 ### 1.36.1 — 2026-08-06
 
 - **The asset boundary, declared** (Refs #503). `visual-assets.md` §10 listed rejected *techniques* —

@@ -47,10 +47,11 @@ errors:
 | **1** | **Product screenshot**, framed in browser chrome | Any hero or feature section for a product that exists. **Specific and true beats decorative** |
 | **1** | **Data-viz** (validated chart tokens) + **Lucide icons** | Stats, metrics, capability grids — see [data-viz.md](data-viz.md) |
 | **2** | **Brand-geometric decoration** (§4) | Backgrounds, section transitions, and every surface with nothing to screenshot |
-| **3** | **Licensed illustration set**, recoloured to role tokens | A *concept* with nothing to depict — "integrations", "security", "compliance" |
-| **4** | **Commissioned illustration** | Flagship brand moments only |
+| **3** | **Generated designed graphic** — Canva brand template, exported (§3a) | A banner, feature graphic, social card or brand motion clip. It **inherits** the brand kit rather than being prompted toward it |
+| **4** | **Generated illustration** — a metered model, per call (§3a) | A *concept* with nothing to depict and nothing to compose from. Costs money per attempt |
+| **5** | **Commissioned illustration** | Flagship brand moments only |
 
-**The ordering principle is specificity, not cost.** A real screenshot of the actual product tells a
+**The ordering principle is specificity first, then cost.** A real screenshot of the actual product tells a
 visitor something no illustration can: that the thing exists and looks like that. The strongest B2B
 SaaS marketing works almost entirely in tiers 1–2, and the corpus audit found the same shape — the
 SaaS landing hero's primary trust device is a browser-chrome-framed product screenshot, not artwork.
@@ -64,6 +65,64 @@ SaaS landing hero's primary trust device is a browser-chrome-framed product scre
    decoration. See §8.
 
 ---
+
+## 3a. Generated assets — tiers 3 and 4, and why they are ordered that way
+
+The system **can** now reach for a generated asset, and the order is not arbitrary: it is
+cheapest-and-most-brand-faithful first. Tier 3 **inherits** the brand; tier 4 is **prompted toward** it
+and may miss.
+
+| | tier 3 — designed graphic | tier 4 — generated illustration |
+|---|---|---|
+| produces | banners, feature graphics, social cards, MP4/GIF brand motion | illustration, texture, photographic concept |
+| brand fidelity | inherited from a brand kit | prompted, and *hoped for* |
+| marginal cost | none on an existing subscription | **per call**, every attempt |
+| reach for it | the asset can be **composed** | the asset must be **imagined** |
+
+That last row is the whole distinction. A design tool assembles from parts you gave it; a diffusion
+model invents. If the thing you need can be composed, composing it is both cheaper and more faithful.
+
+### Tier 3 is exported assets only — never a page
+
+A design tool that can build whole pages **must not** be used to build one. Its page output is a hosted
+artifact that cannot be exported as code (its export formats are PDF, JPG, PNG, PPTX, GIF, MP4, CSV —
+there is no HTML), it uses none of our role tokens, and no gate we ship can see it. A page authored
+there is a **fork of the design system**, which this file's own *"a pack is a theme, not a fork"* rule
+forbids.
+
+So the contract is narrow: **an exported asset that lands in `app/assets/` and is referenced by a view
+we own.** Layout stays in Rails views built from primitives, always.
+
+### Tier 4 is metered, and the ceiling has to refuse
+
+- The ceiling is **checked before the call that would cross it**, never after. A limit enforced on the
+  way out is a receipt.
+- **An unset ceiling means refuse**, not unlimited. A budget defaulting to infinity is not a budget.
+- **A reroll is a full charge.** Where a provider bills all-or-nothing, a *failed* generation is free
+  but a *completed but unusable* one is paid for. So the prompt is composed from the surface class
+  (`art-direction.md` §3) and the brand pack — never improvised. The cheap prompt is not the short one;
+  it is the one that does not need rerolling.
+
+### No provider configured — the rule that has not changed
+
+Absent a working provider, behaviour is exactly as before: **satisfy the surface from tiers 1–2, or say
+so and stop.** Name the surface and what the tiers could not carry. Never a placeholder, never stock
+art, never a hand-rolled "illustration". A half-configured setup must say *which* thing is missing
+rather than reporting the capability absent.
+
+### The drift hazard, named because it cannot yet be gated
+
+Tier 2 derives its identity from **`brand.json`**. Tier 3 inherits its identity from the **design
+tool's own brand kit**. Those are two sources of truth for one brand, feeding adjacent surfaces on the
+same page.
+
+**`brand.json` is authoritative.** It is the copy under version control and under gate; the external
+kit is a **mirror that must be checked**, not a second original. When they disagree, the pack wins and
+the kit gets corrected.
+
+This is **not gated** — the external kit's contents live behind a connector and not in the repo, so
+nothing here can read both and compare. That is a real limitation, stated rather than papered over:
+naming an ungated hazard is honest, implying it is gated would not be.
 
 ## 2. Tier 1 — product screenshots
 
@@ -573,24 +632,15 @@ proof**.
   They need **Tailwind ≥ 4.1.0**, and the recipes here should work on any v4. Reach for `mask-b-from-*`
   in a project you know is on 4.1+, and record the floor.
 - **No new role tokens and no new `brand.json` fields.** §4.1 and §9.
-- **No asset generation, and no improvising when generation is unavailable** (#503). This file
-  produces nothing: tier 1 is captured from the running product, tier 2 is CSS and SVG derived from
-  `brand.json`, and tiers 3–4 are **sourced by a human and recorded**. Nothing in the toolchain
-  emits a raster image, an illustration, or a texture.
+- **No improvising when generation is unavailable** (#503, #507). Tiers 1–2 produce assets from the
+  running product and from `brand.json`; tiers 3–4 **generate** them through a configured provider
+  (§3a). What this file still refuses is the gap between those: **if no provider is configured and
+  tiers 1–2 cannot serve the surface, say so and stop.** Name the surface, name what tiers 1 and 2
+  could not carry, and hand the decision back. Never a placeholder, never stock art, never a
+  hand-rolled "illustration", never an empty box where an asset was implied.
 
-  This was true before it was written down, and the gap mattered because **line 7 of this file
-  already predicts what an agent does with an absent boundary** — *"leave it empty, generate
-  something inconsistent, or import stock art that undercuts the brand"*. A rule that names a
-  failure and does not close it off is the `claims-vs-enforcement` defect in the file warning
-  about it.
-
-  **So: if a surface cannot be satisfied from tiers 1–2, say so and stop.** Name the surface, name
-  what tier 1 and tier 2 could not carry, and hand the decision back. Do **not** ship a placeholder,
-  a stock photograph, a hand-rolled SVG "illustration", or an empty box where an asset was implied.
-  The honest partial is a surface that is complete except for one named, requested asset — never a
-  surface that looks finished and is not.
-
-  §6 is why this costs less than it sounds: on precisely the surfaces with nothing to screenshot,
-  tier 2 and expressive typography are **primary rather than fallback**, so the stop above is rare
-  rather than routine. Where it is not rare — pre-launch marketing, where tier 1 is unavailable by
-  definition — that is a decision for the operator, and #507 tracks the bounded generation path.
+  This paragraph previously said the system *"produces nothing"*, which was true when it was written
+  and is now false. It is **rewritten rather than deleted**, because the rule it carried — the
+  improvisation ban — is the half that survives generation and matters more with it: a provider that
+  is present but misconfigured is a *new* way to end up with nothing, and the honest response is the
+  same one.
