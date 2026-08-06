@@ -60,6 +60,18 @@ Given `/design-flow:variants` output, this command is the rubric that one lacks:
 compositions on **brief-fit first, craft second**, and say which single change would most improve the
 winner. *"They are all fine"* is not a ranking.
 
+## Generated assets get a fitness verdict, and it blocks
+
+If `$ARGUMENTS` includes a **generated** asset, the critic runs **fitness first**: does the image match
+the brief recorded with it — depicts what was asked, omits what was forbidden, leaves the space the
+layout needs, legible at render size. That returns **pass/fail**, not a suggestion, and **this command's
+advisory stance does not cover it**.
+
+The distinction is the point. Taste is judgement, so it never blocks. Fitness is a **comparison against
+a brief we wrote**, so it can — and an asset that fails it is not referenced by a view: regenerate with
+a corrected brief, or fall back a tier. **No recorded brief is a fail**, since there is nothing to
+compare against.
+
 ## Report
 
 Per surface — class · focal point (or its absence) · ranked suggestions, each carrying the missing
