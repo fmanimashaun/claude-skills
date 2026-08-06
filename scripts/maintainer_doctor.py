@@ -114,6 +114,16 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # claim about work nobody did — the coverage-gap class. It was registered TWICE for a while, which
     # inflates the sweep count; GATE names are asserted unique in the selftest now.
     ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
+    # #509, and the same shape a second time: `docs/inventory.html` is COMMITTED, so it goes stale
+    # the moment an agent, a command, a gate or a version moves — which is most PRs. Registered as
+    # both halves for the reason stated above: the selftest proves the guards fire and stay silent
+    # on fixtures, the drift check asserts the page we actually ship is a clean build.
+    #
+    # NOT in CORPORA_GATES, and it never should be: every input is a tracked file in every clone
+    # (`plugins/**`, `.claude/**`, this file, `marketplace.json`). That is the fixed version of the
+    # mistake the block above records, not a carve-out anyone got away without.
+    ("inventory artifact drift", ("python3", "scripts/build_inventory.py", "--check")),
+    ("inventory artifact selftest", ("python3", "scripts/build_inventory.py", "--selftest")),
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
     # #129 widened its INPUT from the doctrine file to every shipped brand pack, because the #304
     # fix had been applied to the doctrine file and to neither pack — so the gate read clean over

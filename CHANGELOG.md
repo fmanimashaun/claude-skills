@@ -43,6 +43,49 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to learn why the count was 2, and a count with no evidence behind it is what makes a maintainer
   reword doctrine to appease the gate.
 
+- **`docs/inventory.html` — a generated, committed map of what this marketplace ships** (Refs #509).
+  27 agents, 37 commands, 4 model-tier tables and 64 gates existed with no map of any of it: the one
+  question people ask ("which agent owns this, what gate covers it, which command drives it") cuts
+  across all three kinds, so answering it meant reading four plugin trees. One filterable table now
+  does. **Change type: repo tooling** — no doctrine change, no framework claim, so no
+  `doctrine-verifier` verdict was sought.
+
+  Deliberately *not* the dashboard #509 was prompted by: same shape as `docs/coverage.html` instead —
+  generated, committed, drift-gated, stdlib only, no runtime. Every source is **imported rather than
+  re-parsed** (`maintainer_doctor.GATES`, `check_handoff.parse_tiers`), and the one source that could
+  not be — agent frontmatter, because the page needs `description` and `tools` — is **reconciled**
+  against `check_handoff.agent_models` instead, so two readers of one file cannot disagree in silence.
+  All three traps that page recorded are pinned by fixture: zero git calls on the render path (counted,
+  not compared), every input tracked in every clone, and `--check` comparing the blob at `HEAD`.
+
+  Three defects were found by mutating the subject rather than by reading it, and all three are
+  fixed. The `--check` fixtures stubbed `committed_blob`, so rewriting it to `Path.read_text`
+  survived the whole selftest — the exact defect the gate exists to prevent, sitting inside its own
+  test; it is now pinned against a throwaway git repo where the commit and the working copy
+  disagree. The frontmatter fixture's folded lines all began with a capital letter, so relaxing the
+  column-0 anchor also survived. And the placeholder guard tested for a placeholder *surviving*
+  `str.replace`, which cannot happen — `gate-that-cannot-fail`, replaced by a count of the
+  template's slots.
+
+  The fourth was caught by writing the page's own footnote and then checking it: a first draft
+  measured agent references as *"named in backticks or bold"* and printed "dispatches none" beside
+  `/rails-flow:issues`, which names seven of its plugin's agents in plain prose and dispatches every
+  one. Emphasis is typographic, not semantic. The match is now word-bounded and markup-blind, the
+  column is called **Agents named**, and the page says outright that naming is not dispatch — a
+  measurement it can make, in place of an inference it cannot.
+
+  One guard exists for a hole nothing else in the repo can see: an agent file with no `name:` is
+  **refused**, not skipped. `check_handoff.agent_models` skips it — correctly, there is nothing to
+  reconcile — so both readers would skip it identically, the reconciliation would stay clean, the
+  tier table would have nothing to match, and the agent would simply be absent from a page whose
+  entire claim is completeness. 90 fixtures; 17 hand-run mutations, each caught by a named fixture
+  (not registered in `mutation_check.py`: that harness stages a subject alone in a temp directory,
+  and this subject is effectively the whole repo tree, so it cannot reach a baseline pass there).
+
+  **The arm step now regenerates two pages, not one.** The inventory stamps the release version for
+  the same reason the coverage page does, so a version bump invalidates it and `inventory artifact
+  drift` fails until `python3 scripts/build_inventory.py` is re-run.
+
 ### 2026-08-06 (v1.67.0)
 
 - **`duplicate-unreleased`** — at most one `### Unreleased` per component section. A manual error I
