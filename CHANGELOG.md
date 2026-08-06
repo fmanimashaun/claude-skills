@@ -7,6 +7,35 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`undeclared-topology` counted a MENTION of an agent as a dispatch** (Refs #491). Detection was
+  `re.search(rf"\`{name}\`", body)`, so a command explaining *who consumes* its output was charged with
+  dispatching them: one sentence naming `qa-reporter` took `setup-qa.md` from 1 agent to 2 and produced a
+  false finding. Both escapes were worse than the finding — declare a topology the command does not have
+  (a false statement written into shipped doctrine to satisfy a gate), or stop naming the agent (the
+  linter deciding what doctrine may say). A dispatch is now recognised by a signal a dispatch actually
+  has: an imperative in the name's **own sentence**, an arrow/`to` handoff, the name in subject position
+  at the head of its step, or a `Task`/`subagent_type` invocation — the last counting even inside a
+  fenced block, while a name that appears *only* in a fence does not.
+
+  The narrowing is biased toward **counting**, because for this rule a false negative (an undeclared
+  fan-out shipping unlabelled) is worse than a false positive: the verb list includes ordinary English
+  (`run`, `use`, `call`), `to`/`via` count as handoffs, and one dispatching occurrence is enough.
+  Measured against the real tree rather than asserted — **5 commands examined and 0 reported, before and
+  after**. Agent detections go 38 → 35 tree-wide and 29 → 28 across the five multi-agent commands; all
+  three drops were read and confirmed to be mentions (`brand-guardian` inside `variants.md`'s own
+  topology comment, `case-author` describing what `/qa-flow:cases` does later, `claude-skills-reporter`
+  in a relative clause), and the narrowing never *adds* a detection. Reproducing #491 by restoring the
+  sentence to `setup-qa.md` fires on `dev` (examined 5 → 6, one false finding) and is silent here.
+  A new coverage counter, `commands_naming_2plus_agents_without_dispatching`, is what makes an
+  over-narrowing visible: a silence fixture proves the rule does not *fire* on a mention, only a number
+  that moves proves it can still *see* one. 6 new fixtures (both directions, one per named signal) and
+  9 new mutations, each verified to be caught by the fixture its `expects` names. The finding now also
+  names **which agent was counted via which signal**, because #491's reporter had to read the function
+  to learn why the count was 2, and a count with no evidence behind it is what makes a maintainer
+  reword doctrine to appease the gate.
+
 ### 2026-08-06 (v1.67.0)
 
 - **`duplicate-unreleased`** — at most one `### Unreleased` per component section. A manual error I
