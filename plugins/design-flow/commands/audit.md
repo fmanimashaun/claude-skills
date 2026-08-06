@@ -8,6 +8,23 @@ argument-hint: "[path or view/component to audit; default: changed files]"
 Review `$ARGUMENTS` (or the working diff) for drift from the **fidara-design** doctrine.
 Delegate to the **design-auditor** agent. Report findings; don't rewrite in place unless asked.
 
+**Run `/design-flow:critique` alongside this, not instead of it.** They answer different questions and
+only one of them blocks:
+
+| | this command | `/design-flow:critique` |
+|---|---|---|
+| asks | is this **correct**? | is this **considered**? |
+| authority | **gate** — drift is a defect | **lens** — ranked suggestions |
+
+A surface can pass every check here and still be flat: correct tokens, correct variants, correct
+a11y, and no focal point. That is not a gap in this command — it is the half it deliberately does not
+own. Running only the gate is how a project ships UI that is provably consistent and lifeless; running
+only the lens is how it ships drift. Both are cheap.
+
+Do **not** fold the critique's suggestions into this report. Consistency findings carry a `file:line`
+and an exact fix; taste findings carry a missing decision. Merging them puts an advisory note next to a
+blocking one, and the reader cannot tell which is which.
+
 ## First: the mechanical cross-check (run it before reading anything)
 
 The checklist below audits a *project's* UI. This one audits the **toolchain** — it catches

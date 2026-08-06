@@ -567,7 +567,7 @@ The `.claude/` hook and the plugins' hooks are **bash + `python3`**, and the flo
 Bash** with `python3` and `gh` on PATH.
 
 **Hooks do NOT all fail open, and the two exceptions are deliberate.** This line used to say they
-did, flatly. Of the ten hook scripts, eight are advisory — a status line, a linter, a
+did, flatly. Of the eleven hook scripts, nine are advisory — a status line, a linter, a
 cross-check — and a missing `python3` degrades them to silence, which is right: an advisory that
 blocks work when a dependency is absent is an advisory people disable. The two **gates** fail
 **closed**, verified by running them with `python3` shadowed by a stub that exits 127:

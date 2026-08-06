@@ -824,6 +824,39 @@ landmark noise outweighs the structure.
 <%# used to disagree about whether this element carried aria-live at all. %>
 <div id="toasts" aria-live="polite" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none" style="--space: var(--space-2xs)"></div>
 
+```
+
+The component itself. It was never declared here — only its markup was — so a reader got the template
+without the object that renders it, and a call site naming `ToastComponent` could not be checked
+against any initializer (#483).
+
+```ruby
+module Ui
+  class ToastComponent < ViewComponent::Base
+    # Rails' own `redirect_to … notice:`/`alert:` shorthands set exactly these two keys, so a map
+    # that omits them silently downgrades half an app's messages to `:info`.
+    INTENT_FOR_FLASH = { notice: :success, success: :success,
+                         alert: :error, error: :error, warning: :warning }.freeze
+    # Errors do NOT auto-dismiss. `:error` already renders `role="alert"`, and a message important
+    # enough to interrupt a screen reader is important enough to outlive five seconds. The dismiss
+    # button is then its only exit — which it already has, named and touch-sized.
+    TIMEOUT_MS = 5_000
+
+    def initialize(intent: :info, message: nil)
+      @intent = intent.to_sym
+      @message = message
+    end
+
+    def auto_dismiss? = @intent != :error
+
+    private
+
+    attr_reader :intent, :message
+  end
+end
+```
+
+```erb
 <%# A toast (turbo_stream.prepend "toasts") — the ROLE carries the severity, and nothing beside it: %>
 <%# `status` already implies aria-live="polite", `alert` already implies aria-live="assertive", so %>
 <%# writing aria-live here restates the role at best and contradicts it at worst. %>
@@ -834,6 +867,64 @@ landmark noise outweighs the structure.
     <button data-action="toast#close" aria-label="Dismiss" class="min-h-touch"><span class="sr-only">Dismiss</span>×</button></div>
 </div>
 ```
+
+### Flash → toast: the half that was promised and missing (#483)
+
+The layout comment says *"flash output goes to `#toasts` below, via Turbo Stream"* — and until now
+nothing did that. Three call sites `prepend` a toast **directly** from a controller action; **no code
+anywhere read `flash`**. So a Turbo Stream response showed its toast, and a plain
+`redirect_to … notice: "Saved"` showed **nothing at all** — no inline flash either, because the layout
+deliberately renders no flash partial. The message was not un-styled; it was lost.
+
+Both paths must reach the same container.
+
+**Path 1 — Turbo Stream (already doctrine).** Prepend directly and do not touch `flash`:
+
+```ruby
+render turbo_stream: turbo_stream.prepend("toasts",
+  ToastComponent.new(intent: :success, message: t(".saved")))
+```
+
+**Path 2 — a full render or redirect.** The layout drains `flash` into the container on load. This is
+the missing half:
+
+```erb
+<%# In the layout, INSIDE the #toasts div — not a separate flash surface. %>
+<div id="toasts" aria-live="polite" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none">
+  <% flash.each do |type, message| %>
+    <%= render ToastComponent.new(intent: INTENT_FOR_FLASH.fetch(type.to_sym, :info), message: message) %>
+  <% end %>
+</div>
+```
+
+`flash` is read **inside** the live region, not beside it. Rendering it anywhere else recreates the
+second notification surface this doctrine exists to remove, and `components.md` → Toast / Notification
+says the Turbo-Stream mechanism *replaces* the `_flash` pair rather than sitting next to it.
+
+**Map Rails' flash keys once, in one place** — `notice` and `alert` are what Rails' own
+`redirect_to` shorthands set, so a map that omits them silently downgrades half the app's messages to
+`:info`:
+
+```ruby
+INTENT_FOR_FLASH = { notice: :success, success: :success,
+                     alert: :error, error: :error, warning: :warning }.freeze
+```
+
+**Errors do not auto-dismiss.** This is ours, and it follows from the markup above rather than being a
+separate rule: `intent == :error` already renders `role="alert"`, and a message important enough to
+interrupt a screen reader is important enough to survive five seconds. So the timeout is conditional:
+
+```erb
+data-controller="toast"
+<%= "data-toast-timeout-value=#{5000}" unless intent == :error %>
+```
+
+An error toast then has only one way out — the dismiss button, which is already there and already
+has `min-h-touch` and an accessible name. **Do not add a second mechanism for it.**
+
+**A toast is never the only record of a failure.** It is transient by construction, so a validation
+error still belongs on the field (`forms.md`), and a failure the user must act on belongs in the page.
+The toast tells them it happened; it is not where they go to fix it.
 
 ## Drawer, Carousel and Lightbox — markup, because the roles are what gets wrong
 

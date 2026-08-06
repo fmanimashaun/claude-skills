@@ -12,6 +12,9 @@ primitive, the right variant, the right role. All of it is necessary and none of
 A surface can pass every gate we ship and still be **mechanically assembled**: correct, accessible,
 dark-mode-aware, and lifeless.
 
+Plainly: this file is the **look and feel** layer. If the question is *"why does this look
+mechanical"* rather than *"which token is wrong"*, it is answered here.
+
 That is not a hypothetical. The tooling we ship is entirely *avoid-the-bad* and *match-the-system* —
 `llm_tell_detector.py` catches AI tells, `rendered_conformance.py` checks token conformance,
 `check_page_pacing.py` measures band repetition. There is no *achieve-the-good*, and the

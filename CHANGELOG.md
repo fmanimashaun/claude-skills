@@ -7,6 +7,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-06 (v1.69.0)
+
+- **`hook-count-drift` — CLAUDE.md had two wrong numbers in one sentence.** It said *"of the ten hook
+  scripts, eight are advisory"*; there are **eleven**, and nine are advisory. The eleventh is
+  `design-flow`'s `design-tells.sh`. Both stale figures sat in the paragraph explaining which hooks fail
+  closed — in the file that spends pages warning about claims nothing makes true.
+
+  Third time a doc number about our own files has gone stale, and the **second time the missed component
+  was design-flow** (#203, #489). So it is a join now: the total is counted from disk, and the advisory
+  figure is **derived** — total minus the gates CLAUDE.md names by path — rather than read, because a
+  second hardcoded number is just a second thing to go stale. A reworded sentence **fails loud** instead
+  of silently checking nothing. 6 fixtures, 3 mutations.
+
+  One fixture had to be rebuilt: the first version had *both* numbers wrong, so it could not isolate the
+  total check — the advisory check fired too, and the mutation that disables the total comparison
+  survived. It now uses a case where only the total is wrong.
+
 ### 2026-08-06 (v1.68.0)
 
 - **`harness-doctrine.md` carried two stale counts about the rule it documents** (Refs #491). It said
@@ -2734,6 +2751,50 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.39.0 — 2026-08-06
+
+- **Password strength — the component contract, with the checklist the issue asked for removed** (Refs
+  #484). #484 specified *"a live requirement checklist"*. That checklist **is** the rule NIST prohibits,
+  rendered: *"Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures
+  of different character types)."* A meter ticking *has uppercase · has a digit · has a symbol* teaches
+  the user that `Passw0rd!` beats a passphrase, which is backwards — so the component shows only what
+  the policy actually enforces: **length progress**, **confirmation match**, and **the server's
+  blocklist verdict**. Never a score out of five, never a colour-only bar, never character classes.
+
+  Four rules that fall out of existing doctrine rather than being new: the meter reports *progress
+  toward valid*, not *invalid* — field errors stay in the field; `role="status"` on a container present
+  from first paint and announced on a **debounce**, since a region speaking per keystroke is unusable;
+  **submit is not gated on the meter**, because a client that disagrees with the server either blocks a
+  valid password or lies about an invalid one; and the blocklist verdict is a round-trip, so **unknown
+  is a state** — silence that reads as approval is the failure. The policy in `auth-security.md` §2a now
+  points at this contract, closing the cross-reference criterion.
+
+- **Flash → toast: the half the layout promised and nothing implemented** (Refs #483). The reference
+  layout carries the comment *"flash output goes to `#toasts` below, via Turbo Stream"* — and **no code
+  anywhere read `flash`**. Three call sites prepend a toast directly from a controller action, so a Turbo
+  Stream response showed its toast while a plain `redirect_to … notice:` showed **nothing at all**: no
+  inline flash either, because the layout deliberately renders no flash partial. The message was not
+  un-styled, it was **lost**. Both paths now reach the same container, with `flash` drained **inside**
+  the live region rather than beside it — rendering it anywhere else recreates the second notification
+  surface this doctrine exists to remove.
+
+  Rails' `notice`/`alert` shorthands are mapped explicitly, because a map omitting them silently
+  downgrades half an app's messages to `:info`. And **errors do not auto-dismiss** — that follows from
+  the existing markup rather than being a new rule: `:error` already renders `role="alert"`, and a
+  message important enough to interrupt a screen reader is important enough to outlive five seconds.
+
+- **`ToastComponent` was never declared, only drawn** (Refs #483). The Toast section shipped its ERB and
+  no Ruby class, so a reader got the template without the object that renders it — and a call site
+  naming `ToastComponent` could not be checked against any initializer. Found by `undeclared-component-call-site`
+  firing on the new `render` in the flash path: the existing call sites use `turbo_stream.prepend(...)`,
+  which that rule does not match, so the gap had been invisible since the component was written.
+
+- **`art-direction.md` names itself the "look and feel" layer** (Refs #486). #486's last acceptance
+  criterion greps the skill for craft vocabulary; four of five terms were present and *"look and feel"*
+  was not. Added as a **routing gloss** in the opening rather than stuffed somewhere to satisfy a grep —
+  an agent asked *"why does this look mechanical"* rather than *"which token is wrong"* should land on
+  this file, and the phrase it would use was the one missing.
 
 ### 1.38.0 — 2026-08-06
 
@@ -6709,6 +6770,22 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.15.0 — 2026-08-06
+
+- **The critic is wired into the review path, alongside the gate rather than inside it** (Refs #486).
+  `/design-flow:audit` now says to run `/design-flow:critique` **as well**, with the division stated: the
+  audit asks *is this correct* and blocks; the critique asks *is this considered* and does not. A surface
+  can pass every check the auditor makes and still be flat — correct tokens, correct variants, correct
+  a11y, no focal point — and that is the half the gate deliberately does not own. Their findings are kept
+  **unmerged** on purpose: a `file:line` fix and a missing decision carry different authority, and
+  putting them in one list means the reader cannot tell which blocks.
+
+  `/design-flow:variants` gains the critic as its **ranking rubric** (criterion 7). That command
+  produces N conformant variants and then asks a human to choose with nothing to choose *on* —
+  conformance cannot rank, because every variant is conformant by construction. The critic ranks on
+  brief-fit first, craft second. Note the division: the winner still goes to the consistency gate
+  *after*; all N go to the lens *before*.
+
 ### 1.14.0 — 2026-08-06
 
 - **`design-critic` gains asset fitness, kept separate from taste** (Refs #507). It could already see
@@ -7667,6 +7744,46 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-06 (release v1.69.0)
+
+> ### Three issues closed out, and each one's own gate caught something on the way
+>
+> The design-flow trio had to serialise — they all touch the same two components — so this is the
+> sequential half of the parallel batch. In all three cases a gate we already ship found a defect in the
+> change being made to satisfy it.
+
+- **The critic joins the review path** (#486, complete — all 8 criteria). `/design-flow:audit` now runs
+  the critique **alongside** it, findings deliberately **unmerged**: a `file:line` fix and a missing
+  decision carry different authority, and one list means the reader cannot tell which blocks.
+  `/design-flow:variants` gains it as its **ranking rubric** — conformance cannot rank, because every
+  variant there is conformant by construction.
+
+- **Flash → toast, the half the layout promised and nothing implemented** (#483). The reference layout
+  said *"flash output goes to `#toasts` via Turbo Stream"* and **no code anywhere read `flash`** — so a
+  Turbo Stream response showed its toast while a plain `redirect_to … notice:` showed **nothing at
+  all**, since the layout renders no flash partial by design. The message was not un-styled; it was
+  **lost**. Errors not auto-dismissing falls out of the existing markup rather than being a new rule:
+  `:error` already renders `role="alert"`.
+
+  `undeclared-component-call-site` then fired on the new `render` and found that **`ToastComponent` had
+  never been declared** — the section shipped its ERB and no Ruby class. Invisible until now because the
+  existing call sites use `turbo_stream.prepend(...)`, which that rule does not match.
+
+- **Password strength, with the checklist the issue asked for removed** (#484). #484 specified *"a live
+  requirement checklist"*, which **is** the composition rule NIST prohibits, rendered — and teaches that
+  `Passw0rd!` beats a passphrase. The component shows length progress, confirmation match, and the
+  server's blocklist verdict; never a score, never character classes. **Submit is not gated on the
+  meter**, because a client disagreeing with the server either blocks a valid password or lies about an
+  invalid one.
+
+- **`hook-count-drift`** — CLAUDE.md said *"of the ten hook scripts, eight are advisory"*; there are
+  **eleven**, nine advisory, the eleventh being design-flow's. Third stale doc-number about our own
+  files, second time the missed component was design-flow (#203, #489). The advisory figure is now
+  **derived**, not read.
+
+**Versions:** rails-stack 1.38.0 → **1.39.0**, design-flow 1.14.0 → **1.15.0**.
+**Gates:** 65/65. **Mutation check:** 409 mutations across 32 guards, all caught.
 
 ### 2026-08-06 (release v1.68.0)
 

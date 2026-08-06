@@ -1393,6 +1393,52 @@ _CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
 _CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
 
 
+def check_hook_script_count() -> tuple[list[Finding], int]:
+    """CLAUDE.md's hook-script count must equal the hook scripts on disk.
+
+    It said *"of the ten hook scripts, eight are advisory"* while eleven existed -- the eleventh being
+    `design-flow`'s `design-tells.sh`. Two wrong numbers in one sentence, in the file that spends pages
+    warning about claims nothing makes true, and in the paragraph explaining which hooks fail closed.
+
+    That is the third time a doc number about our own files went stale, and the second time the missed
+    component was design-flow (#203, #489). A count over files we already hold is a join, so it stops
+    being remembered.
+
+    The ADVISORY figure is derived, never read: total minus the gates CLAUDE.md itself names. A second
+    hardcoded number would just be a second thing to go stale.
+    """
+    doc = ROOT / "CLAUDE.md"
+    if not doc.is_file():
+        return [], 0
+    scripts = sorted(ROOT.glob("plugins/*/hooks/scripts/*.sh")) + \
+              sorted(ROOT.glob(".claude/hooks/scripts/*.sh"))
+    total = len(scripts)
+    if not total:
+        return [], 0
+    WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+             8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen"}
+    body = read(doc)
+    m = re.search(r"Of the (\w+) hook scripts, (\w+) are advisory", body)
+    if not m:
+        return [Finding(
+            "hook-count-drift", "CLAUDE.md", 0,
+            "the hook-script sentence is gone or reworded, so nothing reconciles the count against "
+            "the scripts on disk -- restore it or drop this rule deliberately")], total
+    # The two fail-CLOSED gates CLAUDE.md names by path.
+    gates = sum(1 for s in scripts if s.name in {"guard-bash.sh", "release-gate.sh"})
+    findings = []
+    if m.group(1) != WORDS.get(total, str(total)):
+        findings.append(Finding(
+            "hook-count-drift", "CLAUDE.md", 0,
+            f"says {m.group(1)!r} hook scripts; there are {total}"))
+    if m.group(2) != WORDS.get(total - gates, str(total - gates)):
+        findings.append(Finding(
+            "hook-count-drift", "CLAUDE.md", 0,
+            f"says {m.group(2)!r} are advisory; {total} scripts minus {gates} named gates is "
+            f"{total - gates}"))
+    return findings, total
+
+
 def check_duplicate_unreleased() -> tuple[list[Finding], int]:
     """At most one `### Unreleased` per `## component` section of the CHANGELOG.
 
@@ -1735,6 +1781,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     pw_floor, pw_floor_examined = check_password_floor()
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
+    hook_cnt, hook_cnt_examined = check_hook_script_count()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1760,11 +1807,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "password_floor_claims_reconciled": pw_floor_examined,
         "commands_reading_a_foreign_skill": skill_dep_examined,
         "changelog_sections_with_unreleased": dup_unrel_examined,
+        "hook_scripts_counted": hook_cnt_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel,
+            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt,
             coverage)
 
 
@@ -1800,6 +1848,34 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- hook-count-drift -------------------------------------------------
+    HC = "hook-count-drift"
+    def _hooks(n, sentence):
+        files = {"CLAUDE.md": sentence}
+        for i in range(n):
+            files[f"plugins/p{i}/hooks/scripts/h{i}.sh"] = "#!/bin/sh\n"
+        return files
+    # ONLY the total is wrong here — advisory is correct (3 scripts, 1 named gate = 2 advisory).
+    # A fixture with BOTH numbers wrong cannot isolate the total check: the advisory check fires
+    # too, so disabling the total comparison would still leave a finding and the mutation survives.
+    only_total = _hooks(2, "Of the ten hook scripts, two are advisory.\n")
+    only_total["plugins/pz/hooks/scripts/guard-bash.sh"] = "#!/bin/sh\n"
+    scenario("a wrong total is reported", rule=HC, expect_finding=True, files=only_total)
+    scenario("the right total and derived advisory count is silent", rule=HC, expect_finding=False,
+             files=_hooks(3, "Of the three hook scripts, three are advisory.\n"))
+    # The advisory figure is DERIVED (total minus the named gates), not a second free number.
+    gated = _hooks(2, "Of the three hook scripts, two are advisory.\n")
+    gated["plugins/pz/hooks/scripts/guard-bash.sh"] = "#!/bin/sh\n"
+    scenario("advisory is total minus the named gates", rule=HC, expect_finding=False, files=gated)
+    wrong = dict(gated); wrong["CLAUDE.md"] = "Of the three hook scripts, three are advisory.\n"
+    scenario("a wrong advisory count is reported even when the total is right",
+             rule=HC, expect_finding=True, files=wrong)
+    # The sentence disappearing must FAIL LOUD, not silently stop checking.
+    scenario("a reworded sentence is reported, not ignored", rule=HC, expect_finding=True,
+             files=_hooks(3, "We ship some hooks.\n"))
+    scenario("no hook scripts at all is silent", rule=HC, expect_finding=False,
+             files={"CLAUDE.md": "Of the ten hook scripts, eight are advisory.\n"})
 
     # -- duplicate-unreleased ---------------------------------------------
     DUP = "duplicate-unreleased"
