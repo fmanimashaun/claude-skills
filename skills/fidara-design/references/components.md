@@ -1404,6 +1404,41 @@ see [Activity feed / Timeline](#activity-feed--timeline).
   [interaction-stimulus.md](interaction-stimulus.md#loading-progress-and-busy-state-95). **Emit via Turbo Streams** to prepend into the container. One mechanism
   (replaces the duplicate `_flash`/`_flash_messages` pair).
 
+## Password strength
+
+**It may not render a character-class checklist.** *NIST SP 800-63B*: *"Verifiers and CSPs **SHALL
+NOT** impose other composition rules (e.g., requiring mixtures of different character types)."* A meter
+ticking *"has uppercase · has a digit · has a symbol"* **is** that rule, rendered — and it actively
+teaches the user that `Passw0rd!` beats a passphrase, which is backwards. The policy this pairs with is
+`rails-8` → `auth-security.md` §2a; read it before building this.
+
+So the component shows only what the policy actually enforces:
+
+| shows | why |
+|---|---|
+| **length progress** toward the floor | the one requirement that is a `SHALL` and is checkable client-side |
+| **confirmation match** | pure UI state, no policy involved |
+| **the server's blocklist verdict** | a `SHALL`, and only the server can answer it |
+
+Never a score out of five, never a colour-only strength bar, and **never a list of character classes**.
+
+- **The meter is not the error.** Field errors stay in the field per §Form field, with
+  `aria-describedby`. This reports *progress toward valid*, which is a different thing from *invalid*.
+- **`role="status"`, on a container that is in the DOM from first paint** — same rule as Toast: a live
+  region must exist before content enters it. Announce on a **debounce**, never per keystroke; a region
+  that speaks on every character is unusable with a screen reader.
+- **Do not gate submit on the meter.** The server validates; a disabled button that the client thinks
+  should be enabled is unfixable by the user, and a client that thinks it should be disabled while the
+  server disagrees is a lie. Let them submit and show the server's answer.
+- **Length progress is `Progress bar`** (below), not a bespoke widget — `aria-valuenow` optional,
+  accessible name required, and it is Children Presentational so text inside the fill is not read.
+- **The blocklist verdict arrives late.** It is a server round-trip, so the region must handle
+  *unknown* as a state rather than defaulting to "fine". Absent a verdict, say nothing — silence that
+  reads as approval is the failure here.
+
+**Dark mode and contrast come free** only if the meter uses role tokens: a strength indicator built
+from `bg-green-500`/`bg-red-500` is both a raw-colour drift finding and unreadable in forced-colors.
+
 ## Progress bar
 - **`role="progressbar"` is an ARIA role, not an APG pattern** — there is no pattern page for it, so
   the role definition is the authority. Prefer native `<progress>` where the styling allows it.
