@@ -2585,6 +2585,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.36.1 — 2026-08-06
+
+- **The asset boundary, declared** (Refs #503). `visual-assets.md` §10 listed rejected *techniques* —
+  ambient motion, SVG filters, `mask-*`, vendored illustration sets — and never said that the system
+  **generates nothing**. Tier 1 is captured from the running product, tier 2 is CSS/SVG derived from
+  `brand.json`, tiers 3–4 are sourced by a human and recorded; nothing emits a raster image. That was
+  already true, and the gap mattered because **line 7 of that same file predicts what an agent does
+  with an absent boundary** — *"leave it empty, generate something inconsistent, or import stock art
+  that undercuts the brand"*. A file that names a failure and does not close it off is
+  `claims-vs-enforcement` in the warning itself. So the rule is now explicit: if a surface cannot be
+  satisfied from tiers 1–2, **say so and stop** — name the surface and what the tiers could not carry,
+  and never ship a placeholder, a stock photograph or a hand-rolled "illustration". §6 keeps the cost
+  low by making tier 2 primary on exactly the surfaces with nothing to screenshot; #507 tracks the
+  bounded generation path for the case where that is not enough.
+
 ### 1.36.0 — 2026-08-05
 
 - **The craft layer — `art-direction.md`** (Refs #486). Nineteen references answered *"is this
@@ -7420,6 +7435,28 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-06 (release v1.66.0)
+
+> ### A file that named a failure and did not close it off
+>
+> `visual-assets.md` has warned since it was written that an agent with no boundary will *"leave it
+> empty, generate something inconsistent, or import stock art that undercuts the brand"*. It never
+> said the system generates nothing — so the boundary was absent, which is precisely the condition
+> that sentence describes.
+
+- **The asset boundary, declared** (#503). §10 listed rejected *techniques* — ambient motion, SVG
+  filters, `mask-*`, vendored illustration sets — and never the capability. Tier 1 is captured from the
+  running product, tier 2 is CSS/SVG derived from `brand.json`, tiers 3–4 are sourced by a human and
+  recorded; a grep for any generation path across `skills/` and `plugins/` returns **0 files**. Now
+  explicit, with the rule that matters: if a surface cannot be satisfied from tiers 1–2, **say so and
+  stop** — name the surface and what the tiers could not carry, and never ship a placeholder, a stock
+  photograph, a hand-rolled "illustration", or an empty box where an asset was implied. §6 keeps this
+  rare by making tier 2 and expressive typography *primary rather than fallback* on exactly the
+  surfaces with nothing to screenshot.
+
+**Versions:** rails-stack 1.36.0 → **1.36.1**.
+**Gates:** 63/63. **Mutation check:** 393 mutations across 32 guards, all caught.
 
 ### 2026-08-05 (release v1.65.0)
 
