@@ -228,10 +228,75 @@ GUARDS: tuple[Guard, ...] = (
                 "parallel without a merge rule",
             ),
             Mutation(
+                # Anchor shortened by #491: the skip branch now also ticks the mention counter,
+                # so the `continue` no longer sits on the next line. The stale-anchor rule caught
+                # the drift rather than letting this mutation quietly stop mutating anything.
                 "the topology rule demands a declaration from every single-agent command",
-                "        if len(dispatched) < 2:\n            continue\n",
-                "        if False:\n            continue\n",
+                "        if len(dispatched) < 2:",
+                "        if False:",
                 "a single agent needs no declaration",
+            ),
+            # #491. Every mutation below reverts one half of "a mention is not a dispatch". The
+            # rule's own trap is that narrowing it produces false NEGATIVES, which are worse here
+            # than the false positive being fixed -- so the silence fixtures and the firing
+            # fixtures each get their own mutation, and neither direction is left assumed.
+            Mutation(
+                "detection reverts to a backticked name, so a MENTION is a dispatch again",
+                "        dispatched = _dispatched_agents(body, named)",
+                '        dispatched = {n: "backtick" for n in named}',
+                "two agents merely mentioned, not dispatched",
+            ),
+            Mutation(
+                "the signal stops being scoped to the name's own sentence",
+                "    for end in _SENTENCE_END.finditer(prefix):\n        cut = max(cut, end.end())",
+                "    for end in []:\n        cut = max(cut, end.end())",
+                "two agents merely mentioned, not dispatched",
+            ),
+            Mutation(
+                "subject position stops counting, losing ``qa-reporter` consolidates.`",
+                '    if _STEP_LEAD.match(sentence):\n        return "subject-position"',
+                '    if False:\n        return "subject-position"',
+                "an agent opening its own step is a dispatch",
+            ),
+            Mutation(
+                "the arrow handoff stops counting, losing /rails-flow:review's whole shape",
+                '    if _HANDOFF_PREFIX.search(sentence):\n        return "handoff-arrow"',
+                '    if False:\n        return "handoff-arrow"',
+                "an arrow handoff is a dispatch",
+            ),
+            Mutation(
+                "the imperative stops counting, losing `Dispatch all layers: ...`",
+                '    if _DISPATCH_VERB.search(sentence):\n        return "dispatch-verb"',
+                '    if False:\n        return "dispatch-verb"',
+                "two agents dispatched with no declaration",
+            ),
+            Mutation(
+                "fenced code is read as prose, so a name in a label description dispatches",
+                '    return _FENCED.sub(lambda m: re.sub(r"[^\\n]", " ", m.group(0)), text)',
+                "    return text",
+                "an agent named only inside a fenced block is not dispatched",
+            ),
+            Mutation(
+                "a Task/subagent invocation stops counting because it is inside a fence",
+                '                if _TASK_INVOCATION.search(body[line_start:].split("\\n", 1)[0]):',
+                "                if False:",
+                "a Task invocation inside a fence is a dispatch",
+            ),
+            Mutation(
+                "a thematic break stops ending a block, so frontmatter hides the first instruction",
+                '_BLOCK_BREAK = re.compile(r"\\n[ \\t]*\\n|\\n[ \\t]*(?:-{3,}|={3,}|\\*{3,}|_{3,})'
+                '[ \\t]*(?=\\n)")',
+                '_BLOCK_BREAK = re.compile(r"\\n[ \\t]*\\n")',
+                "an agent opening its own step is a dispatch",
+            ),
+            Mutation(
+                # The narrowing's instrument. Without this, a `_dispatched_agents` that had gone
+                # completely blind would satisfy every silence fixture above and report nothing
+                # -- which is what the counter exists to make visible.
+                "the mention counter stops moving, so an over-narrowed rule reads as a clean one",
+                "                named_only += 1",
+                "                named_only += 0",
+                "must be COUNTED as such, not merely unreported",
             ),
             Mutation(
                 "the coercion rule drops its backreference and flags any two identifiers",
