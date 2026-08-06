@@ -12,6 +12,13 @@ this does NOT modify any native app repo (Kotlin/Swift shells live there).
 
 ## Preconditions
 
+**The `fidara-design` skill must be readable.** It ships in the **`rails-stack`** plugin, not
+this one, and no `plugin.json` can declare that — there is no `requires` field. So confirm you can read
+`fidara-design`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
+(`/plugin install rails-stack@claude-skills`) and stop.** Do not proceed from memory of the catalog:
+this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
+tokens and components that no gate will recognise (#513).
+
 A Rails 8 + Hotwire app already set up with `/design-flow:setup` (tokens, primitives,
 components). `$ARGUMENTS` = which native surface(s) to configure paths for (`ios | android |
 both`; default `both`). Idempotent; marker-guarded; stage only files you author.
