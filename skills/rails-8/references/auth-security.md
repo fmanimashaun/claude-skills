@@ -235,7 +235,7 @@ The second example is the one that documents the policy: a passphrase with no di
 
 ### The UI half
 
-A live strength meter is worth having, but **it may not render a character-class checklist** — that
+A live strength meter is worth having, and its contract is `fidara-design` → **Password strength**. It **may not render a character-class checklist** — that
 is the prohibited rule wearing a progress indicator, and it teaches the user that `Passw0rd!` beats a
 passphrase. What it can honestly show: length progress toward the floor, the confirmation-match
 state, and the server's blocklist verdict. See `fidara-design` → forms for the component contract.

@@ -2754,6 +2754,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Password strength — the component contract, with the checklist the issue asked for removed** (Refs
+  #484). #484 specified *"a live requirement checklist"*. That checklist **is** the rule NIST prohibits,
+  rendered: *"Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures
+  of different character types)."* A meter ticking *has uppercase · has a digit · has a symbol* teaches
+  the user that `Passw0rd!` beats a passphrase, which is backwards — so the component shows only what
+  the policy actually enforces: **length progress**, **confirmation match**, and **the server's
+  blocklist verdict**. Never a score out of five, never a colour-only bar, never character classes.
+
+  Four rules that fall out of existing doctrine rather than being new: the meter reports *progress
+  toward valid*, not *invalid* — field errors stay in the field; `role="status"` on a container present
+  from first paint and announced on a **debounce**, since a region speaking per keystroke is unusable;
+  **submit is not gated on the meter**, because a client that disagrees with the server either blocks a
+  valid password or lies about an invalid one; and the blocklist verdict is a round-trip, so **unknown
+  is a state** — silence that reads as approval is the failure. The policy in `auth-security.md` §2a now
+  points at this contract, closing the cross-reference criterion.
+
 - **Flash → toast: the half the layout promised and nothing implemented** (Refs #483). The reference
   layout carries the comment *"flash output goes to `#toasts` below, via Turbo Stream"* — and **no code
   anywhere read `flash`**. Three call sites prepend a toast directly from a controller action, so a Turbo
