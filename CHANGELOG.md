@@ -2752,6 +2752,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **We shipped a 2FA recipe that produces a replayable one-time password** (Refs #531).
+  `ecosystem-gems.md` said *"Need email confirmation, lockouts, or 2FA? Add a column, a mailer, a
+  `rotp` check"*. True of the plumbing, dangerous as a recipe: verified that way a TOTP **accepts the
+  same code repeatedly** inside its window, and *NIST SP 800-63B-4* makes single-use a **SHALL** —
+  *"the verifier SHALL NOT accept a previously used OTP"*. Replay prevention is not a detail added
+  later; it is the difference between a second factor and a decoration. 2FA is removed from that
+  add-a-column sentence, which stays correct for confirmation and lockouts.
+
+  Found by a research session sent to establish what Rails 8 ships natively for MFA. The answer was
+  **nothing** — 19 generator templates across three generators, zero MFA terms — but the more useful
+  finding was this one, in doctrine we had already published.
+
 ### 1.39.0 — 2026-08-06
 
 - **Password strength — the component contract, with the checklist the issue asked for removed** (Refs
