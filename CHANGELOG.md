@@ -2635,6 +2635,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   model invents. If the asset can be *composed*, composing it is both cheaper and more faithful, so
   tier 4 is genuinely last-resort rather than the default anyone reaches for.
 
+  **Tested before the doctrine was written, and tier 2 won.** A hero backdrop was generated from a
+  brand kit and exported end to end — the pipeline works (`generate → candidate → design → export`
+  returns a real 1920×1080 PNG). But it **ignored the composition brief**, returning a centred motif
+  when asked for empty space in the left two-thirds, so a layout must never depend on a region of a
+  generated image being empty. There is **no SVG export**, so a backdrop arrives as a **126 KB raster**
+  against a few hundred bytes for the equivalent `decor-mesh`. And what came back was abstract
+  geometric decoration — exactly what **tier 2 already produces from `brand.json`**, lighter, scalable,
+  and brand-*derived* rather than brand-*flavoured*. So tier 3 is scoped to **what tier 2 cannot do**:
+  composed scenes, product-adjacent mockups, editorial assembly, and brand **motion** (MP4/GIF, which
+  tier 2 has no answer for). Prompting it for *"abstract shapes in the brand colours"* is paying bytes
+  for a worse `decor-mesh`.
+
   **Tier 3 is exported assets only — never a page.** A design tool that can build whole pages must not
   be used to: its page output cannot be exported as code (formats are PDF, JPG, PNG, PPTX, GIF, MP4,
   CSV — verified, no HTML), it uses none of our role tokens, and no gate we ship can see it. A page

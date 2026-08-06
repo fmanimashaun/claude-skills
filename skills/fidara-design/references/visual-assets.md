@@ -82,6 +82,30 @@ and may miss.
 That last row is the whole distinction. A design tool assembles from parts you gave it; a diffusion
 model invents. If the thing you need can be composed, composing it is both cheaper and more faithful.
 
+### Tier 3 does NOT replace tier 2 — tested, and tier 2 won
+
+Run end to end before this doctrine was written: a hero backdrop generated from a brand kit, converted
+to a design, exported. The pipeline works — `generate → candidate → design → export` returns a real
+**1920×1080 PNG, 126 KB**. Three findings that bound the tier:
+
+- **It ignored the composition brief.** Asked for empty space in the *left two-thirds* with facets to
+  the *right*, it returned a **centred** motif. The restraint constraints held (no text, no people, no
+  photography); the *placement* ones did not. A generated asset is a suggestion, not a specification —
+  so never make a layout depend on a region of a generated image being empty.
+- **There is no SVG export.** Formats are PDF, JPG, PNG, PPTX, GIF, MP4. A hero backdrop therefore
+  arrives as a raster at **126 KB**, against a few hundred bytes for the equivalent `decor-mesh`, and it
+  does not scale.
+- **What came back was abstract geometric decoration** — which is precisely what **tier 2 already
+  produces from `brand.json`**, at a fraction of the weight, infinitely scalable, and brand-*derived*
+  rather than brand-*flavoured*.
+
+**So tier 3 is for what tier 2 cannot do**: composed scenes, product-adjacent mockups, editorial or
+photographic assembly, and brand **motion** (MP4/GIF, which tier 2 has no answer for). Reaching for it
+to make an abstract background is paying bytes for a worse version of something you already have.
+
+If you find yourself prompting for *"abstract geometric shapes in the brand colours"*, stop: that is
+`decor-mesh`, and §4 owns it.
+
 ### Tier 3 is exported assets only — never a page
 
 A design tool that can build whole pages **must not** be used to build one. Its page output is a hosted
