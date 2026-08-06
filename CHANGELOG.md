@@ -2754,6 +2754,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Flash → toast: the half the layout promised and nothing implemented** (Refs #483). The reference
+  layout carries the comment *"flash output goes to `#toasts` below, via Turbo Stream"* — and **no code
+  anywhere read `flash`**. Three call sites prepend a toast directly from a controller action, so a Turbo
+  Stream response showed its toast while a plain `redirect_to … notice:` showed **nothing at all**: no
+  inline flash either, because the layout deliberately renders no flash partial. The message was not
+  un-styled, it was **lost**. Both paths now reach the same container, with `flash` drained **inside**
+  the live region rather than beside it — rendering it anywhere else recreates the second notification
+  surface this doctrine exists to remove.
+
+  Rails' `notice`/`alert` shorthands are mapped explicitly, because a map omitting them silently
+  downgrades half an app's messages to `:info`. And **errors do not auto-dismiss** — that follows from
+  the existing markup rather than being a new rule: `:error` already renders `role="alert"`, and a
+  message important enough to interrupt a screen reader is important enough to outlive five seconds.
+
+- **`ToastComponent` was never declared, only drawn** (Refs #483). The Toast section shipped its ERB and
+  no Ruby class, so a reader got the template without the object that renders it — and a call site
+  naming `ToastComponent` could not be checked against any initializer. Found by `undeclared-component-call-site`
+  firing on the new `render` in the flash path: the existing call sites use `turbo_stream.prepend(...)`,
+  which that rule does not match, so the gap had been invisible since the component was written.
+
 - **`art-direction.md` names itself the "look and feel" layer** (Refs #486). #486's last acceptance
   criterion greps the skill for craft vocabulary; four of five terms were present and *"look and feel"*
   was not. Added as a **routing gloss** in the opening rather than stuffed somewhere to satisfy a grep —
