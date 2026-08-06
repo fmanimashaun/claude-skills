@@ -9,6 +9,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`harness-doctrine.md` carried two stale counts about the rule it documents** (Refs #491). It said
+  *"Four commands qualify today"* (five do) and *"two declared mutations"* (thirteen). Both were
+  `claims-vs-enforcement` on our own doc — the exact class that file exists to warn about, in the
+  paragraph describing a rule whose first version *"reported no findings over an empty scan"*. Found by
+  the session fixing #491, which could not correct it from inside its own lane; both re-measured against
+  the repo rather than incremented, and the §491 narrowing is now documented there too.
+
 - **`undeclared-topology` counted a MENTION of an agent as a dispatch** (Refs #491). Detection was
   `re.search(rf"\`{name}\`", body)`, so a command explaining *who consumes* its output was charged with
   dispatching them: one sentence naming `qa-reporter` took `setup-qa.md` from 1 agent to 2 and produced a
