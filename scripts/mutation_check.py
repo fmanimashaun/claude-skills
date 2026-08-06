@@ -89,6 +89,20 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #513. Nothing can declare this pairing in a manifest, so the check has to
+                # live in the command or the doctrine is simply absent at runtime.
+                "the stop-instruction check goes, so a command may read an absent skill",
+                '        if STOP.search(body):',
+                "        if True:",
+                "a command reading a foreign skill with no stop instruction",
+            ),
+            Mutation(
+                "the skill-reference filter goes, demanding a precondition of every command",
+                '        if FOREIGN_SKILL not in body:',
+                "        if False:",
+                "a command not reading it is silent",
+            ),
+            Mutation(
                 # #484. Two numbers for one rule in one file is how a relaxed example
                 # outlives a table nobody re-read.
                 "the floor comparison inverts, so only a MATCHING example is reported",

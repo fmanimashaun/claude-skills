@@ -9,6 +9,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`undeclared-skill-dependency`** (Refs #513) — a command reading a skill from another plugin must
+  carry a stop instruction. Verified against the pre-fix tree rather than assumed: 5 examined, **5
+  reported**. Agents are deliberately out of scope, since an agent is only ever reached through a
+  command. 6 fixtures, 2 mutations.
+
+- **`invisible-character` missed every C0 control byte, and one had already shipped.** The table was
+  typographic — characters that *look* like a space. A control byte is worse: inside a **regex literal**
+  it silently changes what the pattern means, and `inspect.getsource` renders it invisibly, so the
+  source reads correctly while the rule matches nothing. `gate-that-cannot-fail` with no symptom.
+
+  Found the only way it can be. Writing `\b` through a shell heredoc produced a literal `0x08` in the
+  new rule above, whose pattern then required a backspace after *"stop"* — it reported clean on input it
+  could never match, and its own fixture caught it. Reading the line with `repr()` is what made it
+  visible; `inspect.getsource` had shown it as correct. The table now covers BACKSPACE, VERTICAL TAB,
+  FORM FEED, ESCAPE, BELL and NUL (TAB and line endings excluded as legitimate), and it immediately
+  found **5 backspace bytes already in `CHANGELOG.md`** — a `\bverify\b` written the same way in an
+  earlier session. All cleared; the repo now holds zero.
+
+### Unreleased
+
 - **`plugin-boundaries` — the second maintainer skill**, in `.claude/skills/`, so it ships to nobody
   and arrives automatically on a clone. It decides *where content belongs*: one stack-neutral core with
   stack-specific plugins layered on top, exactly one home per concern, and nothing maintainer-only
@@ -1533,9 +1553,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 - Four bugs were found *in the linter itself* while proving it, all silent-failure shaped: `bash -n
   <tempfile>` broke under Git Bash (mangled Windows path → every block a false syntax error);
   `text=True` encoded stdin as cp1252 and crashed on a `✓`; a nonexistent path reported "0 files,
-  no findings" instead of erroring; and `verify` matched inside `pipeline-verify`, flagging an
+  no findings" instead of erroring; and `\bverify\b` matched inside `pipeline-verify`, flagging an
   idempotent `docker rm … || true`. Worth recording that three separate escaping mistakes wrote
-  literal control characters (``, TAB) into the source via heredoc patching — invisible in
+  literal control characters (`\b`, TAB) into the source via heredoc patching — invisible in
   output, and the regex matched nothing. Author code with an editor, not with nested string layers.
 
 ### 2026-07-28 — the doctrine gate gets an explicit scope
@@ -2061,7 +2081,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   also matches **`simple_form_for`**, because that string ends with `form_for` — so the mandate
   check fired on every *correct* form. A check that flags everything is as useless as one that
   cannot fire: it gets ignored, then disabled. Fixed with a word boundary
-  (`grep -rnE "(form_with|form_for)"`), verified against a fixture containing one correct
+  (`grep -rnE "\b(form_with|form_for)\b"`), verified against a fixture containing one correct
   `simple_form_for` and one offending `form_with` — only the offender is reported.
 - **Added the check that actually catches violations.** The mandate covers form *elements*, not just
   the form tag, and hand-rolled anatomy was unchecked: `f.label` with a manual error `<p>`, or a
@@ -6516,6 +6536,17 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **Five commands read a skill that ships in another plugin, and none checked it was there** (Refs
+  #513). All four design-flow agents and five of its commands read `skills/fidara-design`, which ships
+  only inside the **`rails-stack`** bundle — and no `plugin.json` carries a `requires` field, so nothing
+  *can* declare the pairing. `/plugin install design-flow@claude-skills` alone therefore yields agents
+  whose own text calls that doctrine *"the law"* about a file that is absent, with no warning; the
+  likely outcome is the worst one, an agent improvising a catalog. Each of the five now carries a
+  precondition that names what is missing (`/plugin install rails-stack@claude-skills`) and **stops** —
+  the pattern this repo already uses in six commands for `gh`, Playwright and cloud credentials.
 
 ### 1.13.0 — 2026-08-05
 
