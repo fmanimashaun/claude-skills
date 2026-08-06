@@ -8,6 +8,15 @@ argument-hint: "<component name or screen>  [e.g. pricing-card | settings form |
 Build (or fix) `$ARGUMENTS` to the **fidara-design** doctrine. Delegate to the
 **ui-composer** agent. Never freehand CSS — compose.
 
+## Preconditions
+
+**The `fidara-design` skill must be readable.** It ships in the **`rails-stack`** plugin, not
+this one, and no `plugin.json` can declare that — there is no `requires` field. So confirm you can read
+`fidara-design`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
+(`/plugin install rails-stack@claude-skills`) and stop.** Do not proceed from memory of the catalog:
+this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
+tokens and components that no gate will recognise (#513).
+
 ## `--variants N` — when the brief has no single right answer
 
 `$ARGUMENTS` ending in `--variants N` (default 3) hands off to **`/design-flow:variants`**: N

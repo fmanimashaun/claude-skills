@@ -7,6 +7,52 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-06 (v1.67.0)
+
+- **`duplicate-unreleased`** — at most one `### Unreleased` per component section. A manual error I
+  made **twice in three releases**, both times identically: two changes each insert their bullet against
+  the same `## <section>` anchor, so the second opens its own heading above the first. Nothing broke
+  either time, because the promotion pre-flight counts headings — but it should not need catching by a
+  human reading a number, and a repeated manual error a join can detect belongs in a gate rather than in
+  a habit. Counts **heading lines**, not the substring, because this file's own prose discusses
+  `### Unreleased` while describing the rule against a stray one, and a substring count made an earlier
+  arm fail on that sentence. 5 fixtures, 2 mutations.
+
+- **`undeclared-skill-dependency`** (Refs #513) — a command reading a skill from another plugin must
+  carry a stop instruction. Verified against the pre-fix tree rather than assumed: 5 examined, **5
+  reported**. Agents are deliberately out of scope, since an agent is only ever reached through a
+  command. 6 fixtures, 2 mutations.
+
+- **`invisible-character` missed every C0 control byte, and one had already shipped.** The table was
+  typographic — characters that *look* like a space. A control byte is worse: inside a **regex literal**
+  it silently changes what the pattern means, and `inspect.getsource` renders it invisibly, so the
+  source reads correctly while the rule matches nothing. `gate-that-cannot-fail` with no symptom.
+
+  Found the only way it can be. Writing `\b` through a shell heredoc produced a literal `0x08` in the
+  new rule above, whose pattern then required a backspace after *"stop"* — it reported clean on input it
+  could never match, and its own fixture caught it. Reading the line with `repr()` is what made it
+  visible; `inspect.getsource` had shown it as correct. The table now covers BACKSPACE, VERTICAL TAB,
+  FORM FEED, ESCAPE, BELL and NUL (TAB and line endings excluded as legitimate), and it immediately
+  found **5 backspace bytes already in `CHANGELOG.md`** — a `\bverify\b` written the same way in an
+  earlier session. All cleared; the repo now holds zero.
+
+- **`plugin-boundaries` — the second maintainer skill**, in `.claude/skills/`, so it ships to nobody
+  and arrives automatically on a clone. It decides *where content belongs*: one stack-neutral core with
+  stack-specific plugins layered on top, exactly one home per concern, and nothing maintainer-only
+  vendored into a client plugin. Every rule in it comes from a proposal rejected for breaking it, and
+  it says to apply them **while shaping** a proposal rather than after.
+
+  It earned its keep immediately. Read against #507 (asset generation), its rule 2 — *"a split whose
+  two halves only work together, with nothing able to say so, is not yet a working design"* — surfaced
+  a **pre-existing** defect: **all four `design-flow` agents and five of its commands reference
+  `skills/fidara-design`**, which ships only inside the `rails-stack` bundle, and no `plugin.json`
+  carries a `requires` field. Installing `design-flow` alone yields agents whose own text says *"read
+  it first; it is the law"* about a file that is not there. Filed, not fixed here.
+
+  Named in CLAUDE.md's `.claude/` inventory for the same reason `parallel-session-lane` was: a
+  component in neither an inventory nor a gate is how `design-flow` fell out of the plugin list for as
+  long as it existed (#203, #489).
+
 ### 2026-08-05 (v1.64.0)
 
 - **`password-floor-drift`** (Refs #484) — the floor §2a *states* must equal the one its worked
@@ -1514,9 +1560,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 - Four bugs were found *in the linter itself* while proving it, all silent-failure shaped: `bash -n
   <tempfile>` broke under Git Bash (mangled Windows path → every block a false syntax error);
   `text=True` encoded stdin as cp1252 and crashed on a `✓`; a nonexistent path reported "0 files,
-  no findings" instead of erroring; and `verify` matched inside `pipeline-verify`, flagging an
+  no findings" instead of erroring; and `\bverify\b` matched inside `pipeline-verify`, flagging an
   idempotent `docker rm … || true`. Worth recording that three separate escaping mistakes wrote
-  literal control characters (``, TAB) into the source via heredoc patching — invisible in
+  literal control characters (`\b`, TAB) into the source via heredoc patching — invisible in
   output, and the regex matched nothing. Author code with an editor, not with nested string layers.
 
 ### 2026-07-28 — the doctrine gate gets an explicit scope
@@ -2042,7 +2088,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   also matches **`simple_form_for`**, because that string ends with `form_for` — so the mandate
   check fired on every *correct* form. A check that flags everything is as useless as one that
   cannot fire: it gets ignored, then disabled. Fixed with a word boundary
-  (`grep -rnE "(form_with|form_for)"`), verified against a fixture containing one correct
+  (`grep -rnE "\b(form_with|form_for)\b"`), verified against a fixture containing one correct
   `simple_form_for` and one offending `form_with` — only the offender is reported.
 - **Added the check that actually catches violations.** The mandate covers form *elements*, not just
   the form tag, and hand-rolled anatomy was unchecked: `f.label` with a manual error `<p>`, or a
@@ -2584,6 +2630,52 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.37.0 — 2026-08-06
+
+- **Generated assets enter the hierarchy as two cost-ordered tiers** (Refs #507). The asset ladder now
+  runs: **1** product screenshot · **2** brand-geometric decoration from `brand.json` · **3** a
+  *designed graphic* exported from a brand template · **4** a *generated illustration* from a metered
+  model · **5** commissioned. The ordering principle becomes *specificity first, then cost*, and the
+  distinction between the two new tiers is the load-bearing part: **tier 3 inherits the brand, tier 4
+  is prompted toward it and may miss** — a design tool assembles from parts you gave it, a diffusion
+  model invents. If the asset can be *composed*, composing it is both cheaper and more faithful, so
+  tier 4 is genuinely last-resort rather than the default anyone reaches for.
+
+  **Tested before the doctrine was written, and tier 2 won.** A hero backdrop was generated from a
+  brand kit and exported end to end — the pipeline works (`generate → candidate → design → export`
+  returns a real 1920×1080 PNG). But it **ignored the composition brief**, returning a centred motif
+  when asked for empty space in the left two-thirds, so a layout must never depend on a region of a
+  generated image being empty. There is **no SVG export**, so a backdrop arrives as a **126 KB raster**
+  against a few hundred bytes for the equivalent `decor-mesh`. And what came back was abstract
+  geometric decoration — exactly what **tier 2 already produces from `brand.json`**, lighter, scalable,
+  and brand-*derived* rather than brand-*flavoured*. So tier 3 is scoped to **what tier 2 cannot do**:
+  composed scenes, product-adjacent mockups, editorial assembly, and brand **motion** (MP4/GIF, which
+  tier 2 has no answer for). Prompting it for *"abstract shapes in the brand colours"* is paying bytes
+  for a worse `decor-mesh`.
+
+  **Tier 3 is exported assets only — never a page.** A design tool that can build whole pages must not
+  be used to: its page output cannot be exported as code (formats are PDF, JPG, PNG, PPTX, GIF, MP4,
+  CSV — verified, no HTML), it uses none of our role tokens, and no gate we ship can see it. A page
+  authored there is a fork of the design system, which this file's own *"a pack is a theme, not a
+  fork"* rule already forbids. Layout stays in Rails views built from primitives.
+
+  **Tier 4's ceiling must refuse**, checked before the call that would cross it, with an unset ceiling
+  meaning *refuse* rather than unlimited — a budget defaulting to infinity is not a budget. And where a
+  provider bills all-or-nothing, a failed generation is free but a **completed-but-unusable one is paid
+  for**, so the prompt is composed from the surface class and the brand pack rather than improvised.
+
+  **The drift hazard is named, not gated.** Tier 2 derives identity from `brand.json`; tier 3 inherits
+  it from an external brand kit. Two sources of truth for one brand, on adjacent surfaces.
+  **`brand.json` is authoritative** — it is the copy under version control and under gate — and the
+  external kit is a mirror to be checked. Nothing can compare them today, because the kit lives behind
+  a connector, and saying so is more honest than implying a check exists.
+
+- **§10 reconciled rather than contradicted** (Refs #507). It said the system *"produces nothing"* —
+  true when v1.66.0 shipped it, false now. Rewritten, keeping the half that survives generation and
+  matters more with it: **the improvisation ban.** A provider that is present but misconfigured is a
+  *new* way to end up with nothing, and the answer is unchanged — satisfy from tiers 1–2, or say so and
+  stop.
 
 ### 1.36.1 — 2026-08-06
 
@@ -6498,6 +6590,17 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.13.1 — 2026-08-06
+
+- **Five commands read a skill that ships in another plugin, and none checked it was there** (Refs
+  #513). All four design-flow agents and five of its commands read `skills/fidara-design`, which ships
+  only inside the **`rails-stack`** bundle — and no `plugin.json` carries a `requires` field, so nothing
+  *can* declare the pairing. `/plugin install design-flow@claude-skills` alone therefore yields agents
+  whose own text calls that doctrine *"the law"* about a file that is absent, with no warning; the
+  likely outcome is the worst one, an agent improvising a catalog. Each of the five now carries a
+  precondition that names what is missing (`/plugin install rails-stack@claude-skills`) and **stops** —
+  the pattern this repo already uses in six commands for `gh`, Playwright and cloud credentials.
+
 ### 1.13.0 — 2026-08-05
 
 - **`design-critic` + `/design-flow:critique` — the lens, not a gate** (Refs #486). Three agents
@@ -7435,6 +7538,56 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-06 (release v1.67.0)
+
+> ### Generation enters the asset hierarchy — and the test contradicted the first draft
+>
+> The doctrine for generated assets was written, then a real generation was run against it, and the
+> result narrowed the tier before it shipped. Also here: a dependency nine files relied on that nothing
+> could declare, and a control byte that made a brand-new gate unable to match anything.
+
+- **Generated assets enter the hierarchy as two cost-ordered tiers** (#507). Product screenshot ·
+  brand-geometric decoration from `brand.json` · **designed graphic** · **generated illustration** ·
+  commissioned, ordered by *specificity first, then cost*. The load-bearing distinction: **tier 3
+  inherits the brand, tier 4 is prompted toward it and may miss** — a design tool assembles from parts
+  you gave it, a diffusion model invents.
+
+  **Tested end to end before the doctrine was allowed to stand, and tier 2 won.** The pipeline works — a
+  real 1920×1080 PNG came back — but it **ignored the composition brief** (asked for empty space in the
+  left two-thirds, returned a centred motif), there is **no SVG export**, so a backdrop is a **126 KB
+  raster** against a few hundred bytes for the equivalent `decor-mesh`, and what it produced was abstract
+  geometric decoration — precisely what tier 2 already derives from tokens. Tier 3 is therefore scoped to
+  **what tier 2 cannot do**: composed scenes, product-adjacent mockups, editorial assembly, brand motion.
+
+  **Tier 3 is exported assets only, never a page** — verified against the tool surface: exports are
+  PDF/JPG/PNG/PPTX/GIF/MP4 with **no HTML**, and the design-type list has no website option at all. A page
+  authored in a design tool is a fork of the system, which this file's own *"a pack is a theme, not a
+  fork"* rule forbids. **§10 was reconciled, not contradicted** — it had said the system *"produces
+  nothing"*, true when v1.66.0 shipped it and false now; the improvisation ban survives, because a
+  provider present but misconfigured is a new way to end up with nothing. The `brand.json` ↔ external
+  brand-kit drift hazard is **named and explicitly not gated**; `brand.json` is authoritative.
+
+- **Nine files depended on a skill from another plugin, and nothing could declare it** (#513). All four
+  design-flow agents and five commands read `skills/fidara-design`, which ships only inside the
+  `rails-stack` bundle, and no `plugin.json` carries a `requires` field — so installing design-flow alone
+  gave you agents whose own text calls that doctrine *"the law"* about an absent file. Each command now
+  names what is missing and **stops**. `undeclared-skill-dependency` holds them to it: verified against
+  the pre-fix tree, 5 examined and **5 reported**.
+
+- **`invisible-character` could not see a control byte, and one had already shipped.** A `\b` written
+  through a shell heredoc became a literal `0x08` inside the new rule's own regex, which then required a
+  backspace after *"stop"* — the gate reported clean on input it could never match, and
+  `inspect.getsource` rendered it invisibly. `repr()` on the line exposed it. The table now covers
+  BACKSPACE, VERTICAL TAB, FORM FEED, ESCAPE, BELL and NUL, and immediately found **5 backspace bytes
+  already in `CHANGELOG.md`** from the same mistake in an earlier session. All cleared; the repo holds zero.
+
+- **`duplicate-unreleased`** — one `### Unreleased` per component section, after making that error twice
+  in three releases. And **`plugin-boundaries`**, a maintainer skill for deciding where content belongs;
+  it earned its keep on first use, since reading it against #507 is what surfaced #513.
+
+**Versions:** rails-stack 1.36.1 → **1.37.0**, design-flow 1.13.0 → **1.13.1**.
+**Gates:** 63/63. **Mutation check:** 395 mutations across 32 guards, all caught.
 
 ### 2026-08-06 (release v1.66.0)
 

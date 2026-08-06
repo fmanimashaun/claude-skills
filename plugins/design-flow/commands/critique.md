@@ -21,6 +21,15 @@ threshold, or a merge recommendation. If you want the blocking check, that is
 Running only this one and shipping is a mistake; running only the auditor is how you ship a surface
 that is correct and lifeless. They are both cheap.
 
+## Preconditions
+
+**The `fidara-design` skill must be readable.** It ships in the **`rails-stack`** plugin, not
+this one, and no `plugin.json` can declare that — there is no `requires` field. So confirm you can read
+`fidara-design`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
+(`/plugin install rails-stack@claude-skills`) and stop.** Do not proceed from memory of the catalog:
+this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
+tokens and components that no gate will recognise (#513).
+
 ## 1. Read the rubric
 
 [`art-direction.md`](../../../skills/fidara-design/references/art-direction.md) is the doctrine —

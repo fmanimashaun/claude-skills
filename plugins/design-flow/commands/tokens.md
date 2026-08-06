@@ -12,6 +12,13 @@ maintainer to carry into the native repos — it **never** writes into a native 
 
 ## Preconditions
 
+**The `fidara-design` skill must be readable.** It ships in the **`rails-stack`** plugin, not
+this one, and no `plugin.json` can declare that — there is no `requires` field. So confirm you can read
+`fidara-design`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
+(`/plugin install rails-stack@claude-skills`) and stop.** Do not proceed from memory of the catalog:
+this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
+tokens and components that no gate will recognise (#513).
+
 A Rails app set up with `/design-flow:setup` (so `app/assets/tailwind/application.css` has the
 `@theme` + `:root` role tokens). `$ARGUMENTS` = target(s) (`android | ios | both`; default `both`).
 

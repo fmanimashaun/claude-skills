@@ -64,8 +64,12 @@ which report, and the promotion can no longer say what it shipped.
   source-of-truth + the open-issue signal; file findings as issues (don't fix in place).
 
 Agents backing them (in `.claude/agents/`): `issue-triager`, `doctrine-verifier`,
-`skill-doctor`, `plugin-doctor`, `release-manager`. One maintainer **skill** in
-`.claude/skills/`: `parallel-session-lane`, the operating protocol when several sessions run
+`skill-doctor`, `plugin-doctor`, `release-manager`. Two maintainer **skills** in
+`.claude/skills/`. `plugin-boundaries` decides *where content belongs* — one stack-neutral core with
+stack-specific plugins layered on top, exactly one home per concern, and nothing maintainer-only
+shipped to clients; read it **while shaping** a proposal for a new plugin, a stack port, or a split,
+because each of its rules comes from a proposal rejected for breaking it. `parallel-session-lane` is
+the operating protocol when several sessions run
 against this repo at once — confirm your worktree, take one coherent slice, stay in your plugin
 lane, review your own diff first. It exists because each of those was violated in a real session:
 a wrong-worktree edit put one session's uncommitted work on another's release branch, and an
