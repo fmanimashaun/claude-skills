@@ -1644,6 +1644,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`project_gates.py` now says whose tracker each finding belongs to** (Refs #485). The four
+  states said *what happened*, never *where the fix goes* — and the summary added ERRORs into the
+  same `N failed` total as real findings, so a manifest of ours naming a script of ours that is not
+  there read to a user as a defect in their own app. Every non-pass outcome is now routed and the
+  counts are separated: a **FAIL** to the project (`app`, the detector ran and found something), an
+  **ERROR** or an unparseable manifest **upstream** (`doctrine`, the check produced no verdict at
+  all and project content cannot cause that — handed to `/rails-flow:report`), a missing `requires`
+  binary to neither (`environment`). Not-applicable is routed **nowhere**, which is
+  "not applicable is not a pass" one step later. `--json` carries the destination and its reason on
+  every non-pass row (`null` on a pass) so an agent acts on the routing instead of re-deriving it
+  from prose. **Change type:
+  architecture** — the taxonomy is ours, not an upstream framework claim; decision recorded on
+  [#485](https://github.com/fmanimashaun/claude-skills/issues/485). Scope stated rather than
+  implied: a FAIL routing to `app` is a **default, not a proof** — the archetype that motivated the
+  issue (doctrine mandates a `#toasts` container that our own setup never emits) is a FAIL that
+  belongs upstream, and telling it apart needs the per-plugin conformance detectors of #485(a),
+  which this does not ship. 21 new selftest assertions, and each carve-out carries its near-miss:
+  declaring `requires` must not exempt a check from its own findings. Every branch was proven to
+  fail by mutation — collapsing `route_of` to always answer `app` trips five of them. Also fixes a
+  stale count found in the same docstring: it claimed the plugins "ship eleven checks" while the
+  three manifests declare fifteen. Replaced with no number rather than a fresh one, since a count
+  restated outside the manifests is the thing that went stale.
+
 ### 1.18.2 — 2026-08-05
 
 - **The same defect, in a second plugin** (Refs #490). `pr-comments.md:41` folds an out-of-scope
