@@ -7,6 +7,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`plugin-boundaries` — the second maintainer skill**, in `.claude/skills/`, so it ships to nobody
+  and arrives automatically on a clone. It decides *where content belongs*: one stack-neutral core with
+  stack-specific plugins layered on top, exactly one home per concern, and nothing maintainer-only
+  vendored into a client plugin. Every rule in it comes from a proposal rejected for breaking it, and
+  it says to apply them **while shaping** a proposal rather than after.
+
+  It earned its keep immediately. Read against #507 (asset generation), its rule 2 — *"a split whose
+  two halves only work together, with nothing able to say so, is not yet a working design"* — surfaced
+  a **pre-existing** defect: **all four `design-flow` agents and five of its commands reference
+  `skills/fidara-design`**, which ships only inside the `rails-stack` bundle, and no `plugin.json`
+  carries a `requires` field. Installing `design-flow` alone yields agents whose own text says *"read
+  it first; it is the law"* about a file that is not there. Filed, not fixed here.
+
+  Named in CLAUDE.md's `.claude/` inventory for the same reason `parallel-session-lane` was: a
+  component in neither an inventory nor a gate is how `design-flow` fell out of the plugin list for as
+  long as it existed (#203, #489).
+
 ### 2026-08-05 (v1.64.0)
 
 - **`password-floor-drift`** (Refs #484) — the floor §2a *states* must equal the one its worked
