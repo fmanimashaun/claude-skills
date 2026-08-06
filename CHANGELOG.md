@@ -2585,6 +2585,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.36.0 — 2026-08-05
+
+- **The craft layer — `art-direction.md`** (Refs #486). Nineteen references answered *"is this
+  correct?"* and none answered *"is this considered?"*. Measured: `art direction`, `visual hierarchy`,
+  `focal point`, `look and feel`, `aesthetic` all returned **zero** across the skill, and
+  `design-auditor`'s own priority order is `breaks-consistency > a11y > polish` — polish last, and
+  framed as consistency. Everything we shipped was *avoid-the-bad* (`llm_tell_detector`) and
+  *match-the-system* (`rendered_conformance`); there was no *achieve-the-good*.
+
+  The doctrine: **one focal point per surface** carried by scale **or** weight **or** contrast, never
+  all three; a **different brief per surface class** — marketing is emotion, a dense app is clarity, a
+  focused task is calm — which is the direct answer to *"marketing reads as slop and the app reads
+  mechanical"*, because both were given one treatment; **taste inside the constraints**, with exactly
+  one bounded escape (one element on one surface may break the grid or the scale, and **never** the
+  token contract, because a bespoke hex outlives the brand it was picked for); negative space as
+  grouping; motion as sequence on top of `motion.md`. Two worked before/afters — a marketing hero and
+  a dense table — where the "before" passes every gate we ship.
+
+  `SKILL.md`'s routing description said *"Consistency is enforced here, not left to taste"*, which
+  reads to an agent as taste being out of scope. Reconciled rather than overwritten: consistency is
+  still enforced, and craft now has a named home.
+
 ### 1.35.0 — 2026-08-05
 
 - **A password policy, and the rule the report asked for that NIST forbids** (Refs #484). A fresh
@@ -6461,6 +6483,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.13.0 — 2026-08-05
+
+- **`design-critic` + `/design-flow:critique` — the lens, not a gate** (Refs #486). Three agents
+  existed and all three were correctness roles. The critic judges hierarchy, focal point and
+  brief-fit, and returns **ranked suggestions with the missing decision named** — never a pass, a
+  fail, a score threshold or a merge condition. That is not timidity: **#476** proved a taste gate
+  cannot hold, because its threshold flagged our own worked band sequence, and a gate that gets
+  switched off leaves nothing checking anything.
+
+  Two boundaries are load-bearing. **Consistency findings are explicitly not the critic's** — raw
+  hex, missing `aria-*`, off-catalog variant all belong to `design-auditor`, because two roles
+  grading one thing disagree in front of the user and the blocking one wins. And the critic has
+  **`Read, Grep, Glob` only** — no `Edit`, no `Write`, no `Bash` — since a lens that rewrites what it
+  judges stops being a second opinion.
+
 ### 1.12.2 — 2026-08-05
 
 - **Three Stimulus controllers shipped orphaned, and the CRUD success path had no target** (Refs
@@ -7383,6 +7420,40 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-05 (release v1.65.0)
+
+> ### Nineteen references answered "is this correct?" and none answered "is this considered?"
+>
+> Everything the toolchain shipped was *avoid-the-bad* or *match-the-system*. A surface could pass
+> every gate and be correct, accessible, dark-mode-aware and lifeless. This release adds the missing
+> half — and deliberately adds it as a **lens**, not a gate.
+
+- **The craft layer, `art-direction.md`** (#486). Measured first: `art direction`, `visual hierarchy`,
+  `focal point`, `look and feel`, `aesthetic` all returned **zero** across the skill, and
+  `design-auditor`'s own priority order is `breaks-consistency > a11y > polish` — polish last, and
+  framed as consistency. The doctrine: **one focal point per surface**, carried by scale **or** weight
+  **or** contrast and never all three; a **different brief per surface class** — marketing is emotion,
+  a dense app is clarity — which is the direct answer to *"the marketing pages look like slop and the
+  app looks too mechanical"*, because both had been given one treatment; **taste inside the
+  constraints** with exactly one bounded escape, which may break the grid or the scale and **never**
+  the token contract, since a bespoke hex outlives the brand it was chosen for; negative space as
+  grouping; motion as sequence. Two worked before/afters whose **"before" passes every gate we ship**.
+
+- **`design-critic` + `/design-flow:critique` — advisory by construction** (#486). All three existing
+  agents were correctness roles. The critic judges hierarchy, focal point and brief-fit and returns
+  ranked suggestions with the missing decision named — never a pass, fail, score threshold or merge
+  condition. Not timidity: **#476** proved a taste gate cannot hold, because its threshold flagged our
+  own worked band sequence, and a switched-off gate leaves nothing checking anything. Consistency
+  findings stay the auditor's — two roles grading one thing disagree in front of the user and the
+  blocking one wins — and the critic gets **`Read, Grep, Glob` only**, because a lens that rewrites
+  what it judges is not a second opinion.
+
+`SKILL.md`'s routing description said *"Consistency is enforced here, not left to taste"* — true of
+consistency, but it reads as taste being out of scope. Reconciled rather than overwritten.
+
+**Versions:** rails-stack 1.35.0 → **1.36.0**, design-flow 1.12.2 → **1.13.0**.
+**Gates:** 63/63. **Mutation check:** 393 mutations across 32 guards, all caught.
 
 ### 2026-08-05 (release v1.64.0)
 
