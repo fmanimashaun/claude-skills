@@ -472,6 +472,15 @@ evidence checks as **not applicable**, loudly, and never as a pass: a repo with 
 not go the same green as a repo with complete evidence. Run `--list` first to show the user exactly
 what will and will not run in their project, and why.
 
+Each non-pass outcome also says **whose tracker it belongs to** (#485), because not every red line
+is a defect in this project. A **FAIL** is theirs — a detector ran against their content and found
+something. An **ERROR** is *ours*: a manifest of ours naming a script of ours that is not there,
+which their code cannot cause, so it goes upstream with `/rails-flow:report` rather than into their
+backlog. A missing `requires` binary is **neither** — install it. Not-applicable is routed nowhere
+at all, which is the same rule as "not applicable is not a pass", one step later. Read the routing
+before filing anything; `--json` emits the same run with the destination and its reason on every
+non-pass row (a pass carries `null`), for an agent that has to act on it rather than read it.
+
 **The deploy or release job must declare `needs: doctrine`.** This is the part to insist on. A
 parallel job is *advisory* — it can go red after the deploy has already happened, which is a check
 that reports rather than a gate that stops. We learned this in our own repo: the release workflow

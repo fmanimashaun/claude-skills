@@ -948,7 +948,127 @@ def check_findings_schema_drift() -> tuple[list[Finding], int]:
     return findings, len(canonical["REQUIRED"]) + len(canonical["OPTIONAL"])
 
 
-def check_undeclared_topology() -> tuple[list[Finding], int]:
+# --- a DISPATCH is not a MENTION (#491) ------------------------------------------------------
+# The rule below used to read a backticked agent name as a dispatch. So one sentence in
+# `setup-qa.md` explaining WHO CONSUMES the labels it creates took that command's count from 1 to
+# 2 and produced a false `undeclared-topology`. Both escapes from that finding are worse than the
+# finding: declare a topology the command does not have (a false statement written into shipped
+# doctrine to satisfy a gate), or stop naming the agent (the linter deciding what doctrine may
+# say). A gate whose only escapes are "lie" or "stop explaining" gets switched off.
+#
+# The narrowing below is deliberately BIASED TOWARD COUNTING, because for this rule a false
+# negative -- an undeclared fan-out shipping unlabelled -- is worse than a false positive. Every
+# knob is set the loose way on purpose:
+#
+#   * the verb list includes ordinary English (`run`, `use`, `call`), so a noun reading of one of
+#     them counts as a dispatch rather than losing a real one;
+#   * `to` and `via` are handoffs, so "compared to `x`" counts;
+#   * ANY ONE occurrence dispatching is enough -- the agent need not be dispatched everywhere.
+#
+# What is left out is the one shape that is unambiguously not an instruction: the name buried
+# mid-sentence with no imperative in front of it ("Every defect `qa-reporter` files carries ..."),
+# and a name appearing only inside a fenced block. `commands_naming_2plus_agents_without_
+# dispatching` in the coverage line is the instrument that makes over-narrowing visible: if this
+# starts climbing, the narrowing has gone quiet, not the tree.
+_FENCED = re.compile(r"^[ \t]*(?P<f>```|~~~)[^\n]*\n.*?^[ \t]*(?P=f)[^\n]*$", re.M | re.S)
+
+# Explicit inflections rather than a stem + `\w*`: an auditable list is the point, and `\brun\w*`
+# would also swallow `runtime`.
+_DISPATCH_VERB = re.compile(
+    r"\b(?:"
+    r"dispatch|dispatches|dispatched|dispatching|"
+    r"delegate|delegates|delegated|delegating|"
+    r"hand|hands|handed|handing|handoff|hand-off|"
+    r"invoke|invokes|invoked|invoking|"
+    r"launch|launches|launched|launching|"
+    r"spawn|spawns|spawned|spawning|"
+    r"run|runs|ran|running|"
+    r"call|calls|called|calling|"
+    r"use|uses|used|using|"
+    r"ask|asks|asked|asking|"
+    r"send|sends|sent|sending|"
+    r"route|routes|routed|routing|"
+    r"escalate|escalates|escalated|escalating|"
+    r"assign|assigns|assigned|assigning|"
+    r"task|tasks|tasked"
+    r")\b", re.I)
+
+# `**Security** -> `security-auditor``, `these go to `migration-writer``. A determiner may sit
+# between the arrow and the name (`-> the `a11y-auditor` agent`) -- allowed, because the loose
+# reading is the safe one here.
+_HANDOFF_PREFIX = re.compile(
+    r"(?:→|⇒|->|=>|\bto|\bvia)[ \t]*(?:\*\*|__)?[ \t]*(?:the|a|an|our)?[ \t]*(?:\*\*|__)?\s*$",
+    re.I)
+
+# The harness invocation itself. Counts wherever it appears, fenced or not -- a fenced
+# `Task(subagent_type: "x")` is the most literal dispatch there is.
+_TASK_INVOCATION = re.compile(r"\bsubagent_type\b|\bTask\s*\(", re.I)
+
+# Everything a step may open with before its first word: indentation, blockquote/heading markers,
+# a list bullet or number, and emphasis. If NOTHING else precedes the name, the name is the
+# subject of the step -- `\`qa-reporter\` consolidates.`
+_STEP_LEAD = re.compile(r"^[\s>#]*(?:(?:[-*+]|\d+[.)])[ \t]+)?[\s>*_]*$")
+
+# A sentence ends at `.!?` plus any closing punctuation, before whitespace. `:` is NOT a boundary:
+# "Dispatch all layers: `e2e-tester` (...), `api-contract-tester` (...)" is one instruction.
+_SENTENCE_END = re.compile(r"[.!?][)\]\"'`*_]*(?=\s)")
+_LIST_ITEM = re.compile(r"(?:\A|\n)[ \t]*(?:[-*+]|\d+[.)])[ \t]+")
+
+# A block ends at a blank line -- or at a thematic break / frontmatter delimiter, because a
+# command's FIRST instruction often sits directly under the closing `---` with no blank line, and
+# without this the frontmatter counts as that instruction's prefix and hides its subject position.
+_BLOCK_BREAK = re.compile(r"\n[ \t]*\n|\n[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,})[ \t]*(?=\n)")
+
+
+def _blank_fences(text: str) -> str:
+    """Blank fenced code, preserving every offset so positions stay comparable to the original."""
+    return _FENCED.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
+def _dispatch_signal(prose: str, at: int) -> str | None:
+    """Name the signal that makes the occurrence at `at` an instruction, or None for a mention."""
+    start = 0
+    for boundary in _BLOCK_BREAK.finditer(prose[:at]):
+        start = boundary.end()
+    prefix = prose[start:at]
+    # Narrow the block to the sentence (or list item) the name actually sits in, so a verb three
+    # sentences earlier cannot vouch for it. This is the half that fixes #491.
+    cut = 0
+    for end in _SENTENCE_END.finditer(prefix):
+        cut = max(cut, end.end())
+    for item in _LIST_ITEM.finditer(prefix):
+        cut = max(cut, item.start())
+    sentence = prefix[cut:]
+    if _STEP_LEAD.match(sentence):
+        return "subject-position"
+    if _HANDOFF_PREFIX.search(sentence):
+        return "handoff-arrow"
+    if _DISPATCH_VERB.search(sentence):
+        return "dispatch-verb"
+    return None
+
+
+def _dispatched_agents(body: str, agents: set[str]) -> dict[str, str]:
+    """Map each agent this command DISPATCHES to the signal that says so."""
+    prose = _blank_fences(body)
+    dispatched: dict[str, str] = {}
+    for name in sorted(agents):
+        occurrence = re.compile(rf"`{re.escape(name)}`")
+        for match in occurrence.finditer(prose):
+            signal = _dispatch_signal(prose, match.start())
+            if signal:
+                dispatched[name] = signal
+                break
+        else:
+            for match in occurrence.finditer(body):
+                line_start = body.rfind("\n", 0, match.start()) + 1
+                if _TASK_INVOCATION.search(body[line_start:].split("\n", 1)[0]):
+                    dispatched[name] = "task-invocation"
+                    break
+    return dispatched
+
+
+def check_undeclared_topology() -> tuple[list[Finding], dict[str, int]]:
     """A command dispatching 2+ of its plugin's agents must DECLARE its topology (#137).
 
     #137 asks for topology doctrine plus existing usages "labelled in-place". Building the check
@@ -973,14 +1093,20 @@ def check_undeclared_topology() -> tuple[list[Finding], int]:
     attempt caps and no-progress detection as a known gap owned by #128, and says plainly that
     writing them as doctrine before they exist would be the claims-vs-enforcement defect. An exit
     condition is a different thing: it is a property the command can state today.
+
+    A MENTION IS NOT A DISPATCH (#491). Counting a backticked name was the first draft and it was
+    wrong: a command explaining who consumes its output was charged with dispatching them. See
+    `_dispatch_signal` above for what replaced it, and why that narrowing is set loose.
     """
     findings: list[Finding] = []
     examined = 0
+    named_only = 0
     marker = re.compile(r"<!--\s*topology:\s*(sequential|parallel|loop|agent-to-agent)\b(.*?)-->",
                         re.S | re.I)
     root = ROOT / "plugins"
     if not root.is_dir():
-        return findings, examined
+        return findings, {"multi_agent_commands_checked_for_topology": 0,
+                          "commands_naming_2plus_agents_without_dispatching": 0}
     for command in sorted(root.glob("*/commands/*.md")):
         # `command.parent.parent` rather than indexing into `.parts`: the index version was off by
         # one, resolved every plugin name to "plugins", found no agents directory, and examined ZERO
@@ -989,15 +1115,25 @@ def check_undeclared_topology() -> tuple[list[Finding], int]:
         # to catch, and it does not announce itself.
         agents = {path.stem for path in (command.parent.parent / "agents").glob("*.md")}
         body = read(command)
-        dispatched = {name for name in agents if re.search(rf"`{re.escape(name)}`", body)}
+        named = {name for name in agents if re.search(rf"`{re.escape(name)}`", body)}
+        dispatched = _dispatched_agents(body, named)
         if len(dispatched) < 2:
+            # The second counter, and the reason #491's fix is not itself unfalsifiable: a command
+            # that NAMES two agents and dispatches fewer is exactly what the narrowing lets
+            # through, so the number it lets through is reported rather than left to be assumed.
+            if len(named) >= 2:
+                named_only += 1
             continue
         examined += 1
         found = marker.search(body)
         if not found:
+            # The signal is named per agent, because #491's reporter had to read this function to
+            # find out WHY the count was 2. A count with no evidence behind it is the thing that
+            # makes a maintainer reword doctrine to appease the gate.
+            evidence = ", ".join(f"{name} via {signal}" for name, signal in sorted(dispatched.items()))
             findings.append(Finding(
                 "undeclared-topology", rel(command), 1,
-                f"dispatches {len(dispatched)} agents but declares no topology. Add "
+                f"dispatches {len(dispatched)} agents ({evidence}) but declares no topology. Add "
                 f"`<!-- topology: sequential|parallel|loop|agent-to-agent -->`; a parallel one also "
                 f"needs `merge:`, a loop needs `exit:`. See docs/harness-doctrine.md",
             ))
@@ -1016,7 +1152,8 @@ def check_undeclared_topology() -> tuple[list[Finding], int]:
                 "declares `topology: loop` but no `exit:` condition. An exit is a property the "
                 "command can state today; breakers are a separate known gap (#128)",
             ))
-    return findings, examined
+    return findings, {"multi_agent_commands_checked_for_topology": examined,
+                      "commands_naming_2plus_agents_without_dispatching": named_only}
 
 
 def check_unreachable_coercion_fallback() -> tuple[list[Finding], int]:
@@ -1586,7 +1723,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
     outlines, outlines_examined = check_v4_outline_none()
     coercions, coercions_examined = check_unreachable_coercion_fallback()
-    topologies, topologies_examined = check_undeclared_topology()
+    topologies, topology_coverage = check_undeclared_topology()
     schema, schema_examined = check_findings_schema_drift()
     toggles, toggles_examined = check_unhonoured_config_toggle()
     unwired, unwired_examined = check_unwired_claim_verifier()
@@ -1611,7 +1748,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
         "shipped_docs_scanned_for_coercion_fallbacks": coercions_examined,
-        "multi_agent_commands_checked_for_topology": topologies_examined,
+        **topology_coverage,
         "findings_schema_fields_compared": schema_examined,
         "scaffolded_boolean_toggles": toggles_examined,
         "flows_checked_for_claim_verifier": unwired_examined,
@@ -2408,6 +2545,61 @@ def selftest() -> int:
     scenario("prose naming a non-agent does not count", rule=UT, expect_finding=False,
              files={**TWO, "plugins/x/commands/c.md":
                     "---\nd: x\n---\nRun `alpha`, then check `bundle` and `rubocop`.\n"})
+
+    # ---- a MENTION is not a DISPATCH (#491) ---------------------------------------
+    # The NEGATIVE direction, and the reason this narrowing is allowed to exist at all: without
+    # a fixture that must stay SILENT, narrowing a rule is indistinguishable from switching it
+    # off -- `carve-out-without-negative-test`, from our own code-review skill. The verb in the
+    # first sentence is load-bearing: it proves the signal is scoped to the name's OWN sentence,
+    # not to the paragraph around it, which is how #491's false positive was produced.
+    scenario("two agents merely mentioned, not dispatched", rule=UT, expect_finding=False,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\nRun `bin/setup` first. Every defect `alpha` files is triaged "
+                    "before `beta` sees it.\nUse the tracker to follow up.\n"})
+    # The CONTROL for it. Same two names, same file, in instruction position -- so the silence
+    # above is about the SHAPE of the sentence and not about anything else in the fixture.
+    scenario("the same two names in instruction position still fire", rule=UT, expect_finding=True,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\nRun `bin/setup` first. Dispatch `alpha`, then hand off to "
+                    "`beta`.\nUse the tracker to follow up.\n"})
+    # #491's own shape: a name inside a fenced block, explaining who files against the label.
+    scenario("an agent named only inside a fenced block is not dispatched", rule=UT,
+             expect_finding=False,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\nDispatch `alpha`.\n\n```bash\n# run this on every re-run\n"
+                    "gh label create from-x --description \"filed by `beta`, not a human\"\n```\n"})
+    # ...and the one fenced shape that IS a dispatch, however deep in a code block it sits.
+    scenario("a Task invocation inside a fence is a dispatch", rule=UT, expect_finding=True,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\nThe plan is fixed.\n\n```text\nTask(subagent_type: `alpha`)\n"
+                    "Task(subagent_type: `beta`)\n```\n"})
+    # `**Views & frontend** -> `design-auditor`` -- /rails-flow:review's whole shape, and it
+    # carries no verb at all.
+    scenario("an arrow handoff is a dispatch", rule=UT, expect_finding=True,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\n1. **Views** → `alpha` across the diff\n"
+                    "2. **Security** → `beta` over the whole surface\n"})
+    # ``qa-reporter` consolidates.` -- subject position, no imperative anywhere.
+    scenario("an agent opening its own step is a dispatch", rule=UT, expect_finding=True,
+             files={**TWO, "plugins/x/commands/c.md":
+                    "---\nd: x\n---\n`alpha` opens the cycle.\n\n`beta` closes it.\n"})
+    # The narrowing's own instrument. A silence fixture proves the rule does not FIRE on a
+    # mention; only this proves the rule can still SEE it. Without a number that moves, a
+    # narrowing that had gone completely blind would pass every fixture above.
+    checks += 1
+    _mention_root = Path(_tf.mkdtemp(prefix="topology-mention-"))
+    for _rel, _content in {**TWO, "plugins/x/commands/c.md":
+                           "---\nd: x\n---\nEvery defect `alpha` files is triaged before "
+                           "`beta` sees it.\n"}.items():
+        (_mention_root / _rel).parent.mkdir(parents=True, exist_ok=True)
+        (_mention_root / _rel).write_text(_content, encoding="utf-8")
+    ROOT = _mention_root
+    _, _mention_coverage = check_undeclared_topology()
+    ROOT = _saved_root
+    if _mention_coverage["commands_naming_2plus_agents_without_dispatching"] != 1:
+        failures.append(
+            f"{UT}: a command naming two agents and dispatching neither must be COUNTED as "
+            f"such, not merely unreported -- got {_mention_coverage}")
 
     # ---- unreachable-coercion-fallback --------------------------------------------
     UC = "unreachable-coercion-fallback"

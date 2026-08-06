@@ -407,10 +407,17 @@ with a fires-and-silent fixture pair, not a live rule.)
 
 Enforced by `undeclared-topology` in `lint_self_consistency.py`: any command dispatching two or
 more of its own plugin's agents must carry the marker, a `parallel` one must carry `merge:`, a
-`loop` must carry `exit:`. Four commands qualify today. The rule ships with a fires-and-silent
-fixture per branch and two declared mutations, because its first version resolved every plugin name
-to `"plugins"`, examined **zero** commands, and reported "no findings" — a clean verdict over an
+`loop` must carry `exit:`. **Five** commands qualify today. The rule ships with a fires-and-silent
+fixture per branch and **thirteen** declared mutations, because its first version resolved every plugin
+name to `"plugins"`, examined **zero** commands, and reported "no findings" — a clean verdict over an
 empty scan, visible only because the coverage counter printed the zero.
+
+**A name in backticks is not a dispatch** (#491). The first version treated it as one, so a sentence
+explaining *which agent consumes a command's output* counted as dispatching it — a false positive whose
+only escapes were to declare a topology that does not exist, or to stop naming agents in prose. It now
+requires a signal a dispatch actually has, and the narrowing is **deliberately biased toward counting**,
+because for this rule a false negative is worse than a false positive: an undeclared parallel topology
+ships two agents whose disagreement nobody defined.
 
 ---
 

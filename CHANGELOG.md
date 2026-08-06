@@ -7,6 +7,85 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-06 (v1.68.0)
+
+- **`harness-doctrine.md` carried two stale counts about the rule it documents** (Refs #491). It said
+  *"Four commands qualify today"* (five do) and *"two declared mutations"* (thirteen). Both were
+  `claims-vs-enforcement` on our own doc — the exact class that file exists to warn about, in the
+  paragraph describing a rule whose first version *"reported no findings over an empty scan"*. Found by
+  the session fixing #491, which could not correct it from inside its own lane; both re-measured against
+  the repo rather than incremented, and the §491 narrowing is now documented there too.
+
+- **`undeclared-topology` counted a MENTION of an agent as a dispatch** (Refs #491). Detection was
+  `re.search(rf"\`{name}\`", body)`, so a command explaining *who consumes* its output was charged with
+  dispatching them: one sentence naming `qa-reporter` took `setup-qa.md` from 1 agent to 2 and produced a
+  false finding. Both escapes were worse than the finding — declare a topology the command does not have
+  (a false statement written into shipped doctrine to satisfy a gate), or stop naming the agent (the
+  linter deciding what doctrine may say). A dispatch is now recognised by a signal a dispatch actually
+  has: an imperative in the name's **own sentence**, an arrow/`to` handoff, the name in subject position
+  at the head of its step, or a `Task`/`subagent_type` invocation — the last counting even inside a
+  fenced block, while a name that appears *only* in a fence does not.
+
+  The narrowing is biased toward **counting**, because for this rule a false negative (an undeclared
+  fan-out shipping unlabelled) is worse than a false positive: the verb list includes ordinary English
+  (`run`, `use`, `call`), `to`/`via` count as handoffs, and one dispatching occurrence is enough.
+  Measured against the real tree rather than asserted — **5 commands examined and 0 reported, before and
+  after**. Agent detections go 38 → 35 tree-wide and 29 → 28 across the five multi-agent commands; all
+  three drops were read and confirmed to be mentions (`brand-guardian` inside `variants.md`'s own
+  topology comment, `case-author` describing what `/qa-flow:cases` does later, `claude-skills-reporter`
+  in a relative clause), and the narrowing never *adds* a detection. Reproducing #491 by restoring the
+  sentence to `setup-qa.md` fires on `dev` (examined 5 → 6, one false finding) and is silent here.
+  A new coverage counter, `commands_naming_2plus_agents_without_dispatching`, is what makes an
+  over-narrowing visible: a silence fixture proves the rule does not *fire* on a mention, only a number
+  that moves proves it can still *see* one. 6 new fixtures (both directions, one per named signal) and
+  9 new mutations, each verified to be caught by the fixture its `expects` names. The finding now also
+  names **which agent was counted via which signal**, because #491's reporter had to read the function
+  to learn why the count was 2, and a count with no evidence behind it is what makes a maintainer
+  reword doctrine to appease the gate.
+
+- **`docs/inventory.html` — a generated, committed map of what this marketplace ships** (Refs #509).
+  27 agents, 37 commands, 4 model-tier tables and 64 gates existed with no map of any of it: the one
+  question people ask ("which agent owns this, what gate covers it, which command drives it") cuts
+  across all three kinds, so answering it meant reading four plugin trees. One filterable table now
+  does. **Change type: repo tooling** — no doctrine change, no framework claim, so no
+  `doctrine-verifier` verdict was sought.
+
+  Deliberately *not* the dashboard #509 was prompted by: same shape as `docs/coverage.html` instead —
+  generated, committed, drift-gated, stdlib only, no runtime. Every source is **imported rather than
+  re-parsed** (`maintainer_doctor.GATES`, `check_handoff.parse_tiers`), and the one source that could
+  not be — agent frontmatter, because the page needs `description` and `tools` — is **reconciled**
+  against `check_handoff.agent_models` instead, so two readers of one file cannot disagree in silence.
+  All three traps that page recorded are pinned by fixture: zero git calls on the render path (counted,
+  not compared), every input tracked in every clone, and `--check` comparing the blob at `HEAD`.
+
+  Three defects were found by mutating the subject rather than by reading it, and all three are
+  fixed. The `--check` fixtures stubbed `committed_blob`, so rewriting it to `Path.read_text`
+  survived the whole selftest — the exact defect the gate exists to prevent, sitting inside its own
+  test; it is now pinned against a throwaway git repo where the commit and the working copy
+  disagree. The frontmatter fixture's folded lines all began with a capital letter, so relaxing the
+  column-0 anchor also survived. And the placeholder guard tested for a placeholder *surviving*
+  `str.replace`, which cannot happen — `gate-that-cannot-fail`, replaced by a count of the
+  template's slots.
+
+  The fourth was caught by writing the page's own footnote and then checking it: a first draft
+  measured agent references as *"named in backticks or bold"* and printed "dispatches none" beside
+  `/rails-flow:issues`, which names seven of its plugin's agents in plain prose and dispatches every
+  one. Emphasis is typographic, not semantic. The match is now word-bounded and markup-blind, the
+  column is called **Agents named**, and the page says outright that naming is not dispatch — a
+  measurement it can make, in place of an inference it cannot.
+
+  One guard exists for a hole nothing else in the repo can see: an agent file with no `name:` is
+  **refused**, not skipped. `check_handoff.agent_models` skips it — correctly, there is nothing to
+  reconcile — so both readers would skip it identically, the reconciliation would stay clean, the
+  tier table would have nothing to match, and the agent would simply be absent from a page whose
+  entire claim is completeness. 90 fixtures; 17 hand-run mutations, each caught by a named fixture
+  (not registered in `mutation_check.py`: that harness stages a subject alone in a temp directory,
+  and this subject is effectively the whole repo tree, so it cannot reach a baseline pass there).
+
+  **The arm step now regenerates two pages, not one.** The inventory stamps the release version for
+  the same reason the coverage page does, so a version bump invalidates it and `inventory artifact
+  drift` fails until `python3 scripts/build_inventory.py` is re-run.
+
 ### 2026-08-06 (v1.67.0)
 
 - **`duplicate-unreleased`** — at most one `### Unreleased` per component section. A manual error I
@@ -1644,6 +1723,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.19.0 — 2026-08-06
+
+- **`project_gates.py` now says whose tracker each finding belongs to** (Refs #485). The four
+  states said *what happened*, never *where the fix goes* — and the summary added ERRORs into the
+  same `N failed` total as real findings, so a manifest of ours naming a script of ours that is not
+  there read to a user as a defect in their own app. Every non-pass outcome is now routed and the
+  counts are separated: a **FAIL** to the project (`app`, the detector ran and found something), an
+  **ERROR** or an unparseable manifest **upstream** (`doctrine`, the check produced no verdict at
+  all and project content cannot cause that — handed to `/rails-flow:report`), a missing `requires`
+  binary to neither (`environment`). Not-applicable is routed **nowhere**, which is
+  "not applicable is not a pass" one step later. `--json` carries the destination and its reason on
+  every non-pass row (`null` on a pass) so an agent acts on the routing instead of re-deriving it
+  from prose. **Change type:
+  architecture** — the taxonomy is ours, not an upstream framework claim; decision recorded on
+  [#485](https://github.com/fmanimashaun/claude-skills/issues/485). Scope stated rather than
+  implied: a FAIL routing to `app` is a **default, not a proof** — the archetype that motivated the
+  issue (doctrine mandates a `#toasts` container that our own setup never emits) is a FAIL that
+  belongs upstream, and telling it apart needs the per-plugin conformance detectors of #485(a),
+  which this does not ship. 21 new selftest assertions, and each carve-out carries its near-miss:
+  declaring `requires` must not exempt a check from its own findings. Every branch was proven to
+  fail by mutation — collapsing `route_of` to always answer `app` trips five of them. Also fixes a
+  stale count found in the same docstring: it claimed the plugins "ship eleven checks" while the
+  three manifests declare fifteen. Replaced with no number rather than a fresh one, since a count
+  restated outside the manifests is the thing that went stale.
+
 ### 1.18.2 — 2026-08-05
 
 - **The same defect, in a second plugin** (Refs #490). `pr-comments.md:41` folds an out-of-scope
@@ -2630,6 +2734,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.38.0 — 2026-08-06
+
+- **A generated asset is not usable until its fitness is reviewed** (Refs #507). Nothing makes a prompt
+  produce the asset you asked for — measured, not assumed: the test in §3a asked for empty space in the
+  left two-thirds and got a centred motif. So an asset arrives as a **candidate**, and **unreviewed means
+  unused**: until fitness passes the surface behaves as it does with no provider at all.
+
+  **Fitness is not taste, and that decides who may block.** Taste is judgement and stays advisory.
+  Fitness is a **comparison against a brief we wrote** — the prompt was composed from surface class and
+  brand pack — so "brief said left-weighted, output is centred" is falsifiable, and comparisons can gate.
+  The mechanical half (dimensions, weight, contrast against its role token, `alt`, format) is gateable.
+  The looked-at half needs eyes on the image, which an agent has: reading an image renders it, and that
+  is how the composition failure was found rather than shipped. **No recorded brief is a fail** — an
+  asset nobody can re-check is one nobody can regenerate after a brand change either.
 
 ### 1.37.0 — 2026-08-06
 
@@ -6590,6 +6709,16 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.14.0 — 2026-08-06
+
+- **`design-critic` gains asset fitness, kept separate from taste** (Refs #507). It could already see
+  images — `Read` renders them — but its instructions only described judging markup. Now: fitness first,
+  returning **pass/fail with the clause that failed**, then taste only if fitness passes. The rule that
+  matters is the one against blending them — *"do not soften a fitness fail into a taste suggestion"* —
+  because they carry different authority, and downgrading the first into the second is exactly how an
+  unchecked asset reaches a page. `/design-flow:critique` documents the carve-out: the command is
+  advisory, and that stance explicitly **does not cover** a fitness verdict.
+
 ### 1.13.1 — 2026-08-06
 
 - **Five commands read a skill that ships in another plugin, and none checked it was there** (Refs
@@ -7538,6 +7667,53 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-06 (release v1.68.0)
+
+> ### Three parallel sessions, and each one found an error in the issue it was given
+>
+> Worked in separate git worktrees under the `parallel-session-lane` protocol. None of the three took
+> its issue at face value, and all three corrections are in this release — which is the argument for
+> *"an issue body is a hypothesis, not a specification"* holding up under delegation.
+
+- **`project_gates.py` routes every finding to a tracker** (#485). App gap → the project's tracker;
+  `requires` binary absent → environment, nobody's; ERROR or unparseable manifest → **doctrine**,
+  upstream. Derived from the outcome rather than declared per check. It also fixes a shipped defect: the
+  summary folded ERRORs into the same total as findings, so **a manifest of ours naming a missing script
+  of ours read to a user as a defect in their own app.** The issue claimed `/rails-flow:review` is
+  diff-scoped — it is not (*"Full parallel codebase review"*); the diff-scoped command is
+  `/design-flow:audit`. The two were swapped, and that changes the gap: not *"nothing sweeps the whole
+  codebase"* but *"nothing sweeps it against plugin doctrine mechanically"*. A docstring claiming eleven
+  checks was also wrong — the manifests declare **fifteen**.
+
+- **A mention of an agent is not a dispatch** (#491). `undeclared-topology` counted a backticked name,
+  so a sentence explaining *which agent consumes a command's output* read as dispatching it. It now
+  requires a signal a dispatch has — subject position, handoff arrow, an imperative **in the name's own
+  sentence**, or a `Task(…)` invocation. The narrowing is **deliberately biased toward counting**,
+  because here a false negative is worse: an undeclared parallel topology ships two agents whose
+  disagreement nobody defined. Six fixtures in both directions, including the negative one the issue
+  warned was missing, plus a counter — a silence fixture proves the rule does not *fire* on a mention,
+  only a moving number proves it can still *see* one.
+
+- **A generated, committed map of what this marketplace ships** (#509). 138 rows: 27 agents, 37
+  commands, 64 gates, 4 tier tables joined 1:1 to the agents. The issue's *"68 gates"* was already stale
+  — the page renders `len(GATES)` and a fixture pins the equality, so it cannot drift into prose again.
+  Its own `--check` fixtures had stubbed the function under test, so a mutation survived the entire
+  selftest — **the defect the gate exists to prevent, inside its own test** — now pinned against a
+  throwaway repo where commit and working copy disagree.
+
+- **A generated asset is unusable until its fitness is reviewed** (#507). Nothing makes a prompt produce
+  the asset you asked for; the test in v1.67.0 proved it. **Fitness is not taste**: taste is judgement and
+  stays advisory, fitness is a comparison against a brief we wrote and therefore **blocks**. No recorded
+  brief is a fail.
+
+- **`harness-doctrine.md` carried two stale counts about the rule it documents** (#491) — found by the
+  session fixing that rule, which correctly refused to edit `docs/` from outside its lane and reported
+  the correction instead.
+
+**Versions:** rails-stack 1.37.0 → **1.38.0**, design-flow 1.13.1 → **1.14.0**, rails-flow 1.18.2 →
+**1.19.0**.
+**Gates:** 65/65. **Mutation check:** 406 mutations across 32 guards, all caught.
 
 ### 2026-08-06 (release v1.67.0)
 

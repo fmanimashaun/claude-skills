@@ -3,10 +3,13 @@
 
 Run:  python3 project_gates.py            # run what applies; exit 1 on any failure
       python3 project_gates.py --list      # say what applies and what does not, run nothing
-      python3 project_gates.py --selftest  # prove the states and the applicability rules
+      python3 project_gates.py --json      # the same run, machine-readable, with the routing
+      python3 project_gates.py --selftest  # prove the states, the applicability rules, the routing
 
-WHY (#334). The plugins ship eleven checks that run against a *user's* repo, and no way to run them
-together. A user had to know each script existed, know which applied, and invoke each by hand — which
+WHY (#334). The plugins shipped eleven checks that ran against a *user's* repo, and no way to run
+them together. (Past tense, and no current count: this said "ship eleven" while the manifests
+declared fifteen. The manifests are the count; a number restated here only goes stale.)
+A user had to know each script existed, know which applied, and invoke each by hand — which
 in practice meant **an agent ran them when it remembered.** That is the claims-vs-enforcement defect
 this toolchain warns about, in the toolchain itself.
 
@@ -36,6 +39,31 @@ worse than no gate; those stay in the agent-driven browser pass, where absence i
 REGISTRATION IS THE MANIFEST. Each plugin ships `checks.json` declaring its own; this runner never
 hardcodes a list, so adding a check is one manifest entry and a new plugin needs no change here.
 
+AND THEN: WHOSE TRACKER (#485). The four states say what happened, not where the fix goes, and the
+summary used to add ERRORs into the same "failed" total as real findings. An ERROR is a manifest of
+OURS naming a script that does not exist — a user reading "2 failed" files two bugs against their
+own app, one of which is ours. So every non-pass outcome is now routed:
+
+    app          the detector ran against this project's content and found something -> their tracker
+    doctrine     the check produced no verdict at all, which project content cannot cause -> ours,
+                 reportable with /rails-flow:report
+    environment  a required binary is absent -> neither their code nor our doctrine; install it
+    unrouted     `not applicable` -- reported, and deliberately routed NOWHERE
+
+WHAT THE ROUTING DOES NOT CLAIM, stated because the omission is the interesting part. A FAIL routes
+to `app` because the detector ran and worked. That is correct for every check shipped today and it
+is a **default, not a proof**: a check that catches the toolchain scaffolding half a pattern — its
+own doctrine mandates a container, its own setup never emits one — is a FAIL that belongs upstream,
+and no rule here can tell that apart from a defect in the project's code. Such detectors do not
+exist yet, and `checks.json` therefore carries **no** destination field: a field with one
+hypothetical consumer is indirection, not a seam. The check that needs it adds it, and until then
+the default must not be widened to guess — a confidently wrong route is worse than no route.
+
+`unrouted` is the routing layer's version of "not applicable is not a pass". One run cannot tell a
+project that genuinely has no `qa/` from a check aimed at a path nothing writes — that second case
+is a doctrine gap, and reconciling it needs the whole plugin, not one project. It has its own
+maintainer-side gate upstream and is not re-derived here.
+
 Exit codes:  0 all applicable checks passed · 1 at least one FAIL or ERROR · 2 nothing discovered
 
 Stdlib only, no network.
@@ -53,6 +81,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PASS, FAIL, NA, ERROR = "pass", "FAIL", "n/a", "ERROR"
+
+# Destinations. See the module docstring for why each outcome routes where it does.
+APP, DOCTRINE, ENVIRONMENT, UNROUTED = "app", "doctrine", "environment", "unrouted"
+
+# The headline printed once per destination, and the action it asks for. Kept beside the constants
+# so a new destination cannot be added without saying where its findings are supposed to go.
+DESTINATIONS: dict[str, tuple[str, str]] = {
+    APP: ("this project's own tracker",
+          "the detector ran against this project's content and found something"),
+    DOCTRINE: ("upstream, via /rails-flow:report",
+               "the check produced no verdict at all, and this project's content cannot cause that"),
+    ENVIRONMENT: ("nobody's tracker — install the binary",
+                  "a required dependency is absent, so neither this code nor our doctrine is at fault"),
+}
 
 
 @dataclass
@@ -157,6 +199,37 @@ def required_subcommand(help_text: str) -> set[str]:
     return set(found.group(1).split(",")) if found else set()
 
 
+def missing_dependencies(check: Check) -> list[str]:
+    """Required binaries absent from PATH.
+
+    A named query so the router asks the same question `run_check` asks, rather than recognising a
+    dependency failure by the wording of its message. Recognising it by text is how a message edit
+    silently re-routes findings to the wrong tracker.
+
+    `run_check` asks it inline rather than calling this, so the two must be held in agreement by
+    test rather than by construction — the selftest pins both directions.
+    """
+    return [b for b in check.requires if shutil.which(b) is None]
+
+
+def route_of(result: Result) -> tuple[str, str]:
+    """Whose tracker this outcome belongs to, and why. `("", "")` when there is nothing to route.
+
+    Derived from the outcome, never declared per check -- see the module docstring for the one case
+    this deliberately cannot decide and does not pretend to.
+    """
+    if result.status == PASS:
+        return "", ""
+    if result.status == NA:
+        return UNROUTED, ("not applicable verified nothing, so it is nobody's finding yet — but it "
+                          "is also not a pass")
+    if result.status == ERROR:
+        return DOCTRINE, DESTINATIONS[DOCTRINE][1]
+    if missing_dependencies(result.check):
+        return ENVIRONMENT, DESTINATIONS[ENVIRONMENT][1]
+    return APP, DESTINATIONS[APP][1]
+
+
 def run_check(check: Check, project: Path) -> Result:
     why_not = applicability(check, project)
     if why_not:
@@ -182,6 +255,23 @@ def run_check(check: Check, project: Path) -> Result:
     return Result(check, PASS, f"{len(argvs)} invocation(s)")
 
 
+def routed(results: list[Result], problems: list[str]) -> dict[str, list[tuple[str, str]]]:
+    """Non-pass outcomes grouped by destination, as (what, detail) pairs.
+
+    `unrouted` is absent by design: the not-applicable block already lists those, and printing one
+    list twice trains people to skim both.
+    """
+    groups: dict[str, list[tuple[str, str]]] = {d: [] for d in DESTINATIONS}
+    for r in sorted(results, key=lambda r: (r.check.plugin, r.check.id)):
+        destination = route_of(r)[0]
+        if destination in groups:
+            groups[destination].append((f"{r.check.plugin}/{r.check.id}", r.detail))
+    # A manifest that will not parse is ours by the same argument an ERROR is: the project did not
+    # write it. It never reaches `run_check`, so it has no Result to route.
+    groups[DOCTRINE].extend(("checks.json", p) for p in problems)
+    return groups
+
+
 def report(results: list[Result], problems: list[str]) -> int:
     for r in sorted(results, key=lambda r: (r.check.plugin, r.check.id)):
         mark = {PASS: "ok  ", FAIL: "FAIL", NA: "n/a ", ERROR: "ERR "}[r.status]
@@ -189,24 +279,67 @@ def report(results: list[Result], problems: list[str]) -> int:
         print(f"{line:44} {r.detail}" if r.detail else line)
     for p in problems:
         print(f"  [ERR ] {p}", file=sys.stderr)
-    bad = [r for r in results if r.status in (FAIL, ERROR)]
+    fails = [r for r in results if r.status == FAIL]
+    errors = [r for r in results if r.status == ERROR]
     na = [r for r in results if r.status == NA]
-    print(f"\n{len(results) - len(bad) - len(na)} passed, {len(bad)} failed, "
-          f"{len(na)} not applicable, {len(problems)} manifest problem(s).")
+    # ERRORs are counted SEPARATELY from failures, not folded into one "failed" total. An ERROR is
+    # this toolchain's manifest disagreeing with this toolchain's own scripts; adding it to the
+    # number a user reads as "defects in my app" is how our bug becomes their bug report (#485).
+    print(f"\n{len(results) - len(fails) - len(errors) - len(na)} passed, {len(fails)} failed, "
+          f"{len(errors)} errored, {len(na)} not applicable, {len(problems)} manifest problem(s).")
     if na:
         # Said every run, not only when it is convenient: a not-applicable check did NOT verify
         # anything, and a summary that lets it read as a pass is the defect this tool exists to stop.
-        print("Not applicable is NOT a pass — those checks verified nothing:")
+        print("Not applicable is NOT a pass — those checks verified nothing, and they are routed "
+              "to no tracker:")
         for r in na:
             print(f"  - {r.check.plugin}/{r.check.id}: {r.detail}")
-    return 1 if bad or problems else 0
+    groups = routed(results, problems)
+    if any(groups.values()):
+        print("\nWhere each finding goes — a gap this toolchain caused is not a gap in your app:")
+        for destination, entries in groups.items():
+            where, why = DESTINATIONS[destination]
+            print(f"  {destination.upper()} ({len(entries)}) → {where} — {why}")
+            for what, detail in entries:
+                print(f"    - {what}: {detail}")
+        if groups[DOCTRINE]:
+            print("  Hand the DOCTRINE list to /rails-flow:report — one observation per report.")
+    return exit_code(results, problems)
+
+
+def as_json(results: list[Result], problems: list[str]) -> str:
+    """The same run as `report`, for an agent that has to act on it rather than read it.
+
+    Routing exists so a finding reaches the right tracker without a human re-deciding each time; a
+    destination an agent must recover by parsing prose is the same defect one step later.
+    """
+    rows = []
+    for r in sorted(results, key=lambda r: (r.check.plugin, r.check.id)):
+        destination, why = route_of(r)
+        rows.append({"plugin": r.check.plugin, "id": r.check.id, "why": r.check.why,
+                     "status": r.status, "detail": r.detail,
+                     "destination": destination or None, "routed_because": why or None})
+    return json.dumps({
+        "results": rows,
+        "manifest_problems": problems,
+        "summary": {status: sum(1 for r in results if r.status == status)
+                    for status in (PASS, FAIL, NA, ERROR)},
+    }, indent=2, sort_keys=False)
+
+
+def exit_code(results: list[Result], problems: list[str]) -> int:
+    """0 all applicable checks passed, 1 at least one FAIL or ERROR. Shared so the text and JSON
+    paths cannot drift into disagreeing about whether the same run failed."""
+    return 1 if problems or any(r.status in (FAIL, ERROR) for r in results) else 0
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Run every shipped check that applies to this project.")
     ap.add_argument("--project", type=Path, default=Path.cwd(), help="repo to check (default: cwd)")
     ap.add_argument("--list", action="store_true", help="report applicability, run nothing")
-    ap.add_argument("--selftest", action="store_true", help="prove the states and the rules")
+    ap.add_argument("--json", action="store_true", help="machine-readable results, with the routing")
+    ap.add_argument("--selftest", action="store_true",
+                    help="prove the states, the applicability rules and the routing")
     args = ap.parse_args(argv)
     if args.selftest:
         return selftest()
@@ -223,7 +356,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  [{'n/a ' if why_not else 'runs'}] {c.plugin}/{c.id:24} "
                   f"{why_not or c.why}")
         return 0
-    return report([run_check(c, project) for c in checks], problems)
+    results = [run_check(c, project) for c in checks]
+    if args.json:
+        print(as_json(results, problems))
+        return exit_code(results, problems)
+    return report(results, problems)
 
 
 def selftest() -> int:
@@ -284,6 +421,89 @@ def selftest() -> int:
         check("an all-n/a run says so loudly", "NOT a pass" in out, out[:120])
         check("an all-n/a run reports 0 passed", "0 passed" in out, out[:120])
         check("an all-n/a run still exits 0 (nothing failed)", code == 0, f"got {code}")
+
+        # ROUTING (#485). Every assertion below is paired with its negative, because the value of a
+        # destination is entirely in what it REFUSES to send to the app's tracker. A router that
+        # answers `app` to everything is indistinguishable from no router at all, and it is the
+        # shape this would naturally decay into.
+        passing = run_check(mk(), project)
+        check("a pass routes nowhere", route_of(passing) == ("", ""), f"got {route_of(passing)}")
+
+        found = run_check(mk(command=["python3", str(root / "scripts/bad.py")]), project)
+        check("a check that ran and found something routes to the app",
+              route_of(found)[0] == APP, f"got {route_of(found)}")
+
+        errored = run_check(mk(command=["python3", str(root / "scripts/gone.py")]), project)
+        check("an ERROR routes to DOCTRINE, not the app",
+              route_of(errored)[0] == DOCTRINE,
+              "a manifest naming a script we do not ship is our bug; routing it to the project's "
+              f"tracker files our defect against their code (got {route_of(errored)})")
+
+        absent = run_check(mk(requires=["definitely-not-a-real-binary-xyz"]), project)
+        check("a missing dependency routes to ENVIRONMENT, not the app",
+              route_of(absent)[0] == ENVIRONMENT,
+              f"it FAILS (correctly) but no code is at fault (got {route_of(absent)})")
+        # THE NEAR MISS, which is the whole value of the carve-out. `environment` is an exemption
+        # from `app`, and an exemption keyed on "the check declares requires" instead of "a required
+        # binary is actually absent" would divert every real finding from every check that declares
+        # a dependency -- which is all of them.
+        declared = run_check(mk(command=["python3", str(root / "scripts/bad.py")],
+                                requires=["python3"]), project)
+        check("a real finding from a check whose dependencies are PRESENT still routes to the app",
+              route_of(declared)[0] == APP,
+              f"declaring `requires` must not exempt a check from its own findings "
+              f"(got {route_of(declared)})")
+        # `run_check` asks `shutil.which` inline and the router asks `missing_dependencies`. Nothing
+        # makes them the same code, so pin that they answer alike -- in both directions.
+        check("missing_dependencies agrees with run_check on an absent binary",
+              missing_dependencies(absent.check) == ["definitely-not-a-real-binary-xyz"] and
+              absent.status == FAIL, f"{missing_dependencies(absent.check)}, {absent.status}")
+        check("missing_dependencies agrees with run_check on a present binary",
+              missing_dependencies(declared.check) == [] and "not on PATH" not in declared.detail,
+              f"{missing_dependencies(declared.check)}, {declared.detail!r}")
+
+        skipped = run_check(mk(applies_when=["qa"]), project)
+        check("not applicable routes NOWHERE, and specifically not to the app",
+              route_of(skipped)[0] == UNROUTED, f"got {route_of(skipped)}")
+        check("unrouted is not a destination anything is filed against",
+              UNROUTED not in DESTINATIONS,
+              "a headline for `unrouted` would print a tracker to send non-findings to")
+        check("a not-applicable check appears in NO destination group",
+              not any(routed([skipped], []).values()), f"{routed([skipped], [])}")
+        check("every destination declares where its findings go and why",
+              all(len(v) == 2 and all(v) for v in DESTINATIONS.values()), f"{DESTINATIONS}")
+
+        # THE SUMMARY MUST NOT ADD ERRORS INTO THE FAILURE COUNT. This is the defect the routing
+        # was written for: before #485 an ERROR was folded into "N failed", so a user read our
+        # broken manifest as a defect in their own app and had no way to tell.
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = report([found, errored], [])
+        out = buf.getvalue()
+        check("an ERROR is counted apart from a failure", "1 failed, 1 errored" in out, out[:200])
+        check("the report says where each finding goes", "Where each finding goes" in out, out[:200])
+        check("a doctrine gap names the upstream route", "/rails-flow:report" in out, out[:400])
+        check("a mixed run still exits 1", code == 1, f"got {code}")
+
+        # A manifest that will not parse has no Result, and must still reach the doctrine list.
+        check("a manifest problem routes to DOCTRINE",
+              routed([], ["checks.json: unreadable manifest"])[DOCTRINE] ==
+              [("checks.json", "checks.json: unreadable manifest")],
+              f"{routed([], ['checks.json: unreadable manifest'])}")
+        check("a manifest problem alone still exits 1", exit_code([], ["boom"]) == 1)
+
+        # THE MACHINE PATH MUST CARRY THE ROUTING, or an agent re-derives it by parsing prose.
+        payload = json.loads(as_json([passing, found, errored, skipped], ["boom"]))
+        destinations = [row["destination"] for row in payload["results"]]
+        check("--json routes every non-pass row",
+              destinations.count(None) == 1 and set(destinations) ==
+              {None, APP, DOCTRINE, UNROUTED}, f"got {destinations}")
+        check("--json states why each row was routed",
+              all(row["routed_because"] for row in payload["results"] if row["destination"]),
+              "a destination with no reason cannot be argued with")
+        check("--json carries the manifest problems", payload["manifest_problems"] == ["boom"])
+        check("--json counts every state", payload["summary"] == {PASS: 1, FAIL: 1, NA: 1, ERROR: 1},
+              f"{payload['summary']}")
 
     # The SHIPPED manifests must be loadable and name scripts that exist -- otherwise this runner
     # reports ERROR on a user's first run, which is the worst possible first impression.
