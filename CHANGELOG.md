@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-06 (v1.69.0)
 
 - **`hook-count-drift` — CLAUDE.md had two wrong numbers in one sentence.** It said *"of the ten hook
   scripts, eight are advisory"*; there are **eleven**, and nine are advisory. The eleventh is
@@ -2752,7 +2752,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.39.0 — 2026-08-06
 
 - **Password strength — the component contract, with the checklist the issue asked for removed** (Refs
   #484). #484 specified *"a live requirement checklist"*. That checklist **is** the rule NIST prohibits,
@@ -6770,7 +6770,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.15.0 — 2026-08-06
 
 - **The critic is wired into the review path, alongside the gate rather than inside it** (Refs #486).
   `/design-flow:audit` now says to run `/design-flow:critique` **as well**, with the division stated: the
@@ -7744,6 +7744,46 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-06 (release v1.69.0)
+
+> ### Three issues closed out, and each one's own gate caught something on the way
+>
+> The design-flow trio had to serialise — they all touch the same two components — so this is the
+> sequential half of the parallel batch. In all three cases a gate we already ship found a defect in the
+> change being made to satisfy it.
+
+- **The critic joins the review path** (#486, complete — all 8 criteria). `/design-flow:audit` now runs
+  the critique **alongside** it, findings deliberately **unmerged**: a `file:line` fix and a missing
+  decision carry different authority, and one list means the reader cannot tell which blocks.
+  `/design-flow:variants` gains it as its **ranking rubric** — conformance cannot rank, because every
+  variant there is conformant by construction.
+
+- **Flash → toast, the half the layout promised and nothing implemented** (#483). The reference layout
+  said *"flash output goes to `#toasts` via Turbo Stream"* and **no code anywhere read `flash`** — so a
+  Turbo Stream response showed its toast while a plain `redirect_to … notice:` showed **nothing at
+  all**, since the layout renders no flash partial by design. The message was not un-styled; it was
+  **lost**. Errors not auto-dismissing falls out of the existing markup rather than being a new rule:
+  `:error` already renders `role="alert"`.
+
+  `undeclared-component-call-site` then fired on the new `render` and found that **`ToastComponent` had
+  never been declared** — the section shipped its ERB and no Ruby class. Invisible until now because the
+  existing call sites use `turbo_stream.prepend(...)`, which that rule does not match.
+
+- **Password strength, with the checklist the issue asked for removed** (#484). #484 specified *"a live
+  requirement checklist"*, which **is** the composition rule NIST prohibits, rendered — and teaches that
+  `Passw0rd!` beats a passphrase. The component shows length progress, confirmation match, and the
+  server's blocklist verdict; never a score, never character classes. **Submit is not gated on the
+  meter**, because a client disagreeing with the server either blocks a valid password or lies about an
+  invalid one.
+
+- **`hook-count-drift`** — CLAUDE.md said *"of the ten hook scripts, eight are advisory"*; there are
+  **eleven**, nine advisory, the eleventh being design-flow's. Third stale doc-number about our own
+  files, second time the missed component was design-flow (#203, #489). The advisory figure is now
+  **derived**, not read.
+
+**Versions:** rails-stack 1.38.0 → **1.39.0**, design-flow 1.14.0 → **1.15.0**.
+**Gates:** 65/65. **Mutation check:** 409 mutations across 32 guards, all caught.
 
 ### 2026-08-06 (release v1.68.0)
 
