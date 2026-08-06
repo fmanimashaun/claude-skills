@@ -2585,6 +2585,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The asset boundary, declared** (Refs #503). `visual-assets.md` §10 listed rejected *techniques* —
+  ambient motion, SVG filters, `mask-*`, vendored illustration sets — and never said that the system
+  **generates nothing**. Tier 1 is captured from the running product, tier 2 is CSS/SVG derived from
+  `brand.json`, tiers 3–4 are sourced by a human and recorded; nothing emits a raster image. That was
+  already true, and the gap mattered because **line 7 of that same file predicts what an agent does
+  with an absent boundary** — *"leave it empty, generate something inconsistent, or import stock art
+  that undercuts the brand"*. A file that names a failure and does not close it off is
+  `claims-vs-enforcement` in the warning itself. So the rule is now explicit: if a surface cannot be
+  satisfied from tiers 1–2, **say so and stop** — name the surface and what the tiers could not carry,
+  and never ship a placeholder, a stock photograph or a hand-rolled "illustration". §6 keeps the cost
+  low by making tier 2 primary on exactly the surfaces with nothing to screenshot; #507 tracks the
+  bounded generation path for the case where that is not enough.
+
 ### 1.36.0 — 2026-08-05
 
 - **The craft layer — `art-direction.md`** (Refs #486). Nineteen references answered *"is this

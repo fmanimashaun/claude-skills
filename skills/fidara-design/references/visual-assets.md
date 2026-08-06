@@ -573,3 +573,24 @@ proof**.
   They need **Tailwind ≥ 4.1.0**, and the recipes here should work on any v4. Reach for `mask-b-from-*`
   in a project you know is on 4.1+, and record the floor.
 - **No new role tokens and no new `brand.json` fields.** §4.1 and §9.
+- **No asset generation, and no improvising when generation is unavailable** (#503). This file
+  produces nothing: tier 1 is captured from the running product, tier 2 is CSS and SVG derived from
+  `brand.json`, and tiers 3–4 are **sourced by a human and recorded**. Nothing in the toolchain
+  emits a raster image, an illustration, or a texture.
+
+  This was true before it was written down, and the gap mattered because **line 7 of this file
+  already predicts what an agent does with an absent boundary** — *"leave it empty, generate
+  something inconsistent, or import stock art that undercuts the brand"*. A rule that names a
+  failure and does not close it off is the `claims-vs-enforcement` defect in the file warning
+  about it.
+
+  **So: if a surface cannot be satisfied from tiers 1–2, say so and stop.** Name the surface, name
+  what tier 1 and tier 2 could not carry, and hand the decision back. Do **not** ship a placeholder,
+  a stock photograph, a hand-rolled SVG "illustration", or an empty box where an asset was implied.
+  The honest partial is a surface that is complete except for one named, requested asset — never a
+  surface that looks finished and is not.
+
+  §6 is why this costs less than it sounds: on precisely the surfaces with nothing to screenshot,
+  tier 2 and expressive typography are **primary rather than fallback**, so the stop above is rare
+  rather than routine. Where it is not rare — pre-launch marketing, where tier 1 is unavailable by
+  definition — that is a decision for the operator, and #507 tracks the bounded generation path.
