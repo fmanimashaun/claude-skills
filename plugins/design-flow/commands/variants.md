@@ -214,6 +214,16 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py" --verify-discard 
    best, never whether the best one is correct. `design-auditor` runs on the winner in its real
    home, after the scaffolding is gone.
 
+5. **`/design-flow:critique` is the rubric for *which* is best.** This command produces N conformant
+   variants and then asks a human to choose — with nothing to choose *on* beyond preference. The critic
+   supplies that: it names each variant's surface class and focal point, ranks them on **brief-fit
+   first, craft second**, and says which single change would most improve the winner. *"They are all
+   fine"* is not a ranking.
+
+   Note the division. Point 4 sends the **winner** to the consistency gate; this sends **all N** to the
+   taste lens, and it happens *before* the choice rather than after. Conformance cannot rank — every
+   variant here is conformant by construction, which is exactly why a second question is needed.
+
 ## Output
 
 The switcher URL, one line per variant (id · rationale · the axis it moved along), the

@@ -89,6 +89,25 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # Third stale doc-number about our own files; second time the missed one was design-flow.
+                "the total comparison goes, so a wrong hook count passes",
+                '    if m.group(1) != WORDS.get(total, str(total)):',
+                "    if False:",
+                "a wrong total is reported",
+            ),
+            Mutation(
+                "the advisory figure stops subtracting the gates, so it drifts freely",
+                '    gates = sum(1 for s in scripts if s.name in {"guard-bash.sh", "release-gate.sh"})',
+                "    gates = 0",
+                "advisory is total minus the named gates",
+            ),
+            Mutation(
+                "a missing sentence stops failing loud, so the rule silently checks nothing",
+                '    if not m:',
+                "    if False:",
+                "a reworded sentence is reported, not ignored",
+            ),
+            Mutation(
                 # A manual error made twice in three releases; a join should catch it, not a human.
                 "the duplicate count relaxes, so two Unreleased headings pass",
                 '        if len(lines) > 1:',
