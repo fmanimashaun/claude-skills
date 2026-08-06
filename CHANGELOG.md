@@ -2752,6 +2752,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`art-direction.md` names itself the "look and feel" layer** (Refs #486). #486's last acceptance
+  criterion greps the skill for craft vocabulary; four of five terms were present and *"look and feel"*
+  was not. Added as a **routing gloss** in the opening rather than stuffed somewhere to satisfy a grep —
+  an agent asked *"why does this look mechanical"* rather than *"which token is wrong"* should land on
+  this file, and the phrase it would use was the one missing.
+
 ### 1.38.0 — 2026-08-06
 
 - **A generated asset is not usable until its fitness is reviewed** (Refs #507). Nothing makes a prompt
