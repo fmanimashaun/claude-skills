@@ -161,7 +161,7 @@ release is:
 
 | # | Step | Branch / PR | Publishes? |
 |---|---|---|---|
-| 1 | **Arm** — assign versions, convert `Unreleased` headings, write the one release block, **regenerate `docs/coverage.html`** | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
+| 1 | **Arm** — assign versions, convert `Unreleased` headings, write the one release block, **regenerate BOTH committed pages** (`docs/coverage.html`, `docs/inventory.html`) | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
 | 2 | **Promote** — merge dev into main | `dev` → **`main`** | **Yes** — the push to `main` fires the workflow |
 
 The coverage page is on the arm step because it stamps the **release version**, read from
