@@ -7,6 +7,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`hook-count-drift` — CLAUDE.md had two wrong numbers in one sentence.** It said *"of the ten hook
+  scripts, eight are advisory"*; there are **eleven**, and nine are advisory. The eleventh is
+  `design-flow`'s `design-tells.sh`. Both stale figures sat in the paragraph explaining which hooks fail
+  closed — in the file that spends pages warning about claims nothing makes true.
+
+  Third time a doc number about our own files has gone stale, and the **second time the missed component
+  was design-flow** (#203, #489). So it is a join now: the total is counted from disk, and the advisory
+  figure is **derived** — total minus the gates CLAUDE.md names by path — rather than read, because a
+  second hardcoded number is just a second thing to go stale. A reworded sentence **fails loud** instead
+  of silently checking nothing. 6 fixtures, 3 mutations.
+
+  One fixture had to be rebuilt: the first version had *both* numbers wrong, so it could not isolate the
+  total check — the advisory check fired too, and the mutation that disables the total comparison
+  survived. It now uses a case where only the total is wrong.
+
 ### 2026-08-06 (v1.68.0)
 
 - **`harness-doctrine.md` carried two stale counts about the rule it documents** (Refs #491). It said
@@ -6708,6 +6725,22 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **The critic is wired into the review path, alongside the gate rather than inside it** (Refs #486).
+  `/design-flow:audit` now says to run `/design-flow:critique` **as well**, with the division stated: the
+  audit asks *is this correct* and blocks; the critique asks *is this considered* and does not. A surface
+  can pass every check the auditor makes and still be flat — correct tokens, correct variants, correct
+  a11y, no focal point — and that is the half the gate deliberately does not own. Their findings are kept
+  **unmerged** on purpose: a `file:line` fix and a missing decision carry different authority, and
+  putting them in one list means the reader cannot tell which blocks.
+
+  `/design-flow:variants` gains the critic as its **ranking rubric** (criterion 7). That command
+  produces N conformant variants and then asks a human to choose with nothing to choose *on* —
+  conformance cannot rank, because every variant is conformant by construction. The critic ranks on
+  brief-fit first, craft second. Note the division: the winner still goes to the consistency gate
+  *after*; all N go to the lens *before*.
 
 ### 1.14.0 — 2026-08-06
 
