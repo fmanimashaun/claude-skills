@@ -387,8 +387,9 @@ declarative component and porting HTML examples is easy. Style state off attribu
 ```
 
 Reuse the proven controllers already in the apps: `modal`, `dropdown`, `tabs`, `sidebar`,
-`theme` (dark toggle + localStorage), `toast`, `search` (debounced), `multistep`,
-`form_validation`, `countdown`. Refactor them onto the four mixins so behavior is consistent.
+`theme` (dark toggle + localStorage), `toast`, `password-strength` (debounced live region — see
+`components.md` → Password strength; it announces on a timer, never per keystroke), `search`
+(debounced), `multistep`, `form_validation`, `countdown`. Refactor them onto the four mixins so behavior is consistent.
 
 **Everything else the reference docs prescribe by name, you will have to write** — and this list is
 the whole of it, so a component that needs a controller not below is a component whose behavior

@@ -123,7 +123,7 @@ therefore an obligation, and the shape of it is not a matter of taste.
 
 ### The one rule everybody adds, that you must not add
 
-**Do NOT require a mixture of character types.** *NIST SP 800-63B* is explicit, and it is a
+**Do NOT require a mixture of character types.** *NIST SP 800-63B-4* is explicit, and it is a
 prohibition rather than a preference:
 
 > "Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures of
@@ -138,15 +138,23 @@ symbol", the answer is this citation.
 
 | requirement | strength | source |
 |---|---|---|
-| minimum **15** characters where the password is the *only* factor | **SHALL** | SP 800-63B |
-| minimum **8** where it is one factor of *multi*-factor | **SHALL** | SP 800-63B |
-| compare against a blocklist of known compromised / commonly used passwords, on establish **and** change | **SHALL** | SP 800-63B |
-| permit a maximum of at least **64** characters | SHOULD | SP 800-63B |
-| **no** periodic forced rotation | **SHALL NOT** | SP 800-63B |
+| minimum **15** characters where the password is the *only* factor | **SHALL** | SP 800-63B-4 |
+| minimum **8** where it is one factor of *multi*-factor | **SHALL** | SP 800-63B-4 |
+| compare against a blocklist of known compromised / commonly used passwords, on establish **and** change | **SHALL** | SP 800-63B-4 |
+| permit a maximum of at least **64** characters | SHOULD | SP 800-63B-4 |
+| **no** periodic forced rotation | **SHALL NOT** | SP 800-63B-4 |
 
 A Rails app with the generated session auth and no second factor is the **single-factor** case, so
-the floor is **15**, not the 12 that reads as generous. Force a change only on evidence of
-compromise, never on a schedule.
+the floor is **15**, not the 12 that reads as generous.
+
+**The `-4` in those citations is load-bearing.** SP 800-63B-4 (July 2025) **supersedes** the 2020
+edition, and the 15-character single-factor floor is *new in revision 4* — the superseded document
+required 8. So a citation reading bare *"SP 800-63B"* points at a document that does not contain the
+number in the row above it. Cite the revision, here and anywhere else this table is quoted.
+
+The standard requires a forced change only on **evidence of compromise**, and forbids one on a
+**schedule**. Neither of those covers the accounts sitting below a floor you have just raised — that
+case has no upstream and is decided in *Accounts already below the floor* below.
 
 **The maximum is already handled — do not add a second validator.** `has_secure_password` validates
 the bcrypt 72-**byte** ceiling for you. Note that 64 *characters* is not 72 *bytes*: a passphrase in
@@ -177,7 +185,8 @@ end
 **Write paths only — registration and password reset.** Never on sign-in. Sign-in calls
 `User.authenticate_by`, which verifies the stored digest; re-validating strength there would lock out
 every account created before the policy existed, which is a self-inflicted outage rather than a
-security gain. Tighten the floor and let existing users through until they next set a password.
+security gain. The accounts already under the floor are dealt with **after** authentication succeeds,
+never during it — see *Accounts already below the floor* below.
 
 ### The blocklist is the requirement people skip
 
@@ -194,6 +203,243 @@ implementations, and the trade-off is real:
 
 Whichever you choose, compare case-insensitively and after normalising whitespace, or `PASSWORD1`
 walks past a list containing `password1`.
+
+### Accounts already below the floor — our decision, not NIST's
+
+Raising the floor does nothing to the accounts already under it. Leave them alone and a six-character
+password survives indefinitely, so the policy binds precisely the users who were going to comply anyway.
+The rule is the opposite: **once a user authenticates successfully, an account whose stored password does
+not meet the current policy may reach one destination — the change-password screen — until it does.**
+
+**Say where the authority comes from, because it is not the standard.** SP 800-63B-4 names exactly one
+mandatory trigger — *"verifiers SHALL force a change if there is evidence that the authenticator has been
+compromised"* — and a password merely shorter than a floor raised after it was set is not evidence of
+anything. What the standard prohibits is **periodic** rotation (*"SHALL NOT require subscribers to change
+passwords periodically"*), and this is not that: the trigger is a specific condition, it fires once, and it
+stops firing the moment the condition is resolved. So NIST neither mandates this nor forbids it, and a
+citation claiming otherwise would be invented. **It is our decision** (#484), on the grounds that a floor
+binding only new accounts is not a floor.
+
+**You cannot ask the digest — the app has to have written it down.** `password_digest` is a bcrypt hash;
+there is no way to recover the length of what produced it, and that irreversibility is the property you are
+paying for. So the app can never *discover* that a stored password is sub-policy. It must have **recorded
+the policy in force when the password was set**. The careless implementation reaches for the digest and
+finds nothing to measure; the next-least-careless one adds a `password_length` column, which answers the
+question by handing anyone who reads the `users` table a head start on every account. What gets recorded is
+one integer — the policy's own version, stamped at set-time:
+
+```ruby
+# app/models/password_policy.rb
+module PasswordPolicy
+  # Bump when the floor rises OR the blocklist is replaced. One number covers both, because both
+  # mean the same thing: the rules changed after this digest was written.
+  VERSION = 2
+end
+```
+
+```ruby
+# db/migrate/..._add_password_policy_version_to_users.rb
+add_column :users, :password_policy_version, :integer, null: false, default: 0
+```
+
+**`default: 0` is the load-bearing part.** Every row that predates the column was set under a policy the
+app cannot name, so it is stale by construction and gets the forced change. Defaulting to `VERSION`
+grandfathers in exactly the accounts this exists for.
+
+The stamp belongs on the model rather than in a controller, so every write path gets it — registration, the
+generated token reset, and the change screen below — without any of them remembering to:
+
+```ruby
+class User < ApplicationRecord
+  # has_secure_password + the length and blocklist validations from above
+
+  before_save :stamp_password_policy_version, if: :will_save_change_to_password_digest?
+
+  def password_policy_current? = password_policy_version >= PasswordPolicy::VERSION
+
+  private
+
+  def stamp_password_policy_version
+    self.password_policy_version = PasswordPolicy::VERSION
+  end
+end
+```
+
+`has_secure_password`'s `password=` writes `password_digest`, so `will_save_change_to_password_digest?` is
+true on exactly the saves that set a password and on no others. (`password_digest_changed?` means the same
+thing inside `before_save` on Rails 8 and is not deprecated — the `will_save_change_to_` form just says out
+loud which side of the save it is asking about.)
+
+### The guard: inescapable, and escapable from
+
+The user **is authenticated** — the digest matched, `authenticate_by` returned them, `start_new_session_for`
+gave them a session. This is not a failed sign-in and must not be modelled as one. They are not signed out,
+not locked, not rate-limited; they hold a valid session that can reach exactly one page.
+
+```ruby
+# app/controllers/concerns/password_policy_guard.rb
+module PasswordPolicyGuard
+  extend ActiveSupport::Concern
+
+  included do
+    before_action :require_current_password_policy
+  end
+
+  private
+
+  def require_current_password_policy
+    return unless authenticated?                      # nobody signed in: nothing to confine
+    return if Current.user.password_policy_current?
+    redirect_to edit_password_change_path,
+                alert: "Our password policy changed — please set a new password to continue."
+  end
+end
+```
+
+```ruby
+# app/controllers/application_controller.rb
+class ApplicationController < ActionController::Base
+  include Authentication
+  include PasswordPolicyGuard   # AFTER Authentication: before_actions run in the order they are set
+  allow_browser versions: :modern
+end
+```
+
+**A guard that exempts by omission is not a guard.** It goes in `ApplicationController` so every controller
+inherits it and every exemption is a line somebody had to write. Bolting it onto "the controllers that need
+it" makes the coverage equal to whatever the next person remembered.
+
+**A guard that also runs on the change screen is an infinite redirect.** The one page that can resolve the
+condition has to sit outside it:
+
+```ruby
+# routes: resource :password_change, only: %i[edit update]
+class PasswordChangesController < ApplicationController
+  skip_before_action :require_current_password_policy   # or every visit redirects to itself
+
+  def edit = @user = Current.user
+
+  def update
+    @user = Current.user
+    if @user.update(params.expect(user: [:password, :password_confirmation]))
+      redirect_to root_path, notice: "Password updated."
+    else
+      render :edit, status: :unprocessable_entity
+    end
+  end
+end
+```
+
+Nothing there stamps the version: the model's `before_save` does, so a successful update clears the guard as
+a side effect of the same save that ran the length and blocklist validations. (Whether this screen should
+also demand the *current* password is a separate question — worth yes, and independent of the guard.)
+
+**`allow_unauthenticated_access` does not exempt this, and sign-out is the case that bites.** That macro is
+generated code, not a framework method: the generator defines it as `skip_before_action
+:require_authentication` — one callback, by name, with no knowledge of any other. (The same fact the
+cross-plane section below leans on.) A second `before_action` therefore keeps running everywhere that macro
+appears, so each page that must stay reachable needs its own named skip:
+
+```ruby
+class SessionsController < ApplicationController
+  allow_unauthenticated_access only: %i[new create]
+  skip_before_action :require_current_password_policy, only: :destroy   # let them leave
+end
+
+class PasswordsController < ApplicationController
+  allow_unauthenticated_access                          # generated
+  skip_before_action :require_current_password_policy   # the emailed reset link must still work
+end
+```
+
+`only: :destroy` rather than the whole controller: a signed-in stale user who opens `/session/new` should
+still be sent to the change screen, and the spec below asserts exactly that. Note also that sign-out is
+exempted with `skip_before_action` and **not** by widening `allow_unauthenticated_access` — the generated
+`terminate_session` calls `Current.session.destroy`, so an unauthenticated route into it raises on `nil`.
+And `skip_before_action` defaults to `raise: true`, so a renamed or misspelled guard takes the app down at
+boot instead of quietly exempting everything; leave that default alone.
+
+The cost is one primary-key lookup per request on otherwise-public pages, and only where a session cookie is
+present — `authenticated?` is `Current.session ||= find_session_by_cookie`, memoised for the request, and
+the same lookup `require_authentication` already performs everywhere else.
+
+**Existing sessions are not revoked.** Nothing about the session changes when the policy tightens; the guard
+simply starts redirecting on the next request. Do **not** reach for `user.sessions.destroy_all` — that is
+the response to *compromise*, and here it would achieve nothing anyway: the digest is still valid, so the
+user signs straight back in (sign-in must not test strength, per the rule above) and arrives in the same
+confined state one round trip later. Authentication still succeeds; only the set of reachable pages changed.
+
+**The blocklist half is the same mechanism with a blunter cost.** A password that was acceptable yesterday
+can be in a breach corpus tomorrow. The `SHALL` is scoped to the moment of writing — *"When processing a
+request to establish or change a password, verifiers SHALL compare the prospective secret against a
+blocklist"* — so nothing in the standard re-checks stored passwords, and nothing could: you hold the digest,
+not the password. Refreshing the list therefore reaches existing accounts only by bumping
+`PasswordPolicy::VERSION`, which forces a change on **everyone**, including the majority who were never on
+it. That is the trade, it is not avoidable from the digest alone, and it should be stated rather than
+dressed up as a targeted sweep. There is one honest narrowing: at sign-in you do hold the plaintext for that
+one request, so a *successful* authentication can compare it against the refreshed list and, on a match,
+stamp that single row stale — hitting only the affected accounts. Two constraints on it are absolute. It
+runs **after** `authenticate_by` has returned a user, never inside the validation path; and it may only ever
+move a stamp *down*. The moment it can change what sign-in returns, the strength check is back on the
+sign-in path under a new name, with the lock-out that rule exists to prevent.
+
+Specs for the guard — request specs, because what is under test is controller wiring, not a validation:
+
+```ruby
+RSpec.describe "the password policy guard", type: :request do
+  let(:phrase) { "correct horse battery staple wharf" }
+  let(:compliant) { create(:user, password: phrase, password_confirmation: phrase) }
+  let(:stale) do
+    # Stamped current by the model on create, then wound back: an account whose password was set
+    # under an older policy is the only thing "sub-policy" can mean once the plaintext is gone.
+    create(:user, password: phrase, password_confirmation: phrase)
+      .tap { |u| u.update_column(:password_policy_version, PasswordPolicy::VERSION - 1) }
+  end
+
+  # Through the front door, per §1's `sign_in_as`: the subject is a user who authenticated
+  # successfully, so a spec that forges the session is testing something else.
+  def sign_in_as(user) = post(session_path, params: { email_address: user.email_address, password: phrase })
+
+  it "confines an authenticated sub-policy user to the change screen" do
+    sign_in_as stale
+    get root_path
+    expect(response).to redirect_to(edit_password_change_path)
+  end
+
+  it "leaves the change screen itself reachable" do        # otherwise: infinite redirect
+    sign_in_as stale
+    get edit_password_change_path
+    expect(response).to have_http_status(:ok)
+  end
+
+  it "leaves sign-out reachable" do                        # otherwise: the user is trapped
+    sign_in_as stale
+    delete session_path
+    expect(response).to redirect_to(new_session_path)
+  end
+
+  # The near-miss for `only: :destroy`: allow_unauthenticated_access must NOT exempt the guard.
+  it "still confines them on a page that allows unauthenticated access" do
+    sign_in_as stale
+    get new_session_path
+    expect(response).to redirect_to(edit_password_change_path)
+  end
+
+  # The other whole-controller exemption, and the one only a SIGNED-IN stale user can hit:
+  # signed out, the guard no-ops anyway, so this carve-out is untested unless the spec signs in.
+  it "leaves the emailed reset flow reachable" do
+    sign_in_as stale
+    get edit_password_path(stale.password_reset_token)
+    expect(response).to have_http_status(:ok)
+  end
+
+  it "does not redirect a user whose password meets the current policy" do
+    sign_in_as compliant
+    get root_path
+    expect(response).to have_http_status(:ok)
+  end
+end
+```
 
 ### Specs (pure matchers, no browser)
 

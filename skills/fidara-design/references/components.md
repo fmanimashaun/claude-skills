@@ -1406,7 +1406,7 @@ see [Activity feed / Timeline](#activity-feed--timeline).
 
 ## Password strength
 
-**It may not render a character-class checklist.** *NIST SP 800-63B*: *"Verifiers and CSPs **SHALL
+**It may not render a character-class checklist.** *NIST SP 800-63B-4*: *"Verifiers and CSPs **SHALL
 NOT** impose other composition rules (e.g., requiring mixtures of different character types)."* A meter
 ticking *"has uppercase · has a digit · has a symbol"* **is** that rule, rendered — and it actively
 teaches the user that `Passw0rd!` beats a passphrase, which is backwards. The policy this pairs with is
