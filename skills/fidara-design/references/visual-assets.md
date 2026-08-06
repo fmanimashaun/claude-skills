@@ -134,6 +134,59 @@ so and stop.** Name the surface and what the tiers could not carry. Never a plac
 art, never a hand-rolled "illustration". A half-configured setup must say *which* thing is missing
 rather than reporting the capability absent.
 
+### A generated asset is not usable until its FITNESS is reviewed
+
+**Nothing makes a prompt produce the asset you asked for.** That is not caution — it is measured. The
+test recorded in §3a asked for empty space in the left two-thirds and got a centred motif. So an asset
+arrives as a **candidate**, and using one unreviewed is using output nobody checked against the request.
+
+**Unreviewed means unused.** Until fitness passes, the surface behaves exactly as it does with no
+provider at all: satisfy from tiers 1–2, or say so and stop.
+
+**Fitness is not taste, and the difference decides who may block.**
+
+| | **fitness** | **taste** |
+|---|---|---|
+| asks | is this the asset we asked for, usable on this surface? | is it *good*? |
+| judged against | **the recorded brief — we wrote it** | judgement |
+| falsifiable | **yes**: "brief said left-weighted, output is centred" | no |
+| authority | **blocks** | advisory (see `art-direction.md`) |
+
+The advisory rule for aesthetics is deliberate and unchanged. It does **not** extend here: with
+generation we hold an explicit specification, because the prompt was composed from the surface class
+and the brand pack. Checking an output against a brief we wrote is a **comparison**, not an opinion, and
+comparisons can gate.
+
+**This is why the brief is stored with the asset.** Without it there is nothing to review against and
+fitness collapses into taste — so a generated asset whose brief was not recorded **fails fitness by
+default**, and that is not a technicality: an asset nobody can re-check is an asset nobody can
+regenerate after a brand change either.
+
+#### The mechanical half — gateable, and it should be gated
+
+Dimensions and aspect match what the surface needs · file weight under the surface's budget · contrast
+of the asset against the role token it sits on · `alt` present and not decorative-by-default · format
+appropriate to the tier (raster where raster is right, and there is no SVG from tier 3).
+
+#### The looked-at half — needs eyes on the image
+
+- Does it **depict** what the brief asked for?
+- Does it **omit** what the brief forbade — no text, no people, no logos, no photographic imagery?
+- Does the composition leave the space the layout depends on? **Never make a layout depend on a region
+  of a generated image being empty** — that is the failure the test found.
+- Is it legible at the size it will **actually render**, not at full width? A share card is read as a
+  thumbnail in a feed; a hero backdrop sits behind text.
+
+An agent can do this: reading an image renders it. That is how the centred-composition failure was
+found rather than shipped.
+
+#### The verdict shape
+
+Fitness returns **pass or fail against the brief**, with the specific clause that failed — not a score
+and not a ranking. On fail, the honest options are regenerate with a corrected brief, or fall back a
+tier. **Never "use it anyway because it is close"**: where a provider bills all-or-nothing, a reroll is
+a full charge, so an asset accepted because rejecting it felt expensive is the most expensive one.
+
 ### The drift hazard, named because it cannot yet be gated
 
 Tier 2 derives its identity from **`brand.json`**. Tier 3 inherits its identity from the **design

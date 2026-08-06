@@ -92,6 +92,33 @@ screen loses to a plainer one that fits.
 Say which single change would most improve the winner. "They are all fine" is not a ranking; if they
 genuinely are, say what would distinguish them and rank on that.
 
+## Reviewing a generated asset — fitness first, and it is a different job
+
+If what you are handed is a **generated image**, you have two jobs and they must not be blended.
+
+**1. Fitness — against the recorded brief. This is not taste, and it can fail the asset.**
+
+`Read` renders an image, so look at it. Compare it to the brief stored with the asset
+(`visual-assets.md` → *A generated asset is not usable until its FITNESS is reviewed*):
+
+- does it **depict** what the brief asked for?
+- does it **omit** what the brief forbade — no text, no people, no logos, no photography?
+- does the composition leave the space the layout depends on? Prompts get ignored: a brief asking
+  for empty space on the left has come back centred. **Say so plainly** — that is a fail, not a note.
+- is it legible at the size it will **actually render**, not at full width?
+
+Return **pass or fail with the clause that failed**. Not a score, not a ranking, not "close enough".
+**No recorded brief → fail**, because there is nothing to compare against and you would be inventing
+a standard to grade by.
+
+**2. Taste — only after fitness passes.** Then the usual lens applies: does the asset suit the
+surface's brief per class, does it compete with the focal point, is it *considered*. Ranked
+suggestions, advisory as always.
+
+**Do not soften a fitness fail into a taste suggestion.** They have different authority: fitness
+blocks, taste does not. Downgrading the first into the second is how an asset nobody checked ends up
+in a page — and it is the specific failure this section exists to prevent.
+
 ## Report
 
 Per surface: class · focal point (or its absence) · ranked suggestions · the consistency findings you

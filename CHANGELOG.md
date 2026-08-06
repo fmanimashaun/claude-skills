@@ -2631,6 +2631,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **A generated asset is not usable until its fitness is reviewed** (Refs #507). Nothing makes a prompt
+  produce the asset you asked for — measured, not assumed: the test in §3a asked for empty space in the
+  left two-thirds and got a centred motif. So an asset arrives as a **candidate**, and **unreviewed means
+  unused**: until fitness passes the surface behaves as it does with no provider at all.
+
+  **Fitness is not taste, and that decides who may block.** Taste is judgement and stays advisory.
+  Fitness is a **comparison against a brief we wrote** — the prompt was composed from surface class and
+  brand pack — so "brief said left-weighted, output is centred" is falsifiable, and comparisons can gate.
+  The mechanical half (dimensions, weight, contrast against its role token, `alt`, format) is gateable.
+  The looked-at half needs eyes on the image, which an agent has: reading an image renders it, and that
+  is how the composition failure was found rather than shipped. **No recorded brief is a fail** — an
+  asset nobody can re-check is one nobody can regenerate after a brand change either.
+
 ### 1.37.0 — 2026-08-06
 
 - **Generated assets enter the hierarchy as two cost-ordered tiers** (Refs #507). The asset ladder now
@@ -6589,6 +6604,16 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **`design-critic` gains asset fitness, kept separate from taste** (Refs #507). It could already see
+  images — `Read` renders them — but its instructions only described judging markup. Now: fitness first,
+  returning **pass/fail with the clause that failed**, then taste only if fitness passes. The rule that
+  matters is the one against blending them — *"do not soften a fitness fail into a taste suggestion"* —
+  because they carry different authority, and downgrading the first into the second is exactly how an
+  unchecked asset reaches a page. `/design-flow:critique` documents the carve-out: the command is
+  advisory, and that stance explicitly **does not cover** a fitness verdict.
 
 ### 1.13.1 — 2026-08-06
 
