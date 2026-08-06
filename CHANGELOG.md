@@ -2752,6 +2752,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The password-strength component, implemented** (Refs #484). A worked `PasswordStrengthComponent` +
+  Stimulus controller on role tokens, plus its call site on the two write paths §2a names. The floor
+  comes from the **model**, never a literal in the component: two numbers for one policy is how a
+  relaxed validator and a stale meter end up disagreeing, and the meter is the one the user believes.
+  Announcement is **debounced** — a live region speaking per keystroke is unusable with a screen reader
+  — and *unknown* stays a state, because the blocklist verdict is a round-trip and silence that reads as
+  approval is the failure. No `dark:` variants anywhere: `bg-muted`/`bg-primary` are role tokens, so
+  dark mode and forced-colors come free, whereas a meter built from `bg-green-500` is both a drift
+  finding and unreadable in forced-colors.
+
+  Three gates caught this work while it was being written: `undeclared-component-call-site` (the
+  component was documented but never called), `controller-inventory-gap` (`password-strength` named in
+  markup the inventory did not admit existed), and `component-without-call-site`. Each was a real gap in
+  the addition, not a false positive.
+
 ### 1.39.0 — 2026-08-06
 
 - **Password strength — the component contract, with the checklist the issue asked for removed** (Refs

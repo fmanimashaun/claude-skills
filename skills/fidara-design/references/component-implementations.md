@@ -926,6 +926,107 @@ has `min-h-touch` and an accessible name. **Do not add a second mechanism for it
 error still belongs on the field (`forms.md`), and a failure the user must act on belongs in the page.
 The toast tells them it happened; it is not where they go to fix it.
 
+## Password strength — `app/components/ui/password_strength_component.rb`
+
+Contract in `components.md` → **Password strength**; policy in `rails-8` → `auth-security.md` §2a. It
+renders **length progress, match, and the server's verdict** — never character classes, which is the
+rule NIST prohibits.
+
+```ruby
+module Ui
+  class PasswordStrengthComponent < ViewComponent::Base
+    # The floor comes from the MODEL, never a literal here. Two numbers for one policy is how a
+    # relaxed validator and a stale meter end up disagreeing in front of the user — and the meter is
+    # the one they believe.
+    def initialize(floor: User::PASSWORD_FLOOR, input_id:, confirm_id: nil)
+      @floor = floor
+      @input_id = input_id
+      @confirm_id = confirm_id
+    end
+
+    private
+
+    attr_reader :floor, :input_id, :confirm_id
+  end
+end
+```
+
+```erb
+<%# The live region is present from FIRST PAINT and starts empty — same rule as Toast: a region must
+    exist before content enters it. `role="status"` implies polite AND atomic; nothing beside it. %>
+<div class="stack" style="--space: var(--space-xs)"
+     data-controller="password-strength"
+     data-password-strength-floor-value="<%= floor %>"
+     data-password-strength-input-outlet="#<%= input_id %>">
+
+  <%# Length progress reuses Progress bar. The accessible NAME is required and authored; the fill
+      is Children Presentational, so text inside it would not be read. %>
+  <div role="progressbar" aria-valuemin="0" aria-valuemax="<%= floor %>"
+       aria-label="<%= t('.length_progress') %>"
+       data-password-strength-target="meter"
+       class="h-2 rounded-full bg-muted overflow-hidden">
+    <div class="h-full bg-primary transition-[width] motion-reduce:transition-none"
+         data-password-strength-target="fill" style="width: 0%"></div>
+  </div>
+
+  <%# One region for BOTH messages. Two live regions racing each other is how a screen reader user
+      hears the match state and the blocklist verdict interleaved. %>
+  <p role="status" class="text-step--1 text-muted-foreground"
+     data-password-strength-target="status"></p>
+</div>
+```
+
+```js
+// app/javascript/controllers/password_strength_controller.js
+import { Controller } from "@hotwired/stimulus"
+
+export default class extends Controller {
+  static targets = ["meter", "fill", "status"]
+  static values = { floor: Number, debounce: { type: Number, default: 300 } }
+
+  connect() { this.timer = null }
+  disconnect() { clearTimeout(this.timer) }
+
+  // Debounced. A live region that speaks on every keystroke is unusable with a screen reader —
+  // this is the whole reason the announcement is not wired straight to `input`.
+  update({ target }) {
+    const length = target.value.length
+    const pct = Math.min(100, Math.round((length / this.floorValue) * 100))
+    this.fillTarget.style.width = `${pct}%`
+    this.meterTarget.setAttribute("aria-valuenow", Math.min(length, this.floorValue))
+
+    clearTimeout(this.timer)
+    this.timer = setTimeout(() => { this.announce(length) }, this.debounceValue)
+  }
+
+  announce(length) {
+    // UNKNOWN IS A STATE. The blocklist verdict is a server round-trip; until it arrives we say
+    // nothing about it. Silence that reads as approval is the failure this guards against.
+    this.statusTarget.textContent = length >= this.floorValue
+      ? this.element.dataset.passwordStrengthReachedText
+      : this.element.dataset.passwordStrengthShortText
+  }
+}
+```
+
+Called from the registration and password-reset forms — the two write paths §2a names, and nowhere
+else. It has no place on sign-in, where the password being typed is one the policy may predate:
+
+```erb
+<%= form.password_field :password, id: "user_password" %>
+<%= render Ui::PasswordStrengthComponent.new(input_id: "user_password",
+                                             confirm_id: "user_password_confirmation") %>
+```
+
+**Three things this deliberately does not do.**
+
+- **No score, no colour-coded verdict.** A green bar at eight characters is a claim the policy does not
+  make. The bar reports *distance to the floor*, which is a fact.
+- **No submit gating.** The server validates. A disabled button the client thinks should be enabled is
+  unfixable by the user; an enabled one the server rejects is a lie. Let them submit.
+- **No `dark:` variants.** `bg-muted` and `bg-primary` are role tokens, so dark mode and forced-colors
+  come free. A meter built from `bg-green-500` is both a drift finding and unreadable in forced-colors.
+
 ## Drawer, Carousel and Lightbox — markup, because the roles are what gets wrong
 
 No new ViewComponent classes: the drawer **is** `Ui::Modal` positioned to an edge, and the lightbox is
