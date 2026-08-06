@@ -2752,7 +2752,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.40.0 — 2026-08-07
 
 - **The password-strength component, implemented** (Refs #484). A worked `PasswordStrengthComponent` +
   Stimulus controller on role tokens, plus its call site on the two write paths §2a names. The floor
@@ -7802,6 +7802,49 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-07 (release v1.70.0)
+
+> ### A research session found a security defect in doctrine we had already published
+>
+> Sent to establish what Rails 8 ships natively for MFA. The answer was **nothing** — 19 generator
+> templates, zero MFA terms. The useful finding was elsewhere: a 2FA recipe of ours that produces a
+> one-time password which is not one-time.
+
+- **We shipped a 2FA recipe producing a replayable OTP** (#531). `ecosystem-gems.md` said *"Need email
+  confirmation, lockouts, or 2FA? Add a column, a mailer, a `rotp` check."* True of the plumbing,
+  dangerous as a recipe: `rotp` reports whether a code is **currently valid**, not whether it has been
+  **used**, so that check accepts the same code repeatedly inside its window. *NIST SP 800-63B-4* makes
+  single-use a **SHALL**. 2FA is removed from the add-a-column sentence, which stays correct for
+  confirmation and lockouts.
+
+- **A raised password floor now reaches the accounts already under it** (#484). §2a shipped saying
+  *"let existing users through until they next set a password"* — which grandfathers a six-character
+  password indefinitely, binding only the users who were going to comply anyway. After
+  `authenticate_by` succeeds, a sub-policy account is now confined to the change screen.
+
+  **Stated as ours, not as compliance.** The verifier found NIST authorises neither reading: a password
+  merely shorter than a floor raised after it was set is *not* evidence of compromise, and a later
+  blocklist match as evidence is INCONCLUSIVE. It does not collide with the `SHALL NOT` on **periodic**
+  rotation — but "does not collide with" is not "is required by", and the original wording was the
+  position the standard actually supports. The step beyond is deliberate and recorded as a decision.
+
+  The mechanism matters: **a bcrypt digest cannot be measured**, and a `password_length` column would
+  hand anyone reading `users` a head start on every account. So the **policy version in force at
+  set-time** is recorded — one integer, `default: 0`, so every pre-existing row is stale by
+  construction.
+
+- **Seven bare `SP 800-63B` citations corrected to `SP 800-63B-4`** — plus an eighth in
+  `components.md` that was out of that session's lane. Rev 4 (July 2025) **supersedes** the 2020
+  edition, and the 15-character floor exists **only** in rev 4, so a bare citation pointed at a document
+  not containing the number it was attached to. Citation precision, not a guidance correction.
+
+- **The password-strength component, implemented** (#484). Floor read from the model, debounced live
+  region, *unknown* as a state, no submit gating. Three of our own gates caught gaps in it as it was
+  written.
+
+**Versions:** rails-stack 1.39.0 → **1.40.0**, design-flow 1.15.0 → **1.15.1**.
+**Gates:** 65/65. **Mutation check:** 409 mutations across 32 guards, all caught.
 
 ### 2026-08-06 (release v1.69.0)
 
