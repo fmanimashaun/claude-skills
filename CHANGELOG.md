@@ -2768,6 +2768,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   component was documented but never called), `controller-inventory-gap` (`password-strength` named in
   markup the inventory did not admit existed), and `component-without-call-site`. Each was a real gap in
   the addition, not a false positive.
+- **A raised password floor now reaches the accounts already under it** (Refs #484). `auth-security.md`
+  §2a shipped telling readers to *"let existing users through until they next set a password"* — which
+  grandfathers a six-character password indefinitely, so the floor bound only the users who were going to
+  comply anyway. It now says the opposite: after `authenticate_by` succeeds, a user whose stored password
+  misses the current policy is confined to the change-password screen. **Design decision, not a citation**
+  — verification found NIST SP 800-63B-4 §3.1.1.2 does *not* authorise this (its one mandatory trigger is
+  *"evidence that the authenticator has been compromised"*, and a short password is not evidence), while
+  its prohibition is on **periodic** rotation, which a fires-once condition is not. The section says so in
+  those words instead of borrowing authority: [maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/484#issuecomment-5209651634).
+  The Rails half is a separate CONFIRMED verdict against `rails/rails` `8-0-stable`, and its crux is the
+  trap: `allow_unauthenticated_access` is generated as `skip_before_action :require_authentication` —
+  **one callback, by name** — so it never exempts a second `before_action`, and sign-out, the emailed
+  reset link and the change screen itself each need their own named skip or the user is trapped or
+  looping. The design crux is that a bcrypt digest cannot be measured and a `password_length` column
+  would leak, so the app stamps the **policy version in force at set-time** (`default: 0`, so rows that
+  predate the column are stale by construction). Six request specs — one per exemption plus the
+  near-miss proving `allow_unauthenticated_access` does not exempt the guard. The "never re-validate strength inside
+  `authenticate_by`" rule is unchanged — this happens after it returns, not during it.
+
+  Same pass, same file: all seven citations read bare *"NIST SP 800-63B"* and now read **SP
+  800-63B-4**. This is a **citation-precision fix, not a correction of the guidance** — the quoted
+  composition-rule prohibition, the 15/8 split, the blocklist `SHALL` and the no-periodic-rotation
+  rule were all verbatim correct. But the 15-character single-factor floor exists *only* in revision
+  4 (July 2025, which **supersedes** the 2020 edition; superseded, not withdrawn — CSRC carries no
+  withdrawal label), so bare *"SP 800-63B"* pointed at a document that does not contain the number
+  the table states, and the citation did not support its own claim. The section now says why the
+  suffix is load-bearing. One consequence caught in self-review: *"Force a change only on evidence of
+  compromise"* sat two paragraphs above a section that forces one on policy violation — a
+  `doctrine-contradiction` in the same file, now scoped to what the standard requires versus what we
+  decided.
+- **We shipped a 2FA recipe that produces a replayable one-time password** (Refs #531).
+  `ecosystem-gems.md` said *"Need email confirmation, lockouts, or 2FA? Add a column, a mailer, a
+  `rotp` check"*. True of the plumbing, dangerous as a recipe: verified that way a TOTP **accepts the
+  same code repeatedly** inside its window, and *NIST SP 800-63B-4* makes single-use a **SHALL** —
+  *"the verifier SHALL NOT accept a previously used OTP"*. Replay prevention is not a detail added
+  later; it is the difference between a second factor and a decoration. 2FA is removed from that
+  add-a-column sentence, which stays correct for confirmation and lockouts.
+
+  Found by a research session sent to establish what Rails 8 ships natively for MFA. The answer was
+  **nothing** — 19 generator templates across three generators, zero MFA terms — but the more useful
+  finding was this one, in doctrine we had already published.
 
 ### 1.39.0 — 2026-08-06
 

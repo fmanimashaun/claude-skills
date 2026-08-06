@@ -111,8 +111,16 @@ Rails 8 eliminated the third-party-auth-engine category: `bin/rails g
 authentication` generates readable, auditable session-based auth *inside your
 codebase* — Session model, `has_secure_password`, reset flow — that you
 extend like any other app code (full walkthrough in `auth-security.md`). Need
-email confirmation, lockouts, or 2FA? Add a column, a mailer, a `rotp` check —
-it's your code, not a DSL to configure. The one legitimate add-on is social
+email confirmation or lockouts? Add a column, a mailer — it's your code, not a
+DSL to configure.
+
+**2FA is the exception, and this sentence used to include it.** *"Add a column and a
+`rotp` check"* is true of the plumbing and dangerous as a recipe: a TOTP verified
+that way **accepts the same code repeatedly** inside its window, and NIST SP
+800-63B-4 makes single-use a **SHALL** — *"the verifier SHALL NOT accept a
+previously used OTP"*. Replay prevention is not a detail you add later; it is the
+difference between a second factor and a decoration. See #531 for the scope of what
+production MFA actually requires. The one legitimate add-on is social
 login:
 
 ```ruby
