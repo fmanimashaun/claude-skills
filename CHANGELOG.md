@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-06 (v1.68.0)
 
 - **`harness-doctrine.md` carried two stale counts about the rule it documents** (Refs #491). It said
   *"Four commands qualify today"* (five do) and *"two declared mutations"* (thirteen). Both were
@@ -1723,7 +1723,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.19.0 — 2026-08-06
 
 - **`project_gates.py` now says whose tracker each finding belongs to** (Refs #485). The four
   states said *what happened*, never *where the fix goes* — and the summary added ERRORs into the
@@ -2735,7 +2735,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.38.0 — 2026-08-06
 
 - **A generated asset is not usable until its fitness is reviewed** (Refs #507). Nothing makes a prompt
   produce the asset you asked for — measured, not assumed: the test in §3a asked for empty space in the
@@ -6709,7 +6709,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.14.0 — 2026-08-06
 
 - **`design-critic` gains asset fitness, kept separate from taste** (Refs #507). It could already see
   images — `Read` renders them — but its instructions only described judging markup. Now: fitness first,
@@ -7667,6 +7667,53 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-06 (release v1.68.0)
+
+> ### Three parallel sessions, and each one found an error in the issue it was given
+>
+> Worked in separate git worktrees under the `parallel-session-lane` protocol. None of the three took
+> its issue at face value, and all three corrections are in this release — which is the argument for
+> *"an issue body is a hypothesis, not a specification"* holding up under delegation.
+
+- **`project_gates.py` routes every finding to a tracker** (#485). App gap → the project's tracker;
+  `requires` binary absent → environment, nobody's; ERROR or unparseable manifest → **doctrine**,
+  upstream. Derived from the outcome rather than declared per check. It also fixes a shipped defect: the
+  summary folded ERRORs into the same total as findings, so **a manifest of ours naming a missing script
+  of ours read to a user as a defect in their own app.** The issue claimed `/rails-flow:review` is
+  diff-scoped — it is not (*"Full parallel codebase review"*); the diff-scoped command is
+  `/design-flow:audit`. The two were swapped, and that changes the gap: not *"nothing sweeps the whole
+  codebase"* but *"nothing sweeps it against plugin doctrine mechanically"*. A docstring claiming eleven
+  checks was also wrong — the manifests declare **fifteen**.
+
+- **A mention of an agent is not a dispatch** (#491). `undeclared-topology` counted a backticked name,
+  so a sentence explaining *which agent consumes a command's output* read as dispatching it. It now
+  requires a signal a dispatch has — subject position, handoff arrow, an imperative **in the name's own
+  sentence**, or a `Task(…)` invocation. The narrowing is **deliberately biased toward counting**,
+  because here a false negative is worse: an undeclared parallel topology ships two agents whose
+  disagreement nobody defined. Six fixtures in both directions, including the negative one the issue
+  warned was missing, plus a counter — a silence fixture proves the rule does not *fire* on a mention,
+  only a moving number proves it can still *see* one.
+
+- **A generated, committed map of what this marketplace ships** (#509). 138 rows: 27 agents, 37
+  commands, 64 gates, 4 tier tables joined 1:1 to the agents. The issue's *"68 gates"* was already stale
+  — the page renders `len(GATES)` and a fixture pins the equality, so it cannot drift into prose again.
+  Its own `--check` fixtures had stubbed the function under test, so a mutation survived the entire
+  selftest — **the defect the gate exists to prevent, inside its own test** — now pinned against a
+  throwaway repo where commit and working copy disagree.
+
+- **A generated asset is unusable until its fitness is reviewed** (#507). Nothing makes a prompt produce
+  the asset you asked for; the test in v1.67.0 proved it. **Fitness is not taste**: taste is judgement and
+  stays advisory, fitness is a comparison against a brief we wrote and therefore **blocks**. No recorded
+  brief is a fail.
+
+- **`harness-doctrine.md` carried two stale counts about the rule it documents** (#491) — found by the
+  session fixing that rule, which correctly refused to edit `docs/` from outside its lane and reported
+  the correction instead.
+
+**Versions:** rails-stack 1.37.0 → **1.38.0**, design-flow 1.13.1 → **1.14.0**, rails-flow 1.18.2 →
+**1.19.0**.
+**Gates:** 65/65. **Mutation check:** 406 mutations across 32 guards, all caught.
 
 ### 2026-08-06 (release v1.67.0)
 
