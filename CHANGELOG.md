@@ -2761,6 +2761,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The toast rewrite left call sites that crash, and an accent that silently vanishes** (Refs #546).
+  Two defects, both survivors of the v1.72.0 rewrite, and both bite anyone copying the section verbatim.
+
+  **The examples called a keyword that no longer exists.** The rewrite made `title:` required and
+  removed `message:` — but the flash→toast examples still passed `message:`, so the exact wiring the
+  section teaches raised `ArgumentError`. #546 reported **two** such call sites; there were **five**,
+  three of them in `crud-modal-pattern.md`, a file the report does not mention. One also passed
+  `undo_path:`, a **third** dropped keyword, now expressed through the `action:` slot the rewrite added.
+
+  **`border-l-<%= intent %>` was string interpolation posing as a token.** It emits `border-l-error` and
+  `border-l-loading`, and a conformant theme has **neither** — it names the error colour `destructive`
+  (as `Ui::Alert`'s own `INTENT` map already did) and ships no `loading` colour at all. So the accent
+  disappeared on precisely the two intents that most need it, and a pack passing the brand-pack lint
+  still rendered them unbranded. The accent is now a **mapped constant**, and every one of its five
+  tokens was checked to exist in `foundations-tokens.md`.
+
+  These are the third and fourth survivors of one rewrite, after the two #542 caught. The lesson is the
+  one this repo keeps paying for: **renaming a keyword in a signature does not find its call sites**, and
+  a regex that fixes one passage does not find the others. This time the sweep was run for every dropped
+  keyword across the whole repo, not just the section being edited — and the first attempt at that sweep
+  silently matched nothing because of a shell glob, which is its own reminder that a check that did not
+  run is not a pass.
+
 ### 1.42.0 — 2026-08-07
 
 - **A stale remnant of the reversed error rule survived the rewrite** (Refs #540). The toast rebuild
