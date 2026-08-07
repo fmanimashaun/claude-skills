@@ -1749,6 +1749,40 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Pillar 1 of the autonomous flow driver: the toolchain self-update gate** (Refs #488).
+  `/rails-flow:toolchain-check` resolves what is installed, compares it against what is published,
+  and carries a durable marker across the restart an update requires — so the driver never begins
+  unattended work on a stale toolchain. Three states, and the third is the point: **exit 2 (could not
+  resolve one side) is never folded into exit 0**, because "I could not read the installed state" is
+  not "you are up to date".
+
+  **Five substrate facts corrected the issue's design sketch**, each found by reading the real files.
+  All five fail in the *silent* direction — reporting a stale toolchain as current:
+
+  1. `known_marketplaces.json` records **no version** — only `source`, `installLocation`,
+     `lastUpdated`. The installed marketplace version is one level down, in
+     `<installLocation>/.claude-plugin/marketplace.json`.
+  2. `installed_plugins.json` maps each plugin to a **list** of install records, not one. Two versions
+     coexist in the cache — the machine this was written on held rails-flow at **both 1.19.0 and
+     1.18.2**, same scope, separable only by `lastUpdated`. `[0]` or `[-1]` picks arbitrarily.
+  3. **Four of five** plugin entries in `marketplace.json` carry no `version` key.
+  4. Because the two sources are **disjoint, not redundant**: `rails-stack` is a skills bundle with no
+     plugin directory and is versioned *only* in `marketplace.json`; the four code plugins are
+     versioned *only* in their own `plugin.json`. Read either alone and you miss the other set.
+  5. The drift was **live while this was written** — installed 1.72.0 against a published 1.73.0.
+
+  Recorded as a **maintainer decision**, not a framework claim: the shapes above are observed facts
+  about Claude Code's on-disk state, verified on this machine and reproduced as selftest fixtures, and
+  the gate's policy choices (fail-closed on a plugin behind target, tolerate landing *ahead* of it,
+  clear the marker only on success) are ours.
+
+  28 paired assertions, and **five mutations** — `newest_record` returning `records[0]`, dropping the
+  `plugin.json` fallback, folding exit 2 into 0, clearing the marker unconditionally, and comparing
+  versions lexically — each caught by the fixture named for it. Registered in the doctor's gate sweep,
+  which is how the repo's own `mutation coverage` gate caught it running **nowhere**.
+
 ### 1.19.0 — 2026-08-06
 
 - **`project_gates.py` now says whose tracker each finding belongs to** (Refs #485). The four

@@ -165,6 +165,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # cell and a run one word under the threshold are all shapes that look like duplication.
     ("rails-flow product brief", ("python3", "plugins/rails-flow/scripts/check_brief.py", "--selftest")),
     ("rails-flow claim extraction", ("python3", "plugins/rails-flow/scripts/extract_claims.py", "--selftest")),
+    # #488 pillar 1. Four of its fixtures encode SUBSTRATE facts rather than logic — that
+    # `installed_plugins.json` holds a LIST per plugin (two rails-flow versions really do coexist
+    # in the cache), that `known_marketplaces.json` carries no version at all, and that the two
+    # version sources are DISJOINT (rails-stack only in marketplace.json, the four code plugins
+    # only in their own plugin.json). Each fails in the silent direction: reading one source, or
+    # the wrong record, reports a stale toolchain as current.
+    ("rails-flow toolchain version", ("python3", "plugins/rails-flow/scripts/toolchain_version.py", "--selftest")),
     # #334. Its selftest also validates every SHIPPED checks.json -- that each names a real
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.
