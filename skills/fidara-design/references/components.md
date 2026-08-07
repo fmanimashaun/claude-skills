@@ -1393,6 +1393,17 @@ see [Activity feed / Timeline](#activity-feed--timeline).
   is the server's job, not a markup fix.
 
 ## Toast / Notification
+
+**A toast is transient by definition** — *"meant to be noticed without disrupting a user's attention,
+and it should automatically disappear afterwards"*. Every toast auto-dismisses, with exactly one exception: a
+`:loading` toast persists while its operation runs, then is **replaced** by the outcome. If a message must stay, it is an `Ui::Alert` in the page; if it must be answered first, a
+`Ui::Modal`. Choosing correctly is the whole of this component's design.
+
+**Anatomy: container · optional icon · text · optional action · optional close.** The close button
+earns its place only beside an action — a toast that leaves on its own needs no button, and no button
+means no touch target forcing the height. Do **not** use the `box` primitive: it is the content-panel
+recipe, and it renders a one-word message as an ~80px card.
+
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
   `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
 - **`role="status"`, and nothing beside it.** The role already implies `aria-live="polite"` *and*
