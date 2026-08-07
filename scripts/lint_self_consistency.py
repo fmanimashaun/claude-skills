@@ -1393,6 +1393,37 @@ _CI_RUN_OPEN = re.compile(r"\bCI\.run\b|\bContinuousIntegration\.run\b")
 _CI_SUITE_STEP = re.compile(r"^\s*step\b.*\b(?:rspec|rails\s+test)\b", re.MULTILINE)
 
 
+def check_dangling_conditional_floor() -> tuple[list[Finding], int]:
+    """If §2a offers a lower password floor conditional on MFA, the file must say how to get MFA.
+
+    #531. §2a shipped a table dropping the floor from 15 to 8 *"where it is one factor of multi-factor"*
+    -- a conditional discount whose condition the skill gave a reader **no way whatsoever to satisfy**.
+    Not a false claim; a true one with nothing behind it, which is the same shape as a gate that cannot
+    fail. The reader who wants the discount leaves our doctrine to get it, which is the re-invented-
+    per-app failure the policy was written to stop.
+
+    So: naming the multi-factor exception obliges the file to carry MFA guidance. The check is
+    structural -- does the file discuss the second factor at all -- not a judgement about whether the
+    guidance is good. It cannot tell adequate doctrine from a stub, and does not pretend to.
+    """
+    doc = ROOT / "skills" / "rails-8" / "references" / "auth-security.md"
+    if not doc.is_file():
+        return [], 0
+    body = read(doc)
+    offers = re.search(r"one factor of \*multi\*-factor|factor of multi-factor", body)
+    if not offers:
+        return [], 0
+    # Evidence the file actually tells you how to satisfy the condition.
+    teaches = re.search(r"\bTOTP\b|\bWebAuthn\b|\bpasskey\b|## 2b\.", body, re.I)
+    if teaches:
+        return [], 1
+    return [Finding(
+        "dangling-conditional-floor", rel(doc), 0,
+        "the policy table offers a lower password floor for multi-factor auth, but the file carries no "
+        "MFA guidance -- a conditional discount whose condition a reader cannot satisfy from this "
+        "doctrine. Either add the guidance or drop the row.")], 1
+
+
 def check_hook_script_count() -> tuple[list[Finding], int]:
     """CLAUDE.md's hook-script count must equal the hook scripts on disk.
 
@@ -1782,6 +1813,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
+    dangling, dangling_examined = check_dangling_conditional_floor()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1808,11 +1840,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "commands_reading_a_foreign_skill": skill_dep_examined,
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "hook_scripts_counted": hook_cnt_examined,
+        "conditional_floor_claims": dangling_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt,
+            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling,
             coverage)
 
 
@@ -1848,6 +1881,27 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- dangling-conditional-floor (#531) --------------------------------
+    DCF = "dangling-conditional-floor"
+    AUTH = "skills/rails-8/references/auth-security.md"
+    # Carries the SINGLE-factor floor line too, so these fixtures stay silent for
+    # `password-floor-drift` — otherwise they trip that rule as well and steal its mutation.
+    OFFER = ("| minimum **15** characters where the password is the *only* factor | SHALL |\n"
+             "| minimum **8** where it is one factor of *multi*-factor | SHALL |\n")
+    scenario("the multi-factor discount with no MFA guidance", rule=DCF, expect_finding=True,
+             files={AUTH: OFFER})
+    scenario("...with a 2b section is silent", rule=DCF, expect_finding=False,
+             files={AUTH: OFFER + "\n## 2b. Multi-factor\nEnrol with TOTP.\n"})
+    scenario("TOTP mentioned anywhere satisfies it", rule=DCF, expect_finding=False,
+             files={AUTH: OFFER + "\nUse a TOTP authenticator.\n"})
+    scenario("WebAuthn also satisfies it", rule=DCF, expect_finding=False,
+             files={AUTH: OFFER + "\nRegister a WebAuthn passkey.\n"})
+    # NO OFFER, NO OBLIGATION. A file that never promises the discount owes no MFA guidance —
+    # otherwise the rule would demand MFA doctrine of every auth file in the repo.
+    scenario("a file not offering the discount is silent", rule=DCF, expect_finding=False,
+             files={AUTH: "| minimum **15** characters where the password is the *only* factor |\n"})
+    scenario("no auth file is silent", rule=DCF, expect_finding=False, files={"README.md": "x\n"})
 
     # -- hook-count-drift -------------------------------------------------
     HC = "hook-count-drift"

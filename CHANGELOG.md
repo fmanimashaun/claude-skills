@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-07 (v1.71.0)
+
+- **`dangling-conditional-floor`** (Refs #531) — if §2a offers a lower floor conditional on multi-factor
+  auth, the file must carry MFA guidance. Structural, not a judgement: it asks whether the second factor
+  is discussed at all, and cannot tell adequate doctrine from a stub. A file that never offers the
+  discount owes nothing, so the rule does not demand MFA doctrine of every auth file. 6 fixtures, 2
+  mutations — and the fixtures had to be rebuilt once, because writing a bare `auth-security.md` tripped
+  `password-floor-drift` as well and stole its mutation.
+
 ### 2026-08-06 (v1.69.0)
 
 - **`hook-count-drift` — CLAUDE.md had two wrong numbers in one sentence.** It said *"of the ten hook
@@ -2751,6 +2760,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.41.0 — 2026-08-07
+
+- **§2b — multi-factor, and the discount §2a was offering with no way to earn it** (Refs #531). §2a's
+  table drops the password floor from 15 to **8 when the password is one factor of multi-factor**. Both
+  lines were correct, and together they defined a **conditional discount whose condition the skill gave
+  a reader no way to satisfy** — not a false claim, a true one with nothing behind it, which sends the
+  reader out of our doctrine to re-invent per app.
+
+  **Rails 8 ships no MFA at all** — verified against the installed gem, not assumed: the authentication
+  generator's two migrations are its whole persisted surface, and a sweep for
+  `totp|webauthn|passkey|mfa|otp` across the generator tree returns **zero**. Checked on 8.1.1 and
+  8.1.3 with the same result, and the version boundary is recorded.
+
+  What it *does* give you: `authenticate_by` verifies multiple **stored** secrets in one timing-hardened
+  call — useful, and **not** a TOTP path, since a TOTP is clock-derived with no digest to compare. The
+  `Session` model is a **row**, which is the real hook.
+
+  Three rules that are ours and are the ones most often got wrong: **replay** — *"Verifiers SHALL accept
+  a given OTP only once while it is valid"*, and `rotp` reports validity, never use, so `if
+  totp.verify(code)` accepts the same digits all window; **MFA is a property of the session, not the
+  user**, or enrolling silently blesses every existing session including one an attacker holds; and
+  **recovery codes are a set** needing their own table with `used_at`, hashed, shown once.
+
+  **SMS is *restricted*, not deprecated** — the popular claim is wrong, and shipping it would be the
+  same defect as any other unverified assertion. Restricted is a status with obligations: an
+  alternative authenticator **SHALL** be available, subscribers *SHOULD* be warned, and risk signals
+  (SIM change, porting) *SHOULD* be considered.
 
 ### 1.40.0 — 2026-08-07
 
@@ -7802,6 +7839,41 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-07 (release v1.71.0)
+
+> ### A true claim with nothing behind it
+>
+> §2a offered a lower password floor *"where it is one factor of multi-factor"* — correct, and
+> unsatisfiable, because the skill contained no MFA guidance at all. Not a wrong claim; a right one the
+> reader could not act on, which sends them out of our doctrine to re-invent per app.
+
+- **§2b — multi-factor** (#531). **Rails 8 ships none**, verified against the installed gem rather than
+  assumed: the authentication generator's two migrations are its whole persisted surface, and a sweep
+  for `totp|webauthn|passkey|mfa|otp` over the generator tree returns **zero**. Checked on two versions
+  with the same result, and the version boundary is recorded so it can be re-checked.
+
+  What Rails *does* give you: `authenticate_by` verifies multiple **stored** secrets in one
+  timing-hardened call — useful, and **not** a TOTP path, because a TOTP is clock-derived and has no
+  digest to compare. The `Session` model being a **row** is the real hook.
+
+  Three rules, ours, and the ones most often got wrong: **replay** — NIST's *"SHALL accept a given OTP
+  only once while it is valid"*, against `rotp`, which reports validity and never use; **MFA is a
+  property of the session, not the user**, or enrolling retroactively blesses every existing session
+  including one an attacker holds; and **recovery codes are a set**, needing their own table with
+  `used_at`, hashed, shown once.
+
+  **SMS is *restricted*, not deprecated.** The popular claim is wrong, and shipping it would be the same
+  defect as any other unverified assertion. Restricted is a status with obligations — an alternative
+  **SHALL** be available, subscribers *SHOULD* be warned, risk signals *SHOULD* be weighed.
+
+- **`dangling-conditional-floor`** — offering the discount obliges the file to carry the guidance.
+  Structural rather than a judgement: it asks whether the second factor is discussed at all, and a file
+  that never offers the discount owes nothing.
+
+**Versions:** rails-stack 1.40.0 → **1.41.0**.
+**Gates:** 65/65, and **CI verified** — the first green hosted run since yesterday's Actions outage.
+**Mutation check:** 411 mutations across 32 guards, all caught.
 
 ### 2026-08-07 (release v1.70.0)
 

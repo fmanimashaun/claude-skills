@@ -89,6 +89,20 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #531: a true claim with nothing behind it — the discount whose condition
+                # the skill gave no way to satisfy.
+                "the MFA-guidance test always passes, so the discount may dangle again",
+                '    teaches = re.search(r"\\bTOTP\\b|\\bWebAuthn\\b|\\bpasskey\\b|## 2b\\.", body, re.I)',
+                "    teaches = True",
+                "the multi-factor discount with no MFA guidance",
+            ),
+            Mutation(
+                "the rule stops requiring an offer, demanding MFA doctrine of every auth file",
+                '    if not offers:',
+                "    if False:",
+                "a file not offering the discount is silent",
+            ),
+            Mutation(
                 # Third stale doc-number about our own files; second time the missed one was design-flow.
                 "the total comparison goes, so a wrong hook count passes",
                 '    if m.group(1) != WORDS.get(total, str(total)):',
