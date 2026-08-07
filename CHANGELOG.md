@@ -2761,7 +2761,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.42.1 — 2026-08-07
 
 - **The toast rewrite left call sites that crash, and an accent that silently vanishes** (Refs #546).
   Two defects, both survivors of the v1.72.0 rewrite, and both bite anyone copying the section verbatim.
@@ -7904,6 +7904,32 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-07 (release v1.73.0)
+
+> ### Four survivors of one rewrite, and a sweep that silently swept nothing
+>
+> v1.72.0 rebuilt the toast. The rewrite was right; what it left behind was not. #542 caught two
+> stale remnants an hour later, #546 found two more — and the sweep meant to prove there were no
+> others matched nothing at all, because of a shell glob.
+
+- **The toast examples crashed, in more places than were reported** (#546). The rewrite made `title:`
+  required and removed `message:`, but the flash→toast examples still passed `message:` — so **the exact
+  wiring the section teaches raised `ArgumentError`**. The report named two call sites; there were
+  **five**, three of them in `crud-modal-pattern.md`, a file it does not mention. One also passed
+  `undo_path:`, a *third* dropped keyword, now expressed through the `action:` slot the rewrite added.
+
+- **`border-l-<%= intent %>` was interpolation posing as a token** (#546). It emits `border-l-error` and
+  `border-l-loading`, and a conformant theme has **neither**: it names the error colour `destructive` —
+  as `Ui::Alert`'s own `INTENT` map already did — and ships no `loading` colour at all. The accent
+  vanished on precisely the two intents that most need it, and a pack passing the brand-pack lint still
+  rendered them unbranded. It is a **mapped constant** now, with all five tokens checked to exist.
+
+The lesson is one this repo keeps paying for: **renaming a keyword in a signature does not find its call
+sites**, and a regex that fixes one passage does not find the others. Worth recording alongside it — the
+first repo-wide sweep for the dropped keywords **failed on a shell glob and printed `0 hit(s)` for every
+term**. It read as a clean result. That is a gate that cannot fire, in the very check written to prove
+the rewrite was complete.
 
 ### 2026-08-07 (release v1.72.0)
 
