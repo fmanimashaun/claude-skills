@@ -975,13 +975,6 @@ implementations model it exactly this way. It gets no close button either: dismi
 running operation and leave the user with no way to learn how it ended. An error is a *result*, and
 results auto-dismiss; a loading toast is not a result yet.
 
-```erb
-data-controller="toast"
-<%= "data-toast-timeout-value=#{5000}" unless intent == :error %>
-```
-
-An error toast then has only one way out — the dismiss button, which is already there and already
-has `min-h-touch` and an accessible name. **Do not add a second mechanism for it.**
 
 **A toast is never the only record of a failure.** It is transient by construction, so a validation
 error still belongs on the field (`forms.md`), and a failure the user must act on belongs in the page.
