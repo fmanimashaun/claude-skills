@@ -172,6 +172,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # only in their own plugin.json). Each fails in the silent direction: reading one source, or
     # the wrong record, reports a stale toolchain as current.
     ("rails-flow toolchain version", ("python3", "plugins/rails-flow/scripts/toolchain_version.py", "--selftest")),
+    # #488 pillar 3. Its four load-bearing fixtures encode API facts, not logic: the agent and the
+    # human share a LOGIN (gh authenticates with the user's own token), so replies are found by a
+    # marker; a quoted marker must still read as human; a missing label ERRORS rather than degrading,
+    # and parking on a question nobody is emailed about is the one unrecoverable failure here.
+    ("rails-flow escalation loop", ("python3", "plugins/rails-flow/scripts/escalation.py", "--selftest")),
     # #334. Its selftest also validates every SHIPPED checks.json -- that each names a real
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.

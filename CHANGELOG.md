@@ -1751,6 +1751,40 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Pillar 3 of the autonomous flow driver: the async human-in-the-loop** (Refs #488).
+  `/rails-flow:escalate` posts a question as a comment on the relevant issue, labels it so GitHub
+  emails the human, records the thread in `docs/brain/.escalations.json`, and **moves on**. A later
+  `--poll` finds the reply and resumes from it. Nothing blocks; state survives a restart.
+
+  **Two API facts broke the design as sketched**, both verified against the real API:
+
+  1. **The agent and the human have the same login.** `gh` authenticates with the user's own token,
+     so a comment the flow posts comes back authored by the repo owner — confirmed identical to
+     `gh api user`. The EPIC's *"fetch comments since its question (by timestamp/**author**)"* can
+     therefore never work: excluding the owner excludes the human too, and not excluding them makes
+     the flow answer its own question. Replies are found by an **invisible marker** the flow stamps
+     on its own comments. The marker must be at the *start* — a human quoting the question
+     reproduces it behind a `> `, and reading that as flow-authored would strand the thread parked
+     forever, the one failure this loop cannot recover from by itself.
+  2. **A missing label errors; it does not degrade.** `gh issue edit --add-label` applies nothing
+     when the label is absent — the same defect `unprovisioned-label` exists to catch (#487, #490).
+     Here it is worst-case: the label is what sends the email, so the flow would park believing it
+     had asked while nobody was ever told. `awaiting-input` and `answered` are created before
+     anything is posted, and **if they cannot be created the escalation is not sent**.
+
+  Deliberately *not* a signal: an **edited** comment. Only `createdAt` counts, because `updatedAt`
+  also moves when the flow edits its own comment, and a typo fix on an old comment would resume with
+  an "answer" predating the question. A thread left parked is visible and recoverable; a false
+  resume is not.
+
+  38 paired assertions and five mutations — `startswith` weakened to `in`, the marker check dropped,
+  parking allowed after a failed label, the timestamp filter dropped, an unlabelled post treated as
+  sent — each caught by the fixture named for it. Registered in the doctor's gate sweep.
+
+  Recorded as a **maintainer decision**: the API shapes are observed and reproduced as fixtures; the
+  policy (fail rather than park unlabelled, ignore edits, never fail a poll for want of an answer) is
+  ours.
+
 - **Pillar 1 of the autonomous flow driver: the toolchain self-update gate** (Refs #488).
   `/rails-flow:toolchain-check` resolves what is installed, compares it against what is published,
   and carries a durable marker across the restart an update requires — so the driver never begins
