@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # CLAUDE.md — maintaining the `claude-skills` marketplace
 
 This repo **is** a Claude plugin marketplace. It ships two kinds of things to other
@@ -19,52 +21,14 @@ people, and it carries its own maintenance tooling for you.
 
 If you are here to **build a Rails app**, you want those plugins, not this file.
 
-## How to explain, and when to decide
-
-These two rules were an `AGENTS.md` at the repo root. **They are here instead because Claude Code
-reads `CLAUDE.md` and not `AGENTS.md`**, so for two releases they sat unread — rules written down
-that nothing applied, which is the exact defect this file spends pages warning about. Folded rather
-than imported: a harness-neutral file needs a second harness to be worth the indirection, and this
-repo is Claude-native by decision (#159). The `unimported-agent-instructions` gate now catches a
-reintroduced `AGENTS.md`, in both directions.
-
-## Write the mechanism out; don't compress it into a label
-
-Never let a coined name stand in for the thing it names. A term like "the one unresolved
-mechanism", "the licensing call", "Phase 3", or "the stack descriptor" only works on a
-reader who already knows what it means — and here they did not: both of those first two
-phrases came straight back as "not sure i understand this" and "what do u mean licensing
-call".
-
-Before naming a mechanism or a decision, spell it out in this order:
-
-1. **What is true today** — "`rails-flow` is one self-contained plugin: install it and you
-   get the commands, the agents, and the guardrail hooks."
-2. **What the proposal changes** — "it splits into `dev-flow` (commands, validators,
-   runner) and `stack-rails` (rubocop hook, rspec stop-gate, architecture graph)."
-3. **Why it is unresolved, or what breaks** — "those two only work together, and no
-   `plugin.json` in this repo has a `requires` field, so nothing can say so. Prose in a
-   description is a sentence, not a mechanism."
-
-The same applies to headings and summary bullets. "Two decisions worth recording" is not a
-summary until each decision is stated. Labels and abbreviations are for referring back to
-something already explained in plain terms, never for introducing it.
-
-## End the analysis with the call, then make it
-
-Constraints, options, and trade-offs are the setup, not the answer. Close a design analysis
-with **one** concrete recommended next move — named, specific, already chosen — not a ranked
-menu and not a neutral survey. "so what is your proposal?", "what do u recommend?", and "i
-said make the call on what you feel is the next move and let continue to other works" are
-all the same correction: the write-up stopped one step short.
-
-- Recommend **one** thing. If a real alternative deserves a mention, say in a sentence why
-  you rejected it, then move on.
-- State the next move and then carry it out. Do not pause for approval on work already
-  sanctioned.
-- Stop only for genuinely irreversible or outward-facing steps — merging the promotion that
-  publishes a release, deleting a repo, anything with a public blast radius. Say plainly
-  that it publishes, and hand that call over.
+The first line of this file is `@AGENTS.md`, which **imports** the harness-neutral rules kept
+there — how to explain a mechanism, when to decide versus ask, and to measure before asserting.
+That import is the whole reason those rules apply: **Claude Code reads `CLAUDE.md`, not
+`AGENTS.md`**, so before it existed the file was read by nothing, for two releases. Folding the
+rules in here was tried first and reverted within minutes: `AGENTS.md` is a file the maintainer
+edits directly, so a fold makes every new rule wait for someone to notice and copy it — which is
+exactly what happened, a new rule landing there two minutes after the fold. The
+`unimported-agent-instructions` gate now fails if that import or its target goes missing.
 
 ## The maintenance flow (the `.claude/` commands)
 
@@ -111,8 +75,10 @@ which report, and the promotion can no longer say what it shipped.
   source-of-truth + the open-issue signal; file findings as issues (don't fix in place).
 
 Agents backing them (in `.claude/agents/`): `issue-triager`, `doctrine-verifier`,
-`skill-doctor`, `plugin-doctor`, `release-manager`. Two maintainer **skills** in
-`.claude/skills/`. `plugin-boundaries` decides *where content belongs* — one stack-neutral core with
+`skill-doctor`, `plugin-doctor`, `release-manager`. The maintainer **skills** in
+`.claude/skills/` are `plugin-boundaries`, `parallel-session-lane` and `derived-artifacts` — named
+rather than counted, because a hand-typed "two" is a transcription that goes stale the moment a
+third arrives, which is exactly what happened. `plugin-boundaries` decides *where content belongs* — one stack-neutral core with
 stack-specific plugins layered on top, exactly one home per concern, and nothing maintainer-only
 shipped to clients; read it **while shaping** a proposal for a new plugin, a stack port, or a split,
 because each of its rules comes from a proposal rejected for breaking it. `parallel-session-lane` is
@@ -120,7 +86,13 @@ the operating protocol when several sessions run
 against this repo at once — confirm your worktree, take one coherent slice, stay in your plugin
 lane, review your own diff first. It exists because each of those was violated in a real session:
 a wrong-worktree edit put one session's uncommitted work on another's release branch, and an
-"idle" heuristic deleted three live worktrees. A SessionStart hook
+"idle" heuristic deleted three live worktrees. `derived-artifacts` governs anything whose numbers come from somewhere else — read the
+generator's **structured source** rather than regex-parsing its generated prose, and assert every
+derived total against the source's own declared totals. `build_coverage_artifact.py` is the worked
+case: it *imports* `build_coverage.py` instead of parsing `coverage.md`, and cross-checks its row
+counts against that file's committed Totals table.
+
+A SessionStart hook
 (`.claude/hooks/scripts/maintainer-status.sh`, wired in `.claude/settings.json`) surfaces
 the open-issue count each session — read-only, fails open if `gh` is absent.
 
