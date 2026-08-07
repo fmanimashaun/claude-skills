@@ -1749,6 +1749,74 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.20.0 — 2026-08-07
+
+- **Pillar 3 of the autonomous flow driver: the async human-in-the-loop** (Refs #488).
+  `/rails-flow:escalate` posts a question as a comment on the relevant issue, labels it so GitHub
+  emails the human, records the thread in `docs/brain/.escalations.json`, and **moves on**. A later
+  `--poll` finds the reply and resumes from it. Nothing blocks; state survives a restart.
+
+  **Two API facts broke the design as sketched**, both verified against the real API:
+
+  1. **The agent and the human have the same login.** `gh` authenticates with the user's own token,
+     so a comment the flow posts comes back authored by the repo owner — confirmed identical to
+     `gh api user`. The EPIC's *"fetch comments since its question (by timestamp/**author**)"* can
+     therefore never work: excluding the owner excludes the human too, and not excluding them makes
+     the flow answer its own question. Replies are found by an **invisible marker** the flow stamps
+     on its own comments. The marker must be at the *start* — a human quoting the question
+     reproduces it behind a `> `, and reading that as flow-authored would strand the thread parked
+     forever, the one failure this loop cannot recover from by itself.
+  2. **A missing label errors; it does not degrade.** `gh issue edit --add-label` applies nothing
+     when the label is absent — the same defect `unprovisioned-label` exists to catch (#487, #490).
+     Here it is worst-case: the label is what sends the email, so the flow would park believing it
+     had asked while nobody was ever told. `awaiting-input` and `answered` are created before
+     anything is posted, and **if they cannot be created the escalation is not sent**.
+
+  Deliberately *not* a signal: an **edited** comment. Only `createdAt` counts, because `updatedAt`
+  also moves when the flow edits its own comment, and a typo fix on an old comment would resume with
+  an "answer" predating the question. A thread left parked is visible and recoverable; a false
+  resume is not.
+
+  38 paired assertions and five mutations — `startswith` weakened to `in`, the marker check dropped,
+  parking allowed after a failed label, the timestamp filter dropped, an unlabelled post treated as
+  sent — each caught by the fixture named for it. Registered in the doctor's gate sweep.
+
+  Recorded as a **maintainer decision**: the API shapes are observed and reproduced as fixtures; the
+  policy (fail rather than park unlabelled, ignore edits, never fail a poll for want of an answer) is
+  ours.
+
+- **Pillar 1 of the autonomous flow driver: the toolchain self-update gate** (Refs #488).
+  `/rails-flow:toolchain-check` resolves what is installed, compares it against what is published,
+  and carries a durable marker across the restart an update requires — so the driver never begins
+  unattended work on a stale toolchain. Three states, and the third is the point: **exit 2 (could not
+  resolve one side) is never folded into exit 0**, because "I could not read the installed state" is
+  not "you are up to date".
+
+  **Five substrate facts corrected the issue's design sketch**, each found by reading the real files.
+  All five fail in the *silent* direction — reporting a stale toolchain as current:
+
+  1. `known_marketplaces.json` records **no version** — only `source`, `installLocation`,
+     `lastUpdated`. The installed marketplace version is one level down, in
+     `<installLocation>/.claude-plugin/marketplace.json`.
+  2. `installed_plugins.json` maps each plugin to a **list** of install records, not one. Two versions
+     coexist in the cache — the machine this was written on held rails-flow at **both 1.19.0 and
+     1.18.2**, same scope, separable only by `lastUpdated`. `[0]` or `[-1]` picks arbitrarily.
+  3. **Four of five** plugin entries in `marketplace.json` carry no `version` key.
+  4. Because the two sources are **disjoint, not redundant**: `rails-stack` is a skills bundle with no
+     plugin directory and is versioned *only* in `marketplace.json`; the four code plugins are
+     versioned *only* in their own `plugin.json`. Read either alone and you miss the other set.
+  5. The drift was **live while this was written** — installed 1.72.0 against a published 1.73.0.
+
+  Recorded as a **maintainer decision**, not a framework claim: the shapes above are observed facts
+  about Claude Code's on-disk state, verified on this machine and reproduced as selftest fixtures, and
+  the gate's policy choices (fail-closed on a plugin behind target, tolerate landing *ahead* of it,
+  clear the marker only on success) are ours.
+
+  28 paired assertions, and **five mutations** — `newest_record` returning `records[0]`, dropping the
+  `plugin.json` fallback, folding exit 2 into 0, clearing the marker unconditionally, and comparing
+  versions lexically — each caught by the fixture named for it. Registered in the doctor's gate sweep,
+  which is how the repo's own `mutation coverage` gate caught it running **nowhere**.
+
 ### 1.19.0 — 2026-08-06
 
 - **`project_gates.py` now says whose tracker each finding belongs to** (Refs #485). The four
@@ -6930,6 +6998,35 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.15.2 — 2026-08-07
+
+- **The setup step flattened the toast's conditional role, which is an accessibility regression**
+  (Refs #483). Shipped doctrine renders
+  `role="<%= intent == :error ? 'alert' : 'status' %>"`; step 4b told the scaffolder the toast
+  *"carries `role="status"` and nothing beside it"*. That misread the doctrine's *"the ROLE carries
+  the severity, and nothing beside it"* — a sentence about **not adding `aria-live`**, not about
+  fixing the role's value.
+
+  It fails silently and only for screen-reader users. `status` implies `aria-live="polite"`, `alert`
+  implies `assertive`, so a toast hard-coded to `status` announces an error politely and the user
+  hears it after whatever is already queued. Nothing renders wrong and no test goes red.
+
+  Found while checking #483's remaining acceptance criterion, and **grepped for as a class** rather
+  than fixed in place: of the four conditional roles in shipped doctrine, this was the only one a
+  plugin restated as a literal. Stating that as a measured negative, not an assumption.
+
+  New `flattened-conditional-role` gate in `lint_self_consistency.py` — if doctrine renders a role
+  conditionally, a plugin paragraph naming one branch must name the other. **The rule's first version
+  fired on the fix for the defect it was built to catch**: it required the sibling to appear as a
+  second `role="…"` literal, which no correct paragraph does. It now counts the sibling as named
+  anywhere in the paragraph, and a fixture pins that direction.
+
+- **#483's own acceptance criterion 3 is stale.** It reads *"flashes route to auto-dismissing toasts
+  by default (errors persist)"*. Errors **no longer persist** — v1.72.0 established that
+  `role="alert"` governs announcement, not lifetime, and that a persistent message is a Banner or an
+  `Ui::Alert`, with `:loading` the single persistent toast. Anyone verifying the last box against the
+  issue text as written would file a false regression.
+
 ### 1.15.0 — 2026-08-06
 
 - **The critic is wired into the review path, alongside the gate rather than inside it** (Refs #486).
@@ -7904,6 +8001,48 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-07 (release v1.74.0)
+
+> ### Three issues where the report was wrong, and testing the substrate found it
+>
+> Every slice here started by checking a claim the issue stated confidently. Seven of those
+> claims were false, and each failed **silently** — a stale toolchain reading as current, a
+> parked question nobody was emailed, an error announced politely.
+
+- **Pillar 1 of the autonomous flow driver: the toolchain self-update gate** (Refs #488).
+  `/rails-flow:toolchain-check` resolves what is installed, compares it against what is published,
+  and carries a durable marker across the restart an update requires. **Exit 2 (cannot resolve one
+  side) is never folded into exit 0** — "I could not read the installed state" is not "you are up
+  to date". Five of the EPIC's substrate assumptions were wrong; the load-bearing one is that the
+  two version sources are **disjoint**: `rails-stack` is versioned only in `marketplace.json`, the
+  four code plugins only in their own `plugin.json`, so reading either alone misses the other set.
+
+- **Pillar 3: the async human-in-the-loop** (Refs #488). `/rails-flow:escalate` asks on a GitHub
+  issue, labels it so the human is emailed, parks the thread durably, and **moves on**. The EPIC's
+  "find replies by timestamp/**author**" cannot work — `gh` posts with the user's own token, so the
+  agent's comments carry the *same login as the human*. Replies are found by an invisible marker
+  instead, required at the **start** of the comment so a quoted question is not mistaken for the
+  agent's own writing. And a missing label **errors** rather than degrading, so both labels are
+  created before anything is posted: the label is what sends the email, and a thread parked on a
+  question nobody receives is the one failure this loop cannot recover from.
+
+- **The setup step flattened the toast's conditional role** (Refs #483). Doctrine renders
+  `role="<%= intent == :error ? 'alert' : 'status' %>"`; the scaffold said `role="status"`, flat.
+  `status` implies `aria-live="polite"`, so an error announced after whatever is already queued —
+  failing silently, and only for screen-reader users. New `flattened-conditional-role` gate, whose
+  **first version fired on the fix for the defect it was built to catch**.
+
+- **The production password-strength policy is complete** (Closes #484). All five criteria verified
+  against the repo with line references, including the subtle one: sign-in still authenticates a
+  digest that predates the policy. The catalog entry forbids the character-class checklist, citing
+  *SP 800-63B-4*'s "SHALL NOT impose other composition rules" — a meter ticking "has uppercase · has
+  a digit" **is** that rule rendered, and it teaches users that `Passw0rd!` beats a passphrase.
+
+The gate sweep went **65 → 67**. Both new selftests were registered only because the repo's own
+`mutation coverage` gate failed on a sweep that would have reported clean having never run them.
+Two further defects in these diffs were caught by our gates rather than by review: a literal U+FEFF
+written to strip U+FEFFs, and a docstring citing a flag that does not exist.
 
 ### 2026-08-07 (release v1.73.0)
 
