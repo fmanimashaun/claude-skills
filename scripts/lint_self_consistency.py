@@ -1574,6 +1574,54 @@ def check_duplicate_unreleased() -> tuple[list[Finding], int]:
     return findings, len(counts)
 
 
+def check_unimported_agent_instructions() -> tuple[list[Finding], int]:
+    """An authored `AGENTS.md` must be imported by `CLAUDE.md`, and vice versa.
+
+    Claude Code reads `CLAUDE.md`, NOT `AGENTS.md` -- this repo's own shipped doctrine says so
+    (`plugins/rails-flow/commands/setup-flow.md` 1b) and prescribes the fix 37signals use: a
+    one-line `@AGENTS.md` import. So a hand-authored `AGENTS.md` sitting unimported at the root is
+    a file of rules that NOTHING reads. That is claims-vs-enforcement in the one place this repo
+    can least afford it, and it happened here: an AGENTS.md written to correct how I work went
+    unread for two entire releases, because nothing said it should be loaded and nothing checked.
+
+    Both directions are the same defect, so both are checked. A dangling `@AGENTS.md` whose target
+    does not exist is the WORSE half -- every fresh clone then starts by importing a missing file,
+    which is why the two must land in one commit.
+
+    The import must be a real LINE, not a substring. Documentation OF the pattern -- a fenced block
+    showing `@AGENTS.md` -- is prose about an import, not an import, and reading it as one would
+    make this gate pass on precisely the repo that has only written the rule down. Fenced blocks
+    are therefore stripped before the line match, the same lesson `duplicate-unreleased` records.
+    """
+    neutral, claude = ROOT / "AGENTS.md", ROOT / "CLAUDE.md"
+    if not claude.is_file():
+        return [], 0
+
+    body, fenced, import_line = read(claude), False, None
+    for line_no, line in enumerate(body.splitlines(), 1):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced and line.strip() == "@AGENTS.md":
+            import_line = line_no
+            break
+
+    findings: list[Finding] = []
+    if neutral.is_file() and import_line is None:
+        findings.append(Finding(
+            "unimported-agent-instructions", "AGENTS.md", 1,
+            "an authored `AGENTS.md` exists but `CLAUDE.md` never imports it, so Claude Code "
+            "loads none of it -- it reads `CLAUDE.md` only. Every rule in the file is unenforced. "
+            "Add `@AGENTS.md` as the first line of `CLAUDE.md` (the pattern setup-flow 1b "
+            "prescribes), or delete the file rather than leaving rules nothing applies."))
+    elif import_line is not None and not neutral.is_file():
+        findings.append(Finding(
+            "unimported-agent-instructions", "CLAUDE.md", import_line,
+            "`CLAUDE.md` imports `@AGENTS.md`, but no `AGENTS.md` exists at the repo root, so "
+            "every fresh clone starts by resolving a missing import. Commit the file or drop "
+            "the import -- the two belong in one commit."))
+    return findings, 1 + int(neutral.is_file())
+
+
 def check_undeclared_skill_dependency() -> tuple[list[Finding], int]:
     """A command that reads a skill from ANOTHER plugin must check the skill is there.
 
@@ -1882,6 +1930,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     pw_floor, pw_floor_examined = check_password_floor()
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
+    agents_md, agents_md_examined = check_unimported_agent_instructions()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
@@ -1910,6 +1959,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "password_floor_claims_reconciled": pw_floor_examined,
         "commands_reading_a_foreign_skill": skill_dep_examined,
         "changelog_sections_with_unreleased": dup_unrel_examined,
+        "root_agent_instruction_files": agents_md_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
@@ -1917,7 +1967,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role,
+            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
+            + agents_md,
             coverage)
 
 
@@ -2005,6 +2056,29 @@ def selftest() -> int:
     # Direction-independent: flattening to the OTHER branch is the same defect.
     scenario("...catches the other branch too", rule=FCR, expect_finding=True,
              files={DOCTRINE[0]: DOCTRINE[1], STEP: 'the toast carries `role="alert"`\n'})
+
+    # -- unimported-agent-instructions ------------------------------------
+    UAI = "unimported-agent-instructions"
+    scenario("an authored AGENTS.md that CLAUDE.md never imports", rule=UAI, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nHow to work here.\n",
+                    "AGENTS.md": "# AGENTS.md\n\nRules nothing reads.\n"})
+    scenario("...silent once CLAUDE.md imports it", rule=UAI, expect_finding=False,
+             files={"CLAUDE.md": "@AGENTS.md\n\n# CLAUDE.md\n",
+                    "AGENTS.md": "# AGENTS.md\n"})
+    # The OTHER direction is the worse half: every fresh clone resolves a missing import.
+    scenario("...a dangling import is the same defect reversed", rule=UAI, expect_finding=True,
+             files={"CLAUDE.md": "@AGENTS.md\n\n# CLAUDE.md\n"})
+    scenario("...silent when neither exists", rule=UAI, expect_finding=False,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nNo neutral file here.\n"})
+    # THE TRAP. A fenced block DOCUMENTING the pattern is prose about an import, not an import.
+    # Matching the substring would make this gate pass on exactly the repo that has only written
+    # the rule down -- the failure it exists to catch, committed by the catcher.
+    scenario("...a fenced example is not an import", rule=UAI, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nUse this pattern:\n\n```markdown\n@AGENTS.md\n```\n",
+                    "AGENTS.md": "# AGENTS.md\n"})
+    # No CLAUDE.md means no claim to check -- do not fire on a repo that has neither convention.
+    scenario("...silent with no CLAUDE.md at all", rule=UAI, expect_finding=False,
+             files={"AGENTS.md": "# AGENTS.md\n"})
 
     # -- hook-count-drift -------------------------------------------------
     HC = "hook-count-drift"

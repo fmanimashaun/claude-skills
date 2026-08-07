@@ -19,6 +19,53 @@ people, and it carries its own maintenance tooling for you.
 
 If you are here to **build a Rails app**, you want those plugins, not this file.
 
+## How to explain, and when to decide
+
+These two rules were an `AGENTS.md` at the repo root. **They are here instead because Claude Code
+reads `CLAUDE.md` and not `AGENTS.md`**, so for two releases they sat unread — rules written down
+that nothing applied, which is the exact defect this file spends pages warning about. Folded rather
+than imported: a harness-neutral file needs a second harness to be worth the indirection, and this
+repo is Claude-native by decision (#159). The `unimported-agent-instructions` gate now catches a
+reintroduced `AGENTS.md`, in both directions.
+
+## Write the mechanism out; don't compress it into a label
+
+Never let a coined name stand in for the thing it names. A term like "the one unresolved
+mechanism", "the licensing call", "Phase 3", or "the stack descriptor" only works on a
+reader who already knows what it means — and here they did not: both of those first two
+phrases came straight back as "not sure i understand this" and "what do u mean licensing
+call".
+
+Before naming a mechanism or a decision, spell it out in this order:
+
+1. **What is true today** — "`rails-flow` is one self-contained plugin: install it and you
+   get the commands, the agents, and the guardrail hooks."
+2. **What the proposal changes** — "it splits into `dev-flow` (commands, validators,
+   runner) and `stack-rails` (rubocop hook, rspec stop-gate, architecture graph)."
+3. **Why it is unresolved, or what breaks** — "those two only work together, and no
+   `plugin.json` in this repo has a `requires` field, so nothing can say so. Prose in a
+   description is a sentence, not a mechanism."
+
+The same applies to headings and summary bullets. "Two decisions worth recording" is not a
+summary until each decision is stated. Labels and abbreviations are for referring back to
+something already explained in plain terms, never for introducing it.
+
+## End the analysis with the call, then make it
+
+Constraints, options, and trade-offs are the setup, not the answer. Close a design analysis
+with **one** concrete recommended next move — named, specific, already chosen — not a ranked
+menu and not a neutral survey. "so what is your proposal?", "what do u recommend?", and "i
+said make the call on what you feel is the next move and let continue to other works" are
+all the same correction: the write-up stopped one step short.
+
+- Recommend **one** thing. If a real alternative deserves a mention, say in a sentence why
+  you rejected it, then move on.
+- State the next move and then carry it out. Do not pause for approval on work already
+  sanctioned.
+- Stop only for genuinely irreversible or outward-facing steps — merging the promotion that
+  publishes a release, deleting a repo, anything with a public blast radius. Say plainly
+  that it publishes, and hand that call over.
+
 ## The maintenance flow (the `.claude/` commands)
 
 Downstream projects using the toolchain file issues here (via rails-flow's

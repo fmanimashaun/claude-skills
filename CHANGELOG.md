@@ -7,6 +7,35 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **An `AGENTS.md` at this repo's root was read by nothing, for two whole releases.** Claude Code
+  reads `CLAUDE.md`, **not** `AGENTS.md` — which is this repo's own shipped doctrine
+  (`plugins/rails-flow/commands/setup-flow.md` §1b), written here and not applied here. So a file of
+  rules about how to work, authored by the maintainer, sat unloaded through v1.73.0 and v1.74.0.
+  Three independent confirmations: the session's project-instructions context held `CLAUDE.md` only,
+  `CLAUDE.md` carried no `@AGENTS.md` import, and the file was untracked, so no parallel session or
+  fresh clone saw it either. `claims-vs-enforcement` at the root of the repo that names the class.
+
+  **Folded rather than imported** (maintainer decision). The import is the mechanism §1b prescribes,
+  but a harness-neutral file needs a *second harness* to be worth the indirection, and this repo is
+  Claude-native by decision (#159) — one consumer is indirection, not a seam. Folding also removes
+  the dangling-import failure mode, which is the worse half: a `CLAUDE.md` importing a file no clone
+  has makes every fresh clone open on a missing path.
+
+- **New gate: `unimported-agent-instructions`**, both directions. It fires on an authored `AGENTS.md`
+  that `CLAUDE.md` never imports, and on an import whose target does not exist. The load-bearing
+  detail is that the import must be a **line**, with fenced blocks stripped first: a fenced block
+  *documenting* `@AGENTS.md` is prose about an import, and counting it would make the gate pass on
+  precisely the repo state it exists to refuse — one that has written the rule down and wired
+  nothing. That case is a fixture, and a mutation removing the fence strip is caught by it.
+
+- **The decision-rights half was not shipped, deliberately.** The folded rules include when an agent
+  should decide versus ask, which is genuinely user-facing — but its home is #488 pillar 2's
+  decision-rights matrix, which has not shipped. `pipeline/reference/stop-conditions.md` was checked
+  as a home and rejected: it governs when a *gated chain* stops, a different axis. Recorded on #488
+  as the maintainer decision that pillar 2 must encode, rather than misfiled into a plugin now.
+
 ### 2026-08-07 (v1.71.0)
 
 - **`dangling-conditional-floor`** (Refs #531) — if §2a offers a lower floor conditional on multi-factor

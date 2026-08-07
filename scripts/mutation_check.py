@@ -107,6 +107,28 @@ GUARDS: tuple[Guard, ...] = (
                 "one branch stated as a literal",
             ),
             Mutation(
+                # The fence strip goes, so a fenced block DOCUMENTING `@AGENTS.md` reads as a real
+                # import. That is the gate certifying the exact repo state it exists to refuse: one
+                # that has written the rule down and wired nothing.
+                "a fenced example counts as an import, so documenting the rule satisfies it",
+                "            fenced = not fenced",
+                "            fenced = False",
+                "...a fenced example is not an import",
+            ),
+            Mutation(
+                "the unimported half goes, so an AGENTS.md nothing reads passes",
+                "    if neutral.is_file() and import_line is None:",
+                "    if False:",
+                "an authored AGENTS.md that CLAUDE.md never imports",
+            ),
+            Mutation(
+                # The worse half: every fresh clone opens by resolving a file that is not there.
+                "the dangling half goes, so an import with no target passes",
+                "    elif import_line is not None and not neutral.is_file():",
+                "    elif False:",
+                "...a dangling import is the same defect reversed",
+            ),
+            Mutation(
                 # #531: a true claim with nothing behind it — the discount whose condition
                 # the skill gave no way to satisfy.
                 "the MFA-guidance test always passes, so the discount may dangle again",
