@@ -2763,6 +2763,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A stale remnant of the reversed error rule survived the rewrite** (Refs #540). The toast rebuild
+  replaced the prose but left an ERB snippet showing `"data-toast-timeout-value" unless intent ==
+  :error`, plus a sentence claiming the dismiss button *"already has `min-h-touch`"*. Both described
+  the design as it was **before** that same commit reversed it — a `doctrine-contradiction` inside the
+  file that had just been corrected. Found by grepping the pattern rather than trusting the edit, which
+  is the discipline this repo keeps relearning: a regex that replaces one passage does not find the
+  other three places the rule was stated.
+
+### Unreleased
+
 - **The toast was a card, and the persistent-error rule was wrong** (Refs #483). Reported from a real
   run: the toast renders too big. Measured, and it was arithmetic rather than taste — `box` applies
   `--space-s` (16–20px) on all four sides, `min-h-touch` forces a **44px** dismiss target inside, and
