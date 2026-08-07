@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # CLAUDE.md — maintaining the `claude-skills` marketplace
 
 This repo **is** a Claude plugin marketplace. It ships two kinds of things to other
@@ -18,6 +20,15 @@ people, and it carries its own maintenance tooling for you.
   point. (This replaced an earlier idea of a separate maintainer marketplace repo.)
 
 If you are here to **build a Rails app**, you want those plugins, not this file.
+
+The first line of this file is `@AGENTS.md`, which **imports** the harness-neutral rules kept
+there — how to explain a mechanism, when to decide versus ask, and to measure before asserting.
+That import is the whole reason those rules apply: **Claude Code reads `CLAUDE.md`, not
+`AGENTS.md`**, so before it existed the file was read by nothing, for two releases. Folding the
+rules in here was tried first and reverted within minutes: `AGENTS.md` is a file the maintainer
+edits directly, so a fold makes every new rule wait for someone to notice and copy it — which is
+exactly what happened, a new rule landing there two minutes after the fold. The
+`unimported-agent-instructions` gate now fails if that import or its target goes missing.
 
 ## The maintenance flow (the `.claude/` commands)
 
@@ -64,8 +75,10 @@ which report, and the promotion can no longer say what it shipped.
   source-of-truth + the open-issue signal; file findings as issues (don't fix in place).
 
 Agents backing them (in `.claude/agents/`): `issue-triager`, `doctrine-verifier`,
-`skill-doctor`, `plugin-doctor`, `release-manager`. Two maintainer **skills** in
-`.claude/skills/`. `plugin-boundaries` decides *where content belongs* — one stack-neutral core with
+`skill-doctor`, `plugin-doctor`, `release-manager`. The maintainer **skills** in
+`.claude/skills/` are `plugin-boundaries`, `parallel-session-lane` and `derived-artifacts` — named
+rather than counted, because a hand-typed "two" is a transcription that goes stale the moment a
+third arrives, which is exactly what happened. `plugin-boundaries` decides *where content belongs* — one stack-neutral core with
 stack-specific plugins layered on top, exactly one home per concern, and nothing maintainer-only
 shipped to clients; read it **while shaping** a proposal for a new plugin, a stack port, or a split,
 because each of its rules comes from a proposal rejected for breaking it. `parallel-session-lane` is
@@ -73,7 +86,13 @@ the operating protocol when several sessions run
 against this repo at once — confirm your worktree, take one coherent slice, stay in your plugin
 lane, review your own diff first. It exists because each of those was violated in a real session:
 a wrong-worktree edit put one session's uncommitted work on another's release branch, and an
-"idle" heuristic deleted three live worktrees. A SessionStart hook
+"idle" heuristic deleted three live worktrees. `derived-artifacts` governs anything whose numbers come from somewhere else — read the
+generator's **structured source** rather than regex-parsing its generated prose, and assert every
+derived total against the source's own declared totals. `build_coverage_artifact.py` is the worked
+case: it *imports* `build_coverage.py` instead of parsing `coverage.md`, and cross-checks its row
+counts against that file's committed Totals table.
+
+A SessionStart hook
 (`.claude/hooks/scripts/maintainer-status.sh`, wired in `.claude/settings.json`) surfaces
 the open-issue count each session — read-only, fails open if `gh` is absent.
 
