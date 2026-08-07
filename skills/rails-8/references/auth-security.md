@@ -4,6 +4,7 @@
 1. The built-in authentication generator (8.x)
 2. Extending auth: registration, remember-me, roles
 2a. Password policy — what NIST requires, and the rule it forbids
+2b. Multi-factor — Rails ships none, and §2a already depends on it
 3. Authorization the Rails way
 4. Security checklist (from the official Security guide)
 
@@ -485,6 +486,101 @@ A live strength meter is worth having, and its contract is `fidara-design` → *
 is the prohibited rule wearing a progress indicator, and it teaches the user that `Passw0rd!` beats a
 passphrase. What it can honestly show: length progress toward the floor, the confirmation-match
 state, and the server's blocklist verdict. See `fidara-design` → forms for the component contract.
+
+## 2b. Multi-factor — Rails ships none, and §2a already depends on it
+
+§2a's table drops the password floor from 15 to **8 when the password is one factor of multi-factor**.
+That is a conditional discount, and until this section existed the skill gave a reader **no way to
+satisfy the condition** — which is the re-invented-per-app failure the policy was written to stop.
+
+### What Rails 8 actually ships: nothing
+
+**Verified against the installed gem**, not assumed: `railties` →
+`lib/rails/generators/rails/authentication/`. The generator produces two migrations — the entire
+persisted surface —
+
+```ruby
+generate "migration", "CreateUsers", "email_address:string!:uniq password_digest:string!", "--force"
+generate "migration", "CreateSessions", "user:references ip_address:string user_agent:string", "--force"
+```
+
+and a case-insensitive sweep of the generator tree for `totp|webauthn|passkey|two.factor|mfa|otp` returns
+**zero**. There is no `otp_secret`, no recovery-code table, no second-factor step in `SessionsController`.
+*(Checked on 8.1.1 here and 8.1.3 elsewhere — same result. Re-check when the version in scope moves.)*
+
+### What it does give you to build on
+
+- **`authenticate_by` verifies multiple stored secrets in one timing-hardened call.** It partitions its
+  arguments and requires **all** password-type ones to match. Useful, and **not** a TOTP mechanism: a
+  TOTP is derived from a clock, so there is no stored digest to compare, and it cannot use this path.
+- **The `Session` model is a row**, not a cookie payload. That is the hook: a session can record whether
+  the second factor was satisfied, and be denied privileges until it is.
+- **`Current`** carries the session per request, so the check is a `before_action` like any other.
+
+### The one thing everybody gets wrong: replay
+
+> "Verifiers **SHALL** accept a given OTP only once while it is valid to provide *replay resistance*."
+> — SP 800-63B-4
+
+`rotp` tells you whether a code is **valid right now**. It does not tell you whether it has **already
+been used**. So `if totp.verify(code)` — the form our own `ecosystem-gems.md` used to suggest — accepts
+the same six digits repeatedly for the whole window. That is not a second factor; it is a decoration
+that looks like one.
+
+**Record the last accepted timestep against the user and refuse a repeat**, inside the same transaction
+that marks the session verified. `rotp`'s `verify(code, after:)` exists for exactly this — pass the last
+accepted value, and it will not re-accept it.
+
+### The second thing: MFA is a property of the SESSION, not of the user
+
+A `user.mfa_enabled?` boolean answers the wrong question. The question at request time is *"has **this
+session** satisfied the second factor?"* — otherwise every existing session silently becomes
+multi-factor the moment the user enrols, including one an attacker already holds.
+
+So the flag lives on the session row, it is set only after a verified code, and **enrolling must not
+retroactively bless sessions that predate it**.
+
+### SMS: restricted, not banned — and the popular claim is wrong
+
+The widely repeated line that "NIST deprecated SMS" **is not what the standard says**, and shipping that
+claim would be the same defect as any other unverified assertion. SP 800-63B-4:
+
+> "Use of the PSTN for out-of-band verification is **restricted** … and **SHALL** satisfy the
+> requirements of Sec. 3.2.9."
+
+*Restricted* is a defined status with obligations, not a prohibition. If you offer SMS you owe:
+
+- **an alternative** — *"verifiers SHALL ensure that alternative authenticator types are available to
+  all subscribers"*;
+- **a warning** — the CSP *SHOULD* remind subscribers of the limitation before binding a device;
+- **risk signals** — *SHOULD* consider device swap, SIM change, number porting before delivering a
+  secret over the PSTN.
+
+Ours, on top of that: prefer TOTP or a passkey, and if SMS exists at all it is the **fallback**, never
+the only option — which the first obligation makes mandatory anyway.
+
+### Recovery codes are a set, and each is single-use
+
+One `password_digest`-shaped column holds one secret; recovery codes are a **set**, so they need their
+own table with one row per code and a `used_at`. Hash them like passwords — they are password-equivalent
+— and show them **once**, at generation. A recovery code you can re-read in the UI is a second password
+stored in plaintext-equivalent form.
+
+### What is ours and what is a gem
+
+**Ours** (this doctrine): where the flag lives, the replay rule, the enrolment-does-not-bless-old-sessions
+rule, recovery-code storage and single-use, the SMS obligations, and the `before_action` shape.
+
+**A gem** for the primitives only — `rotp` for TOTP arithmetic, `webauthn` for passkeys. Neither decides
+any of the rules above, and both are chosen by the app rather than mandated here; naming a version in
+doctrine would rot.
+
+### Rate limiting, and a trap
+
+`rate_limit` defaults to `by: -> { request.remote_ip }`. NIST's throttling obligation is **per account**,
+so an IP-keyed limiter lets an attacker spread guesses across addresses against one user. Key the
+second-factor limiter by the **user**, and note that the existing caveat about a `:null_store` cache
+making `rate_limit` a no-op would then be silently disabling a `SHALL`.
 
 ## 3. Authorization the Rails way
 
