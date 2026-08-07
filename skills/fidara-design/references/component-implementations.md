@@ -839,6 +839,15 @@ module Ui
                          alert: :error, error: :error, warning: :warning }.freeze
     TIMEOUT_MS = 5_000
 
+    # The accent is MAPPED, never interpolated. `border-l-#{intent}` looks like it works and emits
+    # `border-l-error` and `border-l-loading` — neither of which is a token, so the accent silently
+    # vanishes on exactly the two intents that most need it. A conformant theme names the error colour
+    # `destructive` (as `Ui::Alert`'s own INTENT map does) and ships no `loading` colour at all.
+    ACCENT = { info: "border-l-info", success: "border-l-success", warning: "border-l-warning",
+               error: "border-l-destructive", loading: "border-l-muted-foreground" }.freeze
+
+    def accent = ACCENT.fetch(@intent, ACCENT[:info])
+
     # ANATOMY, per the reference: container · optional icon · text · optional action · optional close.
     # `title` + optional `description` rather than one `message`, because a component with one slot
     # forces a headline and its detail onto one line.
@@ -880,7 +889,7 @@ end
 <%# NOT `box`. That is the CONTENT-PANEL primitive — --space-s padding on all four sides, 16-20px —
     and it made a one-word message render ~80px tall by 384px wide: a card doing a notification's job.
     Padding is set directly and the toast is `w-fit`, so "Saved" occupies the width of "Saved". %>
-<div class="bg-card text-card-foreground rounded-lg border border-border border-l-4 border-l-<%= intent %>
+<div class="bg-card text-card-foreground rounded-lg border border-border border-l-4 <%= accent %>
             shadow-md pointer-events-auto px-3 py-2 flex items-start gap-2.5 w-fit max-w-full"
      role="<%= intent == :error ? 'alert' : 'status' %>"
      data-controller="toast"<%= " data-toast-timeout-value=#{timeout_ms}" if timeout_ms %>>
@@ -921,7 +930,7 @@ Both paths must reach the same container.
 
 ```ruby
 render turbo_stream: turbo_stream.prepend("toasts",
-  ToastComponent.new(intent: :success, message: t(".saved")))
+  ToastComponent.new(intent: :success, title: t(".saved")))
 ```
 
 **Path 2 — a full render or redirect.** The layout drains `flash` into the container on load. This is
@@ -931,7 +940,7 @@ the missing half:
 <%# In the layout, INSIDE the #toasts div — not a separate flash surface. %>
 <div id="toasts" aria-live="polite" class="fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none">
   <% flash.each do |type, message| %>
-    <%= render ToastComponent.new(intent: INTENT_FOR_FLASH.fetch(type.to_sym, :info), message: message) %>
+    <%= render ToastComponent.new(intent: INTENT_FOR_FLASH.fetch(type.to_sym, :info), title: message) %>
   <% end %>
 </div>
 ```
@@ -1466,7 +1475,8 @@ def destroy
     turbo_stream.replace("cart-total", partial: "carts/total", locals: { cart: current_cart }),
     turbo_stream.replace("cart-badge", partial: "carts/badge", locals: { cart: current_cart }),
     turbo_stream.prepend("toasts", ToastComponent.new(
-      intent: :success, message: "Removed #{@line.name}", undo_path: restore_cart_line_path(@line)))
+      intent: :success, title: "Removed #{@line.name}",
+      action: helpers.button_to("Undo", restore_cart_line_path(@line), class: "link")))
   ]
 end
 ```

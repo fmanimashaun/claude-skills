@@ -68,7 +68,7 @@ them into CRUD**.
        render turbo_stream: [
          turbo_stream.prepend("invoices", partial: "invoices/invoice", locals: { invoice: @invoice }),
          turbo_stream.update("modal", ""),                       # empty the frame → modal gone
-         turbo_stream.prepend("toasts", ToastComponent.new(intent: :success, message: "Invoice created"))
+         turbo_stream.prepend("toasts", ToastComponent.new(intent: :success, title: "Invoice created"))
        ]
      else
        # re-render the form INTO the modal frame with inline errors, HTTP 422
@@ -100,7 +100,7 @@ them into CRUD**.
    render turbo_stream: [
      turbo_stream.remove(dom_id(@invoice)),
      turbo_stream.update("modal", ""),
-     turbo_stream.prepend("toasts", ToastComponent.new(intent: :success, message: "Invoice deleted"))
+     turbo_stream.prepend("toasts", ToastComponent.new(intent: :success, title: "Invoice deleted"))
    ]
    ```
 
