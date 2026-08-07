@@ -834,24 +834,41 @@ against any initializer (#483).
 module Ui
   class ToastComponent < ViewComponent::Base
     # Rails' own `redirect_to … notice:`/`alert:` shorthands set exactly these two keys, so a map
-    # that omits them silently downgrades half an app's messages to `:info`.
+    # omitting them silently downgrades half an app's messages to `:info`.
     INTENT_FOR_FLASH = { notice: :success, success: :success,
                          alert: :error, error: :error, warning: :warning }.freeze
-    # Errors do NOT auto-dismiss. `:error` already renders `role="alert"`, and a message important
-    # enough to interrupt a screen reader is important enough to outlive five seconds. The dismiss
-    # button is then its only exit — which it already has, named and touch-sized.
     TIMEOUT_MS = 5_000
 
-    def initialize(intent: :info, message: nil)
+    # ANATOMY, per the reference: container · optional icon · text · optional action · optional close.
+    # `title` + optional `description` rather than one `message`, because a component with one slot
+    # forces a headline and its detail onto one line.
+    def initialize(intent: :info, title:, description: nil, icon: nil, action: nil)
       @intent = intent.to_sym
-      @message = message
+      @title = title
+      @description = description
+      @icon = icon
+      @action = action
     end
 
-    def auto_dismiss? = @intent != :error
+    # Every toast auto-dismisses EXCEPT `:loading`, which represents an operation still running and
+    # must persist until it resolves — then be REPLACED by its outcome, never left behind. Both
+    # reference implementations model this the same way. A loading toast is the one legitimate
+    # persistent case, and it is not an error: an error is a result and results auto-dismiss.
+    def timeout_ms = @intent == :loading ? nil : TIMEOUT_MS
+
+    def loading? = @intent == :loading
+
+    # The close button is optional and earns its place only when there is something to act on:
+    # an action the user may want to reach before the timer runs out. A toast that just says
+    # "Saved" and leaves on its own needs no button, and with no button there is no touch target
+    # forcing the height.
+    # A loading toast gets no close button either: dismissing it would hide an operation that is
+    # still running, leaving the user with no way to learn how it ended.
+    def dismissable? = @action.present? && !loading?
 
     private
 
-    attr_reader :intent, :message
+    attr_reader :intent, :title, :description, :icon, :action
   end
 end
 ```
@@ -860,11 +877,33 @@ end
 <%# A toast (turbo_stream.prepend "toasts") — the ROLE carries the severity, and nothing beside it: %>
 <%# `status` already implies aria-live="polite", `alert` already implies aria-live="assertive", so %>
 <%# writing aria-live here restates the role at best and contradicts it at worst. %>
-<div class="box bg-card text-card-foreground rounded-lg border border-l-4 border-<%= intent %> shadow-md pointer-events-auto"
+<%# NOT `box`. That is the CONTENT-PANEL primitive — --space-s padding on all four sides, 16-20px —
+    and it made a one-word message render ~80px tall by 384px wide: a card doing a notification's job.
+    Padding is set directly and the toast is `w-fit`, so "Saved" occupies the width of "Saved". %>
+<div class="bg-card text-card-foreground rounded-lg border border-border border-l-4 border-l-<%= intent %>
+            shadow-md pointer-events-auto px-3 py-2 flex items-start gap-2.5 w-fit max-w-full"
      role="<%= intent == :error ? 'alert' : 'status' %>"
-     data-controller="toast" data-toast-timeout-value="5000">
-  <div class="cluster" style="--justify: space-between"><span><%= message %></span>
-    <button data-action="toast#close" aria-label="Dismiss" class="min-h-touch"><span class="sr-only">Dismiss</span>×</button></div>
+     data-controller="toast"<%= " data-toast-timeout-value=#{timeout_ms}" if timeout_ms %>>
+  <% if icon.present? %><span class="shrink-0 mt-0.5" aria-hidden="true"><%= icon %></span><% end %>
+  <div class="stack" style="--space: var(--space-3xs)">
+    <span class="text-step--1 font-medium"><%= title %></span>
+    <% if description.present? %>
+      <span class="text-step--1 text-muted-foreground"><%= description %></span>
+    <% end %>
+  </div>
+  <%# The action is what a toast is worth interrupting for — "Task deleted · Undo". Without a slot,
+      people put the verb in the text and leave the user nothing to press. %>
+  <% if action.present? %>
+    <div class="shrink-0"><%= action %></div>
+    <%# Close appears ONLY alongside an action: the toast leaves by itself, so the button exists to
+        get it out of the way of something, not to end it. No action, no button, no touch target —
+        which is what stops a transient element being sized by a 44px target it never needed. %>
+    <button data-action="toast#close" aria-label="<%= t('.dismiss') %>"
+            class="relative shrink-0 size-6 leading-none
+                   before:absolute before:-inset-2 before:content-['']">
+      <span aria-hidden="true">&times;</span>
+    </button>
+  <% end %>
 </div>
 ```
 
@@ -910,17 +949,32 @@ INTENT_FOR_FLASH = { notice: :success, success: :success,
                      alert: :error, error: :error, warning: :warning }.freeze
 ```
 
-**Errors do not auto-dismiss.** This is ours, and it follows from the markup above rather than being a
-separate rule: `intent == :error` already renders `role="alert"`, and a message important enough to
-interrupt a screen reader is important enough to survive five seconds. So the timeout is conditional:
+**Every toast auto-dismisses except `:loading` — and the error part is a correction.** This file previously said
+errors persist, reasoned from `:error` rendering `role="alert"`. That conflated two different things:
+`role="alert"` governs how the message is **announced**, not how long the box stays. A toast is
+*"meant to be noticed without disrupting a user's attention, and it should automatically disappear
+afterwards"* — a persistent one is a different component wearing a toast's styling.
 
-```erb
-data-controller="toast"
-<%= "data-toast-timeout-value=#{5000}" unless intent == :error %>
-```
+**If a message must remain visible, it is not a toast.** Use `Ui::Alert` in the page. The reference
+guidance is explicit — persistent messages are a **Banner**, high-priority ones a **Dialog** — and we
+already ship the component for it, so the escalation costs nothing but choosing correctly:
 
-An error toast then has only one way out — the dismiss button, which is already there and already
-has `min-h-touch` and an accessible name. **Do not add a second mechanism for it.**
+| the message… | component |
+|---|---|
+| confirms something, may offer one optional action | **Toast** |
+| reports an operation still running | **Toast**, `:loading` — the one persistent case |
+| must stay until read, or until the condition clears | **`Ui::Alert`** in the page |
+| must be answered before anything else | **`Ui::Modal`** |
+
+This also removes the argument for a persistent error toast with a close button as its only exit — an
+error the user must act on was never a toast, and an error worth only a glance leaves on its own.
+
+**`:loading` is the exception, and it proves the rule.** It persists because the operation has not
+finished, and it must then be **replaced** by its outcome rather than left behind — both reference
+implementations model it exactly this way. It gets no close button either: dismissing it would hide a
+running operation and leave the user with no way to learn how it ended. An error is a *result*, and
+results auto-dismiss; a loading toast is not a result yet.
+
 
 **A toast is never the only record of a failure.** It is transient by construction, so a validation
 error still belongs on the field (`forms.md`), and a failure the user must act on belongs in the page.
