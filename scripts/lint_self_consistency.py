@@ -1278,6 +1278,76 @@ def check_plugin_root_in_ci() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+_CONDITIONAL_ROLE = re.compile(
+    r"""role="<%=[^%]*?\?\s*['"](?P<a>[a-z]+)['"]\s*:\s*['"](?P<b>[a-z]+)['"]""")
+_LITERAL_ROLE = re.compile(r"""role=(?:"|&quot;|\\")(?P<value>[a-z]+)""")
+
+
+def check_flattened_conditional_role() -> tuple[list[Finding], int]:
+    """A plugin must not restate a CONDITIONAL role as a literal one.
+
+    #483. `component-implementations.md` renders the toast as
+    `role="<%= intent == :error ? 'alert' : 'status' %>"`, but design-flow's setup step told the
+    scaffolder the toast *"carries `role="status"` and nothing beside it"* — a misreading of the
+    doctrine's *"the ROLE carries the severity, and nothing beside it"*, which is a sentence about
+    not adding `aria-live`, not about fixing the role's value.
+
+    It fails silently and only for screen-reader users: `status` implies `aria-live="polite"` and
+    `alert` implies `assertive`, so a toast hard-coded to `status` announces an error politely and
+    the user hears it after whatever is already queued. Nothing renders wrong, no test goes red.
+
+    The rule: if shipped doctrine renders a role conditionally, a plugin doc naming one branch must
+    name the other in the same paragraph. Naming both is how you describe a conditional; naming one
+    is how you flatten it.
+    """
+    findings: list[Finding] = []
+    branches: list[tuple[str, str]] = []
+    for path in walk(".md"):
+        if not rel(path).startswith("skills/"):
+            continue
+        for match in _CONDITIONAL_ROLE.finditer(read(path)):
+            branches.append((match.group("a"), match.group("b")))
+    if not branches:
+        return [], 0
+
+    siblings: dict[str, set[str]] = {}
+    for a, b in branches:
+        siblings.setdefault(a, set()).add(b)
+        siblings.setdefault(b, set()).add(a)
+
+    examined = 0
+    for path in walk(".md"):
+        if not rel(path).startswith("plugins/"):
+            continue
+        # Paragraphs, because that is the unit a reader takes the instruction from. Splitting on
+        # lines would fire on any prose that wraps between the two branch names.
+        for paragraph in re.split(r"\n\s*\n", read(path)):
+            literals = {m.group("value") for m in _LITERAL_ROLE.finditer(paragraph)}
+            if not literals:
+                continue
+            examined += 1
+            # The sibling counts as named if it appears ANYWHERE in the paragraph as a word —
+            # inside the conditional expression, in prose, in a quote. Requiring it to appear as a
+            # second `role="…"` literal is wrong twice over: it fails the paragraph that scaffolds
+            # the expression correctly (the branch is `'alert'`, not `role="alert"`), and it fails
+            # any paragraph that explains the flattening it is warning against. This rule was
+            # written with the narrow test and immediately fired on the fix for the very defect it
+            # was built to catch.
+            named = {w for w in re.findall(r"[a-z]+", paragraph)}
+            for value in sorted(literals):
+                missing = sorted(siblings.get(value, set()) - named)
+                if not missing:
+                    continue
+                line = read(path)[:read(path).find(paragraph)].count("\n") + 1
+                findings.append(Finding(
+                    "flattened-conditional-role", rel(path), line,
+                    f'states role="{value}" as a literal, but shipped doctrine renders it '
+                    f'conditionally against {", ".join(missing)} — scaffold the expression, not one '
+                    f"branch, or an agent following this ships the wrong announcement politeness",
+                ))
+    return findings, examined
+
+
 def check_invisible_characters() -> tuple[list[Finding], int]:
     """No invisible or confusable whitespace in anything we ship."""
     findings: list[Finding] = []
@@ -1814,6 +1884,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
+    flat_role, flat_role_examined = check_flattened_conditional_role()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -1841,11 +1912,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
+        "plugin_paragraphs_naming_a_role": flat_role_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling,
+            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role,
             coverage)
 
 
@@ -1902,6 +1974,37 @@ def selftest() -> int:
     scenario("a file not offering the discount is silent", rule=DCF, expect_finding=False,
              files={AUTH: "| minimum **15** characters where the password is the *only* factor |\n"})
     scenario("no auth file is silent", rule=DCF, expect_finding=False, files={"README.md": "x\n"})
+
+    # -- flattened-conditional-role (#483) ---------------------------------
+    FCR = "flattened-conditional-role"
+    DOCTRINE = ("skills/fidara-design/references/component-implementations.md",
+                "<div role=\"<%= intent == :error ? 'alert' : 'status' %>\">\n")
+    STEP = "plugins/design-flow/commands/setup.md"
+    scenario("one branch stated as a literal", rule=FCR, expect_finding=True,
+             files={DOCTRINE[0]: DOCTRINE[1],
+                    STEP: 'the toast carries `role="status"` and nothing beside it\n'})
+    # Naming the sibling ANYWHERE in the paragraph is enough — that is how you describe a
+    # conditional. Requiring a second `role="…"` literal fired on the fix for this very defect.
+    scenario("...silent when the paragraph names the sibling", rule=FCR, expect_finding=False,
+             files={DOCTRINE[0]: DOCTRINE[1],
+                    STEP: 'renders `role="status"`, or alert when the intent is an error\n'})
+    scenario("...silent when it scaffolds the expression", rule=FCR, expect_finding=False,
+             files={DOCTRINE[0]: DOCTRINE[1], STEP: DOCTRINE[1]})
+    # PARAGRAPH scope, not file scope: naming the sibling three paragraphs away does not make the
+    # flattened instruction correct, because a scaffolder reads the step it is executing.
+    scenario("...a distant mention does not excuse it", rule=FCR, expect_finding=True,
+             files={DOCTRINE[0]: DOCTRINE[1],
+                    STEP: 'the toast carries `role="status"`\n\nElsewhere: alert exists.\n'})
+    # NO CONDITIONAL, NO OBLIGATION. A role the doctrine renders as a plain literal must not drag
+    # every plugin that names it into a finding.
+    scenario("...silent when doctrine has no conditional role", rule=FCR, expect_finding=False,
+             files={DOCTRINE[0]: '<div role="status">\n',
+                    STEP: 'the toast carries `role="status"`\n'})
+    scenario("...silent when the plugin names no role", rule=FCR, expect_finding=False,
+             files={DOCTRINE[0]: DOCTRINE[1], STEP: "Scaffold the toast component.\n"})
+    # Direction-independent: flattening to the OTHER branch is the same defect.
+    scenario("...catches the other branch too", rule=FCR, expect_finding=True,
+             files={DOCTRINE[0]: DOCTRINE[1], STEP: 'the toast carries `role="alert"`\n'})
 
     # -- hook-count-drift -------------------------------------------------
     HC = "hook-count-drift"
