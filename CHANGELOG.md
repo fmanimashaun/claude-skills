@@ -6930,6 +6930,35 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The setup step flattened the toast's conditional role, which is an accessibility regression**
+  (Refs #483). Shipped doctrine renders
+  `role="<%= intent == :error ? 'alert' : 'status' %>"`; step 4b told the scaffolder the toast
+  *"carries `role="status"` and nothing beside it"*. That misread the doctrine's *"the ROLE carries
+  the severity, and nothing beside it"* — a sentence about **not adding `aria-live`**, not about
+  fixing the role's value.
+
+  It fails silently and only for screen-reader users. `status` implies `aria-live="polite"`, `alert`
+  implies `assertive`, so a toast hard-coded to `status` announces an error politely and the user
+  hears it after whatever is already queued. Nothing renders wrong and no test goes red.
+
+  Found while checking #483's remaining acceptance criterion, and **grepped for as a class** rather
+  than fixed in place: of the four conditional roles in shipped doctrine, this was the only one a
+  plugin restated as a literal. Stating that as a measured negative, not an assumption.
+
+  New `flattened-conditional-role` gate in `lint_self_consistency.py` — if doctrine renders a role
+  conditionally, a plugin paragraph naming one branch must name the other. **The rule's first version
+  fired on the fix for the defect it was built to catch**: it required the sibling to appear as a
+  second `role="…"` literal, which no correct paragraph does. It now counts the sibling as named
+  anywhere in the paragraph, and a fixture pins that direction.
+
+- **#483's own acceptance criterion 3 is stale.** It reads *"flashes route to auto-dismissing toasts
+  by default (errors persist)"*. Errors **no longer persist** — v1.72.0 established that
+  `role="alert"` governs announcement, not lifetime, and that a persistent message is a Banner or an
+  `Ui::Alert`, with `:loading` the single persistent toast. Anyone verifying the last box against the
+  issue text as written would file a false regression.
+
 ### 1.15.0 — 2026-08-06
 
 - **The critic is wired into the review path, alongside the gate rather than inside it** (Refs #486).

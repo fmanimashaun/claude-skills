@@ -89,6 +89,24 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #483. The sibling stops counting as named, so the rule fires on every paragraph
+                # that describes the conditional correctly — including the fix for the very defect
+                # it exists to catch, which is what it did when first written against `role="…"`
+                # literals instead of words.
+                "the sibling branch never counts as named, so correct paragraphs fail",
+                '            named = {w for w in re.findall(r"[a-z]+", paragraph)}',
+                "            named = set()",
+                "...silent when the paragraph names the sibling",
+            ),
+            Mutation(
+                # The other direction: nothing is ever missing, so a flattened role sails through
+                # and a scaffolder ships errors announced politely.
+                "no branch is ever considered missing, so flattening is never caught",
+                "                missing = sorted(siblings.get(value, set()) - named)",
+                "                missing = []",
+                "one branch stated as a literal",
+            ),
+            Mutation(
                 # #531: a true claim with nothing behind it — the discount whose condition
                 # the skill gave no way to satisfy.
                 "the MFA-guidance test always passes, so the discount may dangle again",

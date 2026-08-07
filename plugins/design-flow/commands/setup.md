@@ -129,9 +129,17 @@ authored; `git status` after.
    `turbo_stream.prepend("toasts", ToastComponent.new(...))` — three call sites in the doctrine — so
    without this `div` the target does not exist and **every CRUD success path silently drops its
    feedback**. `aria-live` belongs on the **container**, which must be in the DOM before content is
-   inserted into it; the individual toast carries `role="status"` and nothing beside it. Do not move
-   the attribute onto the toast, and do not add a second flash surface: routing flash through Turbo
-   Stream **replaces** the `_flash`/`_flash_messages` partial pair rather than sitting beside it.
+   inserted into it. Do not move the attribute onto the toast, and do not add a second flash surface:
+   routing flash through Turbo Stream **replaces** the `_flash`/`_flash_messages` partial pair rather
+   than sitting beside it.
+
+   **The toast's own role is conditional, and flattening it is an accessibility regression.** The
+   shipped component renders `role="<%= intent == :error ? 'alert' : 'status' %>"` — scaffold that
+   expression, not a literal. `status` implies `aria-live="polite"`; `alert` implies `assertive`. A
+   toast hard-coded to `status` announces an error politely, so a screen-reader user hears it only
+   after whatever is already queued. This step previously said the toast *"carries `role="status"` and
+   nothing beside it"*, which misread the doctrine's *"the ROLE carries the severity, and nothing
+   beside it"* — a sentence about **not adding `aria-live`**, not about fixing the role's value.
 
    So the layout renders **no flash partial**. A scaffold that leaves one in ships two notification
    surfaces, and the inline one is permanent — which is how a project ends up with all-permanent
