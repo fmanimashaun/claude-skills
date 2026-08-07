@@ -1749,7 +1749,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.20.0 — 2026-08-07
 
 - **Pillar 3 of the autonomous flow driver: the async human-in-the-loop** (Refs #488).
   `/rails-flow:escalate` posts a question as a comment on the relevant issue, labels it so GitHub
@@ -6998,7 +6998,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.15.2 — 2026-08-07
 
 - **The setup step flattened the toast's conditional role, which is an accessibility regression**
   (Refs #483). Shipped doctrine renders
@@ -8001,6 +8001,48 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-07 (release v1.74.0)
+
+> ### Three issues where the report was wrong, and testing the substrate found it
+>
+> Every slice here started by checking a claim the issue stated confidently. Seven of those
+> claims were false, and each failed **silently** — a stale toolchain reading as current, a
+> parked question nobody was emailed, an error announced politely.
+
+- **Pillar 1 of the autonomous flow driver: the toolchain self-update gate** (Refs #488).
+  `/rails-flow:toolchain-check` resolves what is installed, compares it against what is published,
+  and carries a durable marker across the restart an update requires. **Exit 2 (cannot resolve one
+  side) is never folded into exit 0** — "I could not read the installed state" is not "you are up
+  to date". Five of the EPIC's substrate assumptions were wrong; the load-bearing one is that the
+  two version sources are **disjoint**: `rails-stack` is versioned only in `marketplace.json`, the
+  four code plugins only in their own `plugin.json`, so reading either alone misses the other set.
+
+- **Pillar 3: the async human-in-the-loop** (Refs #488). `/rails-flow:escalate` asks on a GitHub
+  issue, labels it so the human is emailed, parks the thread durably, and **moves on**. The EPIC's
+  "find replies by timestamp/**author**" cannot work — `gh` posts with the user's own token, so the
+  agent's comments carry the *same login as the human*. Replies are found by an invisible marker
+  instead, required at the **start** of the comment so a quoted question is not mistaken for the
+  agent's own writing. And a missing label **errors** rather than degrading, so both labels are
+  created before anything is posted: the label is what sends the email, and a thread parked on a
+  question nobody receives is the one failure this loop cannot recover from.
+
+- **The setup step flattened the toast's conditional role** (Refs #483). Doctrine renders
+  `role="<%= intent == :error ? 'alert' : 'status' %>"`; the scaffold said `role="status"`, flat.
+  `status` implies `aria-live="polite"`, so an error announced after whatever is already queued —
+  failing silently, and only for screen-reader users. New `flattened-conditional-role` gate, whose
+  **first version fired on the fix for the defect it was built to catch**.
+
+- **The production password-strength policy is complete** (Closes #484). All five criteria verified
+  against the repo with line references, including the subtle one: sign-in still authenticates a
+  digest that predates the policy. The catalog entry forbids the character-class checklist, citing
+  *SP 800-63B-4*'s "SHALL NOT impose other composition rules" — a meter ticking "has uppercase · has
+  a digit" **is** that rule rendered, and it teaches users that `Passw0rd!` beats a passphrase.
+
+The gate sweep went **65 → 67**. Both new selftests were registered only because the repo's own
+`mutation coverage` gate failed on a sweep that would have reported clean having never run them.
+Two further defects in these diffs were caught by our gates rather than by review: a literal U+FEFF
+written to strip U+FEFFs, and a docstring citing a flag that does not exist.
 
 ### 2026-08-07 (release v1.73.0)
 
