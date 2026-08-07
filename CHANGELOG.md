@@ -2761,7 +2761,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.42.0 — 2026-08-07
 
 - **A stale remnant of the reversed error rule survived the rewrite** (Refs #540). The toast rebuild
   replaced the prose but left an ERB snippet showing `"data-toast-timeout-value" unless intent ==
@@ -7879,6 +7879,48 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-07 (release v1.72.0)
+
+> ### A user report, and the references corrected me twice
+>
+> *"The toast card is big."* It was arithmetic, not taste — and fixing it properly meant reading the
+> reference implementations, which then contradicted two rules shipped the day before.
+
+- **The toast was a card** (#540, #483). `box` applies `--space-s` (16–20px) on all four sides,
+  `min-h-touch` forces a **44px** dismiss target inside, `max-w-sm` fixes the width, and the message
+  inherited `text-step-0` — so *"Saved"* rendered roughly **80px tall by 384px wide**. `box` is the
+  **content-panel** primitive; a toast is transient chrome.
+
+  Rebuilt to the reference anatomy — **container · optional icon · text · optional action · optional
+  close** — with the close button appearing **only beside an action**. That fixes the size at its source
+  rather than working around it: no button, no touch target, nothing forcing the height. `title` +
+  optional `description` replace the single `message`, and an **action slot** finally exists, because
+  *"Task deleted · Undo"* is the canonical toast and without a slot the verb lands in the text with
+  nothing to press.
+
+- **Two rules from the previous release were wrong.** Errors were made persistent, reasoned from
+  `role="alert"` — which conflates **announcement** with **persistence**. A message that must remain
+  visible is `Ui::Alert` in the page; one that must be answered first is `Ui::Modal`.
+
+  **And the correction over-corrected.** *"There is no persistent variant"* is false: `:loading`
+  persists while its operation runs, then is **replaced** by the outcome — found only by reading a
+  reference implementation's **source**, since its published docs do not mention it. A loading toast
+  gets no close button either: dismissing a running operation leaves the user unable to learn how it
+  ended.
+
+- **The touch-target arithmetic, verified.** `min-h-touch`'s 44px is **WCAG 2.5.5 Target Size
+  (Enhanced), level AAA**. The level-AA requirement, **2.5.8**, is *"at least 24 by 24 CSS pixels"* —
+  checked against the W3C understanding document. Paying 44px inside a transient element bought AAA by
+  doubling the notification's height.
+
+- **A stale remnant of the reversed rule survived the rewrite** — an ERB snippet still showing the error
+  exception, and a sentence claiming the dismiss button *"already has `min-h-touch`"*. A
+  `doctrine-contradiction` inside the file just corrected, found by grepping the pattern rather than
+  trusting the edit.
+
+**Versions:** rails-stack 1.41.0 → **1.42.0**.
+**Gates:** 65/65, CI-verified. **Mutation check:** 411 mutations across 32 guards, all caught.
 
 ### 2026-08-07 (release v1.71.0)
 
