@@ -5980,6 +5980,40 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The a11y-auditor cried wolf on every page of a conformant app** (Refs #578). The keyboard pass
+  decided *"visible focus indicator"* by looking up a property, so a design system carrying its ring
+  in `box-shadow` was reported as having none — a **blocking S1** across `/login`, `/passwords/new`
+  and everything else. The reported computed style shows why a property lookup cannot work:
+  `outline: rgb(0,95,204) none 1px` — a non-zero *width* with style `none`, so an outline check
+  passes it and an outline-style check fails it, while the real indicator (a two-layer box-shadow
+  ring) is never consulted by either.
+
+  The spec was **internally inconsistent**, which is the actual defect: line 87 already listed
+  `box-shadow` as an indicator source, and the forced-colors pass below *assumed* the keyboard pass
+  honoured it — but the `No Focus Indicator` column that produces the verdict gave no method at all.
+  One section promised it; the column that decides never mentioned it.
+
+  It is now a **resting-vs-focused diff**: capture the computed style, Tab to the element, capture
+  again, and treat *any* rendered difference as an indicator. That is deliberately property-agnostic
+  — the next design system will carry its ring in something this list does not name.
+
+- **The skip link was judged at rest, where a correct one is invisible by design** (Refs #578). An
+  `sr-only` skip link is *supposed* to be hidden until focused, so a visibility check before Tab
+  reports a working one as absent. It is now judged focused, against three questions: first stop,
+  visible now, and does activating it move focus into main.
+
+- **A blocking S1 must now show its work.** `validate_evidence.py` reports a `No Focus Indicator`
+  count whose row records no diff method. It does not verify the diff was done correctly — it makes
+  an unmethodical S1 impossible to file **silently**, which is the part that cost a morning. The
+  forced-colors `Focus Indicator Lost` class survives unchanged and its reasoning gets sharper: in
+  forced colors `box-shadow` computes to `none`, so the diff finds nothing, which is exactly the
+  finding.
+
+  Fixing the comment in `validate_evidence.py` that restated the old property-lookup model was part
+  of the fix, not a tidy-up: leaving it would have replaced one internal contradiction with another.
+
 ### 1.24.1 — 2026-08-05
 
 - **The scaffold provisioned everything the flow consumes except the labels it files with** (Refs

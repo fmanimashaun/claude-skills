@@ -635,8 +635,32 @@ def run() -> int:
     expect_findings(
         "keyboard: more missing indicators than elements focused",
         "/x,anon,Walked,200,https://a/x,https://a/x,heading 'X',chromium,5,5,0,9,0,0,0,0,0,0,"
-        "Present,S1,e.json,nine unstyled\n",
+        "Present,S1,e.json,nine unstyled by resting-vs-focused diff\n",
         contains="actually focused", count=1, **kb,
+    )
+
+    # -- a blocking S1 must show its work --
+    # The defect this came from: a conformant app flagged S1 on every page because the pass looked
+    # up `outline` while the ring lived in `box-shadow`, so nothing ever consulted the real
+    # indicator. The fixture above now records a method too, or it would stop isolating its own rule.
+    expect_findings(
+        "keyboard: missing-indicator count with no method recorded",
+        "/y,anon,Walked,200,https://a/y,https://a/y,heading 'Y',chromium,9,9,0,2,0,0,0,0,0,0,"
+        "Present,S1,e.json,two unstyled\n",
+        contains="resting-vs-focused diff", count=1, **kb,
+    )
+    expect_clean(
+        "keyboard: ...and none when the diff is recorded",
+        "/z,anon,Walked,200,https://a/z,https://a/z,heading 'Z',chromium,9,9,0,2,0,0,0,0,0,0,"
+        "Present,S1,e.json,two unstyled — confirmed by resting-vs-focused diff\n",
+        **kb,
+    )
+    # A count of ZERO needs no method -- demanding one would make every clean page a finding.
+    expect_clean(
+        "keyboard: a zero count needs no method",
+        "/w,anon,Walked,200,https://a/w,https://a/w,heading 'W',chromium,9,9,0,0,0,0,0,0,0,0,"
+        "Present,none,,\n",
+        **kb,
     )
     expect_findings(
         "keyboard: 3 focus-restore failures across 1 overlay",

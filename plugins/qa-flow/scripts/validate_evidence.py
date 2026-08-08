@@ -609,6 +609,26 @@ def _keyboard_extra(row: dict[str, str], where: str, status: str) -> list[str]:
                 "contract is exhaustive"
             )
 
+    # A BLOCKING S1 MUST SHOW ITS WORK. `No Focus Indicator` is decided by diffing the computed
+    # style at rest against the same element focused -- any rendered difference is an indicator. A
+    # row claiming the count without naming that method was almost certainly produced by looking up
+    # one property, which is what flagged S1 across every page of a conformant app: the design
+    # system carried its ring in `box-shadow` while `outline` read `none`, and no property lookup
+    # ever consulted it. Requiring the method in the row does not verify the diff was correct -- it
+    # makes an unmethodical S1 impossible to file silently, which is the part that was costing
+    # everyone their morning.
+    if counts.get("No Focus Indicator", 0) > 0:
+        method = " ".join(str(v) for k, v in row.items()
+                          if k.lower() in {"method", "indicator method", "notes", "evidence"}).lower()
+        if not any(w in method for w in ("diff", "resting", "before/after", "rest vs")):
+            findings.append(
+                f"{where}: {counts['No Focus Indicator']} element(s) reported with no focus "
+                "indicator, but the row does not record a resting-vs-focused diff. An indicator may "
+                "be carried by box-shadow, border, background or a pseudo-element, so a single "
+                "property lookup reports a conformant ring as missing -- and this counter raises a "
+                "blocking S1. Record the method, or the finding cannot be trusted."
+            )
+
     # You cannot read the focus indicator of an element you never focused.
     if {"No Focus Indicator", "Tab Stops"} <= counts.keys() and (
         counts["No Focus Indicator"] > counts["Tab Stops"]
@@ -956,9 +976,10 @@ FORMS = Profile(
 #
 # WHY `Focus Indicator Lost` IS A REAL CLASS AND NOT A THEORY. In forced colors mode `box-shadow`
 # and `text-shadow` COMPUTE TO `none` (W3C CSS Color Adjustment Module Level 1, "Properties
-# Affected by Forced Colors Mode"). The keyboard pass reads focus indicators from
-# `outline-width`/`outline-style`/`box-shadow`, so a ring implemented with box-shadow and no
-# outline genuinely disappears for a forced-colors user while passing the keyboard pass. That is
+# Affected by Forced Colors Mode"). The keyboard pass decides an indicator by DIFFING the computed
+# style at rest against the same element focused, so a ring implemented with box-shadow and no
+# outline is correctly seen at normal colors -- and genuinely disappears for a forced-colors user,
+# because the property carrying it computes to `none` and the diff then finds nothing. That is
 # the highest-value finding here and it is why the two profiles are worth having separately.
 #
 # WHY THE ENGINE IS PART OF THE CONTRACT -- AND WHY IT FAILS OPEN THE OTHER WAY THAN #114'S.
