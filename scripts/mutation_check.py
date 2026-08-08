@@ -3617,6 +3617,38 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    Guard(
+        name="toolchain_version",
+        subject="plugins/rails-flow/scripts/toolchain_version.py",
+        selftest="plugins/rails-flow/scripts/toolchain_version_selftest.py",
+        mutations=(
+            Mutation(
+                # Two records for one plugin coexist in the cache, ordered ONLY by lastUpdated.
+                # Picking arbitrarily reports the stale one as installed, so an out-of-date
+                # toolchain reads as current -- which is the single thing pillar 1 exists to catch.
+                "the newest install record stops winning, so a stale version reads as installed",
+                '    return max(records, key=lambda r: (r or {}).get("lastUpdated") or "")',
+                "    return records[0]",
+                "shadowed-record: newest wins",
+            ),
+        ),
+    ),
+    Guard(
+        name="escalation",
+        subject="plugins/rails-flow/scripts/escalation.py",
+        selftest="plugins/rails-flow/scripts/escalation_selftest.py",
+        mutations=(
+            Mutation(
+                # The agent and the human share a login, so authorship cannot distinguish them --
+                # only the marker can, and only anchored at the START. Matching it anywhere means a
+                # QUOTED question counts as the agent's own writing, and the thread parks forever.
+                "the marker matches anywhere, so a quoted question reads as agent-authored",
+                r'    return body.lstrip("\ufeff").startswith(MARKER)',
+                "    return MARKER in body",
+                "quoted-marker: a quoted question is not agent-authored",
+            ),
+        ),
+    ),
 )
 
 
