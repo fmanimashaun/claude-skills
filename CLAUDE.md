@@ -582,6 +582,39 @@ every release tag. Deleting the files in a later commit does not remove the blob
 `flowbite-figma/` is **not** in that repo: its `.fig` is 283 MB, over GitHub's 100 MB per-file
 hard limit. Direct file transfer if you need it; it drops into `design-corpora/` like the rest.
 
+## First session in a clone: copy the permission example
+
+`.claude/settings.example.json` is committed and carries a `permissions.allow` block. **Copy it to
+`.claude/settings.local.json`** (gitignored) before doing real work, merging rather than overwriting
+if you already have one.
+
+Without it a maintenance run stops for confirmation every few commands, which is how an unattended
+run stops being unattended. The cause is not obvious and cost a session before it was written down:
+the commands here are **compound pipelines** — `python3 scripts/lint_self_consistency.py | grep -c
+findings` — and the *whole string* is evaluated, so **one** unlisted binary anywhere in the chain
+re-prompts all of it. A list holding `git`, `gh` and `python3` but not `grep` still prompts on most
+real commands.
+
+It deliberately omits `rm`, `curl`, `wget`, `kill`, `chmod` and package installers. Those destroy
+work, reach the network, or mutate a toolchain a later step then trusts — a prompt is correct
+friction there **even mid-run**, because their blast radius outlives the run. For no friction at all,
+choose a permission *mode* deliberately rather than arriving at one by extending a list of binaries.
+
+Three files, three audiences, and mixing them up is the whole trap:
+
+| file | tracked | who gets it | read by Claude |
+|---|---|---|---|
+| `.claude/settings.json` | **yes** | everyone who clones | **yes** |
+| `.claude/settings.local.json` | no, gitignored | **you, this machine** | **yes** |
+| `.claude/settings.example.json` | yes | everyone who clones | **no — inert** |
+
+`settings.json` holds what makes the repo *work* — the SessionStart hook, `enabledPlugins` — and is
+correct to commit. `settings.local.json` holds what **you** trust to run on **your** machine, which
+is not a decision to make on anyone else's behalf, so the allowlist goes there. The example file is
+only a bridge: committed so a fresh clone has something to copy, read by nothing. This is the same three-file
+pattern `/rails-flow:setup-flow` §2c scaffolds for users — which this repo was telling people to
+follow while not following it.
+
 ## Platform
 
 The `.claude/` hook and the plugins' hooks are **bash + `python3`**, and the flow drives

@@ -7,6 +7,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **A committed `.claude/settings.example.json`, and the three-file distinction written down.** This
+  repo was telling users (via `/rails-flow:setup-flow` §2c) to keep permissions in a copied local
+  file while not doing it itself — the claims-vs-enforcement shape, in its own configuration.
+
+  The trap is that the three files look interchangeable and are not: `settings.json` is **tracked**
+  and inherited by everyone who clones, `settings.local.json` is **gitignored** and holds what *you*
+  trust on *your* machine, and `settings.example.json` is committed but **read by nothing** — a
+  bridge so a fresh clone has something to copy. Permissions belong in the local file because they
+  are not a decision to make on anyone else's behalf; the SessionStart hook belongs in the tracked
+  one because it is what makes the repo work.
+
+  Worth recording why a broad allowlist still prompts, since it cost a session: maintenance commands
+  are **compound pipelines**, the whole string is evaluated, and **one** unlisted binary anywhere in
+  the chain re-prompts all of it. A list holding `git`, `gh` and `python3` but not `grep` prompts on
+  most real commands. `rm`, `curl`, `wget`, `kill`, `chmod` and package installers are deliberately
+  absent — their blast radius outlives the run, so a prompt is correct friction even mid-run.
+
 ### 2026-08-08 (v1.75.0)
 
 - **An `AGENTS.md` at this repo's root was read by nothing, for two whole releases.** Claude Code
