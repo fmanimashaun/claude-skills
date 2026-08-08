@@ -61,6 +61,6 @@ digging.
 
 ## What to read next
 
-- Working out which command you want: [command reference](Command-Reference.md)
-- Why the loops are separate agents: [how the loops fit](Loops.md)
-- Something behaving oddly: [troubleshooting](Troubleshooting.md)
+- Working out which command you want: [command reference](Command-Reference)
+- Why the loops are separate agents: [how the loops fit](Loops)
+- Something behaving oddly: [troubleshooting](Troubleshooting)

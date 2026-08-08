@@ -6,7 +6,7 @@ change rather than a rewrite.
 
 ## The order of work
 
-1. **[Reference research](../../skills/fidara-design/references/reference-research.md)** — before
+1. **[Reference research](https://github.com/fmanimashaun/claude-skills/blob/main/skills/fidara-design/references/reference-research.md)** — before
    any design. Gather references for the *kind of problem*, work out **why** each works, and build
    from the mechanisms rather than the surface. Skip it and you do not get nothing: you get the
    median of everything the model has seen, which is the stock-SaaS look.

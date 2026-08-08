@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -264,6 +265,21 @@ def selftest() -> int:
           read_manifest()["metadata"]["version"] in plugins)
     # rails-stack has no commands; printing 0 would read as a defect rather than a design choice.
     check("a plugin with no commands shows an em dash, not 0", "| — |" in plugins)
+
+    # LINK FORM. A GitHub wiki resolves a sibling page by NAME, without the extension: `](Page.md)`
+    # points at a RAW FILE, not the rendered page. That shipped, and every cross-page link in the
+    # wiki was broken until a reader clicked one. And `../x.md` cannot resolve at all, because the
+    # wiki is a different repository -- those must be absolute blob URLs.
+    wiki_dir = ROOT / "docs" / "wiki"
+    if wiki_dir.is_dir():
+        for page in sorted(wiki_dir.glob("*.md")):
+            body = page.read_text(encoding="utf-8")
+            check(f"{page.name}: no `.md` in sibling links",
+                  not re.search(r"\]\([A-Za-z][A-Za-z0-9-]*\.md\)", body))
+            check(f"{page.name}: no relative cross-repo links",
+                  "](../" not in body)
+        for required in ("_Footer.md", "_Sidebar.md", "Home.md"):
+            check(f"{required} exists", (wiki_dir / required).is_file())
 
     for name in GENERATED:
         check(f"{name} has a generated banner", BANNER.strip()[:20] in BUILDERS[name]())
