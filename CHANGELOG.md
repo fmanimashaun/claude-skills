@@ -7244,6 +7244,42 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`/design-flow:assets` — the setup and drive command for the curated library** (Refs #507).
+  Scaffolds config and plan, pins the brief, checks the plan is reviewable, generates what is
+  outstanding and records what happened. **Re-running resumes rather than resets** — a `done` row is
+  never re-bought, and a second scaffold re-pins the brief and changes nothing else, because a setup
+  command that resets a user's rows is not idempotent, it is destructive.
+
+- **Three files, three jobs.** The config says *how to buy*; `plan.json` says *what the product
+  needs*; `manifest.json` says *what the project owns*. **The gap between the last two is the
+  remaining work**, which is the whole reason both exist — keep only the manifest and a library
+  nobody has finished planning looks finished.
+
+- **The plan is costed before anything is generated**, and the run refuses when the budget cannot
+  finish it. That is the point: generating until the money stops leaves an **arbitrary** half of the
+  set, and a half-built family of illustrations is not a cheaper library, it is an incoherent one.
+  The refusal prints the shortfall and what fits by priority; `--confirm-partial` then generates
+  exactly that and leaves the rest `planned` — not `failed`, because they were never attempted.
+
+  Three caveats are printed rather than hidden: the estimate is a **floor** (every row priced at the
+  cheapest rung), rows with no `priority` were split by **plan order** and the run says how many, and
+  `--spent` is an **input** because nothing here can read a provider balance.
+
+- **Two kinds of drift are now detectable, neither visible any other way.** A **PRD fingerprint**
+  catches a plan written against a brief that has since moved — every row `done`, the status clean,
+  and the new surfaces with no rows at all. And **reconciliation** reports any manifest entry with no
+  plan row: an agent generating ad-hoc must add the row with its rationale and use cases, or the
+  plan stops describing the library it tracks and the gap above stops meaning anything.
+
+- **Two defects were caught by the checks themselves while building this.** `--check` blessed an
+  **empty** plan — the exact state the scaffold creates — while a comment three lines above claimed
+  that case was covered. And a plan row whose surface had no brief passed review and failed at run
+  time, after the spend; the cross-check moves that finding to before it. A mutation also **survived**
+  because it was written as `[] or [...]`, which evaluates to the original list — the harness
+  reporting a survivor was reporting a bad mutation, and it was right to.
+
 ### 1.17.0 — 2026-08-08
 
 - **`/design-flow:generate` produces now, not just decides** (Refs #507). `generate_asset.py`
