@@ -1880,6 +1880,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Pillars 1 and 3 had selftests but no mutation coverage** (Refs #488). Their fixtures ran; nothing
+  proved those fixtures could fail. Found while verifying #488's *"each pillar independently
+  acceptance-tested"* against the repo rather than against memory — the `mutation coverage` gate
+  proves every **declared** mutation is caught, and never that everything testable is declared, so
+  two shipped pillars sat uncovered without anything going red.
+
+  Each now has the mutation that matters most. `toolchain_version`: the newest install record stops
+  winning, so a **stale** version reads as installed — the one thing pillar 1 exists to catch.
+  `escalation`: the marker matches anywhere instead of at the start, so a **quoted** question reads
+  as agent-authored and the thread parks forever.
+
+  Registering them took three attempts, each a defect worth naming. The first target was indented by
+  four spaces and I copied eight, having counted my own terminal prefix as source. The second matched
+  a real line yet the harness saw nothing, because `"\ufeff"` inside a normal Python string is
+  **evaluated at parse time** — the file held the right characters while the runtime value held an
+  actual U+FEFF. A raw string fixes it. The same invisible-character class has now bitten twice in
+  this repo, and both times the file looked correct.
+
+  **Four more scripts remain unguarded** — `check_criteria`, `extract_claims`, `findings`,
+  `self_consistency` — all pre-dating this EPIC. Named here rather than silently left, because a
+  count nobody wrote down is how this went unnoticed in the first place.
+
 ### 1.22.0 — 2026-08-08
 
 - **Reverted: `setup-flow` no longer scaffolds a permission allowlist.** It was added hours earlier
