@@ -46,7 +46,7 @@ from pathlib import Path
 
 PLAN_PATH = Path("docs/assets/plan.json")
 CONFIG_PATH = Path(".design-flow/generation.json")
-PLACEHOLDER_KEY_ENV = "GEMINI_API_KEY"
+PLACEHOLDER_KEY_ENV = "OPENROUTER_API_KEY"
 
 # A planned row must say enough to be GENERATED and enough to be REVIEWED. `why` is the one that
 # looks optional and is not: a row nobody can justify is a row nobody should pay for, and it is the
@@ -69,11 +69,30 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
         cfg.write_text(json.dumps({
             "_comment": "Fill api_key_env's variable in your environment (or a gitignored .env). "
                         "Until then every generate call refuses, which is the safe state.",
-            "aggregator": "gemini",
+            # An AGGREGATOR by default, which is what this field asks for: one key reaches many
+            # models, and the response carries `usage.cost` so the budget reconciles against the
+            # real charge rather than an estimate nobody checks. `gemini` is also shipped.
+            "aggregator": "openrouter",
             "api_key_env": PLACEHOLDER_KEY_ENV,
             "budget_usd": 5.00,
-            "ladder": [{"name": "gemini-3.1-flash-lite-image", "cost_usd": 0.012},
-                       {"name": "gemini-3-pro-image", "cost_usd": 0.14}],
+            # PER KIND, because the kinds want different models: only some emit SVG, and no image
+            # endpoint emits video. Model IDs and prices are EXAMPLES, not doctrine -- they change
+            # monthly, which is why they live here. Discover what is current with
+            #   curl -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+            #        https://openrouter.ai/api/v1/images/models
+            # and check pricing before trusting any number below.
+            "ladders": {
+                "static": [{"name": "google/gemini-2.5-flash-image", "cost_usd": 0.012},
+                           {"name": "openai/gpt-image-2", "cost_usd": 0.13}],
+                # SVG-CAPABLE ONLY. A raster named `.svg` does not scale and cannot be recoloured
+                # from tokens, which is the whole reason the vector kind exists -- and the executor
+                # now refuses rather than writing one.
+                "vector": [{"name": "recraft-ai/recraft-v3-svg", "cost_usd": 0.04}],
+                # EMPTY ON PURPOSE. No image endpoint returns video, so a motion row refuses with
+                # "no ladder for kind 'motion'" rather than silently saving a still as `.webm`.
+                # Point this at a video model when you have one.
+                "motion": [],
+            },
             "style_reference": "docs/assets/reference.png",
             "briefs": {},
             "acceptance": {},
@@ -458,8 +477,14 @@ def selftest() -> int:
         cfg = json.loads((root / CONFIG_PATH).read_text())
         check("...naming an api_key_env", cfg.get("api_key_env") == PLACEHOLDER_KEY_ENV)
         check("...with an empty briefs map to fill", cfg.get("briefs") == {})
-        check("...and a ladder, cheapest first",
-              cfg["ladder"][0]["cost_usd"] < cfg["ladder"][1]["cost_usd"])
+        check("...and a per-kind ladder, cheapest first",
+              cfg["ladders"]["static"][0]["cost_usd"] < cfg["ladders"]["static"][1]["cost_usd"])
+        # `motion` is scaffolded EMPTY on purpose: no image endpoint returns video, so a motion row
+        # must refuse rather than save a still frame under a `.webm` name.
+        check("...motion is empty until a video model is configured",
+              cfg["ladders"]["motion"] == [])
+        check("...and vector has its own SVG-capable rung",
+              len(cfg["ladders"]["vector"]) == 1)
         (root / CONFIG_PATH).write_text('{"aggregator":"mine"}', encoding="utf-8")
         check("a second scaffold overwrites nothing", scaffold(root) == [])
         check("...leaving the edited config intact",

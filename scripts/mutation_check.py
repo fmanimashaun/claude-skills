@@ -3532,6 +3532,22 @@ GUARDS: tuple[Guard, ...] = (
         # stands between a request and someone's card.
         mutations=(
             Mutation(
+                # Two shipped messages promised `.env` worked while nothing read the file, so a
+                # user who followed the instruction got "not set" and concluded the tool was broken.
+                "the .env fallback goes, so a promised location silently stops working",
+                "    if raw is None and root is not None:",
+                "    if False:",
+                "a key in .env is found",
+            ),
+            Mutation(
+                # A shell export is the more deliberate act. If a stale file could override it,
+                # someone debugging a key would be overridden by something they had forgotten.
+                "the environment stops winning, so a stale .env overrides a deliberate export",
+                "    if raw is None and root is not None:",
+                "    if root is not None:",
+                "the environment beats .env",
+            ),
+            Mutation(
                 # The load-bearing property: the gate is RE-RUN here, never trusted from the caller.
                 # Drop it and a hand-written {"approved": true} bypasses every refusal at once --
                 # library, tier precondition, composed prompt, budget ceiling.

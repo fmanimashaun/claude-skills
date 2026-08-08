@@ -236,6 +236,24 @@ Add the variable name to config and keep the value in your environment (or a git
 **The key is never printed, logged, or written into the provenance row** — only whether one was
 usable.
 
+### Which provider
+
+**Two adapters ship.** `openrouter` is the default and the better fit for this path — it is an
+*aggregator*, so one key reaches many models, and its response carries **`usage.cost`**: the real
+charge for that request. Everything else here budgets against an estimate, and an estimate that is
+never reconciled is how a ceiling drifts until the bill arrives. With a real number the provenance
+row records `actual_cost_usd` beside `estimated_cost_usd`, and the two disagreeing is a finding
+rather than a surprise.
+
+`gemini` is also shipped, for talking to Google directly. It returns no per-request cost, so
+`actual_cost_usd` is **null** there — absent rather than back-filled from the estimate, because
+copying the estimate would make the two agree by construction and hide the drift the field exists
+to show.
+
+```json
+{ "aggregator": "openrouter", "api_key_env": "OPENROUTER_API_KEY" }
+```
+
 ### Adding a provider
 
 One adapter ships, as a reference implementation of the §3c contract. Adding another is a function

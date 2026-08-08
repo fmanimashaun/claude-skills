@@ -63,7 +63,45 @@ class Unusable(Exception):
     """Input or environment cannot be used — never spend on it."""
 
 
-def preflight_key(env_var: str) -> str:
+def dotenv_value(root: Path, name: str) -> str | None:
+    """Read one key from a `.env` file, because two shipped messages promise this works.
+
+    They said *"put the real value in your environment (or a gitignored .env)"* while the code read
+    `os.environ` and nothing else -- so following the instruction produced a refusal saying the key
+    was not set, which reads like a broken tool rather than an unloaded file. Claims-vs-enforcement,
+    in the one message a user sees when they are already stuck.
+
+    Deliberately minimal: `KEY=value`, optional `export`, optional matching quotes, `#` comments,
+    blank lines. It is NOT a dotenv implementation -- no interpolation, no multi-line values, no
+    `${VAR}` expansion. A fuller parser would be a dependency, and this script holds an API key, so
+    "no transitive supply chain" is worth more than covering an exotic syntax.
+
+    The real environment WINS. A shell export is the more deliberate act, and someone debugging a
+    key would otherwise be overridden by a stale file they had forgotten about.
+    """
+    path = root / ".env"
+    if not path.is_file():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip().removeprefix("export ").strip()
+        if key != name:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        return value
+    return None
+
+
+def preflight_key(env_var: str, root: Path | None = None) -> str:
     """Return the key, or raise with WHICH of the three states it is in.
 
     Absent and placeholder are separated on purpose: one means "not set up", the other means
@@ -74,12 +112,14 @@ def preflight_key(env_var: str) -> str:
         raise Unusable("config names no `api_key_env`, so there is nowhere to read a key from. "
                        "Name the environment variable your aggregator's key lives in.")
     raw = os.environ.get(env_var)
+    if raw is None and root is not None:
+        raw = dotenv_value(root, env_var)      # promised by the message below; now true
     if raw is None:
         # A REFUSAL, not an error. An absent key is the same state as an absent aggregator, which
         # the gate already models as "say so and stop" -- and a caller must be able to tell "we are
         # not generating, which is fine" from "something is broken" by exit code alone.
         raise Refusal(
-            f"${env_var} is not set. Generation is unavailable — satisfy the surface from tiers 1-2, "
+            f"${env_var} is not set, and no `.env` beside the project defines it. Generation is unavailable — satisfy the surface from tiers 1-2, "
             f"or say so and stop. This is the expected state for an install that has not opted in.")
     if PLACEHOLDER_RE.match((raw or "").strip()):
         raise Refusal(
@@ -90,7 +130,8 @@ def preflight_key(env_var: str) -> str:
     return raw.strip()
 
 
-def call_gemini(key: str, model: str, prompt: str, reference: bytes | None, timeout: int) -> bytes:
+def call_gemini(key: str, model: str, prompt: str, reference: bytes | None,
+                timeout: int) -> tuple[bytes, float | None]:
     """Reference adapter. The CONTRACT is doctrine; this vendor is one implementation of it.
 
     Kept here rather than in a skill because model IDs and endpoints change monthly. Swapping it is
@@ -123,12 +164,81 @@ def call_gemini(key: str, model: str, prompt: str, reference: bytes | None, time
         for part in cand.get("content", {}).get("parts", []):
             data = (part.get("inline_data") or part.get("inlineData") or {}).get("data")
             if data:
-                return base64.b64decode(data)
+                # No per-request cost in this response shape, so the provenance keeps the ESTIMATE
+                # and says so. Reporting an estimate as if it were the charge is how a budget
+                # reconciles cleanly against a bill nobody predicted.
+                return base64.b64decode(data), None
     raise Unusable("the provider returned no image data. Nothing was saved — a text-only reply "
                    "usually means the prompt was refused upstream, not that generation failed.")
 
 
-ADAPTERS = {"gemini": call_gemini}
+def call_openrouter(key: str, model: str, prompt: str, reference: bytes | None,
+                    timeout: int) -> tuple[bytes, float | None]:
+    """OpenRouter — an aggregator, which is what the `aggregator` config field actually wants.
+
+    Preferred over a single vendor for this path because it satisfies all three of the §3c contract
+    requirements natively, and the third is the one that matters most here: the response carries
+    `usage.cost`, the REAL charge for that request. Everything else in this pipeline budgets against
+    an estimate, and an estimate that is never reconciled is how a ceiling drifts until the bill
+    arrives. With a real number the provenance row records what was actually spent.
+
+    Verified against https://openrouter.ai/docs/guides/overview/multimodal/image-generation
+    (2026-08-08): POST /api/v1/images, bearer auth, `data[].b64_json`, `input_references` for style.
+    """
+    body: dict = {"model": model, "prompt": prompt}
+    if reference:
+        # A style reference is the single biggest lever on consistency. Base64 data URL, so no
+        # asset has to be publicly hosted before it can be used as a reference.
+        body["input_references"] = [{
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,"
+                                 + base64.b64encode(reference).decode("ascii")},
+        }]
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/images",
+        data=json.dumps(body).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {key}"})    # header, never the query string
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        raise Unusable(f"provider returned HTTP {exc.code}. Nothing was saved and no manifest row "
+                       f"was written. Response: {detail}")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise Unusable(f"provider unreachable ({exc}). Nothing was saved.")
+
+    cost = (payload.get("usage") or {}).get("cost")
+    for item in payload.get("data", []):
+        if item.get("b64_json"):
+            return base64.b64decode(item["b64_json"]), (float(cost) if cost is not None else None)
+    raise Unusable("the provider returned no image data. Nothing was saved — a text-only reply "
+                   "usually means the prompt was refused upstream, not that generation failed.")
+
+
+ADAPTERS = {"openrouter": call_openrouter, "gemini": call_gemini}
+
+
+# Magic bytes, in the order that distinguishes them. Sniffing beats trusting the request: the caller
+# says what it WANTED, the provider decides what it SENT, and only the second determines whether the
+# file is usable. Kept to the formats this path can actually produce -- guessing at more would be a
+# list nobody maintains.
+def sniff_extension(blob: bytes) -> str:
+    head = blob[:512].lstrip()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head):
+        return "svg"
+    if blob[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if blob[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
+        return "webp"
+    if blob[4:8] == b"ftyp":
+        return "mp4"
+    if blob[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm"
+    return "bin"      # unknown, and named honestly rather than guessed at
 
 
 def append_manifest(root: Path, entry: dict) -> Path:
@@ -158,7 +268,7 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
     """Gate → preflight → call → save → record. Any refusal short-circuits before spending."""
     approval = decide(root, request)                 # RE-RUN, never trusted from the caller
     config = load_config(root)
-    key = preflight_key(config.get("api_key_env", ""))
+    key = preflight_key(config.get("api_key_env", ""), root)
 
     adapter = ADAPTERS.get(str(config.get("aggregator", "")).lower())
     if adapter is None:
@@ -173,10 +283,20 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
         reference = (root / ref_path).read_bytes()
 
     prov = approval["provenance"]
-    blob = adapter(key, prov["model"], approval["prompt"], reference, timeout)
+    blob, actual_cost = adapter(key, prov["model"], approval["prompt"], reference, timeout)
 
     kind = prov.get("kind", "static")
-    ext = {"static": "png", "vector": "svg", "motion": "webm"}.get(kind, "png")
+    # EXTENSION FROM THE BYTES, not from the request. Deriving it from `kind` wrote PNG bytes to a
+    # `.svg` and a still frame to a `.webm` -- files that open, look plausible in a listing, and
+    # are the wrong format. A raster named `.svg` does not scale and does not recolour from tokens,
+    # which is the entire reason a vector asset was asked for.
+    ext = sniff_extension(blob)
+    if kind == "vector" and ext != "svg":
+        raise Unusable(
+            f"kind is `vector` but the model returned {ext.upper()} bytes. A raster named `.svg` "
+            f"does not scale and cannot be recoloured from tokens, which is why the vector kind "
+            f"exists. Point this surface's ladder at an SVG-capable model (OpenRouter's Recraft "
+            f"vector models emit SVG), or plan it as `static`.")
     name = f"{prov['surface']}-{prov['model']}".replace("/", "-")
     out = root / ASSET_DIR / f"{name}.{ext}"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -197,7 +317,12 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
     manifest = append_manifest(root, entry)
     return {"produced": str(out.relative_to(root)), "manifest": str(manifest.relative_to(root)),
             "bytes": len(blob),
-            "provenance": {**prov, "estimated_cost_usd": prov.get("cost_usd")}}
+            "provenance": {**prov,
+                           "estimated_cost_usd": prov.get("cost_usd"),
+                           # None when the provider does not report one -- an absent number is
+                           # honest, while copying the estimate here would make the two agree by
+                           # construction and hide exactly the drift this field exists to show.
+                           "actual_cost_usd": actual_cost}}
 
 
 def main(argv: list[str]) -> int:
@@ -266,6 +391,47 @@ def selftest() -> int:
         failures.append("an unnamed env var should raise")
     except Unusable as exc:
         check("config naming no env var is its own message", "api_key_env" in str(exc))
+
+    # THE .env FILE. Two shipped messages promised this worked while nothing read the file, so a
+    # user who followed the instruction got "not set" and reasonably concluded the tool was broken.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        os.environ.pop("DF_ENV_KEY", None)
+        (root / ".env").write_text(
+            "# a comment\n\nexport DF_ENV_KEY='sk-from-dotenv'\nOTHER=x\n", encoding="utf-8")
+        check("a key in .env is found", preflight_key("DF_ENV_KEY", root) == "sk-from-dotenv")
+        check("...quotes are stripped", "'" not in preflight_key("DF_ENV_KEY", root))
+        check("...and an unrelated key is not returned",
+              dotenv_value(root, "MISSING") is None)
+        # The real environment WINS: a shell export is the more deliberate act, and someone
+        # debugging a key must not be silently overridden by a stale file.
+        os.environ["DF_ENV_KEY"] = "sk-from-shell"
+        check("the environment beats .env", preflight_key("DF_ENV_KEY", root) == "sk-from-shell")
+        os.environ.pop("DF_ENV_KEY", None)
+        # A PLACEHOLDER in .env is still a placeholder -- the file is a source, not an exemption.
+        (root / ".env").write_text("DF_ENV_KEY=your-api-key\n", encoding="utf-8")
+        try:
+            preflight_key("DF_ENV_KEY", root)
+            failures.append("a placeholder in .env should still refuse")
+        except Refusal as exc:
+            check("a placeholder in .env still refuses", "PLACEHOLDER" in str(exc))
+        checks += 1
+    with tempfile.TemporaryDirectory() as td:
+        os.environ.pop("DF_ENV_KEY", None)
+        try:
+            preflight_key("DF_ENV_KEY", Path(td))
+            failures.append("no .env and no env var should refuse")
+        except Refusal as exc:
+            check("no .env and no env var still refuses", "not set" in str(exc))
+        checks += 1
+    # Called WITHOUT a root (the old signature) must not crash -- the selftest above uses it.
+    os.environ.pop("DF_ENV_KEY", None)
+    try:
+        preflight_key("DF_ENV_KEY")
+        failures.append("no root should still refuse, not crash")
+    except Refusal:
+        pass
+    checks += 1
 
     # THE GATE IS RE-RUN. A forged approval must not reach the provider -- this is the property that
     # makes every refusal in generation_gate.py binding rather than advisory.

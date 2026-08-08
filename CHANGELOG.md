@@ -7388,6 +7388,57 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`.env` was promised in two shipped messages and read by nothing.** The scaffold's comment and
+  the key refusal both said *"put the real value in your environment (or a gitignored `.env`)"*,
+  while `generate_asset.py` called `os.environ.get()` and stopped there. Follow the instruction and
+  you get *"is not set"* — which reads like a broken tool rather than an unloaded file, in the one
+  message a user sees when they are already stuck. It now reads `.env`, and **the real environment
+  wins**: a shell export is the more deliberate act, and someone debugging a key must not be
+  silently overridden by a stale file they had forgotten. A placeholder in `.env` is still a
+  placeholder — the file is a source, not an exemption.
+
+  The parser is deliberately minimal: `KEY=value`, optional `export`, matching quotes, `#` comments.
+  No interpolation, no `${VAR}` expansion. A fuller parser is a dependency, and this script holds an
+  API key, so *no transitive supply chain* is worth more than covering exotic syntax.
+
+- **OpenRouter is now the default aggregator, and it makes an existing promise true.** The docstring
+  already claimed cost is *"recorded from the response, not from the estimate"* — which the Gemini
+  adapter cannot do, because that response carries no per-request price. OpenRouter's does
+  (`usage.cost`), so the provenance row records **`actual_cost_usd`** beside the estimate, and the
+  two disagreeing is a finding rather than a surprise. Everything else in this pipeline budgets
+  against an estimate, and an estimate that is never reconciled is how a ceiling drifts until the
+  bill arrives.
+
+  It is also simply the right shape for a field called `aggregator`: one key reaches many models.
+  Verified against the [OpenRouter image-generation docs](https://openrouter.ai/docs/guides/overview/multimodal/image-generation)
+  (2026-08-08) — `POST /api/v1/images`, bearer auth, `data[].b64_json`, `input_references` for a
+  style reference. `gemini` still ships for talking to Google directly; there
+  `actual_cost_usd` is **null** rather than back-filled from the estimate, because copying it would
+  make the two agree by construction and hide the drift the field exists to show.
+
+  Shipping one adapter had quietly made *"any provider meeting the contract is swappable"* a claim
+  with a single implementation. Two is the smallest number that tests it.
+
+- **The provider call was verified against the live API for the first time.** Every test in this
+  pipeline is offline by design — a test that dials a provider to prove a refusal is a bill — so the
+  adapter's request shape and response parsing had only ever been checked against documentation. A
+  real call returned **HTTP 402**, and the status is the useful part: *402, not 401*, so the key
+  authenticated and the endpoint, bearer header and body shape are all correct. The account simply
+  has no credits. The failure path behaved as designed: the provider's own remedy reached the caller
+  verbatim, and **nothing was written** — no asset file, no manifest row, no half-state to clean up.
+
+- **Per-kind ladders, and two bugs that only surfaced by taking them seriously.** One global ladder
+  forced every kind through whatever suited the most common one. Only some models emit SVG and no
+  image endpoint emits video, so `kind: vector` wrote **PNG bytes to a `.svg`** and `kind: motion`
+  wrote **a still frame to a `.webm`** — files that open, look plausible in a listing, and are the
+  wrong format. The extension is now **sniffed from the bytes**, never derived from the request, and
+  a `vector` request whose model returned a raster **refuses** rather than saving it: a raster named
+  `.svg` does not scale and cannot be recoloured from tokens, which is the entire reason that kind
+  exists. The scaffold ships `motion` **empty on purpose**, so a motion row refuses with *"no ladder
+  for kind 'motion'"* until a video model is configured.
+
 ### 1.19.0 — 2026-08-08
 
 - **Research is now a precondition of the asset plan**, checked rather than advised. The ordering is
