@@ -1574,6 +1574,127 @@ def check_duplicate_unreleased() -> tuple[list[Finding], int]:
     return findings, len(counts)
 
 
+def check_changelog_section_missing() -> tuple[list[Finding], int]:
+    """Every plugin in `marketplace.json` must still have a `## ` section in the CHANGELOG.
+
+    This exists because a scripted edit deleted **7,950 lines** of CHANGELOG -- eight of its nine
+    component sections, every one of their release histories -- and the whole gate sweep passed,
+    green, in CI. Nothing asserted the file still contained what it is for. The bug was a
+    two-anchor splice: `t[:t.index(a)] + new + t[t.index(b):]` assumed `b` sat just after `a`, and
+    `b` was seven thousand lines further down, so the slice removed everything between them.
+
+    The general lesson does not fit in a linter -- *assert what a splice removes, not just where it
+    starts*. What does fit is the consequence: the sections are derived from `marketplace.json`, so
+    the check transcribes no list of its own and a new plugin is covered the day it is declared.
+
+    Deliberately NOT a size or line-count check. A threshold invites tuning it downward the first
+    time a legitimate consolidation trips it, and a section that exists is a fact rather than a
+    guess about how much prose a component deserves.
+    """
+    manifest, doc = ROOT / ".claude-plugin" / "marketplace.json", ROOT / "CHANGELOG.md"
+    if not manifest.is_file() or not doc.is_file():
+        return [], 0
+    try:
+        plugins = [p["name"] for p in json.loads(read(manifest)).get("plugins", [])]
+    except (ValueError, KeyError, TypeError):
+        return [], 0
+    headings = [l for l in read(doc).splitlines() if l.startswith("## ")]
+    findings = []
+    for name in plugins:
+        if not any(name in h for h in headings):
+            findings.append(Finding(
+                "changelog-section-missing", "CHANGELOG.md", 1,
+                f"no `## ` section names the plugin {name!r}, so its release history is not in the "
+                f"CHANGELOG. A section does not vanish by accident -- check for a truncating edit "
+                f"before adding one back, because the history it held is recoverable from git only "
+                f"until someone rewrites over it."))
+    return findings, len(plugins)
+
+
+def check_undocumented_skill() -> tuple[list[Finding], int]:
+    """Every skill directory that exists must be NAMED in `CLAUDE.md`.
+
+    The sibling of `undocumented-plugin`, and it exists because the same thing happened to skills
+    twice in one night. `derived-artifacts` was authored into `.claude/skills/` and named nowhere,
+    while the sentence introducing the set said "Two maintainer skills" -- a hand-typed count that
+    went stale the moment a third arrived. Then moving two skills into `skills/` left the
+    distribution list at the top of the file under-naming what `rails-stack` actually bundles.
+
+    Both halves are scanned, because both are ways a reader is misled: a shipped skill nobody is
+    told about, and a maintainer skill nobody is told about. The check is NAMING, not counting --
+    a count is a transcription, which is the failure this rule exists to catch, so requiring one
+    would reintroduce it.
+    """
+    doc = ROOT / "CLAUDE.md"
+    if not doc.is_file():
+        return [], 0
+    body = read(doc)
+    findings: list[Finding] = []
+    examined = 0
+    for parent in ("skills", ".claude/skills"):
+        base = ROOT / parent
+        if not base.is_dir():
+            continue
+        for d in sorted(p for p in base.iterdir() if (p / "SKILL.md").is_file()):
+            examined += 1
+            if d.name not in body:
+                findings.append(Finding(
+                    "undocumented-skill", f"{parent}/{d.name}/SKILL.md", 1,
+                    f"the skill {d.name!r} exists but is named nowhere in CLAUDE.md, so anything "
+                    f"orienting from that file cannot know it is there -- which is how a skill "
+                    f"was authored, left untracked and left undocumented on the same night. Name "
+                    f"it where its siblings are named; do not add a count."))
+    return findings, examined
+
+
+def check_unimported_agent_instructions() -> tuple[list[Finding], int]:
+    """An authored `AGENTS.md` must be imported by `CLAUDE.md`, and vice versa.
+
+    Claude Code reads `CLAUDE.md`, NOT `AGENTS.md` -- this repo's own shipped doctrine says so
+    (`plugins/rails-flow/commands/setup-flow.md` 1b) and prescribes the fix 37signals use: a
+    one-line `@AGENTS.md` import. So a hand-authored `AGENTS.md` sitting unimported at the root is
+    a file of rules that NOTHING reads. That is claims-vs-enforcement in the one place this repo
+    can least afford it, and it happened here: an AGENTS.md written to correct how I work went
+    unread for two entire releases, because nothing said it should be loaded and nothing checked.
+
+    Both directions are the same defect, so both are checked. A dangling `@AGENTS.md` whose target
+    does not exist is the WORSE half -- every fresh clone then starts by importing a missing file,
+    which is why the two must land in one commit.
+
+    The import must be a real LINE, not a substring. Documentation OF the pattern -- a fenced block
+    showing `@AGENTS.md` -- is prose about an import, not an import, and reading it as one would
+    make this gate pass on precisely the repo that has only written the rule down. Fenced blocks
+    are therefore stripped before the line match, the same lesson `duplicate-unreleased` records.
+    """
+    neutral, claude = ROOT / "AGENTS.md", ROOT / "CLAUDE.md"
+    if not claude.is_file():
+        return [], 0
+
+    body, fenced, import_line = read(claude), False, None
+    for line_no, line in enumerate(body.splitlines(), 1):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced and line.strip() == "@AGENTS.md":
+            import_line = line_no
+            break
+
+    findings: list[Finding] = []
+    if neutral.is_file() and import_line is None:
+        findings.append(Finding(
+            "unimported-agent-instructions", "AGENTS.md", 1,
+            "an authored `AGENTS.md` exists but `CLAUDE.md` never imports it, so Claude Code "
+            "loads none of it -- it reads `CLAUDE.md` only. Every rule in the file is unenforced. "
+            "Add `@AGENTS.md` as the first line of `CLAUDE.md` (the pattern setup-flow 1b "
+            "prescribes), or delete the file rather than leaving rules nothing applies."))
+    elif import_line is not None and not neutral.is_file():
+        findings.append(Finding(
+            "unimported-agent-instructions", "CLAUDE.md", import_line,
+            "`CLAUDE.md` imports `@AGENTS.md`, but no `AGENTS.md` exists at the repo root, so "
+            "every fresh clone starts by resolving a missing import. Commit the file or drop "
+            "the import -- the two belong in one commit."))
+    return findings, 1 + int(neutral.is_file())
+
+
 def check_undeclared_skill_dependency() -> tuple[list[Finding], int]:
     """A command that reads a skill from ANOTHER plugin must check the skill is there.
 
@@ -1882,6 +2003,9 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     pw_floor, pw_floor_examined = check_password_floor()
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
+    agents_md, agents_md_examined = check_unimported_agent_instructions()
+    undoc_skill, undoc_skill_examined = check_undocumented_skill()
+    cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
@@ -1910,6 +2034,9 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "password_floor_claims_reconciled": pw_floor_examined,
         "commands_reading_a_foreign_skill": skill_dep_examined,
         "changelog_sections_with_unreleased": dup_unrel_examined,
+        "root_agent_instruction_files": agents_md_examined,
+        "skill_directories_named_in_claude_md": undoc_skill_examined,
+        "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
@@ -1917,7 +2044,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     }
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role,
+            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
+            + agents_md + undoc_skill + cl_sections,
             coverage)
 
 
@@ -2005,6 +2133,63 @@ def selftest() -> int:
     # Direction-independent: flattening to the OTHER branch is the same defect.
     scenario("...catches the other branch too", rule=FCR, expect_finding=True,
              files={DOCTRINE[0]: DOCTRINE[1], STEP: 'the toast carries `role="alert"`\n'})
+
+    # -- changelog-section-missing ----------------------------------------
+    CSM = "changelog-section-missing"
+    MANIFEST = '{"plugins": [{"name": "rails-flow"}, {"name": "qa-flow"}]}'
+    scenario("a plugin whose CHANGELOG section was deleted", rule=CSM, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "CHANGELOG.md": "# Changelog\n\n## rails-flow\n\n### 1.0.0\n"})
+    scenario("...silent when every plugin has one", rule=CSM, expect_finding=False,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "CHANGELOG.md": "# Changelog\n\n## rails-flow\n\n## qa-flow\n"})
+    # A `### ` heading is NOT a section. The truncation left release blocks behind while removing
+    # every `## ` component heading, so matching any heading level would have passed on the damage.
+    scenario("...a release block is not a section", rule=CSM, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "CHANGELOG.md": "# Changelog\n\n### rails-flow 1.0.0\n\n### qa-flow 1.0.0\n"})
+
+    # -- undocumented-skill -----------------------------------------------
+    UDS = "undocumented-skill"
+    scenario("a shipped skill named nowhere in CLAUDE.md", rule=UDS, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8.\n",
+                    "skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
+                    "skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+    scenario("...silent once it is named", rule=UDS, expect_finding=False,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8 and derived-artifacts.\n",
+                    "skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
+                    "skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+    # BOTH homes are scanned. A maintainer-only skill nobody is told about misleads a reader of
+    # CLAUDE.md exactly as a shipped one does -- and that is the half that actually happened.
+    scenario("...catches a maintainer-only skill too", rule=UDS, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nNothing named here.\n",
+                    ".claude/skills/plugin-boundaries/SKILL.md": "---\nname: plugin-boundaries\n---\n"})
+    # A directory without a SKILL.md is not a skill -- do not fire on stray folders.
+    scenario("...silent on a directory that is not a skill", rule=UDS, expect_finding=False,
+             files={"CLAUDE.md": "# CLAUDE.md\n", "skills/notaskill/README.md": "hi\n"})
+
+    # -- unimported-agent-instructions ------------------------------------
+    UAI = "unimported-agent-instructions"
+    scenario("an authored AGENTS.md that CLAUDE.md never imports", rule=UAI, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nHow to work here.\n",
+                    "AGENTS.md": "# AGENTS.md\n\nRules nothing reads.\n"})
+    scenario("...silent once CLAUDE.md imports it", rule=UAI, expect_finding=False,
+             files={"CLAUDE.md": "@AGENTS.md\n\n# CLAUDE.md\n",
+                    "AGENTS.md": "# AGENTS.md\n"})
+    # The OTHER direction is the worse half: every fresh clone resolves a missing import.
+    scenario("...a dangling import is the same defect reversed", rule=UAI, expect_finding=True,
+             files={"CLAUDE.md": "@AGENTS.md\n\n# CLAUDE.md\n"})
+    scenario("...silent when neither exists", rule=UAI, expect_finding=False,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nNo neutral file here.\n"})
+    # THE TRAP. A fenced block DOCUMENTING the pattern is prose about an import, not an import.
+    # Matching the substring would make this gate pass on exactly the repo that has only written
+    # the rule down -- the failure it exists to catch, committed by the catcher.
+    scenario("...a fenced example is not an import", rule=UAI, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nUse this pattern:\n\n```markdown\n@AGENTS.md\n```\n",
+                    "AGENTS.md": "# AGENTS.md\n"})
+    # No CLAUDE.md means no claim to check -- do not fire on a repo that has neither convention.
+    scenario("...silent with no CLAUDE.md at all", rule=UAI, expect_finding=False,
+             files={"AGENTS.md": "# AGENTS.md\n"})
 
     # -- hook-count-drift -------------------------------------------------
     HC = "hook-count-drift"

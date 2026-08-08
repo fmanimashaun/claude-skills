@@ -107,6 +107,63 @@ GUARDS: tuple[Guard, ...] = (
                 "one branch stated as a literal",
             ),
             Mutation(
+                # No section is ever missing, so the CHANGELOG can lose eight of its nine component
+                # sections and 7,950 lines and the sweep still reports green — which is exactly what
+                # happened, in CI, on the commit this gate was written for.
+                "no plugin's CHANGELOG section is ever missing, so a truncation passes",
+                "        if not any(name in h for h in headings):",
+                "        if False:",
+                "a plugin whose CHANGELOG section was deleted",
+            ),
+            Mutation(
+                # Match any heading level and the leftover `### <plugin> 1.0.0` release blocks count
+                # as sections. The real truncation left those behind, so this mutation reproduces
+                # the damage in the shape that would have been waved through.
+                "any heading counts as a section, so leftover release blocks mask the loss",
+                '    headings = [l for l in read(doc).splitlines() if l.startswith("## ")]',
+                '    headings = [l for l in read(doc).splitlines() if l.startswith("#")]',
+                "...a release block is not a section",
+            ),
+            Mutation(
+                # Nothing is ever undocumented, so a skill can be authored, shipped and named
+                # nowhere -- which is what happened to derived-artifacts on the night this landed.
+                "no skill is ever missing from CLAUDE.md, so all of them may go unnamed",
+                "            if d.name not in body:",
+                "            if False:",
+                "a shipped skill named nowhere in CLAUDE.md",
+            ),
+            Mutation(
+                # The `.claude/skills` half stops being scanned only if the walk itself narrows;
+                # requiring a SKILL.md is what separates a skill from a stray folder, and dropping
+                # that check makes every directory a subject -- caught by the negative fixture.
+                "any directory counts as a skill, so stray folders demand documentation",
+                '        for d in sorted(p for p in base.iterdir() if (p / "SKILL.md").is_file()):',
+                "        for d in sorted(p for p in base.iterdir() if p.is_dir()):",
+                "...silent on a directory that is not a skill",
+            ),
+            Mutation(
+                # The fence strip goes, so a fenced block DOCUMENTING `@AGENTS.md` reads as a real
+                # import. That is the gate certifying the exact repo state it exists to refuse: one
+                # that has written the rule down and wired nothing.
+                "a fenced example counts as an import, so documenting the rule satisfies it",
+                "            fenced = not fenced",
+                "            fenced = False",
+                "...a fenced example is not an import",
+            ),
+            Mutation(
+                "the unimported half goes, so an AGENTS.md nothing reads passes",
+                "    if neutral.is_file() and import_line is None:",
+                "    if False:",
+                "an authored AGENTS.md that CLAUDE.md never imports",
+            ),
+            Mutation(
+                # The worse half: every fresh clone opens by resolving a file that is not there.
+                "the dangling half goes, so an import with no target passes",
+                "    elif import_line is not None and not neutral.is_file():",
+                "    elif False:",
+                "...a dangling import is the same defect reversed",
+            ),
+            Mutation(
                 # #531: a true claim with nothing behind it — the discount whose condition
                 # the skill gave no way to satisfy.
                 "the MFA-guidance test always passes, so the discount may dangle again",

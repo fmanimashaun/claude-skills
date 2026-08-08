@@ -7,6 +7,118 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-08 (v1.75.0)
+
+- **An `AGENTS.md` at this repo's root was read by nothing, for two whole releases.** Claude Code
+  reads `CLAUDE.md`, **not** `AGENTS.md` — which is this repo's own shipped doctrine
+  (`plugins/rails-flow/commands/setup-flow.md` §1b), written here and not applied here. So a file of
+  rules about how to work, authored by the maintainer, sat unloaded through v1.73.0 and v1.74.0.
+  Three independent confirmations: the session's project-instructions context held `CLAUDE.md` only,
+  `CLAUDE.md` carried no `@AGENTS.md` import, and the file was untracked, so no parallel session or
+  fresh clone saw it either. `claims-vs-enforcement` at the root of the repo that names the class.
+
+  Fixed with the one-line `@AGENTS.md` import §1b prescribes, and the file is now tracked — both in
+  one commit, because an import whose target no clone has makes every fresh clone open on a missing
+  path.
+
+  **Folding the rules into `CLAUDE.md` was tried first and reverted, on evidence.** The argument for
+  folding was sound in the abstract: a harness-neutral file earns its indirection when a *second*
+  harness reads it, and this repo is Claude-native by decision (#159), so there is one consumer.
+  What that missed is how the file is actually used — the maintainer **edits `AGENTS.md` directly**.
+  A new rule landed in it **two minutes after the fold**, unread, which is the fold's failure mode
+  demonstrating itself: folding makes every future rule wait for someone to notice and copy it.
+  The import has no such step.
+
+- **New gate: `unimported-agent-instructions`**, both directions — an authored `AGENTS.md` that
+  `CLAUDE.md` never imports, and an import whose target does not exist. The load-bearing detail is
+  that the import must be a **line**, with fenced blocks stripped first: a fenced block *documenting*
+  `@AGENTS.md` is prose about an import, and counting it would make the gate pass on precisely the
+  repo state it exists to refuse — one that has written the rule down and wired nothing. That case is
+  a fixture, and a mutation removing the fence strip is caught by it. It then **fired on live input
+  within minutes of being written**, when the recreated `AGENTS.md` appeared unimported.
+
+- **`derived-artifacts`, a third maintainer skill, was untracked and undocumented** — the same defect
+  as the `AGENTS.md` one, found ten minutes after fixing it. Now tracked, and described in `CLAUDE.md`
+  beside the other two. The sentence that named them said "**Two** maintainer skills"; it now names
+  all three instead of counting them, which is that skill's own rule 3 (*generate it; never
+  transcribe it*) applied to the sentence introducing it — a hand-typed "two" is a transcription, and
+  it went stale the moment a third arrived.
+
+- **The `unbounded-issue-query` gate caught the new "measure before you assert" rule undercutting
+  itself.** The rule's worked example called `gh issue list` with no `--limit` — and that command
+  silently defaults to `--limit 30`, so re-running that at the moment you quote it still reports one
+  page as the total. Measuring the wrong thing, carefully. Bounded, and the paragraph now says the
+  gate fired on it.
+
+- **The decision-rights half was not shipped, deliberately.** The rules include when an agent should
+  decide versus ask, which is genuinely user-facing — but its home is #488 pillar 2's decision-rights
+  matrix, which has not shipped. `pipeline/reference/stop-conditions.md` was checked as a home and
+  rejected: it governs when a *gated chain* stops, a different axis. Recorded on #488 as the
+  maintainer decision pillar 2 must encode, rather than misfiled into a plugin now.
+
+- **Two skills that lived in `.claude/skills/` now ship, because nothing in them was about this
+  repo.** `derived-artifacts` (anything whose numbers come from somewhere else — read the
+  generator's **structured source** rather than regex-parsing its generated prose, and assert every
+  derived total against the source's own declared totals) and `parallel-session-lane` (the protocol
+  when several agent sessions run against one repository at once). Both are stack-neutral, both
+  answer a problem any project has, and both are now bundled in `rails-stack` beside `code-review`
+  and `quality-pass` — the established precedent for shipping general agent doctrine as a skill.
+
+  `parallel-session-lane` was **generalised, not copied**. It hardcoded this marketplace's layout —
+  *"edit `plugins/<yours>/**` exclusively"*, *"do not edit `skills/**`, `dist/**`"* — which is
+  meaningless in a user's repo. The rules now state the mechanism they always were: your assigned
+  subtree, shared and generated paths, your repository's own review doctrine. A sixth rule was added
+  from the same source as the rest — do not clean up worktrees you did not create, after an "idle"
+  heuristic deleted three that were in active use.
+
+- **`plugin-boundaries` stays maintainer-only, by its own rule 3.** Every line of it is about *this
+  marketplace* — `marketplace.json`, per-stack plugins, the licensed corpora — so a user installing
+  it would receive doctrine about a repo they do not have. **No copy was left behind** for the two
+  that moved, either: rule 2 forbids it, and the price is that they are read as files here rather
+  than being invocable, exactly as `code-review` already is.
+
+- **New gate: `undocumented-skill`.** Every skill directory that exists — under `skills/` *or*
+  `.claude/skills/` — must be **named** in `CLAUDE.md`. The sibling of `undocumented-plugin`, and it
+  exists because the same failure hit skills twice in one night: `derived-artifacts` was authored,
+  left untracked and named nowhere, while the sentence introducing the set said "Two maintainer
+  skills" — a hand-typed count that went stale the moment a third arrived. It checks **naming, not
+  counting**, because a count is itself the transcription the rule exists to catch.
+
+- **Three existing gates caught consequences of the move that a review would have missed**, which is
+  the whole argument for having them. `undeclared-component-label` required a `comp:` label per
+  shipped skill, so downstream reports can route to the new ones. `skill routing` refused with
+  **CANNOT CHECK** rather than passing on a `SHIPPED_SKILLS` pin it no longer recognised — four
+  states, not two. And `CLAUDE.md`'s own distribution list was under-naming what `rails-stack`
+  bundles: the drift its very next sentence warns is *"still on you"*.
+
+- **A stale count inside the routing gate's own docstring.** It said *"The four SHIPPED skills"*
+  while the set held five. Pinned by name now, with no count at all — the `derived-artifacts` rule
+  applied to the file that enforces skill hygiene.
+
+- **A scripted edit deleted 7,950 lines of this file, and the whole gate sweep passed.** PR #557
+  removed **eight of the CHANGELOG's nine component sections** — `rails-flow`, `qa-flow`, `pipeline`,
+  `design-flow` and both `rails-stack` sections, every one of their release histories — and CI
+  reported **67/67 green** on the commit that did it. Restored from the last good blob, asserted
+  **additions only** against it (`+88 −0`), so the 88 legitimate new lines survive and nothing else
+  changed.
+
+  The bug was a **two-anchor splice**: `t[:t.index(a)] + new + t[t.index(b):]`, written assuming `b`
+  sat just after `a`. It sat seven thousand lines further down, so the slice removed everything
+  between them. The general lesson is *assert what a splice removes, not just where it starts* — a
+  rule for a reviewer, not a linter.
+
+- **New gate: `changelog-section-missing`.** Every plugin declared in `marketplace.json` must still
+  have a `## ` section in the CHANGELOG. The sections are **derived from the manifest**, so the check
+  transcribes no list of its own and a new plugin is covered the day it is declared.
+
+  Two properties are deliberate. It matches **`## ` only** — the truncation left `###` release blocks
+  behind, so accepting any heading level would have passed on the damage, and a mutation reproduces
+  exactly that. And it is **not a size or line-count check**: a threshold invites tuning it downward
+  the first time a legitimate consolidation trips it, whereas a section either exists or does not.
+
+  It was validated against the **real damaged commit**, not a fixture approximation: replayed over
+  `674cdad` it names all five missing plugins, and is silent on the restored file.
+
 ### 2026-08-07 (v1.71.0)
 
 - **`dangling-conditional-floor`** (Refs #531) — if §2a offers a lower floor conditional on multi-factor
@@ -2828,6 +2940,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.42.2 — 2026-08-08
+
+- **`dismissable?` was dead code, and the close button was gated on the wrong thing** (Refs #556).
+  The predicate exists to keep a close button off a `:loading` toast; the template gated on
+  `action.present?` instead and never called it. Those two differ on exactly one case, and it is the
+  case the predicate exists for: a **`:loading` toast with an action** — *"Uploading… · Cancel"* —
+  which is legitimate and still rendered a close button, so dismissing it hid an operation that was
+  still running. The recipe's prose stated the correct rule **twice** while the code beneath it did
+  the opposite. Fifth survivor of the v1.72.0 rewrite.
+
+- **Four component templates rendered strings through a lazy `t('.key')` and never said where the
+  key lives** (Refs #555). A missing key does not raise — Rails renders `translation missing:
+  en.ui.toast.dismiss` **into the attribute**, so for the two `aria-label`s the failure is audible
+  only to a screen-reader user and invisible to everyone reviewing the page. #555 reported **one**
+  (Toast); the same defect sat in **PasswordStrength**, **Breadcrumbs** and **DescriptionList::Row**.
+  All four now use absolute keys, and the locale entries ship as part of the recipe.
+
+  Two other lazy lookups were left alone **deliberately**, and that distinction is why this needed
+  measuring rather than a regex: `t(".saved")` sits in a controller and `t(".or")` in a plain view
+  recipe, where a lazy lookup resolves exactly as a reader expects. The defect was never the lazy
+  form — it was a *component* template depending on a resolution the recipe never stated.
+  `breadcrumbs.show_more` takes a `count:`, so it ships plural sub-keys; a bare string there is right
+  for `count: 1` and wrong for every other value.
 
 ### 1.42.1 — 2026-08-07
 
@@ -6998,6 +7134,25 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.15.3 — 2026-08-08
+
+- **`@variant dark` should be `@custom-variant dark`** (Refs #555). The scaffold emitted the
+  directive that **applies** an existing variant where it needed the one that **defines** a new one.
+  Tailwind v4 is explicit about the split — `@custom-variant dark (&:where(.dark, .dark *));` is the
+  form the dark-mode page itself shows, while `@variant` is for applying a variant inside a CSS rule
+  ([dark mode](https://tailwindcss.com/docs/dark-mode),
+  [functions and directives](https://tailwindcss.com/docs/functions-and-directives), verified
+  2026-08-08 against Tailwind v4).
+
+  Low severity by design: `tailwindcss:build` exits **0** either way, which is exactly why it
+  survived — a non-canonical directive that never fails loudly is one a scaffold repeats forever.
+  Corrected in both places that emit it, `foundations-tokens.md:84` and this command's step 1.
+
+  Worth recording for whoever touches this next: of **seven** `@variant` occurrences in shipped
+  content, only **two** are the CSS directive. The other five are Ruby instance variables
+  (`@variant = variant.to_sym`, `VARIANT.fetch(@variant)`), so a blind replace corrupts five
+  components to fix two lines.
+
 ### 1.15.2 — 2026-08-07
 
 - **The setup step flattened the toast's conditional role, which is an accessibility regression**
@@ -8001,6 +8156,57 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.75.0)
+
+> ### A gate sweep reported 67/67 green on a commit that deleted 7,950 lines
+>
+> Four fixes, and the one that matters most is mine: v1.74.0's own CHANGELOG edit destroyed
+> eight of nine component sections, and every gate passed. The rest came from a user running
+> the toolchain into a fresh Rails app, which found three defects our review had not.
+
+- **The CHANGELOG lost 7,950 lines and CI stayed green.** A two-anchor splice —
+  `t[:t.index(a)] + new + t[t.index(b):]` — assumed the second anchor sat just after the first. It
+  sat seven thousand lines further down, so the slice removed everything between: `rails-flow`,
+  `qa-flow`, `pipeline`, `design-flow` and both `rails-stack` sections, with every release history
+  they held. Restored from the last good blob and asserted **additions only** against it (`+88 −0`).
+  New **`changelog-section-missing`** gate: every plugin in `marketplace.json` must still have a
+  `## ` section. It matches `## ` alone, because the truncation left `###` release blocks behind and
+  any-heading matching would have passed on the damage — and it was validated by replaying it over
+  the real damaged commit, where it names all five missing plugins.
+
+- **`dismissable?` was dead code** (#556). The predicate exists to keep a close button off a
+  `:loading` toast; the template gated on `action.present?` and never called it. Those differ on
+  exactly one case, and it is the case the predicate exists for: a `:loading` toast **with** an
+  action — *"Uploading… · Cancel"* — which still rendered a close button, so pressing it hid an
+  operation that was still running. The prose stated the correct rule **twice** while the code did
+  the opposite.
+
+- **Four component templates rendered strings through a lazy `t('.key')` with no key defined**
+  (#555). A missing key does not raise — Rails renders `translation missing: …` **into the
+  attribute**, so for two `aria-label`s the failure is audible only to a screen-reader user. The
+  report named one; there were four. Two other lazy lookups were left alone **deliberately**: one
+  sits in a controller, one in a plain view, where the lookup resolves as a reader expects. The
+  defect was never the lazy form — it was a *component* template relying on a resolution the recipe
+  never stated.
+
+- **`@variant dark` should be `@custom-variant dark`** (#555). We emitted the directive that
+  *applies* an existing variant where Tailwind v4 requires the one that *defines* a new one
+  ([dark mode](https://tailwindcss.com/docs/dark-mode),
+  [functions and directives](https://tailwindcss.com/docs/functions-and-directives), verified
+  2026-08-08). It survived because `tailwindcss:build` exits **0** either way. Of seven `@variant`
+  occurrences in shipped content only **two** are the directive; the other five are Ruby instance
+  variables, so a blind replace corrupts five components to fix two lines.
+
+- **`derived-artifacts` and `parallel-session-lane` now ship**, bundled in `rails-stack`. Neither was
+  ever about this marketplace. `parallel-session-lane` was **generalised**, not copied — it hardcoded
+  our own directory layout. `plugin-boundaries` stays maintainer-only by its own rule 3, and no copy
+  was left behind for the two that moved.
+
+The sweep went **65 → 67**, and three existing gates caught consequences of that move that review
+missed: a shipped skill needs a `comp:` label, the routing gate refused with **CANNOT CHECK** rather
+than passing on a pin it no longer recognised, and `CLAUDE.md`'s distribution list was under-naming
+what `rails-stack` bundles.
 
 ### 2026-08-07 (release v1.74.0)
 

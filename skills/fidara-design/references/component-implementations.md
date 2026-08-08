@@ -904,10 +904,21 @@ end
       people put the verb in the text and leave the user nothing to press. %>
   <% if action.present? %>
     <div class="shrink-0"><%= action %></div>
-    <%# Close appears ONLY alongside an action: the toast leaves by itself, so the button exists to
-        get it out of the way of something, not to end it. No action, no button, no touch target —
-        which is what stops a transient element being sized by a 44px target it never needed. %>
-    <button data-action="toast#close" aria-label="<%= t('.dismiss') %>"
+  <% end %>
+  <%# Close appears ONLY alongside an action: the toast leaves by itself, so the button exists to
+      get it out of the way of something, not to end it. No action, no button, no touch target —
+      which is what stops a transient element being sized by a 44px target it never needed.
+      Gated on `dismissable?`, NOT on `action.present?`. Those differ on exactly one case and it is
+      the case the predicate exists for: a `:loading` toast WITH an action — "Uploading… · Cancel" —
+      which is legitimate and must still not get a close button, because dismissing it would hide an
+      operation that is still running. Gating on `action.present?` rendered the button anyway and
+      left `dismissable?` called by nothing. %>
+  <% if dismissable? %>
+    <%# An ABSOLUTE key, not a lazy `t('.dismiss')`. The recipe names the full key and the locale
+        entry beside it so nothing depends on how a lazy lookup resolves from a component template —
+        a missing key here renders `translation missing: …` into an aria-label, where the only person
+        who hears it is the screen-reader user this button exists for. %>
+    <button data-action="toast#close" aria-label="<%= t("ui.toast.dismiss") %>"
             class="relative shrink-0 size-6 leading-none
                    before:absolute before:-inset-2 before:content-['']">
       <span aria-hidden="true">&times;</span>
@@ -915,6 +926,33 @@ end
   <% end %>
 </div>
 ```
+
+### The locale keys these components need
+
+Four component templates render user-facing strings through `t`. They use **absolute** keys, and
+the entries below are part of the recipe — not an exercise for the reader. A key that is missing
+does not raise: Rails renders `translation missing: en.ui.toast.dismiss` **into the attribute**, so
+for the two `aria-label`s the failure is audible only to a screen-reader user, and silent to
+everyone reviewing the page.
+
+```yaml
+# config/locales/en.yml
+en:
+  ui:
+    toast:
+      dismiss: "Dismiss notification"
+    password_strength:
+      length_progress: "Password length progress"
+    description_list:
+      not_set: "Not set"
+    breadcrumbs:
+      show_more:
+        one: "Show %{count} more level"
+        other: "Show %{count} more levels"
+```
+
+`breadcrumbs.show_more` is passed a `count:`, so it needs the plural sub-keys rather than a single
+string — a bare string there renders correctly for `count: 1` and reads wrong for every other value.
 
 ### Flash → toast: the half that was promised and missing (#483)
 
@@ -1025,7 +1063,7 @@ end
   <%# Length progress reuses Progress bar. The accessible NAME is required and authored; the fill
       is Children Presentational, so text inside it would not be read. %>
   <div role="progressbar" aria-valuemin="0" aria-valuemax="<%= floor %>"
-       aria-label="<%= t('.length_progress') %>"
+       aria-label="<%= t("ui.password_strength.length_progress") %>"
        data-password-strength-target="meter"
        class="h-2 rounded-full bg-muted overflow-hidden">
     <div class="h-full bg-primary transition-[width] motion-reduce:transition-none"
@@ -2023,7 +2061,7 @@ def crumb_link_class = "min-h-touch inline-flex items-center hover:text-foregrou
         <%= render(Ui::DropdownComponent.new(items: hidden_middle)) do |d| %>
           <% d.with_trigger do %>
             <span aria-hidden="true">…</span>
-            <span class="sr-only"><%= t(".show_more", count: hidden_middle.size) %></span>
+            <span class="sr-only"><%= t("ui.breadcrumbs.show_more", count: hidden_middle.size) %></span>
           <% end %>
         <% end %>
         <%= separator %>
@@ -2102,7 +2140,7 @@ end
       <dt class="text-step--1 text-muted-foreground"><%= row.label %></dt>
       <% if row.blank? %>
         <dd class="text-step-0 text-muted-foreground">
-          <span aria-hidden="true">—</span><span class="sr-only"><%= t(".not_set") %></span>
+          <span aria-hidden="true">—</span><span class="sr-only"><%= t("ui.description_list.not_set") %></span>
         </dd>
       <% else %>
         <% row.values.each do |v| %>

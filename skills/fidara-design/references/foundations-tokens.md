@@ -81,7 +81,10 @@ surface role has a `-foreground` companion** — always write `bg-X text-X-foreg
   --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
 }
 ```
-`@variant dark (&:where(.dark, .dark *));` enables the class-based dark mode; a pre-paint
+`@custom-variant dark (&:where(.dark, .dark *));` enables the class-based dark mode -- `@custom-variant` **defines** a variant, which is what this line does; `@variant` **applies** an
+existing one inside a CSS rule, so it is the wrong directive here even though the build does not
+fail on it ([Tailwind v4 dark mode](https://tailwindcss.com/docs/dark-mode),
+[functions and directives](https://tailwindcss.com/docs/functions-and-directives)). A pre-paint
 inline script sets `.dark` from `localStorage` to avoid a flash.
 
 ## 3. Fluid scale (Utopia) + measure, radius, shadow, motion
