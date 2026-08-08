@@ -20,7 +20,9 @@
         "./skills/hotwire",
         "./skills/fidara-design",
         "./skills/code-review",
-        "./skills/quality-pass"
+        "./skills/quality-pass",
+        "./skills/derived-artifacts",
+        "./skills/parallel-session-lane"
       ]
     },
     {
