@@ -108,6 +108,30 @@ def load_doc(root: Path) -> dict:
         raise SystemExit(f"{PLAN_PATH} is not valid JSON ({exc})")
 
 
+RESEARCH_PATH = Path("docs/design/reference-research.json")
+
+
+def check_research(root: Path) -> list[str]:
+    """Reference research must exist BEFORE the plan, because it decides what the plan contains.
+
+    This is a sequencing rule with teeth, and the order is not cosmetic. Research settles the style,
+    and the style settles which assets exist at all: a `minimalist-ink` family needs line art on
+    brand-coloured grounds, while a `character-world` family needs a recurring cast — different
+    rows, different counts, different money. Plan first and you will have costed and possibly bought
+    a set the research would not have asked for.
+
+    It is checked rather than advised because the failure is invisible: a plan written without
+    research looks exactly like one written with it. Every row has a surface, a kind and a `why`,
+    and nothing in the file says the style was picked from the median of what the model had seen.
+    """
+    path = root / RESEARCH_PATH
+    if not path.is_file():
+        return [f"no reference research at {RESEARCH_PATH}. Research comes BEFORE the plan: it "
+                f"settles the style, and the style settles which assets exist at all. Run the "
+                f"research pass first, or the plan is costed against a look nobody chose."]
+    return []
+
+
 def check_prd(root: Path, doc: dict) -> list[str]:
     """Has the brief moved since the plan was written?
 
@@ -218,31 +242,47 @@ def plan_cost(rows: list[dict], config: dict) -> float:
 
 
 def affordable(rows: list[dict], config: dict, spent: float) -> tuple[list[dict], list[dict]]:
-    """Split outstanding rows into (fits, does_not) by priority, against what is left.
+    """Split outstanding rows into (fits, does_not) by priority — GROUP-ATOMIC, not row-greedy.
 
     This exists because the alternative is worse in a way that is easy to miss: a run that simply
     generates until the money stops produces an ARBITRARY half-built set — whichever rows happened
     to be first — and a half-built set of illustrations is not a cheaper library, it is an
     incoherent one. Choosing which half is the entire value.
 
-    `priority` is optional and defaults to plan order, because plan order is already the declared
-    ordering elsewhere in this toolchain. Where it is defaulted the caller says so, rather than
-    letting an unstated order look like a decision.
+    ROW-GREEDY IS NOT ENOUGH, which is the correction here. Assets are not independent: a hero still
+    and the motion loop that animates it are one artefact in two files, and buying the loop without
+    the still is worse than buying neither — you pay for something that cannot be used. So rows may
+    declare a `group`, and a group is ALL OR NOTHING. A group that does not fit whole is skipped
+    entirely, and a cheaper later group may still be taken; that is deliberate, because the aim is
+    the best usable combination, not the longest list of files.
+
+    `priority` is optional and defaults to plan order. A group takes the BEST priority among its
+    members, so marking one row urgent pulls its partner along rather than orphaning it.
     """
     ladder = config.get("ladder") or []
     rung = min((float(r.get("cost_usd", 0)) for r in ladder), default=0.0)
-    ceiling = float(config.get("budget_usd", 0))
-    remaining = ceiling - spent
+    remaining = float(config.get("budget_usd", 0)) - spent
     outstanding = [r for r in rows if r.get("status") not in ("done", "skipped")]
-    ordered = sorted(enumerate(outstanding),
-                     key=lambda pair: (pair[1].get("priority", 10_000), pair[0]))
+
+    # Ungrouped rows are their own group of one, so one code path handles both.
+    groups: dict = {}
+    for i, row in enumerate(outstanding):
+        key = row.get("group") or f"\x00solo-{i}"
+        groups.setdefault(key, []).append((i, row))
+
+    ordered = sorted(
+        groups.values(),
+        key=lambda members: (min(r.get("priority", 10_000) for _, r in members),
+                             min(i for i, _ in members)))
+
     fits, over = [], []
-    for _, row in ordered:
-        if rung <= remaining:
-            fits.append(row)
-            remaining -= rung
+    for members in ordered:
+        cost = rung * len(members)
+        if cost <= remaining:
+            remaining -= cost
+            fits.extend(r for _, r in members)
         else:
-            over.append(row)
+            over.extend(r for _, r in members)
     return fits, over
 
 
@@ -327,14 +367,15 @@ def main(argv: list[str]) -> int:
                 raise SystemExit(f"{CONFIG_PATH} is not valid JSON ({exc})")
         doc = load_doc(root)
         rows = doc.get("assets", [])
-        problems = (check_prd(root, doc) + check_plan(rows, briefs) + reconcile(root, rows))
+        problems = (check_research(root) + check_prd(root, doc)
+                    + check_plan(rows, briefs) + reconcile(root, rows))
         print("\n".join(problems) or "plan is reviewable, current with the brief, and reconciled.")
         return 1 if problems else 0
     if args.run:
         rows = load_plan(root)
         cfg = root / CONFIG_PATH
         briefs = json.loads(cfg.read_text(encoding="utf-8")).get("briefs", {}) if cfg.is_file() else None
-        problems = check_plan(rows, briefs)
+        problems = check_research(root) + check_plan(rows, briefs)
         if problems:
             # Refuse to spend against a plan that cannot be reviewed. A row with no `why` is one
             # nobody can justify, and finding that out after the bill is the wrong order.
@@ -464,6 +505,17 @@ def selftest() -> int:
     # opposite. It reports 0 because there is nothing to do, which --check catches as an empty plan.
     check("an empty plan has nothing outstanding", status_report([])[1] == 0)
 
+    # RESEARCH BEFORE PLAN. The failure is invisible without this: a plan written without research
+    # looks exactly like one written with it, every row complete, and nothing recording that the
+    # style came from the median of what the model had seen.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        check("a missing research record is reported",
+              any("BEFORE the plan" in m for m in check_research(root)))
+        (root / "docs/design").mkdir(parents=True)
+        (root / RESEARCH_PATH).write_text('{"job": "x", "references": []}', encoding="utf-8")
+        check("...and a present one is not", check_research(root) == [])
+
     # COST. The estimate prices every row at the CHEAPEST rung, so it is a floor, and settled rows
     # cost nothing -- a re-run that re-priced finished work would refuse plans that are affordable.
     CFG = {"budget_usd": 0.05, "ladder": [{"cost_usd": 0.01}, {"cost_usd": 0.40}]}
@@ -494,6 +546,30 @@ def selftest() -> int:
     # A settled row must never be re-offered for spending.
     fits5, _ = affordable([{**three[0], "status": "done"}], CFG, spent=0.0)
     check("a done row is not offered for spending", fits5 == [])
+
+    # GROUPS ARE ALL-OR-NOTHING. A hero still and the motion loop that animates it are one
+    # artefact in two files; buying the loop alone is worse than buying neither, because you pay
+    # for something that cannot be used.
+    pair = [{"surface": "hero", "kind": "static", "group": "hero-set"},
+            {"surface": "hero", "kind": "motion", "group": "hero-set"}]
+    fits6, over6 = affordable(pair, {**CFG, "budget_usd": 0.01}, spent=0.0)
+    check(f"a group that does not fit whole is skipped entirely (fits={len(fits6)})", fits6 == [])
+    check("...and both members are reported as not fitting", len(over6) == 2)
+    fits7, _ = affordable(pair, {**CFG, "budget_usd": 0.02}, spent=0.0)
+    check("...and taken together once it does fit", len(fits7) == 2)
+    # A cheaper LATER group may still be taken after an expensive one is skipped -- the aim is the
+    # best usable combination, not the longest list of files.
+    mixed = pair + [{"surface": "empty", "kind": "static"}]
+    fits8, _ = affordable(mixed, {**CFG, "budget_usd": 0.01}, spent=0.0)
+    check(f"a solo row is taken when the group cannot be (fits={len(fits8)})",
+          [r["surface"] for r in fits8] == ["empty"])
+    # The BEST priority in a group pulls its partner along, rather than orphaning it.
+    urgent = [{"surface": "a", "kind": "static"},
+              {"surface": "hero", "kind": "static", "group": "g", "priority": 1},
+              {"surface": "hero", "kind": "motion", "group": "g"}]
+    fits9, _ = affordable(urgent, {**CFG, "budget_usd": 0.02}, spent=0.0)
+    check("a group takes its best member's priority",
+          sorted(r["kind"] for r in fits9) == ["motion", "static"])
 
     # PRD DRIFT. A library planned against last month's brief is quietly incomplete in a way
     # nothing else reports: every row `done`, status clean, new surfaces with no rows at all.
