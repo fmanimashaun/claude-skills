@@ -118,6 +118,22 @@ Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Interactive,Tab
   account for every element, the row is `Blocked` — not a low count.
 - `No Focus Indicator` — focused elements with no visible indicator. Cannot exceed `Tab Stops`;
   you can only read the indicator of something you actually focused.
+
+  **How to decide it — a resting-vs-focused DIFF, not a property lookup.** Capture the computed
+  style before focus, Tab to the element, capture again, and compare. **Any rendered difference is
+  an indicator**: `outline`, `box-shadow`, `border`, `background-color`, `color`, `text-decoration`,
+  a transform, an `::after` ring. Only when *nothing* changed is the row a finding.
+
+  Enumerating properties instead is how this produced **false S1s across every page of a conformant
+  app**. A real design system reported `outline: rgb(0,95,204) none 1px` — a non-zero *width* with
+  style `none`, so an outline check passes it and an outline-style check fails it — while the actual
+  indicator sat in a two-layer `box-shadow` (a white 2px offset ring plus a 4px brand ring) that
+  neither check ever consulted. The diff sees it without needing to know which property carried it,
+  which is also why the diff is the rule: the next design system will use a property this list does
+  not name.
+
+  `box-shadow` is **not** optional to honour here. The forced-colors pass below already assumes this
+  pass counts it, and a keyboard pass that ignores it contradicts that section as well as line 87.
 - `Positive Tabindex` / `Backward Jumps` — `tabindex > 0`, and focus jumping backwards up the
   page or into an off-screen element (a proxy for DOM-vs-visual order mismatch).
 - `Overlays` and `Trap Failures` / `Escape Failures` / `Restore Failures` — per overlay, assert
@@ -152,6 +168,13 @@ Route,State,Status,HTTP,Requested URL,Final URL,Assertion,Engine,Interactive,Tab
   sequence too. There is simply no APG pattern and no runtime flag to check a non-modal one
   against.
 - `Skip Link` — `Present`, `Absent`, or `N/A` (is a skip-to-content affordance the first stop?).
+
+  **Judge it focused, never at rest.** The correct implementation is `sr-only` until focused — it is
+  *supposed* to be invisible before you Tab to it, so a visibility check at rest reports a working
+  skip link as absent or non-functional. Tab once from the top of the document, then ask three
+  questions of what you landed on: is it the **first** stop, is it **visible now**, and does
+  activating it move focus into the main region? A `Present` verdict needs all three, and anything
+  else needs the reason recorded — *"invisible at rest"* is not one of them.
 - `Severity` — `S1` / `S2` / `none`, and it is **recomputed** from the counters, so it cannot be
   talked down. Unreachable, missing indicator, or any overlay failure → **S1**. Positive
   tabindex or backward jumps → **S2**. `S1` needs an `Evidence` path; any severity needs `Notes`

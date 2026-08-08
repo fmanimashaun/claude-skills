@@ -804,6 +804,16 @@ GUARDS: tuple[Guard, ...] = (
         # `plugins/qa-flow`: its selftest reads profile/agent files across the plugin.
         needs=("plugins/qa-flow",),
         mutations=(
+            Mutation(
+                # #578: a conformant app was flagged S1 on EVERY page because the pass looked up
+                # `outline` while the ring lived in `box-shadow`. Requiring the method does not
+                # verify the diff was done right -- it stops an unmethodical blocking S1 being
+                # filed silently, which is the part that cost a morning.
+                "a blocking S1 stops needing a method, so a property lookup can cry wolf again",
+                '    if counts.get("No Focus Indicator", 0) > 0:',
+                "    if False:",
+                "keyboard: missing-indicator count with no method recorded",
+            ),
             # #424: the modal-CRUD 422 assertion, and the carve-out that lets a valid modal row
             # exist at all. Both directions, because widening the carve-out is how it goes quiet.
             Mutation(

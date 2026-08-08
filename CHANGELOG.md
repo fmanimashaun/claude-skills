@@ -7,6 +7,40 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The README was 913 lines and named version 1.3.1 while the marketplace shipped 1.80.0.** It also
+  listed 5 of 42 commands and neither skill shipped that day, and **Install sat at line 732** — a
+  reader had to scroll past seven hundred lines to use the thing. Re-authored to **194 lines** with
+  install at line 12, every skill and command named, and zero stale versions. The two deep sections
+  were **moved verbatim**, not deleted: `docs/architecture.md` (the design reasoning) and
+  `docs/code-review-graph.md` (a 225-line setup for an *optional* integration that was occupying a
+  quarter of the front page).
+
+- **A wiki, in the repository rather than GitHub's.** A GitHub wiki is a separate git repo — no pull
+  request, no review, and no gate can reach it, which is precisely how the README rotted. `docs/wiki/`
+  is versioned with the code it describes, so a change that makes a page wrong shows up in the same
+  diff. Ten pages: three **generated**, seven written.
+
+- **The reference pages are generated and drift-gated.** `build_wiki.py` derives the command, skill
+  and plugin pages from the manifest and the plugin directories, so renaming a command fails
+  `--check` instead of quietly leaving the wiki wrong. A command in no group is **listed as
+  ungrouped**, never dropped — silent omission is how the README came to name 5 of 42, and a reader
+  cannot tell an omission from a command that does not exist.
+
+  Its selftest caught two defects in its own author's work. One assertion was
+  `"Ungrouped" in page_commands.__doc__ or True` — a **gate that cannot fail**, written into the
+  selftest of a script whose entire job is refusing to go stale silently. Its replacement then
+  failed for a second reason: run as a script this module is `__main__`, so `import build_wiki`
+  created a **second module object** and the rebind landed on the wrong one.
+
+- **`.github/workflows/wiki.yml` mirrors the pages on every push to `main`.** It verifies the pages
+  are a clean build before mirroring, because publishing a stale reference under the repository's
+  name is worse than not publishing. It replaces tracked content wholesale so a **deleted page
+  disappears** rather than staying live and linkable. And it **skips loudly** when the wiki
+  repository does not exist — GitHub creates it only after the first page is saved in the web UI,
+  and a release must not go red because a mirror target is uninitialised.
+
 ### 2026-08-08 (v1.77.0)
 
 - **A committed `.claude/settings.example.json`, and the three-file distinction written down.** This
@@ -5979,6 +6013,40 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **The a11y-auditor cried wolf on every page of a conformant app** (Refs #578). The keyboard pass
+  decided *"visible focus indicator"* by looking up a property, so a design system carrying its ring
+  in `box-shadow` was reported as having none — a **blocking S1** across `/login`, `/passwords/new`
+  and everything else. The reported computed style shows why a property lookup cannot work:
+  `outline: rgb(0,95,204) none 1px` — a non-zero *width* with style `none`, so an outline check
+  passes it and an outline-style check fails it, while the real indicator (a two-layer box-shadow
+  ring) is never consulted by either.
+
+  The spec was **internally inconsistent**, which is the actual defect: line 87 already listed
+  `box-shadow` as an indicator source, and the forced-colors pass below *assumed* the keyboard pass
+  honoured it — but the `No Focus Indicator` column that produces the verdict gave no method at all.
+  One section promised it; the column that decides never mentioned it.
+
+  It is now a **resting-vs-focused diff**: capture the computed style, Tab to the element, capture
+  again, and treat *any* rendered difference as an indicator. That is deliberately property-agnostic
+  — the next design system will carry its ring in something this list does not name.
+
+- **The skip link was judged at rest, where a correct one is invisible by design** (Refs #578). An
+  `sr-only` skip link is *supposed* to be hidden until focused, so a visibility check before Tab
+  reports a working one as absent. It is now judged focused, against three questions: first stop,
+  visible now, and does activating it move focus into main.
+
+- **A blocking S1 must now show its work.** `validate_evidence.py` reports a `No Focus Indicator`
+  count whose row records no diff method. It does not verify the diff was done correctly — it makes
+  an unmethodical S1 impossible to file **silently**, which is the part that cost a morning. The
+  forced-colors `Focus Indicator Lost` class survives unchanged and its reasoning gets sharper: in
+  forced colors `box-shadow` computes to `none`, so the diff finds nothing, which is exactly the
+  finding.
+
+  Fixing the comment in `validate_evidence.py` that restated the old property-lookup model was part
+  of the fix, not a tidy-up: leaving it would have replaced one internal contradiction with another.
 
 ### 1.24.1 — 2026-08-05
 
