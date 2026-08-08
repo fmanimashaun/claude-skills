@@ -2941,6 +2941,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`dismissable?` was dead code, and the close button was gated on the wrong thing** (Refs #556).
+  The predicate exists to keep a close button off a `:loading` toast; the template gated on
+  `action.present?` instead and never called it. Those two differ on exactly one case, and it is the
+  case the predicate exists for: a **`:loading` toast with an action** — *"Uploading… · Cancel"* —
+  which is legitimate and still rendered a close button, so dismissing it hid an operation that was
+  still running. The recipe's prose stated the correct rule **twice** while the code beneath it did
+  the opposite. Fifth survivor of the v1.72.0 rewrite.
+
+- **Four component templates rendered strings through a lazy `t('.key')` and never said where the
+  key lives** (Refs #555). A missing key does not raise — Rails renders `translation missing:
+  en.ui.toast.dismiss` **into the attribute**, so for the two `aria-label`s the failure is audible
+  only to a screen-reader user and invisible to everyone reviewing the page. #555 reported **one**
+  (Toast); the same defect sat in **PasswordStrength**, **Breadcrumbs** and **DescriptionList::Row**.
+  All four now use absolute keys, and the locale entries ship as part of the recipe.
+
+  Two other lazy lookups were left alone **deliberately**, and that distinction is why this needed
+  measuring rather than a regex: `t(".saved")` sits in a controller and `t(".or")` in a plain view
+  recipe, where a lazy lookup resolves exactly as a reader expects. The defect was never the lazy
+  form — it was a *component* template depending on a resolution the recipe never stated.
+  `breadcrumbs.show_more` takes a `count:`, so it ships plural sub-keys; a bare string there is right
+  for `count: 1` and wrong for every other value.
+
 ### 1.42.1 — 2026-08-07
 
 - **The toast rewrite left call sites that crash, and an accent that silently vanishes** (Refs #546).
