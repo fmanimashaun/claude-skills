@@ -1861,6 +1861,43 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Scope could enter through the `fix-issue` door, and a real run found it** (Refs #488). Rights
+  were keyed on the ACTION alone: every open issue becomes `fix-issue`, which needs only
+  `pick-next-backlog-item` — so an issue whose own body called it *"a distinct auth-hardening
+  feature"* routed to **decide**. The `build-feature` escalate gate was never reached, because the
+  work never called itself a feature; it called itself an issue. The required right is now the
+  maximum of what the action needs and **what the item is**, matched case-insensitively across
+  `enhancement` / `feature` / `roadmap` / `epic` and their `type:` forms. A bare issue number still
+  decides but is flagged `nature_unverified` — its labels could not be read, and silence there would
+  reopen the hole for hand-written state.
+
+- **`compose_state.py` — the driver reads reality instead of a hand-typed file** (Refs #488). The
+  same run put it plainly: *"I had to be the loop by hand."* Issues come from a **bounded** `gh`
+  query, `run_stopped` from the breaker's own ledger (never re-derived — two safety systems that
+  disagree resolve in favour of the permissive one), plus parked escalations and verification
+  stamps. It reports; it never decides, because a composer that also decided could quietly prefer
+  the state justifying the action it wanted.
+
+- **Actionability and ordering were decisions the toolchain was making by accident.** Blocked,
+  env-gated and deploy-time issues are excluded **with their reason** and still reported as
+  `declined_issues` — *"the backlog is empty"* and *"everything left is blocked"* are different
+  sentences and only one means you are finished. The breaker is a backstop for work that turns out
+  impossible, not a substitute for reading the label that already said so. Ordering is now stated —
+  priority label, then age — because *"first element wins"* **is** a prioritisation policy, and the
+  toolchain had one while refusing to say what it was. Unprioritised sorts **last**, so forgetting a
+  label cannot promote work.
+
+- **`/rails-flow:setup-flow` now scaffolds a permission allowlist** (§2c). Without one an unattended
+  run stops for confirmation every few commands and stops being unattended. The cause is not
+  obvious: agent commands are **compound pipelines**, the whole string is evaluated, so **one**
+  unlisted binary anywhere in the chain re-prompts all of it — a list with `bin/rails` and `bundle`
+  but no `grep` still prompts on most real commands. It writes to the committed
+  `settings.example.json` for the user to copy, **merges rather than overwrites**, and deliberately
+  omits `rm`, `curl`, `wget`, `kill`, `chmod` and package installers: those are exactly the actions
+  whose blast radius outlives the run, so a prompt is correct friction even mid-run.
+
 ### 1.21.0 — 2026-08-08
 
 - **Pillars 2 and 4 of the autonomous flow driver** (Refs #488). `/rails-flow:drive` answers exactly
