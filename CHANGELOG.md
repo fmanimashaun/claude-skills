@@ -1861,6 +1861,43 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Pillars 2 and 4 of the autonomous flow driver** (Refs #488). `/rails-flow:drive` answers exactly
+  two questions per tick — what is next, and may I do it alone. It chooses **one** action, never a
+  menu: a driver returning three options has handed the decision back to the human it exists to
+  spare. Three conditions outrank the work ladder, in order — the breaker has stopped the run, the
+  budget is spent, an escalation is parked awaiting a reply.
+
+- **It does NOT re-implement the circuit breakers, and that is the load-bearing decision.**
+  `breaker.py` already owns attempt caps, the no-progress detector, the four forbidden escapes, the
+  elapsed and blast-radius limits and the complete/partial/stopped verdict — all of #128's doctrine,
+  already selftested and mutated. A second set here could **disagree** with the first, and when two
+  safety systems disagree the more permissive one wins. Run-level stops stay the breaker's answer,
+  and a mutation proves the driver cannot work past one.
+
+- **The decision-rights matrix is configurable, and rots safe rather than permissive.** Two rules do
+  that work: an **unclassified action escalates** — defaulting it to *decide* would let the policy
+  grow permissive by omission, one unconsidered action at a time — and a **policy with no `escalate`
+  list is refused**, because that is full autonomy wearing a config file. The test that keeps this
+  checkable rather than a vibe is *"does it publish, or can it not be undone"*, which is readable
+  from the action itself, unlike *"is this important"*.
+
+- **Pillar 4: craft is autonomous, scope is not**, and the line is not size. A redesign that leaves
+  every journey intact is craft; the same redesign that quietly drops a step is scope wearing a
+  visual diff — the case worth being slow about precisely because it looks like the first one in
+  review. Scope changes pass IA-before-code and escalate through pillar 3; every creative or scope
+  call is recorded as a brain decision, because autonomy without an audit trail is an unexplained
+  diff.
+
+  The mutation harness found **two real defects** in this script that its own selftest passed over. A
+  mutation **survived** because a `right is None` branch was redundant — the final `return "unknown"`
+  already covered it, so removing it changed nothing and proved nothing; the branch is gone and the
+  mutation now targets the load-bearing return. And a second mutation was caught **by the wrong
+  fixture**: removing the policy guard raised `KeyError` instead of refusing, so the selftest crashed
+  rather than failing the assertion written for it. A crash is not a verdict, so the loader degrades
+  now and the fixture catches a wrong answer instead of an exception.
+
 ### 1.20.0 — 2026-08-07
 
 - **Pillar 3 of the autonomous flow driver: the async human-in-the-loop** (Refs #488).
