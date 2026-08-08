@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-08 (v1.75.0)
 
 - **An `AGENTS.md` at this repo's root was read by nothing, for two whole releases.** Claude Code
   reads `CLAUDE.md`, **not** `AGENTS.md` — which is this repo's own shipped doctrine
@@ -2941,7 +2941,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.42.2 — 2026-08-08
 
 - **`dismissable?` was dead code, and the close button was gated on the wrong thing** (Refs #556).
   The predicate exists to keep a close button off a `:loading` toast; the template gated on
@@ -7134,7 +7134,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.15.3 — 2026-08-08
 
 - **`@variant dark` should be `@custom-variant dark`** (Refs #555). The scaffold emitted the
   directive that **applies** an existing variant where it needed the one that **defines** a new one.
@@ -8156,6 +8156,57 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.75.0)
+
+> ### A gate sweep reported 67/67 green on a commit that deleted 7,950 lines
+>
+> Four fixes, and the one that matters most is mine: v1.74.0's own CHANGELOG edit destroyed
+> eight of nine component sections, and every gate passed. The rest came from a user running
+> the toolchain into a fresh Rails app, which found three defects our review had not.
+
+- **The CHANGELOG lost 7,950 lines and CI stayed green.** A two-anchor splice —
+  `t[:t.index(a)] + new + t[t.index(b):]` — assumed the second anchor sat just after the first. It
+  sat seven thousand lines further down, so the slice removed everything between: `rails-flow`,
+  `qa-flow`, `pipeline`, `design-flow` and both `rails-stack` sections, with every release history
+  they held. Restored from the last good blob and asserted **additions only** against it (`+88 −0`).
+  New **`changelog-section-missing`** gate: every plugin in `marketplace.json` must still have a
+  `## ` section. It matches `## ` alone, because the truncation left `###` release blocks behind and
+  any-heading matching would have passed on the damage — and it was validated by replaying it over
+  the real damaged commit, where it names all five missing plugins.
+
+- **`dismissable?` was dead code** (#556). The predicate exists to keep a close button off a
+  `:loading` toast; the template gated on `action.present?` and never called it. Those differ on
+  exactly one case, and it is the case the predicate exists for: a `:loading` toast **with** an
+  action — *"Uploading… · Cancel"* — which still rendered a close button, so pressing it hid an
+  operation that was still running. The prose stated the correct rule **twice** while the code did
+  the opposite.
+
+- **Four component templates rendered strings through a lazy `t('.key')` with no key defined**
+  (#555). A missing key does not raise — Rails renders `translation missing: …` **into the
+  attribute**, so for two `aria-label`s the failure is audible only to a screen-reader user. The
+  report named one; there were four. Two other lazy lookups were left alone **deliberately**: one
+  sits in a controller, one in a plain view, where the lookup resolves as a reader expects. The
+  defect was never the lazy form — it was a *component* template relying on a resolution the recipe
+  never stated.
+
+- **`@variant dark` should be `@custom-variant dark`** (#555). We emitted the directive that
+  *applies* an existing variant where Tailwind v4 requires the one that *defines* a new one
+  ([dark mode](https://tailwindcss.com/docs/dark-mode),
+  [functions and directives](https://tailwindcss.com/docs/functions-and-directives), verified
+  2026-08-08). It survived because `tailwindcss:build` exits **0** either way. Of seven `@variant`
+  occurrences in shipped content only **two** are the directive; the other five are Ruby instance
+  variables, so a blind replace corrupts five components to fix two lines.
+
+- **`derived-artifacts` and `parallel-session-lane` now ship**, bundled in `rails-stack`. Neither was
+  ever about this marketplace. `parallel-session-lane` was **generalised**, not copied — it hardcoded
+  our own directory layout. `plugin-boundaries` stays maintainer-only by its own rule 3, and no copy
+  was left behind for the two that moved.
+
+The sweep went **65 → 67**, and three existing gates caught consequences of that move that review
+missed: a shipped skill needs a `comp:` label, the routing gate refused with **CANNOT CHECK** rather
+than passing on a pin it no longer recognised, and `CLAUDE.md`'s distribution list was under-naming
+what `rails-stack` bundles.
 
 ### 2026-08-07 (release v1.74.0)
 
