@@ -7,6 +7,40 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The README was 913 lines and named version 1.3.1 while the marketplace shipped 1.80.0.** It also
+  listed 5 of 42 commands and neither skill shipped that day, and **Install sat at line 732** — a
+  reader had to scroll past seven hundred lines to use the thing. Re-authored to **194 lines** with
+  install at line 12, every skill and command named, and zero stale versions. The two deep sections
+  were **moved verbatim**, not deleted: `docs/architecture.md` (the design reasoning) and
+  `docs/code-review-graph.md` (a 225-line setup for an *optional* integration that was occupying a
+  quarter of the front page).
+
+- **A wiki, in the repository rather than GitHub's.** A GitHub wiki is a separate git repo — no pull
+  request, no review, and no gate can reach it, which is precisely how the README rotted. `docs/wiki/`
+  is versioned with the code it describes, so a change that makes a page wrong shows up in the same
+  diff. Ten pages: three **generated**, seven written.
+
+- **The reference pages are generated and drift-gated.** `build_wiki.py` derives the command, skill
+  and plugin pages from the manifest and the plugin directories, so renaming a command fails
+  `--check` instead of quietly leaving the wiki wrong. A command in no group is **listed as
+  ungrouped**, never dropped — silent omission is how the README came to name 5 of 42, and a reader
+  cannot tell an omission from a command that does not exist.
+
+  Its selftest caught two defects in its own author's work. One assertion was
+  `"Ungrouped" in page_commands.__doc__ or True` — a **gate that cannot fail**, written into the
+  selftest of a script whose entire job is refusing to go stale silently. Its replacement then
+  failed for a second reason: run as a script this module is `__main__`, so `import build_wiki`
+  created a **second module object** and the rebind landed on the wrong one.
+
+- **`.github/workflows/wiki.yml` mirrors the pages on every push to `main`.** It verifies the pages
+  are a clean build before mirroring, because publishing a stale reference under the repository's
+  name is worse than not publishing. It replaces tracked content wholesale so a **deleted page
+  disappears** rather than staying live and linkable. And it **skips loudly** when the wiki
+  repository does not exist — GitHub creates it only after the first page is saved in the web UI,
+  and a release must not go red because a mirror target is uninitialised.
+
 ### 2026-08-08 (v1.77.0)
 
 - **A committed `.claude/settings.example.json`, and the three-file distinction written down.** This
