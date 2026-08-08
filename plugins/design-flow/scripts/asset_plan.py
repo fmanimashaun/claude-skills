@@ -75,22 +75,31 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
             "aggregator": "openrouter",
             "api_key_env": PLACEHOLDER_KEY_ENV,
             "budget_usd": 5.00,
-            # PER KIND, because the kinds want different models: only some emit SVG, and no image
-            # endpoint emits video. Model IDs and prices are EXAMPLES, not doctrine -- they change
-            # monthly, which is why they live here. Discover what is current with
-            #   curl -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-            #        https://openrouter.ai/api/v1/images/models
-            # and check pricing before trusting any number below.
+            # PER KIND, because the kinds want different models: only some emit SVG, and no
+            # image endpoint emits video.
+            #
+            # These IDs were VERIFIED against OpenRouter's live model list on 2026-08-09. The first
+            # draft of this file was not, and shipped `recraft-ai/recraft-v3-svg` and
+            # `google/gemini-2.5-flash-image` -- both invented from prose, both 404. Refresh them
+            # rather than trusting this comment's date:
+            #     python3 asset_plan.py --discover
+            #
+            # `cost_usd` is NOT verified and cannot be: that endpoint does not expose pricing. Every
+            # number below is a placeholder you must replace from the model's own pricing page. The
+            # budget refuses against these figures, so a wrong one buys a refusal or a surprise.
             "ladders": {
-                "static": [{"name": "google/gemini-2.5-flash-image", "cost_usd": 0.012},
-                           {"name": "openai/gpt-image-2", "cost_usd": 0.13}],
+                "static": [{"name": "google/gemini-3.1-flash-lite-image", "cost_usd": 0.012},
+                           {"name": "google/gemini-3-pro-image", "cost_usd": 0.14}],
                 # SVG-CAPABLE ONLY. A raster named `.svg` does not scale and cannot be recoloured
                 # from tokens, which is the whole reason the vector kind exists -- and the executor
-                # now refuses rather than writing one.
-                "vector": [{"name": "recraft-ai/recraft-v3-svg", "cost_usd": 0.04}],
+                # refuses rather than writing one.
+                # THE AGENT AUTHORS VECTOR BY DEFAULT. Claude Code writes SVG natively and
+                # already holds the brand pack, the token names and the surrounding components --
+                # context a remote model does not have. So the external call buys a worse result
+                # at a cost. `recraft/recraft-v4.1-vector` is the paid fallback if you want one.
+                "vector": [{"name": "agent", "cost_usd": 0.0}],
                 # EMPTY ON PURPOSE. No image endpoint returns video, so a motion row refuses with
                 # "no ladder for kind 'motion'" rather than silently saving a still as `.webm`.
-                # Point this at a video model when you have one.
                 "motion": [],
             },
             "style_reference": "docs/assets/reference.png",
@@ -115,6 +124,38 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
 
 def fingerprint(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.is_file() else ""
+
+
+def discover_models(config: dict) -> dict:
+    """Refresh the ladders' model IDs from the provider, because hardcoding them was already wrong.
+
+    The first version of this scaffold shipped two model IDs invented from documentation prose. Both
+    404'd on the first real run -- a transcription, exactly what this repo's `derived-artifacts`
+    skill exists to warn about, in the file that spends money.
+
+    Only IDS are refreshed. The endpoint does not expose pricing, so `cost_usd` is left ALONE rather
+    than zeroed or guessed: a budget compared against a number nobody set is worse than one compared
+    against a number someone chose badly, because the second is visible.
+    """
+    import os
+    import urllib.request
+    key = os.environ.get(config.get("api_key_env", "")) or ""
+    if not key:
+        raise SystemExit(f"--discover needs ${config.get('api_key_env')} set; it queries the "
+                         f"provider for the current model list.")
+    req = urllib.request.Request("https://openrouter.ai/api/v1/images/models",
+                                 headers={"Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            models = json.loads(resp.read().decode("utf-8")).get("data", [])
+    except Exception as exc:                       # noqa: BLE001 - any failure is the same answer
+        raise SystemExit(f"could not reach the model list ({exc}); ladders left unchanged.")
+    ids = {m.get("id") for m in models if m.get("id")}
+    stale = {kind: [r["name"] for r in rungs if r.get("name") not in ids]
+             for kind, rungs in (config.get("ladders") or {}).items()}
+    return {"available": sorted(ids),
+            "vector_capable": sorted(i for i in ids if "vector" in i or "svg" in i),
+            "stale_in_config": {k: v for k, v in stale.items() if v}}
 
 
 def load_doc(root: Path) -> dict:
@@ -357,6 +398,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--scaffold", action="store_true", help="create config + plan, never overwrite")
     ap.add_argument("--prd", default="", help="path to the brief; pins it so drift is detectable")
     ap.add_argument("--check", action="store_true", help="validate the plan is reviewable")
+    ap.add_argument("--discover", action="store_true",
+                    help="list the provider's current model IDs and flag stale ones in config")
     ap.add_argument("--run", action="store_true", help="generate every outstanding row")
     ap.add_argument("--status", action="store_true", help="plan vs manifest — the remaining work")
     ap.add_argument("--timeout", type=int, default=120)
@@ -375,6 +418,19 @@ def main(argv: list[str]) -> int:
         print("\n".join(f"created {m}" for m in made) or "nothing to create — already scaffolded")
         print(f"\nNext: fill ${PLACEHOLDER_KEY_ENV} in your environment, then write the plan rows.\n"
               f"Until the key is real every generate call refuses, which is the safe state.")
+        return 0
+    if args.discover:
+        cfg = root / CONFIG_PATH
+        config = json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}
+        found = discover_models(config)
+        print(json.dumps(found, indent=2))
+        if found["stale_in_config"]:
+            print("\nThe IDs above under `stale_in_config` are NOT in the provider's list — they "
+                  "will 404 at generation time. Replace them, and check pricing yourself: the "
+                  "model endpoint does not expose it.")
+            return 1
+        print("\nEvery configured model ID exists. Pricing is still yours to verify — this "
+              "endpoint does not report it.")
         return 0
     if args.check:
         cfg = root / CONFIG_PATH

@@ -3532,6 +3532,23 @@ GUARDS: tuple[Guard, ...] = (
         # stands between a request and someone's card.
         mutations=(
             Mutation(
+                # The agent path never calls an API. Demanding a key from it refused the one
+                # zero-cost route for a credential it had no use for -- which is what shipped until
+                # the adapter was resolved before the preflight.
+                "the agent path demands an API key it never uses",
+                '    key = "" if name == "agent" else preflight_key(config.get("api_key_env", ""), root)',
+                '    key = preflight_key(config.get("api_key_env", ""), root)',
+                "the agent path needs no API key (refused instead",
+            ),
+            Mutation(
+                # An agent-authored asset must get NO easier route into the manifest than a bought
+                # one, or "the agent wrote it" becomes the way past every refusal.
+                "a raster recorded as vector is accepted, so `.svg` stops meaning vector",
+                '    if kind == "vector" and ext != "svg":',
+                "    if False:",
+                "a raster recorded as vector is still refused",
+            ),
+            Mutation(
                 # Two shipped messages promised `.env` worked while nothing read the file, so a
                 # user who followed the instruction got "not set" and concluded the tool was broken.
                 "the .env fallback goes, so a promised location silently stops working",
@@ -3552,7 +3569,7 @@ GUARDS: tuple[Guard, ...] = (
                 # Drop it and a hand-written {"approved": true} bypasses every refusal at once --
                 # library, tier precondition, composed prompt, budget ceiling.
                 "the gate stops being re-run, so a forged approval reaches the provider",
-                "    approval = decide(root, request)",
+                "    approval = decide(root, request)  # produce(): RE-RUN, never trusted from the caller",
                 '    approval = request if request.get("approved") else decide(root, request)',
                 "expected a Refusal, got Unusable",
             ),

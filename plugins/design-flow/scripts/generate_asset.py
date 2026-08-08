@@ -217,7 +217,74 @@ def call_openrouter(key: str, model: str, prompt: str, reference: bytes | None,
                    "usually means the prompt was refused upstream, not that generation failed.")
 
 
-ADAPTERS = {"openrouter": call_openrouter, "gemini": call_gemini}
+def call_openrouter_svg(key: str, model: str, prompt: str, reference: bytes | None,
+                        timeout: int) -> tuple[bytes, float | None]:
+    """Ask a TEXT model for raw SVG, which `visual-assets.md` already prefers for vector work.
+
+    An SVG scales, diffs in review, and recolours from tokens without being regenerated -- so for
+    icons and flat shapes it beats a raster even when both are available. It is also the only path
+    on this provider with a genuinely free tier: image endpoints have no `:free` variant, text ones
+    do, so the whole pipeline is testable end to end at zero cost.
+
+    The reference image is IGNORED here rather than silently dropped in the response: a text model
+    takes no style reference, and pretending otherwise would make consistency look guaranteed when
+    it is not. Consistency for this path comes from the composed prompt alone.
+    """
+    system = ("You output a single valid SVG document and nothing else. No markdown fence, no "
+              "commentary. Start with <svg and end with </svg>. Use a viewBox, no external fonts, "
+              "no embedded raster images, and currentColor or the given palette only.")
+    body = {"model": model,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}]}
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(body).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        raise Unusable(f"provider returned HTTP {exc.code}. Nothing was saved and no manifest row "
+                       f"was written. Response: {detail}")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise Unusable(f"provider unreachable ({exc}). Nothing was saved.")
+
+    text = ((payload.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    # A model told "no fence" still sometimes fences. Recovering is right; PRETENDING the output was
+    # clean is not, so anything without an <svg> element fails rather than being written as `.bin`.
+    start, end = text.find("<svg"), text.rfind("</svg>")
+    if start == -1 or end == -1:
+        raise Unusable("the model returned no SVG element. Nothing was saved — a text-only reply "
+                       "usually means the prompt was refused or the model ignored the format "
+                       "instruction, neither of which is an asset.")
+    cost = (payload.get("usage") or {}).get("cost")
+    return text[start:end + 6].encode("utf-8"), (float(cost) if cost is not None else None)
+
+
+class AgentWrites(Exception):
+    """Not a failure — the gate approved, and the AGENT is the generator for this kind.
+
+    Claude Code writes SVG directly, so routing a vector asset through an external model pays for
+    a worse result: the agent has the brand pack, the token names and the surrounding components in
+    context, and a remote model has a sentence. The discipline still applies in full -- library
+    check, tier refusal, composed prompt, budget, provenance -- because the point of the gate was
+    never the HTTP call. Only the call is skipped.
+    """
+
+    def __init__(self, prompt: str, target: Path, entry: dict):
+        self.prompt, self.target, self.entry = prompt, target, entry
+        super().__init__("agent-authored")
+
+
+def call_agent(key, model, prompt, reference, timeout):      # noqa: ARG001 - signature parity
+    raise AgentWrites(prompt, Path(), {})
+
+
+ADAPTERS = {"agent": call_agent,
+            "openrouter": call_openrouter,
+            "openrouter-svg": call_openrouter_svg,
+            "gemini": call_gemini}
 
 
 # Magic bytes, in the order that distinguishes them. Sniffing beats trusting the request: the caller
@@ -239,6 +306,25 @@ def sniff_extension(blob: bytes) -> str:
     if blob[:4] == b"\x1a\x45\xdf\xa3":
         return "webm"
     return "bin"      # unknown, and named honestly rather than guessed at
+
+
+def assert_kind_matches(kind: str, blob: bytes) -> str:
+    """The bytes must be what the kind promised. Returns the sniffed extension.
+
+    Shared by the bought path and the agent path deliberately: an agent-authored asset must get NO
+    easier route into the manifest than a purchased one, or "the agent wrote it" becomes the way
+    past every refusal. It also exists as a FUNCTION because the check first lived inline in the
+    `--record` branch, where the selftest could not reach it -- a mutation removing it survived, and
+    the fixture that claimed to cover it was testing `sniff_extension` instead.
+    """
+    ext = sniff_extension(blob)
+    if kind == "vector" and ext != "svg":
+        raise Unusable(
+            f"kind is `vector` but the bytes are {ext.upper()}. A raster named `.svg` does not "
+            f"scale and cannot be recoloured from tokens, which is why the vector kind exists. "
+            f"Point this surface's ladder at an SVG-capable model, let the agent author it, or "
+            f"plan the surface as `static`.")
+    return ext
 
 
 def append_manifest(root: Path, entry: dict) -> Path:
@@ -266,16 +352,20 @@ def append_manifest(root: Path, entry: dict) -> Path:
 
 def produce(root: Path, request: dict, timeout: int = 120) -> dict:
     """Gate → preflight → call → save → record. Any refusal short-circuits before spending."""
-    approval = decide(root, request)                 # RE-RUN, never trusted from the caller
+    approval = decide(root, request)  # produce(): RE-RUN, never trusted from the caller
     config = load_config(root)
-    key = preflight_key(config.get("api_key_env", ""), root)
-
-    adapter = ADAPTERS.get(str(config.get("aggregator", "")).lower())
+    # ADAPTER FIRST, then the key. Ordering it the other way demanded an API key from the one path
+    # that never calls an API -- the agent authors the asset itself -- so a zero-cost route refused
+    # for a credential it had no use for.
+    name = str(config.get("aggregator", "")).lower()
+    adapter = ADAPTERS.get(name)
     if adapter is None:
         raise Unusable(
             f"no adapter for aggregator {config.get('aggregator')!r}. Shipped: "
             f"{', '.join(sorted(ADAPTERS))}. The contract an aggregator must meet is in "
             f"`/design-flow:generate` §3c — adding one is a function, not a redesign.")
+
+    key = "" if name == "agent" else preflight_key(config.get("api_key_env", ""), root)
 
     reference = None
     ref_path = config.get("style_reference")
@@ -283,28 +373,61 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
         reference = (root / ref_path).read_bytes()
 
     prov = approval["provenance"]
-    blob, actual_cost = adapter(key, prov["model"], approval["prompt"], reference, timeout)
+    try:
+        blob, actual_cost = adapter(key, prov["model"], approval["prompt"], reference, timeout)
+    except AgentWrites:
+        # The gate has ALREADY approved: library searched, tiers refused, prompt composed, budget
+        # checked. What is left is authorship, and the agent does that better here than a remote
+        # model would. It writes the file, then `--record` validates and registers it -- so nothing
+        # reaches the manifest without passing the same checks a bought asset does.
+        target = root / ASSET_DIR / (
+            re.sub(r"[^A-Za-z0-9._-]+", "-", f"{prov['surface']}-agent").strip("-")
+            + (".svg" if prov.get("kind") == "vector" else ".png"))
+        raise AgentWrites(approval["prompt"], target, manifest_entry(root, config, prov, target))
 
     kind = prov.get("kind", "static")
     # EXTENSION FROM THE BYTES, not from the request. Deriving it from `kind` wrote PNG bytes to a
     # `.svg` and a still frame to a `.webm` -- files that open, look plausible in a listing, and
     # are the wrong format. A raster named `.svg` does not scale and does not recolour from tokens,
     # which is the entire reason a vector asset was asked for.
-    ext = sniff_extension(blob)
-    if kind == "vector" and ext != "svg":
-        raise Unusable(
-            f"kind is `vector` but the model returned {ext.upper()} bytes. A raster named `.svg` "
-            f"does not scale and cannot be recoloured from tokens, which is why the vector kind "
-            f"exists. Point this surface's ladder at an SVG-capable model (OpenRouter's Recraft "
-            f"vector models emit SVG), or plan it as `static`.")
-    name = f"{prov['surface']}-{prov['model']}".replace("/", "-")
+    ext = assert_kind_matches(kind, blob)
+    # Only [A-Za-z0-9._-] survives. Model IDs carry `/` and `:` (`cohere/x:free`), both legal on
+    # this filesystem and hostile on Windows and in URLs -- and an asset path ends up in both.
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", f"{prov['surface']}-{prov['model']}").strip("-")
     out = root / ASSET_DIR / f"{name}.{ext}"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(blob)
 
+    entry = manifest_entry(root, config, prov, out)
+    manifest = append_manifest(root, entry)
+    return {"produced": str(out.relative_to(root)), "manifest": str(manifest.relative_to(root)),
+            "bytes": len(blob),
+            "provenance": {**prov,
+                           "estimated_cost_usd": prov.get("cost_usd"),
+                           "actual_cost_usd": actual_cost}}
+
+
+def _project_relative(out: Path, root: Path) -> str:
+    try:
+        return str(out.resolve().relative_to(root.resolve()))
+    except ValueError:
+        raise Unusable(f"{out} is outside the project ({root}); a manifest path must be relative "
+                       f"or it is broken for everyone who clones the repository.")
+
+
+def manifest_entry(root: Path, config: dict, prov: dict, out: Path) -> dict:
+    """Build one COMPLETE manifest row. Both the bought and the agent-authored paths use this.
+
+    `kind` comes from the provenance, not from a caller's local: it was a local when this lived
+    inside produce(), and factoring it out left a NameError that only fired on the agent path --
+    the one path with no test yet.
+    """
     brief = (config.get("briefs") or {}).get(prov["surface"], {})
-    entry = {
-        "file": str(out.relative_to(root)),
+    kind = prov.get("kind", "static")
+    return {
+        # `relative_to` raises on a path outside the project, and a manifest holding an absolute
+        # path is broken for everyone else who clones. Refuse rather than record either.
+        "file": _project_relative(out, root),
         "name": brief.get("subject") or prov["surface"],
         "purpose": brief.get("purpose") or f"carry the {prov['surface']} surface",
         "use_cases": brief.get("use_cases") or [prov["surface"]],
@@ -314,21 +437,15 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
         "kind": kind,
         "surface": prov["surface"],
     }
-    manifest = append_manifest(root, entry)
-    return {"produced": str(out.relative_to(root)), "manifest": str(manifest.relative_to(root)),
-            "bytes": len(blob),
-            "provenance": {**prov,
-                           "estimated_cost_usd": prov.get("cost_usd"),
-                           # None when the provider does not report one -- an absent number is
-                           # honest, while copying the estimate here would make the two agree by
-                           # construction and hide exactly the drift this field exists to show.
-                           "actual_cost_usd": actual_cost}}
+
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--request", help="path to a JSON request, or - for stdin")
     ap.add_argument("--timeout", type=int, default=120)
+    ap.add_argument("--record", metavar="FILE",
+                    help="register a file the AGENT authored, after the gate approved it")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -343,7 +460,34 @@ def main(argv: list[str]) -> int:
         print(f"unusable request: {exc}", file=sys.stderr)
         return 2
     try:
+        if args.record:
+            # Re-run the gate here too. An agent-authored asset gets NO easier route into the
+            # manifest than a bought one -- otherwise "the agent wrote it" becomes the way past
+            # every refusal, which is the forged-approval hole wearing a friendlier name.
+            root = Path.cwd()
+            approval = decide(root, request)
+            written = Path(args.record)
+            if not written.is_file():
+                print(f"cannot record: {written} does not exist", file=sys.stderr)
+                return 2
+            blob = written.read_bytes()
+            assert_kind_matches(approval["provenance"].get("kind", "static"), blob)
+            entry = manifest_entry(root, load_config(root), approval["provenance"],
+                                   written.resolve())
+            manifest = append_manifest(root, entry)
+            print(json.dumps({"recorded": str(written), "bytes": len(blob),
+                              "manifest": str(manifest)}, indent=2))
+            return 0
         print(json.dumps(produce(Path.cwd(), request, args.timeout), indent=2))
+        return 0
+    except AgentWrites as brief:
+        print(json.dumps({
+            "approved": True,
+            "author": "agent",
+            "write_to": str(brief.target),
+            "prompt": brief.prompt,
+            "then": f"python3 {Path(__file__).name} --request <req> --record {brief.target}",
+        }, indent=2))
         return 0
     except Refusal as why:
         print(json.dumps({"produced": None, "refused": str(why)}, indent=2))
@@ -454,6 +598,62 @@ def selftest() -> int:
         except Unusable as exc:
             failures.append(f"expected a Refusal, got Unusable: {exc}")
         os.environ.pop("DF_TEST_KEY", None)
+
+    # THE AGENT PATH. Claude Code writes SVG natively and already holds the brand pack, the token
+    # names and the surrounding components -- context a remote model does not have. So for vector
+    # work the external call buys a worse result at a cost. The GATE still runs in full; only the
+    # HTTP request is skipped, because the discipline was never the request.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / ".design-flow").mkdir()
+        (root / ".design-flow/generation.json").write_text(json.dumps({
+            "aggregator": "agent", "budget_usd": 1.0,
+            "ladders": {"vector": [{"name": "agent", "cost_usd": 0.0}]},
+            "briefs": {"s": {"style": "flat-vector", "subject": "a tray", "mood": "light"}},
+        }), encoding="utf-8")
+        req = {"kind": "vector",
+               "tier_refusal": {"surface": "s", "tier_1_why_not": "a", "tier_2_why_not": "b"},
+               "pack": {"variant": "default"}}
+        # NO KEY IS SET, and none is needed -- the adapter is resolved before the preflight, which
+        # it was not at first: the one path that never calls an API demanded a credential for it.
+        os.environ.pop("OPENROUTER_API_KEY", None)
+        try:
+            produce(root, req)
+            failures.append("the agent path should hand back a brief, not produce")
+        except (Refusal, Unusable) as why:
+            failures.append(f"the agent path needs no API key (refused instead: {why})")
+        except AgentWrites as brief:
+            check("the agent path handed back a brief", True)
+            check("...and names a target inside the project",
+                  str(brief.target).startswith(str(root)))
+            check("...with the composed prompt, not a free-typed one",
+                  "flat-vector" in brief.prompt and "a tray" in brief.prompt)
+        checks += 3
+        # An agent-authored file gets NO easier route into the manifest: a raster is still refused.
+        target = root / ASSET_DIR / "s-agent.svg"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"\x89PNG\r\n\x1a\n")
+        checks += 1
+        try:
+            assert_kind_matches("vector", target.read_bytes())
+            failures.append("a raster recorded as vector is still refused")
+        except Unusable:
+            pass
+        check("...and a raster as `static` is fine",
+              assert_kind_matches("static", target.read_bytes()) == "png")
+        target.write_text("<svg viewBox='0 0 1 1'></svg>", encoding="utf-8")
+        check("...and real SVG bytes sniff as svg",
+              sniff_extension(target.read_bytes()) == "svg")
+        # A real test, not `__name__ == "..."` -- which is what this line was first, and could
+        # not fail. A manifest holding an absolute path is broken for everyone who clones.
+        checks += 1
+        try:
+            _project_relative(Path("/etc/hosts"), root)
+            failures.append("a path outside the project should be refused")
+        except Unusable:
+            pass
+        check("...while a path inside it resolves relative",
+              _project_relative(root / "docs/assets/x.svg", root) == "docs/assets/x.svg")
 
     # THE MANIFEST refuses an incomplete row rather than growing one nobody can act on.
     with tempfile.TemporaryDirectory() as td:

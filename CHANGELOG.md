@@ -7429,6 +7429,23 @@ boot/validation path — with a bullet each so the promotion could close them se
   has no credits. The failure path behaved as designed: the provider's own remedy reached the caller
   verbatim, and **nothing was written** — no asset file, no manifest row, no half-state to clean up.
 
+- **The agent authors vector assets, and that is now the default.** Claude Code writes SVG natively
+  and already holds the brand pack, the token names and the surrounding components — context a
+  remote model does not have — so routing a vector asset through an external call bought a worse
+  result at a cost. `aggregator: "agent"` runs the **whole gate** (library search, tier refusal,
+  composed prompt, budget, provenance) and skips only the HTTP request, because the discipline was
+  never the request. The agent writes the file, then `--record` **re-runs the gate** before the
+  manifest accepts it: an agent-authored asset gets no easier route in than a purchased one, or
+  *"the agent wrote it"* becomes the way past every refusal.
+
+  Four defects surfaced while wiring it, each in something that looked finished. The key preflight
+  ran **before** the adapter was chosen, so the one path that never calls an API refused for a
+  credential it had no use for. `manifest_entry` referenced a local that no longer existed after
+  being factored out — a `NameError` that only fired on the new path. `--record` built a manifest
+  path with `relative_to` against a caller-supplied relative path. And a filename carried the model
+  ID verbatim, so `cohere/x:free` produced a colon in a path that is legal here and hostile on
+  Windows and in URLs.
+
 - **Per-kind ladders, and two bugs that only surfaced by taking them seriously.** One global ladder
   forced every kind through whatever suited the most common one. Only some models emit SVG and no
   image endpoint emits video, so `kind: vector` wrote **PNG bytes to a `.svg`** and `kind: motion`
@@ -7438,6 +7455,23 @@ boot/validation path — with a bullet each so the promotion could close them se
   `.svg` does not scale and cannot be recoloured from tokens, which is the entire reason that kind
   exists. The scaffold ships `motion` **empty on purpose**, so a motion row refuses with *"no ladder
   for kind 'motion'"* until a video model is configured.
+
+- **Both scaffolded model IDs were invented from prose, and both 404'd.** `recraft-ai/recraft-v3-svg`
+  and `google/gemini-2.5-flash-image` do not exist; the real ones are `recraft/recraft-v4.1-vector`
+  and `google/gemini-3.1-flash-lite-image`. They were written from a documentation sentence rather
+  than from the provider, which is the transcription this repo's own `derived-artifacts` skill warns
+  about — in the file that spends money. All IDs are now **verified against the live model list**,
+  and `--discover` refreshes them so nobody depends on a hardcoded list ageing quietly.
+
+  `cost_usd` is **not** verified and cannot be: that endpoint does not expose pricing. Every price in
+  the scaffold is a placeholder the user must replace, and `--discover` says so rather than
+  back-filling a number nobody chose.
+
+- **The full pipeline was proven end to end at zero cost.** No image model on OpenRouter has a
+  `:free` variant — checked across both endpoints, 42 models — but text models do, and the SVG path
+  needs one. A complete run (`scaffold → research → plan → check → run`) produced a **valid SVG**, a
+  complete manifest row, and a plan row marked `done`. The agent path was then proven the same way,
+  needing no key at all.
 
 ### 1.19.0 — 2026-08-08
 
