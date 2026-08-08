@@ -1880,6 +1880,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.22.2 — 2026-08-08
+
+- **The four unguarded scripts are guarded** — `check_criteria`, `extract_claims`, `findings`,
+  `self_consistency`. They were flagged in the last release and not fixed, which is the half-measure
+  this repo's own doctrine forbids: a gap named and left is a gap nobody is accountable for.
+
+  Every target and every `expects` was found **empirically** — mutation applied, selftest run,
+  failure line read — because guessing had already failed three times in this repo: twice naming the
+  *pass* message instead of the *failure* message, and once naming a line the selftest never
+  exercised. Registering a guard for `self_consistency` then triggered the meta-gate's stricter rule
+  — once a guard exists, **every** rule that script emits needs a declared mutation — so
+  `swallowed-verdict`, `dead-env-var` and `assertion-free-spec` were covered too. A partial guard is
+  worse than none, because it looks covered.
+
+  The harness also caught **drift**: a mutation still targeting a line the group-affordability
+  rewrite had deleted. It reported the mutation list had drifted from the code it mutates, which is
+  precisely what that check is for.
+
 ### 1.22.1 — 2026-08-08
 
 - **Pillars 1 and 3 had selftests but no mutation coverage** (Refs #488). Their fixtures ran; nothing
@@ -3074,6 +3092,40 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.43.0 — 2026-08-08
+
+- **Reference research — look before you design.** A designer does not open a blank canvas; they
+  gather references for the *kind of problem*, work out **why** each works, and build from the
+  mechanisms rather than the surface. Skipping it does not produce nothing — it produces the median
+  of everything the model has seen, which is the stock-SaaS look, and a reader recognises that
+  instantly without being able to say why.
+
+  **Scoped to any interface, not just marketing**, because the method is identical for a dashboard,
+  an onboarding flow or a pricing page. Marketing differs only in *weighting*: a product surface is
+  bound by convention (novelty costs a returning user time), a marketing surface by attention
+  (looking like everyone else is the failure, not the safe choice).
+
+  Three rules are checkable and are enforced rather than written down: **three sources minimum and
+  never all from one category** (direct competitors converged by copying each other, so sampling
+  only them inherits the convergence), **a mechanism rather than a brand name** (*"looks like
+  Linear"* cannot be applied to a different subject), and **something rejected** (a record where
+  everything was adopted is a shopping list).
+
+- **The operational half: where to look, and the failures that are silent.** A source directory split
+  by whether a human must sign in first, plus the three capture mechanics whose failures produce a
+  *file* rather than an error — lazy loading returns empty placeholders, a **login wall returns a
+  sign-in form**, and a rotted CSS-in-JS selector returns nothing at all. Each is filed as research
+  and nothing downstream can tell.
+
+  On gated galleries the agent **stops and asks the human to sign in once** into a reusable browser
+  profile; it never requests, types or stores credentials, and a decline is a complete answer. On a
+  *deliberate* block — persistent challenge, rate limit, robots directive — it stops and says so
+  rather than escalating techniques.
+
+  Galleries are an **index, not the material**: follow the listing through to the live site, because
+  a thumbnail cannot show 1440→390 behaviour, interaction, or the current state of a page that may
+  be a redesign old.
 
 ### 1.42.2 — 2026-08-08
 
@@ -7268,6 +7320,22 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.19.0 — 2026-08-08
+
+- **Research is now a precondition of the asset plan**, checked rather than advised. The ordering is
+  not cosmetic: research settles the **style**, and the style settles which assets exist at all — a
+  `minimalist-ink` family needs line art on brand grounds while a `character-world` family needs a
+  recurring cast, which is different rows, different counts and different money. The failure is
+  invisible without a check, because a plan written without research looks exactly like one written
+  with it: every row complete, and nothing recording that the look came from the median.
+
+- **Affordability is group-atomic, not row-greedy.** Assets are not independent — a hero still and
+  the motion loop that animates it are one artefact in two files, and buying the loop alone is worse
+  than buying neither, because you pay for something unusable. Rows may declare a `group`, a group is
+  bought whole or skipped entirely, and a cheaper later group may still be taken: the aim is the best
+  **usable** combination, not the longest list of files. A group takes its best member's priority, so
+  marking one row urgent pulls its partner along instead of orphaning it.
+
 ### 1.18.0 — 2026-08-08
 
 - **`/design-flow:assets` — the setup and drive command for the curated library** (Refs #507).
@@ -8398,6 +8466,36 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.80.0)
+
+> ### Look before you design — and the research gates the spending
+>
+> A designer gathers references, works out *why* each works, and builds from the mechanisms. Skip
+> that and you do not get nothing: you get the median of everything the model has seen.
+
+- **Reference research, scoped to any interface** (not just marketing — the method is identical for
+  a dashboard or an onboarding flow). Three rules are **enforced rather than written down**: three
+  sources minimum and never all from one category, a mechanism rather than a brand name, and
+  something rejected — because a record where everything was adopted is a shopping list.
+
+- **Every capture failure is silent**, which is what the operational half is really about. Lazy
+  loading returns empty placeholders; a **login wall returns a sign-in form**; a rotted CSS-in-JS
+  selector returns nothing. None errors, all produce a file with the right name. On gated galleries
+  the agent stops and asks the human to sign in **once** into a reusable profile, never handling
+  credentials; on a deliberate block it stops rather than escalating technique.
+
+- **Research gates the asset plan.** The order is not cosmetic: research settles the style, and the
+  style settles which assets exist at all. Without the check the failure is invisible — a plan
+  written without research looks exactly like one written with it.
+
+- **Affordability is group-atomic.** A hero still and its motion loop are one artefact in two files;
+  buying the loop alone is worse than buying neither. A group is bought whole or skipped.
+
+- **The four scripts flagged last release are guarded**, plus three more rules the meta-gate then
+  demanded — once a guard exists, every rule that script emits needs one, because a partial guard
+  looks covered. Targets were found **empirically**, since guessing had already failed three times
+  here. The harness also caught **drift**: a mutation still aimed at a line the group rewrite deleted.
 
 ### 2026-08-08 (release v1.79.0)
 
