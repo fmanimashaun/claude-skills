@@ -1882,6 +1882,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Reverted: `setup-flow` no longer scaffolds a permission allowlist.** It was added hours earlier
+  and is being taken out again on the maintainer's call, which is the right one — a plugin has no
+  business configuring a user's permissions, and the advice was self-contradicting: the same passage
+  said *"for no friction at all, choose a permission mode deliberately rather than extending a list
+  of binaries"* and then shipped 38 lines of list-building. If a run should be unattended, that is a
+  **mode** decision the user makes once, not a list a scaffold grows on their behalf.
+
+- **The driver stopped to ask when it had work it could do** (Refs #488). Reported from a real run: a
+  scope-flagged enhancement was first in the backlog, so the driver escalated and halted — while a QA
+  pass that needed no permission at all sat available beside it. The EPIC is explicit that an
+  escalation must **not block the run**: park it and move to other independent work.
+
+  It now collects every candidate the ladder offers and returns the first the policy lets it take
+  **alone**, keeping the first escalation as a fallback for when nothing autonomous remains. A later
+  issue it may actually do beats an earlier one it may not. Over-asking is the failure the
+  decision-rights matrix exists to prevent — it just wears the clothes of caution.
+
 - **Scope could enter through the `fix-issue` door, and a real run found it** (Refs #488). Rights
   were keyed on the ACTION alone: every open issue becomes `fix-issue`, which needs only
   `pick-next-backlog-item` — so an issue whose own body called it *"a distinct auth-hardening
@@ -7226,6 +7243,31 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **`/design-flow:generate` produces now, not just decides** (Refs #507). `generate_asset.py`
+  preflights the key, calls the provider, saves the asset and appends its manifest row. It is a
+  **separate script from the gate on purpose**: a decider that also spent could prefer the decision
+  that justified the spend it wanted.
+
+- **It re-runs the gate rather than accepting an approval.** Handing the executor a hand-written
+  `{"approved": true}` would bypass every refusal at once — library check, tier precondition,
+  composed prompt, budget ceiling — so it takes the *request* and runs the gate in-process
+  immediately before the call. An approval that cannot be forged is worth more than one that is
+  convenient to pass around, and a mutation proves a forged one never reaches a provider.
+
+- **The key preflight has three outcomes, not two.** Absent means *"you have not set this up"*;
+  placeholder means *"you scaffolded it and never filled it in"* — only the second is a forgotten
+  step, and collapsing them sends people to re-read instructions they already followed. The
+  placeholder pattern is **anchored**, so a real key merely containing `changeme` is still accepted;
+  an over-eager matcher would block a working setup, which is worse than the problem it solves. The
+  key is never printed, logged, or written into provenance.
+
+  Both key states **refuse (exit 1)** rather than erroring, which corrected an inconsistency shipped
+  in the same session: a missing *aggregator* refused while a missing *key* errored, though both mean
+  the same thing. A caller must be able to tell *"not generating, that is fine"* from *"something is
+  broken"* by exit code alone.
 
 ### 1.16.0 — 2026-08-08
 
