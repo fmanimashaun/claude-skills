@@ -56,6 +56,45 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   rejected: it governs when a *gated chain* stops, a different axis. Recorded on #488 as the
   maintainer decision pillar 2 must encode, rather than misfiled into a plugin now.
 
+- **Two skills that lived in `.claude/skills/` now ship, because nothing in them was about this
+  repo.** `derived-artifacts` (anything whose numbers come from somewhere else — read the
+  generator's **structured source** rather than regex-parsing its generated prose, and assert every
+  derived total against the source's own declared totals) and `parallel-session-lane` (the protocol
+  when several agent sessions run against one repository at once). Both are stack-neutral, both
+  answer a problem any project has, and both are now bundled in `rails-stack` beside `code-review`
+  and `quality-pass` — the established precedent for shipping general agent doctrine as a skill.
+
+  `parallel-session-lane` was **generalised, not copied**. It hardcoded this marketplace's layout —
+  *"edit `plugins/<yours>/**` exclusively"*, *"do not edit `skills/**`, `dist/**`"* — which is
+  meaningless in a user's repo. The rules now state the mechanism they always were: your assigned
+  subtree, shared and generated paths, your repository's own review doctrine. A sixth rule was added
+  from the same source as the rest — do not clean up worktrees you did not create, after an "idle"
+  heuristic deleted three that were in active use.
+
+- **`plugin-boundaries` stays maintainer-only, by its own rule 3.** Every line of it is about *this
+  marketplace* — `marketplace.json`, per-stack plugins, the licensed corpora — so a user installing
+  it would receive doctrine about a repo they do not have. **No copy was left behind** for the two
+  that moved, either: rule 2 forbids it, and the price is that they are read as files here rather
+  than being invocable, exactly as `code-review` already is.
+
+- **New gate: `undocumented-skill`.** Every skill directory that exists — under `skills/` *or*
+  `.claude/skills/` — must be **named** in `CLAUDE.md`. The sibling of `undocumented-plugin`, and it
+  exists because the same failure hit skills twice in one night: `derived-artifacts` was authored,
+  left untracked and named nowhere, while the sentence introducing the set said "Two maintainer
+  skills" — a hand-typed count that went stale the moment a third arrived. It checks **naming, not
+  counting**, because a count is itself the transcription the rule exists to catch.
+
+- **Three existing gates caught consequences of the move that a review would have missed**, which is
+  the whole argument for having them. `undeclared-component-label` required a `comp:` label per
+  shipped skill, so downstream reports can route to the new ones. `skill routing` refused with
+  **CANNOT CHECK** rather than passing on a `SHIPPED_SKILLS` pin it no longer recognised — four
+  states, not two. And `CLAUDE.md`'s own distribution list was under-naming what `rails-stack`
+  bundles: the drift its very next sentence warns is *"still on you"*.
+
+- **A stale count inside the routing gate's own docstring.** It said *"The four SHIPPED skills"*
+  while the set held five. Pinned by name now, with no count at all — the `derived-artifacts` rule
+  applied to the file that enforces skill hygiene.
+
 ### 2026-08-07 (release v1.74.0)
 
 > ### Three issues where the report was wrong, and testing the substrate found it

@@ -1574,6 +1574,42 @@ def check_duplicate_unreleased() -> tuple[list[Finding], int]:
     return findings, len(counts)
 
 
+def check_undocumented_skill() -> tuple[list[Finding], int]:
+    """Every skill directory that exists must be NAMED in `CLAUDE.md`.
+
+    The sibling of `undocumented-plugin`, and it exists because the same thing happened to skills
+    twice in one night. `derived-artifacts` was authored into `.claude/skills/` and named nowhere,
+    while the sentence introducing the set said "Two maintainer skills" -- a hand-typed count that
+    went stale the moment a third arrived. Then moving two skills into `skills/` left the
+    distribution list at the top of the file under-naming what `rails-stack` actually bundles.
+
+    Both halves are scanned, because both are ways a reader is misled: a shipped skill nobody is
+    told about, and a maintainer skill nobody is told about. The check is NAMING, not counting --
+    a count is a transcription, which is the failure this rule exists to catch, so requiring one
+    would reintroduce it.
+    """
+    doc = ROOT / "CLAUDE.md"
+    if not doc.is_file():
+        return [], 0
+    body = read(doc)
+    findings: list[Finding] = []
+    examined = 0
+    for parent in ("skills", ".claude/skills"):
+        base = ROOT / parent
+        if not base.is_dir():
+            continue
+        for d in sorted(p for p in base.iterdir() if (p / "SKILL.md").is_file()):
+            examined += 1
+            if d.name not in body:
+                findings.append(Finding(
+                    "undocumented-skill", f"{parent}/{d.name}/SKILL.md", 1,
+                    f"the skill {d.name!r} exists but is named nowhere in CLAUDE.md, so anything "
+                    f"orienting from that file cannot know it is there -- which is how a skill "
+                    f"was authored, left untracked and left undocumented on the same night. Name "
+                    f"it where its siblings are named; do not add a count."))
+    return findings, examined
+
+
 def check_unimported_agent_instructions() -> tuple[list[Finding], int]:
     """An authored `AGENTS.md` must be imported by `CLAUDE.md`, and vice versa.
 
@@ -1931,6 +1967,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     agents_md, agents_md_examined = check_unimported_agent_instructions()
+    undoc_skill, undoc_skill_examined = check_undocumented_skill()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
@@ -1960,6 +1997,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "commands_reading_a_foreign_skill": skill_dep_examined,
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "root_agent_instruction_files": agents_md_examined,
+        "skill_directories_named_in_claude_md": undoc_skill_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
@@ -1968,7 +2006,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md,
+            + agents_md + undoc_skill,
             coverage)
 
 
@@ -2056,6 +2094,25 @@ def selftest() -> int:
     # Direction-independent: flattening to the OTHER branch is the same defect.
     scenario("...catches the other branch too", rule=FCR, expect_finding=True,
              files={DOCTRINE[0]: DOCTRINE[1], STEP: 'the toast carries `role="alert"`\n'})
+
+    # -- undocumented-skill -----------------------------------------------
+    UDS = "undocumented-skill"
+    scenario("a shipped skill named nowhere in CLAUDE.md", rule=UDS, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8.\n",
+                    "skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
+                    "skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+    scenario("...silent once it is named", rule=UDS, expect_finding=False,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nWe ship rails-8 and derived-artifacts.\n",
+                    "skills/rails-8/SKILL.md": "---\nname: rails-8\n---\n",
+                    "skills/derived-artifacts/SKILL.md": "---\nname: derived-artifacts\n---\n"})
+    # BOTH homes are scanned. A maintainer-only skill nobody is told about misleads a reader of
+    # CLAUDE.md exactly as a shipped one does -- and that is the half that actually happened.
+    scenario("...catches a maintainer-only skill too", rule=UDS, expect_finding=True,
+             files={"CLAUDE.md": "# CLAUDE.md\n\nNothing named here.\n",
+                    ".claude/skills/plugin-boundaries/SKILL.md": "---\nname: plugin-boundaries\n---\n"})
+    # A directory without a SKILL.md is not a skill -- do not fire on stray folders.
+    scenario("...silent on a directory that is not a skill", rule=UDS, expect_finding=False,
+             files={"CLAUDE.md": "# CLAUDE.md\n", "skills/notaskill/README.md": "hi\n"})
 
     # -- unimported-agent-instructions ------------------------------------
     UAI = "unimported-agent-instructions"

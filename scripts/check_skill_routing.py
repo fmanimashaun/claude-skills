@@ -55,7 +55,9 @@ the Claude Code page says "SKILL.md under 500 lines", so the whole file is measu
 included. Likewise ambiguity in the input is an ERROR, never a skip -- a skill directory with no
 `SKILL.md`, or a run that examined nothing, exits non-zero rather than reporting clean.
 
-SCOPE. The four SHIPPED skills under `skills/`, pinned in `SHIPPED_SKILLS`. `evals/weak-skill/` is
+SCOPE. The SHIPPED skills under `skills/`, pinned by NAME in `SHIPPED_SKILLS` -- not by count.
+This line said "the four" while the set held five, which is the transcription class the
+`derived-artifacts` skill itself warns about, sitting in the docstring of a gate. `evals/weak-skill/` is
 excluded on purpose: it is a deliberately low-quality A/B control for the eval harness, not
 something a user installs, and "improving" it would destroy what it measures.
 
@@ -93,6 +95,11 @@ SHIPPED_SKILLS: frozenset[str] = frozenset({
     # plugin like the other four, so it is installed by users and its references must be
     # reachable from its own SKILL.md on the same terms.
     "quality-pass",
+    # Moved out of `.claude/skills/` and shipped: nothing in either was about this marketplace.
+    # `derived-artifacts` governs anything whose numbers come from elsewhere; `parallel-session-lane`
+    # is the protocol for several agent sessions against one repo. Both are stack-neutral, so they
+    # are installed by users and their references must be reachable on the same terms as the rest.
+    "derived-artifacts", "parallel-session-lane",
 })
 
 # A path mention of a reference file, in either the code-span form (`references/x.md`) or as a

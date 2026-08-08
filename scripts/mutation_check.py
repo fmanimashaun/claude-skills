@@ -107,6 +107,23 @@ GUARDS: tuple[Guard, ...] = (
                 "one branch stated as a literal",
             ),
             Mutation(
+                # Nothing is ever undocumented, so a skill can be authored, shipped and named
+                # nowhere -- which is what happened to derived-artifacts on the night this landed.
+                "no skill is ever missing from CLAUDE.md, so all of them may go unnamed",
+                "            if d.name not in body:",
+                "            if False:",
+                "a shipped skill named nowhere in CLAUDE.md",
+            ),
+            Mutation(
+                # The `.claude/skills` half stops being scanned only if the walk itself narrows;
+                # requiring a SKILL.md is what separates a skill from a stray folder, and dropping
+                # that check makes every directory a subject -- caught by the negative fixture.
+                "any directory counts as a skill, so stray folders demand documentation",
+                '        for d in sorted(p for p in base.iterdir() if (p / "SKILL.md").is_file()):',
+                "        for d in sorted(p for p in base.iterdir() if p.is_dir()):",
+                "...silent on a directory that is not a skill",
+            ),
+            Mutation(
                 # The fence strip goes, so a fenced block DOCUMENTING `@AGENTS.md` reads as a real
                 # import. That is the gate certifying the exact repo state it exists to refuse: one
                 # that has written the rule down and wired nothing.
