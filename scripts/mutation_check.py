@@ -3562,13 +3562,22 @@ GUARDS: tuple[Guard, ...] = (
         # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
         mutations=(
             Mutation(
-                # Without the split, a run generates until the money stops -- leaving an ARBITRARY
-                # half of the set. A half-built family of illustrations is not a cheaper library,
-                # it is an incoherent one, so choosing which half is the entire value.
-                "affordability stops bounding the run, so it spends until the money stops",
-                "        if rung <= remaining:",
+                # Research settles the STYLE, and the style settles which assets exist at all. A
+                # plan written without it looks identical to one written with it -- every row
+                # complete, and nothing recording that the look came from the median.
+                "research stops being required, so the plan is costed against a look nobody chose",
+                "    path = root / RESEARCH_PATH",
+                "    path = Path(__file__)",
+                "a missing research record is reported",
+            ),
+            Mutation(
+                # A hero still and the motion loop that animates it are one artefact in two files.
+                # Row-greedy buys the loop alone, which is worse than buying neither: you pay for
+                # something that cannot be used.
+                "groups stop being atomic, so half a set is bought and cannot be used",
+                "        if cost <= remaining:",
                 "        if True:",
-                "only what fits is taken",
+                "a group that does not fit whole is skipped entirely",
             ),
             Mutation(
                 # A library planned against last month's brief is quietly incomplete: every row
@@ -3646,6 +3655,121 @@ GUARDS: tuple[Guard, ...] = (
                 r'    return body.lstrip("\ufeff").startswith(MARKER)',
                 "    return MARKER in body",
                 "quoted-marker: a quoted question is not agent-authored",
+            ),
+        ),
+    ),
+    # The four that pre-dated the pillars and were flagged rather than fixed. Each target and each
+    # `expects` was found EMPIRICALLY -- the mutation applied, the selftest run, the failure line
+    # read -- because three earlier guesses in this repo named the pass message instead of the
+    # failure message, and one named a line the selftest never exercised.
+    Guard(
+        name="check_criteria",
+        subject="plugins/rails-flow/scripts/check_criteria.py",
+        selftest="plugins/rails-flow/scripts/check_criteria_selftest.py",
+        mutations=(
+            Mutation(
+                "empty criteria stop being unusable, so a brief with nothing in it is accepted",
+                "    if not out:",
+                "    if False:",
+                "no criteria at all: expected UNUSABLE",
+            ),
+        ),
+    ),
+    Guard(
+        name="extract_claims",
+        subject="plugins/rails-flow/scripts/extract_claims.py",
+        selftest="plugins/rails-flow/scripts/extract_claims.py",
+        mutations=(
+            Mutation(
+                # Hedged prose is not a claim. Without the filter, "arguably this prevents X" is
+                # extracted as an assertion someone must then verify.
+                "hedges stop disqualifying a sentence, so speculation is extracted as a claim",
+                "    if any(re.search(h, sentence, re.I) for h in HEDGES):",
+                "    if False:",
+                "silent on 'Arguably this prevents confusion.'",
+            ),
+        ),
+    ),
+    Guard(
+        name="findings",
+        subject="plugins/rails-flow/scripts/findings.py",
+        selftest="plugins/rails-flow/scripts/findings.py",
+        mutations=(
+            Mutation(
+                # Dependency edges must outrank severity, or a fix is ordered before the thing it
+                # depends on and the "ordered" list cannot actually be followed.
+                "edges stop constraining order, so a fix is scheduled before its prerequisite",
+                "    if after not in successors[before]:",
+                "    if False:",
+                "an edge outranks severity",
+            ),
+        ),
+    ),
+    Guard(
+        name="self_consistency",
+        subject="plugins/rails-flow/scripts/self_consistency.py",
+        selftest="plugins/rails-flow/scripts/self_consistency_selftest.py",
+        mutations=(
+            Mutation(
+                # An example that runs code and asserts nothing is a test that cannot fail -- green
+                # forever, and indistinguishable in a report from one that verifies something.
+                "every example looks like it asserts, so assertion-free specs pass as coverage",
+                "        if _PENDING.search(blob) or _ASSERTS.search(blob):",
+                "        if True:",
+                "assertion-free-spec / example runs code but asserts",
+            ),
+            Mutation(
+                # A verification command whose failure cannot fail the build is a gate that cannot
+                # fail -- the class this whole repo is organised around.
+                "softened verdicts stop being reported, so `|| true` on a check passes review",
+                "        match = _SOFTENED.search(line)",
+                "        match = None",
+                "swallowed-verdict / rspec verdict softened",
+            ),
+            Mutation(
+                # An empty sample set must not read as "nothing to check" -- that is the vacuous
+                # pass this repo keeps hitting, where a rule reports clean over nothing examined.
+                "an empty sample set short-circuits, so documented-but-dead keys are never found",
+                "    if not samples:",
+                "    if True:",
+                "dead-env-var / documented key nothing reads",
+            ),
+            Mutation(
+                "`rescue nil` stops being reported, so every failure it hides stays hidden",
+                "        if _RESCUE_NIL.search(code):",
+                "        if False:",
+                "swallowed-exception / rescue nil",
+            ),
+        ),
+    ),
+    Guard(
+        name="research_record",
+        subject="plugins/design-flow/scripts/research_record.py",
+        selftest="plugins/design-flow/scripts/research_record.py",   # --selftest lives in the module
+        # No `needs`: every fixture is a dict literal, and nothing here touches the network -- which
+        # matters more than usual, because the subject is about BROWSING other people's sites.
+        mutations=(
+            Mutation(
+                # Direct competitors converged on one look by copying each other. A record sampled
+                # only from them inherits the convergence and produces the median.
+                "an all-competitor record passes, so the output inherits their convergence",
+                "    if refs and cats == {\"direct\"}:",
+                "    if False:",
+                "an all-direct record is reported",
+            ),
+            Mutation(
+                # A login wall returns a PAGE, not an error -- so the capture can be the wall, filed
+                # as research, and nothing downstream can tell.
+                "a sign-in capture passes unmarked, so the wall is filed as a reference",
+                '        if re.search(r"(login|signin|sign-in|auth)", cap, re.I) and not ref.get("gated"):',
+                "        if False:",
+                "a sign-in-looking capture with no `gated` is reported",
+            ),
+            Mutation(
+                "everything-adopted stops being reported, so a shopping list passes as research",
+                "    if refs and not any(r.get(\"reject\") for r in refs):",
+                "    if False:",
+                "a record rejecting nothing is reported",
             ),
         ),
     ),

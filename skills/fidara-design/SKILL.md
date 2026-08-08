@@ -98,6 +98,16 @@ actually fills the large visual area of a hero, a feature band, a split sign-in 
 hierarchy (product screenshot → data-viz → brand-geometric decoration → illustration, last), the
 CSS recipes deriving decoration from the brand's own geometry, the deterministic screenshot capture
 recipe, and the per-surface prescriptions for the pages with nothing to screenshot.
+[references/reference-research.md](references/reference-research.md) is the **research layer**, and
+it comes **first** — before the asset plan and before any design. A designer gathers references for
+the kind of problem they are solving, works out *why* each one works, and builds from the mechanisms
+rather than the surface. Skip it and you do not get nothing: you get the median of everything the
+model has seen, which is the stock-SaaS look. Three sources minimum, never all from your own
+category, and every adopted mechanism expressed in the pack's own tokens.
+[references/reference-sources.md](references/reference-sources.md) is its operational half — where
+the material is, which sources need a human to sign in, and the three capture mechanics whose
+failures are **silent**: lazy loading, automation challenges, and selectors that rot.
+
 [references/art-direction.md](references/art-direction.md) is the **craft layer** — the creative
 hat *inside* the system. Every other reference answers *"is this correct?"*; this one answers
 *"is this considered, or mechanically assembled?"* One focal point per surface, a different
