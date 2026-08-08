@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-08 (v1.77.0)
 
 - **A committed `.claude/settings.example.json`, and the three-file distinction written down.** This
   repo was telling users (via `/rails-flow:setup-flow` §2c) to keep permissions in a copied local
@@ -1880,7 +1880,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.22.0 — 2026-08-08
 
 - **Reverted: `setup-flow` no longer scaffolds a permission allowlist.** It was added hours earlier
   and is being taken out again on the maintainer's call, which is the right one — a plugin has no
@@ -7244,7 +7244,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.17.0 — 2026-08-08
 
 - **`/design-flow:generate` produces now, not just decides** (Refs #507). `generate_asset.py`
   preflights the key, calls the provider, saves the asset and appends its manifest row. It is a
@@ -8338,6 +8338,38 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.77.0)
+
+> ### The asset path produces, and the driver stops asking when it could work
+>
+> Both fixes came from running the thing rather than reasoning about it — one from a downstream
+> driver run, one from the mutation harness turning on the code that had just been written.
+
+- **`/design-flow:generate` produces now** (Refs #507). `generate_asset.py` preflights the key,
+  calls the provider, saves the asset and appends its manifest row — a **separate script from the
+  gate**, because a decider that also spent could prefer the decision that justified the spend it
+  wanted. It **re-runs the gate** rather than accepting an approval, so a hand-written
+  `{"approved": true}` cannot bypass the library check, the tier precondition, the composed prompt or
+  the budget ceiling. The key preflight distinguishes **absent** from **placeholder** — only the
+  second is a forgotten step — and both refuse at exit 1, correcting an inconsistency where a missing
+  aggregator refused while a missing key errored.
+
+- **The driver stopped to ask when it had work it could do** (Refs #488). A scope-flagged
+  enhancement sat first in the backlog, so it escalated and halted — while a QA pass needing no
+  permission waited beside it. It now takes the first candidate the policy lets it take **alone**,
+  keeping the escalation as a fallback for when nothing autonomous remains. Over-asking is the
+  failure the decision-rights matrix exists to prevent; it just wears the clothes of caution.
+
+- **Reverted the same day: no permission-allowlist scaffolding in the plugin.** A plugin has no
+  business configuring a user's permissions, and the passage contradicted itself — it advised
+  choosing a permission *mode* rather than extending a list of binaries, then shipped 38 lines of
+  list-building.
+
+The mutation harness found **three defects in the guard written minutes earlier**: a missing `needs`
+made every mutation "catch" a `ModuleNotFoundError` instead of a verdict, two `expects` named the
+pass message rather than the failure message, and one fixture would have dialled a real provider once
+mutated. A crash is not a verdict, and a test that reaches the network to prove a refusal is a bill.
 
 ### 2026-08-08 (release v1.76.0)
 
