@@ -1880,7 +1880,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.22.1 — 2026-08-08
 
 - **Pillars 1 and 3 had selftests but no mutation coverage** (Refs #488). Their fixtures ran; nothing
   proved those fixtures could fail. Found while verifying #488's *"each pillar independently
@@ -8398,6 +8398,31 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.79.0)
+
+> ### The autonomous driver is done, and the last check was on the checks
+>
+> Verifying #488's own definition of done against the repo — rather than against memory — found
+> that two shipped pillars had selftests nothing proved could fail.
+
+- **Pillars 1 and 3 had no mutation coverage** (Refs #488). Their fixtures ran; nothing showed those
+  fixtures could fail. The `mutation coverage` gate proves every **declared** mutation is caught, and
+  never that everything testable is declared — so two pillars sat uncovered with nothing going red.
+  Each now carries the mutation that matters: for `toolchain_version`, the newest install record
+  stops winning so a **stale** version reads as installed; for `escalation`, the marker matches
+  anywhere instead of at the start, so a **quoted** question reads as agent-authored and the thread
+  parks forever.
+
+  Registering them took three attempts, and the second is worth remembering: `"\ufeff"` inside a
+  normal Python string is **evaluated at parse time**, so the file held the right characters while
+  the runtime value held an actual U+FEFF and matched nothing. A raw string fixes it. That
+  invisible-character class has now bitten twice in this repo, both times with the file looking
+  correct.
+
+  **Four scripts remain unguarded** — `check_criteria`, `extract_claims`, `findings`,
+  `self_consistency`, all pre-dating this work — named rather than silently left, because a count
+  nobody wrote down is how this went unnoticed.
 
 ### 2026-08-08 (release v1.78.0)
 
