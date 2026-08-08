@@ -1574,6 +1574,43 @@ def check_duplicate_unreleased() -> tuple[list[Finding], int]:
     return findings, len(counts)
 
 
+def check_changelog_section_missing() -> tuple[list[Finding], int]:
+    """Every plugin in `marketplace.json` must still have a `## ` section in the CHANGELOG.
+
+    This exists because a scripted edit deleted **7,950 lines** of CHANGELOG -- eight of its nine
+    component sections, every one of their release histories -- and the whole gate sweep passed,
+    green, in CI. Nothing asserted the file still contained what it is for. The bug was a
+    two-anchor splice: `t[:t.index(a)] + new + t[t.index(b):]` assumed `b` sat just after `a`, and
+    `b` was seven thousand lines further down, so the slice removed everything between them.
+
+    The general lesson does not fit in a linter -- *assert what a splice removes, not just where it
+    starts*. What does fit is the consequence: the sections are derived from `marketplace.json`, so
+    the check transcribes no list of its own and a new plugin is covered the day it is declared.
+
+    Deliberately NOT a size or line-count check. A threshold invites tuning it downward the first
+    time a legitimate consolidation trips it, and a section that exists is a fact rather than a
+    guess about how much prose a component deserves.
+    """
+    manifest, doc = ROOT / ".claude-plugin" / "marketplace.json", ROOT / "CHANGELOG.md"
+    if not manifest.is_file() or not doc.is_file():
+        return [], 0
+    try:
+        plugins = [p["name"] for p in json.loads(read(manifest)).get("plugins", [])]
+    except (ValueError, KeyError, TypeError):
+        return [], 0
+    headings = [l for l in read(doc).splitlines() if l.startswith("## ")]
+    findings = []
+    for name in plugins:
+        if not any(name in h for h in headings):
+            findings.append(Finding(
+                "changelog-section-missing", "CHANGELOG.md", 1,
+                f"no `## ` section names the plugin {name!r}, so its release history is not in the "
+                f"CHANGELOG. A section does not vanish by accident -- check for a truncating edit "
+                f"before adding one back, because the history it held is recoverable from git only "
+                f"until someone rewrites over it."))
+    return findings, len(plugins)
+
+
 def check_undocumented_skill() -> tuple[list[Finding], int]:
     """Every skill directory that exists must be NAMED in `CLAUDE.md`.
 
@@ -1968,6 +2005,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     agents_md, agents_md_examined = check_unimported_agent_instructions()
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
+    cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
@@ -1998,6 +2036,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "root_agent_instruction_files": agents_md_examined,
         "skill_directories_named_in_claude_md": undoc_skill_examined,
+        "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
@@ -2006,7 +2045,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill,
+            + agents_md + undoc_skill + cl_sections,
             coverage)
 
 
@@ -2094,6 +2133,21 @@ def selftest() -> int:
     # Direction-independent: flattening to the OTHER branch is the same defect.
     scenario("...catches the other branch too", rule=FCR, expect_finding=True,
              files={DOCTRINE[0]: DOCTRINE[1], STEP: 'the toast carries `role="alert"`\n'})
+
+    # -- changelog-section-missing ----------------------------------------
+    CSM = "changelog-section-missing"
+    MANIFEST = '{"plugins": [{"name": "rails-flow"}, {"name": "qa-flow"}]}'
+    scenario("a plugin whose CHANGELOG section was deleted", rule=CSM, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "CHANGELOG.md": "# Changelog\n\n## rails-flow\n\n### 1.0.0\n"})
+    scenario("...silent when every plugin has one", rule=CSM, expect_finding=False,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "CHANGELOG.md": "# Changelog\n\n## rails-flow\n\n## qa-flow\n"})
+    # A `### ` heading is NOT a section. The truncation left release blocks behind while removing
+    # every `## ` component heading, so matching any heading level would have passed on the damage.
+    scenario("...a release block is not a section", rule=CSM, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "CHANGELOG.md": "# Changelog\n\n### rails-flow 1.0.0\n\n### qa-flow 1.0.0\n"})
 
     # -- undocumented-skill -----------------------------------------------
     UDS = "undocumented-skill"

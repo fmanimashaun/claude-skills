@@ -107,6 +107,24 @@ GUARDS: tuple[Guard, ...] = (
                 "one branch stated as a literal",
             ),
             Mutation(
+                # No section is ever missing, so the CHANGELOG can lose eight of its nine component
+                # sections and 7,950 lines and the sweep still reports green — which is exactly what
+                # happened, in CI, on the commit this gate was written for.
+                "no plugin's CHANGELOG section is ever missing, so a truncation passes",
+                "        if not any(name in h for h in headings):",
+                "        if False:",
+                "a plugin whose CHANGELOG section was deleted",
+            ),
+            Mutation(
+                # Match any heading level and the leftover `### <plugin> 1.0.0` release blocks count
+                # as sections. The real truncation left those behind, so this mutation reproduces
+                # the damage in the shape that would have been waved through.
+                "any heading counts as a section, so leftover release blocks mask the loss",
+                '    headings = [l for l in read(doc).splitlines() if l.startswith("## ")]',
+                '    headings = [l for l in read(doc).splitlines() if l.startswith("#")]',
+                "...a release block is not a section",
+            ),
+            Mutation(
                 # Nothing is ever undocumented, so a skill can be authored, shipped and named
                 # nowhere -- which is what happened to derived-artifacts on the night this landed.
                 "no skill is ever missing from CLAUDE.md, so all of them may go unnamed",
