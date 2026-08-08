@@ -3437,6 +3437,15 @@ GUARDS: tuple[Guard, ...] = (
         # letting an unclassified action through, and accepting a policy that escalates nothing.
         mutations=(
             Mutation(
+                # THE SCOPE DOOR, found by a real run: an issue whose own body called it "a distinct
+                # auth-hardening feature" routed to DECIDE, because every open issue becomes
+                # `fix-issue` and that needs only `pick-next-backlog-item`.
+                "an item's nature stops upgrading the right, so scope enters via the issue door",
+                "    if labels and SCOPE_LABELS & {str(l).lower() for l in labels}:",
+                "    if False:",
+                "an issue labelled enhancement escalates",
+            ),
+            Mutation(
                 # The worst one available: a driver that keeps working after the safety system said
                 # stop. Two disagreeing stop systems mean the permissive one wins.
                 "the breaker stop is ignored, so the driver works past its own safety system",
@@ -3464,6 +3473,30 @@ GUARDS: tuple[Guard, ...] = (
                 '    if not isinstance(loaded, dict) or not loaded.get("escalate"):',
                 "    if False:",
                 "a policy with no `escalate` list should be refused",
+            ),
+        ),
+    ),
+    Guard(
+        name="compose_state",
+        subject="plugins/rails-flow/scripts/compose_state.py",
+        selftest="plugins/rails-flow/scripts/compose_state.py",   # --selftest lives in the module
+        # No `needs`: the fixtures are literals and a tempdir. Both mutations target a decision the
+        # driver previously made by accident -- what order the backlog is in, and what it refuses to
+        # start -- because "first element wins" IS a prioritisation policy, just an unstated one.
+        mutations=(
+            Mutation(
+                "the actionability filter goes, so blocked work is picked and burns attempts",
+                "        if blocked:",
+                "        if False:",
+                "blocked issues excluded",
+            ),
+            Mutation(
+                # Ordering was previously whatever the caller typed. Unsorting it puts an
+                # unprioritised issue first, which is how forgetting a label promotes work.
+                "the stated order goes, so priority stops deciding what is next",
+                '    actionable.sort(key=lambda e: (priority_rank(set(e["labels"])), e["number"]))',
+                "    pass",
+                "priority then age",
             ),
         ),
     ),

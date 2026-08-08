@@ -215,6 +215,47 @@ distinct area with its own conventions (`app/components`, an API namespace), or 
 style file, which belongs here scoped to `**/*.rb` rather than in a root `STYLE.md` that
 loads in full every session.
 
+## 2c. Scaffold the permission allowlist (or the flow stops every few commands)
+
+Write a `permissions.allow` block into the **committed** `.claude/settings.example.json`, and tell
+the user to copy it to their gitignored `.claude/settings.local.json`. Do **not** write it into a
+tracked `.claude/settings.json`: that file is inherited by everyone who clones the repo, and one
+person's permission decisions are not everyone's.
+
+Without this, an unattended run stops for confirmation every few commands and stops being
+unattended. The cause is not obvious and is worth stating in the report: **agent commands are
+compound pipelines** — `bin/rails test | grep -c failures` — and the *whole command string* is
+evaluated, so **one** unlisted binary anywhere in the chain re-prompts all of it. A list containing
+`bin/rails` and `bundle` but not `grep` still prompts on most real commands.
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)", "Bash(gh:*)", "Bash(bin/rails:*)", "Bash(bundle:*)",
+      "Bash(rspec:*)", "Bash(rubocop:*)", "Bash(python3:*)", "Bash(node:*)", "Bash(npx:*)",
+      "Bash(grep:*)", "Bash(rg:*)", "Bash(find:*)", "Bash(ls:*)", "Bash(cat:*)",
+      "Bash(head:*)", "Bash(tail:*)", "Bash(sed:*)", "Bash(awk:*)", "Bash(cut:*)",
+      "Bash(tr:*)", "Bash(sort:*)", "Bash(uniq:*)", "Bash(wc:*)", "Bash(jq:*)",
+      "Bash(diff:*)", "Bash(stat:*)", "Bash(basename:*)", "Bash(dirname:*)",
+      "Bash(printf:*)", "Bash(echo:*)", "Bash(test:*)", "Bash(xargs:*)",
+      "Bash(mkdir:*)", "Bash(cp:*)", "Bash(mv:*)", "Bash(touch:*)", "Bash(mktemp:*)",
+      "Bash(timeout:*)"
+    ]
+  }
+}
+```
+
+**Do not add `rm`, `curl`, `wget`, `kill`/`pkill`, `chmod`, or any package-installer**, and say so
+when you report. Each either destroys work, reaches the network, or mutates a toolchain a later step
+then trusts — a prompt is the correct friction there *even during an unattended run*, because those
+are precisely the actions whose blast radius outlives the run. A user who wants no friction at all
+should choose a permission **mode** deliberately, not arrive at one by extending a list of binaries.
+
+**Merge, never overwrite.** If `settings.example.json` already has an `allow` array, add only the
+entries that are missing and leave the rest — a user's existing entries encode decisions you cannot
+see, and a re-run that replaces them is the idempotency contract broken.
+
 ## 3. Create `GUARDRAILS.md`
 
 Sections: **Database migrations** (safe vs prohibited-without-approval, the migration

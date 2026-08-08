@@ -85,6 +85,23 @@ ACTION_RIGHTS = {
     "promote": "promote-dev-to-main",
 }
 
+SCOPE_RIGHT = "product-scope-or-user-journey-change"
+
+# Labels that mean "this changes what the product DOES", whatever door it arrived through.
+#
+# Keying rights on the ACTION alone left a hole big enough to drive scope through, and a real run
+# found it: every open issue becomes `fix-issue`, `fix-issue` needs only `pick-next-backlog-item`,
+# so an issue whose own body called it "a distinct auth-hardening feature" was routed to DECIDE. The
+# `build-feature` escalate gate was never reached, because the work never called itself a feature --
+# it called itself an issue.
+#
+# So the right is the MAXIMUM of what the action needs and what the item is. An enhancement is a
+# scope change wearing a bug tracker's clothes, and the tracker's clothes must not decide.
+SCOPE_LABELS = frozenset({
+    "enhancement", "feature", "roadmap", "epic",
+    "type:feature", "type:enhancement", "type:skill-gap",
+})
+
 STOP_CONDITIONS = ("backlog-empty", "needs-human", "budget-reached", "release-ready")
 
 
@@ -109,14 +126,26 @@ def load_policy(root: Path) -> dict:
             "escalate": loaded.get("escalate", [])}
 
 
-def rights_for(action: str, policy: dict) -> str:
+def required_right(action: str, item: object = None) -> str | None:
+    """What this action on THIS item needs — the action's own right, escalated by the item's nature.
+
+    Two inputs, because one was demonstrably not enough. See SCOPE_LABELS.
+    """
+    right = ACTION_RIGHTS.get(action)
+    labels = item.get("labels") if isinstance(item, dict) else None
+    if labels and SCOPE_LABELS & {str(l).lower() for l in labels}:
+        return SCOPE_RIGHT
+    return right
+
+
+def rights_for(action: str, policy: dict, item: object = None) -> str:
     """decide | escalate | unknown. An action in NEITHER list is `unknown`, and unknown escalates.
 
     Defaulting the unknown case to `decide` would mean every action nobody thought about is taken
     autonomously — the policy would grow permissive by omission, which is the failure mode a
     decision-rights matrix exists to prevent.
     """
-    right = ACTION_RIGHTS.get(action)
+    right = required_right(action, item)
     if right in policy.get("escalate", []):
         return "escalate"
     if right in policy.get("decide", []):
@@ -140,7 +169,19 @@ def choose(state: dict, policy: dict) -> dict:
 
     open_issues = state.get("open_issues") or []
     if open_issues:
-        return _action("fix-issue", policy, target=open_issues[0])
+        # An issue may be a bare number or a dict carrying labels. Both are accepted because the
+        # composer emits dicts while a hand-written state file usually does not -- but only the dict
+        # form can be checked for scope, so a bare number is reported as UNVERIFIED nature rather
+        # than quietly treated as a safe little bugfix.
+        item = open_issues[0]
+        target = item.get("number") if isinstance(item, dict) else item
+        out = _action("fix-issue", policy, target=target, item=item)
+        if not isinstance(item, dict):
+            out["nature_unverified"] = (
+                "this issue arrived as a bare number, so its labels could not be read and it could "
+                "not be checked for scope. Compose the state with compose_state.py, which emits "
+                "labels, or confirm by hand that this is not a feature wearing an issue number.")
+        return out
     if state.get("roadmap_items"):
         return _action("build-feature", policy, target=state["roadmap_items"][0])
     if state.get("unverified_work"):
@@ -151,12 +192,12 @@ def choose(state: dict, policy: dict) -> dict:
             "why": "no open issues, no roadmap items, nothing unverified and nothing shippable."}
 
 
-def _action(name: str, policy: dict, target: str) -> dict:
-    right = rights_for(name, policy)
+def _action(name: str, policy: dict, target: object, item: object = None) -> dict:
+    right = rights_for(name, policy, item)
     out = {"action": name, "target": target, "rights": right}
     if right != "decide":
         out["escalate_because"] = (
-            f"{name!r} needs the {ACTION_RIGHTS.get(name, 'unlisted')!r} right, which this policy "
+            f"{name!r} needs the {required_right(name, item)!r} right, which this policy "
             f"does not grant autonomously." if right == "escalate" else
             f"{name!r} is not classified by this policy. An unclassified action escalates — "
             f"defaulting it to 'decide' would let the policy grow permissive by omission.")
@@ -221,6 +262,25 @@ def selftest() -> int:
     expect("a feature is scope, so it escalates",
            {"roadmap_items": ["search"]}, "rights", "escalate")
     expect("promotion publishes, so it escalates", {"shippable": True}, "rights", "escalate")
+
+    # THE SCOPE DOOR. Found by a real run: every open issue becomes `fix-issue`, which needs only
+    # `pick-next-backlog-item`, so an issue whose own body called it "a distinct auth-hardening
+    # feature" was routed to DECIDE. The `build-feature` escalate gate was never reached, because
+    # the work never called itself a feature -- it called itself an issue.
+    expect("an issue labelled enhancement escalates",
+           {"open_issues": [{"number": 3, "labels": ["enhancement"]}]}, "rights", "escalate")
+    expect("...and a plain bug still decides",
+           {"open_issues": [{"number": 25, "labels": ["type:bug"]}]}, "rights", "decide")
+    expect("...the label is matched case-insensitively",
+           {"open_issues": [{"number": 3, "labels": ["Enhancement"]}]}, "rights", "escalate")
+    expect("...a namespaced type: label counts too",
+           {"open_issues": [{"number": 3, "labels": ["type:feature"]}]}, "rights", "escalate")
+    # A bare number carries no labels, so its nature CANNOT be checked. It must not be silently
+    # treated as a safe little bugfix -- say so, or the hole reopens for hand-written state files.
+    expect("a bare number still decides", {"open_issues": [25]}, "rights", "decide")
+    checks += 1
+    if "nature_unverified" not in choose({"open_issues": [25]}, DEFAULT_POLICY):
+        failures.append("a bare issue number must be flagged: its nature could not be checked")
 
     # UNKNOWN ESCALATES. Defaulting to `decide` would let the policy grow permissive by omission.
     checks += 1
