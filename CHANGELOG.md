@@ -7467,6 +7467,26 @@ boot/validation path — with a bullet each so the promotion could close them se
   the scaffold is a placeholder the user must replace, and `--discover` says so rather than
   back-filling a number nobody chose.
 
+- **The invented prices are gone, and an unpriced rung now REFUSES.** Removing them exposed
+  something worse than the placeholders: a missing `cost_usd` defaulted to **0**, so an unpriced
+  model cost nothing, the budget could never refuse it, and the ceiling was unreachable — a gate
+  that cannot fail, guarding the one thing here with a bill attached. The scaffold ships prices
+  **unset** because the provider does not report them and an invented number is worse than an
+  absent one: it looks authoritative and the budget then approves or refuses against a figure nobody
+  chose. `0.0` on the agent rung stays, because there it is a measured fact rather than a guess.
+
+- **The rung chooses the adapter.** Per-kind ladders imply per-rung adapters, and only the global
+  `aggregator` was consulted — so a `vector` ladder whose rung is `agent` was routed through the
+  project's image aggregator and asked for an API key it would never use. This is also what makes an
+  **MCP** path work with no new code: set the rung to `agent`, obtain the asset however you like,
+  and `--record` re-runs the gate before the manifest accepts it.
+
+- **Exit 0 stopped meaning "done".** The agent path exits 0 while handing back a *brief*, so reading
+  the return code alone marked rows `done` with `file: null` and nothing on disk — the exact
+  *"recorded from what was attempted"* failure this file's own docstring forbids. A row is `done`
+  only when a file is named **and exists**; an approved-but-unwritten row is **`awaiting-agent`**,
+  which counts as outstanding, and a run reporting success with no file is `failed`.
+
 - **The full pipeline was proven end to end at zero cost.** No image model on OpenRouter has a
   `:free` variant — checked across both endpoints, 42 models — but text models do, and the SVG path
   needs one. A complete run (`scaffold → research → plan → check → run`) produced a **valid SVG**, a

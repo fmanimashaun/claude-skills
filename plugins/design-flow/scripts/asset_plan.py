@@ -57,7 +57,7 @@ PLAN_FIELDS = {
     "why": "what this asset is FOR; a row nobody can justify should not be bought",
 }
 
-STATUSES = ("planned", "done", "failed", "skipped")
+STATUSES = ("planned", "done", "failed", "skipped", "awaiting-agent")
 
 
 def scaffold(root: Path, prd: str = "") -> list[str]:
@@ -78,25 +78,22 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
             # PER KIND, because the kinds want different models: only some emit SVG, and no
             # image endpoint emits video.
             #
-            # These IDs were VERIFIED against OpenRouter's live model list on 2026-08-09. The first
-            # draft of this file was not, and shipped `recraft-ai/recraft-v3-svg` and
-            # `google/gemini-2.5-flash-image` -- both invented from prose, both 404. Refresh them
-            # rather than trusting this comment's date:
+            # IDs were VERIFIED against OpenRouter's live model list on 2026-08-09. The first draft
+            # of this file was not, and shipped two IDs invented from documentation prose -- both
+            # 404'd on the first real call. Refresh rather than trusting this comment's date:
             #     python3 asset_plan.py --discover
             #
-            # `cost_usd` is NOT verified and cannot be: that endpoint does not expose pricing. Every
-            # number below is a placeholder you must replace from the model's own pricing page. The
-            # budget refuses against these figures, so a wrong one buys a refusal or a surprise.
+            # `cost_usd` IS DELIBERATELY UNSET. The model endpoint does not report pricing, so any
+            # number here would be invented -- and an invented price is worse than none, because it
+            # looks authoritative and the budget then refuses or approves against a figure nobody
+            # chose. The gate REFUSES an unpriced rung, so nothing can be bought until you look the
+            # price up and write it in. That refusal is the feature.
             "ladders": {
-                "static": [{"name": "google/gemini-3.1-flash-lite-image", "cost_usd": 0.012},
-                           {"name": "google/gemini-3-pro-image", "cost_usd": 0.14}],
-                # SVG-CAPABLE ONLY. A raster named `.svg` does not scale and cannot be recoloured
-                # from tokens, which is the whole reason the vector kind exists -- and the executor
-                # refuses rather than writing one.
-                # THE AGENT AUTHORS VECTOR BY DEFAULT. Claude Code writes SVG natively and
-                # already holds the brand pack, the token names and the surrounding components --
-                # context a remote model does not have. So the external call buys a worse result
-                # at a cost. `recraft/recraft-v4.1-vector` is the paid fallback if you want one.
+                "static": [{"name": "google/gemini-3.1-flash-lite-image", "cost_usd": None},
+                           {"name": "google/gemini-3-pro-image", "cost_usd": None}],
+                # THE AGENT AUTHORS VECTOR BY DEFAULT, and costs nothing -- so 0.0 here is a
+                # measured fact rather than a placeholder. `recraft/recraft-v4.1-vector` is the
+                # paid fallback if you want one; it will need a price before it can run.
                 "vector": [{"name": "agent", "cost_usd": 0.0}],
                 # EMPTY ON PURPOSE. No image endpoint returns video, so a motion row refuses with
                 # "no ladder for kind 'motion'" rather than silently saving a still as `.webm`.
@@ -289,6 +286,18 @@ def check_plan(rows: list[dict], briefs: dict | None = None) -> list[str]:
     return problems
 
 
+def cheapest_rung(ladder: list[dict]) -> float:
+    """The cheapest PRICED rung. An unpriced one is skipped, never counted as free.
+
+    Averaging a missing price to 0 made every unpriced model free, so a plan of them cost nothing
+    and the ceiling could not refuse it -- the estimate agreed with the budget by construction.
+    The gate refuses an unpriced rung outright; this keeps the ESTIMATE honest in the meantime, so
+    `--run`'s preflight does not quietly under-report what a plan will cost.
+    """
+    priced = [float(r["cost_usd"]) for r in ladder if r.get("cost_usd") is not None]
+    return min(priced) if priced else 0.0
+
+
 def plan_cost(rows: list[dict], config: dict) -> float:
     """What finishing the outstanding rows would cost, at the CHEAPEST rung.
 
@@ -297,7 +306,7 @@ def plan_cost(rows: list[dict], config: dict) -> float:
     affordable. The estimate is therefore a floor, and it is labelled as one wherever it is printed.
     """
     ladder = config.get("ladder") or []
-    rung = min((float(r.get("cost_usd", 0)) for r in ladder), default=0.0)
+    rung = cheapest_rung(ladder)
     return round(rung * sum(1 for r in rows if r.get("status") not in ("done", "skipped")), 4)
 
 
@@ -366,12 +375,30 @@ def run_plan(root: Path, rows: list[dict], executor: Path, timeout: int) -> list
             [sys.executable, str(executor), "--request", "-", "--timeout", str(timeout)],
             input=json.dumps(request), capture_output=True, text=True, cwd=root)
         if proc.returncode == 0:
-            row["status"] = "done"
-            row.pop("reason", None)
+            # EXIT 0 IS NOT "DONE". The agent path exits 0 while handing back a BRIEF -- the gate
+            # approved, and authorship is still outstanding. Reading the code alone marked the row
+            # done with `file: null` and no asset on disk, which is precisely the "recorded from
+            # what was attempted" failure this file's own docstring warns about. A row is `done`
+            # only when a file is named AND exists.
             try:
-                row["file"] = json.loads(proc.stdout).get("produced")
+                out = json.loads(proc.stdout)
             except ValueError:
-                pass
+                out = {}
+            produced = out.get("produced")
+            if produced and (root / produced).is_file():
+                row["status"] = "done"
+                row["file"] = produced
+                row.pop("reason", None)
+            elif out.get("author") == "agent":
+                row["status"] = "awaiting-agent"
+                row["write_to"] = out.get("write_to")
+                row["prompt"] = out.get("prompt")
+                row["reason"] = ("approved — the agent authors this one. Write the file at "
+                                 "`write_to` using `prompt`, then re-run with --record.")
+            else:
+                row["status"] = "failed"
+                row["reason"] = ("the run reported success but produced no file on disk; "
+                                 "nothing was recorded.")
         else:
             row["status"] = "failed"
             # Verbatim, and from the process that actually refused -- paraphrasing a refusal into
@@ -389,7 +416,7 @@ def status_report(rows: list[dict]) -> tuple[dict, int]:
     counts = {s: 0 for s in STATUSES}
     for row in rows:
         counts[row.get("status", "planned")] = counts.get(row.get("status", "planned"), 0) + 1
-    outstanding = len(rows) - counts["done"] - counts["skipped"]
+    outstanding = len(rows) - counts["done"] - counts["skipped"]   # awaiting-agent counts
     return counts, outstanding
 
 
@@ -533,8 +560,12 @@ def selftest() -> int:
         cfg = json.loads((root / CONFIG_PATH).read_text())
         check("...naming an api_key_env", cfg.get("api_key_env") == PLACEHOLDER_KEY_ENV)
         check("...with an empty briefs map to fill", cfg.get("briefs") == {})
-        check("...and a per-kind ladder, cheapest first",
-              cfg["ladders"]["static"][0]["cost_usd"] < cfg["ladders"]["static"][1]["cost_usd"])
+        # Prices are UNSET on purpose: the provider does not report them, so any number would be
+        # invented, and the gate refuses an unpriced rung rather than treating it as free.
+        check("...static rungs ship unpriced, so nothing can be bought unexamined",
+              all(r["cost_usd"] is None for r in cfg["ladders"]["static"]))
+        check("...and the agent rung is a measured 0.0, not a placeholder",
+              cfg["ladders"]["vector"][0]["cost_usd"] == 0.0)
         # `motion` is scaffolded EMPTY on purpose: no image endpoint returns video, so a motion row
         # must refuse rather than save a still frame under a `.webm` name.
         check("...motion is empty until a video model is configured",
@@ -651,6 +682,33 @@ def selftest() -> int:
     fits9, _ = affordable(urgent, {**CFG, "budget_usd": 0.02}, spent=0.0)
     check("a group takes its best member's priority",
           sorted(r["kind"] for r in fits9) == ["motion", "static"])
+
+    # EXIT 0 IS NOT "DONE". The agent path exits 0 with a brief, and reading the code alone marked
+    # the row done with no file on disk -- "recorded from what was attempted", which this file's
+    # own docstring forbids.
+    import subprocess as _sp
+    real_run = _sp.run
+    def fake(kind_out):
+        return lambda *a, **k: _sp.CompletedProcess(a[0] if a else [], 0, json.dumps(kind_out), "")
+    try:
+        _sp.run = fake({"author": "agent", "write_to": "docs/assets/x.svg", "prompt": "p"})
+        with tempfile.TemporaryDirectory() as td:
+            rows = run_plan(Path(td), [{"surface": "s", "kind": "vector", "why": "w"}],
+                            Path("exec.py"), 1)
+        check("an agent brief is awaiting-agent, not done", rows[0]["status"] == "awaiting-agent")
+        check("...and it carries where to write and what to write",
+              rows[0].get("write_to") and rows[0].get("prompt"))
+        # Success reported with no file on disk is a FAILURE, not a completion.
+        _sp.run = fake({"produced": "docs/assets/missing.svg"})
+        with tempfile.TemporaryDirectory() as td:
+            rows = run_plan(Path(td), [{"surface": "s", "kind": "static", "why": "w"}],
+                            Path("exec.py"), 1)
+        check("success with no file on disk is failed, not done", rows[0]["status"] == "failed")
+    finally:
+        _sp.run = real_run
+    # awaiting-agent is OUTSTANDING: the asset does not exist yet.
+    check("awaiting-agent counts as outstanding",
+          status_report([{"status": "awaiting-agent"}])[1] == 1)
 
     # PRD DRIFT. A library planned against last month's brief is quietly incomplete in a way
     # nothing else reports: every row `done`, status clean, new surfaces with no rows at all.

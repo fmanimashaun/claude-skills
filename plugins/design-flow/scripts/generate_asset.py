@@ -357,7 +357,14 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
     # ADAPTER FIRST, then the key. Ordering it the other way demanded an API key from the one path
     # that never calls an API -- the agent authors the asset itself -- so a zero-cost route refused
     # for a credential it had no use for.
-    name = str(config.get("aggregator", "")).lower()
+    prov = approval["provenance"]
+    # THE RUNG CHOOSES THE ADAPTER, falling back to the global aggregator. Per-kind
+    # ladders imply per-rung adapters: a `vector` ladder whose rung is `agent` must not
+    # be routed through the project's image aggregator, which is what happened -- the
+    # agent rung asked for an API key it would never use, because only the global
+    # setting was ever consulted.
+    rung = str(prov.get("model", "")).lower()
+    name = rung if rung in ADAPTERS else str(config.get("aggregator", "")).lower()
     adapter = ADAPTERS.get(name)
     if adapter is None:
         raise Unusable(
@@ -372,7 +379,7 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
     if ref_path and (root / ref_path).is_file():
         reference = (root / ref_path).read_bytes()
 
-    prov = approval["provenance"]
+
     try:
         blob, actual_cost = adapter(key, prov["model"], approval["prompt"], reference, timeout)
     except AgentWrites:

@@ -239,6 +239,19 @@ def pick_model(config: dict, surface: str, attempt: int, kind: str = "static") -
             f"cannot climb the ladder for {surface!r}: no acceptance check is stated for it, so "
             f"there is no trigger for 'the cheap model was not good enough'. Write the check down "
             f"per surface, or the cheapest rung is the only rung.")
+    # AN UNPRICED RUNG IS REFUSED, never treated as free. Defaulting a missing `cost_usd` to 0 made
+    # the ceiling unreachable: every unpriced model cost nothing, so the budget check could not
+    # refuse anything -- a gate that cannot fail, guarding the one thing here with a bill attached.
+    # The scaffold ships prices UNSET on purpose, because the provider does not expose them and an
+    # invented number is worse than an absent one: it looks authoritative and is not.
+    for rung in ladder:
+        if rung.get("cost_usd") is None:
+            raise Refusal(
+                f"the ladder rung {rung.get('name', '<unnamed>')!r} has no `cost_usd`. Nothing can "
+                f"be budgeted against an unpriced model, and treating it as free would make the "
+                f"ceiling unreachable. Look up what this model charges and write it in — the "
+                f"provider's model endpoint does not report pricing, which is why the scaffold "
+                f"leaves it blank rather than guessing.")
     if attempt >= len(ladder):
         raise Refusal(f"the ladder for {surface!r} is exhausted at {len(ladder)} rung(s); climbing "
                       f"further would be spending with no rung left to justify it.")
@@ -440,6 +453,14 @@ def selftest() -> int:
         {**CONFIG, "briefs": {"marketing-hero": {"style": "playful", "subject": "x",
                                                  "mood": "calm"}}}, OK_REQ, False)
     run("no brief for the surface", {**CONFIG, "briefs": {}}, OK_REQ, False)
+
+    # AN UNPRICED RUNG IS REFUSED. Treating it as free made the ceiling unreachable.
+    run("an unpriced rung is refused",
+        {**CONFIG, "ladder": [{"name": "m"}]}, OK_REQ, False)
+    run("...and a priced one is fine",
+        {**CONFIG, "ladder": [{"name": "m", "cost_usd": 0.01}]}, OK_REQ, True)
+    run("...zero is a price, not an absence",
+        {**CONFIG, "ladder": [{"name": "m", "cost_usd": 0.0}]}, OK_REQ, True)
 
     # PER-KIND LADDERS. Only some models emit SVG, and none of the image endpoints emit video, so
     # one global ladder forced every kind through whatever suited the most common one.

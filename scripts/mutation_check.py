@@ -3370,6 +3370,15 @@ GUARDS: tuple[Guard, ...] = (
         # mutation caught by the wrong fixture would mean some other check is doing the work.
         mutations=(
             Mutation(
+                # An unpriced rung treated as free makes the ceiling unreachable: every unpriced
+                # model costs nothing, so the budget check cannot refuse -- a gate that cannot fail,
+                # guarding the one thing here with a bill attached.
+                "an unpriced rung stops refusing, so the budget compares against nothing",
+                '        if rung.get("cost_usd") is None:',
+                "        if False:",
+                "an unpriced rung is refused",
+            ),
+            Mutation(
                 # #161's shape with a bill attached: a ceiling documented and unenforced.
                 "the budget comparison inverts, so spending past the ceiling is approved",
                 "    if spent + projected > ceiling:",
@@ -3604,6 +3613,15 @@ GUARDS: tuple[Guard, ...] = (
         # No `needs`: the fixtures are literals and tempdirs, and the one run_plan fixture points at
         # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
         mutations=(
+            Mutation(
+                # Exit 0 is not "done": the agent path exits 0 with a BRIEF. Reading the code alone
+                # marked rows done with no file on disk -- the exact "recorded from what was
+                # attempted" failure this file's own docstring forbids.
+                "exit 0 alone marks a row done, so a plan completes with no assets on disk",
+                "            if produced and (root / produced).is_file():",
+                "            if True:",
+                "an agent brief is awaiting-agent, not done",
+            ),
             Mutation(
                 # Research settles the STYLE, and the style settles which assets exist at all. A
                 # plan written without it looks identical to one written with it -- every row
