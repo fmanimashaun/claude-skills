@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-08b (v1.81.0)
 
 - **The README was 913 lines and named version 1.3.1 while the marketplace shipped 1.80.0.** It also
   listed 5 of 42 commands and neither skill shipped that day, and **Install sat at line 732** — a
@@ -6014,7 +6014,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.25.0 — 2026-08-08
 
 - **The a11y-auditor cried wolf on every page of a conformant app** (Refs #578). The keyboard pass
   decided *"visible focus indicator"* by looking up a property, so a design system carrying its ring
@@ -8534,6 +8534,38 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.81.0)
+
+> ### The auditor cried wolf, and the README was lying about itself
+>
+> One reported bug, and two documents that had drifted so far they were misinforming anyone who
+> read them.
+
+- **A conformant focus ring reported as a blocking S1 on every page** (Refs #578). The keyboard pass
+  decided *"visible indicator"* by looking up a property, so a ring living in `box-shadow` read as
+  absent — while `outline: rgb(0,95,204) none 1px` (a non-zero *width* with style `none`) passes one
+  check and fails another, and neither consults the actual ring. The spec was internally
+  inconsistent: line 87 already listed `box-shadow`, the forced-colors pass *assumed* it was
+  honoured, and the column producing the verdict named no method at all. Now a **resting-vs-focused
+  diff** — property-agnostic, because the next design system will use something no list names. The
+  skip link is judged **focused**, where a correct `sr-only` one is visible. And a blocking S1 whose
+  row records no method is now itself reported.
+
+- **The README named version 1.3.1 while the marketplace shipped 1.80.0.** It listed 5 of 42
+  commands, omitted both skills shipped that day, and put **Install at line 732**. Re-authored to
+  194 lines with install at line 12; the two deep sections moved verbatim rather than deleted.
+
+- **A wiki, sourced from the repository.** A GitHub wiki is a separate repo with no PR, no review and
+  no gate — which is exactly how the README rotted. Three reference pages are **generated** from the
+  manifest and drift-gated, seven are written, and a workflow mirrors them on every push to `main`.
+
+Three defects in this batch were caught by checks rather than review, and one by a reader: a
+selftest assertion reading `… or True` (a gate that cannot fail, inside a script whose job is
+refusing to go stale), a rebind landing on a second module object because a script run as `__main__`
+imports itself as a different module, a mutation still aimed at a line an earlier rewrite deleted —
+and every wiki link pointing at a raw file, because a GitHub wiki resolves siblings by page name
+rather than by filename.
 
 ### 2026-08-08 (release v1.80.0)
 
