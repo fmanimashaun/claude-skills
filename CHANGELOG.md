@@ -1880,7 +1880,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.22.2 — 2026-08-08
 
 - **The four unguarded scripts are guarded** — `check_criteria`, `extract_claims`, `findings`,
   `self_consistency`. They were flagged in the last release and not fixed, which is the half-measure
@@ -3093,7 +3093,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.43.0 — 2026-08-08
 
 - **Reference research — look before you design.** A designer does not open a blank canvas; they
   gather references for the *kind of problem*, work out **why** each works, and build from the
@@ -7320,7 +7320,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.19.0 — 2026-08-08
 
 - **Research is now a precondition of the asset plan**, checked rather than advised. The ordering is
   not cosmetic: research settles the **style**, and the style settles which assets exist at all — a
@@ -8466,6 +8466,36 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.80.0)
+
+> ### Look before you design — and the research gates the spending
+>
+> A designer gathers references, works out *why* each works, and builds from the mechanisms. Skip
+> that and you do not get nothing: you get the median of everything the model has seen.
+
+- **Reference research, scoped to any interface** (not just marketing — the method is identical for
+  a dashboard or an onboarding flow). Three rules are **enforced rather than written down**: three
+  sources minimum and never all from one category, a mechanism rather than a brand name, and
+  something rejected — because a record where everything was adopted is a shopping list.
+
+- **Every capture failure is silent**, which is what the operational half is really about. Lazy
+  loading returns empty placeholders; a **login wall returns a sign-in form**; a rotted CSS-in-JS
+  selector returns nothing. None errors, all produce a file with the right name. On gated galleries
+  the agent stops and asks the human to sign in **once** into a reusable profile, never handling
+  credentials; on a deliberate block it stops rather than escalating technique.
+
+- **Research gates the asset plan.** The order is not cosmetic: research settles the style, and the
+  style settles which assets exist at all. Without the check the failure is invisible — a plan
+  written without research looks exactly like one written with it.
+
+- **Affordability is group-atomic.** A hero still and its motion loop are one artefact in two files;
+  buying the loop alone is worse than buying neither. A group is bought whole or skipped.
+
+- **The four scripts flagged last release are guarded**, plus three more rules the meta-gate then
+  demanded — once a guard exists, every rule that script emits needs one, because a partial guard
+  looks covered. Targets were found **empirically**, since guessing had already failed three times
+  here. The harness also caught **drift**: a mutation still aimed at a line the group rewrite deleted.
 
 ### 2026-08-08 (release v1.79.0)
 
