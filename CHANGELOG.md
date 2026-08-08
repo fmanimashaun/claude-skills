@@ -7134,6 +7134,25 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`@variant dark` should be `@custom-variant dark`** (Refs #555). The scaffold emitted the
+  directive that **applies** an existing variant where it needed the one that **defines** a new one.
+  Tailwind v4 is explicit about the split — `@custom-variant dark (&:where(.dark, .dark *));` is the
+  form the dark-mode page itself shows, while `@variant` is for applying a variant inside a CSS rule
+  ([dark mode](https://tailwindcss.com/docs/dark-mode),
+  [functions and directives](https://tailwindcss.com/docs/functions-and-directives), verified
+  2026-08-08 against Tailwind v4).
+
+  Low severity by design: `tailwindcss:build` exits **0** either way, which is exactly why it
+  survived — a non-canonical directive that never fails loudly is one a scaffold repeats forever.
+  Corrected in both places that emit it, `foundations-tokens.md:84` and this command's step 1.
+
+  Worth recording for whoever touches this next: of **seven** `@variant` occurrences in shipped
+  content, only **two** are the CSS directive. The other five are Ruby instance variables
+  (`@variant = variant.to_sym`, `VARIANT.fetch(@variant)`), so a blind replace corrupts five
+  components to fix two lines.
+
 ### 1.15.2 — 2026-08-07
 
 - **The setup step flattened the toast's conditional role, which is an accessibility regression**
