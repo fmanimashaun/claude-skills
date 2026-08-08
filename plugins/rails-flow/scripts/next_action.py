@@ -85,6 +85,23 @@ ACTION_RIGHTS = {
     "promote": "promote-dev-to-main",
 }
 
+SCOPE_RIGHT = "product-scope-or-user-journey-change"
+
+# Labels that mean "this changes what the product DOES", whatever door it arrived through.
+#
+# Keying rights on the ACTION alone left a hole big enough to drive scope through, and a real run
+# found it: every open issue becomes `fix-issue`, `fix-issue` needs only `pick-next-backlog-item`,
+# so an issue whose own body called it "a distinct auth-hardening feature" was routed to DECIDE. The
+# `build-feature` escalate gate was never reached, because the work never called itself a feature --
+# it called itself an issue.
+#
+# So the right is the MAXIMUM of what the action needs and what the item is. An enhancement is a
+# scope change wearing a bug tracker's clothes, and the tracker's clothes must not decide.
+SCOPE_LABELS = frozenset({
+    "enhancement", "feature", "roadmap", "epic",
+    "type:feature", "type:enhancement", "type:skill-gap",
+})
+
 STOP_CONDITIONS = ("backlog-empty", "needs-human", "budget-reached", "release-ready")
 
 
@@ -109,14 +126,26 @@ def load_policy(root: Path) -> dict:
             "escalate": loaded.get("escalate", [])}
 
 
-def rights_for(action: str, policy: dict) -> str:
+def required_right(action: str, item: object = None) -> str | None:
+    """What this action on THIS item needs — the action's own right, escalated by the item's nature.
+
+    Two inputs, because one was demonstrably not enough. See SCOPE_LABELS.
+    """
+    right = ACTION_RIGHTS.get(action)
+    labels = item.get("labels") if isinstance(item, dict) else None
+    if labels and SCOPE_LABELS & {str(l).lower() for l in labels}:
+        return SCOPE_RIGHT
+    return right
+
+
+def rights_for(action: str, policy: dict, item: object = None) -> str:
     """decide | escalate | unknown. An action in NEITHER list is `unknown`, and unknown escalates.
 
     Defaulting the unknown case to `decide` would mean every action nobody thought about is taken
     autonomously — the policy would grow permissive by omission, which is the failure mode a
     decision-rights matrix exists to prevent.
     """
-    right = ACTION_RIGHTS.get(action)
+    right = required_right(action, item)
     if right in policy.get("escalate", []):
         return "escalate"
     if right in policy.get("decide", []):
@@ -138,25 +167,51 @@ def choose(state: dict, policy: dict) -> dict:
                 "why": f"parked on {state['awaiting_human']} awaiting a reply. Other independent "
                        f"work should have been taken first; if there is none, this is the stop."}
 
-    open_issues = state.get("open_issues") or []
-    if open_issues:
-        return _action("fix-issue", policy, target=open_issues[0])
+    # ESCALATE AND CONTINUE. The EPIC is explicit that an escalation must not block the run: park
+    # it and move to other INDEPENDENT work. So this collects every candidate the ladder offers and
+    # returns the first the policy lets us take ALONE, keeping the first escalation only as a
+    # fallback for when nothing autonomous is left.
+    #
+    # Without this the driver stopped on the first scope-flagged item and asked, while verification
+    # work sat available and autonomous beside it -- reported from a real run, where a session-TTL
+    # enhancement blocked a QA pass that needed no permission at all. Stopping to ask when there is
+    # work you may do is the over-asking failure the decision-rights matrix exists to avoid; it
+    # just wears the clothes of caution.
+    candidates: list[dict] = []
+    for item in (state.get("open_issues") or []):
+        target = item.get("number") if isinstance(item, dict) else item
+        out = _action("fix-issue", policy, target=target, item=item)
+        if not isinstance(item, dict):
+            out["nature_unverified"] = (
+                "this issue arrived as a bare number, so its labels could not be read and it could "
+                "not be checked for scope. Compose the state with compose_state.py, which emits "
+                "labels, or confirm by hand that this is not a feature wearing an issue number.")
+        candidates.append(out)
     if state.get("roadmap_items"):
-        return _action("build-feature", policy, target=state["roadmap_items"][0])
+        candidates.append(_action("build-feature", policy, target=state["roadmap_items"][0]))
     if state.get("unverified_work"):
-        return _action("run-qa", policy, target="unverified work on dev")
+        candidates.append(_action("run-qa", policy, target="unverified work on dev"))
     if state.get("shippable"):
-        return _action("promote", policy, target="dev -> main")
+        candidates.append(_action("promote", policy, target="dev -> main"))
+
+    for c in candidates:
+        if c["rights"] == "decide":
+            return c
+    if candidates:
+        # Nothing autonomous remains. Return the first escalation so it is ASKED (via pillar 3) and
+        # the run continues on a later tick, rather than reported as a dead end.
+        first = candidates[0]
+        return {**first, "deferred": [c["action"] for c in candidates[1:]] or None}
     return {"stop": "backlog-empty",
             "why": "no open issues, no roadmap items, nothing unverified and nothing shippable."}
 
 
-def _action(name: str, policy: dict, target: str) -> dict:
-    right = rights_for(name, policy)
+def _action(name: str, policy: dict, target: object, item: object = None) -> dict:
+    right = rights_for(name, policy, item)
     out = {"action": name, "target": target, "rights": right}
     if right != "decide":
         out["escalate_because"] = (
-            f"{name!r} needs the {ACTION_RIGHTS.get(name, 'unlisted')!r} right, which this policy "
+            f"{name!r} needs the {required_right(name, item)!r} right, which this policy "
             f"does not grant autonomously." if right == "escalate" else
             f"{name!r} is not classified by this policy. An unclassified action escalates — "
             f"defaulting it to 'decide' would let the policy grow permissive by omission.")
@@ -221,6 +276,43 @@ def selftest() -> int:
     expect("a feature is scope, so it escalates",
            {"roadmap_items": ["search"]}, "rights", "escalate")
     expect("promotion publishes, so it escalates", {"shippable": True}, "rights", "escalate")
+
+    # THE SCOPE DOOR. Found by a real run: every open issue becomes `fix-issue`, which needs only
+    # `pick-next-backlog-item`, so an issue whose own body called it "a distinct auth-hardening
+    # feature" was routed to DECIDE. The `build-feature` escalate gate was never reached, because
+    # the work never called itself a feature -- it called itself an issue.
+    expect("an issue labelled enhancement escalates",
+           {"open_issues": [{"number": 3, "labels": ["enhancement"]}]}, "rights", "escalate")
+    expect("...and a plain bug still decides",
+           {"open_issues": [{"number": 25, "labels": ["type:bug"]}]}, "rights", "decide")
+    expect("...the label is matched case-insensitively",
+           {"open_issues": [{"number": 3, "labels": ["Enhancement"]}]}, "rights", "escalate")
+    expect("...a namespaced type: label counts too",
+           {"open_issues": [{"number": 3, "labels": ["type:feature"]}]}, "rights", "escalate")
+    # A bare number carries no labels, so its nature CANNOT be checked. It must not be silently
+    # treated as a safe little bugfix -- say so, or the hole reopens for hand-written state files.
+    expect("a bare number still decides", {"open_issues": [25]}, "rights", "decide")
+    checks += 1
+    if "nature_unverified" not in choose({"open_issues": [25]}, DEFAULT_POLICY):
+        failures.append("a bare issue number must be flagged: its nature could not be checked")
+
+    # ESCALATE AND CONTINUE — reported from a real run, where the driver stopped to ask about a
+    # scope-flagged enhancement while a QA pass that needed no permission sat available beside it.
+    expect("a scope-flagged issue does not block available autonomous work",
+           {"open_issues": [{"number": 3, "labels": ["enhancement"]}], "unverified_work": True},
+           "action", "run-qa")
+    expect("...and that work is taken autonomously",
+           {"open_issues": [{"number": 3, "labels": ["enhancement"]}], "unverified_work": True},
+           "rights", "decide")
+    # A LATER issue that can be done autonomously beats an EARLIER one that cannot.
+    expect("it looks past the first issue to one it may actually do",
+           {"open_issues": [{"number": 3, "labels": ["enhancement"]},
+                            {"number": 9, "labels": ["type:bug"]}]}, "target", 9)
+    # ...but when nothing autonomous remains it must still ASK, not report a dead end.
+    expect("with nothing autonomous left it escalates rather than stopping",
+           {"open_issues": [{"number": 3, "labels": ["enhancement"]}]}, "action", "fix-issue")
+    expect("...as an escalation",
+           {"open_issues": [{"number": 3, "labels": ["enhancement"]}]}, "rights", "escalate")
 
     # UNKNOWN ESCALATES. Defaulting to `decide` would let the policy grow permissive by omission.
     checks += 1

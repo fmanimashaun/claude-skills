@@ -198,6 +198,50 @@ The default install has none, and that path must work. A shipped plugin cannot d
 server or an API key being present, so with nothing configured the gate refuses and you report it.
 Satisfy the surface from tiers 1–2 or leave it unfilled — those are the only two options.
 
+## 4b. Producing it
+
+The gate decides; `generate_asset.py` produces. Two scripts on purpose — a decider that also spent
+could prefer the decision that justified the spend it wanted.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/generate_asset.py" --request request.json
+```
+
+Exit **0** produced and recorded · **1** refused, or no usable key · **2** something is broken.
+
+**Pass the request, not an approval.** The executor **re-runs the gate itself**, in-process, right
+before the call. Handing it a hand-written `{"approved": true}` bypasses every refusal at once — the
+library check, the tier precondition, the composed prompt, the budget ceiling — so it does not accept
+one. An approval that cannot be forged is worth more than one that is convenient to pass around.
+
+### The key preflight has three outcomes, not two
+
+| state | meaning | exit |
+|---|---|---|
+| **absent** | you have not set this up — the expected default | **1** |
+| **placeholder** | you scaffolded it and never filled it in | **1** |
+| present | proceed | 0 on success |
+
+Absent and placeholder get different sentences because only the second is a step someone forgot;
+collapsing them sends people to re-read setup instructions they already followed. Both are **exit 1**,
+the same code as any other refusal, because *"we are not generating, and that is fine"* must be
+distinguishable from *"something is broken"* by exit code alone.
+
+Add the variable name to config and keep the value in your environment (or a gitignored `.env`):
+
+```json
+{ "api_key_env": "GEMINI_API_KEY" }
+```
+
+**The key is never printed, logged, or written into the provenance row** — only whether one was
+usable.
+
+### Adding a provider
+
+One adapter ships, as a reference implementation of the §3c contract. Adding another is a function
+in `ADAPTERS`, not a redesign — which is the point of naming a contract rather than a vendor. An
+unknown aggregator is refused with the shipped names listed, never silently skipped.
+
 ## 5. Record the provenance row
 
 On approval the gate returns one. Write it beside the asset, in the §Provenance table:

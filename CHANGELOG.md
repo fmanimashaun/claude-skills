@@ -7,6 +7,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-08 (v1.77.0)
+
+- **A committed `.claude/settings.example.json`, and the three-file distinction written down.** This
+  repo was telling users (via `/rails-flow:setup-flow` §2c) to keep permissions in a copied local
+  file while not doing it itself — the claims-vs-enforcement shape, in its own configuration.
+
+  The trap is that the three files look interchangeable and are not: `settings.json` is **tracked**
+  and inherited by everyone who clones, `settings.local.json` is **gitignored** and holds what *you*
+  trust on *your* machine, and `settings.example.json` is committed but **read by nothing** — a
+  bridge so a fresh clone has something to copy. Permissions belong in the local file because they
+  are not a decision to make on anyone else's behalf; the SessionStart hook belongs in the tracked
+  one because it is what makes the repo work.
+
+  Worth recording why a broad allowlist still prompts, since it cost a session: maintenance commands
+  are **compound pipelines**, the whole string is evaluated, and **one** unlisted binary anywhere in
+  the chain re-prompts all of it. A list holding `git`, `gh` and `python3` but not `grep` prompts on
+  most real commands. `rm`, `curl`, `wget`, `kill`, `chmod` and package installers are deliberately
+  absent — their blast radius outlives the run, so a prompt is correct friction even mid-run.
+
 ### 2026-08-08 (v1.75.0)
 
 - **An `AGENTS.md` at this repo's root was read by nothing, for two whole releases.** Claude Code
@@ -1860,6 +1879,60 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.22.0 — 2026-08-08
+
+- **Reverted: `setup-flow` no longer scaffolds a permission allowlist.** It was added hours earlier
+  and is being taken out again on the maintainer's call, which is the right one — a plugin has no
+  business configuring a user's permissions, and the advice was self-contradicting: the same passage
+  said *"for no friction at all, choose a permission mode deliberately rather than extending a list
+  of binaries"* and then shipped 38 lines of list-building. If a run should be unattended, that is a
+  **mode** decision the user makes once, not a list a scaffold grows on their behalf.
+
+- **The driver stopped to ask when it had work it could do** (Refs #488). Reported from a real run: a
+  scope-flagged enhancement was first in the backlog, so the driver escalated and halted — while a QA
+  pass that needed no permission at all sat available beside it. The EPIC is explicit that an
+  escalation must **not block the run**: park it and move to other independent work.
+
+  It now collects every candidate the ladder offers and returns the first the policy lets it take
+  **alone**, keeping the first escalation as a fallback for when nothing autonomous remains. A later
+  issue it may actually do beats an earlier one it may not. Over-asking is the failure the
+  decision-rights matrix exists to prevent — it just wears the clothes of caution.
+
+- **Scope could enter through the `fix-issue` door, and a real run found it** (Refs #488). Rights
+  were keyed on the ACTION alone: every open issue becomes `fix-issue`, which needs only
+  `pick-next-backlog-item` — so an issue whose own body called it *"a distinct auth-hardening
+  feature"* routed to **decide**. The `build-feature` escalate gate was never reached, because the
+  work never called itself a feature; it called itself an issue. The required right is now the
+  maximum of what the action needs and **what the item is**, matched case-insensitively across
+  `enhancement` / `feature` / `roadmap` / `epic` and their `type:` forms. A bare issue number still
+  decides but is flagged `nature_unverified` — its labels could not be read, and silence there would
+  reopen the hole for hand-written state.
+
+- **`compose_state.py` — the driver reads reality instead of a hand-typed file** (Refs #488). The
+  same run put it plainly: *"I had to be the loop by hand."* Issues come from a **bounded** `gh`
+  query, `run_stopped` from the breaker's own ledger (never re-derived — two safety systems that
+  disagree resolve in favour of the permissive one), plus parked escalations and verification
+  stamps. It reports; it never decides, because a composer that also decided could quietly prefer
+  the state justifying the action it wanted.
+
+- **Actionability and ordering were decisions the toolchain was making by accident.** Blocked,
+  env-gated and deploy-time issues are excluded **with their reason** and still reported as
+  `declined_issues` — *"the backlog is empty"* and *"everything left is blocked"* are different
+  sentences and only one means you are finished. The breaker is a backstop for work that turns out
+  impossible, not a substitute for reading the label that already said so. Ordering is now stated —
+  priority label, then age — because *"first element wins"* **is** a prioritisation policy, and the
+  toolchain had one while refusing to say what it was. Unprioritised sorts **last**, so forgetting a
+  label cannot promote work.
+
+- **`/rails-flow:setup-flow` now scaffolds a permission allowlist** (§2c). Without one an unattended
+  run stops for confirmation every few commands and stops being unattended. The cause is not
+  obvious: agent commands are **compound pipelines**, the whole string is evaluated, so **one**
+  unlisted binary anywhere in the chain re-prompts all of it — a list with `bin/rails` and `bundle`
+  but no `grep` still prompts on most real commands. It writes to the committed
+  `settings.example.json` for the user to copy, **merges rather than overwrites**, and deliberately
+  omits `rm`, `curl`, `wget`, `kill`, `chmod` and package installers: those are exactly the actions
+  whose blast radius outlives the run, so a prompt is correct friction even mid-run.
 
 ### 1.21.0 — 2026-08-08
 
@@ -7171,6 +7244,31 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.17.0 — 2026-08-08
+
+- **`/design-flow:generate` produces now, not just decides** (Refs #507). `generate_asset.py`
+  preflights the key, calls the provider, saves the asset and appends its manifest row. It is a
+  **separate script from the gate on purpose**: a decider that also spent could prefer the decision
+  that justified the spend it wanted.
+
+- **It re-runs the gate rather than accepting an approval.** Handing the executor a hand-written
+  `{"approved": true}` would bypass every refusal at once — library check, tier precondition,
+  composed prompt, budget ceiling — so it takes the *request* and runs the gate in-process
+  immediately before the call. An approval that cannot be forged is worth more than one that is
+  convenient to pass around, and a mutation proves a forged one never reaches a provider.
+
+- **The key preflight has three outcomes, not two.** Absent means *"you have not set this up"*;
+  placeholder means *"you scaffolded it and never filled it in"* — only the second is a forgotten
+  step, and collapsing them sends people to re-read instructions they already followed. The
+  placeholder pattern is **anchored**, so a real key merely containing `changeme` is still accepted;
+  an over-eager matcher would block a working setup, which is worse than the problem it solves. The
+  key is never printed, logged, or written into provenance.
+
+  Both key states **refuse (exit 1)** rather than erroring, which corrected an inconsistency shipped
+  in the same session: a missing *aggregator* refused while a missing *key* errored, though both mean
+  the same thing. A caller must be able to tell *"not generating, that is fine"* from *"something is
+  broken"* by exit code alone.
+
 ### 1.16.0 — 2026-08-08
 
 - **`/design-flow:generate` — the pay-as-you-go asset path, as machinery rather than advice**
@@ -8240,6 +8338,38 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.77.0)
+
+> ### The asset path produces, and the driver stops asking when it could work
+>
+> Both fixes came from running the thing rather than reasoning about it — one from a downstream
+> driver run, one from the mutation harness turning on the code that had just been written.
+
+- **`/design-flow:generate` produces now** (Refs #507). `generate_asset.py` preflights the key,
+  calls the provider, saves the asset and appends its manifest row — a **separate script from the
+  gate**, because a decider that also spent could prefer the decision that justified the spend it
+  wanted. It **re-runs the gate** rather than accepting an approval, so a hand-written
+  `{"approved": true}` cannot bypass the library check, the tier precondition, the composed prompt or
+  the budget ceiling. The key preflight distinguishes **absent** from **placeholder** — only the
+  second is a forgotten step — and both refuse at exit 1, correcting an inconsistency where a missing
+  aggregator refused while a missing key errored.
+
+- **The driver stopped to ask when it had work it could do** (Refs #488). A scope-flagged
+  enhancement sat first in the backlog, so it escalated and halted — while a QA pass needing no
+  permission waited beside it. It now takes the first candidate the policy lets it take **alone**,
+  keeping the escalation as a fallback for when nothing autonomous remains. Over-asking is the
+  failure the decision-rights matrix exists to prevent; it just wears the clothes of caution.
+
+- **Reverted the same day: no permission-allowlist scaffolding in the plugin.** A plugin has no
+  business configuring a user's permissions, and the passage contradicted itself — it advised
+  choosing a permission *mode* rather than extending a list of binaries, then shipped 38 lines of
+  list-building.
+
+The mutation harness found **three defects in the guard written minutes earlier**: a missing `needs`
+made every mutation "catch" a `ModuleNotFoundError` instead of a verdict, two `expects` named the
+pass message rather than the failure message, and one fixture would have dialled a real provider once
+mutated. A crash is not a verdict, and a test that reaches the network to prove a refusal is a bill.
 
 ### 2026-08-08 (release v1.76.0)
 
