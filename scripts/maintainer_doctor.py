@@ -124,6 +124,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # mistake the block above records, not a carve-out anyone got away without.
     ("inventory artifact drift", ("python3", "scripts/build_inventory.py", "--check")),
     ("inventory artifact selftest", ("python3", "scripts/build_inventory.py", "--selftest")),
+    # The wiki's REFERENCE pages only. Its narrative pages are hand-written and this never touches
+    # them -- but a renamed command or a new skill must not be able to leave the reference wrong,
+    # which is exactly how the README came to name version 1.3.1 while the marketplace shipped 1.80.
+    ("wiki reference drift", ("python3", "scripts/build_wiki.py", "--check")),
+    ("wiki reference selftest", ("python3", "scripts/build_wiki.py", "--selftest")),
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
     # #129 widened its INPUT from the doctrine file to every shipped brand pack, because the #304
     # fix had been applied to the doctrine file and to neither pack — so the gate read clean over
