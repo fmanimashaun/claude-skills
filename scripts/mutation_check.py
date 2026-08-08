@@ -3554,6 +3554,69 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    Guard(
+        name="asset_plan",
+        subject="plugins/design-flow/scripts/asset_plan.py",
+        selftest="plugins/design-flow/scripts/asset_plan.py",   # --selftest lives in the module
+        # No `needs`: the fixtures are literals and tempdirs, and the one run_plan fixture points at
+        # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
+        mutations=(
+            Mutation(
+                # Without the split, a run generates until the money stops -- leaving an ARBITRARY
+                # half of the set. A half-built family of illustrations is not a cheaper library,
+                # it is an incoherent one, so choosing which half is the entire value.
+                "affordability stops bounding the run, so it spends until the money stops",
+                "        if rung <= remaining:",
+                "        if True:",
+                "only what fits is taken",
+            ),
+            Mutation(
+                # A library planned against last month's brief is quietly incomplete: every row
+                # done, status clean, and the new surfaces have no rows at all.
+                "PRD drift stops being detected, so a stale plan reads as a finished one",
+                '    if fingerprint(path) != prd.get("sha256"):',
+                "    if False:",
+                "an edited PRD is reported",
+            ),
+            Mutation(
+                # Without reconciliation the plan and the library drift apart, and the gap between
+                # them stops meaning "remaining work".
+                "unplanned assets stop being reported, so ad-hoc work never reaches the plan",
+                '            for e in owned if (e.get("surface"), e.get("kind", "static")) not in planned]',
+                '            for e in owned if False]',
+                "an unplanned asset is reported",
+            ),
+            Mutation(
+                # Idempotency is what stops a re-run re-buying the library. Without it, every
+                # `--run` pays again for everything already on disk.
+                "a done row is re-run, so every pass re-buys the whole library",
+                '        if row.get("status") == "done":',
+                "        if False:",
+                "a done row is skipped entirely",
+            ),
+            Mutation(
+                # The scaffold CREATES an empty plan, so this is the state of every fresh setup.
+                # Blessing it says the planning is finished before it has started.
+                "an empty plan passes review, so an unplanned project reads as finished",
+                "    if not rows:",
+                "    if False:",
+                "an empty plan is reported as unplanned",
+            ),
+            Mutation(
+                "two rows for one slot pass, so a surface forks into two looks",
+                "        if key in seen:",
+                "        if False:",
+                "two rows for one surface+kind is reported",
+            ),
+            Mutation(
+                # Moves the finding from review time back to run time, which is after the spend.
+                "the brief cross-check goes, so unrunnable rows only fail once money is involved",
+                '        if briefs is not None and row.get("surface") and row["surface"] not in briefs:',
+                "        if False:",
+                "a row with no brief for its surface is reported",
+            ),
+        ),
+    ),
 )
 
 
