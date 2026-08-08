@@ -1880,6 +1880,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.22.1 — 2026-08-08
+
+- **Pillars 1 and 3 had selftests but no mutation coverage** (Refs #488). Their fixtures ran; nothing
+  proved those fixtures could fail. Found while verifying #488's *"each pillar independently
+  acceptance-tested"* against the repo rather than against memory — the `mutation coverage` gate
+  proves every **declared** mutation is caught, and never that everything testable is declared, so
+  two shipped pillars sat uncovered without anything going red.
+
+  Each now has the mutation that matters most. `toolchain_version`: the newest install record stops
+  winning, so a **stale** version reads as installed — the one thing pillar 1 exists to catch.
+  `escalation`: the marker matches anywhere instead of at the start, so a **quoted** question reads
+  as agent-authored and the thread parks forever.
+
+  Registering them took three attempts, each a defect worth naming. The first target was indented by
+  four spaces and I copied eight, having counted my own terminal prefix as source. The second matched
+  a real line yet the harness saw nothing, because `"\ufeff"` inside a normal Python string is
+  **evaluated at parse time** — the file held the right characters while the runtime value held an
+  actual U+FEFF. A raw string fixes it. The same invisible-character class has now bitten twice in
+  this repo, and both times the file looked correct.
+
+  **Four more scripts remain unguarded** — `check_criteria`, `extract_claims`, `findings`,
+  `self_consistency` — all pre-dating this EPIC. Named here rather than silently left, because a
+  count nobody wrote down is how this went unnoticed in the first place.
+
 ### 1.22.0 — 2026-08-08
 
 - **Reverted: `setup-flow` no longer scaffolds a permission allowlist.** It was added hours earlier
@@ -7244,6 +7268,42 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.18.0 — 2026-08-08
+
+- **`/design-flow:assets` — the setup and drive command for the curated library** (Refs #507).
+  Scaffolds config and plan, pins the brief, checks the plan is reviewable, generates what is
+  outstanding and records what happened. **Re-running resumes rather than resets** — a `done` row is
+  never re-bought, and a second scaffold re-pins the brief and changes nothing else, because a setup
+  command that resets a user's rows is not idempotent, it is destructive.
+
+- **Three files, three jobs.** The config says *how to buy*; `plan.json` says *what the product
+  needs*; `manifest.json` says *what the project owns*. **The gap between the last two is the
+  remaining work**, which is the whole reason both exist — keep only the manifest and a library
+  nobody has finished planning looks finished.
+
+- **The plan is costed before anything is generated**, and the run refuses when the budget cannot
+  finish it. That is the point: generating until the money stops leaves an **arbitrary** half of the
+  set, and a half-built family of illustrations is not a cheaper library, it is an incoherent one.
+  The refusal prints the shortfall and what fits by priority; `--confirm-partial` then generates
+  exactly that and leaves the rest `planned` — not `failed`, because they were never attempted.
+
+  Three caveats are printed rather than hidden: the estimate is a **floor** (every row priced at the
+  cheapest rung), rows with no `priority` were split by **plan order** and the run says how many, and
+  `--spent` is an **input** because nothing here can read a provider balance.
+
+- **Two kinds of drift are now detectable, neither visible any other way.** A **PRD fingerprint**
+  catches a plan written against a brief that has since moved — every row `done`, the status clean,
+  and the new surfaces with no rows at all. And **reconciliation** reports any manifest entry with no
+  plan row: an agent generating ad-hoc must add the row with its rationale and use cases, or the
+  plan stops describing the library it tracks and the gap above stops meaning anything.
+
+- **Two defects were caught by the checks themselves while building this.** `--check` blessed an
+  **empty** plan — the exact state the scaffold creates — while a comment three lines above claimed
+  that case was covered. And a plan row whose surface had no brief passed review and failed at run
+  time, after the spend; the cross-check moves that finding to before it. A mutation also **survived**
+  because it was written as `[] or [...]`, which evaluates to the original list — the harness
+  reporting a survivor was reporting a bad mutation, and it was right to.
+
 ### 1.17.0 — 2026-08-08
 
 - **`/design-flow:generate` produces now, not just decides** (Refs #507). `generate_asset.py`
@@ -8338,6 +8398,62 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-08 (release v1.79.0)
+
+> ### The autonomous driver is done, and the last check was on the checks
+>
+> Verifying #488's own definition of done against the repo — rather than against memory — found
+> that two shipped pillars had selftests nothing proved could fail.
+
+- **Pillars 1 and 3 had no mutation coverage** (Refs #488). Their fixtures ran; nothing showed those
+  fixtures could fail. The `mutation coverage` gate proves every **declared** mutation is caught, and
+  never that everything testable is declared — so two pillars sat uncovered with nothing going red.
+  Each now carries the mutation that matters: for `toolchain_version`, the newest install record
+  stops winning so a **stale** version reads as installed; for `escalation`, the marker matches
+  anywhere instead of at the start, so a **quoted** question reads as agent-authored and the thread
+  parks forever.
+
+  Registering them took three attempts, and the second is worth remembering: `"\ufeff"` inside a
+  normal Python string is **evaluated at parse time**, so the file held the right characters while
+  the runtime value held an actual U+FEFF and matched nothing. A raw string fixes it. That
+  invisible-character class has now bitten twice in this repo, both times with the file looking
+  correct.
+
+  **Four scripts remain unguarded** — `check_criteria`, `extract_claims`, `findings`,
+  `self_consistency`, all pre-dating this work — named rather than silently left, because a count
+  nobody wrote down is how this went unnoticed.
+
+### 2026-08-08 (release v1.78.0)
+
+> ### The asset pipeline is complete: set up, plan, cost, generate, reconcile
+>
+> `/design-flow:assets` is the missing front end — it scaffolds the config with a placeholder key,
+> holds the plan of what the product needs, and refuses to start a plan the budget cannot finish.
+
+- **`/design-flow:assets`** (Refs #507). Three files, three jobs: the config says *how to buy*,
+  `plan.json` says *what the product needs*, `manifest.json` says *what the project owns*. **The gap
+  between the last two is the remaining work** — keep only the manifest and a library nobody has
+  finished planning looks finished. Re-running **resumes rather than resets**: a `done` row is never
+  re-bought, and a second scaffold re-pins the brief and changes nothing else.
+
+- **The plan is costed before anything is generated.** Generating until the money stops leaves an
+  **arbitrary** half of the set, and a half-built family of illustrations is not a cheaper library —
+  it is an incoherent one, and you cannot tell by looking which half is missing. The refusal prints
+  the shortfall and what fits by priority; `--confirm-partial` generates exactly that and leaves the
+  rest `planned`, not `failed`, because they were never attempted. Three caveats are printed rather
+  than hidden: the estimate is a **floor**, unprioritised rows were split by **plan order**, and
+  `--spent` is an **input** because nothing here can read a provider balance.
+
+- **Two kinds of drift are detectable now.** A pinned **PRD fingerprint** catches a plan written
+  against a brief that has since moved — every row `done`, status clean, new surfaces with no rows.
+  And **reconciliation** reports any manifest entry with no plan row, so an agent generating ad-hoc
+  must record its rationale and use cases or the plan stops describing the library it tracks.
+
+The checks caught two defects in their own author's work: `--check` blessed an **empty** plan — the
+exact state the scaffold creates — while a comment three lines above claimed the case was covered;
+and a row whose surface had no brief passed review and failed only after the spend. A mutation also
+**survived** because it was written as `[] or [...]`, which evaluates to the original list.
 
 ### 2026-08-08 (release v1.77.0)
 
