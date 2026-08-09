@@ -7390,6 +7390,43 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The research now decides the style, and the plan holds every brief to it.** The sequence —
+  scaffold, read the PRD, research for inspiration, curate the set, generate — was enforced at every
+  step **except the one that carries the meaning**: nothing connected the research to the style. A
+  project could research monochrome ink line-work and brief a `3d-render`, and no check noticed. The
+  record was a box that got ticked.
+
+  `style` is now the research record's **output**, required once it has references: three sources
+  disagree, which is why three are the minimum, and **the choosing is the design**. A record that
+  gathers and does not choose is a mood board — it documents the looking and omits the decision.
+
+  Every brief is held to that value, and a mismatch refuses **before anything is bought**. One
+  family, one style: a set that mixes them is the pile this whole path exists to avoid, and it is
+  invisible once shipped.
+
+- **The settled approach is emitted as a project-level SKILL, not left as JSON.** `--emit-skill`
+  writes `.claude/skills/project-design/SKILL.md` — the chosen style, the job it serves, the
+  mechanisms adopted, and **what was rejected and why**.
+
+  The record is *evidence*; the skill is *doctrine*. A JSON file is parsed when an agent remembers
+  to; a skill is read because its description matches the work in hand. Left only in the record, the
+  style gets **re-derived** by every downstream agent from raw references — and re-derivation is
+  where a family quietly becomes a pile. The rejected half is the part people drop, and it is the
+  reason the same idea is not re-proposed next quarter.
+
+  It is **generated, never hand-edited**, and refuses to emit from a record that does not pass its
+  own checks — publishing a decision nobody made, into the place agents trust most, is worse than
+  publishing nothing. That guard first lived in `main()`, where no test reached it and a mutation
+  survived; it now sits at the point of writing, where the danger is.
+
+  Tokens are deferred to the brand pack rather than restated, so the skill records the *approach*
+  and the pack records the *values* — one home each.
+
+- **Retracted, not shipped: a Figma-to-tokens reader.** It was named as a gap against an external
+  designer workflow, and it is not one — tokens here are **generated from the brand pack**, so a
+  Figma reader would be a second source of truth for the same values, which `plugin-boundaries`
+  forbids by name. The flow is agent-driven; the absence is a decision.
+
 - **Doctrine said motion had no route. It was wrong, and the shape of the error is worth keeping.**
   The claim began as a true statement about the *image* endpoint — it returns no video — and was
   allowed to stand as a claim about the provider, so the scaffold shipped an empty motion ladder and

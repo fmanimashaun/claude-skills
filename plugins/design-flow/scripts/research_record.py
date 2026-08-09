@@ -76,6 +76,16 @@ def check(record: dict) -> list[str]:
             "no `job` stated. Research without one returns the median of everything, which is the "
             "stock look this method exists to avoid. Name the user, their state of mind, and the "
             "decision the surface has to move.")
+    # THE STYLE IS THE RESEARCH'S OUTPUT, and it must be stated here. Synthesis that names no
+    # style has not finished: "three or more sources disagree, and the choosing IS the design" --
+    # so a record with no `style` records the gathering and omits the decision. It is also the link
+    # that makes research MEAN anything downstream: without it a project can research ink line-work
+    # and brief a 3D render, and nothing notices.
+    if record.get("references") and not record.get("style"):
+        problems.append(
+            "no `style` chosen. The references disagree — that is why three are required — and "
+            "choosing between them is the design. A record that gathers and does not choose is a "
+            "mood board, and nothing downstream can hold a brief to it.")
     refs = record.get("references") or []
     if len(refs) < MIN_SOURCES:
         problems.append(
@@ -120,9 +130,80 @@ def check(record: dict) -> list[str]:
     return problems
 
 
+SKILL_PATH = Path(".claude/skills/project-design/SKILL.md")
+
+
+def emit_skill(record: dict, root: Path) -> Path:
+    """Write the settled approach as a project-level SKILL, not just a JSON record.
+
+    THE RECORD IS EVIDENCE; THE SKILL IS DOCTRINE. A JSON file is something an agent parses when it
+    remembers to; a skill is something it reads because the description matches what it is doing. If
+    the approach only ever lives in `reference-research.json`, every downstream agent re-derives the
+    style from raw references -- and re-derivation is where a family quietly becomes a pile.
+
+    So the research's OUTPUT is written where doctrine lives. It carries the chosen style, the
+    mechanisms adopted, and -- the part people drop -- what was REJECTED and why, because a reader
+    who does not know what was considered and turned down will re-propose it next quarter.
+
+    Regenerated from the record every time, never hand-edited: the record is the source, and two
+    editable copies of one decision is how they drift apart.
+    """
+    # REFUSE AT THE POINT OF WRITING, not at the CLI. The guard lived in main(), which no test
+    # exercised, so a mutation removing it survived -- and the thing it guards is publishing a
+    # decision nobody made into the place agents trust most.
+    problems = check(record)   # emit_skill: refuse at the point of writing
+    if problems:
+        raise SystemExit("refusing to emit a skill from a record that does not hold up:\n  "
+                         + "\n  ".join(problems))
+    style = record.get("style") or "unstated"
+    refs = record.get("references") or []
+    adopted = [r for r in refs if r.get("adopt")]
+    rejected = [r for r in refs if r.get("reject")]
+
+    lines = [
+        "---",
+        "name: project-design",
+        (f"description: The design approach settled for this project — style `{style}`, the "
+         f"mechanisms adopted from reference research, and what was deliberately rejected. Use when "
+         f"building any UI surface, choosing an illustration or asset, reviewing a design for brand "
+         f"fit, or deciding whether a new visual belongs in this product."),
+        "---", "",
+        "# The design approach for this project", "",
+        "**GENERATED from `docs/design/reference-research.json` — do not hand-edit.** Regenerate with",
+        "`research_record.py --emit-skill`. Two editable copies of one decision drift apart.", "",
+        f"## The style: `{style}`", "",
+        "Every brief in this project carries this style, and the plan refuses a brief that names a",
+        "different one. One family, one style — a set that mixes them is a pile, and it is invisible",
+        "once shipped.", "",
+        f"## The job this design serves", "",
+        f"> {record.get('job') or '(no job stated)'}", "",
+        "Research a job, not a page type. A surface that does not serve this job is not covered by",
+        "this approach and needs its own research rather than a guess.", "",
+        "## Mechanisms adopted", "",
+    ]
+    lines += [f"- **{r.get('adopt')}** — from {r.get('source')} ({r.get('category')}): "
+              f"{r.get('mechanism')}" for r in adopted] or ["- (none recorded)"]
+    lines += ["", "## Deliberately rejected", "",
+              "The half people drop, and the reason the same idea does not get re-proposed next",
+              "quarter. Each of these was considered and turned down:", ""]
+    lines += [f"- **{r.get('reject')}** — considered from {r.get('source')}"
+              for r in rejected] or ["- (nothing rejected — which makes the record a shopping list)"]
+    lines += ["", "## What this does not settle", "",
+              "Tokens, spacing and type come from the brand pack, not from here. This file records",
+              "the *approach*; the pack records the *values*, and a mechanism that cannot be",
+              "expressed in the pack's tokens is one this project cannot ship.", ""]
+
+    out = root / SKILL_PATH
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines), encoding="utf-8")
+    return out
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--record", default=str(RECORD_PATH))
+    ap.add_argument("--emit-skill", action="store_true",
+                    help="write the settled approach as a project-level skill agents read")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -138,8 +219,14 @@ def main(argv: list[str]) -> int:
         print(f"{path} is not valid JSON ({exc})", file=sys.stderr)
         return 2
     problems = check(record)
-    print("\n".join(problems) or "the research record holds up.")
-    return 1 if problems else 0
+    if problems:
+        print("\n".join(problems))
+        return 1
+    if args.emit_skill:
+        print(f"wrote {emit_skill(record, Path.cwd())}")
+        return 0
+    print("the research record holds up.")
+    return 0
 
 
 def selftest() -> int:
@@ -157,7 +244,7 @@ def selftest() -> int:
                 "adopt": "demote the sub-head"}
         return {**base, **kw}
 
-    GOOD = {"job": "a sceptical buyer deciding in one visit",
+    GOOD = {"job": "a sceptical buyer deciding in one visit", "style": "minimalist-ink",
             "references": [ref(category="direct", reject="their comparison table"),
                            ref(category="adjacent"), ref(category="outside")]}
     expect("a complete record passes", check(GOOD) == [])
@@ -185,6 +272,43 @@ def selftest() -> int:
     expect("a record rejecting nothing is reported",
            any("shopping list" in p for p in check(nothing_rejected)))
     expect("...and ONE rejection anywhere is enough", check(GOOD) == [])
+
+    # THE SKILL IS THE HANDOFF. A JSON record is parsed when an agent remembers to; a skill is read
+    # because its description matches the work. If the approach lives only in the record, every
+    # downstream agent re-derives the style from raw references -- and re-derivation is where a
+    # family quietly becomes a pile.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        rec = {**GOOD, "style": "minimalist-ink"}
+        out = emit_skill(rec, root)
+        body = out.read_text(encoding="utf-8")
+        expect("the skill lands where skills are read", str(out).endswith(".claude/skills/project-design/SKILL.md"))
+        expect("...with frontmatter a matcher can use", body.startswith("---\nname: project-design"))
+        expect("...naming the chosen style", "`minimalist-ink`" in body)
+        expect("...and the job it serves", "sceptical buyer" in body)
+        expect("...carrying what was ADOPTED", "demote the sub-head" in body)
+        # The half people drop: without it the same idea is re-proposed next quarter.
+        expect("...and what was REJECTED", "their comparison table" in body)
+        expect("...marked generated, so nobody hand-edits a second copy",
+               "do not hand-edit" in body)
+        # Tokens are the pack's job. A skill that restated them would be a second source of truth.
+        expect("...deferring tokens to the brand pack", "come from the brand pack" in body)
+
+    # An unreviewable record must NOT become doctrine.
+    with tempfile.TemporaryDirectory() as td:
+        checks += 1
+        try:
+            emit_skill({**GOOD, "style": None}, Path(td))
+            failures.append("a record with no style should not emit a skill")
+        except SystemExit:
+            pass
+
+    # THE STYLE IS THE OUTPUT. A record that gathers and does not choose is a mood board.
+    expect("a record with references and no style is reported",
+           any("no `style` chosen" in p for p in check({**GOOD, "style": None})))
+    expect("...and one that chose is fine",
+           not any("no `style`" in p for p in check({**GOOD, "style": "minimalist-ink"})))
 
     # THE LOGIN WALL. It returns a page, not an error, so the capture can BE the wall.
     walled = {**GOOD, "references": [{**ref(reject="x"), "capture": "captures/mobbin-login.png"},

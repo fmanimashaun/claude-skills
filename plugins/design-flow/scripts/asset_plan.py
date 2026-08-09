@@ -204,6 +204,27 @@ def check_research(root: Path) -> list[str]:
     and nothing in the file says the style was picked from the median of what the model had seen.
     """
     path = root / RESEARCH_PATH
+    if path.is_file():
+        # THE RESEARCH DECIDES THE STYLE, and this is the join that makes that true rather than
+        # hoped. Without it a project can research monochrome ink line-work and brief a 3D render,
+        # and nothing notices -- the research record becomes a box that was ticked rather than a
+        # decision anything downstream honours. Every brief must carry the style the research chose.
+        try:
+            chosen = json.loads(path.read_text(encoding="utf-8")).get("style")
+        except ValueError:
+            chosen = None
+        cfg = root / CONFIG_PATH
+        if chosen and cfg.is_file():
+            try:
+                briefs = json.loads(cfg.read_text(encoding="utf-8")).get("briefs") or {}
+            except ValueError:
+                briefs = {}
+            off = [s for s, b in briefs.items() if b.get("style") and b["style"] != chosen]
+            if off:
+                return [f"the research chose {chosen!r}, but {', '.join(sorted(off))} brief(s) name "
+                        f"a different style. One family, one style -- a set that mixes them is the "
+                        f"pile this whole path exists to avoid, and it is invisible once shipped. "
+                        f"Change the briefs, or re-open the research and choose again."]
     if not path.is_file():
         return [f"no reference research at {RESEARCH_PATH}. Research comes BEFORE the plan: it "
                 f"settles the style, and the style settles which assets exist at all. Run the "
@@ -658,6 +679,22 @@ def selftest() -> int:
         (root / "docs/design").mkdir(parents=True)
         (root / RESEARCH_PATH).write_text('{"job": "x", "references": []}', encoding="utf-8")
         check("...and a present one is not", check_research(root) == [])
+
+    # THE RESEARCH DECIDES THE STYLE. Without this join the record is a box that was ticked.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docs/design").mkdir(parents=True)
+        (root / ".design-flow").mkdir()
+        (root / RESEARCH_PATH).write_text(
+            json.dumps({"job": "x", "style": "minimalist-ink", "references": []}), encoding="utf-8")
+        def _cfg(style):
+            (root / CONFIG_PATH).write_text(
+                json.dumps({"briefs": {"hero": {"style": style}}}), encoding="utf-8")
+        _cfg("3d-render")
+        check("a brief that ignores the researched style is reported",
+              any("chose 'minimalist-ink'" in m for m in check_research(root)))
+        _cfg("minimalist-ink")
+        check("...and one that honours it is silent", check_research(root) == [])
 
     # COST. The estimate prices every row at the CHEAPEST rung, so it is a floor, and settled rows
     # cost nothing -- a re-run that re-priced finished work would refuse plans that are affordable.
