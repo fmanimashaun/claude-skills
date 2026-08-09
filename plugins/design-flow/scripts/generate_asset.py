@@ -831,7 +831,8 @@ def selftest() -> int:
         (root / ".design-flow/generation.json").write_text(json.dumps({
             "aggregator": "no-such-provider", "api_key_env": "DF_TEST_KEY", "budget_usd": 1.0,
             "ladder": [{"name": "m", "cost_usd": 0.01}],
-            "briefs": {"s": {"style": "flat-vector", "subject": "x", "mood": "calm"}},
+            "briefs": {"s": {"style": "flat-vector", "subject": "x", "mood": "calm",
+                             "palette": ["monochrome"]}},
         }), encoding="utf-8")
         os.environ["DF_TEST_KEY"] = "real-looking-key"
         forged = {"approved": True, "prompt": "anything",
@@ -855,7 +856,8 @@ def selftest() -> int:
         (root / ".design-flow/generation.json").write_text(json.dumps({
             "aggregator": "agent", "budget_usd": 1.0,
             "ladders": {"vector": [{"name": "agent", "cost_usd": 0.0}]},
-            "briefs": {"s": {"style": "flat-vector", "subject": "a tray", "mood": "light"}},
+            "briefs": {"s": {"style": "flat-vector", "subject": "a tray", "mood": "light",
+                             "palette": ["monochrome"]}},
         }), encoding="utf-8")
         req = {"kind": "vector",
                "tier_refusal": {"surface": "s", "tier_1_why_not": "a", "tier_2_why_not": "b"},
@@ -910,7 +912,8 @@ def selftest() -> int:
         cfg = {"aggregator": "agent", "budget_usd": 1.0,
                "ladders": {"static": [{"name": "agent", "cost_usd": 0.0},
                                       {"name": "better", "cost_usd": 0.5}]},
-               "briefs": {"s": {"style": "flat-vector", "subject": "a tray", "mood": "light"}},
+               "briefs": {"s": {"style": "flat-vector", "subject": "a tray", "mood": "light",
+                             "palette": ["monochrome"]}},
                "acceptance": {"s": "reads as the brand at a glance"}}
         (root / ".design-flow/generation.json").write_text(json.dumps(cfg), encoding="utf-8")
         (root / ASSET_DIR).mkdir(parents=True)

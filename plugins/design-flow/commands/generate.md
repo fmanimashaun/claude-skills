@@ -135,7 +135,11 @@ makes the asset reproducible: without it, a brand change means paying again.
     "marketing-hero": {
       "style": "minimalist-ink",
       "subject": "an abstract woven lattice",
-      "mood": "calm, precise"
+      "mood": "calm, precise",
+      "palette": ["monochrome, single-hue only"],
+      "ground": "transparent",
+      "deliverable": "raster line art, 6-8 separable marks",
+      "avoid": ["human figures", "rendered text", "photographic backdrops"]
     }
   },
   "acceptance": {
@@ -153,6 +157,23 @@ one, but `--scaffold` writes `ladders`, and the cost preflight reads `ladders.<k
 list does not report pricing, so the scaffold leaves paid rungs unset rather than inventing a figure:
 an invented price looks authoritative, and the budget then approves or refuses against a number
 nobody chose. Look the price up, write it in, and the plan runs.
+
+**Every one of those keys reaches the prompt, and `palette` is required.** The brief is the
+**per-surface** authority and the pack is the per-brand default, because a palette constraint varies
+by surface — monochrome for an accent family, full brand colour for a hero — and a pack has nowhere
+to say that. `ground`, `deliverable` and `avoid` are carried **verbatim**; they are the constraints a
+model gets wrong most expensively.
+
+**Where the `pack` in a request actually comes from:** the **plan row** (`docs/assets/plan.json` →
+`row.pack`), never the brand pack's `brand.json` — nothing in the generation path reads that file.
+So the two places a palette can live are the **brief** (per surface, and it wins) and the **row's
+`pack`** (per row). Editing `brands/<slug>/brand.json` for this does nothing.
+
+**With no palette in either place the gate REFUSES, before spending.** It used to write the literal
+words `palette unspecified` into the prompt, which is not a missing constraint but an *instruction* —
+and a model told the palette is open will oblige. A brief that stated "monochrome only" produced a
+full-colour photographic scene for exactly this reason, at real cost. Absence is never narrated into
+a prompt that has a bill attached.
 
 **Model names and prices are not doctrine.** They change monthly and a list in a skill would rot
 inside a quarter, so they live in project config and this command names only the contract: a ladder,

@@ -7457,6 +7457,33 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The brief's constraints never reached the prompt, and absence was narrated into it.** (#621)
+  Reported after a real spend: a brief stating *"monochrome / single-hue ONLY"* and *"transparent
+  ground"* produced a full-colour photographic scene with a photorealistic hand and garbled text.
+
+  `compose_prompt` read only `style`, `subject` and `mood` from the brief. A brief may state
+  `palette`, `deliverable`, `avoid` — the reporting project's did, correctly and in detail — and none
+  of it reached the model. **The brief looked like a specification and was not.**
+
+  Worse, with no palette the prompt literally contained the words **`palette unspecified`**. That is
+  not a missing constraint but an **instruction**: it tells a generator the palette is open, and the
+  model obliged. This file's own doctrine is that *"a vague prompt is a reroll, and it pays twice"* —
+  and it then composed a vague prompt and spent.
+
+  Now: the brief's `palette`, `ground`, `deliverable` and `avoid` are carried **verbatim**; the brief
+  **overrides** the pack, because a palette constraint varies by *surface* and a pack is per *brand*;
+  and with no palette anywhere the gate **refuses before spending** rather than narrating the gap.
+
+  **A correction to the first version of this fix, caught downstream before it shipped.** It added a
+  `palette` to the shipped `brands/fidara/brand.json` and told users to edit theirs — but **nothing
+  in the generation path reads `brand.json`**. The request's `pack` comes from the *plan row*
+  (`asset_plan.py:585`, `row.get("pack", {})`). So the change was inert and the refusal message named
+  a file that cannot help — the #617 failure repeated inside its own fix. Reverted; the message now
+  names the brief and the plan row, and rules `brand.json` out explicitly. The message is asserted by
+  fixture rather than trusted.
+
 ### 1.23.2 — 2026-08-09
 
 - **The doctrine resolver assumed the clone layout, so the library step failed for everyone who

@@ -210,12 +210,51 @@ def compose_prompt(request: dict, brief: dict, pack: dict) -> str:
             f"{', '.join(STYLES)}. A free-text style is the same defect as a free-typed prompt "
             f"wearing a shorter name — it is what lets two runs against one pack drift into "
             f"different-looking art and calls the second one a reroll.")
+    # THE BRIEF IS THE PER-SURFACE AUTHORITY; the pack is the default. A palette constraint that
+    # varies by surface — "monochrome for the accent family, full brand colour for the hero" — has
+    # nowhere to live in a pack, which is per BRAND. Reading only the pack meant a brief could state
+    # its most important constraint and have it silently dropped, and the composed prompt then
+    # invited exactly the output the brief forbade. Constraints are carried, not summarised.
+    palette = brief.get("palette") or pack.get("palette") or []
+    if isinstance(palette, str):
+        palette = [palette]
+
+    # NO PALETTE IS A REFUSAL, NOT A WORD IN THE PROMPT. This used to emit the literal string
+    # `palette unspecified`, which is not a missing constraint but an INSTRUCTION — it tells a
+    # generator the palette is open, and the model reasonably obliges. Absence must never be
+    # narrated into a prompt that costs money; this file's own doctrine is that a vague prompt is a
+    # reroll and pays twice, so the honest place to stop is before the spend.
+    if not palette:
+        raise Refusal(
+            f"neither the brief for {surface!r} nor the pack states a `palette`, so the composed "
+            f"prompt would carry no colour constraint at all. That is the one thing an illustration "
+            f"model will improvise hardest — and the previous version wrote the words 'palette "
+            f"unspecified' into the prompt, which reads as permission rather than as a gap.\n"
+            f"  Put it in the BRIEF for this surface — `.design-flow/generation.json` → "
+            f"`briefs.{surface}.palette` — which is where a per-surface constraint belongs and what "
+            f"overrides everything else.\n"
+            f"  Or in the plan row's `pack.palette` (`docs/assets/plan.json`), which is where the "
+            f"request's `pack` actually comes from. NOT the brand pack's brand.json: nothing in this "
+            f"path reads it, and saying so would send you to edit a file that cannot help.\n"
+            f"  Nothing was spent.")
+
     parts = [
         f"{style} illustration",
         brief["subject"],
         f"{brief['mood']} mood",
-        f"palette {', '.join(pack.get('palette', [])) or 'unspecified'}",
+        f"palette {', '.join(palette)}",
     ]
+    # The remaining brief constraints, each carried VERBATIM. A deliverable ("raster line art on a
+    # transparent ground") and an exclusion ("no human figures, no text") are the two the model gets
+    # wrong most expensively, and both were unreachable before: the schema documented style, subject
+    # and mood, so anything else a brief said was decoration.
+    if brief.get("ground"):
+        parts.append(f"on a {brief['ground']} ground")
+    if brief.get("deliverable"):
+        parts.append(str(brief["deliverable"]))
+    avoid = brief.get("avoid")
+    if avoid:
+        parts.append("avoid " + (", ".join(avoid) if isinstance(avoid, list) else str(avoid)))
     if pack.get("type"):
         parts.append(f"typography {pack['type']}")
     if pack.get("endorsement"):
@@ -423,6 +462,77 @@ def selftest() -> int:
             failures.append(f"{label}: expected approved={expect_approved}, got {got}")
 
     run("a complete request is approved", CONFIG, OK_REQ, True)
+
+    # THE PROMPT MUST CARRY THE BRIEF'S CONSTRAINTS, and must never NARRATE their absence.
+    #
+    # Reported from a live project after a real spend: a brief stating "monochrome / single-hue
+    # ONLY" and "transparent ground" produced a full-colour photographic scene, because the composer
+    # read only style/subject/mood plus the PACK's palette — and the shipped fidara pack had no
+    # palette, so the prompt literally said `palette unspecified`. That is not a missing constraint;
+    # it is an instruction, and the model obliged. Every assertion below is that failure.
+    BRIEF = {"style": "minimalist-ink", "subject": "an abstract lattice", "mood": "calm"}
+    REQ = OK_REQ
+    prompt = compose_prompt(REQ, BRIEF, {"palette": ["#101010"]})
+    check = lambda label, cond: (failures.append(label) if not cond else None)
+    checks += 1
+    check("a pack palette reaches the prompt", "#101010" in prompt)
+
+    # THE REGRESSION, stated as the words that must never appear.
+    checks += 1
+    check("no prompt ever narrates an absent palette", "unspecified" not in prompt)
+
+    # NO PALETTE ANYWHERE IS A REFUSAL — before the spend, not after it.
+    checks += 1
+    try:
+        compose_prompt(REQ, BRIEF, {})
+        failures.append("an unconstrained palette should be refused, not narrated")
+    except Refusal as exc:
+        check("...and the refusal says nothing was spent", "Nothing was spent" in str(exc))
+        checks += 1
+        check("...and names both places a palette may live",
+              "brief" in str(exc) and "brand.json" in str(exc))
+        checks += 1
+
+    # THE BRIEF OVERRIDES THE PACK, because a palette constraint varies per SURFACE and a pack is
+    # per BRAND — "monochrome for the accent family, full colour for the hero" has nowhere else to
+    # live.
+    mono = compose_prompt(REQ, {**BRIEF, "palette": ["monochrome single-hue only"]},
+                          {"palette": ["#101010", "#f5f5f5"]})
+    checks += 1
+    check("the brief's palette wins over the pack's", "monochrome single-hue only" in mono)
+    checks += 1
+    check("...and the pack's is not also emitted", "#f5f5f5" not in mono)
+
+    # THE DELIVERABLE AND THE EXCLUSIONS are what the model gets wrong most expensively.
+    # Wrapped, because this relies on the BRIEF's palette with an empty pack: if that lookup
+    # regresses, the call raises and an uncaught Refusal would abort the run and swallow every
+    # failure recorded before it. A crash is not a verdict.
+    try:
+        full = compose_prompt(REQ, {**BRIEF, "palette": ["mono"], "ground": "transparent",
+                                    "deliverable": "raster line art, 6-8 separable marks",
+                                    "avoid": ["human figures", "text"]}, {})
+    except Refusal:
+        full = ""
+    for needle, label in (("transparent ground", "the ground constraint is carried"),
+                          ("6-8 separable marks", "the deliverable is carried"),
+                          ("avoid human figures, text", "the exclusions are carried")):
+        checks += 1
+        check(label, needle in full)
+
+    # THE REFUSAL MUST NAME LEVERS THAT EXIST. An earlier draft of it sent the reader to the brand
+    # pack's `brand.json` — which NOTHING in this path reads: the request's `pack` comes from the
+    # plan row (`asset_plan.py:585`, `row.get("pack", {})`). Naming a file that cannot help is the
+    # #617 failure repeated, so the message is asserted rather than trusted.
+    try:
+        compose_prompt(REQ, BRIEF, {})
+    except Refusal as exc:
+        msg = str(exc)
+        for needle, label in ((f"briefs.{REQ['tier_refusal']['surface']}.palette",
+                               "the refusal names the brief lever, with the surface"),
+                              ("plan.json", "...and the plan row's pack"),
+                              ("NOT the brand pack", "...and rules OUT brand.json explicitly")):
+            checks += 1
+            check(label, needle in msg)
 
     # THE PRECONDITION. Each free tier must be ruled out explicitly -- an unstated tier is an
     # unexamined one, and both cost nothing.
