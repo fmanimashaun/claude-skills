@@ -3622,6 +3622,55 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        # #603. A generated library's whole safety is that regeneration is predictable: identical
+        # bytes for an unchanged pack, and the designer's own work untouched. Each mutation below
+        # breaks one of those silently -- the file still looks like a library afterwards.
+        name="pen_library",
+        subject="plugins/design-flow/scripts/pen_library.py",
+        selftest="plugins/design-flow/scripts/pen_library.py",   # --selftest lives in the module
+        # The BRAND PACK is a dependency, not incidental data: the selftest generates from the real
+        # fidara theme, so without it every mutation dies on `no theme.css` -- a crash, which is not
+        # a verdict. The harness caught that on the first run and refused to score any of them.
+        needs=("plugins/design-flow/scripts/pen_to_svg.py",
+               "plugins/design-flow/scripts/brand_pack_lint.py",
+               "plugins/design-flow/brands/fidara/theme.css",
+               "plugins/design-flow/brands/fidara/brand.json"),
+        mutations=(
+            Mutation(
+                # THE reason this writes a file instead of driving the MCP. A random id per run
+                # breaks every `ref` in every existing document, and a dangling ref is not an error.
+                "ids lose their generated prefix, so nothing is recognised as ours again",
+                '    return f"fm-{cleaned}"',
+                "    return cleaned",
+                "ids are derived from names, not random",
+            ),
+            Mutation(
+                # The file is also the scratchpad. Dropping the non-generated children deletes the
+                # designer's compositions every time the brand pack moves.
+                "a rebuild stops preserving authored nodes, so it eats the designer's work",
+                '    kept = [c for c in existing.get("children") or [] if not is_generated(c)]',
+                "    kept = []",
+                "regenerating PRESERVES the designer's composition",
+            ),
+            Mutation(
+                # A theme-less value is what pen's own SetVariables silently drops, taking the light
+                # theme with it -- after which artwork exports black rather than erroring.
+                "a theme mode stops being named, so the light theme is silently droppable",
+                '            {"value": resolve(role, light), "theme": {AXIS: LIGHT}},',
+                '            {"value": resolve(role, light)},',
+                "every role names BOTH theme modes",
+            ),
+            Mutation(
+                # Comparing every variable makes a scratch colour read as drift -- a check that
+                # fires on correct input, which is a check that gets switched off.
+                "the drift check widens to every variable, so a scratch colour reads as drift",
+                '    return {"variables": {k: v for k, v in (doc.get("variables") or {}).items() if k in ours},',
+                '    return {"variables": {k: v for k, v in (doc.get("variables") or {}).items()},',
+                "a composition alongside the library is NOT drift",
+            ),
+        ),
+    ),
+    Guard(
         # #602. The compiler's value is entirely in what it REFUSES: a degraded compile looks
         # finished, so nobody re-checks it. Every mutation below turns a refusal into an
         # approximation, which is the failure this file exists to make impossible.

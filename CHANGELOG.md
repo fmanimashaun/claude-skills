@@ -7421,6 +7421,52 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **Generate the pen.dev design library from the brand pack.** (#603)
+  `plugins/design-flow/scripts/pen_library.py --pack fidara --out design/library.pen`.
+
+  Without a library, a composition is built from bare rectangles and is off-brand by construction —
+  so the cheap-exploration argument collapses into "sketch something that will not survive review".
+  This writes all **22 role tokens** as pen variables with **both theme modes explicit**, plus the
+  components a composition needs (Button ×4, Card, Input, Badge, type scale), each `reusable: true`
+  so a composition instantiates a `ref` rather than copying geometry.
+
+  **It writes a file rather than driving the MCP, and that is the decision that made this
+  tractable.** Through the MCP **ids cannot be chosen** — *"Pencil will always generate unique random
+  IDs and override the input"*, measured, every supplied id replaced — so an MCP-built library gets
+  new ids on every regeneration and every `ref` in every existing document breaks **silently**, a dangling
+  ref being no kind of error. That forced a name-matching reconciler, until the simpler observation:
+  `.pen` is plain JSON, the id rule belongs to `Insert`, and a file we author carries the ids we
+  write. Regeneration is byte-identical **by construction**, and needs no app, no open document and
+  no human — so it can run in CI, which the MCP path never could.
+
+  **The library file is also the scratchpad**, which is what makes it usable: compositions get built
+  in the same document that holds the components. So a rebuild replaces only the generated nodes
+  (`fm-*` ids) and preserves everything else in place, and `--check` compares **only that region** —
+  a drift check that fired on the designer's own explorations would fire on correct input, and one of
+  those gets switched off. The single thing a rebuild reclaims is a **hand-edited role token**: the
+  pack owns the roles, and a stale override repaints the library against a pack it no longer matches.
+
+  **The hex lives in exactly one place** — the document's `variables`. Every component fill is a
+  `$--token`, so one pack change repaints the library and light/dark come from one document. That is
+  asserted by compiling the generated library through `pen_to_svg.py`, which refuses a literal colour
+  by node: **two of our own tools checking each other** rather than each trusting itself.
+
+  26 assertions and 4 mutation guards. The guard needed the brand pack added to its `needs` — without
+  it every mutation died on `no theme.css`, and the harness correctly refused to score a crash as a
+  verdict. One assertion was hardened from `e["theme"][AXIS]` to `.get()` for the same reason.
+
+  **Not yet verified, but verifiable — and headless.** That pen itself loads a library we authored is
+  unconfirmed: the MCP cannot open a file, and `export_nodes` with an explicit `filePath` silently
+  resolved against the *active* document rather than erroring, so it answered about the wrong file.
+  The document matches the published schema exactly and our own compiler reads it, which is evidence
+  and not proof.
+
+  The CLI closes it without a GUI — `pen interactive -i design/library.pen -o /tmp/out.pen`, whose
+  shell takes `get_app_state({…})`, `save()` and `exit()`. That is a real acceptance check for the
+  generator and it belongs in the loop; it is absent here only because `@pen.dev/cli` is not
+  installed on this machine, and installing it is a package-manager action this repo deliberately
+  keeps behind a prompt.
+
 - **Compile a `.pen` design into token-native SVG, rather than exporting one.** (#602)
   `plugins/design-flow/scripts/pen_to_svg.py`.
 
