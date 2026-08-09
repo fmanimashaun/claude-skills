@@ -176,6 +176,32 @@ users run. `dev` is the integration branch — a staging area, never a shipping 
   bumps, the CHANGELOG release block, and **every** `Closes #n` for what it ships.
   **Do not commit to `main` directly** — see *why* below; it is stronger than a style rule.
 
+### Merge a promotion with `--merge`. A squash breaks the NEXT one.
+
+`gh pr merge <n> --merge`, explicitly. **Never `--squash`, never `--rebase`** — and this is a
+correctness rule, not a preference about history shape.
+
+A squash keeps dev's **content** and drops its **ancestry**: `main` gets a one-parent commit that
+looks like dev's tree but is not descended from it. So the merge base between the branches falls
+back to whatever preceded the release, git starts seeing both sides as having independently changed
+the same files, and **the next promotion cannot merge at all**. v1.83.0 was squashed; v1.84.0 hit six
+conflicts on files nobody had edited twice, in a repo where `git diff dev main` was otherwise clean.
+
+The repair, if it happens again: merge `origin/main` into `dev`, resolve **every** conflict to dev's
+side, and then assert the merge changed nothing — `git diff --cached <dev's SHA before> --stat` must
+be **empty**. That assertion is the whole safety of the operation, because it proves you performed an
+ancestry repair rather than a content revert. Verify first that `main` holds nothing `dev` lacks
+(compare CHANGELOG headings; `main`'s should be a strict subset). This is **not** the tidiness merge
+warned against below — that one is `main → dev` to flatter an ahead/behind counter, and produced 37
+no-op merges here. This one repairs a genuine divergence.
+
+`maintainer_doctor.py`'s `the last promotion carried dev's ancestry` check now asserts it, because
+the sentence above was prose for eleven releases and prose does not merge anything. It asks whether
+`main`'s tip **is a merge** *and* has a parent on `dev` — both halves, since a squash's single parent
+is `main`'s own previous tip, which for a repo's first promotion is itself on `dev`. It is a
+**diagnostic**, so `--gates-only` (what CI runs) skips it: run the full `maintainer_doctor.py` before
+a promotion, which is the moment it is about.
+
 ### A promotion is two steps, and only the second publishes
 
 Because the promotion PR's head is `dev`, the bumps have to be on `dev` before it opens. So a
