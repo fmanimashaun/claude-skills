@@ -7475,6 +7475,43 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The chat-image adapter silently dropped the style reference.** (#643) Self-reported, one day
+  after it shipped in v1.87.0. `call_openrouter_chat_image` accepted a `reference` parameter and
+  never used it, while `call_gemini` and `call_openrouter` both send theirs:
+
+  ```
+  call_gemini:                2 use(s) of the reference
+  call_openrouter:            2 use(s) of the reference
+  call_openrouter_chat_image: 0 use(s) of the reference
+  ```
+
+  `generate.md` §3c calls a style reference **"the single biggest lever on consistency"**, so a
+  project that had approved one got none of its benefit and no warning — on the newest raster
+  adapter, added precisely because it serves the shape the current top image models use.
+
+  The doctrine had already ruled out exactly this: `call_openrouter_svg` documents its own ignoring
+  because *"pretending otherwise would make consistency look guaranteed when it is not"*. Use it or
+  say you cannot; the new adapter did neither.
+
+  It now sends the reference as a multimodal content list — `{type: "text"}` + `{type: "image_url"}`,
+  the shape OpenRouter's reference documents for image input. With no reference the content stays a
+  plain string, so nothing changes for a project without one.
+
+- **Every adapter declared a style reference as `image/png`, whatever it was.** Found in the same
+  place. A `.jpg` exported from a brand deck was declared PNG, and a provider that validates the
+  declared type against the bytes rejects the call — losing the reference exactly when it was meant
+  to be doing the most work. New `reference_mime()` sniffs it via the existing `sniff_extension`, so
+  there is one format detector in the file rather than two that can disagree.
+
+  **Why it shipped: nothing asserted it.** The #629 fixtures covered the *response* exhaustively —
+  text-only replies, non-data URLs, empty decodes, missing costs — and never looked at the
+  *request*. The signature accepted a reference, so it read as handled. Fixtures now capture the
+  outgoing body. 136 → **147** assertions, two mutation guards, one of which surfaced the familiar
+  follow-on: with the reference dropped `content` is a string, and iterating it yields characters
+  whose `.get` raises, so the run died before printing its own failure.
+
 ### 1.25.0 — 2026-08-09 (release v1.87.0)
 
 - **A visual system can be two-part now: one family plus one rationed signature device.** (#632 —

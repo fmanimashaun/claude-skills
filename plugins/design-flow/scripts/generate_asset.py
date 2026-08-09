@@ -144,6 +144,20 @@ def preflight_key(env_var: str, root: Path | None = None) -> str:
     return raw.strip()
 
 
+def reference_mime(blob: bytes) -> str:
+    """The MIME type of a style-reference image, SNIFFED rather than assumed.
+
+    Every adapter hardcoded `image/png`, which is a lie the moment a project points
+    `style_reference` at the `.jpg` it exported from its brand deck -- and a provider that validates
+    the declared type against the bytes rejects the call, so the reference is lost at exactly the
+    moment it was supposed to be doing the most work. Derived from `sniff_extension` so there is one
+    format-detector in this file rather than two that can disagree.
+    """
+    ext = sniff_extension(blob)
+    return {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp",
+            "svg": "image/svg+xml"}.get(ext, "image/png")
+
+
 def call_gemini(key: str, model: str, prompt: str, reference: bytes | None,
                 timeout: int) -> tuple[bytes, float | None]:
     """Reference adapter. The CONTRACT is doctrine; this vendor is one implementation of it.
@@ -156,7 +170,7 @@ def call_gemini(key: str, model: str, prompt: str, reference: bytes | None,
     if reference:
         # A style reference is the single biggest lever on consistency: it makes new work match an
         # approved asset's palette, line weight and shading instead of re-rolling the look.
-        parts.append({"inline_data": {"mime_type": "image/png",
+        parts.append({"inline_data": {"mime_type": reference_mime(reference),
                                       "data": base64.b64encode(reference).decode("ascii")}})
     body = json.dumps({"contents": [{"parts": parts}]}).encode("utf-8")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -205,7 +219,7 @@ def call_openrouter(key: str, model: str, prompt: str, reference: bytes | None,
         # asset has to be publicly hosted before it can be used as a reference.
         body["input_references"] = [{
             "type": "image_url",
-            "image_url": {"url": "data:image/png;base64,"
+            "image_url": {"url": f"data:{reference_mime(reference)};base64,"
                                  + base64.b64encode(reference).decode("ascii")},
         }]
     req = urllib.request.Request(
@@ -292,9 +306,28 @@ def call_openrouter_chat_image(key: str, model: str, prompt: str, reference: byt
     its bytes. Here the bytes never pass through a model's hands -- they are decoded and written by
     this function -- so a billed generation always produces a file.
     """
+    # THE STYLE REFERENCE IS SENT, and the first version of this adapter dropped it. `generate.md`
+    # §3c calls a reference image "the single biggest lever on consistency" -- give the provider one
+    # approved asset and new work matches its palette, line weight and shading instead of re-rolling
+    # the look. This function accepted `reference` and never used it, so a project that had done the
+    # work of approving a reference got none of its benefit and no warning either. `call_gemini` and
+    # `call_openrouter` both send theirs; `call_openrouter_svg` documents WHY it cannot. Silently
+    # dropping it was the one option its own docstring rules out: it makes consistency "look
+    # guaranteed when it is not".
+    #
+    # Multimodal content is a LIST of parts, which is the same `{type, image_url: {url}}` shape
+    # OpenRouter's chat-completion reference documents for image input.
+    content: list[dict] | str = prompt
+    if reference:
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url",
+             "image_url": {"url": f"data:{reference_mime(reference)};base64,"
+                                  + base64.b64encode(reference).decode("ascii")}},
+        ]
     body = {"model": model,
             "modalities": ["image", "text"],
-            "messages": [{"role": "user", "content": prompt}]}
+            "messages": [{"role": "user", "content": content}]}
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         data=json.dumps(body).encode("utf-8"), method="POST",
@@ -366,7 +399,7 @@ def call_openrouter_video(key: str, model: str, prompt: str, reference: bytes | 
         # the other mode the API offers and is a different intent -- not a style reference.
         body["input_references"] = [{
             "type": "image_url",
-            "image_url": {"url": "data:image/png;base64,"
+            "image_url": {"url": f"data:{reference_mime(reference)};base64,"
                                  + base64.b64encode(reference).decode("ascii")},
         }]
     auth = {"Authorization": f"Bearer {key}"}
@@ -1656,6 +1689,52 @@ def selftest() -> int:
         respond({"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]})
         _, cost = call_openrouter_chat_image("k", "m", "p", None, 5)
         check("an unreported cost is null, never zero", cost is None)
+
+        # THE STYLE REFERENCE MUST REACH THE PROVIDER. `generate.md` §3c calls it "the single
+        # biggest lever on consistency", and the first version of this adapter accepted the
+        # parameter and dropped it -- so a project that had approved a reference got none of its
+        # benefit and no warning. Nothing asserted it, which is why it shipped. Capture the request
+        # body and look, rather than trusting the signature.
+        sent: list[dict] = []
+
+        def capture(req, *a, **k):
+            sent.append(json.loads(req.data.decode()))
+            return _R({"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]})
+
+        urllib.request.urlopen = capture
+        ref = b"\xff\xd8\xff" + b"\x00" * 32                    # a JPEG, deliberately not a PNG
+        call_openrouter_chat_image("k", "m", "the prompt", ref, 5)
+        content = sent[-1]["messages"][0]["content"]
+        check("a style reference is SENT, not dropped", isinstance(content, list))
+        # Read through a list-guard: with the reference dropped, `content` is a STRING, and
+        # iterating it yields characters whose `.get` raises -- the run would die before printing
+        # the failure above, and a crash is not a verdict. The mutation guard found this.
+        parts = content if isinstance(content, list) else []
+        check("...with the prompt still in it",
+              any(p.get("text") == "the prompt" for p in parts))
+        check("...and the image beside it",
+              any(p.get("type") == "image_url" for p in parts))
+        # DECLARED AS WHAT IT IS. Every adapter hardcoded `image/png`; a provider that validates the
+        # declared type against the bytes rejects a JPEG labelled PNG, losing the reference exactly
+        # when it was meant to be doing the most work.
+        check("...declared with its REAL mime type, not a hardcoded png",
+              any("data:image/jpeg;base64," in (p.get("image_url") or {}).get("url", "")
+                  for p in parts))
+        check("...and modalities still requested", sent[-1]["modalities"] == ["image", "text"])
+
+        sent.clear()
+        call_openrouter_chat_image("k", "m", "the prompt", None, 5)
+        check("no reference means a plain string content, not an empty part list",
+              sent[-1]["messages"][0]["content"] == "the prompt")
+
+        # THE MIME IS SNIFFED, NEVER ASSUMED — inside the try, so the stubbed urlopen is restored
+        # either way.
+        for blob, want in ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"),
+                           (b"RIFF____WEBP", "image/webp"),
+                           (b"<svg viewBox='0 0 1 1'>", "image/svg+xml")):
+            check(f"the reference mime sniffs {want}", reference_mime(blob) == want)
+        check("...and an unknown blob falls back to png rather than raising",
+              reference_mime(b"\x00\x01\x02\x03") == "image/png")
     finally:
         urllib.request.urlopen = real_urlopen
 
