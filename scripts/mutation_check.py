@@ -3616,6 +3616,15 @@ GUARDS: tuple[Guard, ...] = (
         # stands between a request and someone's card.
         mutations=(
             Mutation(
+                # A still recorded as footage renders a frozen frame where motion was planned, and
+                # providers really do serve a poster image at a video's URL. Reachable since
+                # --from-url let any URL feed any row.
+                "a still image is accepted as video, so a poster frame records as footage",
+                '    if kind == "video" and ext not in ("mp4", "webm"):',
+                "    if False:",
+                "a still recorded as video should be refused",
+            ),
+            Mutation(
                 # #629. A model without the image modality answers in PROSE about the picture it
                 # would have drawn. Saved, that is a paragraph in the manifest where art belongs --
                 # and it looks like a completed row.

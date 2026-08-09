@@ -7459,6 +7459,13 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The `video` kind never checked its bytes, and `--from-url` made that reachable.** Every other
+  kind sniffed: `motion` refuses footage, `vector` refuses a raster. `video` accepted anything.
+  Survivable while the only route to a video row was the async video adapter; not survivable now
+  that `--from-url` lets any URL feed any row — and providers really do serve a **poster image at a
+  video's URL**, so a request for footage could record a PNG as a `done` video. It opens, it looks
+  plausible in a listing, and the surface plays a frozen frame. Now refused, naming the likely cause.
+
 - **The agent may now write the prompt, and a keyed adapter for the shape the top image models
   actually serve.** (#629)
 

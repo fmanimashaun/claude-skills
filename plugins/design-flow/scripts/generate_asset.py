@@ -553,6 +553,17 @@ def assert_kind_matches(kind: str, blob: bytes) -> str:
             f"animated SVG -- a few KB that recolour from tokens and diff in review. A video file "
             f"here is footage: megabytes, fixed palette, un-recolourable. If you meant footage, "
             f"plan the surface as `video`.")
+    # THE `video` KIND HAD NO CHECK AT ALL, which was survivable while every video arrived from the
+    # async video adapter and is not now: `--from-url` (#628) lets any URL feed any row, so a
+    # provider that answered a video request with a still frame -- or a poster image served at the
+    # video's URL -- would record a PNG as footage. It opens, it looks plausible in a listing, and
+    # the surface plays nothing.
+    if kind == "video" and ext not in ("mp4", "webm"):
+        raise Unusable(
+            f"kind is `video` but the bytes are {ext.upper()}. Footage is MP4 or WebM; a still "
+            f"recorded as video renders a frozen frame where motion was planned. Providers do "
+            f"serve a poster image at a video's URL, so check you fetched the asset rather than "
+            f"its thumbnail — and if you meant a still, plan the surface as `static`.")
     if kind == "vector" and ext != "svg":
         raise Unusable(
             f"kind is `vector` but the bytes are {ext.upper()}. A raster named `.svg` does not "
@@ -1647,6 +1658,20 @@ def selftest() -> int:
         check("an unreported cost is null, never zero", cost is None)
     finally:
         urllib.request.urlopen = real_urlopen
+
+    # THE `video` KIND SNIFFS TOO. Reachable now that --from-url can feed any row from any URL, and
+    # providers do serve a poster image at a video's URL.
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
+    check("real MP4 bytes are accepted as video", assert_kind_matches("video", mp4) == "mp4")
+    checks += 1
+    try:
+        assert_kind_matches("video", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+        failures.append("a still recorded as video should be refused")
+    except Unusable as exc:
+        if "thumbnail" not in str(exc):
+            failures.append(f"a still-as-video refused without naming the likely cause: {exc}")
+    check("...and a still is still fine as `static`",
+          assert_kind_matches("static", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16) == "png")
 
     check("the chat-image adapter is registered", "openrouter-chat-image" in ADAPTERS)
     check("...and did not displace the images-endpoint one", "openrouter" in ADAPTERS)
