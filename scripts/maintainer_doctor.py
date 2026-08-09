@@ -153,6 +153,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # today's behaviour rather than stopping, and only a fixture can hold that true.
     ("design-flow pen compose selftest",
      ("python3", "plugins/design-flow/scripts/pen_compose.py", "--selftest")),
+    # #609. "pen mirrors the whole catalogue" is a claim; without this it is a claim nothing makes
+    # true, and the drift is silent in the worst direction — a component simply not appearing.
+    ("component shapes reconciled",
+     ("python3", "scripts/check_component_shapes.py")),
+    ("component shapes selftest",
+     ("python3", "scripts/check_component_shapes.py", "--selftest")),
     # #360, and the same argument one skill along: the quality-pass worked example states how many
     # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine

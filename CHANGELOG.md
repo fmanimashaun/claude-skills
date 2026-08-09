@@ -7421,6 +7421,44 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **pen now mirrors the WHOLE catalogue — all 51 component rows.** (#609) It mirrored four, because
+  only 6 of 51 rows declare a `**Variants:**` enum and the rest are *structural*: their doctrine
+  describes anatomy, keyboard contract, ARIA and Turbo behaviour, because that is what building them
+  requires. A recipe is in there (`bg-muted`, `text-step--1`) but embedded in prose, and
+  regex-parsing that is the failure `derived-artifacts` exists to prevent.
+
+  So the drawable skeleton moved into a structured source beside it:
+  `skills/fidara-design/references/component-shapes.json`, one entry per row declaring parts, role
+  tokens and layout. The generator reads it and emits **66 nodes covering 51 components**; nothing in
+  `pen_library.py` names a component or its anatomy.
+
+  **`scripts/check_component_shapes.py` is what makes "mirrors all" true rather than claimed.** A
+  sidecar drifts from its prose silently and in the worst direction: a component added to the
+  catalogue and not to the shapes file simply **does not appear in pen**, so an agent composing a
+  screen reaches for what is there and never learns what is missing. The gate asserts every row has
+  an entry — drawn, or `drawable: false` **with a reason** — that every entry names a real row, and
+  that every role a shape references is one the pack declares. Adding a component now fails the build
+  until its shape is declared.
+
+  Exactly one row is non-drawable: **Forms**, which is a chapter rather than a component — its
+  controls are drawn by their own rows, and a single "Forms" shape would be a picture of a form,
+  which composes into nothing.
+
+  The uniqueness assertion earned its keep immediately: slugging a row to its **first word** collided
+  `Navigation — app header` with `Navigation — sidebar`, and duplicate ids in a `.pen` mean a `ref`
+  resolving to the wrong component, silently.
+
+- **A `design-explorer` agent owns the exploration tier.** (#608) design-flow had the scripts —
+  surface detection, library generation, intent checking — and no doctrine for how an agent actually
+  iterates in pen. Scripts without an operator are a workshop with no one in it.
+
+  It composes N options from the generated library, diverges on a **named axis** with a rationale a
+  human can choose *against*, acts on the intent findings rather than forwarding them, and hands
+  **only the winner** to `ui-composer` — as an exported render plus the component list it
+  instantiates, so implementation is a lookup rather than an interpretation. It never writes ERB,
+  never blocks, and treats a mid-flight surface failure the same as an absent one: discard the
+  partial exploration and hand the brief on unchanged.
+
 - **A `pen` rung for composed raster.** (#599) An OG card or social preview is layout plus real type
   at a fixed size, and a diffusion model is the wrong instrument twice over: it cannot render
   accurate text, and it cannot render the same brand twice. `pen` joins the adapter registry, driving

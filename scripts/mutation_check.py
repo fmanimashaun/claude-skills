@@ -3699,11 +3699,14 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/brand_pack_lint.py",
                "plugins/design-flow/brands/fidara/theme.css",
                "plugins/design-flow/brands/fidara/brand.json",
-               # The component CATALOGUE, for the same reason the pack is here: the generator now
-               # derives its component list from it, so without it every mutation dies on
-               # `Unreadable` -- a crash, which is not a verdict. Second time this exact gap
-               # appeared, one file along.
-               "skills/fidara-design/references/components.md"),
+               # EVERY FILE `build()` READS. This list has now been short three times running --
+               # theme.css, then components.md, then component-shapes.json -- and each time the
+               # symptom was identical: every mutation died on `Unreadable`, a crash rather than a
+               # verdict, and the harness refused to score any of them. The rule to carry forward is
+               # that a guard's `needs` is not "the other scripts" but "everything the subject
+               # opens", data included.
+               "skills/fidara-design/references/components.md",
+               "skills/fidara-design/references/component-shapes.json"),
         mutations=(
             Mutation(
                 # THE reason this writes a file instead of driving the MCP. A random id per run
