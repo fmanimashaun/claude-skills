@@ -57,7 +57,14 @@ from dataclasses import dataclass, field
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-DOCTRINE_DIR = os.path.join(REPO, "skills", "fidara-design", "references")
+sys.path.insert(0, HERE)
+import doctrine_path                                    # noqa: E402 — same plugin, one resolver
+_DOCTRINE = doctrine_path.find(os.path.join(HERE, "x.py"))
+# Only `--check-doctrine` reads this; the consumer path scans the paths it is given, so an install
+# that cannot resolve it is unaffected. The fallback keeps the "UNUSABLE" message pointing at the
+# clone path a maintainer would recognise.
+DOCTRINE_DIR = (os.path.join(str(_DOCTRINE), "references") if _DOCTRINE
+                else os.path.join(REPO, "skills", "fidara-design", "references"))
 
 # Criterion 7: the palette-step vocabulary is defined ONCE, in the rendered checker, whose doctrine
 # constants were made module-level for exactly this import. If that import fails we do not quietly
