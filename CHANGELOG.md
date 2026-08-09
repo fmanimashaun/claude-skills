@@ -7388,7 +7388,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.21.0 — 2026-08-09
 
 - **The research now decides the style, and the plan holds every brief to it.** The sequence —
   scaffold, read the PRD, research for inspiration, curate the set, generate — was enforced at every
@@ -8736,6 +8736,42 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09 (release v1.83.0)
+
+> ### The design flow is a sequence now, and every link is enforced
+>
+> Scaffold → read the PRD → research → choose a style → emit it as doctrine → curate → cost →
+> generate → critique. Two links were missing and three shipped claims were wrong.
+
+- **Motion had "no route", which was false.** The claim began as a true statement about the *image*
+  endpoint and was allowed to stand as one about the provider, so every motion row refused. There
+  are **21 video models**. More importantly `motion` and `video` are now **separate kinds**: as one
+  kind it routed a loading spinner through footage generation, so the cheap common case paid the
+  expensive rare case's price. Product motion is Lottie/animated SVG — KB, recolours from tokens,
+  agent-authored, free. Video is footage, and right for a marketing hero and little else.
+
+- **The output critic — the stage that was missing.** The acceptance check shipped as *a string that
+  had to be present*: letter of the criterion, not spirit. Nothing read the asset, so the
+  climb-the-ladder trigger was one nobody could pull and `attempt` existed while nothing set it.
+  `--critique` assembles what a critic needs; `--verdict accept|reject --why` records the judgement,
+  writes provenance, or climbs.
+
+- **The research now decides the style, and every brief is held to it.** A project could research
+  monochrome ink and brief a 3D render with nothing noticing. `style` is the record's required
+  **output** — three sources disagree, and the choosing *is* the design.
+
+- **The approach is emitted as a project-level skill**, not left as JSON. The record is evidence;
+  the skill is doctrine, read because its description matches the work rather than parsed when an
+  agent remembers to. It carries what was **rejected**, which is what stops the same idea returning
+  next quarter, and refuses to emit from a record that does not pass.
+
+- **Retracted rather than shipped:** a Figma-to-tokens reader. Tokens are *generated* from the brand
+  pack, so a reader would be a second source of truth for the same values.
+
+The fixture defects this batch surfaced were all one class — tests failing on each other's side
+effects rather than on what they name — plus one guard living in `main()` where no test reached it,
+and a mutation that survived because of it.
 
 ### 2026-08-09 (release v1.82.0)
 
