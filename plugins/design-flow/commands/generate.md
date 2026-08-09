@@ -210,6 +210,47 @@ The default install has none, and that path must work. A shipped plugin cannot d
 server or an API key being present, so with nothing configured the gate refuses and you report it.
 Satisfy the surface from tiers 1–2 or leave it unfilled — those are the only two options.
 
+## 4a. Composing in a design tool: compile, never export
+
+Some assets are **compositions**, not generations — a custom icon, a spot illustration, an OG card.
+A diffusion model is the wrong instrument for all three: it cannot render accurate text, and it
+cannot render the *same* mark twice. If a design tool such as pen.dev is available, compose there
+instead, then bring the result across by the route that matches what the asset **is**:
+
+| the asset is… | pen's job | how it comes across |
+|---|---|---|
+| a custom **icon** or spot **illustration** | compose the geometry | **compile → SVG** (`pen_to_svg.py`) |
+| an **OG / social / app-store** surface | compose layout + real type | **export → PNG** (`export_nodes`) |
+
+**Compile the vector; export the raster.** That split is not a preference:
+
+- Every design tool's SVG export emits **hardcoded hex**, which `design-auditor` refuses by name
+  (#135: *"a `fill=`/`stroke=` hex inside a component"*). An exported icon arrives as a conformance
+  violation. A **compiled** one is born token-native — `fill="var(--primary)"` — so it recolours with
+  the brand pack and follows light/dark from **one** file instead of two.
+- A raster surface has nothing to compile *to*: its value is real type at a fixed size, which is
+  exactly what an exporter is for.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_to_svg.py" design.pen --node "Empty ledger" --out app/assets/images/empty-ledger.svg
+```
+
+**Custom icons are the exception, not the default.** The icon set is Lucide; a custom glyph is for a
+domain concept Lucide has no word for. Compose it *beside* real Lucide glyphs — pen ships Lucide,
+Feather, Material Symbols and Phosphor as built-in libraries — because the way a custom icon gives
+itself away is optical weight that does not match the set, and that is only visible side by side.
+
+Three things measured against the live tool, each of which produces a plausible wrong answer rather
+than an error:
+
+- **Compose against variables, never raw colours.** A literal hex makes the compiler refuse, and it
+  is right to: guessing which token a hex meant is how a brand acquires a second palette.
+- **When pushing tokens in, name every theme mode explicitly.** A value with no theme is silently
+  dropped, taking the light theme with it — and the artwork then exports **black**, not empty. Read
+  the variables back and check both modes survived.
+- **Verify with the exporter, not the on-screen preview.** A per-node screenshot rendered only the
+  background while the export was correct, which would tell an agent its work had failed.
+
 ## 4b. Producing it
 
 The gate decides; `generate_asset.py` produces. Two scripts on purpose — a decider that also spent

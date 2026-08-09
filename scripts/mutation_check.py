@@ -3622,6 +3622,60 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        # #602. The compiler's value is entirely in what it REFUSES: a degraded compile looks
+        # finished, so nobody re-checks it. Every mutation below turns a refusal into an
+        # approximation, which is the failure this file exists to make impossible.
+        name="pen_to_svg",
+        subject="plugins/design-flow/scripts/pen_to_svg.py",
+        selftest="plugins/design-flow/scripts/pen_to_svg.py",   # --selftest lives in the module
+        # No `needs`: the fixtures are hand-authored dicts and the compiler touches no filesystem
+        # beyond the file named on the command line, which the selftest never supplies.
+        mutations=(
+            Mutation(
+                # The whole point. A literal hex compiles into the asset, so illustration stops
+                # recolouring with the brand pack and `design-auditor` refuses it downstream --
+                # after someone has already shipped it into a component.
+                "a literal colour is accepted, so the asset stops following the brand pack",
+                '    if text.startswith("$"):\n        return f"var({text[1:]})"',
+                '    if True:\n        return text',
+                "a literal hex fill",
+            ),
+            Mutation(
+                # SVG's <ellipse> has no partial sweep, so emitting one silently FILLS IN the
+                # missing arc -- a change to the artwork that renders as though it were intended.
+                "an arc ellipse is emitted whole, so a donut silently becomes a disc",
+                '        if n.get("innerRadius") or n.get("startAngle") or n.get("sweepAngle"):',
+                "        if False:",
+                "an arc ellipse",
+            ),
+            Mutation(
+                # A conic gradient approximated by a linear ramp is the same class: plausible
+                # output, different design, and nothing says so.
+                "a conic gradient is approximated by a linear ramp",
+                '        raise Refusal(\n            f"node {node_id!r}: {prop} is an {kind!r} (conic) gradient',
+                '        defs.append("")\n        _unused = (\n            f"node {node_id!r}: {prop} is an {kind!r} (conic) gradient',
+                "a conic gradient",
+            ),
+            Mutation(
+                # Rotation is CCW about the node's TOP-LEFT corner. Dropping the pivot spins the
+                # shape about the canvas origin and flings it off-canvas -- which reads as "the
+                # compiler lost my artwork" rather than as an axis bug.
+                "rotation loses its pivot, so rotated artwork flies off the canvas",
+                '        out.append(f\'  <g transform="rotate({-num(rot)} {x} {y})">\')',
+                '        out.append(f\'  <g transform="rotate({-num(rot)})">\')',
+                "rotation pivots on the node's own top-left",
+            ),
+            Mutation(
+                # A dimension bound to a variable has no value at compile time. Coercing it would
+                # produce a shape of the wrong size rather than an error.
+                "a variable-bound dimension is coerced, so the shape compiles at the wrong size",
+                '    if isinstance(v, str) and v.startswith("$"):',
+                "    if False:",
+                "a variable-bound dimension",
+            ),
+        ),
+    ),
+    Guard(
         name="asset_plan",
         subject="plugins/design-flow/scripts/asset_plan.py",
         selftest="plugins/design-flow/scripts/asset_plan.py",   # --selftest lives in the module

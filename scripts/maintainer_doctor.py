@@ -141,6 +141,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
     ("design-flow palette candidates selftest",
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--selftest")),
+    # #602. A compiler whose whole value is "no literal colour survives" needs the assertion that
+    # says so to run somewhere other than a maintainer's memory.
+    ("design-flow pen-to-svg selftest",
+     ("python3", "plugins/design-flow/scripts/pen_to_svg.py", "--selftest")),
     # #360, and the same argument one skill along: the quality-pass worked example states how many
     # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
