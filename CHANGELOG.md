@@ -7513,6 +7513,19 @@ boot/validation path — with a bullet each so the promotion could close them se
   it every mutation died on `no theme.css`, and the harness correctly refused to score a crash as a
   verdict. One assertion was hardened from `e["theme"][AXIS]` to `.get()` for the same reason.
 
+  **The component catalogue is derived too, not typed in.** `components.md` — the same rows
+  `ui-composer` builds from — is parsed for its `**Variants:**` / `**Intents:**` enums, so Button's
+  six variants, Badge's seven and Alert's four arrive from doctrine rather than from a list in the
+  generator. Add `link` to Button there and it appears in pen on the next regeneration; **nothing in
+  the generator names a component.** 19 components from 5 base geometries, the other 14 being `ref`
+  variants.
+
+  It refuses to invent in two places, because inventing either turns a mirror into a fork: a variant
+  whose **role token the pack does not declare** (a variant name *is* a role name — `destructive`
+  paints from `--destructive`), and a catalogue row with **no drawable shape** (a Carousel, a Table).
+  Both are reported and printed rather than silently skipped — a library that looks complete and is
+  not is worse than a short one that says so.
+
   **Why derived and not authored in parallel:** pen is the scratchpad for design iteration, so the
   exercise is only meaningful if the components being composed with are **the ones the agent will
   build the real code from**. Choose a variant made of components the codebase lacks and the review

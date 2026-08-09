@@ -3698,7 +3698,12 @@ GUARDS: tuple[Guard, ...] = (
         needs=("plugins/design-flow/scripts/pen_to_svg.py",
                "plugins/design-flow/scripts/brand_pack_lint.py",
                "plugins/design-flow/brands/fidara/theme.css",
-               "plugins/design-flow/brands/fidara/brand.json"),
+               "plugins/design-flow/brands/fidara/brand.json",
+               # The component CATALOGUE, for the same reason the pack is here: the generator now
+               # derives its component list from it, so without it every mutation dies on
+               # `Unreadable` -- a crash, which is not a verdict. Second time this exact gap
+               # appeared, one file along.
+               "skills/fidara-design/references/components.md"),
         mutations=(
             Mutation(
                 # THE reason this writes a file instead of driving the MCP. A random id per run
