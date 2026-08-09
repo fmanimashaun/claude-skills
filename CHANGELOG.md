@@ -7,6 +7,37 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-09 (v1.85.0)
+
+- **Nothing asserted that a promotion is a merge commit, and a squash broke the next release.**
+  (#597) CLAUDE.md has said *"Release = one promotion PR `dev → main` (a merge commit)"* for eleven
+  releases. v1.83.0 was squash-merged anyway, and prose does not merge anything.
+
+  A squash keeps dev's **content** and drops its **ancestry**: `main` got a one-parent commit
+  holding dev's tree without descending from it, so the merge base fell back two releases, git began
+  seeing both sides as having independently changed the same files, and the **v1.84.0 promotion
+  could not merge** — six conflicts on files nobody had edited twice, in a repo where
+  `git diff dev main` was otherwise clean.
+
+  `maintainer_doctor.py` now asserts it: **`main`'s tip must BE a merge and have a parent on
+  `dev`.** Both halves are load-bearing, and the fixture is what proved it — a squash's single
+  parent is `main`'s own previous tip, which for a repo's first promotion is itself an ancestor of
+  `dev`, so "has a parent on dev" alone passes the exact trap the check exists for. The first
+  formulation was weaker still and worth recording: *"is `dev` an ancestor of `main`"* is the
+  **wrong question**, because mid-cycle `dev` has legitimately moved past the last release — it
+  would have waved the real squash straight through.
+
+  Two negative tests and a silent one, all against real git repositories with a real promotion
+  performed both ways: the squash **fails**, the merge **passes**, and a repo that has never
+  promoted is not accused of squashing one. The finding must also name `--squash` as the cause and
+  `--merge` as the remedy, asserted — naming a defect without the flag that prevents it is how it
+  recurs.
+
+  It is a **diagnostic**, not a gate, so `--gates-only` (what CI runs) skips it. That is the correct
+  classification — it is a question about branch topology at promotion time, not about repository
+  content — but it means the full `maintainer_doctor.py` has to be run before a promotion, which
+  CLAUDE.md now says.
+
 ### 2026-08-08b (v1.81.0)
 
 - **The README was 913 lines and named version 1.3.1 while the marketplace shipped 1.80.0.** It also
@@ -7388,6 +7419,253 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.23.0 — 2026-08-09
+
+- **pen now mirrors the WHOLE catalogue — all 51 component rows.** (#609) It mirrored four, because
+  only 6 of 51 rows declare a `**Variants:**` enum and the rest are *structural*: their doctrine
+  describes anatomy, keyboard contract, ARIA and Turbo behaviour, because that is what building them
+  requires. A recipe is in there (`bg-muted`, `text-step--1`) but embedded in prose, and
+  regex-parsing that is the failure `derived-artifacts` exists to prevent.
+
+  So the drawable skeleton moved into a structured source beside it:
+  `skills/fidara-design/references/component-shapes.json`, one entry per row declaring parts, role
+  tokens and layout. The generator reads it and emits **66 nodes covering 51 components**; nothing in
+  `pen_library.py` names a component or its anatomy.
+
+  **`scripts/check_component_shapes.py` is what makes "mirrors all" true rather than claimed.** A
+  sidecar drifts from its prose silently and in the worst direction: a component added to the
+  catalogue and not to the shapes file simply **does not appear in pen**, so an agent composing a
+  screen reaches for what is there and never learns what is missing. The gate asserts every row has
+  an entry — drawn, or `drawable: false` **with a reason** — that every entry names a real row, and
+  that every role a shape references is one the pack declares. Adding a component now fails the build
+  until its shape is declared.
+
+  Exactly one row is non-drawable: **Forms**, which is a chapter rather than a component — its
+  controls are drawn by their own rows, and a single "Forms" shape would be a picture of a form,
+  which composes into nothing.
+
+  The uniqueness assertion earned its keep immediately: slugging a row to its **first word** collided
+  `Navigation — app header` with `Navigation — sidebar`, and duplicate ids in a `.pen` mean a `ref`
+  resolving to the wrong component, silently.
+
+- **A `design-explorer` agent owns the exploration tier.** (#608) design-flow had the scripts —
+  surface detection, library generation, intent checking — and no doctrine for how an agent actually
+  iterates in pen. Scripts without an operator are a workshop with no one in it.
+
+  It composes N options from the generated library, diverges on a **named axis** with a rationale a
+  human can choose *against*, acts on the intent findings rather than forwarding them, and hands
+  **only the winner** to `ui-composer` — as an exported render plus the component list it
+  instantiates, so implementation is a lookup rather than an interpretation. It never writes ERB,
+  never blocks, and treats a mid-flight surface failure the same as an absent one: discard the
+  partial exploration and hand the brief on unchanged.
+
+- **A `pen` rung for composed raster.** (#599) An OG card or social preview is layout plus real type
+  at a fixed size, and a diffusion model is the wrong instrument twice over: it cannot render
+  accurate text, and it cannot render the same brand twice. `pen` joins the adapter registry, driving
+  the CLI headlessly and returning the exported PNG.
+
+  **It is keyless**, and that is now stated as data rather than an `if`: `KEYLESS = {"agent", "pen"}`.
+  Both make no authenticated call this config could serve, and demanding a key refuses a zero-cost
+  route for a credential it never uses — the exact defect already recorded for the agent rung, which
+  a second keyless adapter would otherwise have had to remember to join.
+
+  **An absent binary says only what a PATH miss proves.** pen.dev also ships as a user-scoped MCP
+  server registered outside the repo, so a provisioned machine fails this probe — measured, on a
+  machine where `claude mcp list` reported pencil connected while `which pen` found nothing. The
+  refusal names the CLI, not pen.dev, because "pen.dev is not installed" would send someone to
+  install what they already have. Cost is reported **unknown** rather than zero: the CLI drives its
+  own agent on the operator's Claude auth, so it spends Opus-minutes, not a figure this path can read.
+
+- **`/design-flow:setup` tells a developer the composition tier exists.** (#600) A new machine now
+  learns, at setup, whether a pen surface was found, what it would add — cheap N-way exploration,
+  token-native custom icons, OG cards with real type — and how to add either surface later (the
+  desktop app for interactive work, `npm install -g @pen.dev/cli` for headless). It **installs
+  nothing and blocks on nothing**: a developer who skips it must see no difference in any command's
+  behaviour, which is the contract the tier is asserted against. Discovering an optional tier months
+  later in some command's output is the same failure as not shipping it.
+
+- **An optional composition tier, and the intent pass that judges it.** (#600, #601)
+  `scripts/pen_compose.py --surface` / `--intent`.
+
+  Divergence in `/design-flow:variants` is priced at **N × ERB** — every option costs a full
+  `ui-composer` dispatch writing real view code before it can be compared. A composition surface
+  makes exploration cheap and charges the ERB price only for the winner.
+
+  **The tier is on where available**, per maintainer decision, unless a project sets
+  `exploration_surface: none`. The argument for defaulting off — that one machine's tooling should
+  not change how a shared repo builds UI — is weaker here than it looks: a `.pen` file is never a
+  merge artefact and never a gate input, so the output contract is identical either way. A tier that
+  is off by default is a tier nobody discovers.
+
+  **`--surface` always exits 0.** "No surface" is a normal answer, and a machine without pen must not
+  look like a machine with a problem — otherwise callers learn to ignore the exit code, which is how
+  a real failure later goes unnoticed. Detection needs `--mcp-available` passed by the caller,
+  because namespace presence is **not** readiness: a tier that offers itself and then fails on the
+  first call has already spent the operator's attention.
+
+  **The audit is a three-pass progression** — intent (the composition, advisory), source (the ERB,
+  blocking), rendered (the browser, blocking, shipped since #107). Only pass 1 is new, and it
+  **cannot** judge conformance: role tokens, focus rings, ARIA, tap targets and the motion count that
+  doctrine calls *arithmetic* are properties of code that does not exist yet. So it reports facts
+  about the document instead — raw colours instead of tokens, placeholder copy, a composition
+  referencing no library component, a brief ignoring the researched style. `/design-flow:audit`
+  now reports all three passes and must name any that was skipped, because a skipped pass and a
+  passing one must never look alike.
+
+  25 assertions and 4 mutation guards. One guard had to be re-aimed after the harness showed the
+  obvious fixture passing **coincidentally**: disabling the `none` branch leaves the verdict
+  unchanged and alters only the reason, so the assertion that catches it is the one about the
+  message. That is exactly what `expects` exists to prevent.
+
+- **Generate the pen.dev design library from the brand pack.** (#603)
+  `plugins/design-flow/scripts/pen_library.py --pack fidara --out design/library.pen`.
+
+  Without a library, a composition is built from bare rectangles and is off-brand by construction —
+  so the cheap-exploration argument collapses into "sketch something that will not survive review".
+  This writes all **22 role tokens** as pen variables with **both theme modes explicit**, plus the
+  components a composition needs (Button ×4, Card, Input, Badge, type scale), each `reusable: true`
+  so a composition instantiates a `ref` rather than copying geometry.
+
+  **It writes a file rather than driving the MCP, and that is the decision that made this
+  tractable.** Through the MCP **ids cannot be chosen** — *"Pencil will always generate unique random
+  IDs and override the input"*, measured, every supplied id replaced — so an MCP-built library gets
+  new ids on every regeneration and every `ref` in every existing document breaks **silently**, a dangling
+  ref being no kind of error. That forced a name-matching reconciler, until the simpler observation:
+  `.pen` is plain JSON, the id rule belongs to `Insert`, and a file we author carries the ids we
+  write. Regeneration is byte-identical **by construction**, and needs no app, no open document and
+  no human — so it can run in CI, which the MCP path never could.
+
+  **The library file is also the scratchpad**, which is what makes it usable: compositions get built
+  in the same document that holds the components. So a rebuild replaces only the generated nodes
+  (`fm-*` ids) and preserves everything else in place, and `--check` compares **only that region** —
+  a drift check that fired on the designer's own explorations would fire on correct input, and one of
+  those gets switched off. The single thing a rebuild reclaims is a **hand-edited role token**: the
+  pack owns the roles, and a stale override repaints the library against a pack it no longer matches.
+
+  **The hex lives in exactly one place** — the document's `variables`. Every component fill is a
+  `$--token`, so one pack change repaints the library and light/dark come from one document. That is
+  asserted by compiling the generated library through `pen_to_svg.py`, which refuses a literal colour
+  by node: **two of our own tools checking each other** rather than each trusting itself.
+
+  26 assertions and 4 mutation guards. The guard needed the brand pack added to its `needs` — without
+  it every mutation died on `no theme.css`, and the harness correctly refused to score a crash as a
+  verdict. One assertion was hardened from `e["theme"][AXIS]` to `.get()` for the same reason.
+
+  **The component catalogue is derived too, not typed in.** `components.md` — the same rows
+  `ui-composer` builds from — is parsed for its `**Variants:**` / `**Intents:**` enums, so Button's
+  six variants, Badge's seven and Alert's four arrive from doctrine rather than from a list in the
+  generator. Add `link` to Button there and it appears in pen on the next regeneration; **nothing in
+  the generator names a component.** 19 components from 5 base geometries, the other 14 being `ref`
+  variants.
+
+  It refuses to invent in two places, because inventing either turns a mirror into a fork: a variant
+  whose **role token the pack does not declare** (a variant name *is* a role name — `destructive`
+  paints from `--destructive`), and a catalogue row with **no drawable shape** (a Carousel, a Table).
+  Both are reported and printed rather than silently skipped — a library that looks complete and is
+  not is worse than a short one that says so.
+
+  **Why derived and not authored in parallel:** pen is the scratchpad for design iteration, so the
+  exercise is only meaningful if the components being composed with are **the ones the agent will
+  build the real code from**. Choose a variant made of components the codebase lacks and the review
+  said yes to a screen nobody can ship. That is what makes the drift check load-bearing rather than
+  hygiene. The guarantee currently reaches the **tokens** (derived, so a composition cannot drift on
+  colour) and not yet the **catalogue** (hand-written against `components.md`, so it can still drift
+  on structure) — stated in the file itself and tracked as #607, because that gap is invisible
+  otherwise.
+
+  **Authored to the convention a real pen library uses**, after reading one (`shadcn.lib.pen`).
+  Four things changed, and three are better engineering rather than cosmetics:
+
+  - **One root frame** holds the library — themed, painted from `$--background`, named
+    `<pack>: design system components`. Eight loose top-level frames is a canvas with components on
+    it; one named container is a *library*, and the difference shows the moment a composition is
+    built beside it.
+  - **Variants are `ref`s, not copies.** One `Button/Default` defines the geometry; Secondary, Ghost
+    and Destructive are instances that repaint it via a `descendants` map. A radius change now
+    reaches all four instead of reaching one and drifting from three — and the map is addressable
+    *only because ids are derived rather than random*.
+  - **Flexbox, not absolute boxes** — `gap`, `padding`, `justifyContent`, and no width, so a
+    component sizes to its label. A fixed 140×40 button is a picture of a button.
+  - **`Category/Variant` naming**, matching the convention.
+
+  `pen_to_svg.py` gained **ref resolution** to match: refusing an instance would have made exactly
+  the well-authored library uncompilable while passing the copy-pasted one. It resolves before
+  measuring, too — a `ref` takes its size from its base, so reading width off the instance reported
+  "no size" for a variant that is perfectly well defined.
+
+  **And it cost a cross-check that was over-reach.** The suite used to compile every component
+  through `pen_to_svg` as a mutual check. A flex-laid-out component has no size until a layout engine
+  runs, and it was never destined to be an `.svg` file — it becomes ERB. The compiler is for
+  **artwork**; conflating the two was my error. The property that mattered is asserted directly (no
+  literal colour anywhere in the library), and the compiler is now asserted to *refuse* an unsized
+  node honestly.
+
+  **Verified against pen itself** (CLI 0.3.2), headlessly:
+  `pen interactive -i library.pen -o out.pen`, then `get_app_state({…})`. pen reports all 8
+  components as **top-level nodes AND reusable components**, under **the ids we chose** —
+  `fm-button-primary`, `fm-card`, … — which is the file-authoring premise confirmed end to end: ids
+  survive because the "Pencil always generates random IDs" rule belongs to `Insert`, not to a
+  document it loads.
+
+  Exporting through pen then rendered `--primary` as **#0072C4** (fidara cerulean-700) on white, and
+  the card in `--card` / `--card-foreground` / `--muted-foreground` / `--border`. So the variables
+  resolve, which is the claim that mattered: one document, one pack, both themes.
+
+  Getting there needed one correction on the way. `export_nodes` with an explicit `filePath` naming a
+  file that is not open **silently resolves against the active document**, so it answered confidently
+  about the wrong file and a missing node read as "the library is broken". `get_app_state` names the
+  active editor; checking it costs nothing and is now doctrine. Of every pen quirk measured, this is
+  the only one that produces a *confident* wrong answer rather than a blank or black one.
+
+- **Compile a `.pen` design into token-native SVG, rather than exporting one.** (#602)
+  `plugins/design-flow/scripts/pen_to_svg.py`.
+
+  pen.dev exports `png/jpeg/webp/pdf` and **no SVG** — read off `export_nodes`' own tool schema. The
+  first conclusion drawn from that was that pen could not serve illustration at all. Wrong question:
+  the `.pen` format **is** SVG-shaped, since a `path` carries `geometry`, an SVG path string, beside
+  a `viewBox`. Nothing has to be recovered from a render.
+
+  **And compiling beats the export we do not have.** Every design tool's SVG export emits hardcoded
+  hex — exactly what `design-auditor` refuses by name (#135, *"a `fill=`/`stroke=` hex inside a
+  component"*), so an exported asset arrives as a conformance violation needing manual recolouring. A
+  `.pen` fill that references a variable is written `$--token` and compiles to `var(--token)`: born
+  conformant, recolouring with the brand pack, and serving **light and dark from one file**. Verified
+  end to end — an illustration authored in pen against the fidara pack, compiled, and rendered in
+  both themes from a single asset.
+
+  **It reads the file, and that is forced rather than chosen.** `Get("<pathId>").geometry` returns
+  `"..."` through the pencil MCP, on a direct single-node read as well as through a visitor — the one
+  field this needs is the one the structured API elides. The file is plain JSON (measured on three
+  real documents), so reading it works; the server's own instruction that *".pen files are encrypted:
+  never use Read or Grep"* is false as a claim about bytes, and obeying it would rule out the only
+  path that functions.
+
+  **It refuses rather than approximates**, because a degraded compile looks finished and nobody
+  re-checks it: shaders, mesh gradients, conic gradients, image fills, arc/donut ellipses, paths with
+  no geometry, and dimensions bound to a variable. A **literal colour is an upstream problem** — it
+  means someone composed against a raw hex — so it is refused by node, not guessed at. That refusal
+  fired on unmodified vendor content the first time it ran.
+
+  36 assertions and 5 mutation guards, each guard turning a refusal into an approximation. Fixtures
+  are hand-authored JSON, never a captured `.pen`: a real document would drag the vendor's version
+  churn into the suite and could not carry a deliberately malformed node, which every refusal needs.
+
+- **`/design-flow:generate` documents when a design tool beats a model** — compile the vector, export
+  the raster. A custom icon or spot illustration compiles to SVG; an OG/social/app-store surface
+  exports to PNG, because its value is real type at a fixed size and there is nothing to compile to.
+  Custom icons stay the exception to Lucide, composed *beside* real Lucide glyphs, since the way a
+  custom glyph gives itself away is optical weight that only shows side by side.
+
+  Three measured gotchas are written down because each produces a plausible wrong answer instead of
+  an error: a token push that omits an explicit theme mode is **silently dropped** and the artwork
+  exports **black**; a per-node screenshot rendered only the background while the export was correct;
+  and ids cannot be chosen, so assets are addressed by **name**.
+
+- **`*.pen` is gitignored.** The pen.dev app writes documents wherever it is pointed, including the
+  repository root, where one was found untracked. Not slash-anchored — a stray is a stray at any
+  depth, and #197's lesson was that a pattern matching only the case you happened to test is a guard
+  that has never fired.
+
 ### 1.22.0 — 2026-08-09
 
 - **The cost preflight read a config key `--scaffold` has never written, so every plan cost $0.00
@@ -8797,6 +9075,56 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09c (release v1.85.0)
+
+> ### pen.dev enters design-flow, on both sides of the code boundary
+>
+> Assets get generated and compiled through it; screens get explored in it before any ERB is
+> written. The whole component catalogue is mirrored so both stay on brand. Every vendor claim here
+> was measured against the live tool, and two of them were false.
+
+- **A design system a human can compose in, mirrored from the one agents build code from.** (#603,
+  #609) `pen_library.py` generates a `.pen` library from `theme.css` and `components.md`: 22 role
+  tokens with both themes explicit, and **66 nodes covering all 51 component rows**. Variants are
+  `ref` instances rather than copies, so one geometry serves six buttons.
+
+  It writes a **file** rather than driving the MCP, which is what made it tractable: through the MCP
+  **ids cannot be chosen**, so every regeneration would break every `ref` silently. The id rule
+  belongs to `Insert`; a file we author keeps the ids we write, regeneration is byte-identical by
+  construction, and it runs in CI.
+
+  The library file is also the **scratchpad** — compositions live beside the components — so a
+  rebuild replaces only generated nodes and `--check` compares only that region. A drift check firing
+  on someone's own explorations is one that gets switched off.
+
+- **Compile a `.pen` into token-native SVG.** (#602) pen exports raster only, which first read as
+  "pen cannot serve illustration". Wrong question: the format **is** SVG-shaped, and a compiled asset
+  is **better** than an exported one — every design tool's SVG export emits hardcoded hex, which
+  `design-auditor` refuses by name, while a compiled one is `fill="var(--primary)"` and serves light
+  and dark from one file.
+
+- **A `pen` rung for composed raster, an exploration tier, and an intent pass.** (#599, #600, #601)
+  An OG card is layout plus real type; a diffusion model cannot render accurate text or repeat a
+  brand. Divergence in `/design-flow:variants` was priced at N × ERB; the tier makes exploration
+  cheap and charges the ERB price only for the winner. The audit became a three-pass progression —
+  intent (advisory) → source → rendered — where only the first is new, because role tokens, focus
+  rings and ARIA are properties of code that does not exist yet.
+
+- **A `design-explorer` agent.** (#608) The scripts existed and the doctrine for using them did not;
+  scripts without an operator are a workshop with no one in it.
+
+- **A promotion must be a merge commit, and now something asserts it.** (#597) v1.83.0 was
+  squash-merged, which keeps dev's content and drops its ancestry — so v1.84.0 hit six conflicts on
+  files nobody had edited twice. `maintainer_doctor` checks that `main`'s tip **is** a merge *and*
+  has a parent on `dev`; both halves are needed, and the fixture proved it.
+
+**Four vendor behaviours measured, each producing a plausible wrong answer rather than an error:**
+`.pen` files are **not** encrypted despite the server saying so (and obeying it blocks the only
+working path); the MCP **elides** `geometry`, the one field a compiler needs; `SetVariables`
+**silently drops** a theme-less value, after which artwork exports **black**; and `export_nodes` with
+a `filePath` that is not open **resolves against the active document**, answering confidently about
+the wrong file.
 
 ### 2026-08-09b (release v1.84.0)
 

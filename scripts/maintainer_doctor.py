@@ -141,6 +141,24 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
     ("design-flow palette candidates selftest",
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--selftest")),
+    # #602. A compiler whose whole value is "no literal colour survives" needs the assertion that
+    # says so to run somewhere other than a maintainer's memory.
+    ("design-flow pen-to-svg selftest",
+     ("python3", "plugins/design-flow/scripts/pen_to_svg.py", "--selftest")),
+    # #603. The library is a PROJECTION of the brand pack, so the assertions that matter are that
+    # regeneration is byte-identical and that it never eats the designer's own compositions.
+    ("design-flow pen library selftest",
+     ("python3", "plugins/design-flow/scripts/pen_library.py", "--selftest")),
+    # #600/#601. The branch that matters is the silent skip: an absent surface must degrade to
+    # today's behaviour rather than stopping, and only a fixture can hold that true.
+    ("design-flow pen compose selftest",
+     ("python3", "plugins/design-flow/scripts/pen_compose.py", "--selftest")),
+    # #609. "pen mirrors the whole catalogue" is a claim; without this it is a claim nothing makes
+    # true, and the drift is silent in the worst direction — a component simply not appearing.
+    ("component shapes reconciled",
+     ("python3", "scripts/check_component_shapes.py")),
+    ("component shapes selftest",
+     ("python3", "scripts/check_component_shapes.py", "--selftest")),
     # #360, and the same argument one skill along: the quality-pass worked example states how many
     # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
@@ -516,6 +534,62 @@ class Doctor:
             "read the CHANGELOG `### Unreleased` sections to see what",
         )
 
+    def check_promotion_was_a_merge(self) -> None:
+        """Is `dev` an ANCESTOR of `origin/main`? If not, the last promotion was squashed.
+
+        A promotion is a merge commit with `dev` as a parent. Squash it instead and `main` gets a
+        one-parent commit holding dev's CONTENT with none of its ANCESTRY -- so the merge base falls
+        back to whatever came before, git starts seeing both sides as having independently changed
+        the same files, and **the next promotion cannot merge at all**. That is not a style
+        preference; v1.83.0 was squashed and v1.84.0 hit six conflicts on files nobody had touched
+        twice.
+
+        WHY THIS AND NOT `check_no_direct_to_main`. That one catches the same event by its symptom
+        -- a commit on `main` that is not on `dev` -- and it did fire here. But it fires for several
+        unrelated causes, its remedy ("cherry-pick them onto dev") is the WRONG advice for a squash,
+        and one squash poisons it permanently: after the repair the squash IS reachable from dev, so
+        the symptom clears while the habit that produced it does not. This asks the direct question
+        instead, and its remedy is the actual fix.
+
+        Checked against `origin/main` rather than the local ref, because a stale local `main` would
+        answer for whenever you last fetched.
+        """
+        code, tip = self.git("rev-parse", "origin/main")
+        if code != 0:
+            self.add(SKIP, "last promotion was a merge", "no `origin/main`", "git fetch --all")
+            return
+        # "Is `dev` an ancestor of main" is the WRONG question, and getting it wrong first is worth
+        # recording: mid-cycle `dev` has moved past the last release, so it is legitimately not an
+        # ancestor, and a check asking that would have waved the real squash straight through.
+        #
+        # The question that separates the two cases is whether main's tip has a PARENT on `dev`.
+        # A merge promotion does; a squash has one parent, which is main's own previous tip.
+        if self.git("merge-base", "--is-ancestor", "origin/main", "dev")[0] == 0:
+            # Nothing has diverged them: either no promotion yet, or one just repaired.
+            self.add(PASS, "the last promotion carried `dev`'s ancestry", "`main` is on `dev`")
+            return
+        # BOTH conditions, and the second is not redundant. A squash's single parent is main's own
+        # previous tip -- which, for a repo whose first promotion this is, IS an ancestor of `dev`.
+        # So "has a parent on dev" alone passes the very trap this exists for; the fixture caught
+        # that. A promotion must BE a merge (two parents) AND one of them must be on `dev`.
+        code, parents = self.git("rev-list", "--parents", "-n", "1", tip.strip())
+        kin = parents.split()[1:] if code == 0 else []
+        if len(kin) >= 2:
+            for p in kin:
+                if self.git("merge-base", "--is-ancestor", p, "dev")[0] == 0:
+                    self.add(PASS, "the last promotion carried `dev`'s ancestry",
+                             f"`main`'s tip merges {p[:9]}, which is on `dev`")
+                    return
+        self.add(
+            FAIL, "the last promotion did NOT carry `dev`'s ancestry",
+            f"`origin/main`'s tip ({tip.strip()[:9]}) has {len(kin)} parent(s) and none of them is "
+            "on `dev` — the promotion was squashed or rebased, so `main` holds dev's content with "
+            "none of its history and the NEXT promotion will conflict on files nobody edited twice",
+            "merge `origin/main` into `dev`, resolve every conflict to dev's side, and assert the "
+            "merge changes no content (`git diff --cached <dev before> --stat` must be empty); "
+            "then always merge a promotion with `gh pr merge --merge`, never --squash",
+        )
+
     def check_no_direct_to_main(self) -> None:
         code, out = self.git("log", "--oneline", "dev..origin/main", "--no-merges")
         if code != 0:
@@ -742,6 +816,7 @@ class Doctor:
         self.check_branch()
         self.check_stale_main_ref()
         self.check_dev_current()
+        self.check_promotion_was_a_merge()
         self.check_no_direct_to_main()
         self.check_unshipped()
         self.check_corpora()

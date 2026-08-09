@@ -210,6 +210,117 @@ The default install has none, and that path must work. A shipped plugin cannot d
 server or an API key being present, so with nothing configured the gate refuses and you report it.
 Satisfy the surface from tiers 1–2 or leave it unfilled — those are the only two options.
 
+## 4a. Composing in a design tool: compile, never export
+
+Some assets are **compositions**, not generations — a custom icon, a spot illustration, an OG card.
+A diffusion model is the wrong instrument for all three: it cannot render accurate text, and it
+cannot render the *same* mark twice. If a design tool such as pen.dev is available, compose there
+instead, then bring the result across by the route that matches what the asset **is**:
+
+| the asset is… | pen's job | how it comes across |
+|---|---|---|
+| a custom **icon** or spot **illustration** | compose the geometry | **compile → SVG** (`pen_to_svg.py`) |
+| an **OG / social / app-store** surface | compose layout + real type | **export → PNG** (`export_nodes`) |
+
+**Compile the vector; export the raster.** That split is not a preference:
+
+- Every design tool's SVG export emits **hardcoded hex**, which `design-auditor` refuses by name
+  (#135: *"a `fill=`/`stroke=` hex inside a component"*). An exported icon arrives as a conformance
+  violation. A **compiled** one is born token-native — `fill="var(--primary)"` — so it recolours with
+  the brand pack and follows light/dark from **one** file instead of two.
+- A raster surface has nothing to compile *to*: its value is real type at a fixed size, which is
+  exactly what an exporter is for.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_to_svg.py" design.pen --node "Empty ledger" --out app/assets/images/empty-ledger.svg
+```
+
+### Scaffold the library first — compose *from* the brand, not beside it
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/fidara.lib.pen
+```
+
+That writes a `.pen` document holding **every role token as a variable, both modes explicit**, plus
+the components a composition actually needs — Button (4 variants), Card, Input, Badge and the type
+scale — each `reusable: true` so a composition instantiates it with a `ref` rather than copying
+geometry. Without it you compose from bare rectangles and the result is off-brand by construction.
+
+**It is a projection of the pack, never a second definition.** A hand-built pen library is a second
+`Button`, and two definitions of one component diverge within a sprint — silently, because both look
+right alone. Regenerate and the divergence cannot survive; `--check` reports a stale one:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/fidara.lib.pen --check
+```
+
+### Buying a composed raster: the `pen` rung
+
+For an OG card or a social preview, put `pen` on the `static` ladder and `--run` composes it through
+the CLI instead of an image model:
+
+```json
+"ladders": {
+  "static": [{ "name": "pen", "cost_usd": 0.0 }]
+}
+```
+
+**`cost_usd: 0.0` is a FLOOR, not a price** — the same caveat the `agent` rung carries. pen.dev is
+free today and its owner has said pricing may come, and the CLI drives its own agent on **your**
+Claude auth, so what it actually spends is Opus-minutes rather than a figure this path can read. The
+adapter reports the cost as *unknown* instead of asserting zero. Nothing local can detect a vendor's
+price change, which is why this is a sentence for you rather than a check that could never fire.
+
+**It takes no API key.** pen is a local binary carrying its own auth, so it sits with `agent` in the
+keyless set — asking for `api_key_env` here would refuse a zero-cost route for a credential it never
+uses.
+
+If the binary is absent the rung refuses and **says only what a PATH miss proves**: that the `pen`
+CLI is not on PATH. pen.dev also ships as a user-scoped MCP server registered outside the repo, so a
+provisioned machine can fail this probe — claiming "pen.dev is not installed" would send you to
+install what you already have.
+
+**Check pen accepts it, headlessly, before you rely on it.** The document is written to the published
+schema, but "matches the schema" is evidence rather than proof — and the MCP cannot open a file to
+tell you. The CLI can, with no GUI and no open document:
+
+```bash
+pen interactive -i design/fidara.lib.pen -o /tmp/pen-load-check.pen
+```
+
+Its shell takes `get_app_state({ include_schema: false })` then `exit()`. A document that loads and
+reports its nodes is one pen accepts; one that does not is a generator bug worth knowing about before
+a composition depends on it.
+
+**This file is also your scratchpad, and a rebuild will not eat your work.** Compose in the same
+document that holds the components — that is the point of having them there. Regeneration replaces
+only the generated nodes (`fm-*` ids) and leaves everything else exactly where it is, and `--check`
+compares only that region, so your explorations never read as drift. The one thing a rebuild *does*
+reclaim is a **role token you overrode by hand**: the pack owns the roles, and a stale override
+would repaint the whole library against a pack it no longer matches.
+
+**Custom icons are the exception, not the default.** The icon set is Lucide; a custom glyph is for a
+domain concept Lucide has no word for. Compose it *beside* real Lucide glyphs — pen ships Lucide,
+Feather, Material Symbols and Phosphor as built-in libraries — because the way a custom icon gives
+itself away is optical weight that does not match the set, and that is only visible side by side.
+
+Three things measured against the live tool, each of which produces a plausible wrong answer rather
+than an error:
+
+- **Compose against variables, never raw colours.** A literal hex makes the compiler refuse, and it
+  is right to: guessing which token a hex meant is how a brand acquires a second palette.
+- **When pushing tokens in, name every theme mode explicitly.** A value with no theme is silently
+  dropped, taking the light theme with it — and the artwork then exports **black**, not empty. Read
+  the variables back and check both modes survived.
+- **Verify with the exporter, not the on-screen preview.** A per-node screenshot rendered only the
+  background while the export was correct, which would tell an agent its work had failed.
+- **Confirm which document you are actually addressing, before every export.** A `filePath` naming a
+  file that is *not* open in the editor is **silently resolved against the active document** rather
+  than refused — so the tool answers confidently about the wrong file, and a missing node reads as
+  "my composition is broken" instead of "you are looking somewhere else". `get_app_state` names the
+  active editor; check it matches the file you mean, and open the file you mean if it does not. This
+  is the one pen behaviour here that produces a *confident* wrong answer rather than a blank one.
+
 ## 4b. Producing it
 
 The gate decides; `generate_asset.py` produces. Two scripts on purpose — a decider that also spent

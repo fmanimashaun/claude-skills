@@ -44,6 +44,13 @@ __pycache__/
 /tailwind-ui
 /flowbite*
 
+# Scratch pen.dev documents. The app writes `.pen` files wherever it is pointed, including the
+# repo root, and they are working artefacts of a design session rather than tracked content —
+# `pen_to_svg.py`'s fixtures are hand-authored JSON precisely so the suite needs none of them.
+# Deliberately NOT slash-anchored: a `.pen` is a stray at any depth, and the #197 lesson was that
+# a pattern which matches only what you happened to test is a guard that has never fired.
+*.pen
+
 # Dependency trees are never committed. (Was missing: the flowbite bundles carry two
 # node_modules trees, which the old root-level `flowbite*/` happened to cover — this makes it
 # explicit. They now sit under `/design-corpora`, so this stands alone for any other tree.)

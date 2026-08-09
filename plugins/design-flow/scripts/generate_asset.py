@@ -357,7 +357,74 @@ def call_agent(key, model, prompt, reference, timeout):      # noqa: ARG001 - si
     raise AgentWrites(prompt, Path(), {})
 
 
+def call_pen(key, model, prompt, reference, timeout):        # noqa: ARG001 - signature parity
+    """Compose in pen.dev and export a raster (#599). A LOCAL tool, so there is no key and no HTTP.
+
+    WHY A DESIGN TOOL FOR THIS KIND AT ALL. A composed surface -- an OG card, a social preview, an
+    app-store shot -- is layout plus real type at a fixed size. A diffusion model is the wrong
+    instrument twice over: it cannot render accurate text, and it cannot render the same brand
+    twice. pen composes deterministically and exports PNG, which is exactly that job.
+
+    THE PROMPT IS STILL THE COMPOSED ONE. It arrives from the gate, which refuses a free-typed
+    prompt -- so pen's own agent is constrained by the surface class, the aesthetic brief and the
+    pack, rather than improvising palette and typography. The vendor's guidance says not to expand a
+    user's request with invented creative direction, and this does not: it passes CONSTRAINTS, which
+    narrow that agent instead of competing with it.
+
+    A PATH MISS PROVES ONLY THAT THE CLI IS NOT ON PATH. pen.dev also ships as a user-scoped MCP
+    server registered outside any repo, so a fully-provisioned machine fails this probe -- measured,
+    on a machine where `claude mcp list` reported pencil connected while `which pen` found nothing.
+    Saying "pen.dev is not installed" there would send someone to install what they already have.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    exe = shutil.which("pen")
+    if not exe:
+        raise Unusable(
+            "the `pen` CLI is not on PATH. That is all a PATH miss proves: pen.dev also ships as a "
+            "local MCP server registered outside the repo, so this machine may well have pen.dev "
+            "without having this binary. Install the CLI with `npm install -g @pen.dev/cli` if you "
+            "want the unattended path, or drop this rung and compose interactively instead. "
+            "Nothing was spent.")
+    with tempfile.TemporaryDirectory() as td:
+        doc, img = Path(td) / "composed.pen", Path(td) / "composed.png"
+        cmd = [exe, "--out", str(doc), "--prompt", prompt,
+               "--export", str(img), "--export-type", "png", "--export-scale", "2"]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise Unusable(f"the `pen` CLI could not be run ({exc}). Nothing was saved.")
+        if proc.returncode != 0:
+            # The CLI's own stderr, verbatim. Paraphrasing a tool's refusal into "generation failed"
+            # is how a fixable auth or model problem reads like an outage.
+            raise Unusable(f"`pen` exited {proc.returncode}: "
+                           f"{(proc.stderr or proc.stdout or '').strip()[:400]}")
+        if not img.is_file():
+            raise Unusable(
+                "`pen` reported success and wrote no image. Exit 0 with no artefact is not a "
+                "completion — nothing was recorded.")
+        try:
+            blob = img.read_bytes()
+        except OSError as exc:
+            # Belt and braces, and not idle: without it, disabling the check above turns this into
+            # a FileNotFoundError traceback rather than a refusal -- and a crash is not a verdict,
+            # so the mutation guard on that check could not tell which fixture caught it.
+            raise Unusable(f"`pen` wrote an image that could not be read ({exc}).")
+    # Cost is NOT reported: the CLI drives its own agent on the operator's Claude auth, so what it
+    # spends is Opus-minutes rather than a figure this path can read. Returning None says "unknown"
+    # instead of asserting zero, and the ladder's own `cost_usd` is what the budget compares.
+    return blob, None
+
+
+# Adapters that make no authenticated HTTP call of their own, so `api_key_env` is meaningless to
+# them. Stated as data because the alternative -- an `if name == "agent"` that a second keyless
+# adapter has to remember to join -- is how the agent rung came to demand a key it never used.
+KEYLESS = frozenset({"agent", "pen"})
+
 ADAPTERS = {"agent": call_agent,
+            "pen": call_pen,
             "openrouter-video": call_openrouter_video,
             "openrouter": call_openrouter,
             "openrouter-svg": call_openrouter_svg,
@@ -458,7 +525,11 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
             f"{', '.join(sorted(ADAPTERS))}. The contract an aggregator must meet is in "
             f"`/design-flow:generate` §3c — adding one is a function, not a redesign.")
 
-    key = "" if name == "agent" else preflight_key(config.get("api_key_env", ""), root)
+    # KEYLESS ADAPTERS, named rather than special-cased one at a time. `agent` authors in-process
+    # and `pen` shells out to a local CLI that carries its own auth -- neither makes an HTTP call
+    # this config could authenticate. Demanding a key here is the exact defect the comment above
+    # records for the agent rung: a zero-cost route refused for a credential it has no use for.
+    key = "" if name in KEYLESS else preflight_key(config.get("api_key_env", ""), root)
 
     reference = None
     ref_path = config.get("style_reference")
@@ -920,6 +991,56 @@ def selftest() -> int:
 
     check("no adapter is reachable for an unknown aggregator", ADAPTERS.get("nope") is None)
     check("the shipped adapter is named in the error path", "gemini" in ADAPTERS)
+
+    # THE pen RUNG (#599). A local CLI, so it takes no key -- and the absent-binary path is the
+    # state of most machines, including the one this was written on.
+    check("pen is a registered adapter", ADAPTERS.get("pen") is call_pen)
+    check("...and is keyless, like the agent", {"agent", "pen"} <= KEYLESS)
+    check("...while a paying adapter is NOT keyless", not (KEYLESS & {"openrouter", "gemini"}))
+    import shutil as _sh
+    real_which = _sh.which
+    try:
+        _sh.which = lambda _name: None                       # the binary is absent
+        try:
+            call_pen("", "pen", "a composed prompt", None, 5)
+            failures.append("an absent `pen` binary should refuse")
+        except Unusable as exc:
+            msg = str(exc)
+            # SAY ONLY WHAT A PATH MISS PROVES. pen.dev also ships as a user-scoped MCP server, so a
+            # provisioned machine can fail this probe -- measured. Claiming "pen.dev is not
+            # installed" would send someone to install what they already have.
+            check("an absent binary refuses", "not on PATH" in msg)
+            check("...naming the install command", "npm install -g @pen.dev/cli" in msg)
+            check("...without claiming pen.dev itself is absent",
+                  "MCP server" in msg and "pen.dev is not installed" not in msg)
+            check("...and stating nothing was spent", "Nothing was spent" in msg)
+        checks += 1
+        # A CLI that exits non-zero must surface ITS OWN stderr. Paraphrasing a tool's refusal into
+        # "generation failed" is how a fixable auth problem reads like a provider outage.
+        _sh.which = lambda _name: "/usr/bin/true"
+        import subprocess as _sp
+        real_run = _sp.run
+        try:
+            _sp.run = lambda *a, **k: _sp.CompletedProcess([], 3, "", "not logged in")
+            try:
+                call_pen("", "pen", "p", None, 5)
+                failures.append("a non-zero pen exit should refuse")
+            except Unusable as exc:
+                check("a failing CLI surfaces its own stderr verbatim", "not logged in" in str(exc))
+            checks += 1
+            # EXIT 0 WITH NO ARTEFACT IS NOT A COMPLETION -- the same rule the plan applies to rows.
+            _sp.run = lambda *a, **k: _sp.CompletedProcess([], 0, "", "")
+            try:
+                call_pen("", "pen", "p", None, 5)
+                failures.append("exit 0 with no image should refuse")
+            except Unusable as exc:
+                check("exit 0 with no image is refused, not recorded",
+                      "wrote no image" in str(exc))
+            checks += 1
+        finally:
+            _sp.run = real_run
+    finally:
+        _sh.which = real_which
 
     for f in failures:
         print(f"FAIL {f}")

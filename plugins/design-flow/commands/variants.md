@@ -18,6 +18,54 @@ Generate **N genuinely different compositions of one brief** (default 3) and a s
 compare them live in the real app. Delegate composition to the **ui-composer** agent, one
 dispatch per variant; delegate the brand verdict to **brand-guardian**.
 
+## 0. Offer the cheap tier first, and never wait for it
+
+Divergence is currently priced at **N × ERB**: every option costs a full `ui-composer` dispatch
+writing real view code before it can be compared. If a composition surface is available, explore
+there and pay the ERB price only for the **chosen** one — the same *rule out the cheap tier first*
+economics `/design-flow:generate` already applies to imagery, moved to composition.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_compose.py" --surface --mcp-available
+```
+
+Pass `--mcp-available` only when you can actually see the `mcp__pencil__*` tools **and** a document
+is open — namespace presence alone is not readiness, and a tier that offers itself then fails on the
+first call has already spent the operator's attention. Drop the flag and the CLI is checked instead,
+which works headlessly.
+
+It always exits **0**. `"usable": false` is a normal answer, not a fault: a machine without pen must
+not look like a machine with a problem. Print the one-line `why` and carry on composing in code —
+**no command here may stop for want of pen.**
+
+**The tier is on where available**, unless the project sets `exploration_surface: none` in
+`.design-flow/generation.json`. A tier that is off by default is a tier nobody discovers, and the
+usual objection — that one machine's tooling should not change how a shared repo builds UI — is
+weaker here than it looks: a `.pen` file is never a merge artefact and never a gate input, so the
+output contract is identical either way and everyone still converges on ERB judged by the same
+verdicts.
+
+**Delegate the exploration to the `design-explorer` agent**, which owns this tier: it composes N
+options from the library, checks their intent, and hands only the winner to `ui-composer`. It never
+writes view code and never blocks — that boundary is what keeps a cheap exploration from becoming a
+slow implementation nobody reviewed.
+
+**Compose from the library, not from rectangles.** Scaffold it first
+(`pen_library.py --pack <pack> --out design/fidara.lib.pen`) or the options you are choosing between are
+drawings of components rather than the components themselves.
+
+Then, before dispatching `ui-composer` for the winner:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_compose.py" --intent design/fidara.lib.pen --for-surface marketing-hero
+```
+
+**Advisory, always.** It reports facts about the document — raw colours instead of tokens,
+placeholder copy, a composition that references no library component, a brief that ignores the
+researched style. It cannot and must not judge conformance: role-token pairing, focus rings, ARIA,
+tap targets and the motion count are properties of the **implementation**, and `/design-flow:audit`
+judges them on the ERB afterwards.
+
 ## Why this exists, and when NOT to use it
 
 One-shot generation is the right shape when there is a correct answer — a catalog component, a

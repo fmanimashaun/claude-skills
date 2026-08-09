@@ -1,0 +1,335 @@
+{
+  "_comment": [
+    "DRAWABLE SKELETONS for every row in components.md — the structured half of that file (#609).",
+    "",
+    "WHY A SIDECAR AND NOT PROSE. `components.md` describes anatomy, keyboard contract, ARIA and",
+    "Turbo behaviour, because that is what BUILDING a component requires. A recipe is in there too",
+    "(`bg-muted`, `text-step--1`), but embedded in sentences — and regex-parsing generated prose is",
+    "the failure `derived-artifacts` exists to prevent. So the drawable skeleton lives here, in a",
+    "form a generator can read without guessing, and the prose stays the thing a builder reads.",
+    "",
+    "WHAT AN ENTRY IS FOR. `pen_library.py` mirrors the design system into pen so an agent can",
+    "compose against the SAME components it will build the real code from. An entry is therefore a",
+    "skeleton — enough to recognise and place the component — never a reimplementation of it. If an",
+    "entry starts carrying interaction or a11y detail, it has stopped being a projection.",
+    "",
+    "EVERY ROW APPEARS, and `scripts/check_component_shapes.py` fails if one does not. A row that",
+    "cannot be drawn says so with `drawable: false` and a reason: silence would let the pen library",
+    "look complete while a composition picks a component that is not there.",
+    "",
+    "FILLS ARE ROLE TOKENS, never hex. A shape referencing a role the pack does not declare is",
+    "reported and left out rather than given an invented colour.",
+    "",
+    "parts[]:  kind = box | pill | text | field | line | avatar | icon-slot | column",
+    "          fill/stroke/color = a role token name, without the leading `--`",
+    "          span = how many grid columns the part occupies within its row (default 1)"
+  ],
+
+  "Button": {
+    "shape": "control", "variants": "enum",
+    "parts": [{"kind": "text", "label": "Button", "size": 14, "weight": "500"}]
+  },
+  "Inline link": {
+    "shape": "bare", "parts": [{"kind": "text", "label": "Read the docs", "color": "primary",
+                                "size": 14, "weight": "500", "underline": true}]
+  },
+  "Card": {
+    "shape": "surface", "width": 280,
+    "parts": [{"kind": "text", "label": "Card title", "size": 18, "weight": "600",
+               "color": "card-foreground"},
+              {"kind": "text", "label": "Supporting copy", "size": 14, "color": "muted-foreground"}]
+  },
+  "Heading blocks (page / section / card)": {
+    "shape": "bare",
+    "parts": [{"kind": "text", "label": "Section heading", "size": 28, "weight": "600"},
+              {"kind": "text", "label": "One line of supporting context", "size": 16,
+               "color": "muted-foreground"}]
+  },
+  "Badge / Tag / Chip": {
+    "shape": "pill", "variants": "enum",
+    "parts": [{"kind": "text", "label": "Badge", "size": 12, "weight": "600"}]
+  },
+  "Alert / Banner": {
+    "shape": "banner", "variants": "enum",
+    "parts": [{"kind": "text", "label": "Alert message", "size": 14}]
+  },
+  "Modal / Dialog": {
+    "shape": "surface", "width": 420,
+    "parts": [{"kind": "text", "label": "Dialog title", "size": 18, "weight": "600"},
+              {"kind": "text", "label": "What this asks the reader to decide", "size": 14,
+               "color": "muted-foreground"},
+              {"kind": "line"},
+              {"kind": "pill", "label": "Confirm", "fill": "primary", "color": "primary-foreground"}]
+  },
+  "Drawer / off-canvas": {
+    "shape": "panel", "width": 320, "height": 420,
+    "parts": [{"kind": "text", "label": "Drawer title", "size": 18, "weight": "600"},
+              {"kind": "line"}, {"kind": "field"}, {"kind": "field"}]
+  },
+  "Carousel": {
+    "shape": "surface", "width": 420,
+    "parts": [{"kind": "box", "height": 180, "fill": "muted"},
+              {"kind": "pill", "label": "1 / 4", "fill": "muted", "color": "muted-foreground"}]
+  },
+  "Image gallery / Lightbox": {
+    "shape": "surface", "width": 420,
+    "parts": [{"kind": "box", "height": 200, "fill": "muted"},
+              {"kind": "column", "of": [{"kind": "box", "height": 48, "fill": "muted"},
+                                        {"kind": "box", "height": 48, "fill": "muted"},
+                                        {"kind": "box", "height": 48, "fill": "muted"}]}]
+  },
+  "Video player": {
+    "shape": "surface", "width": 420,
+    "parts": [{"kind": "box", "height": 220, "fill": "foreground"},
+              {"kind": "line"},
+              {"kind": "text", "label": "0:00 / 3:12", "size": 12, "color": "muted-foreground"}]
+  },
+  "Dropdown / Menu": {
+    "shape": "panel", "width": 220,
+    "parts": [{"kind": "text", "label": "Edit", "size": 14},
+              {"kind": "text", "label": "Duplicate", "size": 14},
+              {"kind": "line"},
+              {"kind": "text", "label": "Delete", "size": 14, "color": "destructive"}]
+  },
+  "Mega menu / Flyout": {
+    "shape": "panel", "width": 520,
+    "parts": [{"kind": "column", "of": [{"kind": "text", "label": "Products", "size": 13,
+                                         "weight": "600", "color": "muted-foreground"},
+                                        {"kind": "text", "label": "Solutions", "size": 13,
+                                         "weight": "600", "color": "muted-foreground"},
+                                        {"kind": "text", "label": "Resources", "size": 13,
+                                         "weight": "600", "color": "muted-foreground"}]},
+              {"kind": "line"},
+              {"kind": "text", "label": "Overview", "size": 14}]
+  },
+  "Combobox / Autocomplete": {
+    "shape": "panel", "width": 280,
+    "parts": [{"kind": "field", "label": "Search…"},
+              {"kind": "text", "label": "First match", "size": 14},
+              {"kind": "text", "label": "Second match", "size": 14}]
+  },
+  "Command palette": {
+    "shape": "panel", "width": 420,
+    "parts": [{"kind": "field", "label": "Type a command…"},
+              {"kind": "line"},
+              {"kind": "text", "label": "Go to dashboard", "size": 14},
+              {"kind": "text", "label": "Create invoice", "size": 14}]
+  },
+  "Disclosure / Accordion": {
+    "shape": "panel", "width": 360,
+    "parts": [{"kind": "text", "label": "What does this cover?", "size": 15, "weight": "600"},
+              {"kind": "text", "label": "The answer, one paragraph.", "size": 14,
+               "color": "muted-foreground"},
+              {"kind": "line"},
+              {"kind": "text", "label": "A second question", "size": 15, "weight": "600"}]
+  },
+  "Navigation — app header / navbar": {
+    "shape": "bar", "width": 640,
+    "parts": [{"kind": "pill", "label": "Brand", "fill": "primary", "color": "primary-foreground"},
+              {"kind": "text", "label": "Overview", "size": 14},
+              {"kind": "text", "label": "Reports", "size": 14},
+              {"kind": "avatar"}]
+  },
+  "Navigation — sidebar / vertical": {
+    "shape": "panel", "width": 240, "height": 400,
+    "parts": [{"kind": "pill", "label": "Brand", "fill": "primary", "color": "primary-foreground"},
+              {"kind": "line"},
+              {"kind": "text", "label": "Dashboard", "size": 14},
+              {"kind": "text", "label": "Invoices", "size": 14},
+              {"kind": "text", "label": "Settings", "size": 14, "color": "muted-foreground"}]
+  },
+  "Tabs": {
+    "shape": "bar", "width": 360,
+    "parts": [{"kind": "pill", "label": "Active", "fill": "background", "color": "foreground"},
+              {"kind": "text", "label": "Second", "size": 14, "color": "muted-foreground"},
+              {"kind": "text", "label": "Third", "size": 14, "color": "muted-foreground"}]
+  },
+  "Breadcrumbs": {
+    "shape": "bare",
+    "parts": [{"kind": "text", "label": "Home", "size": 13, "color": "muted-foreground"},
+              {"kind": "text", "label": "/", "size": 13, "color": "muted-foreground"},
+              {"kind": "text", "label": "Invoices", "size": 13}]
+  },
+  "Table (CRUD)": {
+    "shape": "surface", "width": 520,
+    "parts": [{"kind": "box", "height": 32, "fill": "muted"},
+              {"kind": "line"}, {"kind": "line"}, {"kind": "line"}]
+  },
+  "Stacked list": {
+    "shape": "surface", "variants": "enum", "width": 400,
+    "parts": [{"kind": "text", "label": "Row title", "size": 15, "weight": "500"},
+              {"kind": "text", "label": "Supporting detail", "size": 13,
+               "color": "muted-foreground"},
+              {"kind": "line"},
+              {"kind": "text", "label": "Second row", "size": 15, "weight": "500"}]
+  },
+  "Grid list": {
+    "shape": "surface", "width": 420,
+    "parts": [{"kind": "column", "of": [{"kind": "box", "height": 90, "fill": "muted"},
+                                        {"kind": "box", "height": 90, "fill": "muted"},
+                                        {"kind": "box", "height": 90, "fill": "muted"}]}]
+  },
+  "Activity feed / Timeline": {
+    "shape": "surface", "width": 360,
+    "parts": [{"kind": "text", "label": "Invoice sent", "size": 14, "weight": "500"},
+              {"kind": "text", "label": "2 hours ago", "size": 12, "color": "muted-foreground"},
+              {"kind": "line"},
+              {"kind": "text", "label": "Payment received", "size": 14, "weight": "500"}]
+  },
+  "Description list": {
+    "shape": "surface", "width": 360,
+    "parts": [{"kind": "text", "label": "Status", "size": 13, "color": "muted-foreground"},
+              {"kind": "text", "label": "Paid", "size": 14},
+              {"kind": "line"},
+              {"kind": "text", "label": "Due", "size": 13, "color": "muted-foreground"}]
+  },
+  "Divider": {"shape": "bare", "parts": [{"kind": "line", "width": 320}]},
+  "Button group": {
+    "shape": "bar",
+    "parts": [{"kind": "pill", "label": "Day", "fill": "primary", "color": "primary-foreground"},
+              {"kind": "pill", "label": "Week", "fill": "secondary", "color": "secondary-foreground"},
+              {"kind": "pill", "label": "Month", "fill": "secondary",
+               "color": "secondary-foreground"}]
+  },
+  "Media object": {
+    "shape": "bar", "width": 360,
+    "parts": [{"kind": "avatar"},
+              {"kind": "text", "label": "Title beside its media", "size": 14, "weight": "500"}]
+  },
+  "Reviews + Rating": {
+    "shape": "surface", "width": 360,
+    "parts": [{"kind": "text", "label": "★★★★☆", "size": 16, "color": "warning"},
+              {"kind": "text", "label": "What the customer said", "size": 14,
+               "color": "muted-foreground"}]
+  },
+  "Product card": {
+    "shape": "surface", "variants": "enum", "width": 240,
+    "parts": [{"kind": "box", "height": 140, "fill": "muted"},
+              {"kind": "text", "label": "Product name", "size": 15, "weight": "500"},
+              {"kind": "text", "label": "£48.00", "size": 15, "weight": "600"}]
+  },
+  "Filter panel": {
+    "shape": "panel", "width": 240,
+    "parts": [{"kind": "text", "label": "Filters", "size": 15, "weight": "600"},
+              {"kind": "line"},
+              {"kind": "text", "label": "Status", "size": 13, "color": "muted-foreground"},
+              {"kind": "pill", "label": "Paid", "fill": "accent", "color": "accent-foreground"}]
+  },
+  "Quick view": {
+    "shape": "surface", "width": 420,
+    "parts": [{"kind": "box", "height": 160, "fill": "muted"},
+              {"kind": "text", "label": "Product name", "size": 18, "weight": "600"},
+              {"kind": "pill", "label": "Add to cart", "fill": "primary",
+               "color": "primary-foreground"}]
+  },
+  "Cart drawer and cart line": {
+    "shape": "panel", "width": 320, "height": 420,
+    "parts": [{"kind": "text", "label": "Your cart", "size": 18, "weight": "600"},
+              {"kind": "line"},
+              {"kind": "text", "label": "1 × Product name", "size": 14},
+              {"kind": "text", "label": "£48.00", "size": 14, "weight": "600"}]
+  },
+  "Payment / card entry": {
+    "shape": "panel", "width": 320,
+    "parts": [{"kind": "field", "label": "Card number"},
+              {"kind": "field", "label": "MM / YY"},
+              {"kind": "field", "label": "CVC"}]
+  },
+  "Promo / discount code": {
+    "shape": "bar", "width": 320,
+    "parts": [{"kind": "field", "label": "Promo code"},
+              {"kind": "pill", "label": "Apply", "fill": "secondary",
+               "color": "secondary-foreground"}]
+  },
+  "Plan comparison / feature matrix": {
+    "shape": "surface", "width": 520,
+    "parts": [{"kind": "column", "of": [{"kind": "box", "height": 120, "fill": "muted"},
+                                        {"kind": "box", "height": 120, "fill": "card"},
+                                        {"kind": "box", "height": 120, "fill": "muted"}]}]
+  },
+  "Seat / quantity selector": {
+    "shape": "bar",
+    "parts": [{"kind": "pill", "label": "−", "fill": "secondary", "color": "secondary-foreground"},
+              {"kind": "text", "label": "3", "size": 15, "weight": "600"},
+              {"kind": "pill", "label": "+", "fill": "secondary", "color": "secondary-foreground"}]
+  },
+  "Saved payment methods": {
+    "shape": "surface", "width": 360,
+    "parts": [{"kind": "text", "label": "Visa •••• 4242", "size": 14, "weight": "500"},
+              {"kind": "pill", "label": "Default", "fill": "accent", "color": "accent-foreground"},
+              {"kind": "line"},
+              {"kind": "text", "label": "Mastercard •••• 8210", "size": 14}]
+  },
+  "Subscription state and dunning": {
+    "shape": "banner",
+    "parts": [{"kind": "text", "label": "Payment failed — update your card", "size": 14}],
+    "fill": "warning"
+  },
+  "Toast / Notification": {
+    "shape": "panel", "width": 320,
+    "parts": [{"kind": "text", "label": "Invoice saved", "size": 14, "weight": "500"},
+              {"kind": "text", "label": "Undo", "size": 13, "color": "primary"}]
+  },
+  "Password strength": {
+    "shape": "bare",
+    "parts": [{"kind": "line", "width": 200, "fill": "success"},
+              {"kind": "text", "label": "Strong", "size": 12, "color": "muted-foreground"}]
+  },
+  "Progress bar": {
+    "shape": "bare",
+    "parts": [{"kind": "line", "width": 240, "fill": "primary"},
+              {"kind": "text", "label": "62%", "size": 12, "color": "muted-foreground"}]
+  },
+  "Stepper / wizard": {
+    "shape": "bar", "width": 400,
+    "parts": [{"kind": "pill", "label": "1", "fill": "primary", "color": "primary-foreground"},
+              {"kind": "line", "width": 48},
+              {"kind": "pill", "label": "2", "fill": "muted", "color": "muted-foreground"},
+              {"kind": "line", "width": 48},
+              {"kind": "pill", "label": "3", "fill": "muted", "color": "muted-foreground"}]
+  },
+  "Skeleton / loading placeholder": {
+    "shape": "surface", "width": 320,
+    "parts": [{"kind": "line", "width": 240, "fill": "muted"},
+              {"kind": "line", "width": 180, "fill": "muted"},
+              {"kind": "line", "width": 200, "fill": "muted"}]
+  },
+  "Spinner / busy indicator": {
+    "shape": "bare",
+    "parts": [{"kind": "icon-slot", "size": 24, "fill": "primary"},
+              {"kind": "text", "label": "Loading…", "size": 13, "color": "muted-foreground"}]
+  },
+  "Tooltip / Popover": {
+    "shape": "panel", "width": 200,
+    "parts": [{"kind": "text", "label": "What this control does", "size": 13}]
+  },
+  "Avatar": {"shape": "bare", "parts": [{"kind": "avatar"}]},
+  "Logo / Brand mark": {
+    "shape": "bar", "variants": "enum",
+    "parts": [{"kind": "icon-slot", "size": 28, "fill": "primary"},
+              {"kind": "text", "label": "Brand", "size": 16, "weight": "600"}]
+  },
+  "Pagination": {
+    "shape": "bar",
+    "parts": [{"kind": "pill", "label": "Prev", "fill": "secondary",
+               "color": "secondary-foreground"},
+              {"kind": "pill", "label": "1", "fill": "primary", "color": "primary-foreground"},
+              {"kind": "pill", "label": "2", "fill": "secondary",
+               "color": "secondary-foreground"},
+              {"kind": "pill", "label": "Next", "fill": "secondary",
+               "color": "secondary-foreground"}]
+  },
+  "Empty state": {
+    "shape": "surface", "width": 360,
+    "parts": [{"kind": "icon-slot", "size": 40, "fill": "muted-foreground"},
+              {"kind": "text", "label": "No invoices yet", "size": 16, "weight": "600"},
+              {"kind": "text", "label": "They will appear here once you send one", "size": 14,
+               "color": "muted-foreground"},
+              {"kind": "pill", "label": "New invoice", "fill": "primary",
+               "color": "primary-foreground"}]
+  },
+  "Forms": {
+    "drawable": false,
+    "why": "a chapter, not a component — it covers field anatomy, validation timing and error copy across every input type. Its individual controls are drawn by their own rows (Combobox, Payment, Password strength); a single 'Forms' shape would be a picture of a form, which composes into nothing."
+  }
+}
