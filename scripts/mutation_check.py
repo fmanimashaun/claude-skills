@@ -3699,12 +3699,16 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/brand_pack_lint.py",
                "plugins/design-flow/brands/fidara/theme.css",
                "plugins/design-flow/brands/fidara/brand.json",
-               # EVERY FILE `build()` READS. This list has now been short three times running --
-               # theme.css, then components.md, then component-shapes.json -- and each time the
-               # symptom was identical: every mutation died on `Unreadable`, a crash rather than a
-               # verdict, and the harness refused to score any of them. The rule to carry forward is
-               # that a guard's `needs` is not "the other scripts" but "everything the subject
-               # opens", data included.
+               # EVERY FILE `build()` READS -- data included, not just the other scripts. This list
+               # was short three times running (theme.css, then components.md, then
+               # component-shapes.json).
+               #
+               # AND THE HARNESS CAUGHT IT EVERY TIME, which is the part worth recording. Each run
+               # led with `INERT — the UNMUTATED selftest already fails in the staged tempdir …
+               # Add what it reads to the guard's needs.` -- the diagnosis and the fix, in the first
+               # line. It went unread three times because the output was inspected with `tail`, and
+               # `run_baseline` reports FIRST. A tool that says the right thing into a truncated
+               # pipe has still said it; read the head of a failure, not its tail.
                "skills/fidara-design/references/components.md",
                "skills/fidara-design/references/component-shapes.json"),
         mutations=(

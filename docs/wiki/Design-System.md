@@ -38,8 +38,8 @@ Four tiers, and only the last two cost money:
 | 2 | brand geometry from `brand.json` | free — CSS/SVG from tokens |
 | 3/4 | illustration, motion | **paid**, and last on purpose |
 
-`/design-flow:assets` scaffolds the config with a **placeholder key**, holds the plan of what the
-product needs, and refuses to start a plan the budget cannot finish — because generating until the
+`/design-flow:assets` scaffolds the config — **the agent generates by default, so no API key is
+written at all** — holds the plan of what the product needs, and refuses to start a plan the budget cannot finish — because generating until the
 money stops leaves an *arbitrary* half-built set, and a half-built family is not a cheaper library,
 it is an incoherent one.
 
@@ -49,6 +49,32 @@ or a ladder climb with no stated acceptance check — each **before** any call.
 
 Groups are **atomic**: a hero still and the motion loop that animates it are one artefact in two
 files, so buying the loop alone is worse than buying neither.
+
+## pen.dev — optional, on both sides of the code boundary
+
+If a composition surface is available, design-flow uses it for two distinct jobs. **Neither is ever
+required**: no command stops for want of pen, and a machine without it behaves exactly as it did
+before the tier existed.
+
+**Making assets.** A custom icon or spot illustration is composed and then **compiled** to SVG, not
+exported — every design tool's SVG export emits hardcoded hex, which `design-auditor` refuses by
+name, while a compiled asset is `fill="var(--primary)"` and serves light and dark from one file. An
+OG or social card is **exported** raster instead, because its value is real type at a fixed size and
+there is nothing to compile to.
+
+**Exploring screens.** Divergence in `/design-flow:variants` costs N × ERB — every option is a full
+`ui-composer` dispatch writing real view code before it can be compared. The `design-explorer` agent
+composes the options in pen instead, so the ERB price is paid once, for the one that won.
+
+**What joins the two is the mirrored library.** `pen_library.py` generates a `.pen` document from
+`theme.css` and `components.md` — the same rows `ui-composer` builds from — covering **all 51
+component rows** with role tokens in both themes. That is what makes exploring meaningful rather than
+decorative: compose from components the codebase does not have and you have chosen something
+unbuildable.
+
+The library file doubles as the scratchpad, so compositions live beside the components and a rebuild
+preserves them. `check_component_shapes.py` fails the build if a component is added to the catalogue
+without a shape, because a component missing from pen is one an agent reaches past and never misses.
 
 ## Two files that are not the same thing
 

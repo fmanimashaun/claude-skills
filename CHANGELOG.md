@@ -7,6 +7,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The mutation harness was right three times and I read past it.** v1.85.0's notes say a guard's
+  `needs` list was short three times running and framed that as a lesson about the list. It is not:
+  `run_baseline` reports **`INERT — the UNMUTATED selftest already fails in the staged tempdir …
+  Add what it reads to the guard's needs.`** as its *first* line, each time, with the diagnosis and
+  the fix together. It went unread because the output was inspected with `tail`, and the baseline
+  reports first.
+
+  The comment where the list lives now says that. **Read the head of a failure, not its tail** — a
+  tool that says the right thing into a truncated pipe has still said it, and blaming the tool for
+  what the tail cut off is how a working defence gets "improved" into a worse one.
+
+- **README and the Design-System wiki page did not know pen exists**, and the page still described a
+  **placeholder API key** the scaffold stopped writing two releases ago. Generated wiki pages
+  (`Command-Reference`, `Plugin-Reference`, `Skills-Reference`) were current — they are rebuilt by
+  `build_wiki.py` and drift-gated — but the hand-written ones are not, and nothing checks them. That
+  asymmetry is worth knowing: a generated page rots loudly, a hand-written one rots silently.
+
 ### 2026-08-09 (v1.85.0)
 
 - **Nothing asserted that a promotion is a merge commit, and a squash broke the next release.**
