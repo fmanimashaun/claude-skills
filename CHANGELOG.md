@@ -7457,7 +7457,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.24.0 — 2026-08-09 (release v1.86.0)
 
 - **The `video` kind never checked its bytes, and `--from-url` made that reachable.** Every other
   kind sniffed: `motion` refuses footage, `vector` refuses a raster. `video` accepted anything.
