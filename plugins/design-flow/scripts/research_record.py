@@ -76,6 +76,16 @@ def check(record: dict) -> list[str]:
             "no `job` stated. Research without one returns the median of everything, which is the "
             "stock look this method exists to avoid. Name the user, their state of mind, and the "
             "decision the surface has to move.")
+    # THE STYLE IS THE RESEARCH'S OUTPUT, and it must be stated here. Synthesis that names no
+    # style has not finished: "three or more sources disagree, and the choosing IS the design" --
+    # so a record with no `style` records the gathering and omits the decision. It is also the link
+    # that makes research MEAN anything downstream: without it a project can research ink line-work
+    # and brief a 3D render, and nothing notices.
+    if record.get("references") and not record.get("style"):
+        problems.append(
+            "no `style` chosen. The references disagree — that is why three are required — and "
+            "choosing between them is the design. A record that gathers and does not choose is a "
+            "mood board, and nothing downstream can hold a brief to it.")
     refs = record.get("references") or []
     if len(refs) < MIN_SOURCES:
         problems.append(
@@ -157,7 +167,7 @@ def selftest() -> int:
                 "adopt": "demote the sub-head"}
         return {**base, **kw}
 
-    GOOD = {"job": "a sceptical buyer deciding in one visit",
+    GOOD = {"job": "a sceptical buyer deciding in one visit", "style": "minimalist-ink",
             "references": [ref(category="direct", reject="their comparison table"),
                            ref(category="adjacent"), ref(category="outside")]}
     expect("a complete record passes", check(GOOD) == [])
@@ -185,6 +195,12 @@ def selftest() -> int:
     expect("a record rejecting nothing is reported",
            any("shopping list" in p for p in check(nothing_rejected)))
     expect("...and ONE rejection anywhere is enough", check(GOOD) == [])
+
+    # THE STYLE IS THE OUTPUT. A record that gathers and does not choose is a mood board.
+    expect("a record with references and no style is reported",
+           any("no `style` chosen" in p for p in check({**GOOD, "style": None})))
+    expect("...and one that chose is fine",
+           not any("no `style`" in p for p in check({**GOOD, "style": "minimalist-ink"})))
 
     # THE LOGIN WALL. It returns a page, not an error, so the capture can BE the wall.
     walled = {**GOOD, "references": [{**ref(reject="x"), "capture": "captures/mobbin-login.png"},

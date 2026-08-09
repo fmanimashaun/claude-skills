@@ -7390,6 +7390,25 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The research now decides the style, and the plan holds every brief to it.** The sequence —
+  scaffold, read the PRD, research for inspiration, curate the set, generate — was enforced at every
+  step **except the one that carries the meaning**: nothing connected the research to the style. A
+  project could research monochrome ink line-work and brief a `3d-render`, and no check noticed. The
+  record was a box that got ticked.
+
+  `style` is now the research record's **output**, required once it has references: three sources
+  disagree, which is why three are the minimum, and **the choosing is the design**. A record that
+  gathers and does not choose is a mood board — it documents the looking and omits the decision.
+
+  Every brief is held to that value, and a mismatch refuses **before anything is bought**. One
+  family, one style: a set that mixes them is the pile this whole path exists to avoid, and it is
+  invisible once shipped.
+
+- **Retracted, not shipped: a Figma-to-tokens reader.** It was named as a gap against an external
+  designer workflow, and it is not one — tokens here are **generated from the brand pack**, so a
+  Figma reader would be a second source of truth for the same values, which `plugin-boundaries`
+  forbids by name. The flow is agent-driven; the absence is a decision.
+
 - **Doctrine said motion had no route. It was wrong, and the shape of the error is worth keeping.**
   The claim began as a true statement about the *image* endpoint — it returns no video — and was
   allowed to stand as a claim about the provider, so the scaffold shipped an empty motion ladder and
