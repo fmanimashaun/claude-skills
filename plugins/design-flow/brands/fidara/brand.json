@@ -1,17 +1,35 @@
 {
   "slug": "fidara",
   "name": "Fidara",
-  "fonts": { "sans": "Bricolage Grotesque", "display": "Newsreader", "mono": "Overpass Mono" },
+  "fonts": {
+    "sans": "Bricolage Grotesque",
+    "display": "Newsreader",
+    "mono": "Overpass Mono"
+  },
   "knobs": {
     "section_rhythm": "generous",
     "radius": "md-controls-lg-cards",
     "heading_ramp": "mid-range"
   },
-  "chart_hues": ["#0077CC", "#00A3FF", "#00D4FF", "#FF6B35", "#22C55E"],
+  "chart_hues": [
+    "#0077CC",
+    "#00A3FF",
+    "#00D4FF",
+    "#FF6B35",
+    "#22C55E"
+  ],
   "chart_palette_validated": true,
   "default_variant": "fmworkflows",
   "variants": {
-    "fidara": { "name": "Fidara", "endorsement": null, "mark": "prism.svg" },
-    "fmworkflows": { "name": "fmworkflows", "endorsement": "by Fidara", "mark": "prism.svg" }
+    "fidara": {
+      "name": "Fidara",
+      "endorsement": null,
+      "mark": "prism.svg"
+    },
+    "fmworkflows": {
+      "name": "fmworkflows",
+      "endorsement": "by Fidara",
+      "mark": "prism.svg"
+    }
   }
 }

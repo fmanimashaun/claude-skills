@@ -3378,7 +3378,28 @@ GUARDS: tuple[Guard, ...] = (
         # No `needs`: every fixture builds its own config in a tempdir. This path spends real money,
         # so each mutation removes exactly ONE refusal and names the fixture that catches it -- a
         # mutation caught by the wrong fixture would mean some other check is doing the work.
+        # The reference pack: a fixture asserts the SHIPPED brand satisfies the palette
+        # contract its own composer depends on — it did not, which is the bug.
+        needs=("plugins/design-flow/brands/fidara/brand.json",),
         mutations=(
+            Mutation(
+                # Reported after a real spend: a brief saying "monochrome only" produced a
+                # full-colour photographic scene, because absence was NARRATED as `palette
+                # unspecified` — an instruction, not a gap. Restoring that is restoring the bug.
+                "an absent palette is narrated into the prompt instead of refused",
+                "    if not palette:",
+                "    if False:",
+                "an unconstrained palette should be refused",
+            ),
+            Mutation(
+                # The brief is the per-surface authority; reading only the pack is what silently
+                # dropped the one constraint that mattered.
+                "the brief's palette stops overriding the pack's",
+                '    palette = brief.get("palette") or pack.get("palette") or []',
+                '    palette = pack.get("palette") or []',
+                "the brief's palette wins over the pack's",
+            ),
+            
             Mutation(
                 # An unpriced rung treated as free makes the ceiling unreachable: every unpriced
                 # model costs nothing, so the budget check cannot refuse -- a gate that cannot fail,
