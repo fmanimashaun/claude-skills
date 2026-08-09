@@ -7457,6 +7457,17 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.23.1 — 2026-08-09
+
+- **Said WHY the exporter is the verifier, not just that it is.** The guidance already told an agent
+  to trust the export over the on-screen preview; it now carries the reason, which was found by
+  experiment rather than assumed. Four hypotheses were reproduced through the headless CLI —
+  `layout: "none"` frames, live-session inserts, same-session rendering, and far-off-canvas
+  positions — and **all four rendered correctly**. The only variable left is the surface: every
+  observed failure was the desktop app via MCP, every success the CLI, which is what a GUI that
+  rasterises by viewport would do. Nothing shipped depends on that path — the generator and compiler
+  read and write files, and the `pen` rung shells out.
+
 ### 1.23.0 — 2026-08-09
 
 - **pen now mirrors the WHOLE catalogue — all 51 component rows.** (#609) It mirrored four, because
@@ -9113,6 +9124,23 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09e (release v1.85.2)
+
+> ### "Unreliable" was a placeholder for not having looked
+>
+> One doc fix, carrying a diagnosis that turned a shrug into a bounded claim.
+
+- **The pen rendering oddity is diagnosed** rather than filed as flakiness. Four hypotheses were
+  built as fixtures and run through the headless CLI — `layout: "none"` frames, live-session
+  inserts, same-session per-node rendering, and the original far-off-canvas coordinates — and every
+  one **rendered correctly**, refuting all four. The single remaining variable is the surface:
+  every failure was the desktop app via MCP, every success the CLI. That is consistent with a GUI
+  rasterising by viewport, and it means nothing we ship is exposed, since the generator and compiler
+  read and write files while the `pen` rung shells out.
+
+  The doctrine already said *"verify with the exporter, not the on-screen preview"* — correct, but
+  as a bare observation. It now says why, and names the CLI as the surface to trust.
 
 ### 2026-08-09d (release v1.85.1)
 

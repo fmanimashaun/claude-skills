@@ -312,8 +312,14 @@ than an error:
 - **When pushing tokens in, name every theme mode explicitly.** A value with no theme is silently
   dropped, taking the light theme with it — and the artwork then exports **black**, not empty. Read
   the variables back and check both modes survived.
-- **Verify with the exporter, not the on-screen preview.** A per-node screenshot rendered only the
-  background while the export was correct, which would tell an agent its work had failed.
+- **Verify with the exporter, not the on-screen preview** — and prefer the **headless CLI** for it.
+  A per-node screenshot rendered only the background while the export was correct, which would tell
+  an agent its work had failed. Narrowed by experiment afterwards: `layout: "none"`, live-session
+  inserts, same-session rendering and far-off-canvas positions were each reproduced through the CLI
+  and each rendered **correctly**. The one variable left is the surface — every failure was the
+  desktop app via MCP, every success the CLI — which is consistent with a GUI that rasterises by
+  viewport and cannot show you what it is not displaying. Nothing here depends on that path:
+  `pen_library.py` and `pen_to_svg.py` read and write files, and the `pen` rung shells out.
 - **Confirm which document you are actually addressing, before every export.** A `filePath` naming a
   file that is *not* open in the editor is **silently resolved against the active document** rather
   than refused — so the tool answers confidently about the wrong file, and a missing node reads as
