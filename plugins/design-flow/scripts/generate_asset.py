@@ -276,6 +276,70 @@ def call_openrouter_svg(key: str, model: str, prompt: str, reference: bytes | No
     return text[start:end + 6].encode("utf-8"), (float(cost) if cost is not None else None)
 
 
+def call_openrouter_chat_image(key: str, model: str, prompt: str, reference: bytes | None,
+                               timeout: int) -> tuple[bytes, float | None]:
+    """Raster via `chat/completions` with `modalities: ["image", "text"]`.
+
+    #629. This is a SECOND raster shape on the same provider, not a replacement for `call_openrouter`
+    -- and it exists because the current top image models serve this one and not `/api/v1/images`.
+    Verified against OpenRouter's chat-completion API reference before writing: `modalities` is a
+    request field whose enum is text/image/audio, and the assistant message carries an `images` array
+    of `{type, image_url: {url}}`. The reporter's live run added what a reference cannot: the URL is a
+    base64 data URL, and `usage.cost` comes back in the same response.
+
+    IT MATTERS THAT THE SCRIPT MAKES THIS CALL. The agent-in-the-loop path dead-ends on a provider
+    that answers with an inline image (#628): the agent sees a rendered picture and cannot transcribe
+    its bytes. Here the bytes never pass through a model's hands -- they are decoded and written by
+    this function -- so a billed generation always produces a file.
+    """
+    body = {"model": model,
+            "modalities": ["image", "text"],
+            "messages": [{"role": "user", "content": prompt}]}
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(body).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        raise Unusable(f"provider returned HTTP {exc.code}. Nothing was saved and no manifest row "
+                       f"was written. Response: {detail}")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise Unusable(f"provider unreachable ({exc}). Nothing was saved.")
+
+    message = ((payload.get("choices") or [{}])[0].get("message") or {})
+    images = message.get("images") or []
+    if not images:
+        # A TEXT-ONLY REPLY IS NOT AN ASSET, and it is the likeliest failure here: a model that does
+        # not support the image modality answers in prose about the picture it would have drawn.
+        # Saving that as `.bin` would put a paragraph in the manifest where art belongs.
+        text = (message.get("content") or "")[:200]
+        raise Unusable(
+            f"the model returned no image. `modalities: [image, text]` was requested, so a "
+            f"text-only reply means this model does not generate images — check the rung's model ID "
+            f"against `--discover`. It said: {text!r}")
+    # Indexed through a default: with the guard above removed, `images[0]` raises IndexError
+    # and the run dies before any refusal is reported -- and a crash is not a verdict. The
+    # mutation guard for that guard found it.
+    first = images[0] if images else {}
+    url = ((first.get("image_url") or {}).get("url") or "")
+    if not url.startswith("data:"):
+        raise Unusable(f"the image came back as {url[:60]!r}, which is not a base64 data URL. This "
+                       f"adapter decodes `data:` only; if the provider now returns a link, fetch it "
+                       f"with `--from-url` rather than guessing here.")
+    try:
+        blob = base64.b64decode(url.split(",", 1)[1])
+    except (ValueError, IndexError) as exc:
+        raise Unusable(f"the image data URL did not decode ({exc}). Nothing was saved.")
+    if not blob:
+        raise Unusable("the image data URL decoded to nothing. Nothing was saved — a 0-byte file in "
+                       "the manifest is a `done` row nobody can see.")
+    cost = (payload.get("usage") or {}).get("cost")
+    return blob, (float(cost) if cost is not None else None)
+
+
 def call_openrouter_video(key: str, model: str, prompt: str, reference: bytes | None,
                           timeout: int) -> tuple[bytes, float | None]:
     """Motion via the VIDEO endpoint, which is asynchronous: submit, poll, then download.
@@ -440,6 +504,11 @@ ADAPTERS = {"agent": call_agent,
             "pen": call_pen,
             "openrouter-video": call_openrouter_video,
             "openrouter": call_openrouter,
+            # #629. The chat-completions raster shape, which the current top image models serve and
+            # `/api/v1/images` does not. Registered as its own name rather than replacing
+            # `openrouter`, because both endpoints are live and a project pinned to a model on the
+            # images endpoint must not be silently rerouted.
+            "openrouter-chat-image": call_openrouter_chat_image,
             "openrouter-svg": call_openrouter_svg,
             "gemini": call_gemini}
 
@@ -1512,6 +1581,77 @@ def selftest() -> int:
                   not (root / ASSET_LIBRARY / "v-agent.svg").exists())
         finally:
             srv.shutdown()
+
+    # #629. THE CHAT-COMPLETIONS RASTER ADAPTER. Nothing here reaches the network -- the response is
+    # stubbed, because a test that needed a provider would be a bill rather than a test. What is
+    # asserted is the shape handling, which is where a wrong guess costs a billed call: the shape
+    # was verified against OpenRouter's chat-completion reference before this was written.
+    real_urlopen = urllib.request.urlopen
+    try:
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+        class _R:
+            def __init__(self, payload): self._b = json.dumps(payload).encode()
+            def read(self, _n=None): return self._b
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def respond(payload):
+            urllib.request.urlopen = lambda *a, **k: _R(payload)
+
+        data_url = "data:image/png;base64," + base64.b64encode(png).decode()
+        respond({"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}],
+                 "usage": {"cost": 0.068}})
+        blob, cost = call_openrouter_chat_image("k", "m", "p", None, 5)
+        check("the chat-image adapter decodes the data URL", blob == png)
+        check("...and reports the REAL cost from usage", cost == 0.068)
+
+        # A TEXT-ONLY REPLY IS NOT AN ASSET, and it is the likeliest failure: a model that does not
+        # support the image modality answers in prose about the picture it would have drawn.
+        # Saving that would put a paragraph in the manifest where art belongs.
+        respond({"choices": [{"message": {"content": "I would draw a calm lattice."}}]})
+        checks += 1
+        try:
+            call_openrouter_chat_image("k", "m", "p", None, 5)
+            failures.append("a text-only reply should refuse, not be saved")
+        except Unusable as exc:
+            if "no image" not in str(exc) or "--discover" not in str(exc):
+                failures.append(f"a text-only reply refused without naming the fix: {exc}")
+
+        # A LINK RATHER THAN A DATA URL is a provider change, not a crash. Say which flag handles it
+        # instead of guessing at a download inside an adapter that documents itself as base64-only.
+        respond({"choices": [{"message": {"images": [
+            {"image_url": {"url": "https://cdn.example/x.png"}}]}}]})
+        checks += 1
+        try:
+            call_openrouter_chat_image("k", "m", "p", None, 5)
+            failures.append("a non-data URL should refuse")
+        except Unusable as exc:
+            if "--from-url" not in str(exc):
+                failures.append(f"a non-data URL refused without naming --from-url: {exc}")
+
+        respond({"choices": [{"message": {"images": [
+            {"image_url": {"url": "data:image/png;base64,"}}]}}]})
+        checks += 1
+        try:
+            call_openrouter_chat_image("k", "m", "p", None, 5)
+            failures.append("a data URL decoding to nothing should refuse")
+        except Unusable as exc:
+            if "decoded to nothing" not in str(exc):
+                failures.append(f"an empty data URL refused for the wrong reason: {exc}")
+
+        # A MISSING COST IS NULL, NOT ZERO. Recording an unreported charge as $0.00 would make the
+        # budget approve against a number the provider never quoted.
+        respond({"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]})
+        _, cost = call_openrouter_chat_image("k", "m", "p", None, 5)
+        check("an unreported cost is null, never zero", cost is None)
+    finally:
+        urllib.request.urlopen = real_urlopen
+
+    check("the chat-image adapter is registered", "openrouter-chat-image" in ADAPTERS)
+    check("...and did not displace the images-endpoint one", "openrouter" in ADAPTERS)
+    check("...and it needs a key, unlike the roles",
+          "openrouter-chat-image" not in KEYLESS)
 
     for f in failures:
         print(f"FAIL {f}")

@@ -7459,6 +7459,57 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The agent may now write the prompt, and a keyed adapter for the shape the top image models
+  actually serve.** (#629)
+
+  **Change type: mixed, and split accordingly.** The prompt-doctrine half is a **design decision**,
+  authority being the maintainer's reasoning recorded on the issue. The adapter half is an
+  **external claim**, so it was verified before a line was written:
+  [OpenRouter's chat-completion API reference](https://openrouter.ai/docs/api-reference/chat-completion)
+  documents `modalities` as a request field with enum `text`/`image`/`audio`, and the assistant
+  message as carrying an `images` array of `{type, image_url: {url}}`. The reporter's live billed run
+  supplied what a reference cannot: the URL is a base64 data URL and `usage.cost` returns in the same
+  response. Note the first docs page checked
+  ([features/multimodal/image-generation](https://openrouter.ai/docs/features/multimodal/image-generation))
+  documents **only** `/api/v1/images` and would have refuted the claim — the reference page is the
+  one that confirms it.
+
+  **`prompt` is no longer refused.** It was, on the grounds that an improvised prompt produces the
+  stock-art look and pays twice. Half right. The half it got wrong: derivation joins brief fields
+  verbatim (#621/#624), so a brief carrying a *pipeline* instruction — `"traced to a single-path SVG
+  (currentColor)"` — posted that sentence to an image model, and a self-contradictory brief composed
+  a contradictory instruction. Mechanical derivation is a ceiling on quality, not a floor under it.
+
+  But *"record it and trust the agent"* would re-open #621 — filed days earlier, where the brief's
+  constraints never reached the prompt at all. So neither extreme: the agent writes the words, and
+  the gate still holds it to the brief **before the spend**. A crafted prompt must carry a
+  `prompt_rationale`, must evidence the brief's `palette` and `ground`, and must not request anything
+  on its `avoid` list. The check is deliberately crude — one significant word (4+ letters, not a
+  stopword) per constraint — because a semantic check means a second model call, another bill, and a
+  non-deterministic gate. It is a floor, not a proof.
+
+  `provenance_row` gains `crafted` and `prompt_rationale`, and the prompt library records them with a
+  `source` column reading *crafted* or *composed*. Without that the trade could never be judged
+  against its own results, and an unevaluatable trade is a preference wearing a decision's clothes.
+
+  **New `openrouter-chat-image` aggregator** — `chat/completions` + `modalities: ["image","text"]`,
+  reading `choices[0].message.images[0].image_url.url` and `usage.cost`. Registered beside
+  `openrouter` rather than replacing it: both endpoints are live, a given model serves one or the
+  other, and silently rerouting a pinned project would change which model it buys from without
+  saying so. This also closes the #628 dead-end **from the generator side** — on a keyed adapter the
+  *script* decodes the bytes, so nothing has to transcribe an image it only saw rendered.
+
+  A text-only reply refuses rather than being saved (a model without the image modality answers in
+  prose about the picture it would have drawn), a link rather than a data URL points at `--from-url`,
+  and an unreported cost stays **null, never zero** — $0.00 would make the budget approve against a
+  number the provider never quoted.
+
+  Fixtures: `generation_gate.py` 57 → 64, `generate_asset.py` 121 → 133, six new mutation guards.
+  Two of those guards found real defects while being written: `images[0]` raised `IndexError` when
+  its own guard was removed, so the run died before reporting anything — a crash is not a verdict —
+  and one existing mutation still expected a fixture this change had replaced, whose name had
+  silently stopped matching what it tested.
+
 - **The assets dir splits into two named folders.** (#625, #628, #629 — **maintainer decision
   recorded on those issues**, not an upstream claim.) Everything used to land flat under
   `docs/assets/`: the artefacts, the manifest, the plan, and now the prompt library too. The layout

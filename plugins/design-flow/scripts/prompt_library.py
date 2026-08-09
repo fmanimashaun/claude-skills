@@ -14,8 +14,8 @@ claims-vs-enforcement, in the path with a bill attached.
 
 This module is the missing store. Two files, one source:
 
-    docs/assets/prompts.json   the source -- agents read this
-    docs/assets/prompts.md     a VIEW of it -- humans read this, and it is generated
+    docs/assets/prompts-library/prompts.json   the source -- agents read this
+    docs/assets/prompts-library/prompts.md     a VIEW of it -- humans read this, and it is generated
 
 The markdown is derived, never hand-kept, for the reason `docs/coverage.html` records: a
 hand-maintained second copy disagrees with the first within a week and disagrees SILENTLY, because
@@ -120,6 +120,12 @@ def build_entry(prov: dict, prompt: str, brief: dict, *, asset: str | None,
         "asset": asset,
         "use_cases": brief.get("use_cases") or [surface],
         "avoid": brief.get("avoid") or [],
+        # #629. WHO WROTE THE WORDS. The gate now accepts an agent-crafted prompt alongside the
+        # composed one, and that trade -- phrasing quality against mechanical guarantee -- can only
+        # ever be judged by comparing their results. A library that recorded the prompt but not its
+        # provenance would make the question unanswerable while looking like it had the data.
+        "crafted": bool(prov.get("crafted")),
+        "prompt_rationale": prov.get("prompt_rationale") or "",
         "verdict": verdict,
         "why": why,
     }
@@ -256,14 +262,15 @@ def render(rows: list[dict]) -> str:
                    "library._\n")
         return "\n".join(out)
 
-    out.append("| id | surface | kind | model | est. | spent | runs | verdict |")
-    out.append("|---|---|---|---|---|---|---|---|")
+    out.append("| id | surface | kind | model | source | est. | spent | runs | verdict |")
+    out.append("|---|---|---|---|---|---|---|---|---|")
     for r in rows:
         est = r.get("estimated_cost_usd")
         out.append("| " + " | ".join([
             f"[`{_cell(r['id'])}`](#{_cell(r['id'])})", _cell(r.get("surface")),
             _cell(r.get("kind")),
             f"`{_cell(r['model'])}`" if r.get("model") else "**unknown**",
+            "crafted" if r.get("crafted") else "composed",
             f"${float(est):.2f}" if est is not None else "—",
             f"${float(r.get('spent_total_usd') or 0.0):.2f}",
             str(r.get("spend_count") or 0),
@@ -285,6 +292,8 @@ def render(rows: list[dict]) -> str:
             out.append(f"\n**Produced:** `{_cell(r['asset'])}`")
         if r.get("model_note"):
             out.append(f"\n**Model:** {_cell(r['model_note'])}")
+        if r.get("prompt_rationale"):
+            out.append(f"\n**Crafted because:** {_cell(r['prompt_rationale'])}")
         if r.get("why"):
             out.append(f"\n**Verdict:** {_cell(r['why'])}")
         fence = _fence(r["prompt"])
@@ -442,6 +451,18 @@ def selftest() -> int:
         upsert(root, build_entry({**prov, "surface": "about"}, "draw another", brief,
                                  asset=None, model=None))
         ok("an upsert refreshed the committed view", check(root) == [])
+
+    print("who wrote the words is recorded")
+    composed = build_entry(prov, "draw a thing", brief, asset=None, model=None)
+    ok("a composed prompt is marked composed", composed["crafted"] is False)
+    crafted = build_entry({**prov, "crafted": True, "prompt_rationale": "the composed one dumps fields"},
+                          "draw a thing well", brief, asset=None, model=None)
+    ok("a crafted prompt is marked crafted", crafted["crafted"] is True)
+    ok("...carrying why it was crafted",
+       crafted["prompt_rationale"] == "the composed one dumps fields")
+    body = render([composed, crafted])
+    ok("the view distinguishes them", "| composed |" in body and "| crafted |" in body)
+    ok("...and shows the rationale", "**Crafted because:**" in body)
 
     print("a prompt full of backticks still fences")
     tricky = "use ``code`` and ```blocks``` in the prompt"

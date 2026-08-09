@@ -3383,6 +3383,42 @@ GUARDS: tuple[Guard, ...] = (
         needs=("plugins/design-flow/brands/fidara/brand.json",),
         mutations=(
             Mutation(
+                # #629. The crafted-prompt path replaced a flat refusal, so the ONLY thing now
+                # guaranteeing the brief's hard constraints reach the prompt is this check. Without
+                # it #621 comes straight back: a brief saying "monochrome, single-hue only" and a
+                # prompt that never mentions colour, answered with a full-colour photograph.
+                "a crafted prompt is accepted without checking it against the brief's palette",
+                '        if wanted and not (wanted & words):',
+                "        if False:",
+                "a crafted prompt that drops the palette constraint",
+            ),
+            Mutation(
+                # A prompt asking for what the brief forbids is answered exactly as asked, then
+                # rejected on arrival -- a full round trip and a full charge to learn what the
+                # brief already said.
+                "a crafted prompt may request what the brief's `avoid` list forbids",
+                "        if banned and banned <= words:",
+                "        if False:",
+                "a crafted prompt requesting what `avoid` forbids",
+            ),
+            Mutation(
+                # Without a rationale nobody can tell later whether crafting helped, and the trade
+                # this change makes can never be re-evaluated against its own results.
+                "a crafted prompt needs no rationale, so the trade cannot be judged later",
+                '    if not str(request.get("prompt_rationale") or "").strip():',
+                "    if False:",
+                "a crafted prompt with no rationale",
+            ),
+            Mutation(
+                # Matching on stopwords would make the constraint check pass on prompts honouring
+                # nothing -- the palette "monochrome, single-hue only" shares "only" with almost any
+                # prose. A gate that cannot fail is the defect this whole file exists to catch.
+                "stopwords count as evidence, so the constraint check passes on anything",
+                "    return {w for w in re.findall(r\"[a-z]{4,}\", text.lower()) if w not in _STOPWORDS}",
+                "    return {w for w in re.findall(r\"[a-z]{1,}\", text.lower())}",
+                "a crafted prompt sharing only a stopword with the palette",
+            ),
+            Mutation(
                 # Reported after a real spend: a brief saying "monochrome only" produced a
                 # full-colour photographic scene, because absence was NARRATED as `palette
                 # unspecified` — an instruction, not a gap. Restoring that is restoring the bug.
@@ -3417,10 +3453,15 @@ GUARDS: tuple[Guard, ...] = (
                 "projected cost exceeds the ceiling",
             ),
             Mutation(
-                "a free-typed prompt is silently accepted instead of rejected",
+                # #629 changed what this guards. It used to be "a free-typed prompt is REJECTED";
+                # a crafted prompt is now accepted, so what must not be lost is the ROUTING -- drop
+                # this branch and the crafted prompt is silently discarded and a composed one used
+                # instead, which is the original defect wearing the opposite face: the caller
+                # believes their text was used when it was not.
+                "a crafted prompt is silently discarded and the composed one used instead",
                 '    if "prompt" in request:',
                 "    if False:",
-                "a free-typed prompt",
+                "a crafted prompt requesting what `avoid` forbids",
             ),
             Mutation(
                 # Climbing with no stated check is how "best output" becomes "the agent liked it".
@@ -3575,6 +3616,28 @@ GUARDS: tuple[Guard, ...] = (
         # stands between a request and someone's card.
         mutations=(
             Mutation(
+                # #629. A model without the image modality answers in PROSE about the picture it
+                # would have drawn. Saved, that is a paragraph in the manifest where art belongs --
+                # and it looks like a completed row.
+                "a text-only reply is saved as though it were an image",
+                "    if not images:",
+                "    if False:",
+                # Matched on the fixture NAME, not one branch's message: with the guard
+                # removed the reply is still refused, just by the data-URL check and
+                # without naming the fix, so the fixture reports a different sentence.
+                "a text-only reply",
+            ),
+            Mutation(
+                # An unreported charge recorded as $0.00 makes the budget approve against a number
+                # the provider never quoted -- the same defect as an unpriced ladder rung.
+                "a missing provider cost is recorded as zero rather than unknown",
+                '    cost = (payload.get("usage") or {}).get("cost")\n'
+                "    return blob, (float(cost) if cost is not None else None)",
+                '    cost = (payload.get("usage") or {}).get("cost")\n'
+                "    return blob, float(cost or 0.0)",
+                "an unreported cost is null, never zero",
+            ),
+            Mutation(
                 # #628. `--from-url` takes a string an agent read out of a tool result, so the
                 # scheme check is the only thing between that string and `urlopen` reading this
                 # machine. A `file:` URL would be fetched, sniffed, written into docs/assets and
@@ -3588,8 +3651,10 @@ GUARDS: tuple[Guard, ...] = (
                 # A 0-byte download recorded as an asset is a `done` row nobody can see. The row
                 # says finished, the manifest says present, and the surface renders nothing.
                 "an empty download is recorded, so a 0-byte file enters the manifest as art",
-                "    if not blob:",
-                "    if False:",
+                # Multi-line anchor: `if not blob:` alone matches the chat-image adapter too,
+                # and an ambiguous anchor is a mutation that silently moves to another check.
+                '    if not blob:\n        raise Unusable(f"{url} returned no bytes.',
+                '    if False:\n        raise Unusable(f"{url} returned no bytes.',
                 "an empty download should be refused",
             ),
             Mutation(

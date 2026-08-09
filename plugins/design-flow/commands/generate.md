@@ -113,15 +113,47 @@ screenshot. So the request must record, per surface, why **each** free tier cann
 Both `*_why_not` keys are required. An unstated tier is an unexamined one, and it costs nothing to
 examine — so the gate refuses rather than assuming.
 
-## 2. Do not write the prompt
+## 2. You may write the prompt — and the gate still holds you to the brief
 
-The gate composes it from the surface class, the aesthetic brief for that class, and the pack. A
-`prompt` key in the request is **rejected**, not ignored — silently dropping it would let you
-believe your text was used.
+**This section used to say "do not write the prompt".** A `prompt` key was refused outright, and the
+gate composed one by joining the brief's fields with `"; "`. That was half right, and the half it got
+wrong cost money: a brief carrying a *pipeline* instruction — `"traced to a single-path SVG
+(currentColor)"` — posted that sentence to an image model, and a brief that contradicts itself
+composed a contradictory instruction. Mechanical derivation is a **ceiling on quality**, not a floor
+under it.
 
-This is not stylistic. An improvised prompt produces the stock-art look `visual-assets.md` warns
-about, and **it pays twice**, because a vague prompt is a reroll. The composed prompt is also what
-makes the asset reproducible: without it, a brand change means paying again.
+So: supply `prompt` and a **`prompt_rationale`** saying in one sentence what the composed prompt
+would have got wrong. The rationale is not ceremony — it is the only thing that distinguishes *"the
+agent read this brief"* from *"the agent did not"*, and it lands in the prompt library so the trade
+can be judged later against its own results.
+
+```json
+{
+  "prompt": "A minimalist-ink illustration of an abstract interlocking lattice, calm and precise, drawn strictly monochrome in a single hue on a transparent ground, six separable marks at one ink weight.",
+  "prompt_rationale": "the composed prompt reads as a field dump and carried the SVG-tracing step into the image instruction"
+}
+```
+
+**Omit `prompt` and the composed one is used, exactly as before.** Nothing is forced.
+
+### What the gate still checks, before the spend
+
+A crafted prompt is not an unchecked one. Dropping the guarantee entirely would re-open the bug
+filed days earlier, where the brief's constraints never reached the prompt at all and a brief saying
+*"monochrome, single-hue only"* was answered with a full-colour photograph. So:
+
+- the brief's **`palette`** and **`ground`** must each be evidenced in the prompt;
+- nothing on the brief's **`avoid`** list may be requested by it;
+- the prompt must be long enough to be one, and carry a rationale.
+
+The check is deliberately **crude and predictable**: at least one significant word (4+ letters, not a
+stopword) of each constraint must appear. A cleverer semantic check would mean a second model call —
+another bill, and a non-deterministic gate. It is a **floor**, not a proof: you can satisfy it and
+still write a poor prompt. Catching *"the brief said monochrome and the prompt never mentions
+colour"* before the charge is the entire job.
+
+A brief that states no `palette`, `ground` or `avoid` constrains nothing, and the check stays silent
+rather than inventing a requirement.
 
 ## 3. Configure the ladder and the ceiling in the project, not here
 
@@ -231,6 +263,30 @@ IDs change monthly and a list in doctrine rots inside a quarter.
 
 For icons and flat shapes, prefer asking a **text** model for raw SVG over generating a raster: it
 scales, it diffs, and it recolours from tokens.
+
+### The shipped adapters, and which raster shape you need
+
+| `aggregator` | endpoint | reads the image from |
+|---|---|---|
+| `agent` | none — the agent authors it, or calls its own MCP | see §"Check the response shape" |
+| `pen` | the local `pen` CLI | the file it writes |
+| `openrouter` | `POST /api/v1/images` | `data[].b64_json` |
+| **`openrouter-chat-image`** | `POST /api/v1/chat/completions` with `modalities: ["image","text"]` | `choices[0].message.images[0].image_url.url` (a base64 data URL) |
+| `openrouter-svg` | `POST /api/v1/chat/completions` | the message text, as raw SVG |
+| `gemini` | Google's image endpoint | inline base64 |
+
+**Two raster shapes on one provider, and you have to pick the right one.** `/api/v1/images` and
+`chat/completions` are both live, and a given model serves one or the other — a top image model
+reachable only through chat completions returns nothing on the images endpoint. `modalities` and the
+`message.images[]` shape are documented in
+[OpenRouter's chat-completion reference](https://openrouter.ai/docs/api-reference/chat-completion);
+the base64 data URL and `usage.cost` were confirmed on a live billed call. They are registered as
+**separate aggregators on purpose** — silently rerouting a project pinned to an images-endpoint model
+would change which model it buys from without saying so.
+
+**This is also the fix for the inline-only dead-end.** On a keyed adapter *the script* makes the call
+and decodes the bytes, so nothing has to transcribe an image it only saw rendered — a billed
+generation always yields a file.
 
 ## 4. No aggregator? Say so and stop
 
