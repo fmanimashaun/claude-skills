@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-09 (v1.85.1)
 
 - **One cause reported as N findings — found in three places, fixed in all three.** The pattern:
   when a single action fixes every finding, emitting one per item buries the diagnosis under its own
@@ -9113,6 +9113,36 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09d (release v1.85.1)
+
+> ### One cause must not be reported as N findings
+>
+> A maintainer-tooling and documentation release: **no shipped plugin or skill changed**, and the
+> `dist/*.skill` assets are byte-identical to v1.85.0.
+
+- **`mutation_check` ran every mutation after an INERT baseline.** With the unmutated selftest
+  already failing, every verdict is meaningless by construction — yet it emitted one *"caught, but
+  not by the expected fixture"* line per mutation, so a single cause arrived as N+1 findings with the
+  real one **first** and the noise after. It now returns immediately.
+
+  That ordering is why the baseline's diagnosis — which names the fix in its opening line — went
+  unread three times while the output was inspected with `tail`. v1.85.0's notes blamed the guard's
+  `needs` list for this; **the harness was right every time and the reading was not.** Corrected
+  where the list lives, and the failure mode removed rather than noted.
+
+- **`check_component_shapes` had the same defect twice**: an empty sidecar reported 51 times, a
+  wrongly-keyed one 102 times, each from a single mistake. Now one and two.
+
+  The discriminator, since aggregating everything would be the opposite error: **does one action fix
+  all N?** It does for those three. It does not for a plan whose twelve rows each lack a `why`, or a
+  research record whose references each lack a `source` — twelve and nine separate decisions, where
+  per-item findings are correct. Both were probed rather than assumed.
+
+- **README and the Design-System wiki page did not know pen exists**, and the page still described a
+  placeholder API key the scaffold stopped writing two releases ago. The *generated* wiki pages were
+  current — `build_wiki.py` rebuilds them and a gate checks them — which is the asymmetry worth
+  keeping: **a generated page rots loudly, a hand-written one rots silently.**
 
 ### 2026-08-09c (release v1.85.0)
 

@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Plugin reference
-Marketplace **1.85.0**.
+Marketplace **1.85.1**.
 
 | plugin | version | commands | what it does |
 |---|---|---|---|
