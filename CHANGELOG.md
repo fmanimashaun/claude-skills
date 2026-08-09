@@ -7457,6 +7457,58 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **A visual system can be two-part now: one family plus one rationed signature device.** (#632 —
+  **design decision**, authority being the maintainer's reasoning recorded on the issue. No external
+  claim, so nothing here needed a framework citation.)
+
+  The one-style rule conflated *"the project's authored family style"* with *"the style of every
+  generated asset"*, and a real two-part system had nowhere to sit: a family of `minimalist-ink`
+  line marks **authored as SVG** — needing zero generation — plus one deliberately-sanctioned
+  `3d-render` signature device at the hero.
+
+  **The trap was that both exits were closed.** Brief the exception → `check_research` refused it as
+  off-style. Don't brief it → `reconcile` reported it *"in the manifest with no plan row"*. So the
+  single asset in the project that **actually cost money** was forced to live outside the plan,
+  losing exactly the reproducibility and spend tracking the plan exists to provide. Both halves are
+  asserted together in one fixture, because either passing alone still leaves the asset untrackable.
+
+  The research record may now declare `signature_exceptions: [{style, why, max}]`:
+
+  - **`why` is required**, and it is the entire mechanism — the only thing separating a sanctioned
+    second style from the drift the rule prevents. An entry without one is **not honoured**, which is
+    the strict default rather than the loose one, so a malformed record can never widen the rule.
+  - **An exception may only be declared in the research, never in a brief.** One a brief could
+    introduce is not an exception; it is drift with better manners.
+  - **`max` defaults to 1**, and the refusal states the number. A signature device works by
+    **scarcity**: used on six surfaces it stops punctuating and becomes the family — the mixed set
+    the one-style rule exists to prevent. An exception with no ceiling is a second family with
+    paperwork. Raising it stays possible and stays deliberate.
+  - **Undeclared drift stays blocked.** Declaring one exception opens no other door.
+
+  **The same carve-out had to be made three times, because the doctrine lived in three places** —
+  the `grep for the pattern` rule, and it paid: `pen_compose.py` applied the identical check one step
+  earlier, so a project would have passed `asset_plan --check` and then been flagged composing the
+  very device its research sanctioned. And `research_record.py` writes *"every brief in this project
+  carries this style"* into the project's **own generated `project-design` SKILL.md** — doctrine that
+  project's agent reads — which is the same shape as writing a wrong rule into a user's CLAUDE.md and
+  then gating on it. The skill now renders the declared exceptions as a table with their rations and
+  reasons, and says plainly that anything outside it is still refused and that widening the list is a
+  research decision rather than a brief edit. A project declaring none renders **no section at all**,
+  so nobody inherits a mechanism they never opted into.
+
+  `pen_compose` **imports** `signature_exceptions` rather than re-implementing it: two copies of
+  "what counts as a declared exception" would drift into precisely the contradiction above.
+
+  Also fixed in passing: the off-style refusal listed surfaces unquoted, so a surface named `empty`
+  or `pending` read as an adjective — *"but empty brief(s) name a different style"* sends the reader
+  hunting for a problem with emptiness.
+
+  Fixtures: `asset_plan.py` 94 → **105**, `research_record.py` 34 → **50**, `pen_compose.py` 25 →
+  **28**; **7 new mutation guards**. One pre-existing guard's anchor had moved with the rewritten
+  line and was updated — the assertion it guards is unchanged.
+
 ### 1.24.0 — 2026-08-09 (release v1.86.0)
 
 - **The `video` kind never checked its bytes, and `--from-url` made that reachable.** Every other

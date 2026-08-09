@@ -3792,7 +3792,21 @@ GUARDS: tuple[Guard, ...] = (
         name="pen_compose",
         subject="plugins/design-flow/scripts/pen_compose.py",
         selftest="plugins/design-flow/scripts/pen_compose.py",   # --selftest lives in the module
+        # #632 added the import of `signature_exceptions`, and the rule is the standing one:
+        # a guard's `needs` is EVERYTHING the subject opens, so an added import is an added
+        # need. Without it every mutation dies on ModuleNotFoundError and reads as "caught"
+        # while proving nothing.
+        needs=("plugins/design-flow/scripts/asset_plan.py",),
         mutations=(
+            Mutation(
+                # A project with a declared exception would pass `asset_plan --check` and
+                # then be flagged HERE composing the very device its research sanctioned --
+                # one cause, two tools, the second contradicting the first.
+                "a declared signature exception is flagged as drift during composition",
+                "    allowed = {style} | set(exceptions or {})",
+                "    allowed = {style}",
+                "a declared signature exception is not flagged here",
+            ),
             Mutation(
                 # A tier that is off by default is a tier nobody discovers -- the maintainer
                 # decision on #600, which an inverted default would quietly reverse.
@@ -4016,11 +4030,49 @@ GUARDS: tuple[Guard, ...] = (
         # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
         mutations=(
             Mutation(
+                # #632. Without this the declared, justified exception is refused exactly as before
+                # -- and the one deliberately-paid asset in the project goes back to having nowhere
+                # to live: brief it and the style check refuses, do not and reconcile calls it an
+                # orphan.
+                "a declared signature exception is refused like any off-style brief",
+                "            allowed = {chosen} | set(exceptions)",
+                "            allowed = {chosen}",
+                "a declared exception lets the primary and the exception coexist",
+            ),
+            Mutation(
+                # An exception with no ceiling is not an exception, it is a second family with
+                # paperwork -- which is the mixed set the one-style rule exists to prevent.
+                "the ration stops being enforced, so an exception becomes a second family",
+                "                if len(claimants) > cap:",
+                "                if False:",
+                "an unrationed second use of the exception is refused",
+            ),
+            Mutation(
+                # `why` is the only thing separating a sanctioned second style from drift. Honour an
+                # unjustified entry and the mechanism becomes a way to write any style into the
+                # research and have it waved through.
+                "an exception with no `why` is honoured, so drift needs only a style key",
+                '        if not style or not str(why or "").strip():',
+                "        if not style:",
+                "an exception with no `why` is not honoured",
+            ),
+            Mutation(
+                # The default ration is the decision that keeps this from being a hole in the rule.
+                # Loosened, an exception declared without a ceiling silently gets an unlimited one.
+                "the default ration goes unlimited, so an undeclared ceiling means no ceiling",
+                "DEFAULT_RATION = 1",
+                "DEFAULT_RATION = 999",
+                "an unrationed second use of the exception is refused",
+            ),
+            Mutation(
                 # The join that makes research MEAN something downstream. Without it a project can
                 # research monochrome ink line-work and brief a 3D render, and nothing notices --
                 # the record becomes a box that was ticked rather than a decision anything honours.
                 "briefs stop being held to the researched style, so one set mixes families",
-                '            off = [s for s, b in briefs.items() if b.get("style") and b["style"] != chosen]',
+                # #632 rewrote this line from `!= chosen` to `not in allowed` when the declared
+                # exception was added. The anchor follows the code; the assertion it guards is
+                # unchanged — an UNdeclared style must still be refused.
+                '            off = [s for s, b in briefs.items() if b.get("style") and b["style"] not in allowed]',
                 "            off = []",
                 "a brief that ignores the researched style is reported",
             ),
@@ -4268,6 +4320,24 @@ GUARDS: tuple[Guard, ...] = (
         # No `needs`: every fixture is a dict literal, and nothing here touches the network -- which
         # matters more than usual, because the subject is about BROWSING other people's sites.
         mutations=(
+            Mutation(
+                # #632. The record is the ONLY place an exception may be declared, so its validation
+                # is the only thing standing between "a decision, made once, in the open" and any
+                # style at all appearing in the list unexplained.
+                "an exception needs no `why`, so the record cannot tell a decision from drift",
+                '        if not str(exc.get("why") or "").strip():',
+                "        if False:",
+                "an exception with no `why` is reported",
+            ),
+            Mutation(
+                # The generated skill is doctrine the PROJECT'S agent reads. Dropped, it keeps
+                # asserting that every brief carries the one style -- against a project whose
+                # research sanctioned a second one. A wrong rule written into the user's own skill.
+                "the generated skill omits the declared exception it is meant to license",
+                "    if exceptions:",
+                "    if False:",
+                "a declared exception reaches the generated skill",
+            ),
             Mutation(
                 # Emitting doctrine from an unreviewable record publishes a decision nobody made,
                 # in the place agents trust most. The skill is only written from a record that
