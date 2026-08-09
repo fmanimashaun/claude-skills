@@ -41,6 +41,13 @@ import shutil
 import sys
 from pathlib import Path
 
+# #632. IMPORTED, not re-implemented. What counts as a declared signature exception is one
+# rule, and two copies of it would drift into a project that passes `asset_plan --check` and
+# is then flagged here for the very device the research sanctioned. `asset_plan` is stdlib
+# only and side-effect free on import (its `main` is under `__main__`).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from asset_plan import signature_exceptions  # noqa: E402
+
 CONFIG_PATH = Path(".design-flow/generation.json")
 RESEARCH_PATH = Path("docs/design/reference-research.json")
 
@@ -103,7 +110,8 @@ def walk(nodes: list) -> list:
     return out
 
 
-def check_intent(doc: dict, style: str | None, briefs: dict, surface: str | None) -> list[str]:
+def check_intent(doc: dict, style: str | None, briefs: dict, surface: str | None,
+                 exceptions: dict | None = None) -> list[str]:
     """Does this composition honour the brief it came from? ADVISORY, and mechanical.
 
     Deliberately not taste. Every finding below is a fact about the document — a raw colour, a
@@ -148,11 +156,19 @@ def check_intent(doc: dict, style: str | None, briefs: dict, surface: str | None
 
     # THE RESEARCH DECIDED THE STYLE, and a brief that ignores it is the defect the plan already
     # refuses for assets. The same join, one step earlier.
-    if style and surface and (briefs.get(surface) or {}).get("style") not in (None, style):
+    # #632. The SAME carve-out the plan makes, and it has to be made here too: a project with a
+    # declared signature exception would otherwise pass `asset_plan --check` and then be flagged
+    # composing that very device, by a rule the research already sanctioned. One cause, two tools.
+    allowed = {style} | set(exceptions or {})
+    if style and surface and (briefs.get(surface) or {}).get("style") not in ({None} | allowed):
+        extra = (f" Declared signature exception(s): {', '.join(sorted(exceptions))}."
+                 if exceptions else
+                 " A deliberate second style is expressible — declare it in the research as a "
+                 "`signature_exceptions` entry with its own `why`.")
         findings.append(
             f"the research chose {style!r}, but the brief for {surface!r} names "
             f"{briefs[surface]['style']!r}. One family, one style — a set that mixes them is the "
-            f"pile this whole path exists to avoid.")
+            f"pile this whole path exists to avoid.{extra}")
     return findings
 
 
@@ -188,7 +204,7 @@ def main(argv: list[str]) -> int:
         research = load_json(root / RESEARCH_PATH)
         config = load_json(root / CONFIG_PATH)
         findings = check_intent(doc, research.get("style"), config.get("briefs") or {},
-                                args.for_surface)
+                                args.for_surface, signature_exceptions(research))
         print("\n".join(f"- {f}" for f in findings)
               or "this composition honours the brief it came from.")
         # ADVISORY. Exit 1 says "read these", never "you may not proceed": conformance is judged on
@@ -266,6 +282,22 @@ def selftest() -> int:
 
     # THE RESEARCH DECIDED THE STYLE — the same join the asset plan enforces, one step earlier.
     briefs = {"marketing-hero": {"style": "3d-render"}}
+    # #632. A DECLARED EXCEPTION IS HONOURED HERE TOO. Without this the project would pass
+    # `asset_plan --check` and then be flagged composing the very device its research sanctioned —
+    # one cause, two tools, and the second one contradicting the first.
+    check("a declared signature exception is not flagged here",
+          check_intent(good, "minimalist-ink", {"marketing-hero": {"style": "3d-render"}},
+                       "marketing-hero", {"3d-render": {"why": "one prism", "max": 1}}) == [])
+    check("...while an undeclared style still is",
+          any("One family, one style" in x
+              for x in check_intent(good, "minimalist-ink",
+                                    {"marketing-hero": {"style": "cartoon"}}, "marketing-hero",
+                                    {"3d-render": {"why": "one prism", "max": 1}})))
+    check("...and the refusal names what IS declared",
+          any("Declared signature exception(s): 3d-render" in x
+              for x in check_intent(good, "minimalist-ink",
+                                    {"marketing-hero": {"style": "cartoon"}}, "marketing-hero",
+                                    {"3d-render": {"why": "one prism", "max": 1}})))
     check("a brief that ignores the researched style is reported",
           any("One family, one style" in x
               for x in check_intent(good, "minimalist-ink", briefs, "marketing-hero")))

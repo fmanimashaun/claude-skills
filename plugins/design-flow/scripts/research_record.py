@@ -86,6 +86,48 @@ def check(record: dict) -> list[str]:
             "no `style` chosen. The references disagree — that is why three are required — and "
             "choosing between them is the design. A record that gathers and does not choose is a "
             "mood board, and nothing downstream can hold a brief to it.")
+    # #632. A DECLARED SIGNATURE EXCEPTION: a second style the research deliberately sanctions --
+    # one rationed device (a luminous prism at the hero) beside a family of ink line marks. It is
+    # validated HERE, in the record, and never accepted from a brief: an exception a brief could
+    # introduce is not an exception, it is drift with better manners, and the whole value of the
+    # mechanism is that the deviation was decided once, in the open, with a reason attached.
+    seen_styles: set[str] = set()
+    for i, exc in enumerate(record.get("signature_exceptions") or []):
+        label = f"signature_exceptions[{i}]"
+        if not isinstance(exc, dict):
+            problems.append(f"{label}: not an object. Each exception is `{{style, why}}` with an "
+                            f"optional `max`.")
+            continue
+        style = exc.get("style")
+        if not style:
+            problems.append(f"{label}: no `style`. An exception has to name the style it permits, "
+                            f"or nothing downstream can tell it from an off-style brief.")
+        if not str(exc.get("why") or "").strip():
+            problems.append(
+                f"{label}: no `why`. An exception is a deliberate break in the one-style rule, and "
+                f"the reason is the only thing separating that from drift. State what the device is "
+                f"for and where it is allowed to appear — the next person to read this record is "
+                f"deciding whether to widen it.")
+        if style and style == record.get("style"):
+            problems.append(
+                f"{label}: {style!r} is already the chosen style, so exempting it means nothing. An "
+                f"exception naming the primary reads as though a second style were sanctioned when "
+                f"none is.")
+        if style and style in seen_styles:
+            problems.append(f"{label}: {style!r} is declared twice. Two entries for one style means "
+                            f"two `max` values and two reasons, and nothing says which governs.")
+        if style:
+            seen_styles.add(style)
+        if "max" in exc:
+            try:
+                cap = int(exc["max"])
+            except (TypeError, ValueError):
+                cap = -1
+            if cap < 1:
+                problems.append(
+                    f"{label}: `max` is {exc['max']!r}. A ration below 1 permits the style and then "
+                    f"forbids every use of it, which is a refusal wearing a permission's clothes — "
+                    f"drop the exception instead, and say why in the record.")
     refs = record.get("references") or []
     if len(refs) < MIN_SOURCES:
         problems.append(
@@ -175,6 +217,32 @@ def emit_skill(record: dict, root: Path) -> Path:
         "Every brief in this project carries this style, and the plan refuses a brief that names a",
         "different one. One family, one style — a set that mixes them is a pile, and it is invisible",
         "once shipped.", "",
+    ]
+    # #632. THE GENERATED SKILL MUST NOT OVERSTATE THE RULE. This file is read by the project's own
+    # agent as doctrine, so a flat "every brief carries this style" is enforced against a project
+    # whose research deliberately sanctioned a second one -- the same shape as writing a wrong rule
+    # into a user's CLAUDE.md and then gating on it. Stated only when exceptions exist, so a project
+    # without any reads exactly as strictly as before.
+    exceptions = record.get("signature_exceptions") or []
+    if exceptions:
+        lines += [
+            "### Declared signature exception(s)", "",
+            "The research deliberately sanctioned a second style, **rationed** — a signature device",
+            "works by scarcity, so used everywhere it stops punctuating and becomes the family.", "",
+            "| style | ration | why |",
+            "|---|---|---|",
+        ]
+        for e in exceptions:
+            if not isinstance(e, dict):
+                continue
+            why = " ".join(str(e.get("why") or "—").split()).replace("|", "\\|")
+            lines.append(f"| `{e.get('style') or '—'}` | {e.get('max', 1)} | {why} |")
+        lines += [
+            "",
+            "Anything outside this table is drift, and the plan still refuses it. Widening the list",
+            "is a research decision — re-open the record and say why; do not add it to a brief.", "",
+        ]
+    lines += [
         f"## The job this design serves", "",
         f"> {record.get('job') or '(no job stated)'}", "",
         "Research a job, not a page type. A surface that does not serve this job is not covered by",
@@ -294,6 +362,27 @@ def selftest() -> int:
                "do not hand-edit" in body)
         # Tokens are the pack's job. A skill that restated them would be a second source of truth.
         expect("...deferring tokens to the brand pack", "come from the brand pack" in body)
+        # #632. A project with NO exceptions must read exactly as strictly as before — the section
+        # is absent, not empty, or every project inherits a mechanism it never opted into.
+        expect("...and saying nothing about exceptions when none are declared",
+               "signature exception" not in body.lower())
+
+    # #632. THE GENERATED SKILL IS DOCTRINE THE PROJECT'S OWN AGENT READS, so an absolute "every
+    # brief carries this style" would be enforced against a project whose research sanctioned a
+    # second one — a wrong rule written into the user's own skill and then gated on.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        body = emit_skill({**GOOD, "style": "minimalist-ink", "signature_exceptions": [
+            {"style": "3d-render", "why": "one rationed luminous prism at hero punctuation",
+             "max": 1}]}, root).read_text(encoding="utf-8")
+        expect("a declared exception reaches the generated skill", "3d-render" in body)
+        expect("...with its ration, since scarcity is the mechanism", "| 1 |" in body)
+        expect("...and its reason, which is what separates it from drift",
+               "luminous prism" in body)
+        expect("...saying plainly that anything else is still refused",
+               "is drift, and the plan still refuses it" in body)
+        expect("...and that widening it is a RESEARCH decision, not a brief edit",
+               "do not add it to a brief" in body)
 
     # An unreviewable record must NOT become doctrine.
     with tempfile.TemporaryDirectory() as td:
@@ -309,6 +398,41 @@ def selftest() -> int:
            any("no `style` chosen" in p for p in check({**GOOD, "style": None})))
     expect("...and one that chose is fine",
            not any("no `style`" in p for p in check({**GOOD, "style": "minimalist-ink"})))
+
+    # #632. A DECLARED SIGNATURE EXCEPTION is validated in the RECORD, never accepted from a brief:
+    # an exception a brief could introduce is drift with better manners.
+    def exc(**kw):
+        return {**GOOD, "style": "minimalist-ink", "signature_exceptions": [kw]}
+
+    PRISM = {"style": "3d-render", "why": "one rationed prism at hero/CTA punctuation"}
+    expect("a well-formed exception is accepted",
+           not any("signature_exceptions" in p for p in check(exc(**PRISM))))
+    # `why` IS THE MECHANISM. It is the only thing separating a decision from drift, and the next
+    # person reading the record is deciding whether to widen it.
+    expect("an exception with no `why` is reported",
+           any("no `why`" in p for p in check(exc(style="3d-render"))))
+    expect("an exception with a blank `why` is reported too",
+           any("no `why`" in p for p in check(exc(style="3d-render", why="   "))))
+    expect("an exception with no `style` is reported",
+           any("no `style`" in p for p in check(exc(why="because"))))
+    # EXEMPTING THE PRIMARY reads as though a second style were sanctioned when none is.
+    expect("an exception naming the chosen style is reported",
+           any("already the chosen style" in p
+               for p in check(exc(style="minimalist-ink", why="because"))))
+    dup = {**GOOD, "style": "minimalist-ink", "signature_exceptions": [PRISM, {**PRISM, "max": 4}]}
+    expect("the same style declared twice is reported",
+           any("declared twice" in p for p in check(dup)))
+    # A RATION BELOW 1 permits the style and then forbids every use of it.
+    expect("`max: 0` is reported", any("`max` is 0" in p for p in check(exc(**PRISM, max=0))))
+    expect("a non-numeric `max` is reported",
+           any("refusal wearing a permission" in p for p in check(exc(**PRISM, max="lots"))))
+    expect("a sane `max` is accepted",
+           not any("signature_exceptions" in p for p in check(exc(**PRISM, max=2))))
+    # A NON-OBJECT ENTRY must be named rather than crashing the checker — a crash is not a verdict.
+    expect("a non-object exception is reported, not raised on",
+           any("not an object" in p
+               for p in check({**GOOD, "style": "minimalist-ink",
+                               "signature_exceptions": ["3d-render"]})))
 
     # THE LOGIN WALL. It returns a page, not an error, so the capture can BE the wall.
     walled = {**GOOD, "references": [{**ref(reject="x"), "capture": "captures/mobbin-login.png"},
