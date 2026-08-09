@@ -3196,6 +3196,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.46.0 — 2026-08-09 (release v1.87.0)
+
+- **`reference-research.md` §5c — the rationed signature exception.** (#632, maintainer decision
+  recorded on the issue.) The research method said the record must name *the* style it chose, full
+  stop. Some visual systems are genuinely two-part — a family plus one signature device in another
+  register, a single dimensional motif at the hero — and that is a decision rather than drift, so
+  the record can now hold it as a `signature_exceptions` entry.
+
+  Two properties are the doctrine, not the schema: **`why` is required**, because it is the only
+  thing separating a sanctioned second style from the mixed set this method exists to prevent; and
+  **the ration defaults to 1**, because a signature device works by scarcity — used on six surfaces
+  it stops punctuating and becomes the family. An exception may be declared only in the research,
+  never in a brief: one a brief could introduce is not an exception.
+
+  The section also records *why* the mechanism exists, since the failure is not obvious — when the
+  family is authored as SVG and needs no generation at all, the single deliberately-paid signature
+  asset had nowhere to live, and was pushed outside the plan that exists to track its cost.
+
 ### 1.43.0 — 2026-08-08
 
 - **Reference research — look before you design.** A designer does not open a blank canvas; they
@@ -7457,7 +7475,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.25.0 — 2026-08-09 (release v1.87.0)
 
 - **A visual system can be two-part now: one family plus one rationed signature device.** (#632 —
   **design decision**, authority being the maintainer's reasoning recorded on the issue. No external
