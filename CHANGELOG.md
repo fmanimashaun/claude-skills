@@ -7477,6 +7477,97 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **We were buying assets blind: the paid prompt never stated a shape, and nothing checked what came
+  back.** (#640) Reported downstream as *"the generated visual assets will be wrong if we are so
+  clueless on what we are designing for visually."* The complete composed prompt for a hero was:
+
+  ```
+  minimalist-ink illustration; an abstract woven lattice; calm mood;
+  palette monochrome; on a transparent ground; raster line art; avoid human figures
+  ```
+
+  Seven fields, and **not one of them a dimension**. Grepping `generation_gate.py` and
+  `asset_plan.py` for `aspect`, `ratio`, `dimensions`, `width`, `height`, `crop`, `bleed` or
+  `orientation` returned zero hits. So the flow ran a budget preflight, refused unpriced rungs,
+  capped spend to the cent — and never said whether it wanted a 21:9 full-bleed band or a square
+  card inset. Then `a 1x1 PNG passed as a full-bleed hero`, because `assert_kind_matches` sniffs
+  **format only**.
+
+  The brief now carries **`aspect`** (and optional **`frame`**), both reach the composed prompt, and
+  the returned bytes are measured against what was asked for. Checked at both ends: `--check`
+  reports a `static`/`vector` row whose brief states no aspect **before the spend**, and record time
+  refuses a mismatch beyond a **stated 2% tolerance** — which accepts 1024x576 for `16:9` exactly and
+  1024x580 at 0.7% off, while a square delivered for a wide band misses by 78%.
+
+  New `image_size()` reads PNG, GIF, JPEG, WebP and SVG **headers only**, stdlib, no decode and no
+  dependency. Three properties are load-bearing:
+
+  - **It returns `None` rather than guessing**, and an unmeasurable blob **passes**. Refusing there
+    would turn *"we could not measure"* into *"the provider was wrong"*, blocking a correct asset
+    over our own gap.
+  - **SVG reads `viewBox` first** — that is the *ratio*, which is what an aspect check actually
+    wants — and refuses to read `width="8cm"` as pixels, because a physical unit's pixel ratio
+    depends on the renderer.
+  - **JPEG skips C4/C8/CC** while walking to an SOF marker. They sit inside the SOF numeric range
+    and are not frame headers; reading one yields a plausible, wrong size.
+
+  The PNG, JPEG and GIF branches were validated against real files before the synthetic fixtures were
+  written.
+
+  **`motion` and `video` are not asked for an aspect** — a Lottie recolours and scales, and footage
+  is framed by its own row. A check that fired on those would flag correct input, which is how a
+  check gets switched off.
+
+  **Migration:** every existing project's raster briefs will be reported by `--check` until they
+  state an `aspect`. That is deliberate and matches how the plan already treats an unpriced row —
+  refuse rather than invent — and the fix is one field per brief. `plan.md` gains an aspect column
+  rendering an unstated one as **unstated** rather than blank, because a blank cell reads as
+  "nothing to say here" when it is the row about to buy an unknown shape.
+
+- **The `motion` kind was hollow: a completely static SVG passed as a motion asset.** (#641) Filed
+  after the maintainer named the intended direction — *illustration-driven design, animated
+  illustration art* — and the kind meant to carry it checked the **file extension**, which the
+  animated and the static case share:
+
+  ```
+  a completely STATIC svg, recorded as kind=motion -> svg
+  an arbitrary JSON with no animation, as kind=motion -> json
+  ```
+
+  The row went `done`, entered the manifest, and the surface animated nothing. Every other kind
+  asserts something about the bytes; this one asserted a file type.
+
+  Now an SVG must carry `<animate>`, `<animateTransform>`, `<animateMotion>`, `<set>`, `@keyframes`
+  or an `animation:` rule — **both SMIL and a stylesheet**, because checking only for SMIL would
+  refuse the token-recolourable idiom our own doctrine points at. A JSON must be shaped like a Lottie
+  (`v`, `fr`, `op`, `layers`); any JSON at all used to pass.
+
+  **And the doctrine that was missing entirely.** `generation_gate` *defined* the kind as *"Lottie
+  JSON or an animated SVG… authored directly by the agent for nothing"*, and searching every shipped
+  reference for `Lottie`, `animated SVG` or `SMIL` returned **zero hits**. `motion.md` is 371 lines
+  about how a *button* moves and mentions an illustration 0 times. New `visual-assets.md` §5.3
+  covers authoring one:
+
+  - **Two routes, chosen by duration, not taste.** Finite (strokes draw on, a lattice settles) never
+    engages WCAG 2.2.2, which needs motion lasting **more than five seconds**. Perpetual owes the
+    page a **pause control** — and we ship no pause affordance, so **author finite** for now. Worth
+    recording that Material 3's own style pages animate their illustration fields *and ship a visible
+    pause button*: perpetual motion is legitimate, just not free.
+  - **`separable marks` is named as the animatability property.** The brief already asks for *"6-8
+    separable marks"* and read as a composition note; independently addressable parts are exactly
+    what can be staggered or drawn on, so the `static` and `motion` assets of one subject are the
+    same artwork rather than two commissions.
+  - **The static end-state is the deliverable, not a fallback.** A draw-on whose reduced-motion state
+    is "nothing drawn yet" renders an empty box for the user who asked for less motion.
+  - **`pen_to_svg` does not emit animation**, stated plainly rather than discovered after composing.
+
+  Fixtures: `generate_asset.py` 147 → **166**, `asset_plan.py` 105 → **107**; four new mutation
+  guards. One pre-existing guard's `if missing:` anchor became ambiguous when the Lottie check added
+  a second one and was made multi-line — an ambiguous anchor is a mutation that silently moves to a
+  different rule.
+
+### Unreleased
+
 - **The chat-image adapter silently dropped the style reference.** (#643) Self-reported, one day
   after it shipped in v1.87.0. `call_openrouter_chat_image` accepted a `reference` parameter and
   never used it, while `call_gemini` and `call_openrouter` both send theirs:
