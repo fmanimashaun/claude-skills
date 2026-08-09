@@ -63,7 +63,7 @@ you actually got — installed versions drift from what you think you installed 
 |---|---|
 | **rails-stack** | The doctrine: Rails 8.1, Hotwire, pure RSpec, Tailwind v4, a design system, and the review rules. Bundles seven skills — no commands, it just makes Claude write the right code. |
 | **rails-flow** | The build loop — `/feature`, `/fix`, `/review`, plus a durable project memory and an autonomous driver. |
-| **design-flow** | UI and design system work — components, tokens, audits, and a curated asset library. |
+| **design-flow** | UI and design system work — components, tokens, audits, a curated asset library, and an optional pen.dev tier for exploring screens visually before any code is written. |
 | **qa-flow** | An **independent** QA engineer that treats the developer's claims as unverified and produces evidence. |
 | **pipeline** | Build → verify → certify → release, with circuit breakers for unattended runs. |
 

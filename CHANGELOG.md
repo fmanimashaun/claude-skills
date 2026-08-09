@@ -7,6 +7,44 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-09 (v1.85.1)
+
+- **One cause reported as N findings — found in three places, fixed in all three.** The pattern:
+  when a single action fixes every finding, emitting one per item buries the diagnosis under its own
+  consequences, and anything reading the tail of the output learns the least useful of them.
+
+  - **`mutation_check.run_guard` ran every mutation after an INERT baseline.** With the unmutated
+    selftest already failing, every verdict is meaningless by construction — yet it still emitted
+    one "caught, but not by the expected fixture" line per mutation, so one cause arrived as N+1
+    findings. It now returns immediately, and the whole output is the diagnosis.
+  - **`check_component_shapes` reported an empty sidecar 51 times**, once per uncovered row. Now
+    one finding naming the file.
+  - **...and a wrongly-keyed sidecar 102 times** — every row uncovered *and* every entry orphaned,
+    from one mistake. Now two.
+
+  **The test that separates the cases is whether ONE action fixes all N.** It does for the three
+  above. It does not for a plan whose twelve rows each lack a `why`, or a research record whose
+  references each lack a `source` — those are twelve and nine separate decisions, and reporting them
+  separately is right. `pen_compose.check_intent` was already aggregating its raw-colour nodes,
+  which is why it was the one probe that came back correct.
+
+- **The mutation harness was right three times and I read past it.** v1.85.0's notes say a guard's
+  `needs` list was short three times running and framed that as a lesson about the list. It is not:
+  `run_baseline` reports **`INERT — the UNMUTATED selftest already fails in the staged tempdir …
+  Add what it reads to the guard's needs.`** as its *first* line, each time, with the diagnosis and
+  the fix together. It went unread because the output was inspected with `tail`, and the baseline
+  reports first.
+
+  The comment where the list lives now says that. **Read the head of a failure, not its tail** — a
+  tool that says the right thing into a truncated pipe has still said it, and blaming the tool for
+  what the tail cut off is how a working defence gets "improved" into a worse one.
+
+- **README and the Design-System wiki page did not know pen exists**, and the page still described a
+  **placeholder API key** the scaffold stopped writing two releases ago. Generated wiki pages
+  (`Command-Reference`, `Plugin-Reference`, `Skills-Reference`) were current — they are rebuilt by
+  `build_wiki.py` and drift-gated — but the hand-written ones are not, and nothing checks them. That
+  asymmetry is worth knowing: a generated page rots loudly, a hand-written one rots silently.
+
 ### 2026-08-09 (v1.85.0)
 
 - **Nothing asserted that a promotion is a merge commit, and a squash broke the next release.**
@@ -9075,6 +9113,36 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09d (release v1.85.1)
+
+> ### One cause must not be reported as N findings
+>
+> A maintainer-tooling and documentation release: **no shipped plugin or skill changed**, and the
+> `dist/*.skill` assets are byte-identical to v1.85.0.
+
+- **`mutation_check` ran every mutation after an INERT baseline.** With the unmutated selftest
+  already failing, every verdict is meaningless by construction — yet it emitted one *"caught, but
+  not by the expected fixture"* line per mutation, so a single cause arrived as N+1 findings with the
+  real one **first** and the noise after. It now returns immediately.
+
+  That ordering is why the baseline's diagnosis — which names the fix in its opening line — went
+  unread three times while the output was inspected with `tail`. v1.85.0's notes blamed the guard's
+  `needs` list for this; **the harness was right every time and the reading was not.** Corrected
+  where the list lives, and the failure mode removed rather than noted.
+
+- **`check_component_shapes` had the same defect twice**: an empty sidecar reported 51 times, a
+  wrongly-keyed one 102 times, each from a single mistake. Now one and two.
+
+  The discriminator, since aggregating everything would be the opposite error: **does one action fix
+  all N?** It does for those three. It does not for a plan whose twelve rows each lack a `why`, or a
+  research record whose references each lack a `source` — twelve and nine separate decisions, where
+  per-item findings are correct. Both were probed rather than assumed.
+
+- **README and the Design-System wiki page did not know pen exists**, and the page still described a
+  placeholder API key the scaffold stopped writing two releases ago. The *generated* wiki pages were
+  current — `build_wiki.py` rebuilds them and a gate checks them — which is the asymmetry worth
+  keeping: **a generated page rots loudly, a hand-written one rots silently.**
 
 ### 2026-08-09c (release v1.85.0)
 

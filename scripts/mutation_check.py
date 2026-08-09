@@ -3699,12 +3699,16 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/brand_pack_lint.py",
                "plugins/design-flow/brands/fidara/theme.css",
                "plugins/design-flow/brands/fidara/brand.json",
-               # EVERY FILE `build()` READS. This list has now been short three times running --
-               # theme.css, then components.md, then component-shapes.json -- and each time the
-               # symptom was identical: every mutation died on `Unreadable`, a crash rather than a
-               # verdict, and the harness refused to score any of them. The rule to carry forward is
-               # that a guard's `needs` is not "the other scripts" but "everything the subject
-               # opens", data included.
+               # EVERY FILE `build()` READS -- data included, not just the other scripts. This list
+               # was short three times running (theme.css, then components.md, then
+               # component-shapes.json).
+               #
+               # AND THE HARNESS CAUGHT IT EVERY TIME, which is the part worth recording. Each run
+               # led with `INERT — the UNMUTATED selftest already fails in the staged tempdir …
+               # Add what it reads to the guard's needs.` -- the diagnosis and the fix, in the first
+               # line. It went unread three times because the output was inspected with `tail`, and
+               # `run_baseline` reports FIRST. A tool that says the right thing into a truncated
+               # pipe has still said it; read the head of a failure, not its tail.
                "skills/fidara-design/references/components.md",
                "skills/fidara-design/references/component-shapes.json"),
         mutations=(
@@ -4195,6 +4199,16 @@ def run_guard(guard: Guard) -> list[str]:
     # missing a dependency fails for that reason alone, and every mutation then reads as "caught"
     # by the breakage rather than by a fixture -- which is exactly what `build_coverage` was doing.
     problems: list[str] = run_baseline(guard)
+    # AN INERT BASELINE ENDS THE GUARD. Running the mutations anyway is not merely wasted time: it
+    # appends one "caught, but not by the expected fixture" line PER MUTATION, so a single cause is
+    # reported as N+1 findings with the real one first and the noise last. That is what made this
+    # miss-able -- the diagnosis and its fix are in the head of the output, and anything inspecting
+    # the tail sees only the noise. Which happened three times before anyone noticed the header.
+    #
+    # It is also simply wrong to score them: with the selftest already failing, every mutation is
+    # "caught" whether or not it breaks anything, so the verdicts are meaningless by construction.
+    if problems:
+        return problems
     for mutation in guard.mutations:
         workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
         try:

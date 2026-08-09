@@ -59,14 +59,34 @@ def check(md: str, shapes: dict, roles: set[str]) -> list[str]:
     entries = {k: v for k, v in shapes.items() if not k.startswith("_")}
     problems: list[str] = []
 
-    for row in rows:
-        if row not in entries:
+    # ONE CAUSE, ONE FINDING. If *nothing* is covered the sidecar is empty or unwritten — reporting
+    # that as 51 identical "no shape entry" lines buries the diagnosis under its own consequences,
+    # and anything reading the tail of the output learns the least useful of them. Same defect the
+    # mutation harness had: N findings where there is one, with the real one first.
+    missing = [row for row in rows if row not in entries]
+    if rows and len(missing) == len(rows):
+        problems.append(
+            f"the shapes file covers none of the {len(rows)} catalogue rows — it is empty, "
+            f"unwritten, or keyed differently. Fix that before reading anything below; every row "
+            f"would otherwise be reported separately for the same single reason.")
+    else:
+        for row in missing:
             problems.append(
                 f"`{row}` is in components.md with no shape entry. Every row must be drawn or "
                 f"marked `drawable: false` with a reason — a component missing from the pen library "
                 f"is one an agent composing a screen will never reach for, and never miss.")
-    for name in entries:
-        if name not in rows:
+    # THE SAME RULE IN THE OTHER DIRECTION. A sidecar keyed differently — slugs instead of row
+    # names, say — makes every entry an orphan AND every row uncovered, which is one mistake
+    # reported 102 times. The test is whether ONE action fixes all of them: it does here, so it is
+    # one finding. Where each item needs its own fix (a row missing its `why`), N findings is right.
+    orphans = [name for name in entries if name not in rows]
+    if entries and len(orphans) == len(entries):
+        problems.append(
+            f"none of the {len(entries)} shape entries names a catalogue row — the file is keyed "
+            f"differently from components.md (its keys must be the `## ` headings verbatim). One "
+            f"mistake; everything else here follows from it.")
+    else:
+        for name in orphans:
             problems.append(
                 f"`{name}` has a shape but is not a components.md row. A component offered in pen "
                 f"that `ui-composer` cannot build is the drift this mirror exists to prevent.")
@@ -146,9 +166,25 @@ def selftest() -> int:
     # THE FAILURE THAT MATTERS MOST: a row with no shape simply vanishes from pen.
     expect("a row with no shape is reported",
            any("no shape entry" in p for p in check(MD, {"Button": OK["Button"]}, ROLES)))
+    # ONE CAUSE, ONE FINDING. An empty sidecar is a single problem; reporting it once per row buries
+    # the diagnosis under its own consequences, and a reader inspecting the tail learns the least
+    # useful of them.
+    empty = check(MD, {}, ROLES)
+    expect(f"an empty sidecar is ONE finding, not one per row (got {len(empty)})", len(empty) == 1)
+    expect("...and it names the systemic cause",
+           "covers none of the" in empty[0] and "before reading anything below" in empty[0])
+    # ...while a PARTIAL gap is genuinely per-row, because each row is then a separate decision.
+    partial = check(MD, {"Button": OK["Button"]}, ROLES)
+    expect("a partial gap stays per-row", len(partial) == 1 and "`Card`" in partial[0])
     expect("a shape with no row is reported",
            any("not a components.md row" in p
                for p in check(MD, {**OK, "Ghost": OK["Card"]}, ROLES)))
+    # THE SAME RULE, OTHER DIRECTION: a wrongly-keyed file is ONE mistake, not 2N.
+    wrong = {"button": OK["Button"], "card": OK["Card"]}
+    miskeyed = check(MD, wrong, ROLES)
+    expect(f"a wrongly-keyed file is 2 findings, not 2N (got {len(miskeyed)})", len(miskeyed) == 2)
+    expect("...and one of them names the keying itself",
+           any("keyed differently" in p for p in miskeyed))
     # `drawable: false` is a DECISION; without a reason it is indistinguishable from an oversight.
     expect("non-drawable without a reason is reported",
            any("no `why`" in p for p in check(MD, {**OK, "Card": {"drawable": False}}, ROLES)))
