@@ -61,12 +61,19 @@ CONFIG_PATH = Path(".design-flow/generation.json")
 # the product exists, and brand-geometric decoration is CSS/SVG built from tokens.
 FREE_TIERS = (1, 2)
 
-# A library holds more than flat pictures. `motion` is separate from `static` because it is priced,
-# reviewed and REUSED differently -- a looping accent is a different artefact from the still it
-# animates, and a manifest that conflates them cannot tell you whether a surface has both.
-# `vector` is called out because for icons and flat shapes an SVG from a text model beats a raster:
+# A library holds more than flat pictures, and the kinds are split by HOW THEY ARE MADE AND REUSED,
+# not by how they look.
+#
+# `motion` and `video` were one kind for a release, and that was wrong in a way worth recording: it
+# routed a loading spinner to a video model. Motion in a product is overwhelmingly Lottie JSON or an
+# animated SVG -- a few KB, recoloured from tokens, scrubbable, diffable in review, and authored
+# directly by the agent for nothing. Generated video is FOOTAGE: megabytes, fixed palette,
+# un-recolourable, expensive, and right for a marketing hero and almost nothing else. Conflating
+# them meant the cheap, common case paid the expensive, rare case's price.
+#
+# `vector` is called out for the same reason: for icons and flat shapes an SVG beats a raster --
 # it scales, it diffs in review, and it recolours from tokens without being regenerated.
-KINDS = ("static", "vector", "motion")
+KINDS = ("static", "vector", "motion", "video")
 
 # Illustration styles as a CLOSED set, because "playful illustration" is not a specification.
 # Surveying brands that do this well, the styles are mutually exclusive and instantly

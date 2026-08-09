@@ -123,6 +123,19 @@ produced the current design is unrecoverable — so the next person changes it o
 `reject` is the field people skip and the one that keeps the file honest: a research record where
 everything was adopted is a shopping list, not research.
 
+## 5b. The record must name the style it chose
+
+`style` is the **output** of this method, not an input, and it belongs in the record beside the
+references it came from.
+
+Three sources disagree — that is why three are the minimum — and **the choosing is the design**. A
+record that gathers and does not choose is a mood board: it documents the looking and omits the
+decision, so the next reader cannot tell what was concluded from what was merely seen.
+
+It is also the link that makes research mean anything downstream. Every brief in the project is held
+to this value: research monochrome ink line-work and brief a 3D render, and the plan refuses before
+anything is bought. Without it the record is a box that was ticked.
+
 ## 6. Synthesis — three sources minimum, and the reason is not arbitrary
 
 - **One** source is a copy, whatever you tell yourself.

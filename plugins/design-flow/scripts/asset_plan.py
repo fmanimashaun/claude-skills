@@ -103,9 +103,23 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
                 # true for the free half.
                 "static": [{"name": "agent", "cost_usd": 0.0}],
                 "vector": [{"name": "agent", "cost_usd": 0.0}],
-                # EMPTY until a video route exists: no image endpoint returns video, so a motion row
-                # refuses rather than saving a still under a `.webm` name.
-                "motion": [],
+                # MOTION GOES VIA THE VIDEO ENDPOINT, which is asynchronous: submit, poll,
+                # download. Doctrine here previously said motion had no route -- a true statement
+                # about the IMAGE endpoint that was allowed to stand as a claim about the provider,
+                # so every motion row refused. IDs verified against the live catalogue 2026-08-09
+                # (21 video models); refresh with `--discover`. Price is UNSET because the catalogue
+                # does not report it and video is the most expensive thing here by an order of
+                # magnitude -- the gate refuses an unpriced rung, which is the right default.
+                # MOTION IS UI MOTION: Lottie JSON or animated SVG, authored by the agent for
+                # nothing, recoloured from tokens, diffable in review. This was pointed at a video
+                # model for one release, which routed a loading spinner through footage generation
+                # -- the cheap common case paying the expensive rare case's price.
+                "motion": [{"name": "agent", "cost_usd": 0.0}],
+                # VIDEO IS FOOTAGE, and a different endpoint: asynchronous submit/poll/download.
+                # Right for a marketing hero and almost nothing else. ID verified against the live
+                # catalogue 2026-08-09 (21 video models); UNPRICED because it is the most expensive
+                # rung here by an order of magnitude and the gate should refuse until you choose.
+                "video": [{"name": "minimax/hailuo-3", "cost_usd": None}],
             },
             "style_reference": "docs/assets/reference.png",
             "briefs": {},
@@ -190,6 +204,27 @@ def check_research(root: Path) -> list[str]:
     and nothing in the file says the style was picked from the median of what the model had seen.
     """
     path = root / RESEARCH_PATH
+    if path.is_file():
+        # THE RESEARCH DECIDES THE STYLE, and this is the join that makes that true rather than
+        # hoped. Without it a project can research monochrome ink line-work and brief a 3D render,
+        # and nothing notices -- the research record becomes a box that was ticked rather than a
+        # decision anything downstream honours. Every brief must carry the style the research chose.
+        try:
+            chosen = json.loads(path.read_text(encoding="utf-8")).get("style")
+        except ValueError:
+            chosen = None
+        cfg = root / CONFIG_PATH
+        if chosen and cfg.is_file():
+            try:
+                briefs = json.loads(cfg.read_text(encoding="utf-8")).get("briefs") or {}
+            except ValueError:
+                briefs = {}
+            off = [s for s, b in briefs.items() if b.get("style") and b["style"] != chosen]
+            if off:
+                return [f"the research chose {chosen!r}, but {', '.join(sorted(off))} brief(s) name "
+                        f"a different style. One family, one style -- a set that mixes them is the "
+                        f"pile this whole path exists to avoid, and it is invisible once shipped. "
+                        f"Change the briefs, or re-open the research and choose again."]
     if not path.is_file():
         return [f"no reference research at {RESEARCH_PATH}. Research comes BEFORE the plan: it "
                 f"settles the style, and the style settles which assets exist at all. Run the "
@@ -577,10 +612,16 @@ def selftest() -> int:
                                                    cfg["ladders"]["vector"])))
         check("...and no api_key_env is written", "api_key_env" not in cfg)
         check("...with the aggregator set to agent", cfg["aggregator"] == "agent")
-        # `motion` is scaffolded EMPTY on purpose: no image endpoint returns video, so a motion row
-        # must refuse rather than save a still frame under a `.webm` name.
-        check("...motion is empty until a video model is configured",
-              cfg["ladders"]["motion"] == [])
+        # Motion HAS a route -- the video endpoint, which is asynchronous. Doctrine said otherwise
+        # for one release: a true claim about the IMAGE endpoint that stood as a false one about the
+        # provider, so every motion row refused.
+        # Motion is UI motion -- Lottie/animated SVG, agent-authored and free. Video is footage,
+        # a different endpoint and the most expensive rung here. Pointing motion at a video model
+        # for one release routed a loading spinner through footage generation.
+        check("motion is agent-authored and free",
+              cfg["ladders"]["motion"][0] == {"name": "agent", "cost_usd": 0.0})
+        check("video is a real model, shipped unpriced",
+              cfg["ladders"]["video"][0]["name"] and cfg["ladders"]["video"][0]["cost_usd"] is None)
         check("...and vector has its own SVG-capable rung",
               len(cfg["ladders"]["vector"]) == 1)
         (root / CONFIG_PATH).write_text('{"aggregator":"mine"}', encoding="utf-8")
@@ -638,6 +679,22 @@ def selftest() -> int:
         (root / "docs/design").mkdir(parents=True)
         (root / RESEARCH_PATH).write_text('{"job": "x", "references": []}', encoding="utf-8")
         check("...and a present one is not", check_research(root) == [])
+
+    # THE RESEARCH DECIDES THE STYLE. Without this join the record is a box that was ticked.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docs/design").mkdir(parents=True)
+        (root / ".design-flow").mkdir()
+        (root / RESEARCH_PATH).write_text(
+            json.dumps({"job": "x", "style": "minimalist-ink", "references": []}), encoding="utf-8")
+        def _cfg(style):
+            (root / CONFIG_PATH).write_text(
+                json.dumps({"briefs": {"hero": {"style": style}}}), encoding="utf-8")
+        _cfg("3d-render")
+        check("a brief that ignores the researched style is reported",
+              any("chose 'minimalist-ink'" in m for m in check_research(root)))
+        _cfg("minimalist-ink")
+        check("...and one that honours it is silent", check_research(root) == [])
 
     # COST. The estimate prices every row at the CHEAPEST rung, so it is a floor, and settled rows
     # cost nothing -- a re-run that re-priced finished work would refuse plans that are affordable.

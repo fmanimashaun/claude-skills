@@ -7388,6 +7388,85 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.21.0 — 2026-08-09
+
+- **The research now decides the style, and the plan holds every brief to it.** The sequence —
+  scaffold, read the PRD, research for inspiration, curate the set, generate — was enforced at every
+  step **except the one that carries the meaning**: nothing connected the research to the style. A
+  project could research monochrome ink line-work and brief a `3d-render`, and no check noticed. The
+  record was a box that got ticked.
+
+  `style` is now the research record's **output**, required once it has references: three sources
+  disagree, which is why three are the minimum, and **the choosing is the design**. A record that
+  gathers and does not choose is a mood board — it documents the looking and omits the decision.
+
+  Every brief is held to that value, and a mismatch refuses **before anything is bought**. One
+  family, one style: a set that mixes them is the pile this whole path exists to avoid, and it is
+  invisible once shipped.
+
+- **The settled approach is emitted as a project-level SKILL, not left as JSON.** `--emit-skill`
+  writes `.claude/skills/project-design/SKILL.md` — the chosen style, the job it serves, the
+  mechanisms adopted, and **what was rejected and why**.
+
+  The record is *evidence*; the skill is *doctrine*. A JSON file is parsed when an agent remembers
+  to; a skill is read because its description matches the work in hand. Left only in the record, the
+  style gets **re-derived** by every downstream agent from raw references — and re-derivation is
+  where a family quietly becomes a pile. The rejected half is the part people drop, and it is the
+  reason the same idea is not re-proposed next quarter.
+
+  It is **generated, never hand-edited**, and refuses to emit from a record that does not pass its
+  own checks — publishing a decision nobody made, into the place agents trust most, is worse than
+  publishing nothing. That guard first lived in `main()`, where no test reached it and a mutation
+  survived; it now sits at the point of writing, where the danger is.
+
+  Tokens are deferred to the brand pack rather than restated, so the skill records the *approach*
+  and the pack records the *values* — one home each.
+
+- **Retracted, not shipped: a Figma-to-tokens reader.** It was named as a gap against an external
+  designer workflow, and it is not one — tokens here are **generated from the brand pack**, so a
+  Figma reader would be a second source of truth for the same values, which `plugin-boundaries`
+  forbids by name. The flow is agent-driven; the absence is a decision.
+
+- **Doctrine said motion had no route. It was wrong, and the shape of the error is worth keeping.**
+  The claim began as a true statement about the *image* endpoint — it returns no video — and was
+  allowed to stand as a claim about the provider, so the scaffold shipped an empty motion ladder and
+  every motion row refused. A true sentence about one endpoint became a false one about the whole
+  system, and nothing caught it because it read as a limitation rather than as a claim. OpenRouter
+  has a video endpoint; there are **21 video models**, verified against the live catalogue.
+
+- **`motion` and `video` are now separate kinds, and that split is the real fix.** They were one
+  kind, which routed a **loading spinner through footage generation**. Product motion is Lottie JSON
+  or an animated SVG: a few KB, recoloured from tokens, scrubbable, diffable in review, and authored
+  by the agent for nothing. Generated video is footage — megabytes, fixed palette, un-recolourable,
+  expensive, and right for a marketing hero and almost nothing else. Conflated, the cheap common
+  case paid the expensive rare case's price. The kind/bytes check now accepts `svg` or `json` for
+  motion and refuses a video file with a sentence explaining which kind was meant.
+
+- **The video adapter is asynchronous, and three of its shapes are load-bearing.** Submit returns
+  **202 with no asset**, so a caller treating 2xx as success saves an empty file; the timeout covers
+  the **whole poll** rather than each request, because a per-request timeout on a job taking minutes
+  never fires and the run hangs instead of failing; and the download URL needs the **same auth**,
+  because an unauthenticated fetch returns an error page, which is bytes, and bytes get written.
+
+- **The output critic — the stage that was missing.** #507 asked for *"a per-surface acceptance
+  check, so climb-the-ladder has a trigger"*, and it shipped as **a string that had to be present**:
+  letter of the criterion, not spirit. Nothing read the asset, so the trigger was one nobody could
+  pull, and `attempt` existed while nothing ever set it. `--critique` now assembles what a critic
+  needs — the acceptance check, the brief, the pack, the prompt — and `--verdict accept|reject`
+  records the judgement. **Accept** writes the manifest with its reason attached; **reject**
+  increments `attempt`, which is the climb trigger, finally wired.
+
+  A surface with **no** acceptance check yields no critique brief at all, because a critic without a
+  criterion produces an opinion, and an opinion recorded as a verdict is worse than no verdict. A
+  verdict with no reason is refused in both directions: an accept nobody can review is as useless as
+  a reject nobody can act on.
+
+  Four fixture defects surfaced while building it, all the same class — fixtures failing on each
+  other's side effects rather than on what they name. The accept path writes a manifest row, so
+  every later call in that tempdir tripped the duplicate-surface refusal, and a bare
+  `except Unusable: pass` swallowed it and passed for the wrong reason. Each check now runs in its
+  own tempdir and asserts *why* it refused, not merely that it did.
+
 ### 1.20.0 — 2026-08-09
 
 - **`.env` was promised in two shipped messages and read by nothing.** The scaffold's comment and
@@ -8657,6 +8736,42 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09 (release v1.83.0)
+
+> ### The design flow is a sequence now, and every link is enforced
+>
+> Scaffold → read the PRD → research → choose a style → emit it as doctrine → curate → cost →
+> generate → critique. Two links were missing and three shipped claims were wrong.
+
+- **Motion had "no route", which was false.** The claim began as a true statement about the *image*
+  endpoint and was allowed to stand as one about the provider, so every motion row refused. There
+  are **21 video models**. More importantly `motion` and `video` are now **separate kinds**: as one
+  kind it routed a loading spinner through footage generation, so the cheap common case paid the
+  expensive rare case's price. Product motion is Lottie/animated SVG — KB, recolours from tokens,
+  agent-authored, free. Video is footage, and right for a marketing hero and little else.
+
+- **The output critic — the stage that was missing.** The acceptance check shipped as *a string that
+  had to be present*: letter of the criterion, not spirit. Nothing read the asset, so the
+  climb-the-ladder trigger was one nobody could pull and `attempt` existed while nothing set it.
+  `--critique` assembles what a critic needs; `--verdict accept|reject --why` records the judgement,
+  writes provenance, or climbs.
+
+- **The research now decides the style, and every brief is held to it.** A project could research
+  monochrome ink and brief a 3D render with nothing noticing. `style` is the record's required
+  **output** — three sources disagree, and the choosing *is* the design.
+
+- **The approach is emitted as a project-level skill**, not left as JSON. The record is evidence;
+  the skill is doctrine, read because its description matches the work rather than parsed when an
+  agent remembers to. It carries what was **rejected**, which is what stops the same idea returning
+  next quarter, and refuses to emit from a record that does not pass.
+
+- **Retracted rather than shipped:** a Figma-to-tokens reader. Tokens are *generated* from the brand
+  pack, so a reader would be a second source of truth for the same values.
+
+The fixture defects this batch surfaced were all one class — tests failing on each other's side
+effects rather than on what they name — plus one guard living in `main()` where no test reached it,
+and a mutation that survived because of it.
 
 ### 2026-08-09 (release v1.82.0)
 

@@ -42,6 +42,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -262,6 +263,81 @@ def call_openrouter_svg(key: str, model: str, prompt: str, reference: bytes | No
     return text[start:end + 6].encode("utf-8"), (float(cost) if cost is not None else None)
 
 
+def call_openrouter_video(key: str, model: str, prompt: str, reference: bytes | None,
+                          timeout: int) -> tuple[bytes, float | None]:
+    """Motion via the VIDEO endpoint, which is asynchronous: submit, poll, then download.
+
+    This exists because doctrine previously said motion had no route, which was wrong. The claim
+    started as a true statement about the IMAGE endpoint -- it returns no video -- and was allowed
+    to stand as "there is no route at all", so the scaffold shipped an empty motion ladder and the
+    plan refused every motion row. A true sentence about one endpoint became a false one about the
+    provider, and nothing checked it because it read like a limitation rather than a claim.
+
+    Three shapes differ from the image path and each is load-bearing:
+
+      * SUBMIT RETURNS 202, not the asset. The response carries a `polling_url` and nothing usable,
+        so a caller that treated 2xx as success would save an empty file.
+      * POLLING HAS NO CEILING OF ITS OWN. `timeout` is spent across the whole wait here rather than
+        per request, because a per-request timeout on a job that takes minutes never fires and the
+        run hangs instead of failing.
+      * THE URL NEEDS THE SAME AUTH. `unsigned_urls` are OpenRouter paths, not public links; an
+        unauthenticated fetch returns an error page that is bytes, and bytes get written to disk.
+    """
+    body: dict = {"model": model, "prompt": prompt}
+    if reference:
+        # Style guidance, matching the image path's contract. `frame_images` (first/last frame) is
+        # the other mode the API offers and is a different intent -- not a style reference.
+        body["input_references"] = [{
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,"
+                                 + base64.b64encode(reference).decode("ascii")},
+        }]
+    auth = {"Authorization": f"Bearer {key}"}
+
+    def _json(req, secs):
+        try:
+            with urllib.request.urlopen(req, timeout=secs) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:400]
+            raise Unusable(f"provider returned HTTP {exc.code}. Nothing was saved and no manifest "
+                           f"row was written. Response: {detail}")
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise Unusable(f"provider unreachable ({exc}). Nothing was saved.")
+
+    job = _json(urllib.request.Request(
+        "https://openrouter.ai/api/v1/videos", data=json.dumps(body).encode("utf-8"),
+        method="POST", headers={**auth, "Content-Type": "application/json"}), 60)
+    poll_url = job.get("polling_url") or f"https://openrouter.ai/api/v1/videos/{job.get('id')}"
+
+    deadline = time.monotonic() + timeout
+    state = job
+    while state.get("status") in ("pending", "in_progress", None):
+        if time.monotonic() > deadline:
+            raise Unusable(
+                f"the video job did not finish within {timeout}s (last status "
+                f"{state.get('status')!r}). Nothing was saved. The job may still complete at "
+                f"{poll_url} — raise --timeout rather than assuming it failed.")
+        time.sleep(min(15, max(1, deadline - time.monotonic())))
+        state = _json(urllib.request.Request(poll_url, headers=auth), 60)
+
+    if state.get("status") != "completed":
+        raise Unusable(f"the video job ended {state.get('status')!r}. Nothing was saved. "
+                       f"{str(state.get('error') or '')[:200]}")
+    urls = state.get("unsigned_urls") or []
+    if not urls:
+        raise Unusable("the job completed with no video URL. Nothing was saved — a completion "
+                       "carrying nothing to download is a provider-side failure, not an asset.")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(urls[0], headers=auth),
+                                    timeout=120) as resp:
+            blob = resp.read()
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        raise Unusable(f"the video URL could not be fetched ({exc}). Nothing was saved.")
+    cost = (state.get("usage") or {}).get("cost")
+    return blob, (float(cost) if cost is not None else None)
+
+
 class AgentWrites(Exception):
     """Not a failure — the gate approved, and the AGENT is the generator for this kind.
 
@@ -282,6 +358,7 @@ def call_agent(key, model, prompt, reference, timeout):      # noqa: ARG001 - si
 
 
 ADAPTERS = {"agent": call_agent,
+            "openrouter-video": call_openrouter_video,
             "openrouter": call_openrouter,
             "openrouter-svg": call_openrouter_svg,
             "gemini": call_gemini}
@@ -305,6 +382,9 @@ def sniff_extension(blob: bytes) -> str:
         return "mp4"
     if blob[:4] == b"\x1a\x45\xdf\xa3":
         return "webm"
+    # Lottie is JSON. Sniffed last among the text formats so an SVG is never mistaken for it.
+    if head[:1] in (b"{", b"["):
+        return "json"
     return "bin"      # unknown, and named honestly rather than guessed at
 
 
@@ -318,6 +398,12 @@ def assert_kind_matches(kind: str, blob: bytes) -> str:
     the fixture that claimed to cover it was testing `sniff_extension` instead.
     """
     ext = sniff_extension(blob)
+    if kind == "motion" and ext not in ("svg", "json"):
+        raise Unusable(
+            f"kind is `motion` but the bytes are {ext.upper()}. Product motion is Lottie JSON or an "
+            f"animated SVG -- a few KB that recolour from tokens and diff in review. A video file "
+            f"here is footage: megabytes, fixed palette, un-recolourable. If you meant footage, "
+            f"plan the surface as `video`.")
     if kind == "vector" and ext != "svg":
         raise Unusable(
             f"kind is `vector` but the bytes are {ext.upper()}. A raster named `.svg` does not "
@@ -389,7 +475,7 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
         # reaches the manifest without passing the same checks a bought asset does.
         target = root / ASSET_DIR / (
             re.sub(r"[^A-Za-z0-9._-]+", "-", f"{prov['surface']}-agent").strip("-")
-            + (".svg" if prov.get("kind") == "vector" else ".png"))
+            + {"vector": ".svg", "motion": ".json", "video": ".mp4"}.get(prov.get("kind"), ".png"))
         raise AgentWrites(approval["prompt"], target, manifest_entry(root, config, prov, target))
 
     kind = prov.get("kind", "static")
@@ -412,6 +498,77 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
             "provenance": {**prov,
                            "estimated_cost_usd": prov.get("cost_usd"),
                            "actual_cost_usd": actual_cost}}
+
+
+VERDICTS = ("accept", "reject")
+
+
+def critique_brief(root: Path, request: dict, asset: Path) -> dict:
+    """What a critic needs to judge an asset, assembled from what the gate already knows.
+
+    THE MISSING STAGE. `acceptance` existed as a string that had to be PRESENT before the ladder
+    could climb -- which satisfied the acceptance criterion in letter and not in spirit: nothing
+    ever read the asset, so "climb because the output was not good enough" had a trigger nobody
+    could pull. `attempt` existed and nothing ever set it.
+
+    It is assembled rather than judged here for the same reason authorship is: a script cannot look
+    at an image. The agent can, and it holds the brand pack and the surrounding components while it
+    does. So the machinery states WHAT must be judged and records the verdict; the judgement is the
+    agent's, and `--verdict` is where it comes back.
+
+    A surface with no stated acceptance check yields no brief, because a critic with no criterion
+    produces an opinion, and an opinion recorded as a verdict is worse than no verdict at all.
+    """
+    config = load_config(root)
+    approval = decide(root, request)                 # RE-RUN: the same gate, no shortcuts
+    surface = approval["provenance"]["surface"]
+    criterion = (config.get("acceptance") or {}).get(surface)
+    if not criterion:
+        raise Refusal(
+            f"no acceptance check stated for {surface!r}, so there is nothing to judge this against. "
+            f"Write one in `acceptance` — a critic with no criterion produces an opinion, and an "
+            f"opinion recorded as a verdict is worse than no verdict.")
+    brief = (config.get("briefs") or {}).get(surface, {})
+    return {
+        "asset": _project_relative(asset.resolve(), root),
+        "surface": surface,
+        "kind": approval["provenance"].get("kind", "static"),
+        "acceptance": criterion,
+        "brief": {k: brief.get(k) for k in ("style", "subject", "mood")},
+        "pack": request.get("pack", {}),
+        "prompt": approval["prompt"],
+        "judge": ("Look at the asset. Does it meet the acceptance check, in the stated style, on "
+                  "this pack's palette? Answer accept or reject with one sentence of why — and "
+                  "reject on a near miss, because the next rung costs less than a surface that "
+                  "reads as almost-right forever."),
+        "then": "re-run with --verdict accept|reject --why '<one sentence>'",
+    }
+
+
+def record_verdict(root: Path, request: dict, asset: Path, verdict: str, why: str) -> dict:
+    """Accept -> the manifest. Reject -> the NEXT rung, or an honest stop.
+
+    The reject path is what makes `attempt` mean something: a rejected asset increments it, so the
+    next run climbs -- which is the only trigger the ladder ever had, and it was never wired.
+    """
+    if verdict not in VERDICTS:
+        raise Unusable(f"verdict must be one of {', '.join(VERDICTS)}; got {verdict!r}")
+    if not why.strip():
+        raise Unusable("a verdict needs a reason. `accept` with no reason cannot be reviewed later, "
+                       "and `reject` with no reason cannot be acted on.")
+    config = load_config(root)
+    approval = decide(root, request)
+    prov = approval["provenance"]
+    if verdict == "accept":
+        entry = {**manifest_entry(root, config, prov, asset.resolve()), "accepted_because": why}
+        return {"verdict": "accept", "manifest": str(append_manifest(root, entry)), "why": why}
+    return {
+        "verdict": "reject", "why": why,
+        "next_attempt": int(request.get("attempt", 0)) + 1,
+        "then": ("re-run the request with `attempt` incremented to climb to the next rung. If the "
+                 "ladder is exhausted the gate says so rather than re-buying the same rung — a "
+                 "reroll at the same rung is the reroll a composed prompt exists to avoid."),
+    }
 
 
 def _project_relative(out: Path, root: Path) -> str:
@@ -453,6 +610,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--timeout", type=int, default=120)
     ap.add_argument("--record", metavar="FILE",
                     help="register a file the AGENT authored, after the gate approved it")
+    ap.add_argument("--critique", metavar="FILE",
+                    help="emit what a critic needs to judge FILE against its acceptance check")
+    ap.add_argument("--verdict", choices=VERDICTS, help="record a critic's decision on --critique")
+    ap.add_argument("--why", default="", help="one sentence behind the verdict; required")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -467,6 +628,13 @@ def main(argv: list[str]) -> int:
         print(f"unusable request: {exc}", file=sys.stderr)
         return 2
     try:
+        if args.critique and args.verdict:
+            print(json.dumps(record_verdict(Path.cwd(), request, Path(args.critique),
+                                            args.verdict, args.why), indent=2))
+            return 0
+        if args.critique:
+            print(json.dumps(critique_brief(Path.cwd(), request, Path(args.critique)), indent=2))
+            return 0
         if args.record:
             # Re-run the gate here too. An agent-authored asset gets NO easier route into the
             # manifest than a bought one -- otherwise "the agent wrote it" becomes the way past
@@ -661,6 +829,74 @@ def selftest() -> int:
             pass
         check("...while a path inside it resolves relative",
               _project_relative(root / "docs/assets/x.svg", root) == "docs/assets/x.svg")
+
+    # THE CRITIC. `acceptance` was a string that had to be PRESENT before the ladder could climb --
+    # letter of the criterion, not spirit: nothing read the asset, so the climb trigger was one
+    # nobody could pull, and `attempt` existed while nothing ever set it.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / ".design-flow").mkdir()
+        cfg = {"aggregator": "agent", "budget_usd": 1.0,
+               "ladders": {"static": [{"name": "agent", "cost_usd": 0.0},
+                                      {"name": "better", "cost_usd": 0.5}]},
+               "briefs": {"s": {"style": "flat-vector", "subject": "a tray", "mood": "light"}},
+               "acceptance": {"s": "reads as the brand at a glance"}}
+        (root / ".design-flow/generation.json").write_text(json.dumps(cfg), encoding="utf-8")
+        (root / ASSET_DIR).mkdir(parents=True)
+        asset = root / ASSET_DIR / "s.svg"
+        asset.write_text("<svg viewBox='0 0 1 1'></svg>", encoding="utf-8")
+        req = {"kind": "static", "pack": {"variant": "default"},
+               "library_miss": {"searched_for": "a tray", "why_no_fit": "library is empty"},
+               "tier_refusal": {"surface": "s", "tier_1_why_not": "a", "tier_2_why_not": "b"}}
+
+        brief = critique_brief(root, req, asset)
+        check("the critique brief carries the acceptance check",
+              brief["acceptance"] == "reads as the brand at a glance")
+        check("...and the brief it was generated from", brief["brief"]["style"] == "flat-vector")
+        check("...and the asset path, relative", brief["asset"].startswith("docs/assets"))
+        # A criterion is REQUIRED: a critic without one produces an opinion, and an opinion
+        # recorded as a verdict is worse than no verdict.
+        checks += 1
+        nocrit = {**cfg, "acceptance": {}}
+        (root / ".design-flow/generation.json").write_text(json.dumps(nocrit), encoding="utf-8")
+        try:
+            critique_brief(root, req, asset)
+            failures.append("a surface with no acceptance check should refuse to be critiqued")
+        except Refusal:
+            pass
+        (root / ".design-flow/generation.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+        # REJECT increments the attempt -- the only trigger the ladder ever had, now wired.
+        rej = record_verdict(root, req, asset, "reject", "reads as stock")
+        check("reject climbs to the next rung", rej["next_attempt"] == 1)
+        check("...and keeps the reason", rej["why"] == "reads as stock")
+
+
+        # ACCEPT writes the manifest, with the reason attached for a later reader.
+        acc = record_verdict(root, req, asset, "accept", "on brand at a glance")
+        check("accept writes the manifest", Path(acc["manifest"]).is_file())
+        check("...recording why it was accepted",
+              json.loads((root / ASSET_DIR / "manifest.json").read_text())
+                  ["assets"][-1]["accepted_because"] == "on brand at a glance")
+        # A verdict with no reason is refused in BOTH directions: an accept nobody can review is
+        # as useless as a reject nobody can act on.
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / ".design-flow").mkdir()
+        (root / ".design-flow/generation.json").write_text(json.dumps(cfg), encoding="utf-8")
+        (root / ASSET_DIR).mkdir(parents=True)
+        asset = root / ASSET_DIR / "s.svg"
+        asset.write_text("<svg viewBox='0 0 1 1'></svg>", encoding="utf-8")
+        for v in VERDICTS:
+            checks += 1
+            try:
+                record_verdict(root, req, asset, v, "   ")
+                failures.append(f"a {v} verdict with no reason should be refused")
+            except (Unusable, Refusal) as exc:
+                if "reason" not in str(exc):
+                    failures.append(f"a {v} verdict with no reason should be refused "
+                                    f"for that reason, not: {exc}")
 
     # THE MANIFEST refuses an incomplete row rather than growing one nobody can act on.
     with tempfile.TemporaryDirectory() as td:

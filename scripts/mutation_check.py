@@ -3541,6 +3541,21 @@ GUARDS: tuple[Guard, ...] = (
         # stands between a request and someone's card.
         mutations=(
             Mutation(
+                # A critic with no criterion produces an OPINION, and an opinion recorded as a
+                # verdict is worse than no verdict -- it looks like the check ran.
+                "a surface with no acceptance check is still critiqued, so opinion becomes verdict",
+                "    if not criterion:",
+                "    if False:",
+                "a surface with no acceptance check should refuse to be critiqued",
+            ),
+            Mutation(
+                # A verdict nobody can review (accept) or act on (reject) is not a verdict.
+                "a verdict needs no reason, so accepts cannot be reviewed and rejects not acted on",
+                "    if not why.strip():",
+                "    if False:",
+                "verdict with no reason should be refused",
+            ),
+            Mutation(
                 # The agent path never calls an API. Demanding a key from it refused the one
                 # zero-cost route for a credential it had no use for -- which is what shipped until
                 # the adapter was resolved before the preflight.
@@ -3613,6 +3628,15 @@ GUARDS: tuple[Guard, ...] = (
         # No `needs`: the fixtures are literals and tempdirs, and the one run_plan fixture points at
         # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
         mutations=(
+            Mutation(
+                # The join that makes research MEAN something downstream. Without it a project can
+                # research monochrome ink line-work and brief a 3D render, and nothing notices --
+                # the record becomes a box that was ticked rather than a decision anything honours.
+                "briefs stop being held to the researched style, so one set mixes families",
+                '            off = [s for s, b in briefs.items() if b.get("style") and b["style"] != chosen]',
+                "            off = []",
+                "a brief that ignores the researched style is reported",
+            ),
             Mutation(
                 # Exit 0 is not "done": the agent path exits 0 with a BRIEF. Reading the code alone
                 # marked rows done with no file on disk -- the exact "recorded from what was
@@ -3810,6 +3834,23 @@ GUARDS: tuple[Guard, ...] = (
         # No `needs`: every fixture is a dict literal, and nothing here touches the network -- which
         # matters more than usual, because the subject is about BROWSING other people's sites.
         mutations=(
+            Mutation(
+                # Emitting doctrine from an unreviewable record publishes a decision nobody made,
+                # in the place agents trust most. The skill is only written from a record that
+                # PASSES -- a record that gathers and does not choose must not become guidance.
+                "an unreviewable record still emits a skill, publishing a decision nobody made",
+                "    problems = check(record)   # emit_skill: refuse at the point of writing",
+                "    problems = []", 
+                "a record with no style should not emit a skill",
+            ),
+            Mutation(
+                # "Three or more sources disagree, and the choosing IS the design." A record that
+                # gathers and does not choose is a mood board.
+                "a record may gather without choosing, so the research produces no decision",
+                '    if record.get("references") and not record.get("style"):',
+                "    if False:",
+                "a record with references and no style is reported",
+            ),
             Mutation(
                 # Direct competitors converged on one look by copying each other. A record sampled
                 # only from them inherits the convergence and produces the median.
