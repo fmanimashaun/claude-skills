@@ -3625,6 +3625,25 @@ GUARDS: tuple[Guard, ...] = (
                 "a still recorded as video should be refused",
             ),
             Mutation(
+                # The style reference is "the single biggest lever on consistency" (generate.md
+                # §3c), and the first version of this adapter accepted the parameter and DROPPED it.
+                # Nothing asserted it, so it shipped: a project that had approved a reference got
+                # none of its benefit and no warning either.
+                "the style reference is silently dropped, so on-brand consistency is not requested",
+                "    content: list[dict] | str = prompt\n    if reference:",
+                "    content: list[dict] | str = prompt\n    if False:",
+                "a style reference is SENT, not dropped",
+            ),
+            Mutation(
+                # Hardcoding image/png is a lie the moment a project points style_reference at a
+                # .jpg, and a provider that validates the declared type rejects the call -- losing
+                # the reference exactly when it was meant to be doing the most work.
+                "the reference mime is hardcoded again, so a JPEG is declared a PNG",
+                '    ext = sniff_extension(blob)\n    return {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp",\n            "svg": "image/svg+xml"}.get(ext, "image/png")',
+                '    return "image/png"',
+                "the reference mime sniffs image/jpeg",
+            ),
+            Mutation(
                 # #629. A model without the image modality answers in PROSE about the picture it
                 # would have drawn. Saved, that is a paragraph in the manifest where art belongs --
                 # and it looks like a completed row.
