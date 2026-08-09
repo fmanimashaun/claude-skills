@@ -254,6 +254,32 @@ right alone. Regenerate and the divergence cannot survive; `--check` reports a s
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/library.pen --check
 ```
 
+### Buying a composed raster: the `pen` rung
+
+For an OG card or a social preview, put `pen` on the `static` ladder and `--run` composes it through
+the CLI instead of an image model:
+
+```json
+"ladders": {
+  "static": [{ "name": "pen", "cost_usd": 0.0 }]
+}
+```
+
+**`cost_usd: 0.0` is a FLOOR, not a price** — the same caveat the `agent` rung carries. pen.dev is
+free today and its owner has said pricing may come, and the CLI drives its own agent on **your**
+Claude auth, so what it actually spends is Opus-minutes rather than a figure this path can read. The
+adapter reports the cost as *unknown* instead of asserting zero. Nothing local can detect a vendor's
+price change, which is why this is a sentence for you rather than a check that could never fire.
+
+**It takes no API key.** pen is a local binary carrying its own auth, so it sits with `agent` in the
+keyless set — asking for `api_key_env` here would refuse a zero-cost route for a credential it never
+uses.
+
+If the binary is absent the rung refuses and **says only what a PATH miss proves**: that the `pen`
+CLI is not on PATH. pen.dev also ships as a user-scoped MCP server registered outside the repo, so a
+provisioned machine can fail this probe — claiming "pen.dev is not installed" would send you to
+install what you already have.
+
 **Check pen accepts it, headlessly, before you rely on it.** The document is written to the published
 schema, but "matches the schema" is evidence rather than proof — and the MCP cannot open a file to
 tell you. The CLI can, with no GUI and no open document:

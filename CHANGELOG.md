@@ -7421,6 +7421,56 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **A `pen` rung for composed raster.** (#599) An OG card or social preview is layout plus real type
+  at a fixed size, and a diffusion model is the wrong instrument twice over: it cannot render
+  accurate text, and it cannot render the same brand twice. `pen` joins the adapter registry, driving
+  the CLI headlessly and returning the exported PNG.
+
+  **It is keyless**, and that is now stated as data rather than an `if`: `KEYLESS = {"agent", "pen"}`.
+  Both make no authenticated call this config could serve, and demanding a key refuses a zero-cost
+  route for a credential it never uses — the exact defect already recorded for the agent rung, which
+  a second keyless adapter would otherwise have had to remember to join.
+
+  **An absent binary says only what a PATH miss proves.** pen.dev also ships as a user-scoped MCP
+  server registered outside the repo, so a provisioned machine fails this probe — measured, on a
+  machine where `claude mcp list` reported pencil connected while `which pen` found nothing. The
+  refusal names the CLI, not pen.dev, because "pen.dev is not installed" would send someone to
+  install what they already have. Cost is reported **unknown** rather than zero: the CLI drives its
+  own agent on the operator's Claude auth, so it spends Opus-minutes, not a figure this path can read.
+
+- **An optional composition tier, and the intent pass that judges it.** (#600, #601)
+  `scripts/pen_compose.py --surface` / `--intent`.
+
+  Divergence in `/design-flow:variants` is priced at **N × ERB** — every option costs a full
+  `ui-composer` dispatch writing real view code before it can be compared. A composition surface
+  makes exploration cheap and charges the ERB price only for the winner.
+
+  **The tier is on where available**, per maintainer decision, unless a project sets
+  `exploration_surface: none`. The argument for defaulting off — that one machine's tooling should
+  not change how a shared repo builds UI — is weaker here than it looks: a `.pen` file is never a
+  merge artefact and never a gate input, so the output contract is identical either way. A tier that
+  is off by default is a tier nobody discovers.
+
+  **`--surface` always exits 0.** "No surface" is a normal answer, and a machine without pen must not
+  look like a machine with a problem — otherwise callers learn to ignore the exit code, which is how
+  a real failure later goes unnoticed. Detection needs `--mcp-available` passed by the caller,
+  because namespace presence is **not** readiness: a tier that offers itself and then fails on the
+  first call has already spent the operator's attention.
+
+  **The audit is a three-pass progression** — intent (the composition, advisory), source (the ERB,
+  blocking), rendered (the browser, blocking, shipped since #107). Only pass 1 is new, and it
+  **cannot** judge conformance: role tokens, focus rings, ARIA, tap targets and the motion count that
+  doctrine calls *arithmetic* are properties of code that does not exist yet. So it reports facts
+  about the document instead — raw colours instead of tokens, placeholder copy, a composition
+  referencing no library component, a brief ignoring the researched style. `/design-flow:audit`
+  now reports all three passes and must name any that was skipped, because a skipped pass and a
+  passing one must never look alike.
+
+  25 assertions and 4 mutation guards. One guard had to be re-aimed after the harness showed the
+  obvious fixture passing **coincidentally**: disabling the `none` branch leaves the verdict
+  unchanged and alters only the reason, so the assertion that catches it is the one about the
+  message. That is exactly what `expects` exists to prevent.
+
 - **Generate the pen.dev design library from the brand pack.** (#603)
   `plugins/design-flow/scripts/pen_library.py --pack fidara --out design/library.pen`.
 

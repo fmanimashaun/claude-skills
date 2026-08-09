@@ -149,6 +149,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # regeneration is byte-identical and that it never eats the designer's own compositions.
     ("design-flow pen library selftest",
      ("python3", "plugins/design-flow/scripts/pen_library.py", "--selftest")),
+    # #600/#601. The branch that matters is the silent skip: an absent surface must degrade to
+    # today's behaviour rather than stopping, and only a fixture can hold that true.
+    ("design-flow pen compose selftest",
+     ("python3", "plugins/design-flow/scripts/pen_compose.py", "--selftest")),
     # #360, and the same argument one skill along: the quality-pass worked example states how many
     # files carry each duplicated shape, and an extraction decision rests on those numbers. NOT a
     # duplication gate — nothing here refuses a copy. It refuses a number in shipped doctrine
