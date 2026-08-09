@@ -7438,6 +7438,14 @@ boot/validation path — with a bullet each so the promotion could close them se
   install what they already have. Cost is reported **unknown** rather than zero: the CLI drives its
   own agent on the operator's Claude auth, so it spends Opus-minutes, not a figure this path can read.
 
+- **`/design-flow:setup` tells a developer the composition tier exists.** (#600) A new machine now
+  learns, at setup, whether a pen surface was found, what it would add — cheap N-way exploration,
+  token-native custom icons, OG cards with real type — and how to add either surface later (the
+  desktop app for interactive work, `npm install -g @pen.dev/cli` for headless). It **installs
+  nothing and blocks on nothing**: a developer who skips it must see no difference in any command's
+  behaviour, which is the contract the tier is asserted against. Discovering an optional tier months
+  later in some command's output is the same failure as not shipping it.
+
 - **An optional composition tier, and the intent pass that judges it.** (#600, #601)
   `scripts/pen_compose.py --surface` / `--intent`.
 
