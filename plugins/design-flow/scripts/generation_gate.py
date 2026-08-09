@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -187,18 +188,100 @@ def check_precondition(request: dict) -> None:
                 f"tier {tier} costs nothing.")
 
 
+# Words too common to prove a constraint reached the prompt. "only" appearing in a crafted prompt
+# says nothing about whether the palette did, so matching on it would make the check pass on prompts
+# that honour nothing -- a gate that cannot fail.
+_STOPWORDS = frozenset({
+    "only", "with", "that", "this", "from", "into", "onto", "over", "under", "very", "more", "most",
+    "some", "such", "than", "then", "they", "them", "have", "been", "were", "will", "your", "just",
+    "also", "must", "never", "always", "using", "used", "make", "made", "like", "each", "both",
+    "and", "the", "for", "not", "any", "all", "one", "two", "its", "per",
+})
+
+
+def _significant(text: str) -> set[str]:
+    """The words in `text` that could actually evidence a constraint: 4+ letters, not a stopword."""
+    return {w for w in re.findall(r"[a-z]{4,}", text.lower()) if w not in _STOPWORDS}
+
+
+def check_crafted_prompt(request: dict, brief: dict, surface: str) -> str:
+    """#629. Accept the agent's own prompt, but hold it to the brief's hard constraints.
+
+    THE TRADE, stated plainly. Derivation guaranteed the constraints reached the prompt and capped
+    the quality at string concatenation. Free-typing lifts the cap and drops the guarantee. This
+    keeps the guarantee mechanically and gives the phrasing back to the agent, which is the one part
+    a model is actually better at than a `"; ".join`.
+
+    The check is deliberately CRUDE and stated rather than clever: for `palette` and `ground`, at
+    least one significant word of the brief's value must appear in the prompt; for `avoid`, no
+    entry's significant words may ALL appear. A cleverer semantic check would be a second model call
+    -- another bill, and a non-deterministic gate. Crude and predictable beats subtle and unbounded
+    here, because the whole job is to refuse BEFORE the spend.
+
+    It is a floor, not a proof: an agent can satisfy it and still write a poor prompt. That is fine.
+    A floor that catches "the brief said monochrome and the prompt never mentions colour" is exactly
+    the #621 regression, and that is what it is for.
+    """
+    prompt = request["prompt"]
+    if not isinstance(prompt, str) or len(prompt.strip()) < 40:
+        raise Refusal(
+            f"the crafted `prompt` for {surface!r} is empty or too short to be one. A crafted prompt "
+            f"replaces a composed one, so it has to carry at least as much: the subject, the style, "
+            f"and the brief's constraints. Nothing was spent.")
+    # A CRAFTED PROMPT MUST SAY WHY IT IS BETTER. Not ceremony: this is the field that makes the
+    # decision reviewable later, and it is the only thing distinguishing "the agent thought about
+    # this brief" from "the agent did not read it". It lands in the prompt library beside the prompt.
+    if not str(request.get("prompt_rationale") or "").strip():
+        raise Refusal(
+            f"the request carries a crafted `prompt` for {surface!r} but no `prompt_rationale`. "
+            f"Say in one sentence what the composed prompt would have got wrong — a crafted prompt "
+            f"with no stated reason cannot be reviewed, and next time nobody can tell whether "
+            f"crafting helped. Nothing was spent.")
+
+    words = _significant(prompt)
+    for field in ("palette", "ground"):
+        value = brief.get(field)
+        if not value:
+            continue
+        wanted = _significant(", ".join(value) if isinstance(value, list) else str(value))
+        if wanted and not (wanted & words):
+            raise Refusal(
+                f"the crafted prompt for {surface!r} never mentions the brief's {field}: "
+                f"{value!r}. That is exactly how #621 was paid for — a brief stating "
+                f"'monochrome, single-hue only' and a prompt that said nothing about colour, "
+                f"answered with a full-colour photograph. Work the constraint into the prompt, or "
+                f"change the brief if it is wrong. Nothing was spent.")
+
+    for entry in (brief.get("avoid") or []):
+        banned = _significant(str(entry))
+        if banned and banned <= words:
+            raise Refusal(
+                f"the crafted prompt for {surface!r} asks for something the brief's `avoid` list "
+                f"forbids: {entry!r}. A prompt requesting what the brief rules out will be answered "
+                f"exactly as asked, and the result rejected on arrival. Nothing was spent.")
+    return prompt.strip()
+
+
 def compose_prompt(request: dict, brief: dict, pack: dict) -> str:
     """Derive the prompt. Never accept one from the caller — that is the whole point.
 
     A `prompt` key in the request is rejected rather than ignored, because silently overriding it
     would let a caller believe their text was used while it was not.
     """
-    if "prompt" in request:
-        raise Refusal(
-            "the request carries a free-typed `prompt`. Prompts are DERIVED from surface class, the "
-            "aesthetic brief for that class, and the pack — never improvised. An improvised prompt "
-            "produces the stock-art look, and it pays twice, because a vague prompt is a reroll.")
     surface = request["tier_refusal"]["surface"]
+    if "prompt" in request:
+        # #629. A CRAFTED PROMPT IS NOW ALLOWED, AND CHECKED. This used to be a flat refusal, on the
+        # grounds that an improvised prompt produces the stock-art look and pays twice. That was half
+        # right, and the half it got wrong cost real money: derivation concatenates brief fields
+        # verbatim (#621/#624), so a brief carrying a PIPELINE instruction -- "traced to a
+        # single-path SVG (currentColor)" -- posts that sentence to an image model, and a brief that
+        # contradicts itself composes a contradictory instruction. Mechanical derivation is a
+        # ceiling on quality, not a floor under it.
+        #
+        # But "record it and trust the agent" would re-open #621, filed days earlier, where the
+        # brief's constraints never reached the prompt at all. So neither extreme: the agent writes
+        # the words, and the gate still holds it to the brief's hard constraints BEFORE the spend.
+        return check_crafted_prompt(request, brief, surface)
     missing = [k for k in ("style", "mood", "subject") if not brief.get(k)]
     if missing:
         raise Refusal(f"the aesthetic brief for {surface!r} is missing {', '.join(missing)}, so a "
@@ -329,14 +412,23 @@ def check_aggregator(config: dict) -> str:
     return name
 
 
-def provenance_row(surface: str, kind: str, model: dict, prompt: str, pack: dict) -> dict:
-    """Model, prompt, cost, pack variant — without the prompt the asset is unreproducible."""
+def provenance_row(surface: str, kind: str, model: dict, prompt: str, pack: dict,
+                   crafted: bool = False, rationale: str = "") -> dict:
+    """Model, prompt, cost, pack variant — without the prompt the asset is unreproducible.
+
+    #629 added `crafted` and `prompt_rationale`. They travel with the provenance so the prompt
+    library can record WHICH prompts the agent wrote and why. Without that column the trade this
+    change makes -- agent phrasing over mechanical derivation -- could never be evaluated against
+    its own results, and an unevaluatable trade is a preference wearing a decision's clothes.
+    """
     return {
         "surface": surface,
         "kind": kind,
         "model": model.get("name"),
         "cost_usd": model.get("cost_usd"),
         "prompt": prompt,
+        "crafted": crafted,
+        "prompt_rationale": rationale,
         "pack_variant": pack.get("variant"),
     }
 
@@ -359,7 +451,9 @@ def decide(root: Path, request: dict) -> dict:
         "approved": True,
         "aggregator": aggregator,
         "prompt": prompt,
-        "provenance": provenance_row(surface, kind, model, prompt, pack),
+        "provenance": provenance_row(surface, kind, model, prompt, pack,
+                                     crafted="prompt" in request,
+                                     rationale=str(request.get("prompt_rationale") or "")),
     }
 
 
@@ -556,9 +650,53 @@ def selftest() -> int:
     # boundary case would make the declared number unreachable and quietly mean "ceiling minus one".
     run("spending exactly to the ceiling", {**CONFIG, "budget_usd": 0.01}, OK_REQ, True)
 
-    # THE COMPOSED PROMPT. A free-typed prompt is REJECTED, not ignored -- silently dropping it
-    # would let a caller believe their text was used.
-    run("a free-typed prompt", CONFIG, {**OK_REQ, "prompt": "a cool robot"}, False)
+    # #629. A CRAFTED PROMPT IS ACCEPTED, AND HELD TO THE BRIEF. This fixture used to read "a
+    # free-typed prompt is rejected" and passed `"a cool robot"` -- which after the change still
+    # refused, but for LENGTH, so the assertion silently stopped testing what its name claimed. A
+    # fixture whose meaning changes under you is worse than one that fails.
+    CRAFTED_CFG = {**CONFIG, "briefs": {"marketing-hero": {
+        "style": "minimalist-ink", "subject": "an abstract lattice", "mood": "calm",
+        "palette": ["monochrome, single-hue only"], "ground": "transparent",
+        "avoid": ["photographic backdrops"]}}}
+    GOOD = ("A minimalist-ink illustration of an abstract interlocking lattice, calm and precise, "
+            "drawn strictly monochrome in a single hue on a transparent ground, six separable "
+            "marks at one ink weight.")
+    run("a crafted prompt honouring the brief", CRAFTED_CFG,
+        {**OK_REQ, "prompt": GOOD, "prompt_rationale": "the composed one reads as a field dump"},
+        True)
+    # NO RATIONALE, NO CRAFTED PROMPT. Without it nobody can tell later whether crafting helped,
+    # which is the only way this trade can ever be re-evaluated.
+    run("a crafted prompt with no rationale", CRAFTED_CFG, {**OK_REQ, "prompt": GOOD}, False)
+    run("a crafted prompt too short to be one", CRAFTED_CFG,
+        {**OK_REQ, "prompt": "a cool robot", "prompt_rationale": "shorter is better"}, False)
+    # THE #621 REGRESSION, as a fixture: a prompt that never mentions the brief's palette is how a
+    # brief saying "monochrome, single-hue only" was answered with a full-colour photograph.
+    run("a crafted prompt that drops the palette constraint", CRAFTED_CFG,
+        {**OK_REQ, "prompt": ("A minimalist-ink illustration of an abstract interlocking lattice, "
+                              "calm and precise, on a transparent ground, six separable marks."),
+         "prompt_rationale": "tighter phrasing"}, False)
+    run("a crafted prompt that drops the ground constraint", CRAFTED_CFG,
+        {**OK_REQ, "prompt": ("A minimalist-ink illustration of an abstract interlocking lattice, "
+                              "calm, strictly monochrome in a single hue, six separable marks."),
+         "prompt_rationale": "tighter phrasing"}, False)
+    # ASKING FOR WHAT THE BRIEF FORBIDS is answered exactly as asked, then rejected on arrival --
+    # a full round trip and a full charge to learn what the brief already said.
+    run("a crafted prompt requesting what `avoid` forbids", CRAFTED_CFG,
+        {**OK_REQ, "prompt": (GOOD + " Set against rich photographic backdrops for depth."),
+         "prompt_rationale": "depth helps"}, False)
+    # THE STOPWORD FIXTURE. "monochrome, single-hue only" shares "only" with almost any English
+    # sentence, so a check that counted common words would pass on a prompt honouring nothing --
+    # a gate that cannot fail. This prompt shares ONLY the stopword and must still refuse.
+    run("a crafted prompt sharing only a stopword with the palette", CRAFTED_CFG,
+        {**OK_REQ, "prompt": ("A minimalist-ink illustration of an abstract interlocking lattice, "
+                              "calm and precise, on a transparent ground, six separable marks and "
+                              "only that."),
+         "prompt_rationale": "tighter phrasing"}, False)
+    # A brief with no palette/ground/avoid constrains nothing, so the check must stay SILENT rather
+    # than inventing a requirement -- a gate that fires on correct input gets switched off.
+    run("a crafted prompt against an unconstrained brief", CONFIG,
+        {**OK_REQ, "prompt": GOOD, "prompt_rationale": "the composed one reads as a field dump"},
+        True)
     run("brief missing its mood",
         {**CONFIG, "briefs": {"marketing-hero": {"style": "minimalist-ink", "subject": "x"}}},
         OK_REQ, False)

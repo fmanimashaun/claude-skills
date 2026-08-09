@@ -7457,6 +7457,188 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The `video` kind never checked its bytes, and `--from-url` made that reachable.** Every other
+  kind sniffed: `motion` refuses footage, `vector` refuses a raster. `video` accepted anything.
+  Survivable while the only route to a video row was the async video adapter; not survivable now
+  that `--from-url` lets any URL feed any row — and providers really do serve a **poster image at a
+  video's URL**, so a request for footage could record a PNG as a `done` video. It opens, it looks
+  plausible in a listing, and the surface plays a frozen frame. Now refused, naming the likely cause.
+
+- **The agent may now write the prompt, and a keyed adapter for the shape the top image models
+  actually serve.** (#629)
+
+  **Change type: mixed, and split accordingly.** The prompt-doctrine half is a **design decision**,
+  authority being the maintainer's reasoning recorded on the issue. The adapter half is an
+  **external claim**, so it was verified before a line was written:
+  [OpenRouter's chat-completion API reference](https://openrouter.ai/docs/api-reference/chat-completion)
+  documents `modalities` as a request field with enum `text`/`image`/`audio`, and the assistant
+  message as carrying an `images` array of `{type, image_url: {url}}`. The reporter's live billed run
+  supplied what a reference cannot: the URL is a base64 data URL and `usage.cost` returns in the same
+  response. Note the first docs page checked
+  ([features/multimodal/image-generation](https://openrouter.ai/docs/features/multimodal/image-generation))
+  documents **only** `/api/v1/images` and would have refuted the claim — the reference page is the
+  one that confirms it.
+
+  **`prompt` is no longer refused.** It was, on the grounds that an improvised prompt produces the
+  stock-art look and pays twice. Half right. The half it got wrong: derivation joins brief fields
+  verbatim (#621/#624), so a brief carrying a *pipeline* instruction — `"traced to a single-path SVG
+  (currentColor)"` — posted that sentence to an image model, and a self-contradictory brief composed
+  a contradictory instruction. Mechanical derivation is a ceiling on quality, not a floor under it.
+
+  But *"record it and trust the agent"* would re-open #621 — filed days earlier, where the brief's
+  constraints never reached the prompt at all. So neither extreme: the agent writes the words, and
+  the gate still holds it to the brief **before the spend**. A crafted prompt must carry a
+  `prompt_rationale`, must evidence the brief's `palette` and `ground`, and must not request anything
+  on its `avoid` list. The check is deliberately crude — one significant word (4+ letters, not a
+  stopword) per constraint — because a semantic check means a second model call, another bill, and a
+  non-deterministic gate. It is a floor, not a proof.
+
+  `provenance_row` gains `crafted` and `prompt_rationale`, and the prompt library records them with a
+  `source` column reading *crafted* or *composed*. Without that the trade could never be judged
+  against its own results, and an unevaluatable trade is a preference wearing a decision's clothes.
+
+  **New `openrouter-chat-image` aggregator** — `chat/completions` + `modalities: ["image","text"]`,
+  reading `choices[0].message.images[0].image_url.url` and `usage.cost`. Registered beside
+  `openrouter` rather than replacing it: both endpoints are live, a given model serves one or the
+  other, and silently rerouting a pinned project would change which model it buys from without
+  saying so. This also closes the #628 dead-end **from the generator side** — on a keyed adapter the
+  *script* decodes the bytes, so nothing has to transcribe an image it only saw rendered.
+
+  A text-only reply refuses rather than being saved (a model without the image modality answers in
+  prose about the picture it would have drawn), a link rather than a data URL points at `--from-url`,
+  and an unreported cost stays **null, never zero** — $0.00 would make the budget approve against a
+  number the provider never quoted.
+
+  Fixtures: `generation_gate.py` 57 → 64, `generate_asset.py` 121 → 133, six new mutation guards.
+  Two of those guards found real defects while being written: `images[0]` raised `IndexError` when
+  its own guard was removed, so the run died before reporting anything — a crash is not a verdict —
+  and one existing mutation still expected a fixture this change had replaced, whose name had
+  silently stopped matching what it tested.
+
+- **The assets dir splits into two named folders.** (#625, #628, #629 — **maintainer decision
+  recorded on those issues**, not an upstream claim.) Everything used to land flat under
+  `docs/assets/`: the artefacts, the manifest, the plan, and now the prompt library too. The layout
+  is now indexes at the root, contents in subfolders:
+
+  ```
+  docs/assets/
+  ├── plan.json · plan.md · manifest.json   the INDEXES — what is needed, what exists
+  ├── assets-library/                        the finished artefacts (PNG / SVG / MP4)
+  └── prompts-library/                       prompts.json + its generated prompts.md
+  ```
+
+  `--scaffold` creates both **before the first `--run`**, each with a `README.md` — not a `.gitkeep`,
+  because git does not track an empty directory and a bare `mkdir` would give the scaffolding machine
+  a layout nobody else who clones the project ever sees. That is the invisible-deliverable failure
+  `docs/coverage.html` was committed to fix.
+
+  **Kebab, not the space the layout was drawn with**: a path containing a space breaks every unquoted
+  shell one-liner in our own docs, and `lint_markdown_shell.py` checks 191 of those. The founder's
+  note said the binding requirement was the two-folder split rather than the casing.
+
+  `manifest.json` **stays at the root** — that part was not specified, so it is our call: the root
+  holds descriptions and the subfolders hold contents, and leaving it put means no existing project
+  moves a file and every doc naming `docs/assets/manifest.json` keeps working. Assets generated
+  before this change stay where they are; the manifest holds explicit paths, so only new artefacts
+  land in `assets-library/`.
+
+  Three modules encode the one decision and `asset_plan.py` holds its half as literals (it is
+  deliberately standalone), so new `scripts/check_asset_layout.py` asserts they agree — and asserts
+  it **behaviourally**, running the real `scaffold()` in a tempdir rather than reading constants: a
+  constant can agree perfectly while the code that should have used it does not. Move one and not the
+  others and `--scaffold` creates a folder nothing writes to while `--run` writes into one the
+  scaffold never made; both halves keep "working", on different paths.
+
+- **A prompt library, because the flow's own doctrine said the prompt was load-bearing and then
+  threw it away.** (#625) `generation_gate.py` states, of the prompt it composes: *"the only thing
+  that makes the asset reproducible: without it, a brand change means paying again."* And
+  `manifest_entry` recorded file, name, purpose, use_cases, avoid, visual_elements, style, kind,
+  surface — **no prompt, no model, no cost.** The provenance row carried all three, was printed to
+  stdout, and went with the scrolled buffer. Claims-vs-enforcement, in the path with a bill attached.
+
+  New `prompt_library.py` and two files beside the manifest: `docs/assets/prompts.json` (the source)
+  and `docs/assets/prompts.md` (a **generated** view, opt-in via `--render`, drift-checked by
+  `--check` once it exists, bytes a function of the data alone). Written automatically by every path
+  that produces an asset — the bought path, the agent `--record` path, and both verdicts.
+
+  Three design decisions, each because the alternative would produce a file that looked right:
+
+  - **A rung named `agent` or `pen` records `model: null`, never `"agent"`.** Those name *who did
+    the work*, not what rendered it — the real model belongs to whatever MCP the agent called and is
+    not reported back. Writing a role into a column headed `model` would answer *"which model made
+    the good one?"* with a fiction, and reuse decisions are made from that column. New `--model` and
+    `--spent` flags on `--record` let an agent state both; without them the entry says unknown and
+    the view renders **unknown** rather than a rung name.
+  - **Entries are keyed on a hash of (surface, prompt), so a re-run accumulates instead of
+    appending.** A store that grew a row per run could not answer *"did I pay for this twice?"* —
+    the duplicates would read as distinct prompts. `spend_count` and `spent_total_usd` accumulate,
+    and the view warns when either exceeds one run.
+  - **A rejected prompt stays in the library.** A store of keepers only cannot answer *"did we
+    already try this and hate it?"*, so the next run buys the same disappointment.
+
+  Recording never fails a run that already spent money: a library write that fails returns a warning
+  in the result rather than raising, because raising would discard a paid success over bookkeeping —
+  which is the very defect below.
+
+  41 assertions in `prompt_library.py --selftest`, 6 mutation guards, and `generate_asset.py`'s
+  fixtures go 66 → 102 including a real end-to-end drive of the `--record` CLI. That fixture found
+  two things: the gate refuses a second `--record` for a surface that already has an asset (correct
+  — a second one forks the surface's look), and one assertion crashed on an empty library before its
+  own failure could print, which the mutation guard caught and reported as a coincidental catch.
+
+- **The default agent path could not persist an inline-only image MCP result at all, so a billed
+  generation had nothing to record.** (#628) Reported with the receipt: `mcp__openrouter__generate-image`
+  succeeded, billed $0.04, and returned the image as an **inline block only** — no file, no path, no
+  URL. `--record` requires a file that exists, so the row stayed `awaiting-agent` after a successful
+  purchase, and nothing under `docs/assets`, `/tmp` or the caches had been written.
+
+  **This corrects the entry below, which shipped in the same branch and was wrong.** That fix told
+  the agent *"those bytes are the asset — decode them and write them to `write_to`"*. **An agent
+  cannot do that.** An inline image block is a rendered picture, not base64 it can faithfully
+  retype, and no model can retype it. Describing an impossible step as the remedy is worse than
+  silence: it reads as user error. The reporter's suggested `--from-base64 -` has the same
+  impossibility for the same reason — the agent cannot produce the base64 either.
+
+  What actually works is routing by **response shape**, which is now stated everywhere the agent
+  reads — the `awaiting-agent` reason, the approval brief, and `/design-flow:generate`:
+
+  | the MCP returns | what to do |
+  |---|---|
+  | a file path | `--record <path>` — the bytes are already on disk |
+  | **a URL** | **`--from-url <url>`** — new. A URL is *text* the agent can read and pass on; the script fetches it |
+  | the image **inline only** | **do not call it.** It bills and leaves nothing to record — configure a keyed REST rung so the *script* makes the call |
+  | you author the SVG | write it to `write_to`, then `--record` |
+
+  The brief now carries this as a `before_you_spend` block, because after the call the money is gone
+  whichever shape comes back.
+
+  `--from-url` is an ingest, not a bypass: the same gate re-runs, the format is sniffed from the
+  **fetched bytes** (a URL serving PNG for a `vector` row is refused rather than written to a `.svg`
+  that lies), and the manifest and prompt library are written as for any purchase. It fetches
+  **http(s) only** — a `file:` URL would read the machine and commit a local secret as though a
+  model had made it — refuses an empty download, and caps at 64 MB.
+
+  `generate_asset.py`'s fixtures go 102 → 121, including the ingest end-to-end through the real CLI
+  over a localhost socket, so the whole chain is exercised without billing anyone. Three new mutation
+  guards. One of them found a real bug while being written: `urllib.request.Request` parses the URL
+  in its constructor, so a malformed URL raised `ValueError` *outside* the try block — an uncaught
+  traceback rather than a refusal, and a traceback is not a verdict.
+
+- **The agent path never said that the inline image IS the asset.** (#627) A paid generation succeeded, the
+  provider MCP returned the bytes inline as it always does, and the agent then went looking for a
+  file on disk — found none, and reported "the MCP returned the image inline only". The $0.04 bought
+  a good asset that was never saved.
+
+  Nothing was broken: `awaiting-agent` said *"write the file at `write_to`"* and the command said
+  *"MCP call, or write the SVG — then `--record`"*. Neither closed the loop between **the response
+  you got** and **the file you must write**, and that gap costs money in the one direction that
+  matters — the next attempt pays for the same image again.
+
+  Both strings now say it outright: an image MCP hands back bytes, not a path; those bytes are the
+  asset; save them to `write_to` yourself.
+
 ### 1.23.3 — 2026-08-09
 
 - **The brief's constraints never reached the prompt, and absence was narrated into it.** (#621)
