@@ -7419,6 +7419,57 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Compile a `.pen` design into token-native SVG, rather than exporting one.** (#602)
+  `plugins/design-flow/scripts/pen_to_svg.py`.
+
+  pen.dev exports `png/jpeg/webp/pdf` and **no SVG** — read off `export_nodes`' own tool schema. The
+  first conclusion drawn from that was that pen could not serve illustration at all. Wrong question:
+  the `.pen` format **is** SVG-shaped, since a `path` carries `geometry`, an SVG path string, beside
+  a `viewBox`. Nothing has to be recovered from a render.
+
+  **And compiling beats the export we do not have.** Every design tool's SVG export emits hardcoded
+  hex — exactly what `design-auditor` refuses by name (#135, *"a `fill=`/`stroke=` hex inside a
+  component"*), so an exported asset arrives as a conformance violation needing manual recolouring. A
+  `.pen` fill that references a variable is written `$--token` and compiles to `var(--token)`: born
+  conformant, recolouring with the brand pack, and serving **light and dark from one file**. Verified
+  end to end — an illustration authored in pen against the fidara pack, compiled, and rendered in
+  both themes from a single asset.
+
+  **It reads the file, and that is forced rather than chosen.** `Get("<pathId>").geometry` returns
+  `"..."` through the pencil MCP, on a direct single-node read as well as through a visitor — the one
+  field this needs is the one the structured API elides. The file is plain JSON (measured on three
+  real documents), so reading it works; the server's own instruction that *".pen files are encrypted:
+  never use Read or Grep"* is false as a claim about bytes, and obeying it would rule out the only
+  path that functions.
+
+  **It refuses rather than approximates**, because a degraded compile looks finished and nobody
+  re-checks it: shaders, mesh gradients, conic gradients, image fills, arc/donut ellipses, paths with
+  no geometry, and dimensions bound to a variable. A **literal colour is an upstream problem** — it
+  means someone composed against a raw hex — so it is refused by node, not guessed at. That refusal
+  fired on unmodified vendor content the first time it ran.
+
+  36 assertions and 5 mutation guards, each guard turning a refusal into an approximation. Fixtures
+  are hand-authored JSON, never a captured `.pen`: a real document would drag the vendor's version
+  churn into the suite and could not carry a deliberately malformed node, which every refusal needs.
+
+- **`/design-flow:generate` documents when a design tool beats a model** — compile the vector, export
+  the raster. A custom icon or spot illustration compiles to SVG; an OG/social/app-store surface
+  exports to PNG, because its value is real type at a fixed size and there is nothing to compile to.
+  Custom icons stay the exception to Lucide, composed *beside* real Lucide glyphs, since the way a
+  custom glyph gives itself away is optical weight that only shows side by side.
+
+  Three measured gotchas are written down because each produces a plausible wrong answer instead of
+  an error: a token push that omits an explicit theme mode is **silently dropped** and the artwork
+  exports **black**; a per-node screenshot rendered only the background while the export was correct;
+  and ids cannot be chosen, so assets are addressed by **name**.
+
+- **`*.pen` is gitignored.** The pen.dev app writes documents wherever it is pointed, including the
+  repository root, where one was found untracked. Not slash-anchored — a stray is a stray at any
+  depth, and #197's lesson was that a pattern matching only the case you happened to test is a guard
+  that has never fired.
+
 ### 1.22.0 — 2026-08-09
 
 - **The cost preflight read a config key `--scaffold` has never written, so every plan cost $0.00
