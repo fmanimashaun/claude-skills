@@ -80,6 +80,31 @@ Disagree with a rule on a specific line? Disable it **with a reason**:
 A bare disable with no reason is itself a finding, deliberately: the first justified exception is
 what teaches everyone else to switch the checker off wholesale.
 
+## The audit is a three-pass progression — report all three, name any that was skipped
+
+Each pass sees something only it can, and the earlier ones cannot substitute for the later:
+
+| # | pass | subject | blocks? | what only it sees |
+|---|---|---|---|---|
+| 1 | **intent** | the composition, before code | **no** | is this the researched style; does it use the library; is the copy real |
+| 2 | **source** | the ERB | **yes** | role tokens, `-foreground` pairing, ARIA presence, primitives, motion **count** |
+| 3 | **rendered** | the running browser | **yes** | computed contrast, resolved tokens, focus rules that no longer match |
+
+**Pass 1 never blocks, and it cannot judge conformance.** A design cannot state whether the
+implementation has a focus ring, whether ARIA is correct, or whether `min-h-touch` is held — those
+are properties of code that does not exist yet. Run it with
+`pen_compose.py --intent <composition>` when a composition preceded the code; say plainly that it
+was skipped when none did.
+
+**Say which passes ran.** A pass that was skipped and a pass that passed must never look alike —
+that is the whole reason `maintainer_doctor` reports `skip` as a third state rather than folding it
+into a pass. Report the three explicitly, including *"pass 1: skipped — this change had no
+composition step"*.
+
+**Passes 2 and 3 produce identical verdicts whether or not pass 1 ran.** Nothing from a composition
+may reach `design-auditor`'s inputs; if it did, an advisory step would be quietly changing a
+blocking one.
+
 ## Browser mode — measure conformance on the rendered page (optional, #107)
 
 The checklist below reads **source**, so it cannot see what the cascade resolves to: a colour

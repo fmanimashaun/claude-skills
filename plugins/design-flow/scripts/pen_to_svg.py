@@ -55,11 +55,59 @@ UNREPRESENTABLE = {
 
 # The node types this compiles. Stated as data so `--selftest` can assert the handler set matches,
 # rather than a reader trusting that the if-chain below is exhaustive.
-HANDLED = ("frame", "group", "rectangle", "ellipse", "polygon", "path", "text")
+HANDLED = ("frame", "group", "rectangle", "ellipse", "polygon", "path", "text", "ref")
 
 
 class Refusal(Exception):
     """A construct that must not be approximated. Carries the node so the fix is actionable."""
+
+
+def index_by_id(nodes: list, into: dict | None = None) -> dict:
+    """Every node in the document, by id — what a `ref` needs to resolve against."""
+    into = {} if into is None else into
+    for n in nodes:
+        if n.get("id"):
+            into[n["id"]] = n
+        index_by_id(n.get("children") or [], into)
+    return into
+
+
+def resolve_ref(node: dict, index: dict) -> dict:
+    """A `ref` instance flattened into the geometry it stands for, with its overrides applied.
+
+    A library expresses variants as REFS rather than copies -- one base whose radius and padding are
+    defined once, and four instances that repaint it. That is better than duplication for the usual
+    reason, and it means this compiler must resolve an instance rather than refuse one: refusing
+    would make exactly the well-authored library uncompilable and reward the copy-paste one.
+
+    Overrides land in two places, matching the format: the instance's own properties replace the
+    base's root properties, and `descendants` replaces properties on named children BY ID -- which
+    is addressable at all only because ids are derived rather than random.
+    """
+    target = index.get(node.get("ref"))
+    if target is None:
+        raise Refusal(
+            f"node {node.get('id')!r} is a `ref` to {node.get('ref')!r}, which is not in this "
+            f"document. A dangling ref is not a syntax error in pen, so it renders as nothing — "
+            f"regenerate the library, or point it at a component that exists.")
+    if target.get("type") == "ref":
+        raise Refusal(f"node {node.get('id')!r} refs {node.get('ref')!r}, which is itself a ref. "
+                      f"Chained instances are not resolved here — ref the base component.")
+    over = {k: v for k, v in node.items()
+            if k not in ("type", "id", "ref", "name", "reusable", "descendants", "children")}
+    merged = {**target, **over, "type": target["type"], "id": node.get("id", target["id"])}
+    patch = node.get("descendants") or {}
+    if patch:
+        def apply(kids: list) -> list:
+            out = []
+            for k in kids:
+                k = {**k, **patch[k["id"]]} if k.get("id") in patch else dict(k)
+                if k.get("children"):
+                    k["children"] = apply(k["children"])
+                out.append(k)
+            return out
+        merged["children"] = apply(target.get("children") or [])
+    return merged
 
 
 def paint(value, node_id: str, prop: str, defs: list | None = None) -> str:
@@ -149,8 +197,10 @@ def num(v, default: float = 0.0) -> float:
     return float(v) if v is not None else default
 
 
-def emit(n: dict, dx: float, dy: float, out: list, defs: list) -> None:
+def emit(n: dict, dx: float, dy: float, out: list, defs: list, index: dict) -> None:
     """One node → SVG elements, translated into the root node's coordinate space."""
+    if n.get("type") == "ref":
+        n = resolve_ref(n, index)
     kind = n.get("type")
     nid = n.get("id", "?")
     if kind in UNREPRESENTABLE:
@@ -179,7 +229,7 @@ def emit(n: dict, dx: float, dy: float, out: list, defs: list) -> None:
             out.append(f'  <rect x="{x}" y="{y}" width="{w}" height="{h}" '
                        f'fill="{paint(n["fill"], nid, "fill", defs)}"/>')
         for child in n.get("children") or []:
-            emit(child, x, y, out, defs)
+            emit(child, x, y, out, defs, index)
         close()
         return
 
@@ -285,12 +335,18 @@ def compile_svg(doc: dict, root: str | None = None, title: str | None = None) ->
     if node is None:
         raise Refusal(f"no node named {root!r} in this document" if root
                       else "this document has no nodes to compile")
+    index = index_by_id(roots)
+    # RESOLVE BEFORE MEASURING. A `ref` carries overrides and a position but takes its SIZE from the
+    # component it instances, so reading width off the instance reports "no size" for a variant that
+    # is perfectly well defined -- refusing the well-authored library and passing the copy-pasted one.
+    if node.get("type") == "ref":
+        node = resolve_ref(node, index)
     w, h = num(node.get("width")), num(node.get("height"))
     if not w or not h:
         raise Refusal(f"node {node.get('name') or node.get('id')!r} has no size to compile into")
     body: list[str] = []
     defs: list[str] = []
-    emit(node, -num(node.get("x")), -num(node.get("y")), body, defs)
+    emit(node, -num(node.get("x")), -num(node.get("y")), body, defs, index)
     label = title or node.get("name") or "illustration"
     return "\n".join([
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" '

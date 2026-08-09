@@ -238,7 +238,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_to_svg.py" design.pen --node "Empty l
 ### Scaffold the library first — compose *from* the brand, not beside it
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/library.pen
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/fidara.lib.pen
 ```
 
 That writes a `.pen` document holding **every role token as a variable, both modes explicit**, plus
@@ -251,15 +251,41 @@ geometry. Without it you compose from bare rectangles and the result is off-bran
 right alone. Regenerate and the divergence cannot survive; `--check` reports a stale one:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/library.pen --check
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/fidara.lib.pen --check
 ```
+
+### Buying a composed raster: the `pen` rung
+
+For an OG card or a social preview, put `pen` on the `static` ladder and `--run` composes it through
+the CLI instead of an image model:
+
+```json
+"ladders": {
+  "static": [{ "name": "pen", "cost_usd": 0.0 }]
+}
+```
+
+**`cost_usd: 0.0` is a FLOOR, not a price** — the same caveat the `agent` rung carries. pen.dev is
+free today and its owner has said pricing may come, and the CLI drives its own agent on **your**
+Claude auth, so what it actually spends is Opus-minutes rather than a figure this path can read. The
+adapter reports the cost as *unknown* instead of asserting zero. Nothing local can detect a vendor's
+price change, which is why this is a sentence for you rather than a check that could never fire.
+
+**It takes no API key.** pen is a local binary carrying its own auth, so it sits with `agent` in the
+keyless set — asking for `api_key_env` here would refuse a zero-cost route for a credential it never
+uses.
+
+If the binary is absent the rung refuses and **says only what a PATH miss proves**: that the `pen`
+CLI is not on PATH. pen.dev also ships as a user-scoped MCP server registered outside the repo, so a
+provisioned machine can fail this probe — claiming "pen.dev is not installed" would send you to
+install what you already have.
 
 **Check pen accepts it, headlessly, before you rely on it.** The document is written to the published
 schema, but "matches the schema" is evidence rather than proof — and the MCP cannot open a file to
 tell you. The CLI can, with no GUI and no open document:
 
 ```bash
-pen interactive -i design/library.pen -o /tmp/pen-load-check.pen
+pen interactive -i design/fidara.lib.pen -o /tmp/pen-load-check.pen
 ```
 
 Its shell takes `get_app_state({ include_schema: false })` then `exit()`. A document that loads and
@@ -288,6 +314,12 @@ than an error:
   the variables back and check both modes survived.
 - **Verify with the exporter, not the on-screen preview.** A per-node screenshot rendered only the
   background while the export was correct, which would tell an agent its work had failed.
+- **Confirm which document you are actually addressing, before every export.** A `filePath` naming a
+  file that is *not* open in the editor is **silently resolved against the active document** rather
+  than refused — so the tool answers confidently about the wrong file, and a missing node reads as
+  "my composition is broken" instead of "you are looking somewhere else". `get_app_state` names the
+  active editor; check it matches the file you mean, and open the file you mean if it does not. This
+  is the one pen behaviour here that produces a *confident* wrong answer rather than a blank one.
 
 ## 4b. Producing it
 
