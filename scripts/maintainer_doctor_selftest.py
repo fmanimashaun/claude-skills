@@ -53,7 +53,8 @@ def _git(cwd: Path, *args: str) -> str:
 
 def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = False,
             marketplace: bool = True, corpora: bool = False,
-            direct_to_main: bool = False, gitignore: str | None = "real") -> Path:
+            direct_to_main: bool = False, gitignore: str | None = "real",
+            promotion: str | None = None) -> Path:
     """A real repo with a real remote, shaped to trigger (or not) one specific check.
 
     `gitignore`: "real" copies the shipped `.gitignore` (so the ignore-rule check is exercised
@@ -98,6 +99,26 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
     _git(work, "commit", "-m", "dev work")
     _git(work, "push", "-u", "origin", "dev")
 
+    if promotion:
+        # A REAL promotion, done both ways, because the difference is invisible in the tree and
+        # decisive in the history. Both leave `main` byte-identical to `dev`; only the merge leaves
+        # a commit on `main` with a parent on `dev`, and only that makes the NEXT promotion mergeable.
+        _git(work, "checkout", "main")
+        if promotion == "squash":
+            _git(work, "merge", "--squash", "dev")
+            _git(work, "commit", "-m", "release: v1 (squashed — this is the trap)")
+        else:
+            _git(work, "merge", "--no-ff", "dev", "-m", "release: v1")
+        _git(work, "push", "origin", "main")
+        _git(work, "checkout", "dev")
+        # dev moves on afterwards, which is the ordinary mid-cycle state and the one that made the
+        # first version of this check useless: `dev` is not an ancestor of `main` in EITHER case, so
+        # asking that question passes the squash. The fixture keeps this here on purpose.
+        (work / "after.txt").write_text("more dev work\n")
+        _git(work, "add", "-A")
+        _git(work, "commit", "-m", "dev work after the release")
+        _git(work, "push", "origin", "dev")
+
     if direct_to_main:
         # A commit that exists only on main -- invisible to every future dev-based change.
         _git(work, "checkout", "main")
@@ -140,6 +161,7 @@ def diagnose(work: Path, *, fix: bool = False) -> md.Doctor:
         d.check_branch()
         d.check_stale_main_ref()
         d.check_dev_current()
+        d.check_promotion_was_a_merge()
         d.check_no_direct_to_main()
         d.check_unshipped()
         d.check_corpora()
@@ -177,6 +199,34 @@ def run() -> int:
     # Exercised against the `.gitignore` we actually ship, so this PASS is a statement about
     # our real patterns rather than about a stand-in written to satisfy it.
     expect("healthy", d, "corpora ignore rules", md.PASS)
+
+    # ---- a SQUASHED promotion, which is what broke v1.84.0 ------------------------------
+    # v1.83.0 was squash-merged into `main`. A squash keeps the CONTENT and drops the ANCESTRY, so
+    # main's tip had one parent, the merge base fell back two releases, and the next promotion hit
+    # six conflicts on files nobody had edited twice. Nothing asserted it, because CLAUDE.md's
+    # "a promotion is a merge commit" was prose.
+    d = diagnose(fixture(promotion="squash"))
+    r = expect("squashed promotion", d, "last promotion", md.FAIL)
+    _tick()
+    if r and "squash" not in (r.detail + r.remedy).lower():
+        FAILURES.append(
+            "the squashed-promotion finding must name the cause, or the remedy reads as generic "
+            f"merge advice; detail={r.detail!r}"
+        )
+    _tick()
+    if r and "--merge" not in r.remedy:
+        FAILURES.append(
+            "the remedy must name `--merge` explicitly. `gh pr merge` defaults are the whole trap: "
+            f"naming the defect without the flag is how it recurs. remedy={r.remedy!r}"
+        )
+
+    # ---- ...and the SAME fixture merged properly must stay SILENT ------------------------
+    # The negative half. Both shapes leave `main` byte-identical to `dev` and both leave `dev` a
+    # non-ancestor of `main` once dev moves on, so a check that cannot tell them apart would either
+    # pass both (useless) or fail both (switched off within a week).
+    expect("merged promotion", diagnose(fixture(promotion="merge")), "last promotion", md.PASS)
+    # A repo that has never promoted must not be accused of squashing one.
+    expect("never promoted", diagnose(fixture()), "last promotion", md.PASS)
 
     # ---- the #197 regression: directory-only patterns cannot match the prescribed layout --
     # The pre-#197 `.gitignore` verbatim. This is the negative test the original rule never had:

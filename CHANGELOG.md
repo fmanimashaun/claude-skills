@@ -7,6 +7,37 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Nothing asserted that a promotion is a merge commit, and a squash broke the next release.**
+  (#597) CLAUDE.md has said *"Release = one promotion PR `dev → main` (a merge commit)"* for eleven
+  releases. v1.83.0 was squash-merged anyway, and prose does not merge anything.
+
+  A squash keeps dev's **content** and drops its **ancestry**: `main` got a one-parent commit
+  holding dev's tree without descending from it, so the merge base fell back two releases, git began
+  seeing both sides as having independently changed the same files, and the **v1.84.0 promotion
+  could not merge** — six conflicts on files nobody had edited twice, in a repo where
+  `git diff dev main` was otherwise clean.
+
+  `maintainer_doctor.py` now asserts it: **`main`'s tip must BE a merge and have a parent on
+  `dev`.** Both halves are load-bearing, and the fixture is what proved it — a squash's single
+  parent is `main`'s own previous tip, which for a repo's first promotion is itself an ancestor of
+  `dev`, so "has a parent on dev" alone passes the exact trap the check exists for. The first
+  formulation was weaker still and worth recording: *"is `dev` an ancestor of `main`"* is the
+  **wrong question**, because mid-cycle `dev` has legitimately moved past the last release — it
+  would have waved the real squash straight through.
+
+  Two negative tests and a silent one, all against real git repositories with a real promotion
+  performed both ways: the squash **fails**, the merge **passes**, and a repo that has never
+  promoted is not accused of squashing one. The finding must also name `--squash` as the cause and
+  `--merge` as the remedy, asserted — naming a defect without the flag that prevents it is how it
+  recurs.
+
+  It is a **diagnostic**, not a gate, so `--gates-only` (what CI runs) skips it. That is the correct
+  classification — it is a question about branch topology at promotion time, not about repository
+  content — but it means the full `maintainer_doctor.py` has to be run before a promotion, which
+  CLAUDE.md now says.
+
 ### 2026-08-08b (v1.81.0)
 
 - **The README was 913 lines and named version 1.3.1 while the marketplace shipped 1.80.0.** It also
