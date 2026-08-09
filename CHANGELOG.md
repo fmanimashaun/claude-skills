@@ -7566,8 +7566,6 @@ boot/validation path — with a bullet each so the promotion could close them se
   a second one and was made multi-line — an ambiguous anchor is a mutation that silently moves to a
   different rule.
 
-### Unreleased
-
 - **The chat-image adapter silently dropped the style reference.** (#643) Self-reported, one day
   after it shipped in v1.87.0. `call_openrouter_chat_image` accepted a `reference` parameter and
   never used it, while `call_gemini` and `call_openrouter` both send theirs:
