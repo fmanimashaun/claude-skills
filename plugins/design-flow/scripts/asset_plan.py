@@ -23,9 +23,13 @@ STATUS IS RECORDED FROM WHAT HAPPENED, never from what was attempted. A row is `
 asset is on disk; a failure keeps the reason verbatim. A planner that marks rows complete because it
 tried is worse than no planner, because the gap it exists to show is the first thing it hides.
 
-SCAFFOLDING WRITES A PLACEHOLDER KEY ON PURPOSE. `generate_asset.py` distinguishes an absent key from
-a placeholder and refuses on both, so the scaffolded state is safe: the pipeline is wired, nothing
-can be spent, and the message says which step is outstanding rather than reading like an outage.
+THE SCAFFOLDED STATE IS SAFE, and no longer by holding a placeholder API key. It writes
+`aggregator: "agent"` and no key at all, because the default generator is the agent itself — it
+calls a connected provider MCP or authors SVG directly. What makes the state safe now is that the
+paid rungs ship UNPRICED and an unpriced row is refused before the executor runs, so nothing can be
+bought until someone looks a price up and writes it in. (This paragraph described the placeholder
+key for two releases after the scaffold stopped writing one, which is the shape of defect this
+file's own gates exist to catch: doctrine outliving the code it describes.)
 
 Exit codes:  0 clean · 1 the plan has rows that did not complete · 2 unusable input or config
 
@@ -46,7 +50,7 @@ from pathlib import Path
 
 PLAN_PATH = Path("docs/assets/plan.json")
 CONFIG_PATH = Path(".design-flow/generation.json")
-PLACEHOLDER_KEY_ENV = "OPENROUTER_API_KEY"
+RENDER_PATH = Path("docs/assets/plan.md")
 
 # A planned row must say enough to be GENERATED and enough to be REVIEWED. `why` is the one that
 # looks optional and is not: a row nobody can justify is a row nobody should pay for, and it is the
@@ -158,10 +162,18 @@ def discover_models(config: dict) -> dict:
     """
     import os
     import urllib.request
-    key = os.environ.get(config.get("api_key_env", "")) or ""
+    # `api_key_env` is deliberately ABSENT from a scaffolded config -- the agent path needs no key.
+    # So name a real variable here rather than interpolating the missing setting, which printed
+    # "--discover needs $None set" on every default install: a message that reads like a bug in the
+    # tool when the actual answer is "this one command needs a key the rest of the flow does not".
+    named = config.get("api_key_env") or "OPENROUTER_API_KEY"
+    key = os.environ.get(named) or ""
     if not key:
-        raise SystemExit(f"--discover needs ${config.get('api_key_env')} set; it queries the "
-                         f"provider for the current model list.")
+        raise SystemExit(
+            f"--discover needs ${named} set: it is the one command here that talks to the provider "
+            f"directly, to list the current model IDs. The generation path itself does not need a "
+            f"key — the agent calls a connected MCP or authors the asset — so this is not a missing "
+            f"setup step, just a prerequisite for this command.")
     req = urllib.request.Request("https://openrouter.ai/api/v1/images/models",
                                  headers={"Authorization": f"Bearer {key}"})
     try:
@@ -288,8 +300,116 @@ def load_plan(root: Path) -> list[dict]:
         raise SystemExit(f"{PLAN_PATH} is not valid JSON ({exc})")
 
 
+def load_config(root: Path) -> dict:
+    """The generation config, or {} when there is none yet.
+
+    One reader, because three call sites each opening the file their own way is how one of them ends
+    up reading a key the writer does not emit — which is exactly the defect `ladder_for` documents.
+    """
+    path = root / CONFIG_PATH
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise SystemExit(f"{CONFIG_PATH} is not valid JSON ({exc})")
+
+
 def save_plan(root: Path, rows: list[dict]) -> None:
     (root / PLAN_PATH).write_text(json.dumps({"assets": rows}, indent=2) + "\n", encoding="utf-8")
+    # RE-RENDER HERE rather than at each call site, so a mutation path added later cannot forget.
+    # Only when the table already exists: rendering one nobody asked for would create a file the
+    # scaffold does not make and `--check` would then hold the project to it.
+    if (root / RENDER_PATH).is_file():
+        (root / RENDER_PATH).write_text(render_plan(rows, load_config(root)), encoding="utf-8")
+
+
+RENDER_BANNER = ("<!-- GENERATED from docs/assets/plan.json by asset_plan.py --render.\n"
+                 "     Do not hand-edit: the plan is the source, this is a view of it.\n"
+                 "     Rebuild:  python3 <plugin>/scripts/asset_plan.py --render\n"
+                 "     Staleness is reported by --check once this file exists. -->\n")
+
+
+def _cell(value) -> str:
+    """One table cell: pipes escaped, newlines flattened, empty rendered as an em dash."""
+    text = str(value if value not in (None, "") else "—").replace("|", "\\|")
+    return " ".join(text.split())
+
+
+def render_plan(rows: list[dict], config: dict) -> str:
+    """The plan as a markdown table — GENERATED, never hand-maintained.
+
+    JSON is the right shape for the agent that runs the plan and the wrong shape for the human who
+    has to review it, which is the step the plan exists for. So both, from one source.
+
+    THE TABLE IS DERIVED, and that is the load-bearing property. A hand-maintained copy is a second
+    source of truth that disagrees with the first within a week and disagrees SILENTLY, because a
+    stale table still looks like a table. Two rules follow, both learned from `docs/coverage.html`:
+
+      1. The bytes are a function of the DATA and nothing else -- no timestamp, no git SHA, no
+         absolute path. Anything else makes the staleness check unpassable by construction, because
+         re-rendering an unchanged plan would produce different bytes.
+      2. The totals come from `status_report()`, the same tally `--status` prints, rather than from
+         this function recounting the rows. A derived total computed twice can disagree with itself,
+         and the version a human reads is the one nothing else checks.
+
+    Cost is shown per row so the unpriced ones are VISIBLE rather than implied: an unpriced row is
+    the one that refuses the run, and reading "—" in a cost column is how a reviewer sees why.
+    """
+    counts, outstanding = status_report(rows)
+    total, unpriced = plan_pricing(rows, config)
+    unpriced_ids = {id(r) for r in unpriced}
+
+    # Only the statuses that HAPPENED. "0 failed · 0 skipped" is noise in a document whose whole
+    # purpose is being read quickly, and a zero says nothing the absence of a row does not.
+    tally = " · ".join(f"{n} {status}" for status, n in sorted(counts.items()) if n)
+    head = [RENDER_BANNER, "# Asset plan\n",
+            f"**{len(rows)} row(s)** — {tally or 'nothing planned yet'}.",
+            f"**{outstanding} outstanding**, estimated floor **${total:.2f}** to finish.\n"]
+    if unpriced:
+        head.append(
+            f"> **{len(unpriced)} row(s) have no price.** `--run` refuses the plan until a "
+            f"`cost_usd` is written into `ladders.<kind>` — an unpriced row costs $0.00 to the "
+            f"budget and whatever the provider charges in reality.\n")
+    if not rows:
+        head.append("_No rows yet. An empty plan is unplanned, not finished._\n")
+        return "\n".join(head)
+
+    head.append("| # | surface | kind | status | group | priority | est. | file | why |")
+    head.append("|---|---|---|---|---|---|---|---|---|")
+    for i, row in enumerate(rows, 1):
+        if row.get("status") in ("done", "skipped"):
+            est = "—"                       # settled rows cost nothing; a re-run never re-buys them
+        elif id(row) in unpriced_ids:
+            est = "**unpriced**"
+        else:
+            est = f"${cheapest_rung(ladder_for(config, row.get('kind', 'static'))):.2f}"
+        head.append("| " + " | ".join([
+            str(i), _cell(row.get("surface")), _cell(row.get("kind", "static")),
+            _cell(row.get("status", "planned")), _cell(row.get("group")),
+            _cell(row.get("priority")), est,
+            f"`{_cell(row['file'])}`" if row.get("file") else "—",
+            _cell(row.get("why")),
+        ]) + " |")
+    head.append("\n_Estimates are a **floor**: every row is priced at its kind's cheapest rung, and "
+                "a row that fails its acceptance check climbs and costs more._\n")
+    return "\n".join(head)
+
+
+def render_drift(root: Path, rows: list[dict], config: dict) -> list[str]:
+    """Is the committed table still the plan?
+
+    Absent, this says NOTHING -- the table is opt-in, and a check that demanded a file the scaffold
+    never creates would fail every project that does not want one. Once it exists it is held current,
+    because a rendered view that is allowed to rot is worse than no view: it reads as authoritative.
+    """
+    path = root / RENDER_PATH
+    if not path.is_file():
+        return []
+    if path.read_text(encoding="utf-8") != render_plan(rows, config):
+        return [f"{RENDER_PATH} no longer matches the plan it was rendered from. It is generated, "
+                f"so the fix is to rebuild it (--render), not to edit it."]
+    return []
 
 
 def check_plan(rows: list[dict], briefs: dict | None = None) -> list[str]:
@@ -329,28 +449,65 @@ def check_plan(rows: list[dict], briefs: dict | None = None) -> list[str]:
     return problems
 
 
-def cheapest_rung(ladder: list[dict]) -> float:
-    """The cheapest PRICED rung. An unpriced one is skipped, never counted as free.
+def ladder_for(config: dict, kind: str) -> list[dict]:
+    """The rungs that price ONE kind.
 
-    Averaging a missing price to 0 made every unpriced model free, so a plan of them cost nothing
-    and the ceiling could not refuse it -- the estimate agreed with the budget by construction.
-    The gate refuses an unpriced rung outright; this keeps the ESTIMATE honest in the meantime, so
-    `--run`'s preflight does not quietly under-report what a plan will cost.
+    Per-kind first, with the flat `ladder` as the fallback, matching `generation_gate.py` exactly --
+    and reading the same key the scaffold WRITES, which is the defect this replaces. `--scaffold`
+    emits `ladders` (per kind); the cost path read `ladder` (flat), which is absent from every
+    scaffolded config, so it resolved to `[]` and every plan cost $0.00 no matter how many rows it
+    held. The refusal below then compared 0.0 against the ceiling, could not fire, and `--run` fell
+    through to the executor. A guard whose input is always zero is not a lenient guard; it is a
+    guard that has been switched off, and nothing said so.
+
+    The kinds are priced separately because they are not close: a video rung is expensive by an
+    order of magnitude and a vector rung the agent authors is free. One flat ladder had to be wrong
+    for at least one of them.
+    """
+    ladders = config.get("ladders") or {}
+    return ladders.get(kind) or config.get("ladder") or []
+
+
+def cheapest_rung(ladder: list[dict]) -> float | None:
+    """The cheapest PRICED rung, or None when the ladder prices nothing.
+
+    None rather than 0.0, and that is the whole point. Averaging a missing price to 0 made every
+    unpriced model free, so a plan of them cost nothing and the ceiling could not refuse it -- the
+    estimate agreed with the budget by construction. Returning 0.0 for a ladder with no priced rung
+    at all was the same bug one level up, surviving the fix that named it: an unpriced kind is not
+    a free kind, it is a kind nobody has costed, and the caller has to be able to tell those apart.
     """
     priced = [float(r["cost_usd"]) for r in ladder if r.get("cost_usd") is not None]
-    return min(priced) if priced else 0.0
+    return min(priced) if priced else None
 
 
-def plan_cost(rows: list[dict], config: dict) -> float:
-    """What finishing the outstanding rows would cost, at the CHEAPEST rung.
+def plan_pricing(rows: list[dict], config: dict) -> tuple[float, list[dict]]:
+    """(floor cost of the outstanding rows, the rows whose kind prices nothing).
 
     Cheapest rung because that is where every row starts; a row only climbs when it fails a stated
     acceptance check, and budgeting for a climb nobody has needed yet would refuse plans that are
     affordable. The estimate is therefore a floor, and it is labelled as one wherever it is printed.
+
+    The unpriced list is returned SEPARATELY rather than folded into the total, because those two
+    answers want opposite handling: an expensive plan is refused against the ceiling and can be made
+    affordable by dropping rows, while an unpriced plan cannot be reasoned about at all and no
+    ceiling refuses it. Summing them would let a plan nobody has costed read as a cheap one.
     """
-    ladder = config.get("ladder") or []
-    rung = cheapest_rung(ladder)
-    return round(rung * sum(1 for r in rows if r.get("status") not in ("done", "skipped")), 4)
+    total, unpriced = 0.0, []
+    for row in rows:
+        if row.get("status") in ("done", "skipped"):
+            continue
+        rung = cheapest_rung(ladder_for(config, row.get("kind", "static")))
+        if rung is None:
+            unpriced.append(row)
+        else:
+            total += rung
+    return round(total, 4), unpriced
+
+
+def plan_cost(rows: list[dict], config: dict) -> float:
+    """The floor cost alone. Unpriced rows contribute nothing HERE and are refused by the caller."""
+    return plan_pricing(rows, config)[0]
 
 
 def affordable(rows: list[dict], config: dict, spent: float) -> tuple[list[dict], list[dict]]:
@@ -370,9 +527,14 @@ def affordable(rows: list[dict], config: dict, spent: float) -> tuple[list[dict]
 
     `priority` is optional and defaults to plan order. A group takes the BEST priority among its
     members, so marking one row urgent pulls its partner along rather than orphaning it.
+
+    ROWS ARE PRICED PER KIND, by the same two functions `plan_pricing` uses. This used to compute
+    "the cheapest rung" its own second way -- `min(float(r.get("cost_usd", 0)) ...)` over a flat
+    ladder -- which disagreed with `cheapest_rung` in two ways at once: it counted an unpriced rung
+    as free, and it raised `TypeError` on a rung whose `cost_usd` is explicitly `null`, which is
+    what the scaffold writes for video. Two functions answering one question is how a split like
+    that survives; there is now one answer.
     """
-    ladder = config.get("ladder") or []
-    rung = min((float(r.get("cost_usd", 0)) for r in ladder), default=0.0)
     remaining = float(config.get("budget_usd", 0)) - spent
     outstanding = [r for r in rows if r.get("status") not in ("done", "skipped")]
 
@@ -389,7 +551,17 @@ def affordable(rows: list[dict], config: dict, spent: float) -> tuple[list[dict]
 
     fits, over = [], []
     for members in ordered:
-        cost = rung * len(members)
+        rungs = [cheapest_rung(ladder_for(config, r.get("kind", "static"))) for _, r in members]
+        if any(r is None for r in rungs):
+            # A group holding a row nobody has costed cannot be called affordable. Treating it as
+            # free is how an unpriced plan reads as one that fits inside any budget.
+            over.extend(r for _, r in members)
+            continue
+        # Summed with the Nones already filtered rather than relying on the guard above to have
+        # removed them. Not defensiveness for its own sake: `sum([0.01, None])` raises, and a
+        # TypeError is not a verdict -- it makes the line above impossible to test, because
+        # disabling it crashes the suite instead of failing the assertion that names the bug.
+        cost = sum(r for r in rungs if r is not None)
         if cost <= remaining:
             remaining -= cost
             fits.extend(r for _, r in members)
@@ -472,6 +644,8 @@ def main(argv: list[str]) -> int:
                     help="list the provider's current model IDs and flag stale ones in config")
     ap.add_argument("--run", action="store_true", help="generate every outstanding row")
     ap.add_argument("--status", action="store_true", help="plan vs manifest — the remaining work")
+    ap.add_argument("--render", action="store_true",
+                    help=f"write {RENDER_PATH} — the plan as a readable table, generated")
     ap.add_argument("--timeout", type=int, default=120)
     ap.add_argument("--spent", type=float, default=0.0,
                     help="already spent this cycle, so the ceiling is compared against what is left")
@@ -486,8 +660,13 @@ def main(argv: list[str]) -> int:
     if args.scaffold:
         made = scaffold(root, args.prd)
         print("\n".join(f"created {m}" for m in made) or "nothing to create — already scaffolded")
-        print(f"\nNext: fill ${PLACEHOLDER_KEY_ENV} in your environment, then write the plan rows.\n"
-              f"Until the key is real every generate call refuses, which is the safe state.")
+        # This used to say "fill $OPENROUTER_API_KEY, then write the plan rows" -- naming a variable
+        # the scaffolded path never reads, as the FIRST instruction a new project sees. The agent is
+        # the default generator and needs no key; what a new project actually owes is the research.
+        print("\nNext: run the reference research, then write the plan rows. The agent generates by\n"
+              "default — no API key — and paid rungs ship unpriced, so `--run` refuses them until\n"
+              "you look the price up and write `cost_usd` into `ladders.<kind>`. That is the safe\n"
+              "state, and it is enforced before anything is bought rather than described here.")
         return 0
     if args.discover:
         cfg = root / CONFIG_PATH
@@ -502,24 +681,27 @@ def main(argv: list[str]) -> int:
         print("\nEvery configured model ID exists. Pricing is still yours to verify — this "
               "endpoint does not report it.")
         return 0
+    if args.render:
+        rows = load_plan(root)
+        path = root / RENDER_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(render_plan(rows, load_config(root)), encoding="utf-8")
+        print(f"wrote {RENDER_PATH} ({len(rows)} row(s))")
+        return 0
     if args.check:
-        cfg = root / CONFIG_PATH
-        briefs = None
-        if cfg.is_file():
-            try:
-                briefs = json.loads(cfg.read_text(encoding="utf-8")).get("briefs", {})
-            except ValueError as exc:
-                raise SystemExit(f"{CONFIG_PATH} is not valid JSON ({exc})")
+        config = load_config(root)
+        briefs = config.get("briefs", {}) if (root / CONFIG_PATH).is_file() else None
         doc = load_doc(root)
         rows = doc.get("assets", [])
         problems = (check_research(root) + check_prd(root, doc)
-                    + check_plan(rows, briefs) + reconcile(root, rows))
+                    + check_plan(rows, briefs) + reconcile(root, rows)
+                    + render_drift(root, rows, config))
         print("\n".join(problems) or "plan is reviewable, current with the brief, and reconciled.")
         return 1 if problems else 0
     if args.run:
         rows = load_plan(root)
-        cfg = root / CONFIG_PATH
-        briefs = json.loads(cfg.read_text(encoding="utf-8")).get("briefs", {}) if cfg.is_file() else None
+        cfg_all = load_config(root)
+        briefs = cfg_all.get("briefs", {}) if (root / CONFIG_PATH).is_file() else None
         problems = check_research(root) + check_plan(rows, briefs)
         if problems:
             # Refuse to spend against a plan that cannot be reviewed. A row with no `why` is one
@@ -530,10 +712,35 @@ def main(argv: list[str]) -> int:
         # COST PREFLIGHT. Refuse to start a plan the budget cannot finish, rather than generating
         # until the money stops -- that leaves an ARBITRARY half of the set, and a half-built family
         # of illustrations is not a cheaper library, it is an incoherent one.
-        cfg_all = json.loads((root / CONFIG_PATH).read_text(encoding="utf-8")) if (root / CONFIG_PATH).is_file() else {}
-        total = plan_cost(rows, cfg_all)
+        total, unpriced = plan_pricing(rows, cfg_all)
         ceiling = float(cfg_all.get("budget_usd", 0))
         spent = float(args.spent)
+        # AN UNPRICED PLAN IS REFUSED OUTRIGHT, before the executor is invoked and regardless of the
+        # numeric total. This is deliberately NOT a budget comparison: a ceiling can only refuse a
+        # number, and the whole problem with an unpriced row is that there is no number -- it scores
+        # 0.0, fits inside every budget, and reaches the executor as the cheapest thing in the plan.
+        #
+        # --confirm-partial does NOT bypass it either. That flag says "buy what the budget affords",
+        # which is a decision about rows whose price is known; there is no partial answer to a row
+        # whose price is not. `generation_gate.py` also refuses an unpriced rung, but that runs
+        # INSIDE the executor -- per row, after `--run` has committed to spending -- so leaning on
+        # it would make the preflight advisory about the one thing it exists to decide.
+        if unpriced:
+            kinds = sorted({r.get("kind", "static") for r in unpriced})
+            print(json.dumps({
+                "unpriced_rows": [f"{r['surface']}/{r.get('kind', 'static')}" for r in unpriced],
+                "unpriced_kinds": kinds,
+                "priced_rows_total_usd": total,
+            }, indent=2))
+            print(f"\nrefusing to run: {len(unpriced)} row(s) have no price. The ladder for "
+                  f"{', '.join(kinds)} has no rung with a `cost_usd`, so the budget has nothing to "
+                  f"compare against and would approve this plan at $0.00 whatever it actually "
+                  f"costs.")
+            print(f"\nThe provider's model list does not report pricing, which is why the scaffold "
+                  f"leaves it unset rather than inventing a number. Look up the price for each "
+                  f"model above and write `cost_usd` into `ladders.<kind>` in {CONFIG_PATH}, or "
+                  f"drop those rows.")
+            return 2
         if total > ceiling - spent and not args.confirm_partial:
             fits, over = affordable(rows, cfg_all, spent)
             unprioritised = [r for r in fits + over if "priority" not in r]
@@ -577,7 +784,8 @@ def main(argv: list[str]) -> int:
         doc = load_doc(root)
         rows = doc.get("assets", [])
         counts, outstanding = status_report(rows)
-        drift = check_prd(root, doc) + reconcile(root, rows)
+        drift = check_prd(root, doc) + reconcile(root, rows) + render_drift(root, rows,
+                                                                           load_config(root))
         print(json.dumps({"plan": counts, "outstanding": outstanding, "drift": drift}, indent=2))
         return 1 if outstanding or drift else 0
 
@@ -595,7 +803,21 @@ def selftest() -> int:
         if not cond:
             failures.append(label)
 
-    # SCAFFOLDING never overwrites, and writes a config that REFUSES until a key is filled in.
+    # THE CONFIG EVERY COST FIXTURE USES IS THE ONE `--scaffold` ACTUALLY WRITES.
+    #
+    # This is the structural half of the fix, and it matters more than any single assertion below.
+    # The cost fixtures used to hand-write `{"budget_usd": ..., "ladder": [...]}` -- a flat, singular
+    # shape the scaffold has never emitted. So 63 assertions passed against a config no project
+    # could have, while `plan_cost` returned $0.00 for every real one and the budget refusal could
+    # not fire. Tests that imitate the writer's output instead of USING it cannot see a writer/reader
+    # divergence; they are two transcriptions agreeing with each other.
+    def scaffolded_config() -> dict:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            scaffold(root)
+            return json.loads((root / CONFIG_PATH).read_text())
+
+    # SCAFFOLDING never overwrites, and ships the paid rungs UNPRICED so nothing can be bought.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         made = scaffold(root)
@@ -698,13 +920,39 @@ def selftest() -> int:
 
     # COST. The estimate prices every row at the CHEAPEST rung, so it is a floor, and settled rows
     # cost nothing -- a re-run that re-priced finished work would refuse plans that are affordable.
-    CFG = {"budget_usd": 0.05, "ladder": [{"cost_usd": 0.01}, {"cost_usd": 0.40}]}
+    CFG = {"budget_usd": 0.05,
+           "ladders": {"static": [{"cost_usd": 0.01}, {"cost_usd": 0.40}],
+                       "motion": [{"cost_usd": 0.01}],
+                       "video": [{"cost_usd": 0.60}]}}
     three = [{"surface": "a", "kind": "static"}, {"surface": "b", "kind": "static"},
              {"surface": "c", "kind": "static"}]
     check("cost prices outstanding rows at the cheapest rung", plan_cost(three, CFG) == 0.03)
     check("done and skipped rows cost nothing",
           plan_cost([{**three[0], "status": "done"}, {**three[1], "status": "skipped"}], CFG) == 0.0)
-    check("an empty ladder costs nothing rather than crashing", plan_cost(three, {}) == 0.0)
+    # THE KINDS ARE NOT CLOSE. A flat ladder priced a video row at the static rung, which is wrong by
+    # an order of magnitude in the direction that spends money.
+    check("each kind is priced at ITS OWN ladder",
+          plan_cost([three[0], {"surface": "d", "kind": "video"}], CFG) == 0.61)
+    # The flat `ladder` key still resolves, because a project may have written one by hand.
+    check("a flat `ladder` is still honoured as the fallback",
+          plan_cost(three, {"ladder": [{"cost_usd": 0.01}]}) == 0.03)
+
+    # THE REGRESSION. Against the config `--scaffold` REALLY writes, not an imitation of it.
+    SC = scaffolded_config()
+    check("the scaffolded config has no flat `ladder` key at all", "ladder" not in SC)
+    check("...so a reader of `ladder` would price the whole plan at zero",
+          plan_cost(three, {k: v for k, v in SC.items() if k != "ladders"}) == 0.0)
+    check("...while the fixed reader prices it from `ladders`",
+          plan_cost(three, SC) == 0.0 and cheapest_rung(ladder_for(SC, "static")) == 0.0)
+    # An UNPRICED kind is not a free kind. The scaffold ships video unpriced on purpose, so this is
+    # the state of every fresh project that plans a video row.
+    _total, _unpriced = plan_pricing([three[0], {"surface": "promo", "kind": "video"}], SC)
+    check(f"an unpriced row is reported, not costed at 0 (unpriced={len(_unpriced)})",
+          len(_unpriced) == 1 and _unpriced[0]["surface"] == "promo" and _total == 0.0)
+    check("a ladder that prices nothing returns None rather than 0.0",
+          cheapest_rung([{"name": "m", "cost_usd": None}]) is None and cheapest_rung([]) is None)
+    check("an absent ladder leaves the row unpriced rather than free",
+          plan_pricing(three, {})[1] == three)
 
     # AFFORDABILITY. Generating until the money stops leaves an ARBITRARY half of the set; choosing
     # which half is the entire value, so priority decides and plan order is only the fallback.
@@ -726,6 +974,15 @@ def selftest() -> int:
     # A settled row must never be re-offered for spending.
     fits5, _ = affordable([{**three[0], "status": "done"}], CFG, spent=0.0)
     check("a done row is not offered for spending", fits5 == [])
+    # AN UNPRICED ROW IS NOT AN AFFORDABLE ONE. Costing it at 0 made it fit inside every budget --
+    # the cheapest thing in the plan was the one nobody had priced.
+    unpriced_row = [{"surface": "promo", "kind": "video"}]
+    fitsU, overU = affordable(unpriced_row, {**SC, "budget_usd": 100.0}, spent=0.0)
+    check("an unpriced row never fits, however large the budget", fitsU == [] and len(overU) == 1)
+    # ...and pricing it must not raise, either. `float(r.get("cost_usd", 0))` over a rung whose
+    # `cost_usd` is explicitly null is a TypeError, and the scaffold writes exactly that for video.
+    check("a null-priced rung does not crash the split",
+          affordable(unpriced_row, SC, spent=0.0)[1] == unpriced_row)
 
     # GROUPS ARE ALL-OR-NOTHING. A hero still and the motion loop that animates it are one
     # artefact in two files; buying the loop alone is worse than buying neither, because you pay
@@ -838,6 +1095,113 @@ def selftest() -> int:
         out = run_plan(root, rows, Path("/nonexistent/executor.py"), 1)
         check("a done row is skipped entirely", out[0]["status"] == "done")
         check("...and keeps its file", out[0]["file"] == "a.png")
+
+    # --run END TO END, against a project built by `--scaffold` and driven through `main`.
+    #
+    # Every fixture above tests a function; this one tests the PATH, and the difference is the whole
+    # bug. `plan_cost` was wrong, `--run`'s refusal therefore never fired, and control fell through
+    # to the executor -- and no unit test could see it, because each function was asked a question
+    # it answered correctly in isolation. So: a real scaffold, a real plan file, `main(["--run"])`,
+    # and a subprocess.run that FAILS the test if it is ever called.
+    made_dirs: list[str] = []
+
+    def project(rows: list[dict], **cfg_overrides) -> Path:
+        # mkdtemp rather than the context manager, because these outlive one `with` block; they are
+        # removed at the end of the run so a suite that passes does not leave a trail in /tmp.
+        root = Path(tempfile.mkdtemp())
+        made_dirs.append(str(root))
+        (root / "PRD.md").write_text("brief", encoding="utf-8")
+        scaffold(root, "PRD.md")
+        (root / "docs/design").mkdir(parents=True, exist_ok=True)
+        (root / RESEARCH_PATH).write_text(
+            json.dumps({"job": "j", "style": "minimalist-ink", "references": []}), encoding="utf-8")
+        config = json.loads((root / CONFIG_PATH).read_text())
+        config["briefs"] = {r["surface"]: {"style": "minimalist-ink"} for r in rows}
+        config.update(cfg_overrides)
+        (root / CONFIG_PATH).write_text(json.dumps(config), encoding="utf-8")
+        doc = json.loads((root / PLAN_PATH).read_text())
+        doc["assets"] = rows
+        (root / PLAN_PATH).write_text(json.dumps(doc), encoding="utf-8")
+        return root
+
+    def run_in(root: Path, argv: list[str]) -> tuple[int, bool]:
+        """(exit code, was the executor invoked). cwd is restored whatever happens."""
+        import os
+        reached = []
+        here = os.getcwd()
+        real = _sp.run
+        _sp.run = lambda *a, **k: reached.append(a) or _sp.CompletedProcess([], 0, "{}", "")
+        try:
+            os.chdir(root)
+            return main(argv), bool(reached)
+        finally:
+            _sp.run = real
+            os.chdir(here)
+
+    VIDEO = {"surface": "promo", "kind": "video", "why": "launch film"}
+    STATIC = {"surface": "hero", "kind": "static", "why": "no product UI yet"}
+
+    root = project([VIDEO])
+    before = (root / PLAN_PATH).read_text()
+    code, reached = run_in(root, ["--run"])
+    check(f"--run refuses an unpriced plan (exit {code})", code == 2)
+    check("...without invoking the executor", not reached)
+    check("...and without mutating the plan", (root / PLAN_PATH).read_text() == before)
+
+    # --confirm-partial must NOT be a way round it. "Buy what the budget affords" is a decision
+    # about rows whose price is known, and there is no partial answer for a row with no price.
+    root = project([VIDEO])
+    code, reached = run_in(root, ["--run", "--confirm-partial"])
+    check(f"--confirm-partial does not bypass the unpriced refusal (exit {code})", code == 2)
+    check("...and still reaches no executor", not reached)
+
+    # THE PRICED PATH STILL RUNS. A refusal that fired on everything would be worse than the bug:
+    # the agent path is free and is what a fresh project uses for all three non-video kinds.
+    root = project([STATIC])
+    code, reached = run_in(root, ["--run"])
+    check(f"a fully priced plan is not refused (exit {code})", reached)
+    # ...and the ceiling still refuses a plan it cannot finish, now that the total is real.
+    root = project([STATIC, {"surface": "empty", "kind": "static", "why": "x"}],
+                   budget_usd=0.01, ladders={"static": [{"name": "m", "cost_usd": 0.02}]})
+    code, reached = run_in(root, ["--run"])
+    check(f"an over-budget plan is refused (exit {code})", code == 2)
+    check("...before the executor is invoked", not reached)
+
+    # THE RENDERED TABLE. JSON for the agent, a table for the human who has to review it -- one
+    # source, so they cannot disagree.
+    root = project([STATIC, VIDEO])
+    code, _ = run_in(root, ["--render"])
+    table = (root / RENDER_PATH).read_text()
+    check(f"--render writes the table (exit {code})", code == 0 and table.startswith("<!-- GENERATED"))
+    body = [l for l in table.splitlines() if l.startswith("| ") and l[2:3].isdigit()]
+    check(f"...with a row per asset (rows={len(body)})", len(body) == 2)
+    check("...naming each surface and why", "hero" in table and "launch film" in table)
+    # An unpriced row is VISIBLE as unpriced. Rendering it as $0.00 would put the bug in the
+    # document a human reads to decide whether to spend.
+    check("...and marking the unpriced row rather than pricing it at zero", "**unpriced**" in table)
+    check("the render is a function of the DATA only, so it is reproducible",
+          render_plan(load_plan(root), load_config(root)) == table)
+    # Staleness is reported once the file exists, and says nothing before that.
+    check("a fresh render is not stale", render_drift(root, load_plan(root), load_config(root)) == [])
+    (root / RENDER_PATH).write_text("hand-edited\n", encoding="utf-8")
+    check("...an edited one is reported as stale",
+          any("no longer matches" in m
+              for m in render_drift(root, load_plan(root), load_config(root))))
+    with tempfile.TemporaryDirectory() as td:
+        check("...and an absent one says nothing at all",
+              render_drift(Path(td), [STATIC], SC) == [])
+    # save_plan REFRESHES it, so a mutation path added later cannot leave it stale.
+    main_rows = load_plan(root)
+    main_rows[0]["status"] = "done"
+    save_plan(root, main_rows)
+    check("saving the plan re-renders the table",
+          render_drift(root, load_plan(root), load_config(root)) == [])
+    check("an empty plan renders as unplanned rather than finished",
+          "unplanned, not finished" in render_plan([], SC))
+
+    import shutil
+    for d in made_dirs:
+        shutil.rmtree(d, ignore_errors=True)
 
     for f in failures:
         print(f"FAIL {f}")

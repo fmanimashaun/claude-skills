@@ -122,12 +122,14 @@ makes the asset reproducible: without it, a brand change means paying again.
 
 ```json
 {
-  "aggregator": "<your aggregator>",
+  "aggregator": "agent",
   "budget_usd": 5.00,
-  "ladder": [
-    { "name": "<cheapest model>", "cost_usd": 0.012 },
-    { "name": "<next rung>",      "cost_usd": 0.40  }
-  ],
+  "ladders": {
+    "static": [{ "name": "agent",           "cost_usd": 0.0  }],
+    "vector": [{ "name": "agent",           "cost_usd": 0.0  }],
+    "motion": [{ "name": "agent",           "cost_usd": 0.0  }],
+    "video":  [{ "name": "<a video model>", "cost_usd": null }]
+  },
   "style_reference": "brand/illustration-reference.png",
   "briefs": {
     "marketing-hero": {
@@ -141,6 +143,16 @@ makes the asset reproducible: without it, a brand change means paying again.
   }
 }
 ```
+
+**One ladder per kind, because the kinds are not close.** A video rung is expensive by an order of
+magnitude and a vector rung the agent authors is free, so a single flat ladder had to be wrong for at
+least one of them. The flat `ladder` key still resolves as a fallback for configs that already have
+one, but `--scaffold` writes `ladders`, and the cost preflight reads `ladders.<kind>` first.
+
+**`cost_usd: null` is not free — it is unpriced, and `--run` refuses the plan.** The provider's model
+list does not report pricing, so the scaffold leaves paid rungs unset rather than inventing a figure:
+an invented price looks authoritative, and the budget then approves or refuses against a number
+nobody chose. Look the price up, write it in, and the plan runs.
 
 **Model names and prices are not doctrine.** They change monthly and a list in a skill would rot
 inside a quarter, so they live in project config and this command names only the contract: a ladder,

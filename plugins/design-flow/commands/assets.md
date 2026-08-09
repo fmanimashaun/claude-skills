@@ -118,6 +118,48 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_plan.py" --run --confirm-partial --
 which generates exactly what fits, by priority, and leaves the rest `planned` — not `failed`, because
 they were never attempted and a later run should pick them up unprompted.
 
+### An UNPRICED plan is refused outright, and `--confirm-partial` is not a way round it
+
+Before any budget arithmetic, `--run` checks that every outstanding row's kind has a rung with a
+`cost_usd`. If one does not, it refuses (exit **2**) and names the rows and kinds:
+
+```json
+{
+  "unpriced_rows": ["promo/video"],
+  "unpriced_kinds": ["video"],
+  "priced_rows_total_usd": 0.04
+}
+```
+
+This is deliberately **not** a budget comparison. A ceiling can only refuse a number, and the whole
+problem with an unpriced row is that there is no number: it scores `$0.00`, fits inside every budget,
+and arrives at the executor as the cheapest thing in the plan. `--confirm-partial` does not bypass
+it either — "buy what the budget affords" is a decision about rows whose price is known, and there is
+no partial answer for a row whose price is not.
+
+The scaffold ships `video` unpriced on purpose, because the provider's model list does not report
+pricing and an invented figure is worse than none. Look the price up, write `cost_usd` into
+`ladders.<kind>`, and the plan runs.
+
+## 3c. A table for the human, the JSON for the agent
+
+`plan.json` is the right shape for the thing that runs the plan and the wrong shape for the person
+who has to **review** it — which is the step the plan exists for.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_plan.py" --render
+```
+
+writes `docs/assets/plan.md`: one row per asset, with the surface, kind, status, group, priority,
+per-row cost estimate, produced file and `why`. Unpriced rows are marked **unpriced** rather than
+shown as `$0.00`, so the reason a run will refuse is visible in the document you read to decide.
+
+It is **generated, never hand-maintained**. A hand-kept table is a second source of truth that
+disagrees with the first within a week and disagrees *silently*, because a stale table still looks
+like a table. So `--run` re-renders it after every change, and `--check` reports it as stale if it
+drifts. It says nothing when the file is absent: the table is opt-in, and a check that demanded a
+file the scaffold never creates would fail every project that does not want one.
+
 ## 4. Keep it honest as the product grows
 
 ```bash

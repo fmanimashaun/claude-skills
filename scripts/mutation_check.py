@@ -3692,8 +3692,11 @@ GUARDS: tuple[Guard, ...] = (
                 # The scaffold CREATES an empty plan, so this is the state of every fresh setup.
                 # Blessing it says the planning is finished before it has started.
                 "an empty plan passes review, so an unplanned project reads as finished",
-                "    if not rows:",
-                "    if False:",
+                # Anchored with its comment: `render_plan` grew a second `if not rows:` at the same
+                # indent, and a bare anchor then matched twice. An ambiguous anchor is a mutation
+                # that silently moves to a different line, so the harness refuses it outright.
+                "    if not rows:\n        # An empty plan is UNPLANNED, not finished.",
+                "    if False:\n        # An empty plan is UNPLANNED, not finished.",
                 "an empty plan is reported as unplanned",
             ),
             Mutation(
@@ -3708,6 +3711,50 @@ GUARDS: tuple[Guard, ...] = (
                 '        if briefs is not None and row.get("surface") and row["surface"] not in briefs:',
                 "        if False:",
                 "a row with no brief for its surface is reported",
+            ),
+            Mutation(
+                # #592, AND THE REASON IT SURVIVED 63 ASSERTIONS. `--scaffold` writes `ladders`
+                # (per kind); the cost path read `ladder` (flat), which no scaffolded config has.
+                # So it resolved to [], every plan cost $0.00 however many rows it held, the budget
+                # refusal compared 0.0 against the ceiling and could not fire, and `--run` fell
+                # through to the executor. Reverting the reader reproduces it exactly.
+                "the cost path reads a key --scaffold never writes, so every plan costs $0.00",
+                '    return ladders.get(kind) or config.get("ladder") or []',
+                '    return config.get("ladder") or []',
+                "...while the fixed reader prices it from `ladders`",
+            ),
+            Mutation(
+                # An unpriced kind is not a free kind. Returning 0.0 for a ladder that prices
+                # nothing is the same bug one level up: the row scores $0.00, fits inside every
+                # budget, and reaches the executor as the cheapest thing in the plan.
+                "an unpriced ladder reads as free, so the row nobody costed is the cheapest one",
+                "    return min(priced) if priced else None",
+                "    return min(priced) if priced else 0.0",
+                "a ladder that prices nothing returns None rather than 0.0",
+            ),
+            Mutation(
+                # The refusal is deliberately NOT a budget comparison -- a ceiling can only refuse a
+                # number. Dropping it puts the unpriced plan back on the path to the executor.
+                "the unpriced refusal goes, so a plan nobody has costed runs anyway",
+                "        if unpriced:",
+                "        if False:",
+                "--run refuses an unpriced plan",
+            ),
+            Mutation(
+                # "Buy what the budget affords" is a decision about rows whose price is KNOWN.
+                # Letting an unpriced group through prices it at nothing and buys it first.
+                "unpriced groups are treated as affordable, so they fit inside any budget",
+                "        if any(r is None for r in rungs):",
+                "        if False:",
+                "an unpriced row never fits, however large the budget",
+            ),
+            Mutation(
+                # A generated view that is allowed to rot is worse than no view: it still reads as
+                # authoritative, and it is the copy a human reviews before deciding to spend.
+                "the rendered table stops being drift-checked, so a stale one reads as current",
+                "    if path.read_text(encoding=\"utf-8\") != render_plan(rows, config):",
+                "    if False:",
+                "...an edited one is reported as stale",
             ),
         ),
     ),
