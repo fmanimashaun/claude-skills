@@ -263,6 +263,22 @@ whole path is built to avoid.
 only vector-via-agent is genuinely free. The budget ceiling still applies, so put a real `cost_usd`
 on a raster rung before running it.
 
+### Motion uses a different endpoint, and it is asynchronous
+
+Video generation is not the image endpoint with a different model. It **submits a job**, returns
+`202` with a `polling_url`, and the asset only exists once the job reports `completed`. Three
+consequences worth knowing before you wire anything to it:
+
+- **A 2xx from submit is not success.** The response carries no asset. Treating it as one saves an
+  empty file.
+- **The wait is the timeout.** `--timeout` covers the whole poll here, not each request — a
+  per-request timeout on a job taking minutes never fires, and the run hangs instead of failing.
+- **The download needs the same auth.** `unsigned_urls` are OpenRouter paths, not public links, and
+  an unauthenticated fetch returns an error page, which is bytes, and bytes get written to disk.
+
+Video is also the most expensive thing in this pipeline by an order of magnitude, so its rung ships
+**unpriced** and the gate refuses until you set a real figure.
+
 ### The HTTP adapters — for unattended runs only
 
 `openrouter`, `openrouter-svg` and `gemini` remain, and they need `api_key_env` plus a key in the

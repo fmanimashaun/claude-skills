@@ -3541,6 +3541,21 @@ GUARDS: tuple[Guard, ...] = (
         # stands between a request and someone's card.
         mutations=(
             Mutation(
+                # A critic with no criterion produces an OPINION, and an opinion recorded as a
+                # verdict is worse than no verdict -- it looks like the check ran.
+                "a surface with no acceptance check is still critiqued, so opinion becomes verdict",
+                "    if not criterion:",
+                "    if False:",
+                "a surface with no acceptance check should refuse to be critiqued",
+            ),
+            Mutation(
+                # A verdict nobody can review (accept) or act on (reject) is not a verdict.
+                "a verdict needs no reason, so accepts cannot be reviewed and rejects not acted on",
+                "    if not why.strip():",
+                "    if False:",
+                "verdict with no reason should be refused",
+            ),
+            Mutation(
                 # The agent path never calls an API. Demanding a key from it refused the one
                 # zero-cost route for a credential it had no use for -- which is what shipped until
                 # the adapter was resolved before the preflight.

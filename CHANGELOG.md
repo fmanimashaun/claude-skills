@@ -7388,6 +7388,48 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Doctrine said motion had no route. It was wrong, and the shape of the error is worth keeping.**
+  The claim began as a true statement about the *image* endpoint — it returns no video — and was
+  allowed to stand as a claim about the provider, so the scaffold shipped an empty motion ladder and
+  every motion row refused. A true sentence about one endpoint became a false one about the whole
+  system, and nothing caught it because it read as a limitation rather than as a claim. OpenRouter
+  has a video endpoint; there are **21 video models**, verified against the live catalogue.
+
+- **`motion` and `video` are now separate kinds, and that split is the real fix.** They were one
+  kind, which routed a **loading spinner through footage generation**. Product motion is Lottie JSON
+  or an animated SVG: a few KB, recoloured from tokens, scrubbable, diffable in review, and authored
+  by the agent for nothing. Generated video is footage — megabytes, fixed palette, un-recolourable,
+  expensive, and right for a marketing hero and almost nothing else. Conflated, the cheap common
+  case paid the expensive rare case's price. The kind/bytes check now accepts `svg` or `json` for
+  motion and refuses a video file with a sentence explaining which kind was meant.
+
+- **The video adapter is asynchronous, and three of its shapes are load-bearing.** Submit returns
+  **202 with no asset**, so a caller treating 2xx as success saves an empty file; the timeout covers
+  the **whole poll** rather than each request, because a per-request timeout on a job taking minutes
+  never fires and the run hangs instead of failing; and the download URL needs the **same auth**,
+  because an unauthenticated fetch returns an error page, which is bytes, and bytes get written.
+
+- **The output critic — the stage that was missing.** #507 asked for *"a per-surface acceptance
+  check, so climb-the-ladder has a trigger"*, and it shipped as **a string that had to be present**:
+  letter of the criterion, not spirit. Nothing read the asset, so the trigger was one nobody could
+  pull, and `attempt` existed while nothing ever set it. `--critique` now assembles what a critic
+  needs — the acceptance check, the brief, the pack, the prompt — and `--verdict accept|reject`
+  records the judgement. **Accept** writes the manifest with its reason attached; **reject**
+  increments `attempt`, which is the climb trigger, finally wired.
+
+  A surface with **no** acceptance check yields no critique brief at all, because a critic without a
+  criterion produces an opinion, and an opinion recorded as a verdict is worse than no verdict. A
+  verdict with no reason is refused in both directions: an accept nobody can review is as useless as
+  a reject nobody can act on.
+
+  Four fixture defects surfaced while building it, all the same class — fixtures failing on each
+  other's side effects rather than on what they name. The accept path writes a manifest row, so
+  every later call in that tempdir tripped the duplicate-surface refusal, and a bare
+  `except Unusable: pass` swallowed it and passed for the wrong reason. Each check now runs in its
+  own tempdir and asserts *why* it refused, not merely that it did.
+
 ### 1.20.0 — 2026-08-09
 
 - **`.env` was promised in two shipped messages and read by nothing.** The scaffold's comment and

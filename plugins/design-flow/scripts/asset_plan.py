@@ -103,9 +103,23 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
                 # true for the free half.
                 "static": [{"name": "agent", "cost_usd": 0.0}],
                 "vector": [{"name": "agent", "cost_usd": 0.0}],
-                # EMPTY until a video route exists: no image endpoint returns video, so a motion row
-                # refuses rather than saving a still under a `.webm` name.
-                "motion": [],
+                # MOTION GOES VIA THE VIDEO ENDPOINT, which is asynchronous: submit, poll,
+                # download. Doctrine here previously said motion had no route -- a true statement
+                # about the IMAGE endpoint that was allowed to stand as a claim about the provider,
+                # so every motion row refused. IDs verified against the live catalogue 2026-08-09
+                # (21 video models); refresh with `--discover`. Price is UNSET because the catalogue
+                # does not report it and video is the most expensive thing here by an order of
+                # magnitude -- the gate refuses an unpriced rung, which is the right default.
+                # MOTION IS UI MOTION: Lottie JSON or animated SVG, authored by the agent for
+                # nothing, recoloured from tokens, diffable in review. This was pointed at a video
+                # model for one release, which routed a loading spinner through footage generation
+                # -- the cheap common case paying the expensive rare case's price.
+                "motion": [{"name": "agent", "cost_usd": 0.0}],
+                # VIDEO IS FOOTAGE, and a different endpoint: asynchronous submit/poll/download.
+                # Right for a marketing hero and almost nothing else. ID verified against the live
+                # catalogue 2026-08-09 (21 video models); UNPRICED because it is the most expensive
+                # rung here by an order of magnitude and the gate should refuse until you choose.
+                "video": [{"name": "minimax/hailuo-3", "cost_usd": None}],
             },
             "style_reference": "docs/assets/reference.png",
             "briefs": {},
@@ -577,10 +591,16 @@ def selftest() -> int:
                                                    cfg["ladders"]["vector"])))
         check("...and no api_key_env is written", "api_key_env" not in cfg)
         check("...with the aggregator set to agent", cfg["aggregator"] == "agent")
-        # `motion` is scaffolded EMPTY on purpose: no image endpoint returns video, so a motion row
-        # must refuse rather than save a still frame under a `.webm` name.
-        check("...motion is empty until a video model is configured",
-              cfg["ladders"]["motion"] == [])
+        # Motion HAS a route -- the video endpoint, which is asynchronous. Doctrine said otherwise
+        # for one release: a true claim about the IMAGE endpoint that stood as a false one about the
+        # provider, so every motion row refused.
+        # Motion is UI motion -- Lottie/animated SVG, agent-authored and free. Video is footage,
+        # a different endpoint and the most expensive rung here. Pointing motion at a video model
+        # for one release routed a loading spinner through footage generation.
+        check("motion is agent-authored and free",
+              cfg["ladders"]["motion"][0] == {"name": "agent", "cost_usd": 0.0})
+        check("video is a real model, shipped unpriced",
+              cfg["ladders"]["video"][0]["name"] and cfg["ladders"]["video"][0]["cost_usd"] is None)
         check("...and vector has its own SVG-capable rung",
               len(cfg["ladders"]["vector"]) == 1)
         (root / CONFIG_PATH).write_text('{"aggregator":"mine"}', encoding="utf-8")
