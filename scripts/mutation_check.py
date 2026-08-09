@@ -1256,6 +1256,11 @@ GUARDS: tuple[Guard, ...] = (
         name="setup_doctrine_crosscheck",
         subject="plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
         selftest="plugins/design-flow/scripts/setup_doctrine_crosscheck.py",
+        # It now IMPORTS the shared doctrine resolver (#617), so the staged mutant dies at import
+        # without it. This guard had no `needs` at all, which is why adding one by searching for the
+        # next `needs=(` landed in a neighbouring guard — a reminder that "the next occurrence" is
+        # not the same as "this one's".
+        needs=("plugins/design-flow/scripts/doctrine_path.py",),
         mutations=(
             Mutation(
                 "the error direction is disabled — #104 instance 1 ships again",
@@ -2498,7 +2503,8 @@ GUARDS: tuple[Guard, ...] = (
         # It IMPORTS `rendered_conformance` for the shared palette-step definition (#157 criterion
         # 7), so without this every mutant dies at import and each mutation reads as "caught" by a
         # traceback rather than by the fixture named below.
-        needs=("plugins/design-flow/scripts/rendered_conformance.py",
+        needs=("plugins/design-flow/scripts/doctrine_path.py",
+               "plugins/design-flow/scripts/rendered_conformance.py",
                "plugins/design-flow/scripts/conformance_collector.js"),
         mutations=(
             # Three of these four are bugs I actually shipped into the first draft, kept as
@@ -2905,7 +2911,11 @@ GUARDS: tuple[Guard, ...] = (
         # It RUNS the #157 detector rather than reimplementing it, and the detector in turn imports
         # `rendered_conformance` for the shared palette-step definition. Without both, every mutant
         # dies at import and reads as "caught" by a traceback instead of by the fixture named below.
+        # TRANSITIVE, and that is the trap: this stages `llm_tell_detector`, which now imports
+        # `doctrine_path` (#617). Adding an import to a module makes every guard that stages THAT
+        # module need the new file too — so a `needs` list is the subject's imports plus theirs.
         needs=("plugins/design-flow/scripts/llm_tell_detector.py",
+               "plugins/design-flow/scripts/doctrine_path.py",
                "plugins/design-flow/scripts/rendered_conformance.py",
                "plugins/design-flow/scripts/conformance_collector.js"),
         mutations=(
@@ -3697,6 +3707,7 @@ GUARDS: tuple[Guard, ...] = (
         # a verdict. The harness caught that on the first run and refused to score any of them.
         needs=("plugins/design-flow/scripts/pen_to_svg.py",
                "plugins/design-flow/scripts/brand_pack_lint.py",
+               "plugins/design-flow/scripts/doctrine_path.py",
                "plugins/design-flow/brands/fidara/theme.css",
                "plugins/design-flow/brands/fidara/brand.json",
                # EVERY FILE `build()` READS -- data included, not just the other scripts. This list

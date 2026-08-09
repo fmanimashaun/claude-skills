@@ -147,6 +147,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/design-flow/scripts/pen_to_svg.py", "--selftest")),
     # #603. The library is a PROJECTION of the brand pack, so the assertions that matter are that
     # regeneration is byte-identical and that it never eats the designer's own compositions.
+    # #617. The resolver that finds `fidara-design` from BOTH the clone and the installed cache —
+    # the layout no fixture exercised until a user hit it.
+    ("design-flow doctrine path selftest",
+     ("python3", "plugins/design-flow/scripts/doctrine_path.py", "--selftest")),
     ("design-flow pen library selftest",
      ("python3", "plugins/design-flow/scripts/pen_library.py", "--selftest")),
     # #600/#601. The branch that matters is the silent skip: an absent surface must degrade to
