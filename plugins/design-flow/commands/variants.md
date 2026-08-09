@@ -45,6 +45,11 @@ weaker here than it looks: a `.pen` file is never a merge artefact and never a g
 output contract is identical either way and everyone still converges on ERB judged by the same
 verdicts.
 
+**Delegate the exploration to the `design-explorer` agent**, which owns this tier: it composes N
+options from the library, checks their intent, and hands only the winner to `ui-composer`. It never
+writes view code and never blocks — that boundary is what keeps a cheap exploration from becoming a
+slow implementation nobody reviewed.
+
 **Compose from the library, not from rectangles.** Scaffold it first
 (`pen_library.py --pack <pack> --out design/fidara.lib.pen`) or the options you are choosing between are
 drawings of components rather than the components themselves.

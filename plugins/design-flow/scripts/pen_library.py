@@ -157,17 +157,19 @@ def label_text(name: str, content: str, size: int, weight: str, fill: str, font:
 CATALOGUE = (Path(__file__).resolve().parent.parent.parent.parent
              / "skills" / "fidara-design" / "references" / "components.md")
 
-# Which catalogue rows this can DRAW, and as what. The catalogue describes plenty that is not a box
-# with a label — a Carousel, a Video player, a Table — and drawing a naive rectangle for those would
-# furnish the library with placeholders that look like components. So the map is explicit and
-# everything outside it is REPORTED rather than silently absent: a library that looks complete and
-# is not is worse than a short one that says so.
-SHAPES = {"Button": "control", "Badge / Tag / Chip": "pill", "Alert / Banner": "banner"}
+SHAPES_PATH = CATALOGUE.parent / "component-shapes.json"
 
-SHAPE_SPEC = {                    # padding, radius key, label, size, weight
-    "control": ([8, 16], "control", "Button", 14, "500"),
-    "pill": ([4, 10], "pill", "Badge", 12, "600"),
-    "banner": ([12, 14], "card", "Alert message", 14, "400"),
+# The frame each shape sits in: (padding, radius key, layout, gap).  A shape says WHAT a component
+# looks like from across the room; the parts say what is in it. Neither reimplements the component —
+# a skeleton is enough to recognise and place, and anything more is a second definition.
+SHAPE_FRAME = {
+    "control": ([8, 16], "control", "horizontal", 6),
+    "pill":    ([4, 10], "pill",    "horizontal", 4),
+    "banner":  ([12, 14], "card",   "horizontal", 8),
+    "surface": ([20, 20], "card",   "vertical",   8),
+    "panel":   ([12, 12], "card",   "vertical",   6),
+    "bar":     ([8, 8],   "control", "horizontal", 8),
+    "bare":    ([0, 0],   "control", "horizontal", 8),
 }
 
 # A variant name IS a role-token name in this system — `destructive` paints from `--destructive`.
@@ -207,67 +209,141 @@ def role_for(variant_name: str, roles: set[str]) -> str | None:
     return token if token in roles else None
 
 
-def component_group(row: str, spec: dict, roles: set[str], font: str, radii: dict,
-                    y: int) -> tuple[list[dict], list[str]]:
-    """One catalogue row → a base component plus a `ref` per further variant."""
-    pad, radius_key, label, size, weight = SHAPE_SPEC[SHAPES[row]]
-    slug = re.sub(r"[^a-z0-9]+", "-", row.lower()).strip("-").split("-")[0]
-    mapped = [(v, role_for(v, roles)) for v in spec["variants"]]
-    notes = [f"{row}/{v}: this pack declares no role token to paint it from"
-             for v, tok in mapped if tok is None]
-    mapped = [(v, tok) for v, tok in mapped if tok]
-    if not mapped:
-        return [], notes + [f"{row}: no variant maps to a role this pack declares"]
+def token(name: str | None, roles: set[str], fallback: str | None = None) -> str | None:
+    """A shape's role name → a `$--token`, or None when this pack does not declare it.
 
-    text_name = f"{slug} label"
-    first, first_role = mapped[0]
-    fg = f"{first_role}-foreground" if f"{first_role}-foreground" in roles else "--foreground"
-    base = {"type": "frame", "id": nid(slug, first), "reusable": True,
-            "name": f"{row.split(' /')[0]}/{first}", "x": 0, "y": y,
-            "fill": f"${first_role}", "cornerRadius": radii[radius_key], "gap": 6, "padding": pad,
-            "justifyContent": "center", "alignItems": "center",
-            "children": [label_text(text_name, label, size, weight, f"${fg}", font)]}
+    Never a hex, and never a guess. A shape that names a role the pack lacks is reported and left
+    out; inventing a colour is how a mirror of a design system becomes a fork of one.
+    """
+    for candidate in (name, fallback):
+        if candidate and f"--{candidate}" in roles:
+            return f"$--{candidate}"
+    return None
+
+
+def part_node(part: dict, row_slug: str, i: int, roles: set[str], font: str,
+              radii: dict) -> tuple[dict | None, str | None]:
+    """One declared part → one pen node, or a note saying why it could not be drawn."""
+    kind = part.get("kind")
+    pid = nid(row_slug, "part", str(i))
+    fill = token(part.get("fill"), roles)
+    color = token(part.get("color"), roles, "foreground")
+
+    if kind == "text":
+        if color is None:
+            return None, f"{row_slug}: a text part names role {part.get('color')!r}, undeclared here"
+        return label_text(f"{row_slug} t{i}", part.get("label", ""), part.get("size", 14),
+                          part.get("weight", "400"), color, font), None
+    if kind in ("pill", "box", "field", "line", "avatar", "icon-slot"):
+        default_fill = {"field": "background", "line": "border", "avatar": "muted",
+                        "icon-slot": "muted-foreground", "box": "muted", "pill": "secondary"}[kind]
+        paint = fill or token(default_fill, roles) or "$--muted"
+        node = {"type": "frame" if kind in ("pill", "field") else "rectangle",
+                "id": pid, "name": f"{kind} {i}", "fill": paint}
+        if kind == "line":
+            node.update({"width": part.get("width", 240), "height": 2})
+        elif kind == "avatar":
+            node.update({"width": 32, "height": 32, "cornerRadius": 999})
+        elif kind == "icon-slot":
+            sz = part.get("size", 24)
+            node.update({"width": sz, "height": sz, "cornerRadius": 6})
+        elif kind == "box":
+            node.update({"width": part.get("width", 240), "height": part.get("height", 80),
+                         "cornerRadius": radii["card"]})
+        elif kind == "field":
+            node.update({"width": part.get("width", 240), "cornerRadius": radii["control"],
+                         "stroke": token("input", roles, "border"), "strokeWidth": 1,
+                         "padding": [10, 12], "alignItems": "center",
+                         "children": [label_text(f"{row_slug} f{i}", part.get("label", ""), 14,
+                                                 "400", token("muted-foreground", roles,
+                                                              "foreground"), font)]})
+        else:                                                   # pill
+            node.update({"cornerRadius": radii["pill"], "padding": [4, 10], "gap": 4,
+                         "alignItems": "center", "justifyContent": "center",
+                         "children": [label_text(f"{row_slug} p{i}", part.get("label", ""), 12,
+                                                 "600", color, font)]})
+        return node, None
+    if kind == "column":
+        kids = []
+        for j, sub in enumerate(part.get("of") or []):
+            node, note = part_node(sub, f"{row_slug}-col{i}", j, roles, font, radii)
+            if node:
+                kids.append(node)
+        return {"type": "frame", "id": pid, "name": f"columns {i}", "gap": 8,
+                "alignItems": "start", "children": kids}, None
+    return None, f"{row_slug}: part kind {kind!r} is not one this generator draws"
+
+
+def component_group(row: str, shape: dict, enums: dict, roles: set[str], font: str,
+                    radii: dict, y: int) -> tuple[list[dict], list[str]]:
+    """One catalogue row → its skeleton, plus a `ref` per further variant where an enum exists."""
+    if shape.get("drawable") is False:
+        return [], [f"{row}: {shape.get('why', 'no reason given')}"]
+    frame = SHAPE_FRAME.get(shape.get("shape", "surface"))
+    if frame is None:
+        return [], [f"{row}: shape {shape.get('shape')!r} is not one this generator knows"]
+    pad, radius_key, layout, gap = frame
+    # THE WHOLE ROW NAME, not its first word. `Navigation — app header / navbar` and
+    # `Navigation — sidebar / vertical` both begin "navigation", so a first-word slug collided and
+    # produced duplicate ids -- which in a .pen file means a `ref` resolving to the wrong component,
+    # silently. Caught by the uniqueness assertion, which is exactly why it exists.
+    slug = re.sub(r"[^a-z0-9]+", "-", row.lower()).strip("-")
+
+    kids, notes = [], []
+    for i, part in enumerate(shape.get("parts") or []):
+        node, note = part_node(part, slug, i, roles, font, radii)
+        if node:
+            kids.append(node)
+        if note:
+            notes.append(note)
+    if not kids:
+        return [], notes + [f"{row}: none of its parts could be drawn from this pack"]
+
+    ground = token(shape.get("fill"), roles) or (
+        token({"surface": "card", "panel": "popover", "bar": "background",
+               "banner": "accent"}.get(shape.get("shape"), "background"), roles, "background"))
+    base = {"type": "frame", "id": nid(slug), "reusable": True, "name": row.split(" /")[0],
+            "x": 0, "y": y, "cornerRadius": radii[radius_key], "gap": gap, "padding": pad,
+            "layout": layout, "alignItems": "start" if layout == "vertical" else "center",
+            "children": kids}
+    if shape.get("shape") != "bare":
+        base["fill"] = ground
+        if shape.get("shape") in ("surface", "panel", "field"):
+            base["stroke"], base["strokeWidth"] = token("border", roles, "foreground"), 1
+    if shape.get("width"):
+        base["width"] = shape["width"]
     out = [base]
-    for i, (v, tok) in enumerate(mapped[1:], start=1):
-        vfg = f"{tok}-foreground" if f"{tok}-foreground" in roles else "--foreground"
-        node = {"type": "ref", "id": nid(slug, v), "reusable": True,
-                "name": f"{row.split(' /')[0]}/{v}", "ref": base["id"],
-                "x": i * 170, "y": y, "fill": f"${tok}",
-                "descendants": {nid(text_name): {"fill": f"${vfg}"}}}
-        if v in ("outline", "secondary"):
-            node["stroke"], node["strokeWidth"] = "$--border", 1
-        out.append(node)
+
+    # VARIANTS, where the catalogue declares an enum. Each is a `ref` that repaints the ground —
+    # one geometry, N instances, so a padding change reaches all of them.
+    if shape.get("variants") == "enum" and row in enums:
+        for i, v in enumerate((enums[row].get("variants") or [])[1:], start=1):
+            tok = role_for(v, roles)
+            if tok is None:
+                notes.append(f"{row}/{v}: this pack declares no role token to paint it from")
+                continue
+            out.append({"type": "ref", "id": nid(slug, v), "reusable": True,
+                        "name": f"{row.split(' /')[0]}/{v}", "ref": base["id"],
+                        "x": i * 200, "y": y, "fill": f"${tok}"})
     return out, notes
 
 
-def components(font: str, radii: dict, roles: set[str],
-               catalogue: dict) -> tuple[list[dict], list[str]]:
-    """Every catalogue row this can draw, plus a report of every row it cannot."""
+def components(font: str, radii: dict, roles: set[str], shapes: dict,
+               enums: dict) -> tuple[list[dict], list[str]]:
+    """Every catalogue row, drawn from its declared shape — or reported, never silently absent."""
     out: list[dict] = []
     notes: list[str] = []
     y = 0
-    for row in sorted(catalogue):
-        if row not in SHAPES:
-            notes.append(f"{row}: declares variants, but this generator has no shape for it")
-            continue
-        nodes, skipped = component_group(row, catalogue[row], roles, font, radii, y)
+    for row in sorted(k for k in shapes if not k.startswith("_")):
+        nodes, skipped = component_group(row, shapes[row], enums, roles, font, radii, y)
         out.extend(nodes)
         notes.extend(skipped)
         if nodes:
-            y += 72
-    # Card carries no variant enum — the catalogue calls it slot layout — so it is drawn once.
-    out.append({"type": "frame", "id": nid("card"), "name": "Card", "reusable": True,
-                "x": 0, "y": y, "width": 280, "fill": "$--card", "cornerRadius": radii["card"],
-                "stroke": "$--border", "strokeWidth": 1,
-                "layout": "vertical", "gap": 8, "padding": 20, "alignItems": "start",
-                "children": [
-                    label_text("Card title", "Card title", 18, "600", "$--card-foreground", font),
-                    label_text("Card body", "Supporting copy", 14, "400",
-                               "$--muted-foreground", font)]})
+            y += 200
     steps = [("Display", 40, "700"), ("Heading", 28, "600"), ("Subhead", 20, "600"),
              ("Body", 16, "400"), ("Caption", 13, "400")]
     out.append({"type": "frame", "id": nid("type-scale"), "name": "Type/Scale", "reusable": True,
-                "x": 320, "y": y, "layout": "vertical", "gap": 12, "alignItems": "start",
+                "x": 520, "y": 0, "layout": "vertical", "gap": 12, "alignItems": "start",
                 "children": [label_text(f"Type {n}", f"{n} — {sz}px", sz, w, "$--foreground", font)
                              for n, sz, w in steps]})
     return out, notes
@@ -311,8 +387,14 @@ def build(theme_css: str, brand: dict, catalogue_md: str | None = None) -> tuple
             f"the component catalogue is not readable at {CATALOGUE}. It ships in the rails-stack "
             f"plugin as `fidara-design`; without it this would have to invent a component list, "
             f"which is the parallel library this generator exists to avoid.")
+    if not SHAPES_PATH.is_file():
+        raise Unreadable(
+            f"no component shapes at {SHAPES_PATH}. Every catalogue row needs a declared skeleton; "
+            f"without them this would have to invent anatomy, which is the parallel library this "
+            f"generator exists to avoid.")
+    shapes = json.loads(SHAPES_PATH.read_text(encoding="utf-8"))
     kids, notes = components(font, {"control": control, "card": card, "pill": 999}, roles,
-                             parse_catalogue(md))
+                             shapes, parse_catalogue(md))
     doc = {
         "version": "2.17",
         "themes": {AXIS: [LIGHT, DARK]},
@@ -502,36 +584,38 @@ def selftest() -> int:
     tops = lib["children"]
     check("every component is reusable", all(c.get("reusable") for c in tops))
     names = [c["name"] for c in tops]
-    # DERIVED FROM THE CATALOGUE, not typed here. The counts come from `components.md`, so adding
-    # a variant there shows up in the library instead of needing a second edit in this file.
-    catalogue = parse_catalogue(CATALOGUE.read_text(encoding="utf-8"))
-    check(f"the catalogue parsed ({len(catalogue)} rows declare variants)", len(catalogue) >= 5)
-    for row in SHAPES:
-        check(f"{row} is a real catalogue row", row in catalogue)
-        declared = catalogue[row]["variants"]
-        drawn = [n for n in names if n.startswith(row.split(" /")[0] + "/")]
-        # Drawn OR reported -- never silently missing, which would offer a library that looks
-        # complete while a composition picks what the code cannot express.
-        check(f"...every {row} variant is accounted for ({len(drawn)}/{len(declared)})",
-              len(drawn) + sum(1 for n in notes if n.startswith(f"{row}/")) == len(declared))
-    check("Card is drawn even though it declares no variant enum", "Card" in names)
-    check("Type/Scale is present", "Type/Scale" in names)
-    check("a catalogue row with no shape is REPORTED, not dropped",
-          any("no shape for it" in n for n in notes))
-    check("components are named Category/Variant", all("/" in n or n == "Card" for n in names))
+    # THE WHOLE CATALOGUE IS MIRRORED, from the declared shapes — not a subset chosen here.
+    shapes = json.loads(SHAPES_PATH.read_text(encoding="utf-8"))
+    declared = {k for k in shapes if not k.startswith("_")}
+    rows = [b.split("\n", 1)[0].strip()
+            for b in re.split(r"^## ", CATALOGUE.read_text(encoding="utf-8"), flags=re.M)[1:]]
+    rows = {r for r in rows if not r.startswith("The ")}
+    check(f"every catalogue row has a shape ({len(declared)}/{len(rows)})", rows == declared)
+    drawn = {c["name"].split("/")[0] for c in tops}
+    non_drawable = {k for k, v in shapes.items()
+                    if isinstance(v, dict) and v.get("drawable") is False}
+    missing = {r.split(" /")[0] for r in rows} - drawn - {n.split(" /")[0] for n in non_drawable}
+    check(f"every drawable row is IN the library (missing: {sorted(missing)[:3]})", not missing)
+    check("a non-drawable row is reported with its reason",
+          all(any(n.startswith(k) for n in notes) for k in non_drawable))
+    check(f"the library is the whole catalogue ({len(drawn)} components)", len(drawn) >= 50)
 
     # VARIANTS ARE REFS, NOT COPIES. One base defines the geometry; four instances repaint it, so a
     # radius change reaches all four instead of reaching one and drifting from three.
     refs = [c for c in tops if c.get("type") == "ref"]
-    check(f"variants are refs, not copies ({len(refs)} refs, {len(tops)-len(refs)} bases)",
-          len(refs) > len(tops) - len(refs))
+    # Most catalogue rows declare no variant enum, so refs are the minority here — what matters is
+    # that where variants EXIST they are instances rather than copies.
+    check(f"variants are expressed as refs ({len(refs)} of them)", len(refs) >= 12)
+    with_variants = {r["name"].split("/")[0] for r in refs}
+    check("...covering the rows that declare an enum",
+          {"Button", "Badge", "Alert"} <= with_variants)
     base_ids = {c["id"] for c in tops if c.get("type") != "ref"}
     check("...each pointing at a component in this document",
           all(r["ref"] in base_ids for r in refs))
-    check("...and repainting the label through `descendants`",
-          all(r.get("descendants") for r in refs))
+    check("...each repainting the ground from a role token",
+          all(str(r.get("fill", "")).startswith("$--") for r in refs))
     # LAID OUT BY FLEXBOX, so a component sizes to its content instead of being a fixed picture.
-    btn = next(c for c in tops if c["name"] == "Button/primary")
+    btn = next(c for c in tops if c["name"] == "Button")
     check("the base button is laid out, not absolutely sized",
           btn.get("padding") and "width" not in btn)
     check("...and its children carry no x/y", all("x" not in k for k in btn["children"]))
@@ -549,7 +633,7 @@ def selftest() -> int:
     p2s = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(p2s)
     try:
-        p2s.compile_svg(doc, "Button/primary")
+        p2s.compile_svg(doc, "Button")
         failures.append("an unsized flex component should not silently compile")
     except p2s.Refusal as exc:
         check("the compiler refuses an unsized flex component rather than guessing",
@@ -616,7 +700,7 @@ def selftest() -> int:
         lib_after = next((c for c in after["children"]
                           if str(c.get("id", "")).startswith("fm-library")), None)
         check("...while still carrying every generated component",
-              lib_after is not None and {"Card", "Badge/primary"}
+              lib_after is not None and {"Card", "Badge"}
               <= {k["name"] for k in lib_after.get("children") or []})
         check("...with the role tokens still authoritative",
               after["variables"]["--primary"] == doc["variables"]["--primary"])
