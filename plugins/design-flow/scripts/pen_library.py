@@ -154,9 +154,23 @@ def label_text(name: str, content: str, size: int, weight: str, fill: str, font:
             "lineHeight": 1.43, "textAlign": "center", "textAlignVertical": "middle", "fill": fill}
 
 
-CATALOGUE = (Path(__file__).resolve().parent.parent.parent.parent
-             / "skills" / "fidara-design" / "references" / "components.md")
+import doctrine_path                          # noqa: E402 — same plugin, one resolver
 
+CATALOGUE_REL = doctrine_path.SKILL_REL / "references" / "components.md"
+
+
+def catalogue_candidates(script: Path) -> list[Path]:
+    """Every place `components.md` can live — see `doctrine_path` for why there is more than one."""
+    return [d / "references" / "components.md" for d in doctrine_path.candidates(script)]
+
+
+def resolve_catalogue(script: Path | None = None) -> Path | None:
+    found = doctrine_path.find(script or Path(__file__))
+    return (found / "references" / "components.md") if found else None
+
+
+CATALOGUE = resolve_catalogue() or (Path(__file__).resolve().parent.parent.parent.parent
+                                    / CATALOGUE_REL)
 SHAPES_PATH = CATALOGUE.parent / "component-shapes.json"
 
 # The frame each shape sits in: (padding, radius key, layout, gap).  A shape says WHAT a component
@@ -364,7 +378,9 @@ def root_frame(pack: str, kids: list[dict]) -> dict:
             "theme": {AXIS: LIGHT}, "fill": "$--background", "children": kids}
 
 
-def build(theme_css: str, brand: dict, catalogue_md: str | None = None) -> tuple[dict, list[str]]:
+def build(theme_css: str, brand: dict, catalogue_md: str | None = None,
+          catalogue: Path | None = None, shapes_path: Path | None = None
+          ) -> tuple[dict, list[str]]:
     """(the library document, notes about what could not be drawn).
 
     The notes are RETURNED rather than swallowed, so the caller has to do something with them. A
@@ -380,19 +396,26 @@ def build(theme_css: str, brand: dict, catalogue_md: str | None = None) -> tuple
     # `radius: md-controls-lg-cards` is the pack's own language for the two radii; anything else
     # falls back rather than inventing a third value the pack never asked for.
     control, card = (8, 12) if knobs.get("radius") == "md-controls-lg-cards" else (6, 10)
+    cat = catalogue or CATALOGUE
     md = catalogue_md if catalogue_md is not None else (
-        CATALOGUE.read_text(encoding="utf-8") if CATALOGUE.is_file() else "")
+        cat.read_text(encoding="utf-8") if cat.is_file() else "")
     if not md:
+        # NAME EVERY PLACE TRIED. "not readable at <one path>" sent a reporter looking for a file
+        # that was never going to be there; the useful message says which layouts were considered,
+        # because the answer is usually "you installed rather than cloned".
+        tried = "\n".join(f"    - {c}" for c in catalogue_candidates(Path(__file__)))
         raise Unreadable(
-            f"the component catalogue is not readable at {CATALOGUE}. It ships in the rails-stack "
-            f"plugin as `fidara-design`; without it this would have to invent a component list, "
-            f"which is the parallel library this generator exists to avoid.")
-    if not SHAPES_PATH.is_file():
+            f"the component catalogue is not readable. It ships in the rails-stack bundle as "
+            f"`fidara-design`, and without it this would have to invent a component list — the "
+            f"parallel library this generator exists to avoid. Looked in:\n{tried}\n"
+            f"  Pass --catalogue <path/to/components.md> if it lives somewhere else.")
+    sp = shapes_path or (cat.parent / "component-shapes.json")
+    if not sp.is_file():
         raise Unreadable(
-            f"no component shapes at {SHAPES_PATH}. Every catalogue row needs a declared skeleton; "
-            f"without them this would have to invent anatomy, which is the parallel library this "
-            f"generator exists to avoid.")
-    shapes = json.loads(SHAPES_PATH.read_text(encoding="utf-8"))
+            f"no component shapes at {sp}. Every catalogue row needs a declared skeleton; without "
+            f"them this would have to invent anatomy, which is the parallel library this generator "
+            f"exists to avoid. It sits beside components.md; pass --shapes to point elsewhere.")
+    shapes = json.loads(sp.read_text(encoding="utf-8"))
     kids, notes = components(font, {"control": control, "card": card, "pill": 999}, roles,
                              shapes, parse_catalogue(md))
     doc = {
@@ -469,14 +492,20 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--out", default=None, help="write the .pen document here")
     ap.add_argument("--check", action="store_true",
                     help="compare an existing --out against a fresh generation (drift gate)")
+    ap.add_argument("--catalogue", default=None,
+                    help="path to components.md, when the resolver cannot find it")
+    ap.add_argument("--shapes", default=None,
+                    help="path to component-shapes.json (default: beside components.md)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
 
     if args.selftest:
         return selftest()
+    cat_arg = Path(args.catalogue) if args.catalogue else None
+    shp_arg = Path(args.shapes) if args.shapes else None
     try:
         css, brand = load(args.pack)
-        fresh, notes = build(css, brand)
+        fresh, notes = build(css, brand, catalogue=cat_arg, shapes_path=shp_arg)
     except (Unreadable, OSError, ValueError) as exc:
         print(f"cannot generate: {exc}", file=sys.stderr)
         return 2
@@ -584,6 +613,64 @@ def selftest() -> int:
     tops = lib["children"]
     check("every component is reusable", all(c.get("reusable") for c in tops))
     names = [c["name"] for c in tops]
+    # THE INSTALLED LAYOUT, which is the one every user has and the one this suite could not see.
+    #
+    # The resolver walked four `.parent` hops to a single path. That is right for a marketplace
+    # CLONE and wrong for every INSTALL, because the cache interposes `<plugin>/<version>/` — so the
+    # library step hard-failed for everyone who installed rather than cloned, while this selftest
+    # passed. It only ever exercised the developer's layout, which is the silent direction: the
+    # fixture agreed with the code because both assumed the same shape.
+    #
+    # Built as a real directory tree rather than a mocked path, for the reason the doctor's fixtures
+    # are real git repos: the bug was in how a filesystem is actually laid out.
+    with tempfile.TemporaryDirectory() as td:
+        cache = Path(td) / "cache" / "claude-skills"
+        plug = cache / "design-flow" / "1.23.1" / "scripts"
+        plug.mkdir(parents=True)
+        for ver in ("1.9.0", "1.45.0"):                 # two versions coexist in a real cache
+            refs = cache / "rails-stack" / ver / CATALOGUE_REL.parent
+            refs.mkdir(parents=True)
+            (refs / "components.md").write_text(f"## Button\n- v{ver}\n", encoding="utf-8")
+            (refs / "component-shapes.json").write_text("{}", encoding="utf-8")
+        found = resolve_catalogue(plug / "pen_library.py")
+        check("the INSTALLED layout resolves", found is not None)
+        # Newest wins, and string order would not: "1.9.0" > "1.45.0" lexically.
+        check(f"...and the NEWEST cached version wins (got {found.parent.parent.parent.parent.name if found else None})",
+              found is not None and found.parent.parent.parent.parent.name == "1.45.0")
+        # `.resolve()` on both sides: a macOS tempdir is /var/... and resolves to /private/var/...,
+        # so comparing a resolved candidate against an unresolved expectation fails on the symlink
+        # rather than on the logic.
+        check("...while the clone layout is still tried first",
+              catalogue_candidates(plug / "pen_library.py")[0]
+              == (cache / CATALOGUE_REL).resolve())
+
+    # NOTHING RESOLVES: the message must name every place it looked, or a reporter goes hunting for
+    # a file that was never going to be there.
+    with tempfile.TemporaryDirectory() as td:
+        empty = Path(td) / "a" / "b" / "c" / "scripts"
+        empty.mkdir(parents=True)
+        check("an unresolvable catalogue returns None", resolve_catalogue(empty / "x.py") is None)
+        try:
+            build(css, brand, catalogue=Path(td) / "nope.md")
+            failures.append("a missing catalogue should be unreadable")
+        except Unreadable as exc:
+            check("...and the error names every candidate tried", "Looked in:" in str(exc))
+            check("...and points at the override", "--catalogue" in str(exc))
+        checks += 1
+
+    # AN EXPLICIT OVERRIDE wins over resolution, which is what makes an unusual layout survivable.
+    with tempfile.TemporaryDirectory() as td:
+        refs = Path(td) / "refs"
+        refs.mkdir()
+        (refs / "components.md").write_text("## Button\n- **Variants:** `primary`.\n", encoding="utf-8")
+        (refs / "component-shapes.json").write_text(json.dumps(
+            {"Button": {"shape": "control", "parts": [{"kind": "text", "color": "foreground"}]}}),
+            encoding="utf-8")
+        doc2, _ = build(css, brand, catalogue=refs / "components.md")
+        names = {c["name"] for c in doc2["children"][0]["children"]}
+        check("--catalogue overrides the resolver", "Button" in names)
+        check("...and --shapes follows it by default", len(names) == 2)   # Button + Type/Scale
+
     # THE WHOLE CATALOGUE IS MIRRORED, from the declared shapes — not a subset chosen here.
     shapes = json.loads(SHAPES_PATH.read_text(encoding="utf-8"))
     declared = {k for k in shapes if not k.startswith("_")}

@@ -101,7 +101,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # scripts -> design-flow -> plugins -> repo root
 _REPO = os.path.normpath(os.path.join(_HERE, "..", "..", ".."))
 DEFAULT_SETUP = os.path.join(_HERE, "..", "commands", "setup.md")
-DEFAULT_DOCTRINE = os.path.join(_REPO, "skills", "fidara-design")
+# RESOLVED, not counted. Four `..` hops reach the doctrine in a marketplace clone and land a
+# directory short from an install, where the cache interposes `<bundle>/<version>/` — #617. The
+# shared resolver knows both shapes; falling back to the clone path keeps the message honest when
+# neither exists.
+sys.path.insert(0, _HERE)
+import doctrine_path                                    # noqa: E402 — same plugin, one resolver
+_FOUND = doctrine_path.find(os.path.join(_HERE, "x.py"))
+DEFAULT_DOCTRINE = str(_FOUND) if _FOUND else os.path.join(_REPO, "skills", "fidara-design")
 
 # `Rails.configuration.x.<key>` or the equivalent `Rails.application.config.x.<key>`.
 # Captures the FIRST segment after `.x.` — that is the config key. A chained

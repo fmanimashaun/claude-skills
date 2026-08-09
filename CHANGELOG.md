@@ -7457,6 +7457,38 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The doctrine resolver assumed the clone layout, so the library step failed for everyone who
+  installed.** (#617) `pen_library.py` found `components.md` by counting four `.parent` hops. That is
+  right for a marketplace clone and lands a directory short from an install, where the cache
+  interposes `<bundle>/<version>/` — so `${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py`, **the only
+  invocation this plugin documents**, could not find the catalogue and refused.
+
+  It is substrate fact #4 from `/rails-flow:toolchain-check` wearing different clothes: `rails-stack`
+  is a skills bundle with **no plugin directory**, so a code plugin and the skills bundle have
+  genuinely disjoint cache shapes. **They differ in depth, not offset**, so no amount of
+  parent-counting reconciles them.
+
+  `scripts/doctrine_path.py` now answers *where does `fidara-design` live* once, for both layouts,
+  newest cached version first — the ordering `toolchain_version.py` already records, because two
+  versions coexist and taking whichever the filesystem yields reports the stale one. Verified: both
+  layouts now produce **byte-identical** libraries.
+
+  **Two more scripts had the same defect**, found by sweeping rather than by report:
+  `setup_doctrine_crosscheck.py` (documented at `audit.md:36`, and broken identically) and
+  `llm_tell_detector.py` (whose doctrine path feeds only its maintainer self-check, so consumers
+  were unaffected). All three now share the one resolver.
+
+  Also from the report: the refusal named **one** path, so it read as *"the catalogue is missing"*
+  when the truth was *"I looked in the wrong place"* — it now lists every root tried and points at
+  the new `--catalogue` / `--shapes` overrides.
+
+  **The selftest passed throughout, because it only ever ran from a clone.** That is the silent
+  direction again: a fixture that shares the code's assumption cannot test it. There is now an
+  installed-layout fixture built as a real directory tree, plus one for the clone so the fix cannot
+  regress the other way.
+
 ### 1.23.1 — 2026-08-09
 
 - **Said WHY the exporter is the verifier, not just that it is.** The guidance already told an agent
