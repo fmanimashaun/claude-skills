@@ -234,6 +234,48 @@ def load_doc(root: Path) -> dict:
 
 RESEARCH_PATH = Path("docs/design/reference-research.json")
 
+# #632. How many surfaces a declared signature exception may claim before it stops being one.
+#
+# DEFAULTING TO 1 RATHER THAN TO UNLIMITED is the decision that keeps this mechanism from becoming
+# the hole in the rule it carves. A "signature device" works by SCARCITY -- one luminous prism at
+# the hero, and the ink line-work everywhere else. Used on six surfaces it is no longer punctuation,
+# it is a second family, which is precisely the mixed set the one-style rule exists to prevent. So
+# an exception declared without a ceiling gets the tightest one, and the refusal states the number
+# so the default is never a surprise. Raising it stays possible and stays deliberate.
+DEFAULT_RATION = 1
+
+
+def signature_exceptions(record: dict) -> dict[str, dict]:
+    """The research's declared, justified exceptions to its own chosen style, keyed by style.
+
+    #632. The one-style rule conflated "the project's authored family style" with "the style of
+    every generated asset", and a real two-part system has no way to say otherwise: a family of
+    `minimalist-ink` line marks authored as SVG (needing no generation at all) plus ONE rationed
+    `3d-render` signature device. Briefing the exception tripped the style refusal; not briefing it
+    tripped the orphan-manifest check -- so the single asset in the project that actually cost money
+    was forced to live outside the plan, losing exactly the reproducibility and spend tracking the
+    plan exists to provide.
+
+    TOLERANT ON PURPOSE. An entry with no `style` or no `why` is skipped here rather than raised on,
+    because this function reads a record whose SHAPE is `research_record.check`'s job. Two checkers
+    reporting one defect is the "one cause, N findings" failure; the record's own checker says it
+    once, clearly, and this one simply does not honour an exception nobody justified -- which is the
+    strict default, so a malformed record can never loosen the rule.
+    """
+    out: dict[str, dict] = {}
+    for entry in record.get("signature_exceptions") or []:
+        if not isinstance(entry, dict):
+            continue
+        style, why = entry.get("style"), entry.get("why")
+        if not style or not str(why or "").strip():
+            continue
+        try:
+            cap = int(entry.get("max", DEFAULT_RATION))
+        except (TypeError, ValueError):
+            cap = DEFAULT_RATION
+        out[str(style)] = {"why": str(why), "max": max(0, cap)}
+    return out
+
 
 def check_research(root: Path) -> list[str]:
     """Reference research must exist BEFORE the plan, because it decides what the plan contains.
@@ -255,21 +297,55 @@ def check_research(root: Path) -> list[str]:
         # and nothing notices -- the research record becomes a box that was ticked rather than a
         # decision anything downstream honours. Every brief must carry the style the research chose.
         try:
-            chosen = json.loads(path.read_text(encoding="utf-8")).get("style")
+            record = json.loads(path.read_text(encoding="utf-8"))
         except ValueError:
-            chosen = None
+            record = {}
+        chosen = record.get("style")
+        exceptions = signature_exceptions(record)
         cfg = root / CONFIG_PATH
         if chosen and cfg.is_file():
             try:
                 briefs = json.loads(cfg.read_text(encoding="utf-8")).get("briefs") or {}
             except ValueError:
                 briefs = {}
-            off = [s for s, b in briefs.items() if b.get("style") and b["style"] != chosen]
+            allowed = {chosen} | set(exceptions)
+            off = [s for s, b in briefs.items() if b.get("style") and b["style"] not in allowed]
             if off:
-                return [f"the research chose {chosen!r}, but {', '.join(sorted(off))} brief(s) name "
+                # NAME THE DECLARED EXCEPTIONS in the refusal. Without them the message reads as
+                # "one style, ever" and the reader's only visible move is to change the brief --
+                # which is what forced a deliberately-paid signature asset out of the plan entirely
+                # (#632). The mechanism has to be discoverable from the refusal that blocks you.
+                extra = (f" Declared signature exception(s): {', '.join(sorted(exceptions))}."
+                         if exceptions else
+                         " A deliberate second style is expressible — declare it in the research as "
+                         "a `signature_exceptions` entry with its own `why`, and it becomes a "
+                         "tracked, rationed part of the system rather than drift.")
+                # QUOTED. Unquoted, a surface called `empty` or `pending` reads as an adjective
+                # -- "but empty brief(s) name a different style" -- and the reader hunts for a
+                # problem with emptiness rather than for the surface named `empty`.
+                named = ', '.join(repr(s) for s in sorted(off))
+                return [f"the research chose {chosen!r}, but {named} brief(s) name "
                         f"a different style. One family, one style -- a set that mixes them is the "
                         f"pile this whole path exists to avoid, and it is invisible once shipped. "
-                        f"Change the briefs, or re-open the research and choose again."]
+                        f"Change the briefs, or re-open the research and choose again.{extra}"]
+            # THE RATION IS THE WHOLE POINT. An exception with no ceiling is not an exception, it is
+            # a second family with paperwork -- and a second family is exactly what the one-style
+            # rule exists to prevent. So `max` defaults to 1 rather than to unlimited, and the
+            # refusal says so, because a default that surprises is worse than one that is stated.
+            over = []
+            for style in sorted(exceptions):
+                cap = exceptions[style]["max"]
+                claimants = sorted(s for s, b in briefs.items() if b.get("style") == style)
+                if len(claimants) > cap:
+                    over.append(
+                        f"{style!r} is a RATIONED signature exception capped at {cap}, but "
+                        f"{len(claimants)} brief(s) claim it ({', '.join(claimants)}). A signature "
+                        f"device works by scarcity: used everywhere it stops punctuating and "
+                        f"becomes the family, which is the mixed set the one-style rule prevents. "
+                        f"Raise `max` in the research deliberately, or move the surplus surfaces "
+                        f"back to {chosen!r}.")
+            if over:
+                return over
     if not path.is_file():
         return [f"no reference research at {RESEARCH_PATH}. Research comes BEFORE the plan: it "
                 f"settles the style, and the style settles which assets exist at all. Run the "
@@ -972,6 +1048,77 @@ def selftest() -> int:
               any("chose 'minimalist-ink'" in m for m in check_research(root)))
         _cfg("minimalist-ink")
         check("...and one that honours it is silent", check_research(root) == [])
+        # THE REFUSAL MUST TEACH THE WAY OUT. With no exception declared, a reader's only visible
+        # move was "change the brief" -- which is what forced a deliberately-paid signature asset
+        # out of the plan entirely (#632). The mechanism has to be discoverable from the refusal.
+        _cfg("3d-render")
+        check("...and the refusal names the mechanism when none is declared",
+              any("signature_exceptions" in m for m in check_research(root)))
+
+    # #632. A DECLARED SIGNATURE EXCEPTION: a primary family plus one rationed off-style device.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docs/design").mkdir(parents=True)
+        (root / ".design-flow").mkdir()
+
+        def _research(exceptions):
+            (root / RESEARCH_PATH).write_text(json.dumps(
+                {"job": "x", "style": "minimalist-ink", "references": [],
+                 "signature_exceptions": exceptions}), encoding="utf-8")
+
+        def _briefs(styles):
+            (root / CONFIG_PATH).write_text(json.dumps(
+                {"briefs": {s: {"style": st} for s, st in styles.items()}}), encoding="utf-8")
+
+        PRISM = {"style": "3d-render", "why": "one rationed luminous prism at hero/CTA punctuation"}
+        _research([PRISM])
+        _briefs({"accent": "minimalist-ink", "hero": "3d-render"})
+        check("a declared exception lets the primary and the exception coexist",
+              check_research(root) == [])
+        # UNDECLARED DRIFT STAYS BLOCKED. If declaring one exception waved through every other
+        # style, the mechanism would be a hole in the rule rather than a carve-out of it.
+        _briefs({"accent": "minimalist-ink", "hero": "3d-render", "empty": "cartoon"})
+        problems = check_research(root)
+        check("...while an UNdeclared style is still refused",
+              any("'empty'" in m for m in problems))
+        check("...and the refusal lists what IS declared",
+              any("3d-render" in m and "Declared signature exception" in m for m in problems))
+
+        # THE RATION. A device used everywhere stops punctuating and becomes the family, which is
+        # the mixed set the one-style rule prevents -- so `max` defaults to 1, stated in the message.
+        _briefs({"hero": "3d-render", "cta": "3d-render"})
+        problems = check_research(root)
+        check("an unrationed second use of the exception is refused",
+              any("RATIONED" in m and "capped at 1" in m for m in problems))
+        check("...naming the surfaces that claim it",
+              any("cta, hero" in m for m in problems))
+        _research([{**PRISM, "max": 2}])
+        check("...and raising `max` deliberately permits it", check_research(root) == [])
+
+        # AN UNJUSTIFIED EXCEPTION IS NOT ONE. `why` is what separates a decision from drift, so an
+        # entry without it is not honoured -- the strict default, never the loose one.
+        _research([{"style": "3d-render"}])
+        _briefs({"hero": "3d-render"})
+        check("an exception with no `why` is not honoured",
+              any("chose 'minimalist-ink'" in m for m in check_research(root)))
+
+        # DEFAULT STAYS STRICT: a record with no exceptions behaves exactly as before.
+        _research([])
+        check("no declared exceptions means the old rule, unchanged",
+              any("chose 'minimalist-ink'" in m for m in check_research(root)))
+
+        # AND THE ORPHAN TRAP CLOSES. The compounding half of #632: briefing the exception tripped
+        # the style refusal, and NOT briefing it tripped reconcile's "in the manifest with no plan
+        # row" -- so the one asset that actually cost money had nowhere to live. Asserted together,
+        # because either check passing alone still leaves the asset untrackable.
+        _research([PRISM])
+        _briefs({"hero": "3d-render"})
+        (root / "docs/assets").mkdir(parents=True)
+        (root / "docs/assets/manifest.json").write_text(json.dumps({"assets": [
+            {"name": "Luminous prism", "surface": "hero", "kind": "static"}]}), encoding="utf-8")
+        rows = [{"surface": "hero", "kind": "static", "why": "the signature device"}]
+        check("the exception asset passes the style check", check_research(root) == [])
+        check("...AND is no longer an orphan in the manifest", reconcile(root, rows) == [])
 
     # COST. The estimate prices every row at the CHEAPEST rung, so it is a floor, and settled rows
     # cost nothing -- a re-run that re-priced finished work would refuse plans that are affordable.

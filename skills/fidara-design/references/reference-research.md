@@ -136,6 +136,44 @@ It is also the link that makes research mean anything downstream. Every brief in
 to this value: research monochrome ink line-work and brief a 3D render, and the plan refuses before
 anything is bought. Without it the record is a box that was ticked.
 
+### 5c. One deliberate exception: the rationed signature device
+
+Some visual systems are genuinely two-part — a **family** and one **signature device**. Stripe's
+gradient, a single dimensional motif at the hero — one rationed element in a different register,
+against an otherwise consistent family. That is not drift; it is a decision, and the record can hold
+it:
+
+```json
+{
+  "style": "minimalist-ink",
+  "signature_exceptions": [
+    {
+      "style": "3d-render",
+      "why": "one rationed luminous prism, used only at hero and CTA punctuation points",
+      "max": 1
+    }
+  ]
+}
+```
+
+**`why` is required**, and it is the whole mechanism: it is the only thing separating a sanctioned
+second style from the mixed set this method exists to prevent. An exception a *brief* could
+introduce would not be an exception — declare it here, in the open, once.
+
+**`max` defaults to 1**, and the refusal says so. A signature device works by **scarcity**: used on
+six surfaces it stops punctuating and becomes the family, which is exactly the pile the one-style
+rule prevents. Raising the ration stays possible and stays deliberate.
+
+Everything outside the declared list is still refused, before anything is bought. Declaring one
+exception does not open the door to others.
+
+**Why this exists.** The one-style rule conflated *"the project's authored family style"* with
+*"the style of every generated asset"*. When the family is authored as SVG and needs no generation
+at all, the single deliberately-paid signature asset had nowhere to live: brief it and the style
+check refused; leave it unbriefed and it was flagged as an orphan in the manifest. So the one asset
+in the project that actually cost money was pushed outside the plan — losing exactly the
+reproducibility and spend tracking the plan exists to provide.
+
 ## 6. Synthesis — three sources minimum, and the reason is not arbitrary
 
 - **One** source is a copy, whatever you tell yourself.

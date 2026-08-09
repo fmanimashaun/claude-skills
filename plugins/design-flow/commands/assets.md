@@ -70,6 +70,9 @@ This is the judgement step, and it is yours.
 1. **Read the PRD and the skills it produced.** What the product does, who for, how it should feel.
 2. **Brainstorm broadly, then cut to one family** — one style, one palette, one level of
    abstraction. Eight good ideas in eight styles is the pile this whole path exists to avoid.
+   A genuinely two-part system — a family **plus one rationed signature device** in another
+   register — is expressible, but it is declared once in the research as a `signature_exceptions`
+   entry with its own `why`, never slipped into a brief. See `reference-research.md` §5c.
 3. **Walk the product's surfaces** and write a row per asset, static and motion separately: a
    looping accent is a different artefact from the still it animates.
 4. **Write a brief per surface** into the config's `briefs` map.
