@@ -4199,6 +4199,16 @@ def run_guard(guard: Guard) -> list[str]:
     # missing a dependency fails for that reason alone, and every mutation then reads as "caught"
     # by the breakage rather than by a fixture -- which is exactly what `build_coverage` was doing.
     problems: list[str] = run_baseline(guard)
+    # AN INERT BASELINE ENDS THE GUARD. Running the mutations anyway is not merely wasted time: it
+    # appends one "caught, but not by the expected fixture" line PER MUTATION, so a single cause is
+    # reported as N+1 findings with the real one first and the noise last. That is what made this
+    # miss-able -- the diagnosis and its fix are in the head of the output, and anything inspecting
+    # the tail sees only the noise. Which happened three times before anyone noticed the header.
+    #
+    # It is also simply wrong to score them: with the selftest already failing, every mutation is
+    # "caught" whether or not it breaks anything, so the verdicts are meaningless by construction.
+    if problems:
+        return problems
     for mutation in guard.mutations:
         workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
         try:

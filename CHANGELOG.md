@@ -9,6 +9,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **One cause reported as N findings — found in three places, fixed in all three.** The pattern:
+  when a single action fixes every finding, emitting one per item buries the diagnosis under its own
+  consequences, and anything reading the tail of the output learns the least useful of them.
+
+  - **`mutation_check.run_guard` ran every mutation after an INERT baseline.** With the unmutated
+    selftest already failing, every verdict is meaningless by construction — yet it still emitted
+    one "caught, but not by the expected fixture" line per mutation, so one cause arrived as N+1
+    findings. It now returns immediately, and the whole output is the diagnosis.
+  - **`check_component_shapes` reported an empty sidecar 51 times**, once per uncovered row. Now
+    one finding naming the file.
+  - **...and a wrongly-keyed sidecar 102 times** — every row uncovered *and* every entry orphaned,
+    from one mistake. Now two.
+
+  **The test that separates the cases is whether ONE action fixes all N.** It does for the three
+  above. It does not for a plan whose twelve rows each lack a `why`, or a research record whose
+  references each lack a `source` — those are twelve and nine separate decisions, and reporting them
+  separately is right. `pen_compose.check_intent` was already aggregating its raw-colour nodes,
+  which is why it was the one probe that came back correct.
+
 - **The mutation harness was right three times and I read past it.** v1.85.0's notes say a guard's
   `needs` list was short three times running and framed that as a lesson about the list. It is not:
   `run_baseline` reports **`INERT — the UNMUTATED selftest already fails in the staged tempdir …
