@@ -46,7 +46,7 @@ from pathlib import Path
 
 PLAN_PATH = Path("docs/assets/plan.json")
 CONFIG_PATH = Path(".design-flow/generation.json")
-PLACEHOLDER_KEY_ENV = "GEMINI_API_KEY"
+PLACEHOLDER_KEY_ENV = "OPENROUTER_API_KEY"
 
 # A planned row must say enough to be GENERATED and enough to be REVIEWED. `why` is the one that
 # looks optional and is not: a row nobody can justify is a row nobody should pay for, and it is the
@@ -57,7 +57,7 @@ PLAN_FIELDS = {
     "why": "what this asset is FOR; a row nobody can justify should not be bought",
 }
 
-STATUSES = ("planned", "done", "failed", "skipped")
+STATUSES = ("planned", "done", "failed", "skipped", "awaiting-agent")
 
 
 def scaffold(root: Path, prd: str = "") -> list[str]:
@@ -67,13 +67,46 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
     if not cfg.is_file():
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(json.dumps({
-            "_comment": "Fill api_key_env's variable in your environment (or a gitignored .env). "
-                        "Until then every generate call refuses, which is the safe state.",
-            "aggregator": "gemini",
-            "api_key_env": PLACEHOLDER_KEY_ENV,
+            "_comment": [
+                "The AGENT generates by default. It calls a connected provider MCP (OpenRouter's",
+                "`generate-image`) or authors SVG itself -- no API key, no .env, no adapter code.",
+                "`--run` marks such rows `awaiting-agent` with the composed prompt; the agent",
+                "fulfils each and registers it with `generate_asset.py --record`, which re-runs the",
+                "whole gate before the manifest accepts anything.",
+                "",
+                "Raster generation still COSTS via MCP -- the tool bills the same account. Only",
+                "vector-via-agent is genuinely free.",
+                "",
+                "Set `api_key_env` and a non-agent `aggregator` ONLY for unattended runs, where no",
+                "agent is in the loop to call an MCP. That path needs a key; this one does not."
+            ],
+            "aggregator": "agent",
             "budget_usd": 5.00,
-            "ladder": [{"name": "gemini-3.1-flash-lite-image", "cost_usd": 0.012},
-                       {"name": "gemini-3-pro-image", "cost_usd": 0.14}],
+            # PER KIND, because the kinds want different models: only some emit SVG, and no
+            # image endpoint emits video.
+            #
+            # IDs were VERIFIED against OpenRouter's live model list on 2026-08-09. The first draft
+            # of this file was not, and shipped two IDs invented from documentation prose -- both
+            # 404'd on the first real call. Refresh rather than trusting this comment's date:
+            #     python3 asset_plan.py --discover
+            #
+            # `cost_usd` IS DELIBERATELY UNSET. The model endpoint does not report pricing, so any
+            # number here would be invented -- and an invented price is worse than none, because it
+            # looks authoritative and the budget then refuses or approves against a figure nobody
+            # chose. The gate REFUSES an unpriced rung, so nothing can be bought until you look the
+            # price up and write it in. That refusal is the feature.
+            "ladders": {
+                # THE AGENT IS THE DEFAULT GENERATOR FOR EVERY KIND -- it calls a provider MCP when
+                # one is connected, or authors SVG itself. 0.0 is a measured fact for the SVG path
+                # and a FLOOR for the MCP path: the MCP bills the account, so put a real figure here
+                # before running raster work, or the budget compares against a number that is only
+                # true for the free half.
+                "static": [{"name": "agent", "cost_usd": 0.0}],
+                "vector": [{"name": "agent", "cost_usd": 0.0}],
+                # EMPTY until a video route exists: no image endpoint returns video, so a motion row
+                # refuses rather than saving a still under a `.webm` name.
+                "motion": [],
+            },
             "style_reference": "docs/assets/reference.png",
             "briefs": {},
             "acceptance": {},
@@ -96,6 +129,38 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
 
 def fingerprint(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:16] if path.is_file() else ""
+
+
+def discover_models(config: dict) -> dict:
+    """Refresh the ladders' model IDs from the provider, because hardcoding them was already wrong.
+
+    The first version of this scaffold shipped two model IDs invented from documentation prose. Both
+    404'd on the first real run -- a transcription, exactly what this repo's `derived-artifacts`
+    skill exists to warn about, in the file that spends money.
+
+    Only IDS are refreshed. The endpoint does not expose pricing, so `cost_usd` is left ALONE rather
+    than zeroed or guessed: a budget compared against a number nobody set is worse than one compared
+    against a number someone chose badly, because the second is visible.
+    """
+    import os
+    import urllib.request
+    key = os.environ.get(config.get("api_key_env", "")) or ""
+    if not key:
+        raise SystemExit(f"--discover needs ${config.get('api_key_env')} set; it queries the "
+                         f"provider for the current model list.")
+    req = urllib.request.Request("https://openrouter.ai/api/v1/images/models",
+                                 headers={"Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            models = json.loads(resp.read().decode("utf-8")).get("data", [])
+    except Exception as exc:                       # noqa: BLE001 - any failure is the same answer
+        raise SystemExit(f"could not reach the model list ({exc}); ladders left unchanged.")
+    ids = {m.get("id") for m in models if m.get("id")}
+    stale = {kind: [r["name"] for r in rungs if r.get("name") not in ids]
+             for kind, rungs in (config.get("ladders") or {}).items()}
+    return {"available": sorted(ids),
+            "vector_capable": sorted(i for i in ids if "vector" in i or "svg" in i),
+            "stale_in_config": {k: v for k, v in stale.items() if v}}
 
 
 def load_doc(root: Path) -> dict:
@@ -229,6 +294,18 @@ def check_plan(rows: list[dict], briefs: dict | None = None) -> list[str]:
     return problems
 
 
+def cheapest_rung(ladder: list[dict]) -> float:
+    """The cheapest PRICED rung. An unpriced one is skipped, never counted as free.
+
+    Averaging a missing price to 0 made every unpriced model free, so a plan of them cost nothing
+    and the ceiling could not refuse it -- the estimate agreed with the budget by construction.
+    The gate refuses an unpriced rung outright; this keeps the ESTIMATE honest in the meantime, so
+    `--run`'s preflight does not quietly under-report what a plan will cost.
+    """
+    priced = [float(r["cost_usd"]) for r in ladder if r.get("cost_usd") is not None]
+    return min(priced) if priced else 0.0
+
+
 def plan_cost(rows: list[dict], config: dict) -> float:
     """What finishing the outstanding rows would cost, at the CHEAPEST rung.
 
@@ -237,7 +314,7 @@ def plan_cost(rows: list[dict], config: dict) -> float:
     affordable. The estimate is therefore a floor, and it is labelled as one wherever it is printed.
     """
     ladder = config.get("ladder") or []
-    rung = min((float(r.get("cost_usd", 0)) for r in ladder), default=0.0)
+    rung = cheapest_rung(ladder)
     return round(rung * sum(1 for r in rows if r.get("status") not in ("done", "skipped")), 4)
 
 
@@ -306,12 +383,30 @@ def run_plan(root: Path, rows: list[dict], executor: Path, timeout: int) -> list
             [sys.executable, str(executor), "--request", "-", "--timeout", str(timeout)],
             input=json.dumps(request), capture_output=True, text=True, cwd=root)
         if proc.returncode == 0:
-            row["status"] = "done"
-            row.pop("reason", None)
+            # EXIT 0 IS NOT "DONE". The agent path exits 0 while handing back a BRIEF -- the gate
+            # approved, and authorship is still outstanding. Reading the code alone marked the row
+            # done with `file: null` and no asset on disk, which is precisely the "recorded from
+            # what was attempted" failure this file's own docstring warns about. A row is `done`
+            # only when a file is named AND exists.
             try:
-                row["file"] = json.loads(proc.stdout).get("produced")
+                out = json.loads(proc.stdout)
             except ValueError:
-                pass
+                out = {}
+            produced = out.get("produced")
+            if produced and (root / produced).is_file():
+                row["status"] = "done"
+                row["file"] = produced
+                row.pop("reason", None)
+            elif out.get("author") == "agent":
+                row["status"] = "awaiting-agent"
+                row["write_to"] = out.get("write_to")
+                row["prompt"] = out.get("prompt")
+                row["reason"] = ("approved — the agent authors this one. Write the file at "
+                                 "`write_to` using `prompt`, then re-run with --record.")
+            else:
+                row["status"] = "failed"
+                row["reason"] = ("the run reported success but produced no file on disk; "
+                                 "nothing was recorded.")
         else:
             row["status"] = "failed"
             # Verbatim, and from the process that actually refused -- paraphrasing a refusal into
@@ -329,7 +424,7 @@ def status_report(rows: list[dict]) -> tuple[dict, int]:
     counts = {s: 0 for s in STATUSES}
     for row in rows:
         counts[row.get("status", "planned")] = counts.get(row.get("status", "planned"), 0) + 1
-    outstanding = len(rows) - counts["done"] - counts["skipped"]
+    outstanding = len(rows) - counts["done"] - counts["skipped"]   # awaiting-agent counts
     return counts, outstanding
 
 
@@ -338,6 +433,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--scaffold", action="store_true", help="create config + plan, never overwrite")
     ap.add_argument("--prd", default="", help="path to the brief; pins it so drift is detectable")
     ap.add_argument("--check", action="store_true", help="validate the plan is reviewable")
+    ap.add_argument("--discover", action="store_true",
+                    help="list the provider's current model IDs and flag stale ones in config")
     ap.add_argument("--run", action="store_true", help="generate every outstanding row")
     ap.add_argument("--status", action="store_true", help="plan vs manifest — the remaining work")
     ap.add_argument("--timeout", type=int, default=120)
@@ -356,6 +453,19 @@ def main(argv: list[str]) -> int:
         print("\n".join(f"created {m}" for m in made) or "nothing to create — already scaffolded")
         print(f"\nNext: fill ${PLACEHOLDER_KEY_ENV} in your environment, then write the plan rows.\n"
               f"Until the key is real every generate call refuses, which is the safe state.")
+        return 0
+    if args.discover:
+        cfg = root / CONFIG_PATH
+        config = json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}
+        found = discover_models(config)
+        print(json.dumps(found, indent=2))
+        if found["stale_in_config"]:
+            print("\nThe IDs above under `stale_in_config` are NOT in the provider's list — they "
+                  "will 404 at generation time. Replace them, and check pricing yourself: the "
+                  "model endpoint does not expose it.")
+            return 1
+        print("\nEvery configured model ID exists. Pricing is still yours to verify — this "
+              "endpoint does not report it.")
         return 0
     if args.check:
         cfg = root / CONFIG_PATH
@@ -456,10 +566,23 @@ def selftest() -> int:
         made = scaffold(root)
         check("scaffold creates both files", len(made) == 2)
         cfg = json.loads((root / CONFIG_PATH).read_text())
-        check("...naming an api_key_env", cfg.get("api_key_env") == PLACEHOLDER_KEY_ENV)
+        check("...and a budget ceiling that the agent path still respects",
+              cfg.get("budget_usd") is not None)
         check("...with an empty briefs map to fill", cfg.get("briefs") == {})
-        check("...and a ladder, cheapest first",
-              cfg["ladder"][0]["cost_usd"] < cfg["ladder"][1]["cost_usd"])
+        # The AGENT is the default generator for every kind, so no key is scaffolded at all --
+        # naming a variable nobody needs is how a placeholder became a documented step for a path
+        # that never reads one.
+        check("every kind defaults to the agent",
+              all(l[0]["name"] == "agent" for l in (cfg["ladders"]["static"],
+                                                   cfg["ladders"]["vector"])))
+        check("...and no api_key_env is written", "api_key_env" not in cfg)
+        check("...with the aggregator set to agent", cfg["aggregator"] == "agent")
+        # `motion` is scaffolded EMPTY on purpose: no image endpoint returns video, so a motion row
+        # must refuse rather than save a still frame under a `.webm` name.
+        check("...motion is empty until a video model is configured",
+              cfg["ladders"]["motion"] == [])
+        check("...and vector has its own SVG-capable rung",
+              len(cfg["ladders"]["vector"]) == 1)
         (root / CONFIG_PATH).write_text('{"aggregator":"mine"}', encoding="utf-8")
         check("a second scaffold overwrites nothing", scaffold(root) == [])
         check("...leaving the edited config intact",
@@ -570,6 +693,33 @@ def selftest() -> int:
     fits9, _ = affordable(urgent, {**CFG, "budget_usd": 0.02}, spent=0.0)
     check("a group takes its best member's priority",
           sorted(r["kind"] for r in fits9) == ["motion", "static"])
+
+    # EXIT 0 IS NOT "DONE". The agent path exits 0 with a brief, and reading the code alone marked
+    # the row done with no file on disk -- "recorded from what was attempted", which this file's
+    # own docstring forbids.
+    import subprocess as _sp
+    real_run = _sp.run
+    def fake(kind_out):
+        return lambda *a, **k: _sp.CompletedProcess(a[0] if a else [], 0, json.dumps(kind_out), "")
+    try:
+        _sp.run = fake({"author": "agent", "write_to": "docs/assets/x.svg", "prompt": "p"})
+        with tempfile.TemporaryDirectory() as td:
+            rows = run_plan(Path(td), [{"surface": "s", "kind": "vector", "why": "w"}],
+                            Path("exec.py"), 1)
+        check("an agent brief is awaiting-agent, not done", rows[0]["status"] == "awaiting-agent")
+        check("...and it carries where to write and what to write",
+              rows[0].get("write_to") and rows[0].get("prompt"))
+        # Success reported with no file on disk is a FAILURE, not a completion.
+        _sp.run = fake({"produced": "docs/assets/missing.svg"})
+        with tempfile.TemporaryDirectory() as td:
+            rows = run_plan(Path(td), [{"surface": "s", "kind": "static", "why": "w"}],
+                            Path("exec.py"), 1)
+        check("success with no file on disk is failed, not done", rows[0]["status"] == "failed")
+    finally:
+        _sp.run = real_run
+    # awaiting-agent is OUTSTANDING: the asset does not exist yet.
+    check("awaiting-agent counts as outstanding",
+          status_report([{"status": "awaiting-agent"}])[1] == 1)
 
     # PRD DRIFT. A library planned against last month's brief is quietly incomplete in a way
     # nothing else reports: every row `done`, status clean, new surfaces with no rows at all.
