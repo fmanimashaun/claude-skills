@@ -79,6 +79,11 @@ by well-meaning reuse — one reasonable-looking placement at a time — and aft
 at where it went wrong. `use_cases` must be non-empty for the same reason: an asset with no stated
 home is one nobody will find, so it gets bought again.
 
+**The manifest answers "may I use this?" — not "what did it cost?"** Deliberately: it is read at
+*placement* time, by an agent choosing between assets that already exist. The prompt, the model and
+the money live in the **prompt library** (§5), which is read at *purchase* time by someone deciding
+whether to spend at all. Two files because they are two questions; both are written for you.
+
 ## 1. Rule out the free tiers first — in writing
 
 The hierarchy decides this; you do not:
@@ -401,14 +406,35 @@ The gate still runs in full. It approves, then hands back a brief:
   "then": "python3 generate_asset.py --request <req> --record <path>" }
 ```
 
-**An image MCP hands you the bytes INLINE — there is no file on disk.** Those bytes *are* the
-asset: decode them and write them to `write_to` yourself. Going to look for a file the provider never
-created is how a successful, paid generation gets thrown away, and the next attempt pays for the same
-image twice. (Reported after exactly that: a good result, $0.04 spent, nothing recorded.)
+#### Check the provider's response shape BEFORE you call it
 
-Fulfil it — MCP call, or write the SVG — then **`--record`**, which re-runs the whole gate before
-the manifest accepts the file. That is the point: an agent-authored asset gets **no easier route in**
+This is the single most expensive thing on this page to get wrong, and it was reported twice — a
+good result, $0.04 spent, nothing recorded, both times. **After the call you have been billed
+whatever happens next**, so the decision has to be made first.
+
+| the MCP returns | what to do | why |
+|---|---|---|
+| **a file path** | `--record <that path>` | the bytes are already on disk |
+| **a URL** | `--from-url <that URL>` | a URL is *text* you can read out of the result and pass on; the script downloads it |
+| **the image INLINE only** | **do not call it** | you cannot save an image you only saw *rendered* |
+| **you author the SVG** | write it to `write_to`, then `--record` | you produced the text yourself |
+
+**The inline-only row is the one that costs money.** An MCP that replies with an inline image block
+hands you a *rendered picture*, not base64 you can faithfully retype — and no model can retype it.
+The generation succeeds, the account is billed, and there is no route from that result to a file. An
+earlier version of this page told you to *"decode the bytes and write them to `write_to`"*: that
+instruction cannot be followed, and describing an impossible step as the fix is worse than saying
+nothing, because it reads as user error.
+
+If your only raster provider is inline-only, **stop using the agent path for rasters** and configure
+a keyed REST rung (`aggregator: "openrouter"` plus an API key) — then *the script* makes the call and
+writes the bytes itself, which is the one arrangement where nothing has to transcribe anything.
+
+Fulfil it, then **`--record`** (or **`--from-url`**), which re-runs the whole gate before the
+manifest accepts the file. That is the point: an agent-authored asset gets **no easier route in**
 than a purchased one, or *"the agent got it from somewhere"* becomes the way past every refusal.
+`--from-url` fetches **http(s) only** — a `file:` URL would read this machine and commit the result
+as though a model had made it.
 
 In a plan, `--run` marks these rows **`awaiting-agent`** rather than `done`. They are outstanding
 until a file exists, because a row claiming completion with nothing on disk is the failure this
@@ -449,19 +475,55 @@ One adapter ships, as a reference implementation of the §3c contract. Adding an
 in `ADAPTERS`, not a redesign — which is the point of naming a contract rather than a vendor. An
 unknown aggregator is refused with the shipped names listed, never silently skipped.
 
-## 5. Record the provenance row
+## 5. The prompt library — written for you, not by you
 
-On approval the gate returns one. Write it beside the asset, in the §Provenance table:
+This step used to say *"write the provenance row beside the asset"*, and nothing made it happen. The
+gate's own docstring calls the composed prompt **"the only thing that makes the asset reproducible:
+without it, a brand change means paying again"** — and then the prompt was printed to stdout and lost
+with the scrolled buffer. **You no longer write anything here.** Every path that produces an asset
+records it:
 
-```json
-{ "surface": "…", "model": "…", "cost_usd": 0.012, "prompt": "…", "pack_variant": "default" }
+| file | what it is |
+|---|---|
+| `docs/assets/prompts.json` | the source — the prompt verbatim, the model, both costs, the verdict |
+| `docs/assets/prompts.md` | a **generated** view of it, for the human deciding whether to reuse or re-buy |
+
+The markdown is opt-in and derived. Create it once and it is held current from then on:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" --render
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" --check   # drift, once it exists
 ```
 
-Every field earns its place: without `prompt` the asset is unreproducible, and without `cost_usd`
-the budget cannot be reconciled against what was actually spent.
+Never hand-edit `prompts.md`. It is a view of the JSON, and a hand-maintained second copy disagrees
+with the first within a week — silently, because a stale table still looks like a table.
+
+### Two properties worth knowing before you read it
+
+**A rejected prompt stays in the library.** A store holding only the keepers cannot answer *"did we
+already try this and hate it?"*, so the next run buys the same disappointment again. Rejects are
+rendered in bold for exactly that reason.
+
+**The model may say `unknown`, and that is the honest answer.** The `agent` and `pen` rungs name
+**who did the work, not what rendered it** — the real model belongs to whatever MCP you called, and
+nothing reports it back. Recording `agent` in a column headed `model` would answer *"which model made
+the good one?"* with a role name, and reuse decisions get made from that column. So **tell it**:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/generate_asset.py" --request req.json \
+  --record docs/assets/hero-agent.png \
+  --model gemini-2.5-flash-image \
+  --spent 0.04
+```
+
+`--model` is the model you actually called. `--spent` is what it actually cost — the flow cannot see
+a charge it did not make itself, so an agent-path spend is invisible unless you say so, and an
+invisible spend is how a budget is blown while reading `$0.00`.
 
 ## Verifying a change to this path
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/generation_gate.py" --selftest
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/generate_asset.py" --selftest
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" --selftest
 ```

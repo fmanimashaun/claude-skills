@@ -3566,11 +3566,52 @@ GUARDS: tuple[Guard, ...] = (
         # `needs` the sibling it imports. Without it the staged mutant cannot import
         # generation_gate, the selftest dies on ModuleNotFoundError, and every mutation reads as
         # "caught" while proving nothing -- a crash is not a verdict, and this guard demonstrated it.
-        needs=("plugins/design-flow/scripts/generation_gate.py",),
+        # #625 added the second import, and the rule is the one above rather than a new one: a
+        # guard's `needs` is EVERYTHING the subject opens, so an added import is an added need.
+        needs=("plugins/design-flow/scripts/generation_gate.py",
+               "plugins/design-flow/scripts/prompt_library.py"),
         # Every fixture is a tempdir and NOTHING reaches the network. A test that needed
         # a provider would not be a test -- it would be a bill. Each mutation removes one thing that
         # stands between a request and someone's card.
         mutations=(
+            Mutation(
+                # #628. `--from-url` takes a string an agent read out of a tool result, so the
+                # scheme check is the only thing between that string and `urlopen` reading this
+                # machine. A `file:` URL would be fetched, sniffed, written into docs/assets and
+                # committed as though a model had made it -- a local secret laundered into art.
+                "any URL scheme is fetched, so file: reads this machine into the asset folder",
+                '    if scheme not in ("http", "https"):',
+                "    if False:",
+                "only http(s) is fetched",
+            ),
+            Mutation(
+                # A 0-byte download recorded as an asset is a `done` row nobody can see. The row
+                # says finished, the manifest says present, and the surface renders nothing.
+                "an empty download is recorded, so a 0-byte file enters the manifest as art",
+                "    if not blob:",
+                "    if False:",
+                "an empty download should be refused",
+            ),
+            Mutation(
+                # A raster written to `.svg` opens, looks plausible in a listing, and is the wrong
+                # format -- it does not scale and does not recolour from tokens, which is the whole
+                # reason a vector was asked for. Sniffing the FETCHED bytes is what stops it.
+                "the ingest trusts the row's kind instead of the bytes it just downloaded",
+                '            ext = assert_kind_matches(prov.get("kind", "static"), blob)',
+                '            ext = "png"',
+                "a URL serving the wrong format is refused",
+            ),
+            Mutation(
+                # #625. The prompt is what makes a bought asset reproducible, and the reject path is
+                # the half most easily dropped: recording only the keepers leaves the next run
+                # unable to see that this prompt was already tried and disliked, so it pays for the
+                # same disappointment again. Nothing else in the flow would notice.
+                "a rejected prompt is not recorded, so the next run re-buys the disappointment",
+                '    warning = remember_prompt(root, config, prov, approval["prompt"], asset=None, model=None,\n'
+                '                              verdict="reject", why=why)',
+                "    warning = None",
+                "reject records the prompt",
+            ),
             Mutation(
                 # A critic with no criterion produces an OPINION, and an opinion recorded as a
                 # verdict is worse than no verdict -- it looks like the check ran.
@@ -3775,6 +3816,67 @@ GUARDS: tuple[Guard, ...] = (
                 '    return {"variables": {k: v for k, v in (doc.get("variables") or {}).items() if k in ours},',
                 '    return {"variables": {k: v for k, v in (doc.get("variables") or {}).items()},',
                 "a composition alongside the library is NOT drift",
+            ),
+        ),
+    ),
+    Guard(
+        # #625. The library that keeps the composed prompt, the model and the money. Every mutation
+        # below leaves it PRODUCING A FILE THAT LOOKS RIGHT -- rows present, table rendered, totals
+        # printed -- while quietly answering the one question it exists for with a fiction. That is
+        # this flow's signature failure, so the fixtures have to be provably able to see it.
+        name="prompt_library",
+        subject="plugins/design-flow/scripts/prompt_library.py",
+        selftest="plugins/design-flow/scripts/prompt_library.py",  # --selftest lives in the module
+        needs=(),  # stdlib only, and every fixture builds its own tempdir project
+        mutations=(
+            Mutation(
+                # The whole reason the model column can be trusted. `agent` names WHO did the work;
+                # writing it where a model belongs answers "which model made the good one?" with a
+                # role name, and nothing downstream can tell the difference.
+                "a role is recorded as though it were a model, so the column starts lying",
+                "    if model is None and rung and not is_role:",
+                "    if model is None and rung:",
+                "an agent-authored row records model=None",
+            ),
+            Mutation(
+                # Appending per run makes one prompt look like N prompts, which is precisely the
+                # shape that hides paying twice -- the failure the library was built to expose.
+                "a re-run appends a duplicate row instead of accumulating onto the first",
+                '        if existing.get("id") != entry["id"]:',
+                "        if True:",
+                "one prompt run twice is ONE row",
+            ),
+            Mutation(
+                # An earlier run that knew its model must not be overwritten by a later one that
+                # did not. Losing it is silent: the row stays, the column just empties.
+                "a later unknown model erases an earlier known one",
+                '        if entry.get("model") is not None:',
+                "        if True:",
+                "a null model does not overwrite a known one",
+            ),
+            Mutation(
+                # Money summed wrongly still renders a total, and a wrong total is read as a right
+                # one. Nothing else in the flow tallies actual spend.
+                "spend stops accumulating, so paying twice reads as paying once",
+                '        merged["spend_count"] = int(existing.get("spend_count", 0)) + int(entry.get("spend_count", 0))',
+                '        merged["spend_count"] = int(entry.get("spend_count", 0))',
+                "...with spend_count 2",
+            ),
+            Mutation(
+                # A hand-editable view is a second source of truth that disagrees within a week and
+                # disagrees SILENTLY, because a stale table still looks like a table.
+                "drift in the generated view stops being reported",
+                '    if path.read_text(encoding="utf-8") != render(rows):',
+                "    if False:",
+                "a hand-edited view is drift",
+            ),
+            Mutation(
+                # A prompt quoting a token name or a code fence would break out of a 3-backtick
+                # fence, and a prompt that cannot be copied is the one thing this document is for.
+                "the fence stops outgrowing the prompt, so a quoted prompt breaks the page",
+                '    return "`" * max(3, longest + 1)',
+                '    return "`" * 3',
+                "the fence outgrows the content",
             ),
         ),
     ),

@@ -608,12 +608,21 @@ def run_plan(root: Path, rows: list[dict], executor: Path, timeout: int) -> list
                 row["status"] = "awaiting-agent"
                 row["write_to"] = out.get("write_to")
                 row["prompt"] = out.get("prompt")
+                # #628 CORRECTED THIS STRING'S PREDECESSOR, which said "the bytes are the asset,
+                # save them to write_to". That is an instruction the agent CANNOT follow for an
+                # inline-only image MCP: it receives a rendered picture, not base64 it can retype.
+                # Telling it to save bytes it cannot reach turned a dead-end into a dead-end with
+                # blame attached. So the reason now routes by RESPONSE SHAPE, and says which shape
+                # to check for before spending rather than what to do after.
                 row["reason"] = (
-                    "approved — the agent authors this one. Call the provider with `prompt` (or "
-                    "write the SVG yourself), then SAVE THE RESULT to `write_to` and re-run with "
-                    "--record. An image MCP returns its bytes INLINE, not as a file on disk: those "
-                    "bytes are the asset, and if you go looking for a file instead of saving them "
-                    "the spend buys nothing and the next attempt pays again.")
+                    "approved — the agent authors this one. CHECK YOUR PROVIDER'S RESPONSE SHAPE "
+                    "BEFORE CALLING IT, because after the call you have been billed either way. "
+                    "Returns a file path → `--record <path>`. Returns a URL → `--from-url <url>` "
+                    "and the script downloads it. Returns the image INLINE ONLY → do not call it: "
+                    "you cannot save an image you only saw rendered, so it bills and leaves "
+                    "nothing to record — configure a keyed REST rung instead and let the script "
+                    "make the call. Authoring SVG yourself → write it to `write_to`, then "
+                    "`--record`.")
             else:
                 row["status"] = "failed"
                 row["reason"] = ("the run reported success but produced no file on disk; "

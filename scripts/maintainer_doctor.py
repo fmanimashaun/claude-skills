@@ -153,6 +153,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/design-flow/scripts/doctrine_path.py", "--selftest")),
     ("design-flow pen library selftest",
      ("python3", "plugins/design-flow/scripts/pen_library.py", "--selftest")),
+    # #625. The library that keeps the composed prompt, the model and the money. Two of its rules
+    # are the ones a checker cannot infer and only a fixture can hold: the markdown view's bytes
+    # are a function of the JSON alone, and a rung named `agent` is a ROLE recorded as an unknown
+    # model rather than as a model called "agent".
+    ("design-flow prompt library selftest",
+     ("python3", "plugins/design-flow/scripts/prompt_library.py", "--selftest")),
     # #600/#601. The branch that matters is the silent skip: an absent surface must degrade to
     # today's behaviour rather than stopping, and only a fixture can hold that true.
     ("design-flow pen compose selftest",

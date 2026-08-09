@@ -7,15 +7,21 @@ description: Set up and drive the curated asset library — scaffold config, rea
 The setup and drive command for the asset library. **Re-run it whenever you like** — it resumes, it
 never resets, and it tells you what moved.
 
-Three files, three jobs, and confusing them is the trap:
+Four files, four jobs, and confusing them is the trap:
 
 | file | holds | written by |
 |---|---|---|
 | `.design-flow/generation.json` | how to buy — ladder, ceiling, briefs | you, once |
 | `docs/assets/plan.json` | **what the product needs** | the seeding pass |
 | `docs/assets/manifest.json` | **what the project owns** | each successful generate |
+| `docs/assets/prompts.json` | **what was asked for, by which model, at what price** | each generate and each verdict |
 
 The **gap between plan and manifest is the remaining work.** That is the whole reason both exist.
+
+The prompt library is the fourth because those three answer *what is left*, *what exists*, and *how
+to buy* — none of them answers **"have I bought this before, and was it any good?"**. Until it
+existed the composed prompt was printed to stdout and lost, so a brand change meant paying again for
+work already done. `prompts.md` is its generated human view; see `/design-flow:generate` §5.
 
 ## 1. Scaffold — safe to re-run
 
@@ -194,4 +200,6 @@ actually finished.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_plan.py" --selftest
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" --selftest
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" --check    # is prompts.md still the library?
 ```

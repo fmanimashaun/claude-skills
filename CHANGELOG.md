@@ -7459,7 +7459,82 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
-- **The agent path never said that the inline image IS the asset.** A paid generation succeeded, the
+- **A prompt library, because the flow's own doctrine said the prompt was load-bearing and then
+  threw it away.** (#625) `generation_gate.py` states, of the prompt it composes: *"the only thing
+  that makes the asset reproducible: without it, a brand change means paying again."* And
+  `manifest_entry` recorded file, name, purpose, use_cases, avoid, visual_elements, style, kind,
+  surface — **no prompt, no model, no cost.** The provenance row carried all three, was printed to
+  stdout, and went with the scrolled buffer. Claims-vs-enforcement, in the path with a bill attached.
+
+  New `prompt_library.py` and two files beside the manifest: `docs/assets/prompts.json` (the source)
+  and `docs/assets/prompts.md` (a **generated** view, opt-in via `--render`, drift-checked by
+  `--check` once it exists, bytes a function of the data alone). Written automatically by every path
+  that produces an asset — the bought path, the agent `--record` path, and both verdicts.
+
+  Three design decisions, each because the alternative would produce a file that looked right:
+
+  - **A rung named `agent` or `pen` records `model: null`, never `"agent"`.** Those name *who did
+    the work*, not what rendered it — the real model belongs to whatever MCP the agent called and is
+    not reported back. Writing a role into a column headed `model` would answer *"which model made
+    the good one?"* with a fiction, and reuse decisions are made from that column. New `--model` and
+    `--spent` flags on `--record` let an agent state both; without them the entry says unknown and
+    the view renders **unknown** rather than a rung name.
+  - **Entries are keyed on a hash of (surface, prompt), so a re-run accumulates instead of
+    appending.** A store that grew a row per run could not answer *"did I pay for this twice?"* —
+    the duplicates would read as distinct prompts. `spend_count` and `spent_total_usd` accumulate,
+    and the view warns when either exceeds one run.
+  - **A rejected prompt stays in the library.** A store of keepers only cannot answer *"did we
+    already try this and hate it?"*, so the next run buys the same disappointment.
+
+  Recording never fails a run that already spent money: a library write that fails returns a warning
+  in the result rather than raising, because raising would discard a paid success over bookkeeping —
+  which is the very defect below.
+
+  41 assertions in `prompt_library.py --selftest`, 6 mutation guards, and `generate_asset.py`'s
+  fixtures go 66 → 102 including a real end-to-end drive of the `--record` CLI. That fixture found
+  two things: the gate refuses a second `--record` for a surface that already has an asset (correct
+  — a second one forks the surface's look), and one assertion crashed on an empty library before its
+  own failure could print, which the mutation guard caught and reported as a coincidental catch.
+
+- **The default agent path could not persist an inline-only image MCP result at all, so a billed
+  generation had nothing to record.** (#628) Reported with the receipt: `mcp__openrouter__generate-image`
+  succeeded, billed $0.04, and returned the image as an **inline block only** — no file, no path, no
+  URL. `--record` requires a file that exists, so the row stayed `awaiting-agent` after a successful
+  purchase, and nothing under `docs/assets`, `/tmp` or the caches had been written.
+
+  **This corrects the entry below, which shipped in the same branch and was wrong.** That fix told
+  the agent *"those bytes are the asset — decode them and write them to `write_to`"*. **An agent
+  cannot do that.** An inline image block is a rendered picture, not base64 it can faithfully
+  retype, and no model can retype it. Describing an impossible step as the remedy is worse than
+  silence: it reads as user error. The reporter's suggested `--from-base64 -` has the same
+  impossibility for the same reason — the agent cannot produce the base64 either.
+
+  What actually works is routing by **response shape**, which is now stated everywhere the agent
+  reads — the `awaiting-agent` reason, the approval brief, and `/design-flow:generate`:
+
+  | the MCP returns | what to do |
+  |---|---|
+  | a file path | `--record <path>` — the bytes are already on disk |
+  | **a URL** | **`--from-url <url>`** — new. A URL is *text* the agent can read and pass on; the script fetches it |
+  | the image **inline only** | **do not call it.** It bills and leaves nothing to record — configure a keyed REST rung so the *script* makes the call |
+  | you author the SVG | write it to `write_to`, then `--record` |
+
+  The brief now carries this as a `before_you_spend` block, because after the call the money is gone
+  whichever shape comes back.
+
+  `--from-url` is an ingest, not a bypass: the same gate re-runs, the format is sniffed from the
+  **fetched bytes** (a URL serving PNG for a `vector` row is refused rather than written to a `.svg`
+  that lies), and the manifest and prompt library are written as for any purchase. It fetches
+  **http(s) only** — a `file:` URL would read the machine and commit a local secret as though a
+  model had made it — refuses an empty download, and caps at 64 MB.
+
+  `generate_asset.py`'s fixtures go 102 → 121, including the ingest end-to-end through the real CLI
+  over a localhost socket, so the whole chain is exercised without billing anyone. Three new mutation
+  guards. One of them found a real bug while being written: `urllib.request.Request` parses the URL
+  in its constructor, so a malformed URL raised `ValueError` *outside* the try block — an uncaught
+  traceback rather than a refusal, and a traceback is not a verdict.
+
+- **The agent path never said that the inline image IS the asset.** (#627) A paid generation succeeded, the
   provider MCP returned the bytes inline as it always does, and the agent then went looking for a
   file on disk — found none, and reported "the MCP returned the image inline only". The $0.04 bought
   a good asset that was never saved.
