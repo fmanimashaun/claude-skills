@@ -235,6 +235,44 @@ instead, then bring the result across by the route that matches what the asset *
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_to_svg.py" design.pen --node "Empty ledger" --out app/assets/images/empty-ledger.svg
 ```
 
+### Scaffold the library first — compose *from* the brand, not beside it
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/library.pen
+```
+
+That writes a `.pen` document holding **every role token as a variable, both modes explicit**, plus
+the components a composition actually needs — Button (4 variants), Card, Input, Badge and the type
+scale — each `reusable: true` so a composition instantiates it with a `ref` rather than copying
+geometry. Without it you compose from bare rectangles and the result is off-brand by construction.
+
+**It is a projection of the pack, never a second definition.** A hand-built pen library is a second
+`Button`, and two definitions of one component diverge within a sprint — silently, because both look
+right alone. Regenerate and the divergence cannot survive; `--check` reports a stale one:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/library.pen --check
+```
+
+**Check pen accepts it, headlessly, before you rely on it.** The document is written to the published
+schema, but "matches the schema" is evidence rather than proof — and the MCP cannot open a file to
+tell you. The CLI can, with no GUI and no open document:
+
+```bash
+pen interactive -i design/library.pen -o /tmp/pen-load-check.pen
+```
+
+Its shell takes `get_app_state({ include_schema: false })` then `exit()`. A document that loads and
+reports its nodes is one pen accepts; one that does not is a generator bug worth knowing about before
+a composition depends on it.
+
+**This file is also your scratchpad, and a rebuild will not eat your work.** Compose in the same
+document that holds the components — that is the point of having them there. Regeneration replaces
+only the generated nodes (`fm-*` ids) and leaves everything else exactly where it is, and `--check`
+compares only that region, so your explorations never read as drift. The one thing a rebuild *does*
+reclaim is a **role token you overrode by hand**: the pack owns the roles, and a stale override
+would repaint the whole library against a pack it no longer matches.
+
 **Custom icons are the exception, not the default.** The icon set is Lucide; a custom glyph is for a
 domain concept Lucide has no word for. Compose it *beside* real Lucide glyphs — pen ships Lucide,
 Feather, Material Symbols and Phosphor as built-in libraries — because the way a custom icon gives
