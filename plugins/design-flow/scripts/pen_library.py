@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 """Generate a pen.dev design library from the brand pack — a projection, never a second source (#603).
 
-WHY GENERATE RATHER THAN AUTHOR. `theme.css` and the project's components are the source of truth. A
-hand-built pen library is a *second definition of Button*, and two definitions of one component
-diverge within a sprint — silently, because both look right in isolation. Generated from the pack, it
-is a projection: regenerate and the divergence cannot survive. This is `plugin-boundaries`' "exactly
-one home per concern" applied to a design tool, and the same call already made against reading tokens
-back out of Figma.
+WHY GENERATE RATHER THAN AUTHOR — and the reason is about the SCRATCHPAD, not about tidiness. pen is
+where design iterations happen, so the whole exercise is only meaningful if the components you are
+composing with are **the same ones the agent will build the real code from**. Choose a variant
+composed of components the codebase does not have and you have chosen something unbuildable; the
+review said yes to a screen nobody can ship.
+
+That is what makes the drift check load-bearing rather than hygiene. A hand-built pen library is a
+second definition of Button, and two definitions diverge within a sprint — silently, because both
+look right in isolation. Generated from the pack, it is a projection: regenerate and the divergence
+cannot survive. Same rule as `plugin-boundaries`' "exactly one home per concern", and the same call
+already made against reading tokens back out of Figma.
+
+HOW FAR THAT GUARANTEE CURRENTLY REACHES, stated plainly because the gap is invisible otherwise:
+the **tokens** are derived, so every colour here is the colour the code will render. The **component
+set and its variants are not** — they are written below, against `components.md`'s catalogue by hand.
+So a composition cannot drift on colour, and can still drift on structure: a variant or size that
+exists in pen and not in `Ui::Button` is a choice the code cannot express. Deriving the catalogue
+itself is the next step, tracked separately.
 
 WHY IT WRITES A FILE INSTEAD OF DRIVING THE MCP, which is the decision that makes this tractable.
 Through the MCP, **ids cannot be chosen**: "Pencil will always generate unique random IDs and

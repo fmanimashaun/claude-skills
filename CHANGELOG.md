@@ -7513,6 +7513,15 @@ boot/validation path — with a bullet each so the promotion could close them se
   it every mutation died on `no theme.css`, and the harness correctly refused to score a crash as a
   verdict. One assertion was hardened from `e["theme"][AXIS]` to `.get()` for the same reason.
 
+  **Why derived and not authored in parallel:** pen is the scratchpad for design iteration, so the
+  exercise is only meaningful if the components being composed with are **the ones the agent will
+  build the real code from**. Choose a variant made of components the codebase lacks and the review
+  said yes to a screen nobody can ship. That is what makes the drift check load-bearing rather than
+  hygiene. The guarantee currently reaches the **tokens** (derived, so a composition cannot drift on
+  colour) and not yet the **catalogue** (hand-written against `components.md`, so it can still drift
+  on structure) — stated in the file itself and tracked as #607, because that gap is invisible
+  otherwise.
+
   **Authored to the convention a real pen library uses**, after reading one (`shadcn.lib.pen`).
   Four things changed, and three are better engineering rather than cosmetics:
 
