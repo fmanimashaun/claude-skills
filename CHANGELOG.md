@@ -7513,6 +7513,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   it every mutation died on `no theme.css`, and the harness correctly refused to score a crash as a
   verdict. One assertion was hardened from `e["theme"][AXIS]` to `.get()` for the same reason.
 
+  **Authored to the convention a real pen library uses**, after reading one (`shadcn.lib.pen`).
+  Four things changed, and three are better engineering rather than cosmetics:
+
+  - **One root frame** holds the library — themed, painted from `$--background`, named
+    `<pack>: design system components`. Eight loose top-level frames is a canvas with components on
+    it; one named container is a *library*, and the difference shows the moment a composition is
+    built beside it.
+  - **Variants are `ref`s, not copies.** One `Button/Default` defines the geometry; Secondary, Ghost
+    and Destructive are instances that repaint it via a `descendants` map. A radius change now
+    reaches all four instead of reaching one and drifting from three — and the map is addressable
+    *only because ids are derived rather than random*.
+  - **Flexbox, not absolute boxes** — `gap`, `padding`, `justifyContent`, and no width, so a
+    component sizes to its label. A fixed 140×40 button is a picture of a button.
+  - **`Category/Variant` naming**, matching the convention.
+
+  `pen_to_svg.py` gained **ref resolution** to match: refusing an instance would have made exactly
+  the well-authored library uncompilable while passing the copy-pasted one. It resolves before
+  measuring, too — a `ref` takes its size from its base, so reading width off the instance reported
+  "no size" for a variant that is perfectly well defined.
+
+  **And it cost a cross-check that was over-reach.** The suite used to compile every component
+  through `pen_to_svg` as a mutual check. A flex-laid-out component has no size until a layout engine
+  runs, and it was never destined to be an `.svg` file — it becomes ERB. The compiler is for
+  **artwork**; conflating the two was my error. The property that mattered is asserted directly (no
+  literal colour anywhere in the library), and the compiler is now asserted to *refuse* an unsized
+  node honestly.
+
   **Verified against pen itself** (CLI 0.3.2), headlessly:
   `pen interactive -i library.pen -o out.pen`, then `get_app_state({…})`. pen reports all 8
   components as **top-level nodes AND reusable components**, under **the ids we chose** —

@@ -126,22 +126,45 @@ def text(name: str, content: str, x: int, y: int, w: int, h: int, size: int,
             "fill": fill}
 
 
-def button(variant: str, label: str, fill: str, fg: str, border: str | None,
-           y: int, font: str, radius: int) -> dict:
-    """One button variant, as a REUSABLE component with a text slot.
+def label_text(name: str, content: str, size: int, weight: str, fill: str, font: str) -> dict:
+    """A flex child, so NO x/y: the parent lays it out. Position is the frame's job here."""
+    return {"type": "text", "id": nid(name), "name": name, "content": content,
+            "fontFamily": font, "fontSize": size, "fontWeight": weight,
+            "lineHeight": 1.43, "textAlign": "center", "textAlignVertical": "middle", "fill": fill}
 
-    `reusable: true` is what lets a composition instantiate it with `type: "ref"` instead of copying
-    geometry — which is the difference between a library and a pile of look-alikes.
+
+def base_button(font: str, radius: int) -> dict:
+    """The ONE button whose geometry exists. Every variant is a `ref` to this — see `variant()`.
+
+    Laid out with flexbox rather than an absolute box, matching how a design-system library is
+    authored: `gap` + `padding` + `justifyContent`/`alignItems`, and no width or height, so the
+    component sizes to its label. A fixed 140x40 button is a picture of a button; this one grows
+    with its content the way the real component does.
     """
-    kids = [{"type": "rectangle", "id": nid("button", variant, "bg"), "name": "Background",
-             "x": 0, "y": 0, "width": 140, "height": 40, "cornerRadius": radius, "fill": fill}]
+    return {"type": "frame", "id": nid("button", "default"), "name": "Button/Default",
+            "reusable": True, "x": 0, "y": 0, "fill": "$--primary", "cornerRadius": radius,
+            "gap": 6, "padding": [8, 16], "justifyContent": "center", "alignItems": "center",
+            "children": [label_text("Button label", "Continue", 14, "500",
+                                    "$--primary-foreground", font)]}
+
+
+def variant(name: str, base_id: str, x: int, y: int, fill: str, fg: str,
+            border: str | None = None) -> dict:
+    """A variant as a `ref` with overrides — NOT a second copy of the geometry.
+
+    This is the pattern a real pen library uses, and it is better engineering than duplication for
+    the usual reason: the base is the single definition, so a radius or padding change reaches every
+    variant instead of reaching one and drifting from four. `descendants` re-paints the label by the
+    base child's id, which is reachable here precisely BECAUSE ids are derived rather than random --
+    a randomly-idded library could not address its own parts.
+    """
+    node = {"type": "ref", "id": nid("button", name.split("/")[-1].lower()), "name": name,
+            "reusable": True, "ref": base_id, "x": x, "y": y, "fill": fill,
+            "descendants": {nid("Button label"): {"fill": fg}}}
     if border:
-        kids[0]["stroke"] = border
-        kids[0]["strokeWidth"] = 1
-    kids.append(text(f"Button {variant} label", label, 20, 11, 100, 18, 14, "600", fg, font))
-    return {"type": "frame", "id": nid("button", variant), "name": f"Button / {variant}",
-            "reusable": True, "layout": "none", "x": 0, "y": y, "width": 140, "height": 40,
-            "children": kids}
+        node["stroke"] = border
+        node["strokeWidth"] = 1
+    return node
 
 
 def components(font: str, radius_control: int, radius_card: int) -> list[dict]:
@@ -150,51 +173,65 @@ def components(font: str, radius_control: int, radius_card: int) -> list[dict]:
     Deliberately small. The purpose is composing screens cheaply enough that divergence is explored
     before ERB is written; reproducing every component in a second tool would be the parallel library
     this file exists to avoid, wearing a generated coat.
+
+    NO `icon` NODES, and that is a scoping choice rather than an oversight. A pen `icon` names a
+    glyph in a library (`lucide`, `phosphor`) instead of carrying geometry, so it cannot be compiled
+    to standalone SVG -- and the components here exist to be composed against, not to reproduce the
+    icon set, which the app already gets from Lucide directly.
     """
+    base = base_button(font, radius_control)
     out: list[dict] = [
-        button("primary", "Continue", "$--primary", "$--primary-foreground", None, 0, font, radius_control),
-        button("secondary", "Cancel", "$--secondary", "$--secondary-foreground", "$--border", 56, font, radius_control),
-        button("ghost", "Learn more", "$--background", "$--foreground", None, 112, font, radius_control),
-        button("destructive", "Delete", "$--destructive", "$--destructive-foreground", None, 168, font, radius_control),
-        {"type": "frame", "id": nid("card"), "name": "Card", "reusable": True, "layout": "none",
-         "x": 200, "y": 0, "width": 280, "height": 160, "fill": "$--card",
+        base,
+        variant("Button/Secondary", base["id"], 0, 56, "$--secondary", "$--secondary-foreground",
+                "$--border"),
+        variant("Button/Ghost", base["id"], 0, 112, "$--background", "$--foreground"),
+        variant("Button/Destructive", base["id"], 0, 168, "$--destructive",
+                "$--destructive-foreground"),
+        {"type": "frame", "id": nid("card"), "name": "Card", "reusable": True,
+         "x": 220, "y": 0, "width": 280, "fill": "$--card", "cornerRadius": radius_card,
+         "stroke": "$--border", "strokeWidth": 1,
+         "layout": "vertical", "gap": 8, "padding": 20, "alignItems": "start",
          "children": [
-             {"type": "rectangle", "id": nid("card", "border"), "name": "Border", "x": 0, "y": 0,
-              "width": 280, "height": 160, "cornerRadius": radius_card, "fill": "$--card",
-              "stroke": "$--border", "strokeWidth": 1},
-             text("Card title", "Card title", 20, 20, 200, 24, 18, "600", "$--card-foreground", font),
-             text("Card body", "Supporting copy", 20, 52, 240, 20, 14, "400", "$--muted-foreground", font),
+             label_text("Card title", "Card title", 18, "600", "$--card-foreground", font),
+             label_text("Card body", "Supporting copy", 14, "400", "$--muted-foreground", font),
          ]},
-        {"type": "frame", "id": nid("input"), "name": "Input", "reusable": True, "layout": "none",
-         "x": 200, "y": 180, "width": 280, "height": 40,
-         "children": [
-             {"type": "rectangle", "id": nid("input", "box"), "name": "Box", "x": 0, "y": 0,
-              "width": 280, "height": 40, "cornerRadius": radius_control, "fill": "$--background",
-              "stroke": "$--input", "strokeWidth": 1},
-             text("Input placeholder", "Placeholder", 12, 11, 200, 18, 14, "400",
-                  "$--muted-foreground", font),
-         ]},
-        {"type": "frame", "id": nid("badge"), "name": "Badge", "reusable": True, "layout": "none",
-         "x": 520, "y": 0, "width": 88, "height": 24,
-         "children": [
-             {"type": "rectangle", "id": nid("badge", "bg"), "name": "Background", "x": 0, "y": 0,
-              "width": 88, "height": 24, "cornerRadius": 999, "fill": "$--accent"},
-             text("Badge label", "Active", 16, 4, 60, 16, 12, "600", "$--accent-foreground", font),
-         ]},
+        {"type": "frame", "id": nid("input"), "name": "Input/Default", "reusable": True,
+         "x": 220, "y": 180, "width": 280, "fill": "$--background",
+         "cornerRadius": radius_control, "stroke": "$--input", "strokeWidth": 1,
+         "gap": 8, "padding": [10, 12], "alignItems": "center",
+         "children": [label_text("Input placeholder", "Placeholder", 14, "400",
+                                 "$--muted-foreground", font)]},
+        {"type": "frame", "id": nid("badge"), "name": "Badge/Default", "reusable": True,
+         "x": 540, "y": 0, "fill": "$--accent", "cornerRadius": 999,
+         "gap": 4, "padding": [4, 10], "alignItems": "center",
+         "children": [label_text("Badge label", "Active", 12, "600",
+                                 "$--accent-foreground", font)]},
     ]
-    # The type ramp, as one reusable frame: a composition that picks sizes off a swatch stays on the
-    # scale, and one that guesses does not.
+    # The type ramp. A composition that picks sizes off a swatch stays on the scale; one that
+    # guesses does not.
     steps = [("Display", 40, "700"), ("Heading", 28, "600"), ("Subhead", 20, "600"),
              ("Body", 16, "400"), ("Caption", 13, "400")]
-    kids, y = [], 0
-    for label, size, weight in steps:
-        kids.append(text(f"Type {label}", f"{label} — {size}px", 0, y, 320, size + 10, size,
-                         weight, "$--foreground", font))
-        y += size + 18
-    out.append({"type": "frame", "id": nid("type-scale"), "name": "Type scale", "reusable": True,
-                "layout": "none", "x": 520, "y": 60, "width": 320, "height": y,
-                "children": kids})
+    out.append({"type": "frame", "id": nid("type-scale"), "name": "Type/Scale", "reusable": True,
+                "x": 540, "y": 80, "layout": "vertical", "gap": 12, "alignItems": "start",
+                "children": [label_text(f"Type {label}", f"{label} — {size}px", size, weight,
+                                        "$--foreground", font)
+                             for label, size, weight in steps]})
     return out
+
+
+ROOT_NAME = "{slug}: design system components"
+
+
+def root_frame(pack: str, kids: list[dict]) -> dict:
+    """ONE frame holding the whole library, themed and painted — how a pen library file is shaped.
+
+    Eight loose top-level frames is a canvas with components on it; one named, themed container is a
+    LIBRARY, and the difference shows the moment a composition is built beside it: the library reads
+    as one object to move, hide or theme, instead of eight things to keep track of.
+    """
+    return {"type": "frame", "id": nid("library"), "name": ROOT_NAME.format(slug=pack),
+            "x": 0, "y": 0, "width": 900, "height": 700, "clip": True, "layout": "none",
+            "theme": {AXIS: LIGHT}, "fill": "$--background", "children": kids}
 
 
 def build(theme_css: str, brand: dict) -> dict:
@@ -211,7 +248,8 @@ def build(theme_css: str, brand: dict) -> dict:
         "version": "2.17",
         "themes": {AXIS: [LIGHT, DARK]},
         "variables": variables(light, dark, roles),
-        "children": components(font, control, card),
+        "children": [root_frame(brand.get("slug") or "library",
+                                    components(font, control, card))],
     }
 
 
@@ -327,8 +365,11 @@ def main(argv: list[str]) -> int:
         doc = merge(fresh, current) if current else fresh
         kept = len(doc["children"]) - len(fresh["children"])
         path.write_text(render(doc), encoding="utf-8")
-        print(f"wrote {args.out} — {len(fresh['children'])} generated component(s), "
-              f"{len(fresh['variables'])} role token(s)"
+        # Count the COMPONENTS, not the root frame that holds them. Reporting "1 component" for a
+        # library of eight is the kind of true-but-useless number that makes an operator distrust
+        # every other number the tool prints.
+        made = len(fresh["children"][0].get("children") or [])
+        print(f"wrote {args.out} — {made} component(s), {len(fresh['variables'])} role token(s)"
               + (f", {kept} of your own node(s) preserved" if kept else ""))
     else:
         sys.stdout.write(render(fresh))
@@ -377,35 +418,77 @@ def selftest() -> int:
     differing = [k for k, v in doc["variables"].items() if v["value"][0]["value"] != v["value"][1]["value"]]
     check(f"the dark scope genuinely differs ({len(differing)} roles)", len(differing) >= 10)
 
-    # COMPONENTS ARE REUSABLE, which is what makes this a library rather than a pile of look-alikes.
-    tops = doc["children"]
-    check("every top-level component is reusable", all(c.get("reusable") for c in tops))
+    # ONE ROOT FRAME holds the library -- the shape a real pen library file uses. Eight loose
+    # top-level frames is a canvas with components on it; one named, themed container is a library.
+    check("the document has exactly one root", len(doc["children"]) == 1)
+    lib = doc["children"][0]
+    check("...which is the library frame", lib["name"].endswith(": design system components"))
+    check("...themed, so it renders in a known mode", lib.get("theme", {}).get(AXIS) == LIGHT)
+    check("...and painted from a role token", lib.get("fill") == "$--background")
+
+    tops = lib["children"]
+    check("every component is reusable", all(c.get("reusable") for c in tops))
     names = [c["name"] for c in tops]
     check(f"the composition set is present ({len(names)})",
-          {"Card", "Input", "Badge", "Type scale"} <= set(names)
-          and sum(n.startswith("Button /") for n in names) == 4)
+          {"Card", "Input/Default", "Badge/Default", "Type/Scale"} <= set(names)
+          and sum(n.startswith("Button/") for n in names) == 4)
+    check("components are named Category/Variant", all("/" in n or n == "Card" for n in names))
 
-    # CROSS-CHECK AGAINST OUR OWN COMPILER. `pen_to_svg` refuses a literal colour by node, so a
-    # library it compiles without refusing is one whose fills are all token references — two tools
-    # checking each other instead of each trusting itself.
+    # VARIANTS ARE REFS, NOT COPIES. One base defines the geometry; four instances repaint it, so a
+    # radius change reaches all four instead of reaching one and drifting from three.
+    refs = [c for c in tops if c.get("type") == "ref"]
+    check(f"button variants are refs, not copies ({len(refs)})", len(refs) == 3)
+    base_ids = {c["id"] for c in tops if c.get("type") != "ref"}
+    check("...each pointing at a component in this document",
+          all(r["ref"] in base_ids for r in refs))
+    check("...and repainting the label through `descendants`",
+          all(r.get("descendants") for r in refs))
+    # LAID OUT BY FLEXBOX, so a component sizes to its content instead of being a fixed picture.
+    btn = next(c for c in tops if c["name"] == "Button/Default")
+    check("the base button is laid out, not absolutely sized",
+          btn.get("padding") and "width" not in btn)
+    check("...and its children carry no x/y", all("x" not in k for k in btn["children"]))
+
+    # WHAT THE COMPILER IS AND IS NOT FOR. An earlier version of this suite compiled every
+    # component through `pen_to_svg` as a cross-check. That was an over-reach: the compiler exists
+    # for ARTWORK -- bounded geometry with a resolved size -- and a design-system component laid out
+    # by flexbox has no size until a layout engine runs, because it is sized by its content. It was
+    # also never destined to become an `.svg` file; it becomes ERB. So the property that mattered is
+    # asserted directly, above: no literal colour anywhere in the library. The compiler still refuses
+    # an unsized node, honestly, which is the behaviour a caller wants when they point it at one.
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "pen_to_svg", Path(__file__).resolve().parent / "pen_to_svg.py")
     p2s = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(p2s)
-    compiled = 0
-    for comp in tops:
-        try:
-            svg = p2s.compile_svg(doc, comp["name"])
-        except p2s.Refusal as exc:
-            failures.append(f"{comp['name']!r} does not compile: {exc}")
-            continue
-        compiled += 1
-        if "var(--" not in svg:
-            failures.append(f"{comp['name']!r} compiled with no token reference")
+    try:
+        p2s.compile_svg(doc, "Button/Default")
+        failures.append("an unsized flex component should not silently compile")
+    except p2s.Refusal as exc:
+        check("the compiler refuses an unsized flex component rather than guessing",
+              "no size" in str(exc))
     checks += 1
-    check(f"every component compiles to token-native SVG ({compiled}/{len(tops)})",
-          compiled == len(tops))
+    # ...while a REF still resolves, because a well-authored library expresses variants that way and
+    # refusing them would reward the copy-paste library over the good one.
+    sized = {"children": [{"type": "frame", "id": "fm-base", "name": "Base", "width": 40,
+                           "height": 20, "fill": "$--primary",
+                           "children": [{"type": "rectangle", "id": "fm-inner", "x": 0, "y": 0,
+                                         "width": 40, "height": 20, "fill": "$--primary"}]},
+                          {"type": "ref", "id": "fm-alt", "name": "Alt", "ref": "fm-base",
+                           "x": 0, "y": 0, "fill": "$--secondary",
+                           "descendants": {"fm-inner": {"fill": "$--accent"}}}]}
+    svg = p2s.compile_svg(sized, "Alt")
+    check("a ref variant compiles by resolving its base", "<rect" in svg)
+    check("...with the instance's own override applied", "var(--secondary)" in svg)
+    check("...and its descendant override applied", "var(--accent)" in svg)
+    try:
+        p2s.compile_svg({"children": [{"type": "ref", "id": "x", "name": "N", "ref": "nope",
+                                       "width": 4, "height": 4}]}, "N")
+        failures.append("a dangling ref should be refused")
+    except p2s.Refusal as exc:
+        check("a dangling ref is refused, not rendered as nothing",
+              "not in this document" in str(exc))
+    checks += 1
 
     # THE DRIFT GATE fires on an edited library and stays silent on a fresh one.
     with tempfile.TemporaryDirectory() as td:
@@ -439,8 +522,15 @@ def selftest() -> int:
         names = [c["name"] for c in after["children"]]
         check("regenerating PRESERVES the designer's composition", "Hero v3" in names)
         check("...and their scratch variable", "--scratch" in after["variables"])
+        # `next(...)` with a DEFAULT, not a bare generator: if the library frame is missing, this
+        # assertion must FAIL rather than raise. A StopIteration here aborts the run and swallows
+        # every failure recorded before it -- which is how a mutation guard ends up unable to say
+        # which fixture caught it, and a crash is not a verdict.
+        lib_after = next((c for c in after["children"]
+                          if str(c.get("id", "")).startswith("fm-library")), None)
         check("...while still carrying every generated component",
-              {"Card", "Input", "Badge"} <= set(names))
+              lib_after is not None and {"Card", "Input/Default", "Badge/Default"}
+              <= {k["name"] for k in lib_after.get("children") or []})
         check("...with the role tokens still authoritative",
               after["variables"]["--primary"] == doc["variables"]["--primary"])
         # A designer who overrides a ROLE must lose that override: the pack owns the roles, and a

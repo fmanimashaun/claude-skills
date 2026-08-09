@@ -46,13 +46,13 @@ output contract is identical either way and everyone still converges on ERB judg
 verdicts.
 
 **Compose from the library, not from rectangles.** Scaffold it first
-(`pen_library.py --pack <pack> --out design/library.pen`) or the options you are choosing between are
+(`pen_library.py --pack <pack> --out design/fidara.lib.pen`) or the options you are choosing between are
 drawings of components rather than the components themselves.
 
 Then, before dispatching `ui-composer` for the winner:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_compose.py" --intent design/library.pen --for-surface marketing-hero
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_compose.py" --intent design/fidara.lib.pen --for-surface marketing-hero
 ```
 
 **Advisory, always.** It reports facts about the document — raw colours instead of tokens,

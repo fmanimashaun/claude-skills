@@ -238,7 +238,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_to_svg.py" design.pen --node "Empty l
 ### Scaffold the library first — compose *from* the brand, not beside it
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/library.pen
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/fidara.lib.pen
 ```
 
 That writes a `.pen` document holding **every role token as a variable, both modes explicit**, plus
@@ -251,7 +251,7 @@ geometry. Without it you compose from bare rectangles and the result is off-bran
 right alone. Regenerate and the divergence cannot survive; `--check` reports a stale one:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/library.pen --check
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack fidara --out design/fidara.lib.pen --check
 ```
 
 ### Buying a composed raster: the `pen` rung
@@ -285,7 +285,7 @@ schema, but "matches the schema" is evidence rather than proof — and the MCP c
 tell you. The CLI can, with no GUI and no open document:
 
 ```bash
-pen interactive -i design/library.pen -o /tmp/pen-load-check.pen
+pen interactive -i design/fidara.lib.pen -o /tmp/pen-load-check.pen
 ```
 
 Its shell takes `get_app_state({ include_schema: false })` then `exit()`. A document that loads and

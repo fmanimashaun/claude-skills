@@ -212,7 +212,7 @@ Then scaffold the library once, so compositions are built from real components r
 of them:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack <slug> --out design/library.pen
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack <slug> --out design/fidara.lib.pen
 ```
 
 **Say plainly that it is optional.** A developer who skips this must see no difference in any
