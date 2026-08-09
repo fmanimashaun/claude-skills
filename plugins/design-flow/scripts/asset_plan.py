@@ -67,13 +67,20 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
     if not cfg.is_file():
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(json.dumps({
-            "_comment": "Fill api_key_env's variable in your environment (or a gitignored .env). "
-                        "Until then every generate call refuses, which is the safe state.",
-            # An AGGREGATOR by default, which is what this field asks for: one key reaches many
-            # models, and the response carries `usage.cost` so the budget reconciles against the
-            # real charge rather than an estimate nobody checks. `gemini` is also shipped.
-            "aggregator": "openrouter",
-            "api_key_env": PLACEHOLDER_KEY_ENV,
+            "_comment": [
+                "The AGENT generates by default. It calls a connected provider MCP (OpenRouter's",
+                "`generate-image`) or authors SVG itself -- no API key, no .env, no adapter code.",
+                "`--run` marks such rows `awaiting-agent` with the composed prompt; the agent",
+                "fulfils each and registers it with `generate_asset.py --record`, which re-runs the",
+                "whole gate before the manifest accepts anything.",
+                "",
+                "Raster generation still COSTS via MCP -- the tool bills the same account. Only",
+                "vector-via-agent is genuinely free.",
+                "",
+                "Set `api_key_env` and a non-agent `aggregator` ONLY for unattended runs, where no",
+                "agent is in the loop to call an MCP. That path needs a key; this one does not."
+            ],
+            "aggregator": "agent",
             "budget_usd": 5.00,
             # PER KIND, because the kinds want different models: only some emit SVG, and no
             # image endpoint emits video.
@@ -89,14 +96,15 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
             # chose. The gate REFUSES an unpriced rung, so nothing can be bought until you look the
             # price up and write it in. That refusal is the feature.
             "ladders": {
-                "static": [{"name": "google/gemini-3.1-flash-lite-image", "cost_usd": None},
-                           {"name": "google/gemini-3-pro-image", "cost_usd": None}],
-                # THE AGENT AUTHORS VECTOR BY DEFAULT, and costs nothing -- so 0.0 here is a
-                # measured fact rather than a placeholder. `recraft/recraft-v4.1-vector` is the
-                # paid fallback if you want one; it will need a price before it can run.
+                # THE AGENT IS THE DEFAULT GENERATOR FOR EVERY KIND -- it calls a provider MCP when
+                # one is connected, or authors SVG itself. 0.0 is a measured fact for the SVG path
+                # and a FLOOR for the MCP path: the MCP bills the account, so put a real figure here
+                # before running raster work, or the budget compares against a number that is only
+                # true for the free half.
+                "static": [{"name": "agent", "cost_usd": 0.0}],
                 "vector": [{"name": "agent", "cost_usd": 0.0}],
-                # EMPTY ON PURPOSE. No image endpoint returns video, so a motion row refuses with
-                # "no ladder for kind 'motion'" rather than silently saving a still as `.webm`.
+                # EMPTY until a video route exists: no image endpoint returns video, so a motion row
+                # refuses rather than saving a still under a `.webm` name.
                 "motion": [],
             },
             "style_reference": "docs/assets/reference.png",
@@ -558,14 +566,17 @@ def selftest() -> int:
         made = scaffold(root)
         check("scaffold creates both files", len(made) == 2)
         cfg = json.loads((root / CONFIG_PATH).read_text())
-        check("...naming an api_key_env", cfg.get("api_key_env") == PLACEHOLDER_KEY_ENV)
+        check("...and a budget ceiling that the agent path still respects",
+              cfg.get("budget_usd") is not None)
         check("...with an empty briefs map to fill", cfg.get("briefs") == {})
-        # Prices are UNSET on purpose: the provider does not report them, so any number would be
-        # invented, and the gate refuses an unpriced rung rather than treating it as free.
-        check("...static rungs ship unpriced, so nothing can be bought unexamined",
-              all(r["cost_usd"] is None for r in cfg["ladders"]["static"]))
-        check("...and the agent rung is a measured 0.0, not a placeholder",
-              cfg["ladders"]["vector"][0]["cost_usd"] == 0.0)
+        # The AGENT is the default generator for every kind, so no key is scaffolded at all --
+        # naming a variable nobody needs is how a placeholder became a documented step for a path
+        # that never reads one.
+        check("every kind defaults to the agent",
+              all(l[0]["name"] == "agent" for l in (cfg["ladders"]["static"],
+                                                   cfg["ladders"]["vector"])))
+        check("...and no api_key_env is written", "api_key_env" not in cfg)
+        check("...with the aggregator set to agent", cfg["aggregator"] == "agent")
         # `motion` is scaffolded EMPTY on purpose: no image endpoint returns video, so a motion row
         # must refuse rather than save a still frame under a `.webm` name.
         check("...motion is empty until a video model is configured",

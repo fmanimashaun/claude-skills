@@ -27,9 +27,16 @@ Creates the config and an empty plan **only if absent**, and pins the brief so d
 A second run re-pins the fingerprint and **changes nothing else** — a setup command that resets the
 rows on re-run is not idempotent, it is destructive.
 
-The config lands with a **placeholder key on purpose**. Every generate call refuses until the real
-value is in the environment, so the pipeline is wired and nothing can be spent. That is the safe
-resting state, not a broken one.
+The config lands with **`aggregator: "agent"`** and **no API key at all** — because the agent
+generates: it calls a connected provider MCP (OpenRouter's `generate-image`) or authors SVG itself.
+Nothing to configure, nothing to leak.
+
+`--run` marks agent rows **`awaiting-agent`** with the composed prompt and a target path; fulfil each
+and register it with `generate_asset.py --record`, which re-runs the whole gate before the manifest
+accepts it. Those rows stay **outstanding** until a file exists.
+
+A key is needed in exactly one case: an **unattended** run, where no agent is in the loop to call an
+MCP. Set `api_key_env` and a non-agent `aggregator` then, and not before.
 
 ## 2. Read the brief and plan the set — before any coding
 

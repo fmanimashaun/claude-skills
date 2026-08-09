@@ -236,23 +236,41 @@ Add the variable name to config and keep the value in your environment (or a git
 **The key is never printed, logged, or written into the provenance row** — only whether one was
 usable.
 
-### Which provider
+### Who generates — the agent, by default
 
-**Two adapters ship.** `openrouter` is the default and the better fit for this path — it is an
-*aggregator*, so one key reaches many models, and its response carries **`usage.cost`**: the real
-charge for that request. Everything else here budgets against an estimate, and an estimate that is
-never reconciled is how a ceiling drifts until the bill arrives. With a real number the provenance
-row records `actual_cost_usd` beside `estimated_cost_usd`, and the two disagreeing is a finding
-rather than a surprise.
+**You do.** The scaffold sets `aggregator: "agent"` for every kind, and that is the intended path:
+you call a connected provider MCP (OpenRouter's `generate-image`) or author the SVG yourself. **No
+API key, no `.env`, no adapter code**, and nothing to keep in sync with a vendor.
 
-`gemini` is also shipped, for talking to Google directly. It returns no per-request cost, so
-`actual_cost_usd` is **null** there — absent rather than back-filled from the estimate, because
-copying the estimate would make the two agree by construction and hide the drift the field exists
-to show.
+The gate still runs in full. It approves, then hands back a brief:
 
 ```json
-{ "aggregator": "openrouter", "api_key_env": "OPENROUTER_API_KEY" }
+{ "approved": true, "author": "agent",
+  "write_to": "docs/assets/marketing-hero-agent.png",
+  "prompt": "minimalist-ink illustration; an abstract woven lattice; calm mood; palette …",
+  "then": "python3 generate_asset.py --request <req> --record <path>" }
 ```
+
+Fulfil it — MCP call, or write the SVG — then **`--record`**, which re-runs the whole gate before
+the manifest accepts the file. That is the point: an agent-authored asset gets **no easier route in**
+than a purchased one, or *"the agent got it from somewhere"* becomes the way past every refusal.
+
+In a plan, `--run` marks these rows **`awaiting-agent`** rather than `done`. They are outstanding
+until a file exists, because a row claiming completion with nothing on disk is the failure this
+whole path is built to avoid.
+
+**Cost has not gone away.** An MCP `generate-image` call bills the same account as the HTTP one —
+only vector-via-agent is genuinely free. The budget ceiling still applies, so put a real `cost_usd`
+on a raster rung before running it.
+
+### The HTTP adapters — for unattended runs only
+
+`openrouter`, `openrouter-svg` and `gemini` remain, and they need `api_key_env` plus a key in the
+environment or a gitignored `.env`. Reach for them in **one** case: a pipeline with no agent in the
+loop, which cannot call an MCP and must fetch bytes itself.
+
+If an agent is running the flow, use `agent` — the MCP path is strictly simpler and has one fewer
+credential to leak.
 
 ### Adding a provider
 

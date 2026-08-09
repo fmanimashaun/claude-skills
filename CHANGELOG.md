@@ -7467,6 +7467,24 @@ boot/validation path — with a bullet each so the promotion could close them se
   the scaffold is a placeholder the user must replace, and `--discover` says so rather than
   back-filling a number nobody chose.
 
+- **The agent generates by default, and the scaffold no longer writes an API key at all.** A
+  connected provider MCP (OpenRouter's `generate-image`) or the agent's own SVG covers the
+  interactive case entirely — no key, no `.env`, no adapter code, and one fewer credential to leak.
+  The gate is unchanged: it approves, hands back a brief, and `--record` **re-runs the whole gate**
+  before the manifest accepts the file, because an agent-authored asset must get no easier route in
+  than a purchased one.
+
+  Scaffolding `api_key_env` was itself the defect underneath the earlier `.env` bug: naming a
+  variable the default path never reads is how a placeholder became a documented step for a route
+  that could not use it. It is written only when someone chooses a non-agent aggregator.
+
+  **The HTTP adapters stay, scoped to one case** — an unattended run with no agent in the loop,
+  which cannot call an MCP and must fetch bytes itself. That path needs a key; the default does not.
+
+  **Cost is unchanged by any of this.** An MCP `generate-image` call bills the same account as the
+  HTTP one; only vector-via-agent is genuinely free. Measured, not assumed: `get-credits` reports
+  **0**, which is the same wall the HTTP path hit with a 402.
+
 - **The invented prices are gone, and an unpriced rung now REFUSES.** Removing them exposed
   something worse than the placeholders: a missing `cost_usd` defaulted to **0**, so an unpriced
   model cost nothing, the budget could never refuse it, and the ceiling was unreachable — a gate
