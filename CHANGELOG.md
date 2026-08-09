@@ -7388,6 +7388,129 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`.env` was promised in two shipped messages and read by nothing.** The scaffold's comment and
+  the key refusal both said *"put the real value in your environment (or a gitignored `.env`)"*,
+  while `generate_asset.py` called `os.environ.get()` and stopped there. Follow the instruction and
+  you get *"is not set"* — which reads like a broken tool rather than an unloaded file, in the one
+  message a user sees when they are already stuck. It now reads `.env`, and **the real environment
+  wins**: a shell export is the more deliberate act, and someone debugging a key must not be
+  silently overridden by a stale file they had forgotten. A placeholder in `.env` is still a
+  placeholder — the file is a source, not an exemption.
+
+  The parser is deliberately minimal: `KEY=value`, optional `export`, matching quotes, `#` comments.
+  No interpolation, no `${VAR}` expansion. A fuller parser is a dependency, and this script holds an
+  API key, so *no transitive supply chain* is worth more than covering exotic syntax.
+
+- **OpenRouter is now the default aggregator, and it makes an existing promise true.** The docstring
+  already claimed cost is *"recorded from the response, not from the estimate"* — which the Gemini
+  adapter cannot do, because that response carries no per-request price. OpenRouter's does
+  (`usage.cost`), so the provenance row records **`actual_cost_usd`** beside the estimate, and the
+  two disagreeing is a finding rather than a surprise. Everything else in this pipeline budgets
+  against an estimate, and an estimate that is never reconciled is how a ceiling drifts until the
+  bill arrives.
+
+  It is also simply the right shape for a field called `aggregator`: one key reaches many models.
+  Verified against the [OpenRouter image-generation docs](https://openrouter.ai/docs/guides/overview/multimodal/image-generation)
+  (2026-08-08) — `POST /api/v1/images`, bearer auth, `data[].b64_json`, `input_references` for a
+  style reference. `gemini` still ships for talking to Google directly; there
+  `actual_cost_usd` is **null** rather than back-filled from the estimate, because copying it would
+  make the two agree by construction and hide the drift the field exists to show.
+
+  Shipping one adapter had quietly made *"any provider meeting the contract is swappable"* a claim
+  with a single implementation. Two is the smallest number that tests it.
+
+- **The provider call was verified against the live API for the first time.** Every test in this
+  pipeline is offline by design — a test that dials a provider to prove a refusal is a bill — so the
+  adapter's request shape and response parsing had only ever been checked against documentation. A
+  real call returned **HTTP 402**, and the status is the useful part: *402, not 401*, so the key
+  authenticated and the endpoint, bearer header and body shape are all correct. The account simply
+  has no credits. The failure path behaved as designed: the provider's own remedy reached the caller
+  verbatim, and **nothing was written** — no asset file, no manifest row, no half-state to clean up.
+
+- **The agent authors vector assets, and that is now the default.** Claude Code writes SVG natively
+  and already holds the brand pack, the token names and the surrounding components — context a
+  remote model does not have — so routing a vector asset through an external call bought a worse
+  result at a cost. `aggregator: "agent"` runs the **whole gate** (library search, tier refusal,
+  composed prompt, budget, provenance) and skips only the HTTP request, because the discipline was
+  never the request. The agent writes the file, then `--record` **re-runs the gate** before the
+  manifest accepts it: an agent-authored asset gets no easier route in than a purchased one, or
+  *"the agent wrote it"* becomes the way past every refusal.
+
+  Four defects surfaced while wiring it, each in something that looked finished. The key preflight
+  ran **before** the adapter was chosen, so the one path that never calls an API refused for a
+  credential it had no use for. `manifest_entry` referenced a local that no longer existed after
+  being factored out — a `NameError` that only fired on the new path. `--record` built a manifest
+  path with `relative_to` against a caller-supplied relative path. And a filename carried the model
+  ID verbatim, so `cohere/x:free` produced a colon in a path that is legal here and hostile on
+  Windows and in URLs.
+
+- **Per-kind ladders, and two bugs that only surfaced by taking them seriously.** One global ladder
+  forced every kind through whatever suited the most common one. Only some models emit SVG and no
+  image endpoint emits video, so `kind: vector` wrote **PNG bytes to a `.svg`** and `kind: motion`
+  wrote **a still frame to a `.webm`** — files that open, look plausible in a listing, and are the
+  wrong format. The extension is now **sniffed from the bytes**, never derived from the request, and
+  a `vector` request whose model returned a raster **refuses** rather than saving it: a raster named
+  `.svg` does not scale and cannot be recoloured from tokens, which is the entire reason that kind
+  exists. The scaffold ships `motion` **empty on purpose**, so a motion row refuses with *"no ladder
+  for kind 'motion'"* until a video model is configured.
+
+- **Both scaffolded model IDs were invented from prose, and both 404'd.** `recraft-ai/recraft-v3-svg`
+  and `google/gemini-2.5-flash-image` do not exist; the real ones are `recraft/recraft-v4.1-vector`
+  and `google/gemini-3.1-flash-lite-image`. They were written from a documentation sentence rather
+  than from the provider, which is the transcription this repo's own `derived-artifacts` skill warns
+  about — in the file that spends money. All IDs are now **verified against the live model list**,
+  and `--discover` refreshes them so nobody depends on a hardcoded list ageing quietly.
+
+  `cost_usd` is **not** verified and cannot be: that endpoint does not expose pricing. Every price in
+  the scaffold is a placeholder the user must replace, and `--discover` says so rather than
+  back-filling a number nobody chose.
+
+- **The agent generates by default, and the scaffold no longer writes an API key at all.** A
+  connected provider MCP (OpenRouter's `generate-image`) or the agent's own SVG covers the
+  interactive case entirely — no key, no `.env`, no adapter code, and one fewer credential to leak.
+  The gate is unchanged: it approves, hands back a brief, and `--record` **re-runs the whole gate**
+  before the manifest accepts the file, because an agent-authored asset must get no easier route in
+  than a purchased one.
+
+  Scaffolding `api_key_env` was itself the defect underneath the earlier `.env` bug: naming a
+  variable the default path never reads is how a placeholder became a documented step for a route
+  that could not use it. It is written only when someone chooses a non-agent aggregator.
+
+  **The HTTP adapters stay, scoped to one case** — an unattended run with no agent in the loop,
+  which cannot call an MCP and must fetch bytes itself. That path needs a key; the default does not.
+
+  **Cost is unchanged by any of this.** An MCP `generate-image` call bills the same account as the
+  HTTP one; only vector-via-agent is genuinely free. Measured, not assumed: `get-credits` reports
+  **0**, which is the same wall the HTTP path hit with a 402.
+
+- **The invented prices are gone, and an unpriced rung now REFUSES.** Removing them exposed
+  something worse than the placeholders: a missing `cost_usd` defaulted to **0**, so an unpriced
+  model cost nothing, the budget could never refuse it, and the ceiling was unreachable — a gate
+  that cannot fail, guarding the one thing here with a bill attached. The scaffold ships prices
+  **unset** because the provider does not report them and an invented number is worse than an
+  absent one: it looks authoritative and the budget then approves or refuses against a figure nobody
+  chose. `0.0` on the agent rung stays, because there it is a measured fact rather than a guess.
+
+- **The rung chooses the adapter.** Per-kind ladders imply per-rung adapters, and only the global
+  `aggregator` was consulted — so a `vector` ladder whose rung is `agent` was routed through the
+  project's image aggregator and asked for an API key it would never use. This is also what makes an
+  **MCP** path work with no new code: set the rung to `agent`, obtain the asset however you like,
+  and `--record` re-runs the gate before the manifest accepts it.
+
+- **Exit 0 stopped meaning "done".** The agent path exits 0 while handing back a *brief*, so reading
+  the return code alone marked rows `done` with `file: null` and nothing on disk — the exact
+  *"recorded from what was attempted"* failure this file's own docstring forbids. A row is `done`
+  only when a file is named **and exists**; an approved-but-unwritten row is **`awaiting-agent`**,
+  which counts as outstanding, and a run reporting success with no file is `failed`.
+
+- **The full pipeline was proven end to end at zero cost.** No image model on OpenRouter has a
+  `:free` variant — checked across both endpoints, 42 models — but text models do, and the SVG path
+  needs one. A complete run (`scaffold → research → plan → check → run`) produced a **valid SVG**, a
+  complete manifest row, and a plan row marked `done`. The agent path was then proven the same way,
+  needing no key at all.
+
 ### 1.19.0 — 2026-08-08
 
 - **Research is now a precondition of the asset plan**, checked rather than advised. The ordering is

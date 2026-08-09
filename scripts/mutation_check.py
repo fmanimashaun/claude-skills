@@ -3370,6 +3370,15 @@ GUARDS: tuple[Guard, ...] = (
         # mutation caught by the wrong fixture would mean some other check is doing the work.
         mutations=(
             Mutation(
+                # An unpriced rung treated as free makes the ceiling unreachable: every unpriced
+                # model costs nothing, so the budget check cannot refuse -- a gate that cannot fail,
+                # guarding the one thing here with a bill attached.
+                "an unpriced rung stops refusing, so the budget compares against nothing",
+                '        if rung.get("cost_usd") is None:',
+                "        if False:",
+                "an unpriced rung is refused",
+            ),
+            Mutation(
                 # #161's shape with a bill attached: a ceiling documented and unenforced.
                 "the budget comparison inverts, so spending past the ceiling is approved",
                 "    if spent + projected > ceiling:",
@@ -3532,11 +3541,44 @@ GUARDS: tuple[Guard, ...] = (
         # stands between a request and someone's card.
         mutations=(
             Mutation(
+                # The agent path never calls an API. Demanding a key from it refused the one
+                # zero-cost route for a credential it had no use for -- which is what shipped until
+                # the adapter was resolved before the preflight.
+                "the agent path demands an API key it never uses",
+                '    key = "" if name == "agent" else preflight_key(config.get("api_key_env", ""), root)',
+                '    key = preflight_key(config.get("api_key_env", ""), root)',
+                "the agent path needs no API key (refused instead",
+            ),
+            Mutation(
+                # An agent-authored asset must get NO easier route into the manifest than a bought
+                # one, or "the agent wrote it" becomes the way past every refusal.
+                "a raster recorded as vector is accepted, so `.svg` stops meaning vector",
+                '    if kind == "vector" and ext != "svg":',
+                "    if False:",
+                "a raster recorded as vector is still refused",
+            ),
+            Mutation(
+                # Two shipped messages promised `.env` worked while nothing read the file, so a
+                # user who followed the instruction got "not set" and concluded the tool was broken.
+                "the .env fallback goes, so a promised location silently stops working",
+                "    if raw is None and root is not None:",
+                "    if False:",
+                "a key in .env is found",
+            ),
+            Mutation(
+                # A shell export is the more deliberate act. If a stale file could override it,
+                # someone debugging a key would be overridden by something they had forgotten.
+                "the environment stops winning, so a stale .env overrides a deliberate export",
+                "    if raw is None and root is not None:",
+                "    if root is not None:",
+                "the environment beats .env",
+            ),
+            Mutation(
                 # The load-bearing property: the gate is RE-RUN here, never trusted from the caller.
                 # Drop it and a hand-written {"approved": true} bypasses every refusal at once --
                 # library, tier precondition, composed prompt, budget ceiling.
                 "the gate stops being re-run, so a forged approval reaches the provider",
-                "    approval = decide(root, request)",
+                "    approval = decide(root, request)  # produce(): RE-RUN, never trusted from the caller",
                 '    approval = request if request.get("approved") else decide(root, request)',
                 "expected a Refusal, got Unusable",
             ),
@@ -3571,6 +3613,15 @@ GUARDS: tuple[Guard, ...] = (
         # No `needs`: the fixtures are literals and tempdirs, and the one run_plan fixture points at
         # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
         mutations=(
+            Mutation(
+                # Exit 0 is not "done": the agent path exits 0 with a BRIEF. Reading the code alone
+                # marked rows done with no file on disk -- the exact "recorded from what was
+                # attempted" failure this file's own docstring forbids.
+                "exit 0 alone marks a row done, so a plan completes with no assets on disk",
+                "            if produced and (root / produced).is_file():",
+                "            if True:",
+                "an agent brief is awaiting-agent, not done",
+            ),
             Mutation(
                 # Research settles the STYLE, and the style settles which assets exist at all. A
                 # plan written without it looks identical to one written with it -- every row

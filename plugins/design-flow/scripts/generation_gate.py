@@ -216,16 +216,22 @@ def compose_prompt(request: dict, brief: dict, pack: dict) -> str:
     return "; ".join(parts)
 
 
-def pick_model(config: dict, surface: str, attempt: int) -> dict:
+def pick_model(config: dict, surface: str, attempt: int, kind: str = "static") -> dict:
     """Bottom of the ladder first; climb only on a FAILED acceptance check.
 
     A surface with no acceptance check is pinned to the cheapest rung. That is deliberate and it is
     the whole of requirement 3: without a stated check, "climb because the output was not good
     enough" has no trigger and "best output" collapses into "the agent liked it".
     """
-    ladder = config.get("ladder") or []
+    # PER-KIND FIRST, then the shared ladder. A line drawing, an SVG icon and a motion loop do not
+    # want the same model: only some models emit SVG at all, and none of the image endpoints emit
+    # video. One global ladder forced every kind through whatever suited the most common one, and
+    # the mismatch surfaced as a raster named `.svg`.
+    ladders = config.get("ladders") or {}
+    ladder = ladders.get(kind) or config.get("ladder") or []
     if not ladder:
-        raise Refusal("no model ladder in project config. The ladder is config, not doctrine — "
+        raise Refusal(f"no model ladder for kind {kind!r} in project config — neither "
+                      f"`ladders.{kind}` nor a shared `ladder`. The ladder is config, not doctrine — "
                       "model names and prices change monthly and a list in doctrine rots inside a "
                       "quarter. Declare one, cheapest first.")
     if attempt > 0 and not config.get("acceptance", {}).get(surface):
@@ -233,6 +239,19 @@ def pick_model(config: dict, surface: str, attempt: int) -> dict:
             f"cannot climb the ladder for {surface!r}: no acceptance check is stated for it, so "
             f"there is no trigger for 'the cheap model was not good enough'. Write the check down "
             f"per surface, or the cheapest rung is the only rung.")
+    # AN UNPRICED RUNG IS REFUSED, never treated as free. Defaulting a missing `cost_usd` to 0 made
+    # the ceiling unreachable: every unpriced model cost nothing, so the budget check could not
+    # refuse anything -- a gate that cannot fail, guarding the one thing here with a bill attached.
+    # The scaffold ships prices UNSET on purpose, because the provider does not expose them and an
+    # invented number is worse than an absent one: it looks authoritative and is not.
+    for rung in ladder:
+        if rung.get("cost_usd") is None:
+            raise Refusal(
+                f"the ladder rung {rung.get('name', '<unnamed>')!r} has no `cost_usd`. Nothing can "
+                f"be budgeted against an unpriced model, and treating it as free would make the "
+                f"ceiling unreachable. Look up what this model charges and write it in — the "
+                f"provider's model endpoint does not report pricing, which is why the scaffold "
+                f"leaves it blank rather than guessing.")
     if attempt >= len(ladder):
         raise Refusal(f"the ladder for {surface!r} is exhausted at {len(ladder)} rung(s); climbing "
                       f"further would be spending with no rung left to justify it.")
@@ -288,7 +307,7 @@ def decide(root: Path, request: dict) -> dict:
     brief = (config.get("briefs") or {}).get(surface, {})
     pack = request.get("pack") or {}
     prompt = compose_prompt(request, brief, pack)
-    model = pick_model(config, surface, int(request.get("attempt", 0)))
+    model = pick_model(config, surface, int(request.get("attempt", 0)), kind)
     check_budget(config, float(request.get("spent_usd", 0.0)), float(model.get("cost_usd", 0.0)))
     return {
         "approved": True,
@@ -434,6 +453,25 @@ def selftest() -> int:
         {**CONFIG, "briefs": {"marketing-hero": {"style": "playful", "subject": "x",
                                                  "mood": "calm"}}}, OK_REQ, False)
     run("no brief for the surface", {**CONFIG, "briefs": {}}, OK_REQ, False)
+
+    # AN UNPRICED RUNG IS REFUSED. Treating it as free made the ceiling unreachable.
+    run("an unpriced rung is refused",
+        {**CONFIG, "ladder": [{"name": "m"}]}, OK_REQ, False)
+    run("...and a priced one is fine",
+        {**CONFIG, "ladder": [{"name": "m", "cost_usd": 0.01}]}, OK_REQ, True)
+    run("...zero is a price, not an absence",
+        {**CONFIG, "ladder": [{"name": "m", "cost_usd": 0.0}]}, OK_REQ, True)
+
+    # PER-KIND LADDERS. Only some models emit SVG, and none of the image endpoints emit video, so
+    # one global ladder forced every kind through whatever suited the most common one.
+    PERKIND = {**CONFIG, "ladders": {"vector": [{"name": "vector-model", "cost_usd": 0.02}]}}
+    run("a kind with its own ladder uses it", PERKIND,
+        {**OK_REQ, "kind": "vector",
+         "library_miss": {"searched_for": "x", "why_no_fit": "y"}}, True)
+    run("...and a kind with none falls back to the shared ladder", PERKIND, OK_REQ, True)
+    run("...but no ladder at all for that kind refuses",
+        {k: v for k, v in PERKIND.items() if k != "ladder"},
+        {**OK_REQ, "kind": "motion"}, False)
 
     # THE LADDER. Climbing needs a stated acceptance check, or "best output" means "agent liked it".
     run("no ladder declared", {k: v for k, v in CONFIG.items() if k != "ladder"}, OK_REQ, False)
