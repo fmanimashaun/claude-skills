@@ -59,6 +59,18 @@ PLACEHOLDER_RE = re.compile(
     r"<[^>]*>|\.\.\.|)$", re.I)
 
 ASSET_DIR = Path("docs/assets")
+# #625/#628/#629 — MAINTAINER DECISION, recorded on those issues rather than derived from any
+# upstream: the assets dir splits into two named folders, so the finished artefacts and the prompt
+# library each have a home instead of everything landing in one flat directory beside the indexes.
+#
+# The indexes STAY at the assets-dir root -- `plan.json`/`plan.md` and `manifest.json` describe the
+# contents, so root holds descriptions and the subfolders hold contents. Leaving `manifest.json`
+# where it is also means no existing project has to move a file, and every doc and command that
+# already names `docs/assets/manifest.json` keeps working.
+#
+# Kebab, not the space the layout was drawn with: a path with a space in it breaks every unquoted
+# shell one-liner in our own docs, and `lint_markdown_shell.py` checks 191 of those.
+ASSET_LIBRARY = ASSET_DIR / "assets-library"
 
 
 class Unusable(Exception):
@@ -557,7 +569,7 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
     # Only [A-Za-z0-9._-] survives. Model IDs carry `/` and `:` (`cohere/x:free`), both legal on
     # this filesystem and hostile on Windows and in URLs -- and an asset path ends up in both.
     name = re.sub(r"[^A-Za-z0-9._-]+", "-", f"{prov['surface']}-{prov['model']}").strip("-")
-    out = root / ASSET_DIR / f"{name}.{ext}"
+    out = root / ASSET_LIBRARY / f"{name}.{ext}"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(blob)
 
@@ -709,7 +721,7 @@ def agent_target(root: Path, prov: dict, ext: str | None = None) -> Path:
     stem = re.sub(r"[^A-Za-z0-9._-]+", "-", f"{prov['surface']}-agent").strip("-")
     suffix = ext or {"vector": "svg", "motion": "json", "video": "mp4"}.get(
         prov.get("kind"), "png")
-    return root / ASSET_DIR / f"{stem}.{suffix}"
+    return root / ASSET_LIBRARY / f"{stem}.{suffix}"
 
 
 def fetch_url(url: str, timeout: int) -> bytes:
@@ -1456,9 +1468,19 @@ def selftest() -> int:
             check(f"--from-url records end to end (exit {proc.returncode})", proc.returncode == 0)
             out = json.loads(proc.stdout or "{}")
             check("...writing the file the agent could not write itself",
-                  (root / ASSET_DIR / "s-agent.png").is_file())
+                  (root / ASSET_LIBRARY / "s-agent.png").is_file())
             check("...with the fetched bytes intact",
-                  (root / ASSET_DIR / "s-agent.png").read_bytes() == png)
+                  (root / ASSET_LIBRARY / "s-agent.png").read_bytes() == png)
+            # #625/#628/#629. THE NEGATIVE HALF: the flat root is where every asset used to land,
+            # so "it is in the library folder" is only half a check — a path that wrote to BOTH, or
+            # that fell back to the root on some branch, would satisfy the positive one alone.
+            check("...and NOT at the old flat assets-dir root",
+                  not (root / ASSET_DIR / "s-agent.png").exists())
+            check("the prompt library is in its own folder too",
+                  (root / prompt_library.PROMPT_DIR / "prompts.json").is_file()
+                  and not (root / ASSET_DIR / "prompts.json").exists())
+            check("...and the indexes stayed at the root",
+                  (root / ASSET_DIR / "manifest.json").is_file())
             check("...naming its source", out.get("source") == url)
             check("...and the manifest row", json.loads(
                 (root / ASSET_DIR / "manifest.json").read_text())["assets"][-1]["surface"] == "s")
@@ -1486,7 +1508,8 @@ def selftest() -> int:
                             "--from-url", url], cwd=root, capture_output=True, text=True, timeout=60)
             check(f"a URL serving the wrong format is refused (exit {proc.returncode})",
                   proc.returncode == 2)
-            check("...before writing anything", not (root / ASSET_DIR / "v-agent.svg").exists())
+            check("...before writing anything",
+                  not (root / ASSET_LIBRARY / "v-agent.svg").exists())
         finally:
             srv.shutdown()
 

@@ -159,6 +159,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # model rather than as a model called "agent".
     ("design-flow prompt library selftest",
      ("python3", "plugins/design-flow/scripts/prompt_library.py", "--selftest")),
+    # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as
+    # literals (it is deliberately standalone). Move one and not the others and `--scaffold` creates
+    # a folder nothing writes to while `--run` writes into one the scaffold never made — both halves
+    # still "work", on different paths, and nothing else in the repo would notice.
+    ("design-flow asset layout",
+     ("python3", "scripts/check_asset_layout.py")),
+    ("design-flow asset layout selftest",
+     ("python3", "scripts/check_asset_layout.py", "--selftest")),
     # #600/#601. The branch that matters is the silent skip: an absent surface must degrade to
     # today's behaviour rather than stopping, and only a fixture can hold that true.
     ("design-flow pen compose selftest",

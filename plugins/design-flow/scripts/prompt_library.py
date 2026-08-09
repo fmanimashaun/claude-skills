@@ -48,8 +48,12 @@ import json
 import sys
 from pathlib import Path
 
-LIBRARY_PATH = Path("docs/assets/prompts.json")
-RENDER_PATH = Path("docs/assets/prompts.md")
+# #625 — MAINTAINER DECISION on the issue: the prompt library gets its own folder under the assets
+# dir, mirroring `assets-library/` for the finished artefacts. Kebab rather than the space the layout
+# was drawn with, because a path with a space breaks every unquoted shell one-liner in our own docs.
+PROMPT_DIR = Path("docs/assets/prompts-library")
+LIBRARY_PATH = PROMPT_DIR / "prompts.json"
+RENDER_PATH = PROMPT_DIR / "prompts.md"
 
 # A rung name that is a ROLE rather than a model. `agent` authors in-process and `pen` shells out to
 # a local CLI; in both cases the model that actually rendered the pixels is unreported. Kept as a

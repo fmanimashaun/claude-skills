@@ -51,6 +51,12 @@ from pathlib import Path
 PLAN_PATH = Path("docs/assets/plan.json")
 CONFIG_PATH = Path(".design-flow/generation.json")
 RENDER_PATH = Path("docs/assets/plan.md")
+# #625/#628/#629. The two destinations the scaffold creates up front. Kept as literals rather than
+# imported from `generate_asset`/`prompt_library`, because those import `generation_gate` and this
+# module is deliberately standalone -- but `check_asset_layout.py` asserts all three agree, so the
+# duplication cannot rot into a disagreement.
+LIBRARY_DIR = Path("docs/assets/assets-library")
+PROMPTS_DIR = Path("docs/assets/prompts-library")
 
 # A planned row must say enough to be GENERATED and enough to be REVIEWED. `why` is the one that
 # looks optional and is not: a row nobody can justify is a row nobody should pay for, and it is the
@@ -142,6 +148,33 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
         doc["prd"] = {"path": prd, "sha256": fingerprint(root / prd)}
         plan.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
         made.append(f"pinned {prd}")
+
+    # #625/#628/#629 — MAINTAINER DECISION on those issues: both destinations exist BEFORE the first
+    # `--run`, so nothing has to invent a folder mid-generation. The indexes stay at the assets-dir
+    # root (`plan.json`, `plan.md`, `manifest.json` describe the contents); these two folders hold
+    # the contents themselves.
+    #
+    # EACH GETS A README RATHER THAN A `.gitkeep`. Git does not track an empty directory, so a bare
+    # mkdir gives the scaffolding machine a layout that nobody else who clones the project ever
+    # sees -- the invisible-deliverable failure this repo has hit before. A README makes the folder
+    # tracked AND says what belongs in it, which a zero-byte sentinel does not.
+    for rel, blurb in (
+        (LIBRARY_DIR, "# Assets library\n\nFinished, persisted visual assets — the PNG/SVG/MP4 "
+                      "files themselves.\n\nWritten here by `generate_asset.py`. The index that "
+                      "says what each one is FOR, and where it may be used, is\n"
+                      "`../manifest.json`; the plan of what is still outstanding is `../plan.md`.\n"),
+        (PROMPTS_DIR, "# Prompts library\n\nOne entry per prompt that reached a provider: the "
+                      "prompt verbatim, the model, the estimated and\nactual cost, the use cases, "
+                      "and the verdict.\n\n`prompts.json` is the source. `prompts.md` is a "
+                      "**generated** view of it — do not hand-edit that one;\nrebuild it with "
+                      "`prompt_library.py --render` and check it with `--check`.\n\nIt exists so a "
+                      "brand change does not mean paying again for work already done.\n"),
+    ):
+        (root / rel).mkdir(parents=True, exist_ok=True)
+        readme = root / rel / "README.md"
+        if not readme.is_file():
+            readme.write_text(blurb, encoding="utf-8")
+            made.append(str(rel) + "/")
     return made
 
 
@@ -834,7 +867,16 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         made = scaffold(root)
-        check("scaffold creates both files", len(made) == 2)
+        # NAMES, not a count. This was `len(made) == 2` and broke the moment #625 added the two
+        # library folders -- a bare count says nothing about WHAT was created, so it fails on a
+        # correct addition and would pass if the config were swapped for something else entirely.
+        check("scaffold creates the config", (root / CONFIG_PATH).is_file())
+        check("...and the plan", (root / PLAN_PATH).is_file())
+        # #625/#628/#629. Both destinations exist BEFORE the first --run, each with a README so git
+        # tracks the folder and the next person is told what belongs in it.
+        check("...and the assets library folder", (root / LIBRARY_DIR / "README.md").is_file())
+        check("...and the prompts library folder", (root / PROMPTS_DIR / "README.md").is_file())
+        check("...and reports each one it made", len(made) == 4)
         cfg = json.loads((root / CONFIG_PATH).read_text())
         check("...and a budget ceiling that the agent path still respects",
               cfg.get("budget_usd") is not None)

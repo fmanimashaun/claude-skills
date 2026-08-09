@@ -14,7 +14,7 @@ Four files, four jobs, and confusing them is the trap:
 | `.design-flow/generation.json` | how to buy — ladder, ceiling, briefs | you, once |
 | `docs/assets/plan.json` | **what the product needs** | the seeding pass |
 | `docs/assets/manifest.json` | **what the project owns** | each successful generate |
-| `docs/assets/prompts.json` | **what was asked for, by which model, at what price** | each generate and each verdict |
+| `docs/assets/prompts-library/prompts.json` | **what was asked for, by which model, at what price** | each generate and each verdict |
 
 The **gap between plan and manifest is the remaining work.** That is the whole reason both exist.
 
@@ -32,6 +32,25 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_plan.py" --scaffold --prd docs/PRD.
 Creates the config and an empty plan **only if absent**, and pins the brief so drift is detectable.
 A second run re-pins the fingerprint and **changes nothing else** — a setup command that resets the
 rows on re-run is not idempotent, it is destructive.
+
+It also creates **both destinations, before the first `--run`**, so nothing has to invent a folder
+mid-generation:
+
+```
+docs/assets/
+├── plan.json          ┐
+├── plan.md            ├─ the INDEXES — what is needed, what exists
+├── manifest.json      ┘
+├── assets-library/    → the finished artefacts (PNG / SVG / MP4)
+└── prompts-library/   → prompts.json + its generated prompts.md
+```
+
+Each folder gets a `README.md` saying what belongs in it. That is not decoration: **git does not
+track an empty directory**, so a bare `mkdir` would give the scaffolding machine a layout nobody
+else who clones the project ever sees.
+
+Assets generated before this layout stay where they are and keep working — the manifest holds
+explicit paths, so nothing needs moving. Only new artefacts land in `assets-library/`.
 
 The config lands with **`aggregator: "agent"`** and **no API key at all** — because the agent
 generates: it calls a connected provider MCP (OpenRouter's `generate-image`) or authors SVG itself.

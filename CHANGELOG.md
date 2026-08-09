@@ -7459,6 +7459,40 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The assets dir splits into two named folders.** (#625, #628, #629 — **maintainer decision
+  recorded on those issues**, not an upstream claim.) Everything used to land flat under
+  `docs/assets/`: the artefacts, the manifest, the plan, and now the prompt library too. The layout
+  is now indexes at the root, contents in subfolders:
+
+  ```
+  docs/assets/
+  ├── plan.json · plan.md · manifest.json   the INDEXES — what is needed, what exists
+  ├── assets-library/                        the finished artefacts (PNG / SVG / MP4)
+  └── prompts-library/                       prompts.json + its generated prompts.md
+  ```
+
+  `--scaffold` creates both **before the first `--run`**, each with a `README.md` — not a `.gitkeep`,
+  because git does not track an empty directory and a bare `mkdir` would give the scaffolding machine
+  a layout nobody else who clones the project ever sees. That is the invisible-deliverable failure
+  `docs/coverage.html` was committed to fix.
+
+  **Kebab, not the space the layout was drawn with**: a path containing a space breaks every unquoted
+  shell one-liner in our own docs, and `lint_markdown_shell.py` checks 191 of those. The founder's
+  note said the binding requirement was the two-folder split rather than the casing.
+
+  `manifest.json` **stays at the root** — that part was not specified, so it is our call: the root
+  holds descriptions and the subfolders hold contents, and leaving it put means no existing project
+  moves a file and every doc naming `docs/assets/manifest.json` keeps working. Assets generated
+  before this change stay where they are; the manifest holds explicit paths, so only new artefacts
+  land in `assets-library/`.
+
+  Three modules encode the one decision and `asset_plan.py` holds its half as literals (it is
+  deliberately standalone), so new `scripts/check_asset_layout.py` asserts they agree — and asserts
+  it **behaviourally**, running the real `scaffold()` in a tempdir rather than reading constants: a
+  constant can agree perfectly while the code that should have used it does not. Move one and not the
+  others and `--scaffold` creates a folder nothing writes to while `--run` writes into one the
+  scaffold never made; both halves keep "working", on different paths.
+
 - **A prompt library, because the flow's own doctrine said the prompt was load-bearing and then
   threw it away.** (#625) `generation_gate.py` states, of the prompt it composes: *"the only thing
   that makes the asset reproducible: without it, a brand change means paying again."* And
