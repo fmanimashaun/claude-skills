@@ -314,6 +314,12 @@ than an error:
   the variables back and check both modes survived.
 - **Verify with the exporter, not the on-screen preview.** A per-node screenshot rendered only the
   background while the export was correct, which would tell an agent its work had failed.
+- **Confirm which document you are actually addressing, before every export.** A `filePath` naming a
+  file that is *not* open in the editor is **silently resolved against the active document** rather
+  than refused — so the tool answers confidently about the wrong file, and a missing node reads as
+  "my composition is broken" instead of "you are looking somewhere else". `get_app_state` names the
+  active editor; check it matches the file you mean, and open the file you mean if it does not. This
+  is the one pen behaviour here that produces a *confident* wrong answer rather than a blank one.
 
 ## 4b. Producing it
 
