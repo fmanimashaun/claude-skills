@@ -7388,6 +7388,67 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.22.0 — 2026-08-09
+
+- **The cost preflight read a config key `--scaffold` has never written, so every plan cost $0.00
+  and the budget guard could not fire.** (#592) `--scaffold` writes the price table under `ladders`
+  — a dict keyed by kind — while `plan_cost()` and `affordable()` read `ladder`, flat and singular.
+  Against any real project that resolved to `[]`, so the estimate was `$0.00` however many rows the
+  plan held, `0.0 > ceiling` was never true, and `--run` fell straight through the refusal to the
+  executor. **A guard whose input is always zero is not a lenient guard; it is one that has been
+  switched off, and nothing said so.**
+
+  Reconciled onto `ladders`, priced **per kind** — which is the shape the per-kind ladders were
+  introduced for. A video rung costs an order of magnitude more than a vector rung the agent
+  authors, so one flat ladder had to be wrong for at least one of them. The flat key still resolves
+  as a fallback, matching `generation_gate.py` exactly, so hand-written configs keep working.
+
+  Two further holes closed on the way, both the same shape one level down:
+
+  - **An unpriced ladder read as a free one.** `cheapest_rung` returned `0.0` when nothing on the
+    ladder had a price, so the row nobody had costed was the cheapest thing in the plan and fitted
+    inside every budget. It returns `None` now, and `--run` **refuses an unpriced plan outright,
+    before the executor is invoked and regardless of the numeric total** — deliberately not a budget
+    comparison, because a ceiling can only refuse a number. `--confirm-partial` does not bypass it:
+    "buy what the budget affords" is a decision about rows whose price is known.
+  - **`affordable()` computed "the cheapest rung" its own second way**, which disagreed with
+    `cheapest_rung` in two directions at once — it counted an unpriced rung as free, and raised
+    `TypeError` on a rung whose `cost_usd` is explicitly `null`, which is exactly what the scaffold
+    writes for video. One answer now, from one function.
+
+  **Why 63 assertions passed over it.** The cost fixtures hand-wrote `{"ladder": [...]}` — a shape
+  the scaffold has never emitted — so the suite validated a contract the writer does not produce.
+  Tests that *imitate* the writer's output instead of **using** it cannot see a writer/reader
+  divergence; they are two transcriptions agreeing with each other. Every cost fixture is now built
+  by calling `scaffold()`, and a new end-to-end fixture drives `main(["--run"])` against a real
+  scaffolded project with a `subprocess.run` that fails the test if the executor is ever reached.
+  Five mutation guards cover the reconciled reader, the `None` rung, both refusals and the render.
+
+- **The asset plan renders as a markdown table beside the JSON.** (#593) `plan.json` is the right
+  shape for the agent that runs the plan and the wrong shape for the human who has to **review** it,
+  which is the step the plan exists for. `--render` writes `docs/assets/plan.md`: one row per asset
+  with surface, kind, status, group, priority, per-row estimate, produced file and `why`. Unpriced
+  rows are marked **unpriced** rather than shown as `$0.00`, so the reason a run will refuse is
+  visible in the document someone reads before deciding to spend.
+
+  Generated, never hand-maintained — a hand-kept table is a second source of truth that disagrees
+  with the first within a week and disagrees *silently*, because a stale table still looks like a
+  table. Two properties carried over from `docs/coverage.html`: the bytes are a function of the
+  **data only** (no timestamp, no SHA, no absolute path — anything else makes the drift check
+  unpassable by construction), and the totals come from `status_report()` rather than the renderer
+  recounting rows. `save_plan()` re-renders at the single choke point so a mutation path added later
+  cannot forget, `--check` reports staleness, and an **absent** table says nothing at all — it is
+  opt-in, and a check demanding a file the scaffold never creates would fail every project that
+  does not want one.
+
+- **Three stale claims in `asset_plan.py`'s own doctrine.** The module docstring described a
+  placeholder API key the scaffold stopped writing two releases ago; `--scaffold` told every new
+  project its next step was to fill `$OPENROUTER_API_KEY`, a variable the scaffolded path never
+  reads, as the **first instruction it sees**; and `--discover` printed `--discover needs $None set`
+  on any default config. All three now describe what the code does — the agent generates by default
+  and needs no key, and what makes the scaffolded state safe is that paid rungs ship unpriced and an
+  unpriced row is refused before the executor runs.
+
 ### 1.21.0 — 2026-08-09
 
 - **The research now decides the style, and the plan holds every brief to it.** The sequence —
@@ -8736,6 +8797,56 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09b (release v1.84.0)
+
+> ### A budget guard that could not fire, and a plan a human can read
+>
+> The cost preflight read a config key `--scaffold` has never written, so every plan cost $0.00 and
+> `--run` walked past the refusal to the executor. Fixed, with the test discipline that would have
+> caught it — plus a generated markdown table beside the plan JSON.
+
+- **`asset_plan.py`'s cost preflight read `ladder`; `--scaffold` writes `ladders`.** (#592) The
+  singular key is absent from every scaffolded config, so it resolved to `[]`, every plan cost
+  `$0.00` however many rows it held, `0.0 > ceiling` was never true, and `--run` fell through to the
+  executor. **A guard whose input is always zero is not a lenient guard; it is one that has been
+  switched off, and nothing said so.** Reconciled onto `ladders` and priced **per kind** — a video
+  rung costs an order of magnitude more than a vector rung the agent authors, so one flat ladder had
+  to be wrong for at least one of them.
+
+  Two holes of the same shape one level down: `cheapest_rung` returned `0.0` for a ladder that
+  priced nothing, making the row nobody had costed the cheapest thing in the plan; and `affordable()`
+  computed "the cheapest rung" its own second way, which counted an unpriced rung as free **and**
+  raised `TypeError` on a rung whose `cost_usd` is explicitly `null` — exactly what the scaffold
+  writes for video. `--run` now refuses an unpriced plan outright, before the executor and
+  regardless of the numeric total, and `--confirm-partial` does not bypass it: a ceiling can only
+  refuse a number, and the whole problem is that there is no number.
+
+  **Why 63 assertions passed over it, which is the part worth keeping.** The cost fixtures
+  hand-wrote a config shape the scaffold has never emitted, so the suite validated a contract the
+  writer does not produce — two transcriptions agreeing with each other. Every cost fixture is now
+  built by calling `scaffold()`, and a new end-to-end fixture drives `main(["--run"])` against a
+  real scaffolded project with a `subprocess.run` that **fails the test if the executor is ever
+  reached**. No unit test could have caught this: each function answered correctly in isolation, and
+  the bug lived in the path between them.
+
+- **The asset plan renders as a markdown table beside the JSON.** (#593) `plan.json` is the right
+  shape for the agent that runs the plan and the wrong shape for the human who has to review it —
+  which is the step the plan exists for. Unpriced rows are marked **unpriced** rather than shown as
+  `$0.00`, so the reason a run will refuse is visible in the document someone reads before deciding
+  to spend. Generated and drift-checked, carrying the two `docs/coverage.html` rules: the bytes are
+  a function of the **data only**, and the totals come from `status_report()` rather than a second
+  count.
+
+- **Three stale claims in `asset_plan.py`'s own doctrine**, all about a placeholder API key the
+  scaffold stopped writing two releases ago — including `Next: fill $OPENROUTER_API_KEY`, the
+  **first instruction a new project saw**, naming a variable the scaffolded path never reads.
+
+**Upgrade note.** `--run` now refuses a plan containing a `video` row until a real `cost_usd` is
+written into `ladders.video`, because the provider's catalogue does not report pricing and the
+scaffold ships that rung unset rather than inventing a figure. The three agent-authored kinds
+(`static`, `vector`, `motion`) are priced at `0.0` and unaffected, so the free path a fresh project
+actually uses still runs.
 
 ### 2026-08-09 (release v1.83.0)
 
