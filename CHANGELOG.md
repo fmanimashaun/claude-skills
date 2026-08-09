@@ -7404,6 +7404,24 @@ boot/validation path — with a bullet each so the promotion could close them se
   family, one style: a set that mixes them is the pile this whole path exists to avoid, and it is
   invisible once shipped.
 
+- **The settled approach is emitted as a project-level SKILL, not left as JSON.** `--emit-skill`
+  writes `.claude/skills/project-design/SKILL.md` — the chosen style, the job it serves, the
+  mechanisms adopted, and **what was rejected and why**.
+
+  The record is *evidence*; the skill is *doctrine*. A JSON file is parsed when an agent remembers
+  to; a skill is read because its description matches the work in hand. Left only in the record, the
+  style gets **re-derived** by every downstream agent from raw references — and re-derivation is
+  where a family quietly becomes a pile. The rejected half is the part people drop, and it is the
+  reason the same idea is not re-proposed next quarter.
+
+  It is **generated, never hand-edited**, and refuses to emit from a record that does not pass its
+  own checks — publishing a decision nobody made, into the place agents trust most, is worse than
+  publishing nothing. That guard first lived in `main()`, where no test reached it and a mutation
+  survived; it now sits at the point of writing, where the danger is.
+
+  Tokens are deferred to the brand pack rather than restated, so the skill records the *approach*
+  and the pack records the *values* — one home each.
+
 - **Retracted, not shipped: a Figma-to-tokens reader.** It was named as a gap against an external
   designer workflow, and it is not one — tokens here are **generated from the brand pack**, so a
   Figma reader would be a second source of truth for the same values, which `plugin-boundaries`

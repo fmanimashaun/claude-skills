@@ -3835,6 +3835,15 @@ GUARDS: tuple[Guard, ...] = (
         # matters more than usual, because the subject is about BROWSING other people's sites.
         mutations=(
             Mutation(
+                # Emitting doctrine from an unreviewable record publishes a decision nobody made,
+                # in the place agents trust most. The skill is only written from a record that
+                # PASSES -- a record that gathers and does not choose must not become guidance.
+                "an unreviewable record still emits a skill, publishing a decision nobody made",
+                "    problems = check(record)   # emit_skill: refuse at the point of writing",
+                "    problems = []", 
+                "a record with no style should not emit a skill",
+            ),
+            Mutation(
                 # "Three or more sources disagree, and the choosing IS the design." A record that
                 # gathers and does not choose is a mood board.
                 "a record may gather without choosing, so the research produces no decision",
