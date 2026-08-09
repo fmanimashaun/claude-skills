@@ -7457,7 +7457,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.23.2 — 2026-08-09
 
 - **The doctrine resolver assumed the clone layout, so the library step failed for everyone who
   installed.** (#617) `pen_library.py` found `components.md` by counting four `.parent` hops. That is
@@ -9156,6 +9156,42 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09f (release v1.85.3)
+
+> ### The library step was broken for everyone who installed rather than cloned
+>
+> Reported from a live downstream project (#617), with a differential repro: same version, same
+> args, same cwd — only the invocation path differed.
+
+- **`pen_library.py` resolved the `fidara-design` catalogue with the CLONE layout.** Four `.parent`
+  hops reach the doctrine in a marketplace clone and land a directory short from an install, where
+  the cache interposes `<bundle>/<version>/`. So `${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py` —
+  **the only invocation this plugin documents** — could not find the catalogue and refused.
+
+  Substrate fact #4 from `/rails-flow:toolchain-check` in different clothes: `rails-stack` is a
+  skills bundle with **no plugin directory**, so a code plugin and the skills bundle have disjoint
+  cache shapes. **They differ in depth, not offset**, so a corrected hop count would only have been
+  a different wrong constant.
+
+  `doctrine_path.py` now answers it once for both layouts, newest cached version first — the
+  ordering `toolchain_version.py` already records, since two versions coexist and taking whichever
+  the filesystem yields reports the stale one. Both layouts now emit **byte-identical** libraries.
+
+- **Two more scripts shared the defect**, found by sweeping rather than by report:
+  `setup_doctrine_crosscheck.py` (documented at `audit.md:36`, broken identically) and
+  `llm_tell_detector.py` (self-check only, so consumers were unaffected). All three share the one
+  resolver now.
+
+- **The refusal named one path**, so it read as *"the catalogue is missing"* when the truth was *"I
+  looked in the wrong place"* — a reader who checked it would conclude their `rails-stack` install
+  was broken. It lists every root tried, and `--catalogue` / `--shapes` are the escape hatch a path
+  assumption should always have had.
+
+- **The selftest passed throughout, because it only ever ran from a clone.** A fixture that shares
+  the code's assumption cannot test it — 44 green assertions over a bug that broke every user. There
+  is now an installed-layout fixture built as a real directory tree, with two cached versions so
+  newest-wins is asserted too, and a clone fixture so the fix cannot regress the other way.
 
 ### 2026-08-09e (release v1.85.2)
 
