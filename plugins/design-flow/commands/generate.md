@@ -401,6 +401,11 @@ The gate still runs in full. It approves, then hands back a brief:
   "then": "python3 generate_asset.py --request <req> --record <path>" }
 ```
 
+**An image MCP hands you the bytes INLINE — there is no file on disk.** Those bytes *are* the
+asset: decode them and write them to `write_to` yourself. Going to look for a file the provider never
+created is how a successful, paid generation gets thrown away, and the next attempt pays for the same
+image twice. (Reported after exactly that: a good result, $0.04 spent, nothing recorded.)
+
 Fulfil it — MCP call, or write the SVG — then **`--record`**, which re-runs the whole gate before
 the manifest accepts the file. That is the point: an agent-authored asset gets **no easier route in**
 than a purchased one, or *"the agent got it from somewhere"* becomes the way past every refusal.

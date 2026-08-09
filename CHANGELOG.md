@@ -7457,6 +7457,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The agent path never said that the inline image IS the asset.** A paid generation succeeded, the
+  provider MCP returned the bytes inline as it always does, and the agent then went looking for a
+  file on disk — found none, and reported "the MCP returned the image inline only". The $0.04 bought
+  a good asset that was never saved.
+
+  Nothing was broken: `awaiting-agent` said *"write the file at `write_to`"* and the command said
+  *"MCP call, or write the SVG — then `--record`"*. Neither closed the loop between **the response
+  you got** and **the file you must write**, and that gap costs money in the one direction that
+  matters — the next attempt pays for the same image again.
+
+  Both strings now say it outright: an image MCP hands back bytes, not a path; those bytes are the
+  asset; save them to `write_to` yourself.
+
 ### 1.23.3 — 2026-08-09
 
 - **The brief's constraints never reached the prompt, and absence was narrated into it.** (#621)
