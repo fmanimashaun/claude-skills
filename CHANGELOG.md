@@ -7388,7 +7388,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.20.0 — 2026-08-09
 
 - **`.env` was promised in two shipped messages and read by nothing.** The scaffold's comment and
   the key refusal both said *"put the real value in your environment (or a gitignored `.env`)"*,
@@ -8657,6 +8657,43 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09 (release v1.82.0)
+
+> ### The asset path generates, and it needs no API key to do it
+>
+> Six defects, all in code that looked finished, and every one of them found by running the thing
+> rather than reading it.
+
+- **The agent generates by default.** A connected provider MCP or the agent's own SVG covers the
+  interactive case entirely — no key, no `.env`, no adapter code. The gate is unchanged: it
+  approves, hands back a brief, and `--record` **re-runs the whole gate** before the manifest
+  accepts the file, so an agent-authored asset gets no easier route in than a purchased one. The
+  HTTP adapters remain, scoped to unattended runs where no agent can call an MCP.
+
+- **`.env` was promised in two shipped messages and read by nothing.** Follow the instruction and
+  you got *"is not set"* — which reads like a broken tool rather than an unloaded file. It reads
+  `.env` now, and the real environment wins. Scaffolding `api_key_env` at all turned out to be the
+  defect underneath: naming a credential the default path never reads is how a placeholder became a
+  documented step for a route that could not use it.
+
+- **Both scaffolded model IDs were invented from documentation prose**, and both 404'd on the first
+  real call. Verified against the live model list now, with `--discover` to refresh them. Prices are
+  **unset**, because that endpoint does not report pricing and an invented number is worse than an
+  absent one — and removing them exposed that a missing `cost_usd` defaulted to **0**, so an
+  unpriced model cost nothing and the ceiling was unreachable. An unpriced rung refuses now.
+
+- **`kind: vector` wrote PNG bytes to a `.svg`, and `motion` wrote a still to a `.webm`.** Files
+  that open, look plausible in a listing, and are the wrong format. Extensions are sniffed from the
+  **bytes**; a vector request that gets a raster refuses.
+
+- **Exit 0 stopped meaning "done".** The agent path exits 0 while handing back a *brief*, so reading
+  the return code alone marked rows complete with nothing on disk — the exact *"recorded from what
+  was attempted"* failure the file's own docstring forbids.
+
+Verified live rather than asserted: an HTTP call returned **402, not 401** (key valid, no credits),
+`get-credits` reports **0**, and a full `scaffold → research → plan → check → run` produced a valid
+SVG, a complete manifest row and an honest status — at zero cost.
 
 ### 2026-08-08 (release v1.81.0)
 
