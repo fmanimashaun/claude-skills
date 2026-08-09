@@ -7513,17 +7513,22 @@ boot/validation path — with a bullet each so the promotion could close them se
   it every mutation died on `no theme.css`, and the harness correctly refused to score a crash as a
   verdict. One assertion was hardened from `e["theme"][AXIS]` to `.get()` for the same reason.
 
-  **Not yet verified, but verifiable — and headless.** That pen itself loads a library we authored is
-  unconfirmed: the MCP cannot open a file, and `export_nodes` with an explicit `filePath` silently
-  resolved against the *active* document rather than erroring, so it answered about the wrong file.
-  The document matches the published schema exactly and our own compiler reads it, which is evidence
-  and not proof.
+  **Verified against pen itself** (CLI 0.3.2), headlessly:
+  `pen interactive -i library.pen -o out.pen`, then `get_app_state({…})`. pen reports all 8
+  components as **top-level nodes AND reusable components**, under **the ids we chose** —
+  `fm-button-primary`, `fm-card`, … — which is the file-authoring premise confirmed end to end: ids
+  survive because the "Pencil always generates random IDs" rule belongs to `Insert`, not to a
+  document it loads.
 
-  The CLI closes it without a GUI — `pen interactive -i design/library.pen -o /tmp/out.pen`, whose
-  shell takes `get_app_state({…})`, `save()` and `exit()`. That is a real acceptance check for the
-  generator and it belongs in the loop; it is absent here only because `@pen.dev/cli` is not
-  installed on this machine, and installing it is a package-manager action this repo deliberately
-  keeps behind a prompt.
+  Exporting through pen then rendered `--primary` as **#0072C4** (fidara cerulean-700) on white, and
+  the card in `--card` / `--card-foreground` / `--muted-foreground` / `--border`. So the variables
+  resolve, which is the claim that mattered: one document, one pack, both themes.
+
+  Getting there needed one correction on the way. `export_nodes` with an explicit `filePath` naming a
+  file that is not open **silently resolves against the active document**, so it answered confidently
+  about the wrong file and a missing node read as "the library is broken". `get_app_state` names the
+  active editor; checking it costs nothing and is now doctrine. Of every pen quirk measured, this is
+  the only one that produces a *confident* wrong answer rather than a blank or black one.
 
 - **Compile a `.pen` design into token-native SVG, rather than exporting one.** (#602)
   `plugins/design-flow/scripts/pen_to_svg.py`.
