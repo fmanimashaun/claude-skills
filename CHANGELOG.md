@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-09 (v1.85.0)
 
 - **Nothing asserted that a promotion is a merge commit, and a squash broke the next release.**
   (#597) CLAUDE.md has said *"Release = one promotion PR `dev → main` (a merge commit)"* for eleven
@@ -7419,7 +7419,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.23.0 — 2026-08-09
 
 - **pen now mirrors the WHOLE catalogue — all 51 component rows.** (#609) It mirrored four, because
   only 6 of 51 rows declare a `**Variants:**` enum and the rest are *structural*: their doctrine
@@ -9075,6 +9075,56 @@ boot/validation path — with a bullet each so the promotion could close them se
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
 ## Repository / marketplace
+
+### 2026-08-09c (release v1.85.0)
+
+> ### pen.dev enters design-flow, on both sides of the code boundary
+>
+> Assets get generated and compiled through it; screens get explored in it before any ERB is
+> written. The whole component catalogue is mirrored so both stay on brand. Every vendor claim here
+> was measured against the live tool, and two of them were false.
+
+- **A design system a human can compose in, mirrored from the one agents build code from.** (#603,
+  #609) `pen_library.py` generates a `.pen` library from `theme.css` and `components.md`: 22 role
+  tokens with both themes explicit, and **66 nodes covering all 51 component rows**. Variants are
+  `ref` instances rather than copies, so one geometry serves six buttons.
+
+  It writes a **file** rather than driving the MCP, which is what made it tractable: through the MCP
+  **ids cannot be chosen**, so every regeneration would break every `ref` silently. The id rule
+  belongs to `Insert`; a file we author keeps the ids we write, regeneration is byte-identical by
+  construction, and it runs in CI.
+
+  The library file is also the **scratchpad** — compositions live beside the components — so a
+  rebuild replaces only generated nodes and `--check` compares only that region. A drift check firing
+  on someone's own explorations is one that gets switched off.
+
+- **Compile a `.pen` into token-native SVG.** (#602) pen exports raster only, which first read as
+  "pen cannot serve illustration". Wrong question: the format **is** SVG-shaped, and a compiled asset
+  is **better** than an exported one — every design tool's SVG export emits hardcoded hex, which
+  `design-auditor` refuses by name, while a compiled one is `fill="var(--primary)"` and serves light
+  and dark from one file.
+
+- **A `pen` rung for composed raster, an exploration tier, and an intent pass.** (#599, #600, #601)
+  An OG card is layout plus real type; a diffusion model cannot render accurate text or repeat a
+  brand. Divergence in `/design-flow:variants` was priced at N × ERB; the tier makes exploration
+  cheap and charges the ERB price only for the winner. The audit became a three-pass progression —
+  intent (advisory) → source → rendered — where only the first is new, because role tokens, focus
+  rings and ARIA are properties of code that does not exist yet.
+
+- **A `design-explorer` agent.** (#608) The scripts existed and the doctrine for using them did not;
+  scripts without an operator are a workshop with no one in it.
+
+- **A promotion must be a merge commit, and now something asserts it.** (#597) v1.83.0 was
+  squash-merged, which keeps dev's content and drops its ancestry — so v1.84.0 hit six conflicts on
+  files nobody had edited twice. `maintainer_doctor` checks that `main`'s tip **is** a merge *and*
+  has a parent on `dev`; both halves are needed, and the fixture proved it.
+
+**Four vendor behaviours measured, each producing a plausible wrong answer rather than an error:**
+`.pen` files are **not** encrypted despite the server saying so (and obeying it blocks the only
+working path); the MCP **elides** `geometry`, the one field a compiler needs; `SetVariables`
+**silently drops** a theme-less value, after which artwork exports **black**; and `export_nodes` with
+a `filePath` that is not open **resolves against the active document**, answering confidently about
+the wrong file.
 
 ### 2026-08-09b (release v1.84.0)
 
