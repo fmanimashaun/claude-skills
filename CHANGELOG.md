@@ -7,6 +7,75 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-16b (v1.88.1)
+
+- **The install description named the wrong agents.** (#653) Found immediately after #651, in the
+  same file, and the same class: the install surface saying something untrue.
+
+  ```
+  rails-flow:  ships 11, description claims "eight"
+  design-flow: ships 5,  description names 3
+  ```
+
+  `rails-flow` also named **`developer`** for a file called `rails-developer.md`, so a user who read
+  the description and went looking found nothing. `design-flow` omitted `design-critic` — the
+  advisory lens the whole `art-direction.md` enforcement model rests on — and `design-explorer`.
+  Both agents were added this month; the description was never touched.
+
+  New `misdescribed-agents` rule, **verified by restoring the old descriptions and watching it fire
+  on exactly the state the repo was in** — catching the wrong count and the subset separately.
+
+  **The escape hatch is the design.** `qa-flow` ships ten agents and names none; `pipeline` ships two
+  and names none. Both are correct, and a rule demanding a full list would fire on them and get
+  switched off. So: name none and it is silent; name one and you must name all.
+
+  That is also why it does not contradict `check_undocumented_plugins`, which refuses to check counts
+  because *"prose legitimately refers to subsets"*. That holds for CLAUDE.md essays. A manifest
+  description listing agents is answering *"what do I get?"*, and there a subset is a wrong answer.
+
+  Selftest 216 → **223**, pinning the count and the subset independently plus both silent cases, and
+  two mutation guards.
+
+
+- **Every plugin shipped with no licence, repository, homepage or keywords.** (#651) Found comparing
+  our marketplace against `VectifyAI/OpenKB` (3.7k stars), which is also a Claude plugin marketplace
+  and declares the full set.
+
+  ```
+  rails-stack -> ['description', 'name', 'skills', 'source', 'strict', 'version']
+  rails-flow  -> ['description', 'name', 'source', 'strict']
+  qa-flow     -> ['description', 'name', 'source', 'strict']
+  pipeline    -> ['description', 'name', 'source', 'strict']
+  design-flow -> ['description', 'name', 'source', 'strict']
+  ```
+
+  The [official field table](https://code.claude.com/docs/en/plugin-marketplaces) supports `author`,
+  `homepage`, `repository`, `license`, `keywords` and `category` — checked before filing rather than
+  assumed, since it is a framework claim.
+
+  **`license` is the one with weight.** This repo ships an MIT `LICENSE` at its root and not one
+  distributed plugin said so: the licence existed and did not travel with the artefact. `repository`
+  is the one this repo's own feedback loop depends on — every issue in the tracker arrived from a
+  downstream project, and `/plugin marketplace` showed those users a name and a description with
+  nowhere to click.
+
+  **The licence is reconciled, not retyped.** The gate derives the SPDX id from the root `LICENSE`'s
+  own first line and fails if the manifest disagrees. A hardcoded `"MIT"` would be a second source of
+  truth that diverges the first time either changes — the defect this linter exists to catch.
+
+  **Why it went unnoticed:** `lint_self_consistency.py` already checked `marketplace.json` for
+  plugin/doc agreement — that every declared plugin is documented, that inventoried directories match
+  what it installs. Nothing checked the entries for *completeness*, so five bare ones looked exactly
+  like five complete ones. Same shape as `generation_gate.ENTRY_FIELDS`, where a row that only names
+  a file can dedupe and cannot answer the question a reader asks.
+
+  New `bare-plugin-entry` rule, **verified by stripping the fields and watching it fire on exactly
+  the state the repo was in**. It asserts presence, not content — a linter that argues about whether
+  a keyword list is good is one people switch off, the same boundary `undocumented-plugin` draws when
+  it refuses to check counts. Selftest 205 → **216**, with each of the six fields pinned individually
+  so the rule cannot quietly stop checking five of them, plus two mutation guards — required by the
+  mutation-coverage gate, which failed the build until they existed.
+
 ### 2026-08-16 (v1.88.0)
 
 - **`hotwire` was staged into the measured arm of the doctrine benchmark and exercised by zero
@@ -3240,6 +3309,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.47.1 — 2026-08-16 (release v1.88.1)
+
+- **`visual-assets.md` claimed we ship no pause affordance; the catalogue ships two.** (#654)
+  Self-reported. §5.1 said *"If a project genuinely wants perpetual ambient motion, it owes the page
+  a pause affordance. **We do not ship one**, so we do not ship the loop."* And `components.md`
+  ships:
+
+  - **Carousel** (`:220`) — *"Prev/Next always; **play/pause**, stop-on-hover and stop-on-focus only
+    if it auto-rotates."*
+  - **Video player** (`:256`) — native media controls, with `:288` quoting 2.2.2's requirement for
+    *"a mechanism for the user to pause, stop, or hide it"* verbatim.
+
+  The catalogue even quotes the part of Understanding 2.2.2 that names **animations** as a common
+  example — so the criterion's own text made this directly relevant, and the claim was wrong anyway.
+
+  **It propagated.** §5.3 (added the day before, #641) inherited §5.1's WCAG reasoning — correctly —
+  and its unchecked inventory claim along with it, restating *"we ship no pause affordance"* in a
+  table. A wrong claim in shipped doctrine is a template.
+
+  Both now say what is true: pause affordances exist and are **bound to their own component**, the
+  Carousel's conditional on *its* auto-rotation, so neither is something a hero illustration can
+  reach for. The gap is a **reusable** control, not the idea of one — and that distinction matters
+  to whoever closes it, because the Carousel already has the right shape (a labelled toggle,
+  stop-on-hover, stop-on-focus). The practical advice is unchanged: author finite.
+
+  **How it happened, since that is the reusable part.** The WCAG half was verified against the spec;
+  the inventory half — a claim about *our own files* — was verified against nothing. AGENTS.md
+  already requires that a factual assertion about our own doctrine be *"made re-checkable by a
+  script, not asserted"*, and no script exists, so the rule held for whoever remembered it. Recorded
+  on #655 as a data point rather than answered with a one-off gate: over-fitting a single
+  cross-reference is how a linter becomes noise.
+
+  **Whether to generalise the Carousel's control into something the decorative layer can reuse is a
+  maintainer decision and is left open on #654** — it is new capability, and it should be weighed on
+  its own rather than slipped in with a correction.
 
 ### 1.47.0 — 2026-08-16 (release v1.88.0)
 

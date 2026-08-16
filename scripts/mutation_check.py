@@ -89,6 +89,40 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
             Mutation(
+                # #653. rails-flow said "eight" and shipped eleven. The count is the part a reader
+                # remembers, and it is the text they read while deciding to install.
+                "a stated subagent count stops being reconciled against what ships",
+                "            if claimed is not None and claimed != len(shipped):",
+                "            if False:",
+                "a wrong spelled-out count",
+            ),
+            Mutation(
+                # Naming SOME agents is the trap: it reads as the list. design-flow named three of
+                # five, hiding design-critic -- the advisory lens the enforcement model rests on.
+                "a description may name a subset of its agents and pass",
+                "            if missing:",
+                "            if False:",
+                "a description naming some agents but not all",
+            ),
+            Mutation(
+                # #651. All five plugins shipped bare -- no licence on a repo that has an MIT
+                # LICENSE at its root, and no repository on a project whose whole feedback loop is
+                # downstream users filing issues here. Nothing checked the entries for completeness,
+                # so five bare ones looked exactly like five complete ones.
+                "plugin entries stop being checked for the metadata a user installs against",
+                "        missing = [f for f in required if not plugin.get(f)]",
+                "        missing = []",
+                "a plugin entry with no install metadata",
+            ),
+            Mutation(
+                # Two statements of one licence that disagree is the exact defect this file exists
+                # to catch, and the one users receive is the manifest's.
+                "the manifest licence stops being reconciled against the root LICENSE",
+                "        if spdx and declared and declared != spdx:",
+                "        if False:",
+                "a manifest licence contradicting the root LICENSE",
+            ),
+            Mutation(
                 # #483. The sibling stops counting as named, so the rule fires on every paragraph
                 # that describes the conditional correctly — including the fix for the very defect
                 # it exists to catch, which is what it did when first written against `role="…"`
