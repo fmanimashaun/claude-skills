@@ -599,6 +599,70 @@ Style off `data-*` rather than toggling utility classes, per `interaction-stimul
 
 ---
 
+### 5.3 An animated illustration — the artwork's own parts move
+
+§5.1 and §5.2 animate the **container**: the element arrives, or reveals on scroll. An *animated
+illustration* is different — the drawing's own marks move, and it is the register a brand reaches
+for when the illustration **is** the design rather than decoration around it.
+
+**Both routes are open, and the choice is decided by duration, not by taste.**
+
+| | finite | perpetual |
+|---|---|---|
+| what it is | strokes draw on, a lattice settles, a mark resolves — then stops | an ambient loop that never ends |
+| WCAG 2.2.2 | **never engages it** — the criterion needs motion lasting **more than five seconds** | engages all three conditions |
+| what it owes the page | nothing | a **pause control** |
+| shippable here today | **yes** | **no** — we ship no pause affordance |
+
+The reasoning is §5.1's and is not repeated. What is worth adding is that the second route is what a
+serious design system actually does: **Material 3's own style pages animate their illustration
+fields and ship a visible pause button** beside the theme toggle. Perpetual motion is legitimate; it
+is simply not free, and the price is a control we do not yet have. Until we do, **author finite**.
+
+**`prefers-reduced-motion` is not the pause control** — it is a different accommodation for a
+different user, and satisfying one does not satisfy the other.
+
+#### What makes a subject animatable
+
+The brief field that decides this already exists and is usually read as a composition note:
+
+> `"deliverable": "raster line art, **6-8 separable marks**"`
+
+**Separable marks are the animatability property.** Independently addressable parts are exactly what
+can be staggered, drawn on, or resolved in sequence; a single merged silhouette can only fade or
+move as one lump. So a subject intended to animate is briefed with its parts named — and the
+`static` and `motion` assets of one subject are the *same artwork*, not two commissions.
+
+#### The two formats, and when each
+
+- **Animated SVG** — for line-work and flat shapes. It **recolours from role tokens**, which a
+  raster never does, so one asset survives a dark-mode swap and a brand change. Author the movement
+  as SMIL (`<animate>`, `<animateTransform>`, `<set>`) or as a `<style>` block carrying
+  `@keyframes`; both are accepted, and the token-recolourable idiom is normally the stylesheet.
+- **Lottie JSON** — for anything with easing curves and many parts, exported from a motion tool. It
+  carries `v`, `fr`, `op` and `layers`; anything else is not a Lottie whatever its extension.
+
+Everything in [motion.md](motion.md) still governs the *timing*: two curves, distance-chosen
+durations, a departure shorter than an arrival, and reduced motion changing the **behaviour** rather
+than only the speed.
+
+#### The static end-state is the deliverable, not a fallback
+
+Reduced motion must land on a **composed still**, not on frame zero. A draw-on animation whose
+reduced-motion state is "nothing drawn yet" renders an empty box for the user who asked for less
+motion, which is worse than the animation. Author the finished frame first, then animate *into* it.
+
+**This is now asserted rather than requested**: an SVG recorded as `kind: motion` with no animation
+construct, or a JSON that is not shaped like a Lottie, is refused at record time.
+
+#### `pen_to_svg` does not emit animation
+
+Stated plainly because the alternative is discovering it after composing. The compiler turns a
+`.pen` document into token-native **static** SVG — it carries no `<animate>`, no `@keyframes`. Use it
+to author the still, then add the movement by hand or in a motion tool. A `.pen` composition is the
+right place to decide *which marks* move; it is not the place the movement is authored.
+
+
 ## 6. Per-surface prescriptions — the pages with nothing to screenshot
 
 This is where the visual gap is widest, and it is exactly where convention reaches for illustration.

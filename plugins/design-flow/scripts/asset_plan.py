@@ -484,8 +484,8 @@ def render_plan(rows: list[dict], config: dict) -> str:
         head.append("_No rows yet. An empty plan is unplanned, not finished._\n")
         return "\n".join(head)
 
-    head.append("| # | surface | kind | status | group | priority | est. | file | why |")
-    head.append("|---|---|---|---|---|---|---|---|---|")
+    head.append("| # | surface | kind | aspect | status | group | priority | est. | file | why |")
+    head.append("|---|---|---|---|---|---|---|---|---|---|")
     for i, row in enumerate(rows, 1):
         if row.get("status") in ("done", "skipped"):
             est = "—"                       # settled rows cost nothing; a re-run never re-buys them
@@ -493,8 +493,14 @@ def render_plan(rows: list[dict], config: dict) -> str:
             est = "**unpriced**"
         else:
             est = f"${cheapest_rung(ladder_for(config, row.get('kind', 'static'))):.2f}"
+        # #640. An UNSTATED aspect renders bold, not as an em dash: a blank cell reads as "nothing
+        # to say here", and the whole point is that it is the row about to buy an unknown shape.
+        brief = (config.get("briefs") or {}).get(row.get("surface")) or {}
+        aspect = (_cell(brief.get("aspect")) if brief.get("aspect")
+                  else ("**unstated**" if row.get("kind", "static") in ("static", "vector")
+                        else "—"))
         head.append("| " + " | ".join([
-            str(i), _cell(row.get("surface")), _cell(row.get("kind", "static")),
+            str(i), _cell(row.get("surface")), _cell(row.get("kind", "static")), aspect,
             _cell(row.get("status", "planned")), _cell(row.get("group")),
             _cell(row.get("priority")), est,
             f"`{_cell(row['file'])}`" if row.get("file") else "—",
@@ -555,6 +561,22 @@ def check_plan(rows: list[dict], briefs: dict | None = None) -> list[str]:
             problems.append(
                 f"{label}: no brief for this surface in the config's `briefs` map, so the run will "
                 f"refuse it for a missing style/mood/subject. Write the brief before running.")
+        # #640. AN UNSTATED SHAPE IS BOUGHT BLIND. The prompt used to carry style, subject, mood,
+        # palette, ground and an avoid-list -- and never said whether it wanted a 21:9 band or a
+        # square card. Reported HERE, at review time, because the alternative is finding out after
+        # the charge, by looking at the page.
+        #
+        # NOT reported for `motion` or `video`: a Lottie recolours and scales, and footage is framed
+        # by its own row. Firing on those would flag correct input, which is how a check gets
+        # switched off.
+        if (briefs is not None and row.get("surface") in (briefs or {})
+                and row.get("kind", "static") in ("static", "vector")
+                and not (briefs[row["surface"]] or {}).get("aspect")):
+            problems.append(
+                f"{label}: the brief states no `aspect`, so this row buys an unspecified shape. A "
+                f"square delivered for a wide band is cropped at composition time, which throws "
+                f"away the part of the picture you paid for. State it as e.g. \"16:9\", \"1:1\" or "
+                f"\"21:9\".")
     return problems
 
 
@@ -1009,7 +1031,17 @@ def selftest() -> int:
     # refusal after the run rather than from a review before it.
     check("a row with no brief for its surface is reported",
           any("no brief" in p for p in check_plan([ok], briefs={})))
-    check("...and one WITH a brief is fine", check_plan([ok], briefs={"hero": {}}) == [])
+    # The brief must now carry an `aspect` for a raster/vector row (#640) — an unstated shape is
+    # bought blind — so this fixture states one. Its subject is the CROSS-CHECK, not the aspect.
+    check("...and one WITH a brief is fine",
+          check_plan([ok], briefs={"hero": {"aspect": "16:9"}}) == [])
+    # #640 ITSELF: a brief with no aspect is reported at review time, before the charge.
+    check("a raster row whose brief states no aspect is reported",
+          any("no `aspect`" in p for p in check_plan([ok], briefs={"hero": {}})))
+    # ...and NOT for motion/video: a Lottie recolours and scales, footage is framed by its own row.
+    # A check that fired on those would flag correct input, which is how a check gets switched off.
+    check("...but a motion row is not",
+          check_plan([{**ok, "kind": "motion"}], briefs={"hero": {}}) == [])
     check("...while briefs=None (no config yet) does not fire",
           check_plan([ok], briefs=None) == [])
 
@@ -1318,7 +1350,10 @@ def selftest() -> int:
         (root / RESEARCH_PATH).write_text(
             json.dumps({"job": "j", "style": "minimalist-ink", "references": []}), encoding="utf-8")
         config = json.loads((root / CONFIG_PATH).read_text())
-        config["briefs"] = {r["surface"]: {"style": "minimalist-ink"} for r in rows}
+        # `aspect` because #640 reports a raster brief without one at --check time, and these
+        # fixtures are about COST, not about shape.
+        config["briefs"] = {r["surface"]: {"style": "minimalist-ink", "aspect": "16:9"}
+                            for r in rows}
         config.update(cfg_overrides)
         (root / CONFIG_PATH).write_text(json.dumps(config), encoding="utf-8")
         doc = json.loads((root / PLAN_PATH).read_text())

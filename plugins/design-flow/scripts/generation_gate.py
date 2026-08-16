@@ -331,6 +331,14 @@ def compose_prompt(request: dict, brief: dict, pack: dict) -> str:
     # transparent ground") and an exclusion ("no human figures, no text") are the two the model gets
     # wrong most expensively, and both were unreachable before: the schema documented style, subject
     # and mood, so anything else a brief said was decoration.
+    # #640. THE SHAPE REACHES THE PROVIDER. Without it we paid for a careful prompt -- palette,
+    # ground, avoid-list -- that never said whether it wanted a 21:9 full-bleed band or a square
+    # card inset, and then accepted whatever came back. Every provider honours an aspect; we passed
+    # nothing.
+    if brief.get("aspect"):
+        parts.append(f"{brief['aspect']} aspect ratio")
+    if brief.get("frame"):
+        parts.append(f"composed for a {brief['frame']} frame")
     if brief.get("ground"):
         parts.append(f"on a {brief['ground']} ground")
     if brief.get("deliverable"):
@@ -413,7 +421,8 @@ def check_aggregator(config: dict) -> str:
 
 
 def provenance_row(surface: str, kind: str, model: dict, prompt: str, pack: dict,
-                   crafted: bool = False, rationale: str = "") -> dict:
+                   crafted: bool = False, rationale: str = "",
+                   aspect: str | None = None) -> dict:
     """Model, prompt, cost, pack variant — without the prompt the asset is unreproducible.
 
     #629 added `crafted` and `prompt_rationale`. They travel with the provenance so the prompt
@@ -429,6 +438,9 @@ def provenance_row(surface: str, kind: str, model: dict, prompt: str, pack: dict
         "prompt": prompt,
         "crafted": crafted,
         "prompt_rationale": rationale,
+        # Travels with the provenance so the returned bytes can be checked against what was ASKED
+        # for, without the checker re-reading config and risking a different answer.
+        "aspect": aspect,
         "pack_variant": pack.get("variant"),
     }
 
@@ -453,7 +465,8 @@ def decide(root: Path, request: dict) -> dict:
         "prompt": prompt,
         "provenance": provenance_row(surface, kind, model, prompt, pack,
                                      crafted="prompt" in request,
-                                     rationale=str(request.get("prompt_rationale") or "")),
+                                     rationale=str(request.get("prompt_rationale") or ""),
+                                     aspect=brief.get("aspect")),
     }
 
 
