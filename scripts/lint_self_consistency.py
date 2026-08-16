@@ -491,6 +491,62 @@ def check_controller_inventory() -> tuple[list[Finding], int]:
 PLUGIN_DOCS = ("CLAUDE.md", "README.md")
 
 
+def check_bare_plugin_entries() -> tuple[list[Finding], int]:
+    """Every plugin entry must carry the metadata a user sees when installing it.
+
+    All five shipped with `name`, `source`, `description`, `strict` and nothing else (#651): no
+    licence, no repository, no homepage, no keywords. The repo has an MIT `LICENSE` at its root and
+    not one distributed plugin said so -- the licence existed and did not travel with the artefact.
+
+    `repository` is the one this repo's own feedback loop depends on: every issue in the tracker
+    arrived from a downstream project, and `/plugin marketplace` showed those users a name and a
+    description with nowhere to click.
+
+    THE LICENCE IS RECONCILED, NOT RETYPED. A hardcoded "MIT" here would be a second source of truth
+    that disagrees with the root LICENSE the first time either changes -- the defect this whole file
+    exists to catch. The SPDX id is derived from the LICENSE's own first line.
+
+    WHY COMPLETENESS AND NOT CONTENT. It asserts the fields are PRESENT, not that a keyword list is
+    good or a category well chosen. Those are judgement, and a linter that argues about taste is one
+    people switch off -- the same boundary `check_undocumented_plugins` draws when it refuses to
+    check counts.
+    """
+    manifest = ROOT / ".claude-plugin" / "marketplace.json"
+    licence_file = ROOT / "LICENSE"
+    if not manifest.is_file():
+        return [], 0
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except ValueError:
+        return [], 0
+
+    # The root LICENSE decides the SPDX id; the manifest must agree with it.
+    spdx = None
+    if licence_file.is_file():
+        first = licence_file.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+        spdx = {"MIT License": "MIT", "Apache License": "Apache-2.0"}.get(first)
+
+    required = ("author", "homepage", "repository", "license", "keywords", "category")
+    findings: list[Finding] = []
+    plugins = payload.get("plugins") or []
+    for plugin in plugins:
+        name = plugin.get("name", "(unnamed)")
+        missing = [f for f in required if not plugin.get(f)]
+        if missing:
+            findings.append(Finding(
+                "bare-plugin-entry", ".claude-plugin/marketplace.json", 0,
+                f"plugin {name!r} declares no {', '.join(missing)} -- this is the install surface, "
+                f"and a user browsing `/plugin marketplace` sees a name and a description with "
+                f"nowhere to click and no stated terms. The schema supports every one of them."))
+        declared = plugin.get("license")
+        if spdx and declared and declared != spdx:
+            findings.append(Finding(
+                "bare-plugin-entry", ".claude-plugin/marketplace.json", 0,
+                f"plugin {name!r} declares license {declared!r} but the root LICENSE is {spdx!r}. "
+                f"Two statements of one licence disagree, and the one users receive is this one."))
+    return findings, len(plugins)
+
+
 def check_undocumented_plugins() -> tuple[list[Finding], int]:
     """Every plugin declared in `marketplace.json` must be named in the docs that describe them.
 
@@ -1982,6 +2038,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dead, dead_examined = check_dead_settings_keys(python_sources)
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
+    bare, bare_examined = check_bare_plugin_entries()
     unbounded, queries_examined = check_unbounded_issue_queries()
     components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
@@ -2014,6 +2071,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "json_settings_files_examined": dead_examined,
         "documented_flag_claims_examined": flag_examined,
         "declared_plugins": plugins_examined,
+        "plugin_entries_checked_for_metadata": bare_examined,
         "gh_list_calls_examined": queries_examined,
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
@@ -2042,7 +2100,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + unbounded + components + call_sites + invisible
+    return (dead + unenforced + undocumented + bare + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections,
@@ -2507,6 +2565,54 @@ def selftest() -> int:
                              "    end\n  end\nend\n```\n"
                              "```erb\n<%= render Ui::OuterComponent.new %>\n"
                              "<%= render Ui::InnerComponent.new(x: 1) %>\n```\n"})
+
+    # -- bare-plugin-entry (#651) -----------------------------------------
+    # All five plugins shipped with name/source/description/strict and nothing else: no licence on
+    # a repo that has an MIT LICENSE at its root, and no repository on a project whose entire
+    # feedback loop depends on downstream users filing issues here.
+    _FULL = {
+        "name": "rails-flow", "source": "./x", "description": "d",
+        "author": {"name": "A"}, "homepage": "https://h", "repository": "https://r",
+        "license": "MIT", "keywords": ["k"], "category": "development",
+    }
+
+    def _manifest(plugin: dict) -> str:
+        return json.dumps({"plugins": [plugin]}) + "\n"
+
+    scenario(
+        "a plugin entry with no install metadata", rule="bare-plugin-entry", expect_finding=True,
+        files={".claude-plugin/marketplace.json":
+               _manifest({"name": "rails-flow", "source": "./x", "description": "d"}),
+               "LICENSE": "MIT License\n"},
+    )
+    scenario(
+        "a complete entry is silent", rule="bare-plugin-entry", expect_finding=False,
+        files={".claude-plugin/marketplace.json": _manifest(_FULL), "LICENSE": "MIT License\n"},
+    )
+    # Each required field pinned individually, or a rule could quietly stop checking five of six
+    # and still pass the all-present and all-absent cases above.
+    for _field in ("author", "homepage", "repository", "license", "keywords", "category"):
+        scenario(
+            f"a plugin entry missing only {_field}", rule="bare-plugin-entry", expect_finding=True,
+            files={".claude-plugin/marketplace.json":
+                   _manifest({k: v for k, v in _FULL.items() if k != _field}),
+                   "LICENSE": "MIT License\n"},
+        )
+    # THE LICENCE IS RECONCILED, not retyped. Two statements of one licence that disagree is the
+    # exact defect this file exists to catch, and the one users receive is the manifest's.
+    scenario(
+        "a manifest licence contradicting the root LICENSE", rule="bare-plugin-entry",
+        expect_finding=True,
+        files={".claude-plugin/marketplace.json": _manifest({**_FULL, "license": "Apache-2.0"}),
+               "LICENSE": "MIT License\n"},
+    )
+    # An unrecognised LICENSE must not manufacture a contradiction -- silence beats a false accusation.
+    scenario(
+        "an unrecognised LICENSE does not accuse the manifest", rule="bare-plugin-entry",
+        expect_finding=False,
+        files={".claude-plugin/marketplace.json": _manifest(_FULL),
+               "LICENSE": "Some bespoke terms\n"},
+    )
 
     # -- undocumented-plugin (#203) ---------------------------------------
     # design-flow shipped while CLAUDE.md's "what this repo distributes" section named the other
@@ -3299,6 +3405,7 @@ def main(argv: list[str]) -> int:
         "json_settings_files_examined": "json settings file(s)",
         "documented_flag_claims_examined": "documented flag claim(s)",
         "declared_plugins": "declared plugin(s)",
+        "plugin_entries_checked_for_metadata": "plugin entries checked for install metadata",
         "gh_list_calls_examined": "gh list call(s)",
         "documented_components": "documented component(s)",
         "doc_pointers_examined": "doc pointer(s) to our own files",

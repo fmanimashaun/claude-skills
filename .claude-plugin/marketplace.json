@@ -23,31 +23,106 @@
         "./skills/quality-pass",
         "./skills/derived-artifacts",
         "./skills/parallel-session-lane"
-      ]
+      ],
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "rails",
+        "hotwire",
+        "design-system",
+        "code-review",
+        "doctrine"
+      ],
+      "category": "development"
     },
     {
       "name": "rails-flow",
       "description": "Agentic development flow for Rails 8 projects \u2014 /feature, /fix, /review, /setup-flow and /brain commands, eight specialist subagents (developer, migration-writer, code-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
       "source": "./plugins/rails-flow",
-      "strict": false
+      "strict": false,
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "rails",
+        "agentic-workflow",
+        "tdd",
+        "code-review",
+        "git"
+      ],
+      "category": "development"
     },
     {
       "name": "qa-flow",
       "description": "Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/qa.config.yml (Playwright, Cypress+Cucumber, Selenium+pytest-bdd, Appium; free by default) \u2014 qa-flow is never forced onto one. Free, repo-local case authoring/management (/qa-flow:cases \u2192 qa/test-cases.csv; Testmo opt-in) and agentic functional testing via Playwright MCP (/qa-flow:functional): auto-maps flows, self-adapting locators, evidence-based Markdown/CSV reports. Plus risk-based planning, defect filing, PR-native results, and a hook-enforced dev->main certification gate.",
       "source": "./plugins/qa-flow",
-      "strict": false
+      "strict": false,
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "qa",
+        "playwright",
+        "bdd",
+        "test-automation",
+        "accessibility"
+      ],
+      "category": "testing"
     },
     {
       "name": "pipeline",
       "description": "Lifecycle orchestrator over rails-flow and qa-flow \u2014 build -> verify -> certify -> containerized release, honoring every gate. Release artifact is a versioned ghcr.io Docker image (local pull-and-run today, Kamal cloud when ready). /pipeline:deploy-cloud reads a prepared .env and generates the full Kamal 2 config + wires secrets safely (committed deploy.yml references names; gitignored .kamal/secrets holds values), then deploys with approval.",
       "source": "./plugins/pipeline",
-      "strict": false
+      "strict": false,
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "ci-cd",
+        "docker",
+        "kamal",
+        "release",
+        "orchestration"
+      ],
+      "category": "deployment"
     },
     {
       "name": "design-flow",
       "description": "Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 \u2014 applies the Fidara design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive @utility recipes + base ViewComponents; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:audit flags drift. Agents: ui-composer, design-auditor, brand-guardian. Pairs with the fidara-design skill (bundled in rails-stack).",
       "source": "./plugins/design-flow",
-      "strict": false
+      "strict": false,
+      "author": {
+        "name": "Fisayo Animashaun",
+        "url": "https://github.com/fmanimashaun/claude-skills"
+      },
+      "homepage": "https://github.com/fmanimashaun/claude-skills#readme",
+      "repository": "https://github.com/fmanimashaun/claude-skills",
+      "license": "MIT",
+      "keywords": [
+        "design-system",
+        "tailwind",
+        "ui",
+        "illustration",
+        "brand"
+      ],
+      "category": "design"
     }
   ]
 }
