@@ -7683,6 +7683,50 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The composition brief ASSIGNED assets from word overlap. Now it shortlists.** (#672) Reported
+  from the first real run of `/design-flow:compose` against a real manifest, one release after #639
+  shipped — and it corrects that issue's premise rather than tuning it.
+
+  #639 claimed *"asset selection becomes a lookup, not taste"*. **Half of that was right.** Reading
+  `use_cases`/`avoid` at all is the win: they were required on write and read by nothing. **Deciding**
+  from prose overlap presented a guess as a fact, and the run showed it wrong three ways while
+  reading as authoritative:
+
+  | defect | what happened |
+  |---|---|
+  | **1 synonym miss** | band *"Capabilities"* got `none` while the asset's `use_cases` said *"three-outcomes"* — `{three, outcomes} ∩ {capabilities, verb, led, cards} = ∅`. **The most deliberate placement was the one missed.** |
+  | **2 page-scoped leak** | a `use_case` for the `/how-it-works` **page** matched a *"How it works"* **band** on Home, on `{how, works}` |
+  | **3 cap breached** | the asset landed in three bands while its own `avoid` said *"at most 1-2 per surface"* |
+  | **4 no stemming** | `avoid "money CTAs"` could not fire on band 7 *"Closing CTA"* |
+
+  **Defect 2 is the other half of a fix.** A fixture had caught the surface name dominating every
+  band, so the surface was removed from the match context — which is precisely what lets a
+  page-scoped `use_case` match a like-named band elsewhere. The comment recorded the first bug and
+  was silent on the second.
+
+  **Defect 3 was unrepresentable, not merely unenforced.** `pick_asset` ran per band with no
+  accumulator, so a per-surface count could not be checked however it was phrased.
+
+  Each band now carries **ranked candidates with the matching `use_case` quoted**, and the caller
+  decides. That dissolves 1 and 2 rather than tuning them — a synonym miss becomes *"no candidate;
+  the project owns X"*, and a page reference is visible because its text is quoted. Two new manifest
+  fields make the guess unnecessary: **`bands`** names the bands a row is for and outranks prose, and
+  **`max_per_surface`** lifts the quantity rule out of `avoid`, so `avoid` means only *where*. Both
+  opt-in; prose `use_cases` unchanged.
+
+  A cap breach is **reported, never trimmed** — which band loses the asset is a design decision.
+
+  Stemming is deliberately dumb (strip a trailing `s` from 4+ letters) rather than a dependency, and
+  it is fixed alone so it is not mistaken for a fix to the others. **A synonym map was rejected:**
+  brittle, unbounded, and it would make failures less predictable rather than fewer.
+
+  Fixtures are the reporter's verbatim manifest — every defect came from a real project and none
+  from a fixture, which is the lesson worth encoding. `compose_brief.py` 22 → **43**, three new
+  mutation guards; one of them survived at first because the fixture proved the `bands` path and not
+  the inventory message it was supposed to guard.
+
 ### 1.28.0 — 2026-08-16 (release v1.90.0)
 
 - **The prompt library held asset prompts only, and `/design-flow:variants` threw away its own
