@@ -533,8 +533,12 @@ infinite background drift behind a hero satisfies all three, so it would need a 
 and `prefers-reduced-motion` is *not* that control; it is a different accommodation for a different
 user. A 1.2s settle never engages the criterion at all.
 
-If a project genuinely wants perpetual ambient motion, it owes the page a pause affordance. We do
-not ship one, so we do not ship the loop. **This is a deliberate departure from #135, recorded
+If a project genuinely wants perpetual ambient motion, it owes the page a pause affordance. **We
+ship two, and neither is reusable here** (#654): the **Carousel** prescribes play/pause,
+stop-on-hover and stop-on-focus — but *"only if it auto-rotates"*, bound to its own rotation state —
+and the **Video player** has native media controls. Both are controls for the component they belong
+to. There is no control the decorative layer can reach for, so the loop stays unshipped for a
+concrete reason rather than a blanket absence. **This is a deliberate departure from #135, recorded
 here.**
 
 ### 5.2 `decor-reveal` — content-safe scroll reveal
@@ -612,12 +616,20 @@ for when the illustration **is** the design rather than decoration around it.
 | what it is | strokes draw on, a lattice settles, a mark resolves — then stops | an ambient loop that never ends |
 | WCAG 2.2.2 | **never engages it** — the criterion needs motion lasting **more than five seconds** | engages all three conditions |
 | what it owes the page | nothing | a **pause control** |
-| shippable here today | **yes** | **no** — we ship no pause affordance |
+| shippable here today | **yes** | **not yet** — no control the decorative layer can reuse |
 
-The reasoning is §5.1's and is not repeated. What is worth adding is that the second route is what a
-serious design system actually does: **Material 3's own style pages animate their illustration
-fields and ship a visible pause button** beside the theme toggle. Perpetual motion is legitimate; it
-is simply not free, and the price is a control we do not yet have. Until we do, **author finite**.
+The reasoning is §5.1's and is not repeated. **What "not yet" means precisely**, because an earlier
+version of this table said we ship no pause affordance at all and that was wrong (#654): the
+catalogue ships play/pause on the **Carousel** and native controls on the **Video player**. Both are
+bound to their own component — the Carousel's is conditional on *its* auto-rotation — so neither is
+something a hero illustration can reach for. The gap is a **reusable** control, not the idea of one.
+
+That distinction matters to whoever closes it: the Carousel already has the right shape — a labelled
+toggle, stop-on-hover, stop-on-focus — so this is a generalisation, not a design from scratch.
+
+The second route is also what a serious design system actually does: **Material 3's own style pages
+animate their illustration fields and ship a visible pause button** beside the theme toggle.
+Perpetual motion is legitimate; it is simply not free. Until the control exists, **author finite**.
 
 **`prefers-reduced-motion` is not the pause control** — it is a different accommodation for a
 different user, and satisfying one does not satisfy the other.
