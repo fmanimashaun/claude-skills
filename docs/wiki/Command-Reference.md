@@ -13,40 +13,40 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Build** — plan, implement and review a change
 
-- `/rails-flow:feature`
-- `/rails-flow:fix`
-- `/rails-flow:review`
+- `/rails-flow:feature` — Orchestrated feature development.
+- `/rails-flow:fix` — Systematically fix a bug or a phased review backlog.
+- `/rails-flow:review` — Full parallel codebase review.
 
 
 **Backlog** — turn a tracker or a review into work, and report toolchain bugs upstream
 
-- `/rails-flow:brief`
-- `/rails-flow:curate`
-- `/rails-flow:issues`
-- `/rails-flow:pr-comments`
-- `/rails-flow:report`
+- `/rails-flow:brief` — Turn a vague ask into something buildable.
+- `/rails-flow:curate` — Convert project docs (PRDs, branding, architecture) into project-local skills and keep them synced as documentation evolves
+- `/rails-flow:issues` — Triage the repo's open issues and work them one at a time through the matching pipeline.
+- `/rails-flow:pr-comments` — Sweep a PR's review feedback.
+- `/rails-flow:report` — Report toolchain friction (a rails-flow/qa-flow/pipeline/design-flow/rails-stack bug, wrong guidance, a generated component that won't build, or a feature idea) upstream as a structured, deduped, version-pinned issue.
 
 
 **Memory** — durable project memory that survives a session ending
 
-- `/rails-flow:brain`
-- `/rails-flow:brain-review`
-- `/rails-flow:brain-sync`
-- `/rails-flow:handoff`
+- `/rails-flow:brain` — Institutionalize a lesson or decision as a docs/brain memo, indexed in MEMORY.md
+- `/rails-flow:brain-review` — Weekly maintenance sweep of docs/brain — flag stale STATUS/evidence, surface decisions-vs-PRD drift and contradictions, compress patterns, and check hypotheses against evidence.
+- `/rails-flow:brain-sync` — Publish this project's brain status to a shared cross-project brain repo, and consume sibling projects' status — so agentic flows in separate repos coordinate WITHOUT cloning each other.
+- `/rails-flow:handoff` — Write the work order for a unit of work.
 
 
 **Autonomous** — one action per tick, asking the human asynchronously when it must
 
-- `/rails-flow:drive`
-- `/rails-flow:escalate`
-- `/rails-flow:toolchain-check`
+- `/rails-flow:drive` — Pick the one next action from repository state and say whether you may take it alone.
+- `/rails-flow:escalate` — Ask the human a question on a GitHub issue, park the thread, and pick the answer up on a later tick — the async human-in-the-loop.
+- `/rails-flow:toolchain-check` — Check whether this project's installed claude-skills toolchain is behind what is published, and carry a durable marker across the restart an update requires.
 
 
 **Setup** — scaffold the flow into a project
 
-- `/rails-flow:explain`
-- `/rails-flow:graph`
-- `/rails-flow:setup-flow`
+- `/rails-flow:explain` — Explain the built system back to its human owner — plain-language docs/GUIDE.md with mermaid diagrams, section-scoped and idempotent.
+- `/rails-flow:graph` — Regenerate the living architecture graph — docs/architecture/{graph.json,index.html,graph.md} — from routes, app/** and db/schema.rb.
+- `/rails-flow:setup-flow` — Scaffold, update, or repair the rails-flow conventions in this project — CLAUDE.md, GUARDRAILS.md, docs/brain.
 
 
 
@@ -54,32 +54,32 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Setup** — design system, tokens and the brand pack
 
-- `/design-flow:setup`
-- `/design-flow:tokens`
+- `/design-flow:setup` — Scaffold the Fidara design system into a Rails 8 + Hotwire + Tailwind v4 project — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode.
+- `/design-flow:tokens` — Export native design tokens (Phase 3) from the Rails app's Tailwind @theme — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction.
 
 
 **Build** — build UI against the system
 
-- `/design-flow:component`
-- `/design-flow:mobile`
-- `/design-flow:variants`
+- `/design-flow:component` — Author or refactor a UI component per the Fidara design system.
+- `/design-flow:mobile` — Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->card-stack.
+- `/design-flow:variants` — Generate N brand-conformant compositions of one brief plus a dev-only switcher route.
 
 
 **Review** — conformance is the gate; taste is the lens
 
-- `/design-flow:audit`
-- `/design-flow:critique`
+- `/design-flow:audit` — Audit UI against the Fidara design system — flag drift (raw/brand colors in components, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus ring/ARIA, non-min-h-touch targets, hand-rolled layout CSS) and propose fixes.
+- `/design-flow:critique` — Critique UI look-and-feel against the art-direction doctrine — visual hierarchy, focal point, per-surface aesthetic intent — and return ranked, concrete improvements.
 
 
 **Assets** — the curated asset library, and generation that mostly refuses
 
-- `/design-flow:assets`
-- `/design-flow:generate`
+- `/design-flow:assets` — Set up and drive the curated asset library.
+- `/design-flow:generate` — Generate an illustration or decorative asset for a surface.
 
 
 **Ungrouped** — shipped but not yet placed in a group above
 
-- `/design-flow:compose`
+- `/design-flow:compose` — Generate the composition brief for one surface.
 
 
 
@@ -87,25 +87,25 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Setup** — scaffold the QA lane
 
-- `/qa-flow:setup-qa`
+- `/qa-flow:setup-qa` — Set up the independent QA workspace — detects the codebase's testing signals and PROPOSES a stack (qa/qa.config.yml) you confirm/override, then scaffolds only the chosen tools, seed personas, and case catalogue.
 
 
 **Plan** — derive cases from the brief, not from the diff
 
-- `/qa-flow:cases`
+- `/qa-flow:cases` — Author and maintain the in-repo test-case catalogue (qa/test-cases.csv) from the PRD, app surface, qa-lead plan, and past defects.
 
 
 **Run** — produce evidence, not assurances
 
-- `/qa-flow:crawl`
-- `/qa-flow:functional`
-- `/qa-flow:smoke`
-- `/qa-flow:verify`
+- `/qa-flow:crawl` — Crawl every route in a browser and judge it — broken pages, dead controls, theme-only failures.
+- `/qa-flow:functional` — Agentic functional/exploratory testing of a running app via Playwright MCP — menu-scoped, evidence-based, driven from test-case titles.
+- `/qa-flow:smoke` — Reuse a running server or launch the app (stack-aware), then confirm it actually BOOTS and its key routes respond, before any deeper QA.
+- `/qa-flow:verify` — Independent QA verification after a feature merges to dev.
 
 
 **Sign-off** — the only command that can say a change is ready
 
-- `/qa-flow:certify`
+- `/qa-flow:certify` — Comprehensive release certification before dev->main.
 
 
 
@@ -113,26 +113,26 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Setup** — wire the lifecycle into a project
 
-- `/pipeline:install-hooks`
-- `/pipeline:setup-pipeline`
+- `/pipeline:install-hooks` — Install local git-hook nudges that detect lifecycle transitions without spending tokens
+- `/pipeline:setup-pipeline` — Scaffold pipeline.yml and the local git-hook nudges; verify the Docker/Kamal release prerequisites
 
 
 **Run** — build → verify → certify, with circuit breakers
 
-- `/pipeline:ack`
-- `/pipeline:pipeline`
-- `/pipeline:status`
+- `/pipeline:ack` — Dismiss the post-merge QA-verify nudge marker (.git/pipeline-pending) without another merge or a manual rm.
+- `/pipeline:pipeline` — Drive the software lifecycle.
+- `/pipeline:status` — Report where the repo sits in the lifecycle and the exact next command
 
 
 **Release** — cut it
 
-- `/pipeline:release`
+- `/pipeline:release` — Build the release artifact.
 
 
 **Cloud** — deploy on demand
 
-- `/pipeline:deploy-cloud`
-- `/pipeline:setup-cloud`
+- `/pipeline:deploy-cloud` — One-command autonomous cloud deploy.
+- `/pipeline:setup-cloud` — Prepare cloud deployment.
 
 
 

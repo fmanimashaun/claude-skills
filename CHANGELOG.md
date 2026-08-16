@@ -7,6 +7,53 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-16c (v1.91.1)
+
+- **The wiki published `>-` where five of seven skill descriptions belonged.** (#680) Reported as
+  *"the wiki should have full documentation of what the project is about, not just recording version
+  numbers."* The premise needed correcting — the wiki is **609 lines across 12 pages**, and only the
+  15-line `Plugin-Reference.md` changes per release, which is why every release diff looks like a
+  version bump. Checking it turned up two real defects in the two pages that matter most.
+
+  `skill_description()` read the rest of the `description:` line. For a YAML **block scalar** the
+  text is on the following indented lines, so it returned the marker:
+
+  ```
+  ## `rails-8`
+
+  >-
+
+  19 reference file(s): …
+  ```
+
+  **Two skills use single-line descriptions and rendered correctly**, which is why it survived: it
+  looked fine wherever you happened to check.
+
+- **`Command-Reference` listed 43 names and ignored 43 descriptions it already had.** (#680)
+
+  ```
+  commands: 43   with a frontmatter description: 43
+  ```
+
+  Required on every command, present on every command, read by nothing — in the script written
+  specifically to stop the docs rotting. The same shape as `use_cases` before #639. The page said a
+  command existed and which group it was in; not what it does. That is a table of contents.
+
+  A command whose description cannot be read is now **named as such** rather than rendered blank: a
+  silently description-less row reads as a command that does nothing worth saying, and publishing a
+  placeholder where prose belongs is the defect this replaces.
+
+  **The gate is on the RENDERED pages, not the parser.** A parser test proves the function works;
+  this proves the published bytes do, and the one that shipped wrong was the second. Verified by
+  restoring the marker and watching it fire. `build_wiki.py` 38 → **46** assertions.
+
+- **`scripts/rebuild_generated.py`** — one command for every version-stamped artefact. Three
+  committed files carry the marketplace version, each with its own drift gate, and the arm ran four
+  builders in order from memory. **The v1.88.0 arm forgot the wiki** and the gate caught it: the gate
+  working, the sequence being memory. It runs all four even if one fails and reports each outcome,
+  because stopping early leaves the tree half-rebuilt — some gates pass, some do not, and the reason
+  is invisible.
+
 ### 2026-08-16b (v1.88.1)
 
 - **The install description named the wrong agents.** (#653) Found immediately after #651, in the

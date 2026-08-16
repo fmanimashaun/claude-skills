@@ -12,33 +12,33 @@ standalone `.skill` for claude.ai.
 
 ## `rails-8`
 
->-
+Playbook for building full-stack Ruby on Rails 8.1 applications "the Rails way" — vanilla Rails, Hotwire (Turbo + Stimulus), the Solid stack, Propshaft + importmap, RSpec testing, ecosystem gems, OpenAPI docs, AI features, observability, and Kamal 2 deployment.
 
 19 reference file(s): `advanced-active-record`, `ai-llm`, `api-documentation`, `auth-security`, `controllers-routing`, `deployment-kamal`, `ecosystem-gems`, `extending-rails`, `jobs-and-realtime`, `mail-storage-richtext`, `models`, `multi-tenancy`, `observability`, `performance-caching`, `project-setup`, `sso`, `style`, `testing`, `views-hotwire`
 
 
 ## `hotwire`
 
->-
+Deep reference for the Hotwire stack from the official handbooks — Turbo (Drive, Frames, Streams, morphing page refreshes), Stimulus (controllers, actions, targets, values, outlets), and Hotwire Native (wrap a web app into iOS and Android apps with bridge components and path configuration).
 
 4 reference file(s): `native`, `production`, `stimulus`, `turbo`
 
 
 ## `fidara-design`
 
->
+The Fidara design system — how to build consistent, modern, responsive UI in Rails 8 + Hotwire + Tailwind CSS v4, brand-parameterised via brand packs.
 
 22 reference file(s): `art-direction`, `brand`, `component-implementations`, `components`, `coverage`, `crud-modal-pattern`, `data-viz`, `forms`, `foundations-tokens`, `interaction-stimulus`, `layout-primitives`, `marketing-copy`, `mobile-reference-implementation`, `mobile`, `motion`, `native-tokens`, `page-anatomies`, `reference-implementation`, `reference-research`, `reference-sources`, `responsive`, `visual-assets`
 
 
 ## `code-review`
 
->-
+Review doctrine for the class of defect authors are systematically blind to — code that is correct on its own terms but does not do what its own documentation, config, comments or project rules claim it does.
 
 
 ## `quality-pass`
 
->-
+A SECOND review pass over changed code, for quality rather than correctness — reuse (is this duplicating something that already exists?), simplification (redundant or derivable state, copy-paste with variation, dead code left behind), efficiency (repeated I/O, work hoisted out of a loop, independent work run in series) and altitude (a bandaid where the root cause is reachable, a special case where the mechanism generalises).
 
 1 reference file(s): `worked-example`
 
