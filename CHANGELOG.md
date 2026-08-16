@@ -7683,7 +7683,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.29.0 — 2026-08-16 (release v1.91.0)
 
 - **Every surface composed from the LANDING band spine, and the brief never said so.** (#676) From a
   second real run: `/problem` and `/how-it-works` came back **byte-identical**. The reporter read
