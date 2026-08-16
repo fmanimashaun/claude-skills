@@ -70,6 +70,59 @@ statement about the page rather than about one band. That trade is also **why** 
 **A cap breach is reported, never trimmed.** Which band loses the asset is a design decision, and a
 tool that dropped one to satisfy a count would be making it.
 
+## It says which anatomy it borrowed
+
+The catalogue carries **one** structured band sequence — *"How a page is paced"* — and that block
+scopes itself in its own words: *"6–8 bands sit between the marketing header and the footer, **for a
+product landing page**."* Pricing, About, Error and Auth are prose and ERB with **no band table at
+all**.
+
+So every surface composes from the landing spine. That is the best available answer; **saying so is
+the difference between usable and silently wrong.** A brief for a surface the catalogue governs
+elsewhere now opens with it:
+
+> **Composed from _How a page is paced — the product-landing spine_, which is borrowed here.** The
+> catalogue governs this surface in **§Pricing** of `page-anatomies.md`, and that section carries no
+> band table — it is prose and ERB. […] read §Pricing for what this page actually owes, because this
+> brief does not encode it.
+
+**Band tables are not invented for the other archetypes.** `/design-flow:component` step 1 forbids
+inventing page structure, and the pacing section itself composes *"only from rows that already
+exist: no new token, no new `@utility`, no new archetype."* Manufacturing four sequences to make the
+tool feel complete is the failure it was built against.
+
+The governing section is a **lookup against the catalogue's own headings**, not a taxonomy of ours —
+so a surface the catalogue does not name gets no false warning.
+
+## Scope a row to its surfaces
+
+Two marketing surfaces compose identically, because the band sequence is the same. That is correct,
+and it means a `use_case` written for one page can suggest an asset on another. Scope it:
+
+```json
+{ "name": "marketing-accents", "surfaces": ["/how-it-works"], "bands": ["How it works"] }
+```
+
+Opt-in and explicit, exactly like `bands`. **A row with no `surfaces` matches everywhere, unchanged.**
+
+**No prefix-sniffing.** Reading scope out of `"/how-it-works — a mark beside the flywheel"` would be
+convention-guessing, which is the family of shortcut that produced the four defects in #672. A row
+says which surfaces it is for, or it is for all of them.
+
+**The surface makes a row relevant, not just excluded.** It used to do only the latter: `avoid` saw
+the surface and `surfaces` scoped by it, and nothing let a row be *relevant* because of it — so a row
+saying `"surfaces": ["/problem"]` was invisible on `/problem`. Surface-scoped metadata was dead.
+
+Such a row is now listed as **owned for this surface, but no band matched**:
+
+> The project says these belong on this page and nothing says **where**. Knowing the page is not
+> knowing the band, so they are listed rather than placed — name a band with a `bands` entry and the
+> guess disappears.
+
+**It is not made a candidate in every band**, which would be the one-asset-whole-page bug an earlier
+fixture caught. Relevance to a page is not knowledge of a band, and inventing one would be the tool
+making the design decision.
+
 ## Unfilled bands are the point, not an omission
 
 A band with no owned asset is listed as such. That is the honest bridge back to `/design-flow:assets`:
