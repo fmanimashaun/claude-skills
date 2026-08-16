@@ -1,26 +1,26 @@
 ---
-description: One-command autonomous cloud deploy — read the prepared .env briefing sheet, route every value to its Rails-native home, wire Kamal, and deploy with self-verification
+description: One-command autonomous cloud deploy — read the prepared .kamal/deploy.env briefing sheet, route every value to its Rails-native home, wire Kamal, and deploy with self-verification
 argument-hint: "[optional: destination, e.g. production | staging]"
 ---
 
 # /pipeline:deploy-cloud — $ARGUMENTS
 
-Read the prepared `.env` and do everything — no prompting for values. `.env` is the
+Read the prepared `.kamal/deploy.env` and do everything — no prompting for values. `.kamal/deploy.env` is the
 agent's briefing sheet; the agent routes each value to where Rails convention puts it,
 then deploys.
 
 ## Preconditions (hard)
 
-1. `.env` exists with every key from `.env.example` filled (blank only where the
+1. `.kamal/deploy.env` exists with every key from `.kamal/deploy.env.example` filled (blank only where the
    template says "leave blank to generate"). Missing → STOP, list them, point at
-   `.env.example`. Never prompt, never half-deploy.
+   `.kamal/deploy.env.example`. Never prompt, never half-deploy.
 2. `qa/CERTIFICATION` PASSes for the current dev sha (release gate). Override only via
    audited `RAILS_FLOW_ALLOW_DEPLOY=1` + explicit say-so.
 3. A release image for this sha exists, or build it first (`/pipeline:release`).
 
 ## Run — delegate to kamal-configurator
 
-1. **Route** each `.env` key to its destination:
+1. **Route** each `.kamal/deploy.env` key to its destination:
    - `CRED__*` → Rails encrypted credentials (non-interactive
      `ActiveSupport::EncryptedConfiguration` write + read-back verify; generate
      `secret_key_base` if blank).
@@ -30,7 +30,7 @@ then deploys.
    - `REGISTRY_USER` / `IMAGE` / `WEB_HOST` / `APP_HOST` → `config/deploy.yml`
      (generate via `kamal init` if absent, else patch, never clobber).
    - `RAILS_ENV` and non-secret toggles → deploy.yml `env.clear`.
-2. **Safety pass (BLOCKING)**: `.env`, `.kamal/secrets*`, `*.key` gitignored AND
+2. **Safety pass (BLOCKING)**: `.kamal/deploy.env`, `.kamal/secrets*`, `*.key` gitignored AND
    dockerignored; `git diff` proves no plaintext secret in a committed file;
    credentials round-trip verified.
 3. **Confirm & deploy**: show the resolved plan — host, domain, image, destination,
@@ -60,7 +60,7 @@ deploy is refused by the ledger and not only by the prose above.
 ## Post-deploy
 
 Report each destination written (names only), deploy result, live-URL `/up` check.
-Self-troubleshoot failures against `.env` + `kamal app logs` and re-run idempotently
+Self-troubleshoot failures against `.kamal/deploy.env` + `kamal app logs` and re-run idempotently
 — **within the attempt cap**: `breaker.py check deploy` before each retry, and
 `breaker.py record` after it with the exact failure signature. Three attempts, or two
 identical signatures, ends it: write the diagnosis with `breaker.py stop` and hand back

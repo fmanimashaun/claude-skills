@@ -2144,6 +2144,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.22.3 — 2026-08-16 (release v1.91.2)
+
+- **The Stop gate reported a false RED on a green suite, blocking every turn-stop.** (#683) It ran
+  `bundle exec rspec` on the **bare `PATH`**. Under mise/rbenv/asdf the shims are often not on
+  `PATH`, so that resolves to the *global* Ruby's bundler, which then aborts on the Ruby/lockfile
+  mismatch — and a bundler abort exits non-zero exactly like a failing example. The gate called it
+  *"changed specs are RED — fix before finishing"* and refused the finish, on a suite that passed.
+
+  **That is the worst failure a gate can have**, and this repo's own doctrine says why: a gate that
+  fires on correct input gets switched off, and then nothing is checked at all.
+
+  It now runs through the Ruby **the project pins**, not the one that happens to be installed: a
+  `.tool-versions` or `.ruby-version` is the project saying *"this Ruby"*, so mise, rbenv or asdf is
+  tried in turn, falling back to `PATH` when the project pins nothing. Verified in a clean
+  non-interactive shell — the environment a hook actually gets — because an interactive shell hides
+  it: `mise` there is a shell function, and the first attempt to test this proved nothing.
+
+  **And a bundler abort is no longer called a red suite.** It is reported as an environment problem
+  with *"nothing about your specs is known either way"*, which is the honest statement. Both branches
+  still `exit 2`, and that is what makes the pattern match safe: a misclassification changes the
+  wording, never whether the finish is blocked.
+
+  Same class as #682 — a toolchain step assuming a bare-`PATH` environment that a common local setup
+  does not provide.
+
 ### 1.22.2 — 2026-08-08
 
 - **The four unguarded scripts are guarded** — `check_criteria`, `extract_claims`, `findings`,
@@ -3154,6 +3179,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
 ## pipeline (lifecycle orchestrator)
+
+### 1.3.1 — 2026-08-16 (release v1.91.2)
+
+- **The cloud-deploy briefing sat at repo-root `.env`, where `bin/dev` reads it — booting local
+  development in production.** (#682) Reported downstream with the full failure chain.
+
+  `/pipeline:setup-cloud` wrote the briefing to `.env`. Stock Rails `bin/dev` runs a Procfile through
+  **foreman, which reads a root `.env` by default**, and the `dotenv` gem does the same in any
+  project that has it. So the sheet's `RAILS_ENV=production` and `RAILS_MASTER_KEY` were injected
+  into the local app: it booted in production and died at `Rails.application.initialize!` with
+  `InvalidMessage / key must be 16 bytes` — **an error naming the credentials and never the
+  briefing**. With a *valid* master key it was worse: local development pointed at the
+  **production database**.
+
+  **The template asserted its own safety**, which is the sharpest part:
+
+  > `# This is NOT a Rails runtime file. Rails 8 uses encrypted credentials, not dotenv.`
+
+  True about Rails, and it answered the wrong question. The danger was never Rails reading the file
+  — it was foreman, which our own `rails-8` doctrine prescribes: *"`bin/dev` (Procfile.dev) runs the
+  server plus `tailwindcss:watch`."* A claim can be accurate and still license the defect it denies.
+
+  The briefing now lives at **`.kamal/deploy.env`**, beside the deploy machinery that consumes it and
+  outside every dev-tooling default. The template header states the real reason rather than a
+  reassurance, and `setup-cloud` **reports a leftover root `.env`** rather than deleting it: it may
+  hold real values and keys the app genuinely wants, so the developer moves what belongs in the
+  briefing and decides about the rest.
 
 ### 1.3.0 — 2026-08-01
 
