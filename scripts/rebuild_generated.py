@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Rebuild every generated artefact that stamps the release version. #680.
+
+WHY THIS EXISTS. Three committed files carry the marketplace version — `docs/coverage.html`,
+`docs/inventory.html` and `docs/wiki/Plugin-Reference.md` — and a fourth, `dist/*.skill`, is a
+deterministic build of the skills. Each has its own drift gate, so bumping a version invalidates all
+of them and the gates fail until each is rebuilt.
+
+Until now the arm ran four commands, in order, from memory. **The v1.88.0 arm forgot the wiki and the
+gate caught it**, which is the gate working and the sequence being memory — the claims-vs-enforcement
+shape this repo files bugs about, and one that bites a second maintainer on their first release.
+
+IT RUNS THEM ALL EVEN IF ONE FAILS, and reports every outcome. Stopping at the first failure would
+leave the tree half-rebuilt, which is worse than not starting: some gates then pass and some do not,
+and the reason is invisible.
+
+    python3 scripts/rebuild_generated.py
+
+Exit 0 when every builder succeeded, 1 otherwise.
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+# Order matters only for readability; none depends on another's output.
+BUILDERS = (
+    ("coverage page", "build_coverage_artifact.py"),
+    ("inventory page", "build_inventory.py"),
+    ("wiki reference", "build_wiki.py"),
+    ("dist/*.skill", "package_core.py"),
+)
+
+
+def main() -> int:
+    failures: list[str] = []
+    for label, script in BUILDERS:
+        path = ROOT / "scripts" / script
+        if not path.is_file():
+            print(f"[FAIL] {label}: {script} is missing")
+            failures.append(label)
+            continue
+        proc = subprocess.run([sys.executable, str(path)], cwd=ROOT,
+                              capture_output=True, text=True)
+        if proc.returncode == 0:
+            print(f"[ ok ] {label}")
+        else:
+            # The builder's OWN stderr, verbatim. Paraphrasing it into "rebuild failed" is how a
+            # fixable problem reads like a broken toolchain.
+            print(f"[FAIL] {label} (exit {proc.returncode})")
+            for line in (proc.stderr or proc.stdout).strip().splitlines()[-4:]:
+                print(f"         {line}")
+            failures.append(label)
+
+    print()
+    if failures:
+        print(f"{len(failures)} of {len(BUILDERS)} failed: {', '.join(failures)}")
+        return 1
+    print(f"all {len(BUILDERS)} rebuilt — `git add docs/ dist/` and the drift gates will pass "
+          f"once committed (they compare the blob at HEAD, not the working copy).")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
