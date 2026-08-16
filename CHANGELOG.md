@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-16 (v1.88.0)
 
 - **`hotwire` was staged into the measured arm of the doctrine benchmark and exercised by zero
   cases.** (#646) Found reviewing four external agent-tooling repos against ours — Clerk's per-skill
@@ -3240,6 +3240,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.47.0 — 2026-08-16 (release v1.88.0)
+
+- **`visual-assets.md` §5.3 — authoring an animated illustration.** (#641) The `motion` asset kind
+  was *defined* as *"Lottie JSON or an animated SVG"*, and searching every shipped reference for
+  `Lottie`, `animated SVG` or `SMIL` returned **zero hits**. `motion.md` is 371 lines about how a
+  *button* moves and mentions an illustration 0 times. So the kind was enforced against a technology
+  the doctrine never explained.
+
+  The new section covers it, and three points are the doctrine rather than the schema:
+
+  - **Finite or perpetual, chosen by duration rather than taste.** A finite animation never engages
+    WCAG 2.2.2, which requires motion lasting **more than five seconds**; a perpetual one owes the
+    page a **pause control**, and we ship no pause affordance — so author finite for now. The
+    reasoning is inherited from §5.1 rather than restated. Recorded alongside it: Material 3's own
+    style pages animate their illustration fields *and* ship a visible pause button, so perpetual
+    motion is legitimate — just not free.
+  - **`separable marks` is named as the animatability property.** The brief already asks for *"6-8
+    separable marks"* and it read as a composition note; independently addressable parts are exactly
+    what can be staggered or drawn on, which makes the `static` and `motion` assets of one subject
+    the same artwork rather than two commissions.
+  - **The static end-state is the deliverable, not a fallback** — a draw-on whose reduced-motion
+    state is "nothing drawn yet" renders an empty box for the user who asked for less motion.
+
+  Also stated plainly: **`pen_to_svg` does not emit animation.** Better read than discovered after
+  composing.
 
 ### 1.46.0 — 2026-08-09 (release v1.87.0)
 
@@ -7520,7 +7546,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.26.0 — 2026-08-16 (release v1.88.0)
 
 - **We were buying assets blind: the paid prompt never stated a shape, and nothing checked what came
   back.** (#640) Reported downstream as *"the generated visual assets will be wrong if we are so
