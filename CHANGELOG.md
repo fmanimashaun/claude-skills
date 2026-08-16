@@ -7685,6 +7685,35 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The prompt library held asset prompts only, and `/design-flow:variants` threw away its own
+  answer.** (#638) Every writer into the library lived in `generate_asset.py` — the bought path,
+  `--record`, `--from-url` and both verdicts — so the composition work, which is what
+  `/design-flow:component` and `/design-flow:variants` actually produce, had no reuse memory at all.
+
+  **The loop was open at both ends.** `/variants` generates N conformant compositions, asks a human
+  to choose, moves the winner to its real home and deletes the rest. The choice was made once and
+  evaporated: nothing recorded *which* composition won, on *what* axis, or why the others lost — so
+  the same three variants get re-proposed next quarter and re-discarded on taste.
+
+  Compositions are now first-class library rows, recorded through
+  `prompt_library.py --record-surface` so the flow can drive a script rather than an import. **The
+  losers are recorded too**, with their reason: a library of keepers cannot answer *"did we already
+  try this and reject it?"*, which is the composition-side version of paying twice — the same
+  argument the asset half already makes for rejected prompts.
+
+  A composition **costs nothing and names no model**: the agent authored it from the doctrine, so
+  the row records `model: null` with a note saying *not applicable* rather than pretending a gap.
+
+  **Two defects the first render exposed**, both found by looking at real output rather than at
+  fixtures:
+
+  - The generated banner and intro still named `docs/assets/prompts.json`, the pre-#625 flat path,
+    so the file told a reader to edit somewhere that no longer exists.
+  - The *"N prompts have no known model"* warning counted compositions, whose advice — *"pass
+    `--model` to state it"* — **cannot be followed** for something no model made. Now scoped to
+    assets, and guarded, because a warning nobody can act on trains people past warnings.
+
+
 - **`/design-flow:compose` — the composition brief.** (#639) Requested downstream as *"a complete
   design prompt generator… something that guides the agent to know exactly the kind of visual assets
   to use and how to combine them."*

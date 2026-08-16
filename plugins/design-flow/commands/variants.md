@@ -272,8 +272,33 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variant_conformance.py" --verify-discard 
    taste lens, and it happens *before* the choice rather than after. Conformance cannot rank — every
    variant here is conformant by construction, which is exactly why a second question is needed.
 
+## Phase 4 — Record the choice, including the ones you discarded
+
+**This command generated N compositions, asked a human to choose, and let the answer evaporate.**
+The winner moved to its real home, the losers were deleted, and nothing recorded *which* won, on
+*what* axis, or why the others lost — so the same three variants get re-proposed next quarter and
+re-discarded on taste.
+
+After the choice, record every variant:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/prompt_library.py" \
+  --record-surface marketing-hero \
+  --rationale "screenshot-led hero, claim demoted to a lede" \
+  --axis "focal point" --verdict accept --why "the product carries it" \
+  --built app/views/home/index.html.erb
+```
+
+**Record the losers too.** A library of keepers cannot answer *"did we already try this and reject
+it?"*, so the next run re-proposes the discarded one — the composition-side version of paying twice.
+That is the same argument the asset half of the library already makes for rejected prompts.
+
+A composition costs nothing and names no model: the agent authored it from the doctrine, so the
+library records `model: null` with a note saying *not applicable* rather than pretending a gap.
+
 ## Output
 
 The switcher URL, one line per variant (id · rationale · the axis it moved along), the
-`variant_conformance.py` verdict, and the choice question. After a choice: the winner's new path
-and the discard verification.
+`variant_conformance.py` verdict, and the choice question. After a choice: the winner's new path,
+the discard verification, and **one library row per variant** — the winner accepted, the rest
+rejected with their reasons.
