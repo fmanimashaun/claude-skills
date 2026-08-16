@@ -7683,7 +7683,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.28.1 — 2026-08-16 (release v1.90.1)
 
 - **The composition brief ASSIGNED assets from word overlap. Now it shortlists.** (#672) Reported
   from the first real run of `/design-flow:compose` against a real manifest, one release after #639
