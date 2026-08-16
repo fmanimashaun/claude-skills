@@ -547,6 +547,80 @@ def check_bare_plugin_entries() -> tuple[list[Finding], int]:
     return findings, len(plugins)
 
 
+_COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+                "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+
+
+def check_misdescribed_agents() -> tuple[list[Finding], int]:
+    """A plugin description that enumerates its agents must enumerate all of them.
+
+    `rails-flow` shipped saying "eight specialist subagents" while shipping **eleven**, and naming
+    `developer` for a file called `rails-developer.md` -- so a user who read the description and went
+    looking found nothing. `design-flow` named three of five, leaving `design-critic` invisible: the
+    advisory lens the whole `art-direction.md` enforcement model rests on (#653).
+
+    This is the install surface, not a docs nit. The description is what `/plugin marketplace` renders
+    when someone decides whether to install, and a count in it is a promise about what arrives.
+
+    THE ESCAPE HATCH IS THE WHOLE DESIGN. `qa-flow` ships ten agents and names none; `pipeline` ships
+    two and names none. Both are CORRECT -- not enumerating is a legitimate choice, and a rule that
+    demanded a full list would fire on them and get switched off. So: name none and this is silent;
+    name one and you must name all.
+
+    That is also why this does not contradict `check_undocumented_plugins`, which refuses to check
+    counts because "prose legitimately refers to subsets". That holds for CLAUDE.md ESSAYS. A manifest
+    description that lists agents is answering "what do I get?", and there a subset is a wrong answer.
+    """
+    manifest = ROOT / ".claude-plugin" / "marketplace.json"
+    if not manifest.is_file():
+        return [], 0
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except ValueError:
+        return [], 0
+
+    findings: list[Finding] = []
+    examined = 0
+    for plugin in payload.get("plugins") or []:
+        source = plugin.get("source")
+        if not isinstance(source, str):
+            continue
+        agent_dir = ROOT / source / "agents"
+        if not agent_dir.is_dir():
+            continue
+        shipped = sorted(path.stem for path in agent_dir.glob("*.md"))
+        if not shipped:
+            continue
+        examined += 1
+        description = plugin.get("description") or ""
+        name = plugin.get("name", "(unnamed)")
+
+        named = [agent for agent in shipped if agent in description]
+        if named:
+            missing = [agent for agent in shipped if agent not in named]
+            if missing:
+                findings.append(Finding(
+                    "misdescribed-agents", ".claude-plugin/marketplace.json", 0,
+                    f"plugin {name!r} names {len(named)} of its {len(shipped)} agents and omits "
+                    f"{', '.join(missing)} -- a user choosing whether to install cannot see them. "
+                    f"Name all of them, or name none."))
+
+        # A STATED COUNT IS A PROMISE. Checked whether or not the agents are enumerated, because the
+        # number is the part a reader remembers.
+        match = re.search(r"\b(\w+) specialist subagents\b", description)
+        if match:
+            claimed = _COUNT_WORDS.get(match.group(1).lower())
+            if claimed is None and match.group(1).isdigit():
+                claimed = int(match.group(1))
+            if claimed is not None and claimed != len(shipped):
+                findings.append(Finding(
+                    "misdescribed-agents", ".claude-plugin/marketplace.json", 0,
+                    f"plugin {name!r} claims {match.group(1)} specialist subagents and ships "
+                    f"{len(shipped)}. The count is what a reader remembers, and this is the text "
+                    f"they read while deciding to install."))
+    return findings, examined
+
+
 def check_undocumented_plugins() -> tuple[list[Finding], int]:
     """Every plugin declared in `marketplace.json` must be named in the docs that describe them.
 
@@ -2039,6 +2113,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
     bare, bare_examined = check_bare_plugin_entries()
+    misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
     components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
@@ -2072,6 +2147,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_flag_claims_examined": flag_examined,
         "declared_plugins": plugins_examined,
         "plugin_entries_checked_for_metadata": bare_examined,
+        "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
@@ -2100,7 +2176,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + bare + unbounded + components + call_sites + invisible
+    return (dead + unenforced + undocumented + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections,
@@ -2565,6 +2641,52 @@ def selftest() -> int:
                              "    end\n  end\nend\n```\n"
                              "```erb\n<%= render Ui::OuterComponent.new %>\n"
                              "<%= render Ui::InnerComponent.new(x: 1) %>\n```\n"})
+
+    # -- misdescribed-agents (#653) ---------------------------------------
+    # rails-flow said "eight specialist subagents" and shipped eleven, naming `developer` for a
+    # file called rails-developer.md. design-flow named three of five, hiding design-critic.
+    def _agents_manifest(desc: str) -> str:
+        return json.dumps({"plugins": [{"name": "p", "source": "./p", "description": desc}]}) + "\n"
+
+    _TWO = {"p/agents/alpha.md": "a\n", "p/agents/beta.md": "b\n"}
+
+    scenario(
+        "a description naming some agents but not all", rule="misdescribed-agents",
+        expect_finding=True,
+        files={".claude-plugin/marketplace.json": _agents_manifest("Agents: alpha."), **_TWO},
+    )
+    scenario(
+        "a description naming every agent", rule="misdescribed-agents", expect_finding=False,
+        files={".claude-plugin/marketplace.json": _agents_manifest("Agents: alpha, beta."), **_TWO},
+    )
+    # THE ESCAPE HATCH. qa-flow ships ten agents and names none, and that is correct -- a rule that
+    # demanded a full list would fire on it and get switched off.
+    scenario(
+        "a description naming no agents at all", rule="misdescribed-agents", expect_finding=False,
+        files={".claude-plugin/marketplace.json": _agents_manifest("A flow with no agent list."),
+               **_TWO},
+    )
+    # A STATED COUNT is checked whether or not the agents are enumerated.
+    scenario(
+        "a wrong spelled-out count", rule="misdescribed-agents", expect_finding=True,
+        files={".claude-plugin/marketplace.json":
+               _agents_manifest("Has three specialist subagents."), **_TWO},
+    )
+    scenario(
+        "a correct spelled-out count", rule="misdescribed-agents", expect_finding=False,
+        files={".claude-plugin/marketplace.json":
+               _agents_manifest("Has two specialist subagents."), **_TWO},
+    )
+    scenario(
+        "a wrong numeric count", rule="misdescribed-agents", expect_finding=True,
+        files={".claude-plugin/marketplace.json":
+               _agents_manifest("Has 5 specialist subagents."), **_TWO},
+    )
+    # A plugin with NO agents directory is out of scope entirely -- rails-stack is skills only.
+    scenario(
+        "a plugin that ships no agents", rule="misdescribed-agents", expect_finding=False,
+        files={".claude-plugin/marketplace.json": _agents_manifest("Agents: alpha, beta.")},
+    )
 
     # -- bare-plugin-entry (#651) -----------------------------------------
     # All five plugins shipped with name/source/description/strict and nothing else: no licence on
@@ -3406,6 +3528,7 @@ def main(argv: list[str]) -> int:
         "documented_flag_claims_examined": "documented flag claim(s)",
         "declared_plugins": "declared plugin(s)",
         "plugin_entries_checked_for_metadata": "plugin entries checked for install metadata",
+        "plugin_descriptions_reconciled_against_agents": "plugin description(s) reconciled against agents/",
         "gh_list_calls_examined": "gh list call(s)",
         "documented_components": "documented component(s)",
         "doc_pointers_examined": "doc pointer(s) to our own files",
