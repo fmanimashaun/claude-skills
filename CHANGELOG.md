@@ -3155,6 +3155,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### Unreleased
+
+- **The cloud-deploy briefing sat at repo-root `.env`, where `bin/dev` reads it — booting local
+  development in production.** (#682) Reported downstream with the full failure chain.
+
+  `/pipeline:setup-cloud` wrote the briefing to `.env`. Stock Rails `bin/dev` runs a Procfile through
+  **foreman, which reads a root `.env` by default**, and the `dotenv` gem does the same in any
+  project that has it. So the sheet's `RAILS_ENV=production` and `RAILS_MASTER_KEY` were injected
+  into the local app: it booted in production and died at `Rails.application.initialize!` with
+  `InvalidMessage / key must be 16 bytes` — **an error naming the credentials and never the
+  briefing**. With a *valid* master key it was worse: local development pointed at the
+  **production database**.
+
+  **The template asserted its own safety**, which is the sharpest part:
+
+  > `# This is NOT a Rails runtime file. Rails 8 uses encrypted credentials, not dotenv.`
+
+  True about Rails, and it answered the wrong question. The danger was never Rails reading the file
+  — it was foreman, which our own `rails-8` doctrine prescribes: *"`bin/dev` (Procfile.dev) runs the
+  server plus `tailwindcss:watch`."* A claim can be accurate and still license the defect it denies.
+
+  The briefing now lives at **`.kamal/deploy.env`**, beside the deploy machinery that consumes it and
+  outside every dev-tooling default. The template header states the real reason rather than a
+  reassurance, and `setup-cloud` **reports a leftover root `.env`** rather than deleting it: it may
+  hold real values and keys the app genuinely wants, so the developer moves what belongs in the
+  briefing and decides about the rest.
+
 ### 1.3.0 — 2026-08-01
 
 - **Unattended pipeline runs are bounded by a circuit breaker instead of by hope** (#128, the
