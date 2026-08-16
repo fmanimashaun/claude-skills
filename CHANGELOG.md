@@ -7,6 +7,51 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`hotwire` was staged into the measured arm of the doctrine benchmark and exercised by zero
+  cases.** (#646) Found reviewing four external agent-tooling repos against ours — Clerk's per-skill
+  `evals/evals.json`, `jsm-agent-skill`, `swarm-forge`, and an Augment guide on spec-driven
+  development.
+
+  ```
+  real arm stages:  rails-8, hotwire, fidara-design
+  cases exercise:   rails-8 (4), fidara-design (1), hotwire (0)
+  ```
+
+  **Worse than an untested skill.** Its tokens occupied the real arm's context and contributed no
+  signal, so every win or loss was attributed to the other two. The `weak` arm exists to stop us
+  mistaking *"any instructions help"* for *"our doctrine helps"*; a staged-but-unmeasured skill
+  undermines the same rigour from the other direction.
+
+  New case **`06-stimulus-controller`** and rule **`stimulus-discipline`**, every assertion citing
+  its line of `stimulus.md` §10: declared `static targets` (`:314`, the HTML is the API), no
+  document-wide querying (`:321`), no markup built in the controller (`:319`), no global
+  `DOMContentLoaded`/`turbo:load` listener (`:322`).
+
+  **One doctrine line is deliberately not checked.** `:320-321` forbids state in *"instance fields
+  that must survive navigation"* — and *must survive navigation* is not decidable from source, since
+  `this.timeout = setTimeout(...)` is ordinary and correct. A rule flagging every `this.x =` would
+  fail the scaffold's own shipped controller and manufacture a false regression, which is what *"a
+  gate must be fair"* forbids. Left to human review rather than approximated.
+
+  The scaffold gains a Stimulus home (`controllers/index.js` + a `disclosure_controller.js`),
+  because without one the agent invents a path and the gate cannot find what to read — failure mode
+  2 in `scaffold.py`'s own docstring. The shipped controller also establishes the convention the
+  gate holds the agent to, so "use targets" is existing practice rather than a rule sprung after the
+  fact (failure mode 3, fairness).
+
+  **The enforcement half:** `selftest.py` now fails if a skill is staged in `real` and no case is
+  tagged with its name — verified by removing the tag and watching it fire on exactly the state the
+  repo was in. Prose would not have caught this, because the rule had never been written down at
+  all. Selftest 38 → **47** assertions, including one asserting the scaffold's own controller passes.
+
+  `evals/README.md` records why the remaining four shipped skills have no cases — `code-review`
+  needs a diff this harness never produces, `quality-pass` is advisory and scoring it pass/fail
+  would contradict the doctrine it measures, `derived-artifacts` needs a generator, and
+  `parallel-session-lane` needs concurrent sessions. None is staged, so none dilutes anything. An
+  unexplained absence reads exactly like an oversight.
+
 ### 2026-08-09 (v1.85.1)
 
 - **One cause reported as N findings — found in three places, fixed in all three.** The pattern:

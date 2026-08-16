@@ -175,6 +175,37 @@ end
 @utility border-subtle { border-color: var(--border-subtle); }
 """,
 
+    # A STIMULUS HOME, so the hotwire case is well-posed (#646). Without a controllers
+    # directory and an index that registers them, the agent invents a path and the gate cannot
+    # find what to read -- failure mode 2 in this file's own docstring. The shipped controller
+    # also establishes the CONVENTION the gate holds the agent to (failure mode 3, fairness):
+    # it declares `static targets`, so "use targets rather than document.querySelector" is the
+    # project's existing practice rather than a rule sprung after the fact.
+    "app/javascript/controllers/index.js": """\
+import { application } from "controllers/application"
+
+import DisclosureController from "controllers/disclosure_controller"
+application.register("disclosure", DisclosureController)
+""",
+
+    "app/javascript/controllers/disclosure_controller.js": """\
+import { Controller } from "@hotwired/stimulus"
+
+// Small and generic, named by behavior rather than by page. The HTML is the API.
+export default class extends Controller {
+  static targets = ["panel"]
+  static values = { open: Boolean }
+
+  toggle() {
+    this.openValue = !this.openValue
+  }
+
+  openValueChanged() {
+    this.panelTarget.hidden = !this.openValue
+  }
+}
+""",
+
     "app/views/layouts/application.html.erb": """\
 <!DOCTYPE html>
 <html>

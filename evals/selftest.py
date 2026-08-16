@@ -19,13 +19,16 @@ Costs nothing. No API calls, no `claude` binary, no network.
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 
 import gates  # noqa: E402
+import run  # noqa: E402  -- for RAILS_STACK_SKILLS, the staged-vs-measured check
 
 # A Gemfile + initializer are what make the simple_form gate fair; most fixtures
 # inherit them so the rule under test is the only variable.
@@ -399,10 +402,113 @@ for name, rule in gates.RULES.items():
     if not rule.doctrine or "skills/" not in rule.doctrine:
         FAILURES.append(f"{name}: cites no doctrine file under skills/")
 
+
+# --------------------------------------------------------------------------
+# stimulus-discipline (#646) -- the case that finally measures the hotwire skill the real arm
+# has been staging all along.
+
+_GOOD_STIMULUS = (
+    'import { Controller } from "@hotwired/stimulus"\\nexport default class extends Controller {\\n  static targets = ["button"]\\n  static values = { text: String }\\n  copy() {\\n    navigator.clipboard.writeText(this.textValue)\\n    this.buttonTarget.textContent = "Copied"\\n  }\\n}\\n'
+)
+
+expect(
+    "stimulus-discipline",
+    {'app/javascript/controllers/copy_controller.js': _GOOD_STIMULUS},
+    flagged=False, label="targets declared, no document query, no markup in JS (doctrine form)",
+)
+
+expect(
+    "stimulus-discipline",
+    {'app/javascript/controllers/copy_controller.js':
+        'import { Controller } from "@hotwired/stimulus"\n'
+        'export default class extends Controller {\n'
+        '  static targets = ["button"]\n'
+        '  copy() { document.querySelector("#invoice-number").textContent }\n'
+        '}\n'},
+    flagged=True, label="document.querySelector instead of a target (stimulus.md:321)",
+)
+
+expect(
+    "stimulus-discipline",
+    {'app/javascript/controllers/copy_controller.js':
+        'import { Controller } from "@hotwired/stimulus"\n'
+        'export default class extends Controller {\n'
+        '  static targets = ["button"]\n'
+        '  copy() { this.buttonTarget.innerHTML = "<em>Copied</em>" }\n'
+        '}\n'},
+    flagged=True, label="builds markup in the controller (stimulus.md:319)",
+)
+
+expect(
+    "stimulus-discipline",
+    {'app/javascript/controllers/copy_controller.js':
+        'import { Controller } from "@hotwired/stimulus"\n'
+        'export default class extends Controller {\n'
+        '  static targets = ["button"]\n'
+        '  connect() { document.addEventListener("turbo:load", () => this.reset()) }\n'
+        '}\n'},
+    flagged=True, label="global turbo:load listener (stimulus.md:322)",
+)
+
+expect(
+    "stimulus-discipline",
+    {'app/javascript/controllers/copy_controller.js':
+        'import { Controller } from "@hotwired/stimulus"\n'
+        'export default class extends Controller {\n'
+        '  copy() { navigator.clipboard.writeText("x") }\n'
+        '}\n'},
+    flagged=True, label="no static targets, so the HTML is not the API (stimulus.md:314)",
+)
+
+# THE SCAFFOLD'S OWN CONTROLLER MUST PASS. A gate that fails what we ship as the correct example
+# is a wrong gate, and it would manufacture a false regression against the real arm -- the rule
+# this file's header states, and which #156 caught twice while it was being authored.
+expect(
+    "stimulus-discipline",
+    {"app/javascript/controllers/pager_controller.js":
+        'import { Controller } from "@hotwired/stimulus"\n'
+        'export default class extends Controller {\n'
+        '  static targets = ["panel"]\n'
+        '  static values = { open: Boolean }\n'
+        '  toggle() { this.openValue = !this.openValue }\n'
+        '  openValueChanged() { this.panelTarget.hidden = !this.openValue }\n'
+        '}\n'},
+    flagged=False, label="the shipped disclosure controller's own shape",
+)
+
+# The scaffold's files are NOT the agent's work and must never be graded as it.
+expect(
+    "stimulus-discipline",
+    {"app/javascript/controllers/index.js": 'application.register("disclosure", X)\n',
+      "app/javascript/controllers/disclosure_controller.js": _GOOD_STIMULUS},
+    flagged=True, label="only scaffold files present -- the task was not attempted",
+)
+
+# --------------------------------------------------------------------------
+# EVERY STAGED SKILL IS MEASURED (#646)
+#
+# `hotwire` sat in RAILS_STACK_SKILLS for the whole life of this benchmark with no case exercising
+# it. That is worse than an untested skill: its tokens occupied the real arm's context and
+# contributed no signal, so a win or a loss was attributed to the other two. The `weak` arm exists
+# to stop us mistaking "any instructions help" for "our doctrine helps"; a staged-but-unmeasured
+# skill undermines the same rigour from the other side.
+#
+# Prose would not have caught it -- the rule was never written down at all. This is the enforcement.
+CHECKS += 1
+_suite = json.loads((HERE / "suite.json").read_text(encoding="utf-8"))
+_tagged = {t for case in _suite["cases"] for t in case.get("tags", [])}
+_unmeasured = [skill for skill in run.RAILS_STACK_SKILLS if skill not in _tagged]
+if _unmeasured:
+    FAILURES.append(
+        f"staged in the `real` arm but exercised by no case: {sorted(_unmeasured)} -- their tokens "
+        f"dilute the arm and their doctrine is unmeasured. Add a case tagged with the skill name, "
+        f"or stop staging it.")
+
 # Every rule must be exercised above, in both directions.
 _ASSERTED = {
     "scoped-index", "simple-form-convention", "no-inline-dark",
     "no-literal-color", "job-idempotent", "spec-accompanies-behavior",
+    "stimulus-discipline",
 }
 CHECKS += 1
 _missing = set(gates.RULES) - _ASSERTED
