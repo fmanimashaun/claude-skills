@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -527,6 +528,63 @@ def render_drift(root: Path, rows: list[dict], config: dict) -> list[str]:
     return []
 
 
+# #642. Styles whose subject is a SCENE -- people or characters doing something somewhere. For these
+# the subject has to name an action and an environment, because a model given "a person working"
+# invents the tool, the room and the wardrobe, differently every run. The abstract registers are
+# excluded deliberately: "an abstract woven lattice" is a CORRECT subject for `geometric` or
+# `minimalist-ink`, and a check demanding an action there would flag our own worked fidara brief on
+# its first run -- #476's lesson exactly.
+SCENE_STYLES = ("character-world", "cartoon", "mixed-media")
+
+# Verbs that describe a person doing something. Crude and stated rather than clever: the alternative
+# is a parts-of-speech dependency, and this file is stdlib-only by design.
+_ACTION = re.compile(r"\b\w+(ing|s)\b")
+# "in a kitchen", "at a desk", "on a park bench" -- a preposition introducing a place.
+_PLACE = re.compile(r"\b(in|at|on|inside|outside|beside|among|through|across)\s+(a|an|the|their|his|her|its)\b",
+                    re.I)
+
+
+def subject_problems(surface: str, brief: dict) -> list[str]:
+    """What a `subject` is missing, for a style whose subject is a scene. Empty for abstract work.
+
+    The contract is `illustrationsai.com`'s, which publishes it for exactly this job: be specific,
+    include key objects and environment, describe the action clearly -- and do not write "a person
+    working", do not assume context, do not leave the action unclear. Their own samples are all the
+    same shape: [who] + [doing what] + [with which objects] + [where].
+
+    Every one of those anti-patterns passed our gate and was billed: `subject: "x"` composed into a
+    paid prompt, because `compose_prompt` validated presence only.
+
+    WHAT IT CANNOT CATCH, stated because the boundary is easy to overclaim. It detects an ABSENT
+    action or environment, never a VAGUE one. "a person working" satisfies the action check --
+    "working" is a verb -- and is caught only because it names no environment. A subject that is
+    specific-looking and empty ("a professional doing their job in an office") passes entirely.
+    Vagueness is judgement, and a rule that tried to score it would fire on correct briefs; the
+    contract in `visual-assets.md` is what a human reviews against.
+    """
+    subject = str(brief.get("subject") or "").strip()
+    if not subject:
+        return []                       # the missing-subject case is already reported elsewhere
+    out: list[str] = []
+    # A FLOOR IN EVERY REGISTER. "x" is not a subject for geometric work either, and this needs no
+    # taxonomy knowledge.
+    if len(subject) < 12:
+        out.append(f"{surface}: subject {subject!r} is too short to be one. It is what the picture "
+                   f"is OF, and it is the field with no contract until now — 'x' composed into a "
+                   f"paid prompt.")
+        return out
+    if brief.get("style") not in SCENE_STYLES:
+        return out
+    if not _ACTION.search(subject):
+        out.append(f"{surface}: subject {subject!r} names no action, and {brief.get('style')!r} is a "
+                   f"scene style. 'Teaching? Reading? Writing?' — a model given no verb picks one.")
+    if not _PLACE.search(subject):
+        out.append(f"{surface}: subject {subject!r} names no environment, and {brief.get('style')!r} "
+                   f"is a scene style. Without one the model invents the room, differently each run. "
+                   f"Say where: 'at a modern desk', 'in a restaurant kitchen'.")
+    return out
+
+
 def check_plan(rows: list[dict], briefs: dict | None = None) -> list[str]:
     """Per-field, per-row. `surface`+`kind` must also be unique — two rows for one slot is a fork."""
     if not rows:
@@ -577,6 +635,10 @@ def check_plan(rows: list[dict], briefs: dict | None = None) -> list[str]:
                 f"square delivered for a wide band is cropped at composition time, which throws "
                 f"away the part of the picture you paid for. State it as e.g. \"16:9\", \"1:1\" or "
                 f"\"21:9\".")
+        # #642. The subject is the field that decides what the picture is OF, and it was the only
+        # one in the brief with no contract at all.
+        if briefs is not None and row.get("surface") in (briefs or {}):
+            problems.extend(subject_problems(row["surface"], briefs[row["surface"]] or {}))
     return problems
 
 
@@ -1042,6 +1104,26 @@ def selftest() -> int:
     # A check that fired on those would flag correct input, which is how a check gets switched off.
     check("...but a motion row is not",
           check_plan([{**ok, "kind": "motion"}], briefs={"hero": {}}) == [])
+
+    # #642. THE SUBJECT CONTRACT. Conditional on the style, because "an abstract woven lattice" is a
+    # CORRECT subject for the abstract registers, and a check demanding an action there would flag
+    # our own worked fidara brief on its first run.
+    SCENE = {"style": "character-world"}
+    check("a scene subject naming no environment is reported",
+          any("no environment" in m
+              for m in subject_problems("hero", {**SCENE, "subject": "a person working"})))
+    check("...and one naming both action and place is clean",
+          subject_problems("hero", {**SCENE, "subject":
+              "a young female designer sketching on a tablet at a modern desk"}) == [])
+    check("an abstract subject in an abstract style is SILENT",
+          subject_problems("hero", {"style": "minimalist-ink",
+                                    "subject": "an abstract woven lattice"}) == [])
+    # A FLOOR IN EVERY REGISTER: "x" is not a subject for geometric work either.
+    check("a trivially short subject is reported whatever the style",
+          any("too short" in m
+              for m in subject_problems("hero", {"style": "geometric", "subject": "x"})))
+    check("...and an absent subject is left to the field-presence check",
+          subject_problems("hero", {"style": "character-world"}) == [])
     check("...while briefs=None (no config yet) does not fire",
           check_plan([ok], briefs=None) == [])
 
