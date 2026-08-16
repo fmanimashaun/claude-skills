@@ -131,6 +131,58 @@ def build_entry(prov: dict, prompt: str, brief: dict, *, asset: str | None,
     }
 
 
+def build_surface_entry(surface: str, rationale: str, *, style: str | None = None,
+                        brief: str | None = None, built: str | None = None,
+                        axis: str | None = None, verdict: str = "pending",
+                        why: str = "") -> dict:
+    """One library row for a COMPOSITION rather than an asset. #638.
+
+    Every writer into this library was in `generate_asset.py` -- the bought path, `--record`,
+    `--from-url` and both verdicts. So it held asset prompts only, and the composition work, which is
+    what `/design-flow:component` and `/design-flow:variants` actually produce, had no reuse memory
+    at all.
+
+    THE LOOP THAT WAS OPEN AT BOTH ENDS. `/design-flow:variants` generates N conformant compositions,
+    asks a human to choose, moves the winner to its real home and discards the rest. The choice is
+    made once and evaporates: nothing records WHICH composition won, on WHAT axis, or why the others
+    lost. So the same three variants get re-proposed next quarter and re-discarded on taste.
+
+    The losers are recorded too, with `verdict: "reject"` and the reason -- for the same argument the
+    asset side already makes. A library of keepers cannot answer *"did we already try this and
+    reject it?"*, so the next run re-proposes the discarded one, which is the composition-side
+    version of paying twice.
+
+    `model` is None and stays None: a composition is authored by the agent from the doctrine, and
+    there is no model to name. That is the honest value, not a gap -- the same rule the `agent` rung
+    already follows.
+    """
+    return {
+        "id": entry_id(surface, rationale),
+        "surface": surface,
+        "kind": "surface",
+        "style": style or "",
+        "prompt": rationale,
+        "model": None,
+        "model_note": ("not applicable — a composition is authored from the doctrine, not bought "
+                       "from a model."),
+        "rung": None,
+        "estimated_cost_usd": 0.0,
+        "spent_total_usd": 0.0,
+        "spend_count": 0,
+        # `asset` carries what this composition PRODUCED, so the one column means the same thing on
+        # both sides of the library: the artefact you would go and look at.
+        "asset": built,
+        "brief": brief,
+        "axis": axis,
+        "use_cases": [surface],
+        "avoid": [],
+        "crafted": True,
+        "prompt_rationale": rationale,
+        "verdict": verdict,
+        "why": why,
+    }
+
+
 def load(root: Path) -> dict:
     path = root / LIBRARY_PATH
     if not path.is_file():
@@ -199,12 +251,19 @@ def tally(rows: list[dict]) -> dict:
         "accepted": sum(1 for r in rows if r.get("verdict") == "accept"),
         "rejected": sum(1 for r in rows if r.get("verdict") == "reject"),
         "pending": sum(1 for r in rows if r.get("verdict") == "pending"),
-        "unknown_model": sum(1 for r in rows if r.get("model") is None),
+        # ASSETS ONLY. A composition has no model BY DEFINITION -- the agent authored it from
+        # the doctrine -- so counting it here produced the advice "pass --model to state it",
+        # which cannot be followed. A warning nobody can act on trains people past warnings.
+        "unknown_model": sum(1 for r in rows
+                             if r.get("model") is None and r.get("kind") != "surface"),
         "re_spent": sum(1 for r in rows if int(r.get("spend_count") or 0) > 1),
+        # Counted apart because a composition costs nothing and an asset costs money; a single
+        # "12 prompts" total would read as twelve purchases.
+        "surfaces": sum(1 for r in rows if r.get("kind") == "surface"),
     }
 
 
-BANNER = ("<!-- GENERATED from docs/assets/prompts.json by prompt_library.py --render.\n"
+BANNER = ("<!-- GENERATED from docs/assets/prompts-library/prompts.json by prompt_library.py --render.\n"
           "     Do not hand-edit: the JSON is the source, this is a view of it.\n"
           "     Rebuild:  python3 <plugin>/scripts/prompt_library.py --render\n"
           "     Staleness is reported by --check once this file exists. -->\n")
@@ -244,9 +303,13 @@ def render(rows: list[dict]) -> str:
     out = [BANNER, "# Prompt library\n",
            "Every prompt that reached a provider — what it asked for, which model answered, what it "
            "cost, and whether the result was kept. **This file is generated**; edit "
-           "`docs/assets/prompts.json` or re-run the flow.\n",
+           "`docs/assets/prompts-library/prompts.json` or re-run the flow.\n",
            f"**{t['prompts']} prompt(s)** — {t['accepted']} accepted · {t['rejected']} rejected · "
            f"{t['pending']} pending. **${t['spent_total_usd']:.2f} spent in total.**\n"]
+    if t["surfaces"]:
+        out.append(f"{t['surfaces']} of those are **compositions** rather than bought assets — the "
+                   f"agent authored them from the doctrine, so they cost nothing and name no "
+                   f"model.\n")
 
     if t["re_spent"]:
         out.append(f"> **{t['re_spent']} prompt(s) were paid for more than once.** An identical "
@@ -262,6 +325,8 @@ def render(rows: list[dict]) -> str:
                    "library._\n")
         return "\n".join(out)
 
+    # #638. A surface row and an asset row are different artefacts and must not read alike: one
+    # cost money and names a picture, the other is a composition the agent authored for nothing.
     out.append("| id | surface | kind | model | source | est. | spent | runs | verdict |")
     out.append("|---|---|---|---|---|---|---|---|---|")
     for r in rows:
@@ -292,7 +357,12 @@ def render(rows: list[dict]) -> str:
             out.append(f"\n**Produced:** `{_cell(r['asset'])}`")
         if r.get("model_note"):
             out.append(f"\n**Model:** {_cell(r['model_note'])}")
-        if r.get("prompt_rationale"):
+        if r.get("kind") == "surface":
+            if r.get("brief"):
+                out.append(f"\n**Composed from:** `{_cell(r['brief'])}`")
+            if r.get("axis"):
+                out.append(f"\n**Moved along:** {_cell(r['axis'])}")
+        elif r.get("prompt_rationale"):
             out.append(f"\n**Crafted because:** {_cell(r['prompt_rationale'])}")
         if r.get("why"):
             out.append(f"\n**Verdict:** {_cell(r['why'])}")
@@ -320,6 +390,19 @@ def check(root: Path) -> list[str]:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # #638. A CLI, so `/design-flow:variants` can record a chosen composition with a shell line
+    # rather than a Python import — the flow drives scripts, not modules.
+    ap.add_argument("--record-surface", metavar="SURFACE",
+                    help="record a composition that produced a surface")
+    ap.add_argument("--rationale", default="", help="what this composition does, in one sentence")
+    ap.add_argument("--brief", help="path to the composition brief it was built from")
+    ap.add_argument("--built", help="path to what it produced")
+    ap.add_argument("--axis", help="the axis this variant moved along, for a /variants winner")
+    ap.add_argument("--verdict", choices=VERDICTS, default="accept",
+                    help="accept for a winner, reject for a discarded variant — record BOTH, or the "
+                         "library cannot answer 'did we already try this and reject it?'")
+    ap.add_argument("--why", default="", help="why it won, or why it lost")
+    ap.add_argument("--style", help="the researched style it was built against")
     ap.add_argument("--render", action="store_true", help="write the markdown view of the library")
     ap.add_argument("--check", action="store_true", help="report drift between the JSON and the view")
     ap.add_argument("--selftest", action="store_true")
@@ -333,6 +416,21 @@ def main(argv: list[str]) -> int:
             for p in problems:
                 print(p, file=sys.stderr)
             return 1 if problems else 0
+        if args.record_surface:
+            if not args.rationale.strip():
+                print("a composition needs a `--rationale`: one sentence saying what it does. "
+                      "Without it the row records that a choice happened and not what was chosen.",
+                      file=sys.stderr)
+                return 2
+            entry = build_surface_entry(
+                args.record_surface, args.rationale.strip(), style=args.style,
+                brief=args.brief, built=args.built, axis=args.axis,
+                verdict=args.verdict, why=args.why)
+            path = upsert(root, entry)
+            print(json.dumps({"recorded": entry["id"], "surface": args.record_surface,
+                              "verdict": args.verdict,
+                              "library": str(path.relative_to(root))}, indent=2))
+            return 0
         if args.render:
             rows = load(root)["prompts"]
             path = root / RENDER_PATH
@@ -463,6 +561,39 @@ def selftest() -> int:
     body = render([composed, crafted])
     ok("the view distinguishes them", "| composed |" in body and "| crafted |" in body)
     ok("...and shows the rationale", "**Crafted because:**" in body)
+
+    print("a composition is recorded, and is not read as a purchase")
+    win = build_surface_entry("marketing-hero", "screenshot-led hero, claim demoted to a lede",
+                              style="minimalist-ink", brief="docs/design/compositions/hero.json",
+                              built="app/views/home/index.html.erb", axis="focal point",
+                              verdict="accept", why="the product carries it")
+    ok("a composition is kind=surface", win["kind"] == "surface")
+    ok("...costing nothing", win["spent_total_usd"] == 0.0 and win["spend_count"] == 0)
+    # A composition has NO MODEL by definition, and the note says why rather than promising one.
+    ok("...with no model, and a note that does not ask for one", win["model"] is None
+       and "not applicable" in (win["model_note"] or ""))
+    ok("...naming the brief it was composed from", win["brief"].endswith("hero.json"))
+
+    # THE LOSERS ARE RECORDED TOO. A library of keepers cannot answer "did we already try this and
+    # reject it?", so the next run re-proposes the discarded variant -- the composition-side version
+    # of paying twice.
+    lose = build_surface_entry("marketing-hero", "illustration-led hero at display size",
+                               axis="focal point", verdict="reject", why="competes with the shot")
+    ok("a discarded variant is recorded, not dropped", lose["verdict"] == "reject")
+    ok("...and is a different row from the winner", lose["id"] != win["id"])
+
+    body = render([win, lose])
+    ok("the view names the brief it came from", "docs/design/compositions/hero.json" in body)
+    ok("...and the axis it moved along", "**Moved along:** focal point" in body)
+    ok("...and counts compositions apart from purchases", "are **compositions**" in body)
+    # A COMPOSITION MUST NOT TRIGGER THE MISSING-MODEL WARNING: its advice is "pass --model", which
+    # cannot be followed for something no model made. A warning nobody can act on trains people to
+    # ignore warnings.
+    ok("...without advising a --model nobody could pass", "no known model" not in body)
+    ok("an asset with no model still DOES warn",
+       "no known model" in render([build_entry(
+           {"surface": "s", "kind": "static", "model": "agent"}, "p" * 40, {},
+           asset=None, model=None)]))
 
     print("a prompt full of backticks still fences")
     tricky = "use ``code`` and ```blocks``` in the prompt"

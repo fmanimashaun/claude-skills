@@ -7683,6 +7683,85 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.28.0 — 2026-08-16 (release v1.90.0)
+
+- **The prompt library held asset prompts only, and `/design-flow:variants` threw away its own
+  answer.** (#638) Every writer into the library lived in `generate_asset.py` — the bought path,
+  `--record`, `--from-url` and both verdicts — so the composition work, which is what
+  `/design-flow:component` and `/design-flow:variants` actually produce, had no reuse memory at all.
+
+  **The loop was open at both ends.** `/variants` generates N conformant compositions, asks a human
+  to choose, moves the winner to its real home and deletes the rest. The choice was made once and
+  evaporated: nothing recorded *which* composition won, on *what* axis, or why the others lost — so
+  the same three variants get re-proposed next quarter and re-discarded on taste.
+
+  Compositions are now first-class library rows, recorded through
+  `prompt_library.py --record-surface` so the flow can drive a script rather than an import. **The
+  losers are recorded too**, with their reason: a library of keepers cannot answer *"did we already
+  try this and reject it?"*, which is the composition-side version of paying twice — the same
+  argument the asset half already makes for rejected prompts.
+
+  A composition **costs nothing and names no model**: the agent authored it from the doctrine, so
+  the row records `model: null` with a note saying *not applicable* rather than pretending a gap.
+
+  **Two defects the first render exposed**, both found by looking at real output rather than at
+  fixtures:
+
+  - The generated banner and intro still named `docs/assets/prompts.json`, the pre-#625 flat path,
+    so the file told a reader to edit somewhere that no longer exists.
+  - The *"N prompts have no known model"* warning counted compositions, whose advice — *"pass
+    `--model` to state it"* — **cannot be followed** for something no model made. Now scoped to
+    assets, and guarded, because a warning nobody can act on trains people past warnings.
+
+
+- **`/design-flow:compose` — the composition brief.** (#639) Requested downstream as *"a complete
+  design prompt generator… something that guides the agent to know exactly the kind of visual assets
+  to use and how to combine them."*
+
+  The asymmetry it closes:
+
+  ```
+  what to buy    ->  plan.json + a generated plan.md, one row per asset, reviewable
+  how to compose ->  nothing
+  ```
+
+  We generated a concrete artefact for the decision that costs **money** and nothing for the decision
+  that determines whether the page looks professional. `/design-flow:component` is thorough, and it
+  is a **reading list**: it names the files to open and leaves the agent to derive, per surface and
+  from scratch, which assets this surface needs and where they go.
+
+  **Asset selection is now a lookup, and that is why a brief can be generated at all.**
+  `generation_gate` already *required* every manifest row to carry `use_cases` and `avoid` — and
+  grepping every command, agent and skill for a composition-time consumer of `use_cases` returned
+  only the three places that **documented** the field. Required on write, declared load-bearing,
+  read by nothing. A band now takes the manifest row whose `use_cases` match it, and the brief
+  records **which entry matched and why**.
+
+  Three design decisions, each because the alternative produced a plausible-looking wrong brief:
+
+  - **`avoid` is evaluated first and is absolute.** A stated prohibition outranks a stated
+    permission, or the field means nothing at the only moment it could act.
+  - **The band matches; the surface only excludes.** Folding the surface into the match made every
+    band on `marketing-hero` take the asset whose use case said *"marketing hero"* — one asset, whole
+    page. Caught by this module's own fixture, which is why the no-match case is asserted rather than
+    assumed. `avoid` still sees the surface, because *"anywhere beside a product screenshot"* is a
+    statement about the page, not one band.
+  - **Unfilled bands are listed, not omitted** — the honest bridge back to the plan, since an
+    unfilled band is either a `plan.json` row or a deliberate blank and should not be neither.
+
+  **It generates a brief; it does not judge a surface.** The only mechanical checks are joins — a
+  named asset exists, and no band uses a forbidden one. `art-direction.md`'s *"why none of this is
+  gated"* holds: #476 killed a monotony gate whose threshold flagged our own worked band sequence.
+
+  **One parser, not two.** `scripts/check_page_pacing.py` now imports the band parser from the
+  shipped plugin instead of keeping its own copy — maintainer tooling may read shipped code, never
+  the reverse. Its guard gains the plugin module in `needs`, which is the third time in this session
+  that an added import needed an added need.
+
+  22 assertions, four mutation guards. One of those mutations was a **no-op on the first attempt**
+  (`[] or [...]` evaluates to the list) and read as a surviving mutant until it was fixed — a
+  mutation that changes nothing proves nothing.
+
 ### 1.27.0 — 2026-08-16 (release v1.89.0)
 
 - **`subject` had no contract: `"a person working"`, `"teaching"` and `"x"` all composed into paid
