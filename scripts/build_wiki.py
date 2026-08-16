@@ -88,19 +88,73 @@ def plugin_commands(name: str) -> list[str]:
     return sorted(p.stem for p in d.glob("*.md")) if d.is_dir() else []
 
 
+# YAML block-scalar indicators. `description: >-` puts the text on the FOLLOWING indented lines, so
+# reading the rest of the `description:` line returns the marker itself -- and the wiki published
+# `>-` as the description for five of seven skills (#680). Two skills use single-line descriptions
+# and rendered correctly, which is why it survived: it looks fine wherever you happen to check.
+_BLOCK_SCALAR = ("|", "|-", "|+", ">", ">-", ">+")
+
+
+def frontmatter_description(path: Path) -> str:
+    """The `description:` from a markdown file's YAML frontmatter, block scalars included.
+
+    #680. Returns "" only when there is genuinely nothing to read -- never a marker, never a
+    fragment of syntax. The caller refuses to render an empty one rather than publishing a blank,
+    because the failure this replaces was printing YAML where prose belonged.
+    """
+    if not path.is_file():
+        return ""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines):
+        if not line.startswith("description:"):
+            continue
+        rest = line.split(":", 1)[1].strip()
+        if rest and rest not in _BLOCK_SCALAR:
+            return rest
+        # A BLOCK SCALAR: the text is the indented run that follows, folded to one line. Stopping at
+        # the first unindented line keeps the next frontmatter key out of the description -- reading
+        # to the closing `---` would swallow `argument-hint:` and print it as prose.
+        folded: list[str] = []
+        for nxt in lines[i + 1:]:
+            if not nxt.strip():
+                break
+            if not nxt.startswith((" ", "\t")):
+                break
+            folded.append(nxt.strip())
+        return " ".join(folded)
+    return ""
+
+
+def first_sentence(text: str, limit: int = 200) -> str:
+    """The lead clause of a description — enough to choose by, not the whole contract."""
+    for stop in (". ", " — ", " -- "):
+        if stop in text:
+            return text.split(stop)[0].rstrip(".") + "."
+    return text[:limit]
+
+
 def skill_description(name: str) -> str:
     """The skill's own frontmatter description, trimmed to its first sentence."""
-    p = ROOT / "skills" / name / "SKILL.md"
-    if not p.is_file():
-        return ""
-    for line in p.read_text(encoding="utf-8").splitlines():
-        if line.startswith("description:"):
-            desc = line.split(":", 1)[1].strip()
-            for stop in (". ", " — ", " -- "):
-                if stop in desc:
-                    return desc.split(stop)[0].rstrip(".") + "."
-            return desc[:200]
-    return ""
+    return first_sentence(frontmatter_description(ROOT / "skills" / name / "SKILL.md"))
+
+
+def command_line(plugin: str, name: str) -> str:
+    """One command's line: its name AND what it does. #680.
+
+    Every one of the 43 shipped commands carries a frontmatter `description:` -- required, present,
+    and read by nothing. The page listed bare names, which is a table of contents rather than a
+    reference: it said a command existed and not what it did, what it took, or what it produced.
+    Same shape as `use_cases` before #639, in the script written to stop the docs rotting.
+
+    A MISSING DESCRIPTION IS NAMED, not blanked. A silently description-less row reads as a command
+    that does nothing worth saying, and the whole defect this replaces was publishing a placeholder
+    where prose belonged.
+    """
+    desc = first_sentence(
+        frontmatter_description(ROOT / "plugins" / plugin / "commands" / f"{name}.md"))
+    if not desc:
+        return f"- `/{plugin}:{name}` — _no `description:` in its frontmatter_\n"
+    return f"- `/{plugin}:{name}` — {desc}\n"
 
 
 def page_commands() -> str:
@@ -120,14 +174,14 @@ def page_commands() -> str:
                 continue
             listed.update(present)
             out.append(f"**{heading}** — {why}\n")
-            out.append("".join(f"- `/{plugin}:{n}`\n" for n in sorted(present)))
+            out.append("".join(command_line(plugin, n) for n in sorted(present)))
             out.append("")
         # A command that exists and is in no group is LISTED, not dropped. Silently omitting it is
         # how the old README came to name 5 of 42 -- the reader cannot tell absence from oversight.
         ungrouped = sorted(available - listed)
         if ungrouped:
             out.append("**Ungrouped** — shipped but not yet placed in a group above\n")
-            out.append("".join(f"- `/{plugin}:{n}`\n" for n in ungrouped))
+            out.append("".join(command_line(plugin, n) for n in ungrouped))
             out.append("")
         total += len(available)
     out.append(f"\n---\n\n**{total} commands** across {len(GROUPS)} plugins.\n")
@@ -187,6 +241,39 @@ BUILDERS = {"Command-Reference.md": page_commands,
             "Plugin-Reference.md": page_plugins}
 
 
+def check_descriptions() -> list[str]:
+    """No generated page may publish YAML syntax, or a command with nothing said about it. #680.
+
+    The wiki printed `>-` as the description for five of seven skills, and listed 43 commands whose
+    descriptions it already had. Both were invisible because two skills used single-line descriptions
+    and rendered fine — it looked correct wherever you happened to check.
+
+    So the check is on the RENDERED pages, not the parser: a parser test proves the function works
+    and this proves the published bytes do. Those are different claims, and the one that shipped
+    wrong was the second.
+    """
+    problems: list[str] = []
+    for page in ("Skills-Reference.md", "Command-Reference.md", "Plugin-Reference.md"):
+        path = WIKI / page
+        if not path.is_file():
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.strip() in _BLOCK_SCALAR:
+                problems.append(
+                    f"docs/wiki/{page}:{n} publishes {line.strip()!r} — a YAML block-scalar marker "
+                    f"rendered as prose. The description is on the indented lines that follow it.")
+    cmds = WIKI / "Command-Reference.md"
+    if cmds.is_file():
+        bare = [ln.strip() for ln in cmds.read_text(encoding="utf-8").splitlines()
+                if ln.startswith("- `/") and "—" not in ln]
+        if bare:
+            problems.append(
+                f"{len(bare)} command(s) in Command-Reference carry no description, e.g. "
+                f"{bare[0]!r}. Every shipped command has one in its frontmatter; a bare name is a "
+                f"table of contents, not a reference.")
+    return problems
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="fail on drift instead of writing")
@@ -209,9 +296,14 @@ def main(argv: list[str]) -> int:
         for d in drift:
             print(f"DRIFT: docs/wiki/{d} is not a clean build — a command, skill or version moved "
                   f"and the page was not rebuilt.")
-        print("  -> python3 scripts/build_wiki.py && git add docs/wiki/" if drift
+        # #680. Drift is "the page does not match a rebuild"; this is "the page is WRONG even
+        # though it matches" — a rebuild that faithfully republishes `>-` drifts from nothing.
+        bad = check_descriptions()
+        for b in bad:
+            print(f"CONTENT: {b}")
+        print("  -> python3 scripts/build_wiki.py && git add docs/wiki/" if drift or bad
               else "wiki reference pages are current.")
-        return 1 if drift else 0
+        return 1 if (drift or bad) else 0
     print(f"wrote {len(BUILDERS)} page(s) to docs/wiki/")
     return 0
 
@@ -224,6 +316,46 @@ def selftest() -> int:
         checks += 1
         if not cond:
             failures.append(label)
+
+    # -- #680: descriptions ------------------------------------------------
+    import tempfile as _tf
+
+    def _fm(body: str) -> str:
+        with _tf.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
+            fh.write(body)
+        return frontmatter_description(Path(fh.name))
+
+    # A BLOCK SCALAR puts its text on the following indented lines. Reading the rest of the
+    # `description:` line returns the marker, and the wiki published `>-` for five of seven skills.
+    check("a `>-` block scalar folds its indented lines",
+          _fm("---\nname: x\ndescription: >-\n  first line\n  second line\n---\n")
+          == "first line second line")
+    check("...and `|` too", _fm("---\ndescription: |\n  kept\n---\n") == "kept")
+    check("a single-line description still works",
+          _fm("---\ndescription: one line\n---\n") == "one line")
+    # STOP AT THE NEXT KEY, or the description swallows `argument-hint:` and prints it as prose.
+    check("...and folding stops before the next frontmatter key",
+          _fm("---\ndescription: >-\n  the text\nargument-hint: <x>\n---\n") == "the text")
+    check("a file with no description reads empty", _fm("---\nname: x\n---\n") == "")
+
+    # THE CHECK IS ON THE RENDERED PAGES, not the parser. A parser test proves the function works;
+    # this proves the published bytes do, and the one that shipped wrong was the second.
+    check("the built pages publish no YAML marker and no bare command",
+          check_descriptions() == [])
+
+    global WIKI
+    _real = WIKI
+    try:
+        WIKI = Path(_tf.mkdtemp())
+        (WIKI / "Skills-Reference.md").write_text("## `x`\n\n>-\n", encoding="utf-8")
+        (WIKI / "Command-Reference.md").write_text("- `/p:bare`\n", encoding="utf-8")
+        found = check_descriptions()
+        check("a published block-scalar marker is caught",
+              any("block-scalar marker" in f for f in found))
+        check("...and a command with no description is caught",
+              any("no description" in f for f in found))
+    finally:
+        WIKI = _real
 
     cmds = page_commands()
     # EVERY command must appear. The old README named 5 of 42, and the reader could not tell an

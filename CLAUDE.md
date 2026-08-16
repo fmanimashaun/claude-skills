@@ -207,6 +207,17 @@ a promotion, which is the moment it is about.
 Because the promotion PR's head is `dev`, the bumps have to be on `dev` before it opens. So a
 release is:
 
+One command rebuilds every version-stamped artefact, and the arm should use it:
+
+```bash
+python3 scripts/rebuild_generated.py     # coverage page, inventory, wiki, dist/*.skill
+```
+
+It exists because the arm ran four builders in order from memory, and the **v1.88.0 arm forgot the
+wiki** — the gate caught it, which is the gate working and the sequence being memory. It runs all
+four even if one fails, because stopping early leaves the tree half-rebuilt: some gates then pass,
+some do not, and the reason is invisible.
+
 | # | Step | Branch / PR | Publishes? |
 |---|---|---|---|
 | 1 | **Arm** — assign versions, convert `Unreleased` headings, write the one release block, **regenerate BOTH committed pages** (`docs/coverage.html`, `docs/inventory.html`) | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
