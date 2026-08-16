@@ -4085,6 +4085,15 @@ GUARDS: tuple[Guard, ...] = (
                 "...with spend_count 2",
             ),
             Mutation(
+                # #638. A composition has no model BY DEFINITION, so counting it as "unknown model"
+                # produced the advice "pass --model to state it" -- which cannot be followed. A
+                # warning nobody can act on trains people to ignore warnings.
+                "a composition is counted as a missing model, advising a flag nobody can pass",
+                '                             if r.get("model") is None and r.get("kind") != "surface"),',
+                '                             if r.get("model") is None),',
+                "...without advising a --model nobody could pass",
+            ),
+            Mutation(
                 # A hand-editable view is a second source of truth that disagrees within a week and
                 # disagrees SILENTLY, because a stale table still looks like a table.
                 "drift in the generated view stops being reported",
