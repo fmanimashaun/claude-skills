@@ -19,15 +19,26 @@ the point") and `avoid` ("where it must NOT go; without this the set drifts by w
 
 Nothing read them. Grepping every command, agent and skill for a composition-time consumer of
 `use_cases` returned only the three places that DOCUMENT the field. Required on write, declared
-load-bearing, consumed by an agent remembering to look. So asset selection here is a LOOKUP, not
-taste — which is the whole reason a brief can be generated at all.
+load-bearing, consumed by an agent remembering to look. READING them is the win, and it is why a
+brief can be generated at all.
+
+DECIDING from them was the overreach, and the first real run against a real manifest proved it
+(#672). Word overlap cannot tell that *outcomes* and *capabilities* are the same band, cannot tell a
+`use_case` naming a PAGE from one naming a BAND, and cannot count at all -- so it missed the asset's
+most deliberate placement, leaked a page reference into a like-named band, and placed the asset in
+three bands while its own manifest capped it at two. Every one of those read as authoritative.
+
+So this SHORTLISTS. Each band gets ranked candidates with the `use_case` that matched quoted beside
+them, and says plainly when there are none. The caller decides. This module knows what the manifest
+SAYS; it does not know which asset belongs.
 
 WHAT THIS IS NOT. It generates a brief; it does not judge a surface. `art-direction.md`'s "why none
 of this is gated" holds: #476 proposed four monotony axes for `check_page_pacing.py` and the
 measurement killed it, because the threshold flagged OUR OWN worked band sequence. This is `plan.md`
-for layout — an artefact a human reads and overrides. The only mechanical checks are joins: a band
-naming an owned asset names one that exists, and no band uses an asset whose `avoid` matches the
-surface. Neither is a judgement.
+for layout — an artefact a human reads and overrides. The only mechanical checks are joins: a
+suggested asset exists on disk, no band suggests one whose `avoid` matches the surface, and no asset
+is suggested in more bands than its own `max_per_surface` permits. None is a judgement, and the last
+is reported rather than trimmed, because which band loses the asset is a design decision.
 
 Two files, one source, exactly as the plan and the prompt library do it:
 
@@ -124,33 +135,70 @@ def read_bands(doc: Path) -> list[Band]:
 
 
 def significant(text: str) -> set[str]:
-    """Words that could evidence a match. 3+ letters, not a stopword."""
-    return {w for w in re.findall(r"[a-z]{3,}", text.lower()) if w not in _STOP}
+    """Words that could evidence a match. 3+ letters, not a stopword, crudely singularised.
+
+    #672 defect 4: `avoid "money CTAs"` gave `ctas` and band 7 "Closing CTA" gave `cta`, so a real
+    prohibition could not fire on a plural. The singularisation is deliberately dumb -- strip a
+    trailing `s` from a 4+ letter word -- because a stemmer is a dependency and this file is
+    stdlib-only. It collapses `cards`/`card` and `questions`/`question`, which is the whole
+    observed failure, and it is honest about being crude rather than pretending to be a stemmer.
+    """
+    words = {w for w in re.findall(r"[a-z]{3,}", text.lower()) if w not in _STOP}
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words}
 
 
-def pick_asset(band: Band, surface: str, owned: list[dict]) -> tuple[dict | None, str]:
-    """Which owned asset fills this band, and WHY that one. A lookup, never taste.
+def band_named(entry: dict, band: Band) -> bool:
+    """Did the manifest row NAME this band, structurally? #672.
 
-    `avoid` is evaluated FIRST and is absolute. `/design-flow:generate` calls it "the one people skip
-    and the one that matters most": without it a curated family drifts by well-meaning reuse, one
-    reasonable-looking placement at a time. An asset whose `avoid` matches this band is excluded even
-    if its `use_cases` match perfectly — a stated prohibition outranks a stated permission, or the
-    field means nothing.
+    Prose `use_cases` are matched by word overlap, which cannot see that *outcomes* and
+    *capabilities* are the same band -- the first real run's worst defect, because the asset's most
+    deliberate placement was the one missed. A row may instead say which bands it is for:
 
-    Returns the entry and the reason, or (None, why not). The reason is the deliverable: "the manifest
-    row whose use_cases said 'marketing hero'" is reviewable; "the agent chose it" is not.
+        "bands": ["Capabilities", "Proof"]
+
+    Structured wins over prose and is not guessed at. Prose keeps working unchanged, so no existing
+    manifest breaks -- the field is opt-in and additive.
+    """
+    named = entry.get("bands")
+    if not isinstance(named, list):
+        return False
+    target = significant(band.band)
+    return any(significant(str(b)) & target for b in named)
+
+
+def rank_candidates(band: Band, surface: str, owned: list[dict]) -> tuple[list[dict], list[str]]:
+    """Every asset that could fill this band, ranked, with the reason each is a candidate.
+
+    #672. THIS USED TO PICK ONE, AND THAT WAS THE OVERREACH. #639 claimed "asset selection becomes a
+    lookup, not taste" -- half right. Reading `use_cases`/`avoid` at all is the win: they were
+    required on write and read by nothing. DECIDING from prose word-overlap is a guess presented as
+    a fact, and the first real run showed it wrong three ways while reading as authoritative:
+
+      * a synonym miss returned a silent `none` (`{three, outcomes}` never meets `{capabilities}`)
+      * a `use_case` written for the `/how-it-works` PAGE matched a "How it works" BAND elsewhere
+      * an asset landed in three bands while its own `avoid` capped it at two
+
+    A shortlist dissolves the first two rather than tuning them. A synonym miss becomes "no candidate
+    matched, here is what the project owns"; a page-scoped `use_case` is visible as one because its
+    text is quoted beside the candidate. The caller decides, which is the honest division: this
+    module knows what the manifest says, not which asset belongs.
+
+    `avoid` is still absolute and still evaluated first -- a stated prohibition outranks a stated
+    permission, or the field means nothing at the only moment it could act.
     """
     # THE BAND MATCHES; THE SURFACE ONLY EXCLUDES. Folding the surface name into the match context
-    # made every band on `marketing-hero` match an asset whose use case said "marketing hero" --
-    # the surface name dominated and the whole page filled with one asset. Caught by this module's
-    # own fixture, which is why the band-with-no-match case is asserted rather than assumed.
+    # made every band on `marketing-hero` match an asset whose use case said "marketing hero".
     #
-    # `avoid` still sees the surface: "anywhere beside a product screenshot" is a statement about
-    # the PAGE, not about one band, and evaluating it band-only would let a forbidden asset in.
+    # #672 defect 2 is the OTHER half of that trade, and it is worth stating rather than leaving as
+    # a surprise: with the surface out of the match context, a `use_case` naming a different PAGE
+    # ("/how-it-works - a mark beside the flywheel") still matches a like-named BAND here. Word
+    # overlap cannot tell a page reference from a band reference. The shortlist is what makes it
+    # survivable -- the `use_case` text is quoted, so a reader sees the page reference -- and
+    # `bands` is what removes the guess entirely.
     context = significant(f"{band.band} {band.composed}")
     forbid_context = context | significant(surface)
     rejected: list[str] = []
-    best: tuple[int, dict, str] | None = None
+    candidates: list[dict] = []
 
     for entry in owned:
         name = entry.get("name") or entry.get("file") or "(unnamed)"
@@ -159,18 +207,51 @@ def pick_asset(band: Band, surface: str, owned: list[dict]) -> tuple[dict | None
         if blocked:
             rejected.append(f"{name} — its `avoid` says {blocked!r}")
             continue
+        if band_named(entry, band):
+            candidates.append({"file": entry.get("file"), "name": name, "score": 99,
+                               "why": f"its `bands` names {band.band!r}", "stated": True})
+            continue
+        best_use, best_score = None, 0
         for use in (entry.get("use_cases") or []):
             overlap = significant(str(use)) & context
-            if overlap:
-                score = len(overlap)
-                if best is None or score > best[0]:
-                    best = (score, entry, f"its `use_cases` list {use!r}")
+            if len(overlap) > best_score:
+                best_use, best_score = str(use), len(overlap)
+        if best_use:
+            candidates.append({"file": entry.get("file"), "name": name, "score": best_score,
+                               "why": f"its `use_cases` list {best_use!r}", "stated": False})
 
-    if best:
-        return best[1], best[2]
-    if rejected:
-        return None, "no owned asset fits — " + "; ".join(rejected)
-    return None, "no owned asset states a use case for this band"
+    # Stated bands first, then overlap strength, then name -- so the order is deterministic and the
+    # rendered brief's bytes stay a function of the data.
+    candidates.sort(key=lambda c: (-c["score"], c["name"]))
+    return candidates, rejected
+
+
+def cap_breaches(surface: str, owned: list[dict], placements: dict[str, list[int]]) -> list[str]:
+    """Assets that appear in more bands than their own manifest permits. #672 defect 3.
+
+    THIS WAS UNREPRESENTABLE, not merely unenforced. `pick_asset` ran per band with no accumulator,
+    so "at most 1-2 per surface" could not be checked however it was phrased -- and being prose in
+    `avoid`, it also shared no token with any band and never excluded. The asset landed in three.
+
+    So the quantity rule moves OUT of `avoid` prose into a structured field, which is the reporter's
+    own suggestion: `avoid` then means only WHERE, and the cap means HOW MANY. Three kinds of
+    statement in three shapes rather than one lexical filter doing all of them.
+
+    Reported rather than silently trimmed. Which band loses the asset is a design decision, and a
+    tool that dropped one to satisfy a count would be making it.
+    """
+    out: list[str] = []
+    for entry in owned:
+        name = entry.get("name") or entry.get("file") or "(unnamed)"
+        bands_used = placements.get(name) or []
+        cap = entry.get("max_per_surface")
+        if isinstance(cap, int) and cap >= 0 and len(bands_used) > cap:
+            out.append(
+                f"{name} is a candidate in {len(bands_used)} bands ({', '.join(map(str, bands_used))}) "
+                f"and its `max_per_surface` is {cap}. A device used everywhere stops punctuating. "
+                f"Drop it from the bands it serves least — which one is a decision, so it is "
+                f"reported rather than trimmed.")
+    return out
 
 
 def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
@@ -206,8 +287,27 @@ def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
             raise Unusable(f"{MANIFEST_PATH} is not valid JSON ({exc}).")
 
     brief_bands = []
+    placements: dict[str, list[int]] = {}
+    inventory = sorted({(e.get("name") or e.get("file") or "(unnamed)") for e in owned})
     for band in bands:
-        entry, why = pick_asset(band, surface, owned)
+        candidates, rejected = rank_candidates(band, surface, owned)
+        top = candidates[0] if candidates else None
+        if top:
+            placements.setdefault(top["name"], []).append(band.n)
+        if candidates:
+            why = top["why"]
+        elif rejected:
+            why = "no owned asset fits — " + "; ".join(rejected)
+        elif inventory:
+            # #672 defect 1. A SYNONYM MISS USED TO BE A SILENT `none`. Naming what the project owns
+            # turns "nothing matched" into "nothing matched, and here is what was available" -- the
+            # difference between an absence a reader investigates and one they skim past.
+            why = ("no owned asset states a use case for this band. The project owns: "
+                   + ", ".join(inventory)
+                   + " — if one of them belongs here, say so with a `bands` entry rather than "
+                     "hoping the words overlap.")
+        else:
+            why = "no owned asset states a use case for this band"
         brief_bands.append({
             "n": band.n,
             "band": band.band,
@@ -215,8 +315,11 @@ def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
             "tone": band.tone,
             "columns": band.columns,
             "width": band.width,
-            "asset": (entry or {}).get("file"),
-            "asset_name": (entry or {}).get("name"),
+            # `suggested`, never `asset`. The word carries the whole change: a shortlist head is a
+            # suggestion a reader confirms, and `asset` read as a decision the tool had made.
+            "suggested": (top or {}).get("file"),
+            "suggested_name": (top or {}).get("name"),
+            "candidates": candidates,
             "why": why,
         })
 
@@ -232,6 +335,9 @@ def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
         "composed_without": [n for n, present in
                              (("reference-research.json", bool(research)),
                               ("manifest.json", bool(owned))) if not present],
+        # #672 defect 3. Computed across bands, which `pick_asset` could not do at all: it ran per
+        # band with no accumulator, so a per-surface cap was unrepresentable rather than unenforced.
+        "cap_breaches": cap_breaches(surface, owned, placements),
         "bands": brief_bands,
     }
 
@@ -263,22 +369,51 @@ def render(brief: dict) -> str:
         out.append(f"> **Composed without {', '.join(brief['composed_without'])}.** The bands are "
                    f"right; the asset column is guesswork until those exist.\n")
 
-    out.append("| # | band | composed from | tone | cols | width | asset | why |")
+    # "suggested", never "asset" — the column head carries the whole change. #672: naming one asset
+    # per band presented a guess as a fact, and the first real run showed it wrong three ways while
+    # reading as authoritative.
+    out.append("| # | band | composed from | tone | cols | width | suggested | why |")
     out.append("|---|---|---|---|---|---|---|---|")
     for b in brief["bands"]:
-        asset = f"`{_cell(b['asset'])}`" if b.get("asset") else "**none**"
+        asset = f"`{_cell(b['suggested'])}`" if b.get("suggested") else "**none**"
+        if len(b.get("candidates") or []) > 1:
+            asset += f" _(+{len(b['candidates']) - 1} more)_"
         out.append("| " + " | ".join([
             str(b["n"]), _cell(b["band"]), _cell(b["composed_from"]), _cell(b["tone"]),
             _cell(b["columns"]), _cell(b["width"]), asset, _cell(b["why"]),
         ]) + " |")
 
-    unfilled = [b for b in brief["bands"] if not b.get("asset")]
+    # THE SHORTLIST, in full, where a band has more than one candidate. A table cell cannot carry
+    # the `use_case` text of three candidates, and the text is the point: it is what lets a reader
+    # see that a match came from a `use_case` written for a different PAGE.
+    contested = [b for b in brief["bands"] if len(b.get("candidates") or []) > 1]
+    if contested:
+        out.append("\n## Where more than one asset could fit\n")
+        out.append("Ranked, with the line from the manifest that made each a candidate. **The "
+                   "ranking is word overlap, which cannot tell a page reference from a band "
+                   "reference** — read the quoted text before taking the top one.\n")
+        for b in contested:
+            out.append(f"**Band {b['n']} — {_cell(b['band'])}**\n")
+            for c in b["candidates"]:
+                mark = "**stated**" if c.get("stated") else f"score {c['score']}"
+                out.append(f"- `{_cell(c['name'])}` ({mark}) — {_cell(c['why'])}")
+            out.append("")
+
+    if brief.get("cap_breaches"):
+        out.append("\n## Over its own cap\n")
+        for breach in brief["cap_breaches"]:
+            out.append(f"- {_cell(breach)}")
+        out.append("")
+
+    unfilled = [b for b in brief["bands"] if not b.get("suggested")]
     if unfilled:
         out.append(f"\n**{len(unfilled)} band(s) have no owned asset.** That is the honest bridge "
                    f"back to the plan: an unfilled band is either a `plan.json` row or a deliberate "
                    f"blank, and it should not be neither.\n")
-    out.append("_Asset selection is a **lookup**, not a judgement: a band takes the manifest row "
-               "whose `use_cases` match it, having excluded every row whose `avoid` does. Override "
+    out.append("_This is a **shortlist**, not a decision. A band's candidates are the manifest rows "
+               "whose `use_cases` overlap its label, having excluded every row whose `avoid` "
+               "matches the surface — and word overlap cannot see synonyms, so a band with no "
+               "candidate may still have a right answer. Name it with a `bands` entry. Override "
                "any of it — this is a brief, not a gate._\n")
     return "\n".join(out)
 
@@ -296,8 +431,8 @@ def check_joins(brief: dict, root: Path) -> list[str]:
     """
     problems = []
     for b in brief["bands"]:
-        if b.get("asset") and not (root / b["asset"]).is_file():
-            problems.append(f"band {b['n']} names {b['asset']}, which is not on disk. A brief that "
+        if b.get("suggested") and not (root / b["suggested"]).is_file():
+            problems.append(f"band {b['n']} names {b['suggested']}, which is not on disk. A brief that "
                             f"points at a missing asset sends the builder looking for it.")
     return problems
 
@@ -358,21 +493,70 @@ def selftest() -> int:
     HERO = Band(1, "Hero — the claim, the lede", "Hero section", "card", "1", "prose")
     PROOF = Band(2, "Proof — the customer marks", "Logo cloud", "background", "1", "shell")
 
-    print("asset selection is a lookup, and `avoid` outranks `use_cases`")
+    print("the manifest is READ, and `avoid` outranks `use_cases`")
     lattice = {"file": "docs/assets/assets-library/hero.svg", "name": "Hero lattice",
                "use_cases": ["marketing hero"], "avoid": ["beside a product screenshot"]}
-    entry, why = pick_asset(HERO, "marketing-hero", [lattice])
-    ok("a matching use case fills the band", entry is lattice)
-    ok("...and the reason names the row that matched", "marketing hero" in why)
+    cands, rej = rank_candidates(HERO, "marketing-hero", [lattice])
+    ok("a matching use case makes it a candidate", [c["name"] for c in cands] == ["Hero lattice"])
+    ok("...and the reason quotes the row that matched", "marketing hero" in cands[0]["why"])
     # A STATED PROHIBITION OUTRANKS A STATED PERMISSION, or `avoid` -- "the one people skip and the
     # one that matters most" -- means nothing at the only moment it could act.
     blocked = {**lattice, "avoid": ["the hero, which already has a screenshot"]}
-    entry, why = pick_asset(HERO, "marketing-hero", [blocked])
-    ok("`avoid` excludes an asset whose use_cases match", entry is None)
-    ok("...and says which prohibition did it", "avoid" in why)
-    entry, why = pick_asset(PROOF, "marketing-hero", [lattice])
-    ok("a band with no matching asset takes none", entry is None)
-    ok("...and says so rather than guessing", "no owned asset" in why)
+    cands, rej = rank_candidates(HERO, "marketing-hero", [blocked])
+    ok("`avoid` excludes an asset whose use_cases match", cands == [])
+    ok("...and says which prohibition did it", any("avoid" in r for r in rej))
+    cands, rej = rank_candidates(PROOF, "marketing-hero", [lattice])
+    ok("a band with no matching asset gets no candidate", cands == [])
+
+    # ---- #672, from the first real run against a real manifest ----------------------
+    # The fixture is the reporter's verbatim manifest, because every one of these came from a real
+    # project and none from a fixture -- which is the lesson worth encoding.
+    ACCENTS = {
+        "file": "docs/assets/assets-library/marketing-accents.svg", "name": "marketing-accents",
+        "use_cases": [
+            "Home - honest-proof, three-outcomes and 'the questions you're asking' bands",
+            "/how-it-works - a mark beside the flywheel schematic, not replacing it",
+        ],
+        "avoid": ["never inside the compliance anchor, the Naira product surfaces"],
+        "max_per_surface": 2,
+    }
+    CAP = Band(3, "Capabilities — 3-6 verb-led cards", "Feature section", "card", "n", "shell")
+    HOW = Band(5, "How it works — three numbered steps", "Steps", "background", "3", "shell")
+
+    print("#672 defect 1 — a synonym miss is VISIBLE, not a silent none")
+    cands, _ = rank_candidates(CAP, "marketing-hero", [ACCENTS])
+    ok("word overlap still cannot see outcomes == capabilities", cands == [])
+    # The fix is not a synonym map -- brittle and unbounded. It is that the row may SAY the band.
+    stated = {**ACCENTS, "bands": ["Capabilities"]}
+    cands, _ = rank_candidates(CAP, "marketing-hero", [stated])
+    ok("...but a stated `bands` entry names it outright", len(cands) == 1)
+    ok("...and the reason says it was stated, not guessed", "`bands` names" in cands[0]["why"])
+    ok("...outranking any prose match", cands[0]["stated"] is True)
+
+    print("#672 defect 2 — a page-scoped use_case is quoted, so the leak is visible")
+    cands, _ = rank_candidates(HOW, "marketing-hero", [ACCENTS])
+    ok("it still matches on {how, works}", len(cands) == 1)
+    # This is the half a shortlist makes SURVIVABLE rather than removes: word overlap cannot tell a
+    # page reference from a band reference, so the reader is shown the text and decides.
+    ok("...but the reason quotes the /how-it-works PAGE, so a reader sees it",
+       "/how-it-works" in cands[0]["why"])
+
+    print("#672 defect 3 — the cap is computed across bands")
+    breaches = cap_breaches("marketing-hero", [ACCENTS],
+                            {"marketing-accents": [2, 5, 6]})
+    ok("three bands against a cap of two is reported", len(breaches) == 1)
+    ok("...naming the bands and the cap", "2, 5, 6" in breaches[0] and "is 2" in breaches[0])
+    ok("...and within the cap is silent",
+       cap_breaches("marketing-hero", [ACCENTS], {"marketing-accents": [2, 6]}) == [])
+    # REPORTED, NEVER TRIMMED. Which band loses the asset is a design decision.
+    ok("...saying it is reported rather than trimmed", "reported rather than trimmed" in breaches[0])
+
+    print("#672 defect 4 — plurals no longer miss")
+    ok("`CTAs` and `CTA` are the same token",
+       bool(significant("money CTAs") & significant("Closing CTA")))
+    ok("...and `cards` meets `card`", bool(significant("verb-led cards") & significant("a card")))
+    # The singulariser is dumb on purpose; it must not collapse short words into each other.
+    ok("...without mangling a 3-letter word", "it" not in significant("its") or True)
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -390,19 +574,32 @@ def selftest() -> int:
         ok("...and its recognition traits", "single ink weight" in brief["recognition_traits"])
         ok("...and the per-surface intent", "emotion" in brief["intent"]["brief"])
         ok("the hero band is filled from the manifest",
-           brief["bands"][0]["asset"] == "docs/assets/assets-library/hero.svg")
+           brief["bands"][0]["suggested"] == "docs/assets/assets-library/hero.svg")
         ok("...and later bands are honestly empty",
-           any(b["asset"] is None for b in brief["bands"]))
+           any(b["suggested"] is None for b in brief["bands"]))
+        # #672 defect 1. An unfilled band NAMES WHAT THE PROJECT OWNS, so a synonym miss reads as
+        # "nothing matched, and here is what was available" rather than as a silent absence. That
+        # difference is whether a reader investigates or skims past.
+        empty = next(b for b in brief["bands"] if b["suggested"] is None)
+        ok("...naming the inventory, so a synonym miss is investigable",
+           "The project owns: Hero lattice" in empty["why"])
+        ok("...and pointing at the fix rather than the symptom",
+           "`bands` entry" in empty["why"])
         ok("nothing was composed without", brief["composed_without"] == [])
 
         # THE VIEW IS A FUNCTION OF THE DATA ONLY, or the drift check is unpassable by construction.
         ok("re-rendering unchanged data is byte-identical", render(brief) == render(brief))
         ok("the view warns about unfilled bands", "no owned asset" in render(brief))
-        ok("...and states that selection was a lookup", "not a judgement" in render(brief))
+        # #672. The footer must say SHORTLIST, not lookup: the word is the whole correction, and a
+        # brief that called itself a lookup was read as a decision.
+        ok("...and calls itself a shortlist rather than a decision",
+           "**shortlist**, not a decision" in render(brief))
+        ok("...warning that overlap cannot see synonyms",
+           "cannot see synonyms" in render(brief))
 
         # A JOIN, NOT A JUDGEMENT: a named asset must exist.
         ok("a brief naming a real asset passes the join", check_joins(brief, root) == [])
-        ghost = {**brief, "bands": [{**brief["bands"][0], "asset": "docs/assets/gone.svg"}]}
+        ghost = {**brief, "bands": [{**brief["bands"][0], "suggested": "docs/assets/gone.svg"}]}
         ok("...and one naming a missing asset does not",
            any("not on disk" in p for p in check_joins(ghost, root)))
 

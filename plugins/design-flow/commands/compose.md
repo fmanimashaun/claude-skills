@@ -24,14 +24,37 @@ that determines whether the page looks professional. `/design-flow:component` is
 **reading list** — it says which files to open, then leaves the agent to derive, per surface and from
 scratch, which assets this surface needs and where they go.
 
-## Asset selection is a lookup, not taste
-
-That is the whole reason this can be generated rather than being a second opinion.
+## It SHORTLISTS. It does not choose.
 
 `generation_gate` already **requires** every manifest row to carry `use_cases` (*"where it MAY go — a
-list, because reuse is the point"*) and `avoid` (*"where it must NOT go"*). Nothing read them at
-composition time. Now a band takes the manifest row whose `use_cases` match it, and the brief records
-**which entry matched and why**.
+list, because reuse is the point"*) and `avoid` (*"where it must NOT go"*), and nothing read them at
+composition time. **Reading them is the win.** Deciding from them was an overreach, and the first
+real run against a real manifest proved it (#672).
+
+Word overlap cannot tell that *outcomes* and *capabilities* are the same band; cannot tell a
+`use_case` naming a **page** from one naming a **band**; and cannot count. So it missed the asset's
+most deliberate placement, leaked a page reference into a like-named band, and put one asset in three
+bands while its own manifest capped it at two — **each of those reading as authoritative.**
+
+So each band gets **ranked candidates with the matching `use_case` quoted**, and the caller decides.
+This command knows what the manifest *says*; it does not know which asset belongs.
+
+| you see | because |
+|---|---|
+| a ranked shortlist, with the `use_case` text | a page reference is visible as one |
+| *"no candidate — the project owns X, Y"* | a synonym miss is investigable, not a silent blank |
+| *"candidate in 3 bands, `max_per_surface` is 2"* | counted across bands, which was impossible before |
+
+**Name the band and stop guessing.** A manifest row may say which bands it is for:
+
+```json
+{ "name": "marketing-accents", "bands": ["Capabilities", "Proof"], "max_per_surface": 2 }
+```
+
+`bands` **outranks prose** and is not guessed at. `max_per_surface` moves the quantity rule out of
+`avoid` prose, so `avoid` means only *where* and the cap means *how many* — three kinds of statement
+in three shapes rather than one word-overlap filter doing all of them. Prose `use_cases` keep working
+unchanged; both fields are opt-in.
 
 **`avoid` is evaluated first and is absolute.** A stated prohibition outranks a stated permission, or
 the field means nothing at the only moment it could act — and `/design-flow:generate` calls it *"the
@@ -40,7 +63,12 @@ one people skip and the one that matters most"*.
 **The band matches; the surface only excludes.** Folding the surface name into the match made every
 band on `marketing-hero` take the asset whose use case said *"marketing hero"* — one asset, whole
 page. But `avoid` still sees the surface, because *"anywhere beside a product screenshot"* is a
-statement about the page rather than about one band.
+statement about the page rather than about one band. That trade is also **why** a page-scoped
+`use_case` can match a like-named band elsewhere: quoting the text is what makes it visible, and
+`bands` is what removes the guess.
+
+**A cap breach is reported, never trimmed.** Which band loses the asset is a design decision, and a
+tool that dropped one to satisfy a count would be making it.
 
 ## Unfilled bands are the point, not an omission
 
