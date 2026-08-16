@@ -144,6 +144,145 @@ def preflight_key(env_var: str, root: Path | None = None) -> str:
     return raw.strip()
 
 
+def image_size(blob: bytes) -> tuple[int, int] | None:
+    """Pixel (width, height) from the header, or None when it cannot be read.
+
+    #640. Stdlib only, header-only -- no decode, no dependency. Returning None rather than guessing
+    is the whole contract: a caller that cannot measure must say so, because a fabricated dimension
+    would be worse than an absent one. Every branch is a documented header layout:
+
+      PNG   IHDR is always the first chunk; width/height are big-endian uint32 at 16..24.
+      GIF   logical screen descriptor, LITTLE-endian uint16 at 6..10.
+      JPEG  walk the marker segments to an SOFn; height precedes width, and SOF4/SOF8/SOFC are
+            not frame headers despite sitting in the range.
+      WebP  three sub-formats, and reading only VP8X would silently miss the common ones.
+      SVG   `viewBox` first -- it is the RATIO, which is what an aspect check actually wants.
+    """
+    if blob[:8] == b"\x89PNG\r\n\x1a\n" and blob[12:16] == b"IHDR":
+        return (int.from_bytes(blob[16:20], "big"), int.from_bytes(blob[20:24], "big"))
+    if blob[:6] in (b"GIF87a", b"GIF89a"):
+        return (int.from_bytes(blob[6:8], "little"), int.from_bytes(blob[8:10], "little"))
+    if blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
+        fourcc = blob[12:16]
+        if fourcc == b"VP8 " and blob[23:26] == b"\x9d\x01\x2a":
+            return (int.from_bytes(blob[26:28], "little") & 0x3FFF,
+                    int.from_bytes(blob[28:30], "little") & 0x3FFF)
+        if fourcc == b"VP8L" and blob[20:21] == b"\x2f":
+            bits = int.from_bytes(blob[21:25], "little")
+            return ((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+        if fourcc == b"VP8X":
+            return (int.from_bytes(blob[24:27], "little") + 1,
+                    int.from_bytes(blob[27:30], "little") + 1)
+        return None
+    if blob[:3] == b"\xff\xd8\xff":
+        i, n = 2, len(blob)
+        while i + 9 < n:
+            if blob[i] != 0xFF:
+                i += 1
+                continue
+            marker = blob[i + 1]
+            # SOF0-SOF15 carry the frame dimensions; C4 (DHT), C8 (JPG) and CC (DAC) sit inside
+            # that numeric range and are NOT frame headers. Reading one gives a plausible, wrong
+            # size -- which is the failure mode this whole function exists to avoid.
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                return (int.from_bytes(blob[i + 7:i + 9], "big"),
+                        int.from_bytes(blob[i + 5:i + 7], "big"))
+            seg = int.from_bytes(blob[i + 2:i + 4], "big")
+            if seg < 2:
+                return None
+            i += 2 + seg
+        return None
+    head = blob[:2048].lstrip()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head):
+        text = head.decode("utf-8", "replace")
+        box = re.search(r'viewBox\s*=\s*["\']\s*[-\d.]+[,\s]+[-\d.]+[,\s]+([\d.]+)[,\s]+([\d.]+)',
+                        text)
+        if box:
+            try:
+                w, h = float(box.group(1)), float(box.group(2))
+                if w > 0 and h > 0:
+                    return (round(w), round(h))
+            except ValueError:
+                return None
+        # No viewBox: fall back to width/height, but ONLY when both are unitless or px. `width="8cm"`
+        # is a physical size whose pixel ratio depends on the renderer, and treating 8 as pixels
+        # would compare a centimetre against a pixel.
+        dims = []
+        for attr in ("width", "height"):
+            m = re.search(rf'\b{attr}\s*=\s*["\']([\d.]+)(px)?["\']', text)
+            if not m:
+                return None
+            dims.append(float(m.group(1)))
+        return (round(dims[0]), round(dims[1])) if all(d > 0 for d in dims) else None
+    return None
+
+
+# How far a returned image may sit from the aspect that was asked for. STATED, not implied, because
+# an unstated tolerance is a threshold nobody can argue with. 2% accepts a 1024x576 for 16:9 exactly
+# and a 1024x580 (0.7% off), and refuses a square delivered for a wide band -- which is the failure
+# this exists to catch, and it misses by 78%, not by 2%.
+ASPECT_TOLERANCE = 0.02
+
+
+def parse_aspect(text: str | None) -> float | None:
+    """`"16:9"` -> 1.777…. None when absent or unparseable, never a guess."""
+    if not text:
+        return None
+    m = re.fullmatch(r"\s*([\d.]+)\s*[:x/]\s*([\d.]+)\s*", str(text))
+    if not m:
+        return None
+    try:
+        w, h = float(m.group(1)), float(m.group(2))
+    except ValueError:
+        return None
+    return w / h if w > 0 and h > 0 else None
+
+
+def assert_aspect(blob: bytes, aspect: str | None) -> None:
+    """The bytes must be the shape that was ASKED for. Silent when nothing was asked.
+
+    #640. The flow priced the plan to the cent and then never said whether it wanted a 21:9 band or
+    a square card -- and accepted whatever arrived. A square returned for a wide band was recorded
+    `done`, entered the manifest, and was found by a human looking at the page.
+
+    UNREADABLE DIMENSIONS PASS. `image_size` returns None for a format it cannot parse, and refusing
+    on that would turn "we could not measure" into "the provider was wrong" -- blocking a correct
+    asset over our own gap. The honest failure here is a miss, not a false accusation.
+    """
+    want = parse_aspect(aspect)
+    if want is None:
+        return
+    size = image_size(blob)
+    if size is None:
+        return
+    w, h = size
+    if h <= 0:
+        return
+    got = w / h
+    if abs(got - want) / want > ASPECT_TOLERANCE:
+        raise Unusable(
+            f"the asset is {w}x{h} ({got:.3f}), but the brief asked for {aspect} ({want:.3f}) — "
+            f"off by {abs(got - want) / want * 100:.0f}%, and the tolerance is "
+            f"{ASPECT_TOLERANCE * 100:.0f}%. Nothing was recorded. A shape that does not fit its "
+            f"band gets cropped at composition time, which throws away the part of the picture you "
+            f"paid for. Re-run stating the aspect in the prompt, or change the brief if the band "
+            f"changed.")
+
+
+def reference_mime(blob: bytes) -> str:
+    """The MIME type of a style-reference image, SNIFFED rather than assumed.
+
+    Every adapter hardcoded `image/png`, which is a lie the moment a project points
+    `style_reference` at the `.jpg` it exported from its brand deck -- and a provider that validates
+    the declared type against the bytes rejects the call, so the reference is lost at exactly the
+    moment it was supposed to be doing the most work. Derived from `sniff_extension` so there is one
+    format-detector in this file rather than two that can disagree.
+    """
+    ext = sniff_extension(blob)
+    return {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp",
+            "svg": "image/svg+xml"}.get(ext, "image/png")
+
+
 def call_gemini(key: str, model: str, prompt: str, reference: bytes | None,
                 timeout: int) -> tuple[bytes, float | None]:
     """Reference adapter. The CONTRACT is doctrine; this vendor is one implementation of it.
@@ -156,7 +295,7 @@ def call_gemini(key: str, model: str, prompt: str, reference: bytes | None,
     if reference:
         # A style reference is the single biggest lever on consistency: it makes new work match an
         # approved asset's palette, line weight and shading instead of re-rolling the look.
-        parts.append({"inline_data": {"mime_type": "image/png",
+        parts.append({"inline_data": {"mime_type": reference_mime(reference),
                                       "data": base64.b64encode(reference).decode("ascii")}})
     body = json.dumps({"contents": [{"parts": parts}]}).encode("utf-8")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -190,7 +329,7 @@ def call_openrouter(key: str, model: str, prompt: str, reference: bytes | None,
                     timeout: int) -> tuple[bytes, float | None]:
     """OpenRouter — an aggregator, which is what the `aggregator` config field actually wants.
 
-    Preferred over a single vendor for this path because it satisfies all three of the §3c contract
+    Preferred over a single vendor for this path because it satisfies all three of the §3e contract
     requirements natively, and the third is the one that matters most here: the response carries
     `usage.cost`, the REAL charge for that request. Everything else in this pipeline budgets against
     an estimate, and an estimate that is never reconciled is how a ceiling drifts until the bill
@@ -205,7 +344,7 @@ def call_openrouter(key: str, model: str, prompt: str, reference: bytes | None,
         # asset has to be publicly hosted before it can be used as a reference.
         body["input_references"] = [{
             "type": "image_url",
-            "image_url": {"url": "data:image/png;base64,"
+            "image_url": {"url": f"data:{reference_mime(reference)};base64,"
                                  + base64.b64encode(reference).decode("ascii")},
         }]
     req = urllib.request.Request(
@@ -292,9 +431,28 @@ def call_openrouter_chat_image(key: str, model: str, prompt: str, reference: byt
     its bytes. Here the bytes never pass through a model's hands -- they are decoded and written by
     this function -- so a billed generation always produces a file.
     """
+    # THE STYLE REFERENCE IS SENT, and the first version of this adapter dropped it. `generate.md`
+    # §3e calls a reference image "the single biggest lever on consistency" -- give the provider one
+    # approved asset and new work matches its palette, line weight and shading instead of re-rolling
+    # the look. This function accepted `reference` and never used it, so a project that had done the
+    # work of approving a reference got none of its benefit and no warning either. `call_gemini` and
+    # `call_openrouter` both send theirs; `call_openrouter_svg` documents WHY it cannot. Silently
+    # dropping it was the one option its own docstring rules out: it makes consistency "look
+    # guaranteed when it is not".
+    #
+    # Multimodal content is a LIST of parts, which is the same `{type, image_url: {url}}` shape
+    # OpenRouter's chat-completion reference documents for image input.
+    content: list[dict] | str = prompt
+    if reference:
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url",
+             "image_url": {"url": f"data:{reference_mime(reference)};base64,"
+                                  + base64.b64encode(reference).decode("ascii")}},
+        ]
     body = {"model": model,
             "modalities": ["image", "text"],
-            "messages": [{"role": "user", "content": prompt}]}
+            "messages": [{"role": "user", "content": content}]}
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
         data=json.dumps(body).encode("utf-8"), method="POST",
@@ -366,7 +524,7 @@ def call_openrouter_video(key: str, model: str, prompt: str, reference: bytes | 
         # the other mode the API offers and is a different intent -- not a style reference.
         body["input_references"] = [{
             "type": "image_url",
-            "image_url": {"url": "data:image/png;base64,"
+            "image_url": {"url": f"data:{reference_mime(reference)};base64,"
                                  + base64.b64encode(reference).decode("ascii")},
         }]
     auth = {"Authorization": f"Bearer {key}"}
@@ -564,6 +722,40 @@ def assert_kind_matches(kind: str, blob: bytes) -> str:
             f"recorded as video renders a frozen frame where motion was planned. Providers do "
             f"serve a poster image at a video's URL, so check you fetched the asset rather than "
             f"its thumbnail — and if you meant a still, plan the surface as `static`.")
+    # #641. THE `motion` KIND CHECKED ONLY THE EXTENSION, which both the animated and the static
+    # case share -- so a completely static SVG was accepted as a motion asset, the row went `done`,
+    # and the surface animated nothing. `.json` was worse: any JSON at all passed as "Lottie".
+    # Every other kind asserts something about the bytes; this one asserted a file type.
+    if kind == "motion":
+        if ext == "svg":
+            text = blob.decode("utf-8", "replace")
+            # SMIL elements, or a stylesheet carrying an animation. A `<style>` block with
+            # `@keyframes` is how a token-recoloured animated SVG is normally authored, so checking
+            # only for SMIL would refuse the idiom our own doctrine points at.
+            if not re.search(r"<(animate|animateTransform|animateMotion|set)\b", text) \
+                    and "@keyframes" not in text and not re.search(r"\banimation\s*:", text):
+                raise Unusable(
+                    "kind is `motion` but this SVG contains no animation — no `<animate>`, "
+                    "`<animateTransform>`, `<animateMotion>` or `<set>`, and no `@keyframes` or "
+                    "`animation:` in a `<style>` block. A static drawing recorded as motion is a "
+                    "`done` row whose surface animates nothing. Author the movement, or plan the "
+                    "surface as `vector`.")
+        elif ext == "json":
+            try:
+                doc = json.loads(blob.decode("utf-8", "replace"))
+            except ValueError as exc:
+                raise Unusable(f"kind is `motion` and the bytes are JSON, but it does not parse "
+                               f"({exc}). Nothing was recorded.")
+            # Lottie's required top-level keys: `v` version, `fr` frame rate, `op` out point,
+            # `layers`. Checking the SHAPE rather than merely "is JSON" is the whole point -- any
+            # JSON at all used to pass as an animation.
+            missing = [k for k in ("v", "fr", "op", "layers") if k not in doc]
+            if missing:
+                raise Unusable(
+                    f"kind is `motion` and the bytes are JSON, but this is not a Lottie animation — "
+                    f"missing {', '.join(missing)}. A Lottie carries `v` (version), `fr` (frame "
+                    f"rate), `op` (out point) and `layers`. Any other JSON recorded here is a "
+                    f"`done` row that renders nothing.")
     if kind == "vector" and ext != "svg":
         raise Unusable(
             f"kind is `vector` but the bytes are {ext.upper()}. A raster named `.svg` does not "
@@ -616,7 +808,7 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
         raise Unusable(
             f"no adapter for aggregator {config.get('aggregator')!r}. Shipped: "
             f"{', '.join(sorted(ADAPTERS))}. The contract an aggregator must meet is in "
-            f"`/design-flow:generate` §3c — adding one is a function, not a redesign.")
+            f"`/design-flow:generate` §3e — adding one is a function, not a redesign.")
 
     # KEYLESS ADAPTERS, named rather than special-cased one at a time. `agent` authors in-process
     # and `pen` shells out to a local CLI that carries its own auth -- neither makes an HTTP call
@@ -646,6 +838,9 @@ def produce(root: Path, request: dict, timeout: int = 120) -> dict:
     # are the wrong format. A raster named `.svg` does not scale and does not recolour from tokens,
     # which is the entire reason a vector asset was asked for.
     ext = assert_kind_matches(kind, blob)
+    # #640. The shape too, against what the brief ASKED for — carried on the provenance so this
+    # never re-reads config and risks a different answer than the prompt was composed from.
+    assert_aspect(blob, prov.get("aspect"))
     # Only [A-Za-z0-9._-] survives. Model IDs carry `/` and `:` (`cohere/x:free`), both legal on
     # this filesystem and hostile on Windows and in URLs -- and an asset path ends up in both.
     name = re.sub(r"[^A-Za-z0-9._-]+", "-", f"{prov['surface']}-{prov['model']}").strip("-")
@@ -922,6 +1117,7 @@ def main(argv: list[str]) -> int:
             prov = approval["provenance"]
             blob = fetch_url(args.from_url, args.timeout)
             ext = assert_kind_matches(prov.get("kind", "static"), blob)
+            assert_aspect(blob, prov.get("aspect"))
             written = agent_target(root, prov, ext)
             written.parent.mkdir(parents=True, exist_ok=True)
             written.write_bytes(blob)
@@ -952,6 +1148,7 @@ def main(argv: list[str]) -> int:
                 return 2
             blob = written.read_bytes()
             assert_kind_matches(approval["provenance"].get("kind", "static"), blob)
+            assert_aspect(blob, approval["provenance"].get("aspect"))
             config = load_config(root)
             entry = manifest_entry(root, config, approval["provenance"], written.resolve())
             manifest = append_manifest(root, entry)
@@ -1656,6 +1853,52 @@ def selftest() -> int:
         respond({"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]})
         _, cost = call_openrouter_chat_image("k", "m", "p", None, 5)
         check("an unreported cost is null, never zero", cost is None)
+
+        # THE STYLE REFERENCE MUST REACH THE PROVIDER. `generate.md` §3e calls it "the single
+        # biggest lever on consistency", and the first version of this adapter accepted the
+        # parameter and dropped it -- so a project that had approved a reference got none of its
+        # benefit and no warning. Nothing asserted it, which is why it shipped. Capture the request
+        # body and look, rather than trusting the signature.
+        sent: list[dict] = []
+
+        def capture(req, *a, **k):
+            sent.append(json.loads(req.data.decode()))
+            return _R({"choices": [{"message": {"images": [{"image_url": {"url": data_url}}]}}]})
+
+        urllib.request.urlopen = capture
+        ref = b"\xff\xd8\xff" + b"\x00" * 32                    # a JPEG, deliberately not a PNG
+        call_openrouter_chat_image("k", "m", "the prompt", ref, 5)
+        content = sent[-1]["messages"][0]["content"]
+        check("a style reference is SENT, not dropped", isinstance(content, list))
+        # Read through a list-guard: with the reference dropped, `content` is a STRING, and
+        # iterating it yields characters whose `.get` raises -- the run would die before printing
+        # the failure above, and a crash is not a verdict. The mutation guard found this.
+        parts = content if isinstance(content, list) else []
+        check("...with the prompt still in it",
+              any(p.get("text") == "the prompt" for p in parts))
+        check("...and the image beside it",
+              any(p.get("type") == "image_url" for p in parts))
+        # DECLARED AS WHAT IT IS. Every adapter hardcoded `image/png`; a provider that validates the
+        # declared type against the bytes rejects a JPEG labelled PNG, losing the reference exactly
+        # when it was meant to be doing the most work.
+        check("...declared with its REAL mime type, not a hardcoded png",
+              any("data:image/jpeg;base64," in (p.get("image_url") or {}).get("url", "")
+                  for p in parts))
+        check("...and modalities still requested", sent[-1]["modalities"] == ["image", "text"])
+
+        sent.clear()
+        call_openrouter_chat_image("k", "m", "the prompt", None, 5)
+        check("no reference means a plain string content, not an empty part list",
+              sent[-1]["messages"][0]["content"] == "the prompt")
+
+        # THE MIME IS SNIFFED, NEVER ASSUMED — inside the try, so the stubbed urlopen is restored
+        # either way.
+        for blob, want in ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"),
+                           (b"RIFF____WEBP", "image/webp"),
+                           (b"<svg viewBox='0 0 1 1'>", "image/svg+xml")):
+            check(f"the reference mime sniffs {want}", reference_mime(blob) == want)
+        check("...and an unknown blob falls back to png rather than raising",
+              reference_mime(b"\x00\x01\x02\x03") == "image/png")
     finally:
         urllib.request.urlopen = real_urlopen
 
@@ -1672,6 +1915,75 @@ def selftest() -> int:
             failures.append(f"a still-as-video refused without naming the likely cause: {exc}")
     check("...and a still is still fine as `static`",
           assert_kind_matches("static", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16) == "png")
+
+    # #640. THE SHAPE READER. Header-only, stdlib, and it must return None rather than guess — a
+    # fabricated dimension is worse than an absent one, because it would refuse a correct asset.
+    # The PNG/JPEG/GIF branches were validated against real files produced by `sips` before these
+    # synthetic fixtures were written; WebP is covered from the documented header layout only.
+    def png(w: int, h: int) -> bytes:
+        return (b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR"
+                + w.to_bytes(4, "big") + h.to_bytes(4, "big") + b"\x08\x06\x00\x00\x00")
+
+    check("a PNG header gives its size", image_size(png(1024, 576)) == (1024, 576))
+    check("a GIF header gives its size (LITTLE endian, unlike PNG)",
+          image_size(b"GIF89a" + (800).to_bytes(2, "little") + (600).to_bytes(2, "little"))
+          == (800, 600))
+    check("an SVG viewBox gives the RATIO, which is what an aspect check wants",
+          image_size(b'<svg viewBox="0 0 21 9"></svg>') == (21, 9))
+    check("...falling back to px width/height when there is no viewBox",
+          image_size(b'<svg width="800" height="600"></svg>') == (800, 600))
+    # `width="8cm"` is a PHYSICAL size whose pixel ratio depends on the renderer. Treating 8 as
+    # pixels would compare a centimetre against a pixel and refuse a correct asset.
+    check("...and refusing to read a physical unit as pixels",
+          image_size(b'<svg width="8cm" height="6cm"></svg>') is None)
+    check("an unreadable blob measures None rather than guessing",
+          image_size(b"\x00\x01\x02\x03") is None)
+
+    print("the shape is checked against what the brief asked for")
+    check("`16:9` parses", abs((parse_aspect("16:9") or 0) - 16 / 9) < 1e-9)
+    check("...and `1:1`", parse_aspect("1:1") == 1.0)
+    check("nonsense parses to None, never a guess", parse_aspect("wide-ish") is None)
+    check("an exact match passes", assert_aspect(png(1024, 576), "16:9") is None)
+    check("...and so does a hair off, inside the stated tolerance",
+          assert_aspect(png(1024, 580), "16:9") is None)
+    checks += 1
+    try:
+        assert_aspect(png(1024, 1024), "21:9")
+        failures.append("a square delivered for a 21:9 band should be refused")
+    except Unusable as exc:
+        if "1024x1024" not in str(exc) or "tolerance" not in str(exc):
+            failures.append(f"the aspect refusal should name the size and the tolerance: {exc}")
+    # NOTHING ASKED, NOTHING CHECKED. A project that states no aspect must be unaffected, or this
+    # lands as a breaking change on every asset rather than on the ones that asked for a shape.
+    check("no stated aspect means no check at all", assert_aspect(png(3, 7), None) is None)
+    # UNREADABLE DIMENSIONS PASS: refusing there would turn "we could not measure" into "the
+    # provider was wrong", blocking a correct asset over our own gap.
+    check("an unmeasurable blob passes rather than being accused",
+          assert_aspect(b"\x00\x01\x02\x03", "16:9") is None)
+
+    print("a motion asset must actually move")
+    checks += 1
+    try:
+        assert_kind_matches("motion", b"<svg viewBox='0 0 10 10'><path d='M0 0h10'/></svg>")
+        failures.append("a static SVG recorded as motion should be refused")
+    except Unusable as exc:
+        if "no animation" not in str(exc):
+            failures.append(f"a static SVG refused for the wrong reason: {exc}")
+    check("...but SMIL is accepted",
+          assert_kind_matches("motion", b"<svg><animate attributeName='x' dur='1s'/></svg>") == "svg")
+    # A `<style>` block with @keyframes is how a TOKEN-RECOLOURED animated SVG is normally authored,
+    # so checking only for SMIL would refuse the idiom our own doctrine points at.
+    check("...and so is a @keyframes stylesheet, the token-recolourable idiom",
+          assert_kind_matches("motion", b"<svg><style>@keyframes d{}</style></svg>") == "svg")
+    checks += 1
+    try:
+        assert_kind_matches("motion", b'{"nothing": true}')
+        failures.append("arbitrary JSON recorded as motion should be refused")
+    except Unusable as exc:
+        if "not a Lottie" not in str(exc):
+            failures.append(f"non-Lottie JSON refused for the wrong reason: {exc}")
+    check("...but a real Lottie shape is accepted",
+          assert_kind_matches("motion", b'{"v":"5.7.4","fr":30,"op":60,"layers":[]}') == "json")
 
     check("the chat-image adapter is registered", "openrouter-chat-image" in ADAPTERS)
     check("...and did not displace the images-endpoint one", "openrouter" in ADAPTERS)

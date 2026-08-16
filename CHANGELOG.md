@@ -7,6 +7,51 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-16 (v1.88.0)
+
+- **`hotwire` was staged into the measured arm of the doctrine benchmark and exercised by zero
+  cases.** (#646) Found reviewing four external agent-tooling repos against ours — Clerk's per-skill
+  `evals/evals.json`, `jsm-agent-skill`, `swarm-forge`, and an Augment guide on spec-driven
+  development.
+
+  ```
+  real arm stages:  rails-8, hotwire, fidara-design
+  cases exercise:   rails-8 (4), fidara-design (1), hotwire (0)
+  ```
+
+  **Worse than an untested skill.** Its tokens occupied the real arm's context and contributed no
+  signal, so every win or loss was attributed to the other two. The `weak` arm exists to stop us
+  mistaking *"any instructions help"* for *"our doctrine helps"*; a staged-but-unmeasured skill
+  undermines the same rigour from the other direction.
+
+  New case **`06-stimulus-controller`** and rule **`stimulus-discipline`**, every assertion citing
+  its line of `stimulus.md` §10: declared `static targets` (`:314`, the HTML is the API), no
+  document-wide querying (`:321`), no markup built in the controller (`:319`), no global
+  `DOMContentLoaded`/`turbo:load` listener (`:322`).
+
+  **One doctrine line is deliberately not checked.** `:320-321` forbids state in *"instance fields
+  that must survive navigation"* — and *must survive navigation* is not decidable from source, since
+  `this.timeout = setTimeout(...)` is ordinary and correct. A rule flagging every `this.x =` would
+  fail the scaffold's own shipped controller and manufacture a false regression, which is what *"a
+  gate must be fair"* forbids. Left to human review rather than approximated.
+
+  The scaffold gains a Stimulus home (`controllers/index.js` + a `disclosure_controller.js`),
+  because without one the agent invents a path and the gate cannot find what to read — failure mode
+  2 in `scaffold.py`'s own docstring. The shipped controller also establishes the convention the
+  gate holds the agent to, so "use targets" is existing practice rather than a rule sprung after the
+  fact (failure mode 3, fairness).
+
+  **The enforcement half:** `selftest.py` now fails if a skill is staged in `real` and no case is
+  tagged with its name — verified by removing the tag and watching it fire on exactly the state the
+  repo was in. Prose would not have caught this, because the rule had never been written down at
+  all. Selftest 38 → **47** assertions, including one asserting the scaffold's own controller passes.
+
+  `evals/README.md` records why the remaining four shipped skills have no cases — `code-review`
+  needs a diff this harness never produces, `quality-pass` is advisory and scoring it pass/fail
+  would contradict the doctrine it measures, `derived-artifacts` needs a generator, and
+  `parallel-session-lane` needs concurrent sessions. None is staged, so none dilutes anything. An
+  unexplained absence reads exactly like an oversight.
+
 ### 2026-08-09 (v1.85.1)
 
 - **One cause reported as N findings — found in three places, fixed in all three.** The pattern:
@@ -3195,6 +3240,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.47.0 — 2026-08-16 (release v1.88.0)
+
+- **`visual-assets.md` §5.3 — authoring an animated illustration.** (#641) The `motion` asset kind
+  was *defined* as *"Lottie JSON or an animated SVG"*, and searching every shipped reference for
+  `Lottie`, `animated SVG` or `SMIL` returned **zero hits**. `motion.md` is 371 lines about how a
+  *button* moves and mentions an illustration 0 times. So the kind was enforced against a technology
+  the doctrine never explained.
+
+  The new section covers it, and three points are the doctrine rather than the schema:
+
+  - **Finite or perpetual, chosen by duration rather than taste.** A finite animation never engages
+    WCAG 2.2.2, which requires motion lasting **more than five seconds**; a perpetual one owes the
+    page a **pause control**, and we ship no pause affordance — so author finite for now. The
+    reasoning is inherited from §5.1 rather than restated. Recorded alongside it: Material 3's own
+    style pages animate their illustration fields *and* ship a visible pause button, so perpetual
+    motion is legitimate — just not free.
+  - **`separable marks` is named as the animatability property.** The brief already asks for *"6-8
+    separable marks"* and it read as a composition note; independently addressable parts are exactly
+    what can be staggered or drawn on, which makes the `static` and `motion` assets of one subject
+    the same artwork rather than two commissions.
+  - **The static end-state is the deliverable, not a fallback** — a draw-on whose reduced-motion
+    state is "nothing drawn yet" renders an empty box for the user who asked for less motion.
+
+  Also stated plainly: **`pen_to_svg` does not emit animation.** Better read than discovered after
+  composing.
 
 ### 1.46.0 — 2026-08-09 (release v1.87.0)
 
@@ -7474,6 +7545,132 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.26.0 — 2026-08-16 (release v1.88.0)
+
+- **We were buying assets blind: the paid prompt never stated a shape, and nothing checked what came
+  back.** (#640) Reported downstream as *"the generated visual assets will be wrong if we are so
+  clueless on what we are designing for visually."* The complete composed prompt for a hero was:
+
+  ```
+  minimalist-ink illustration; an abstract woven lattice; calm mood;
+  palette monochrome; on a transparent ground; raster line art; avoid human figures
+  ```
+
+  Seven fields, and **not one of them a dimension**. Grepping `generation_gate.py` and
+  `asset_plan.py` for `aspect`, `ratio`, `dimensions`, `width`, `height`, `crop`, `bleed` or
+  `orientation` returned zero hits. So the flow ran a budget preflight, refused unpriced rungs,
+  capped spend to the cent — and never said whether it wanted a 21:9 full-bleed band or a square
+  card inset. Then `a 1x1 PNG passed as a full-bleed hero`, because `assert_kind_matches` sniffs
+  **format only**.
+
+  The brief now carries **`aspect`** (and optional **`frame`**), both reach the composed prompt, and
+  the returned bytes are measured against what was asked for. Checked at both ends: `--check`
+  reports a `static`/`vector` row whose brief states no aspect **before the spend**, and record time
+  refuses a mismatch beyond a **stated 2% tolerance** — which accepts 1024x576 for `16:9` exactly and
+  1024x580 at 0.7% off, while a square delivered for a wide band misses by 78%.
+
+  New `image_size()` reads PNG, GIF, JPEG, WebP and SVG **headers only**, stdlib, no decode and no
+  dependency. Three properties are load-bearing:
+
+  - **It returns `None` rather than guessing**, and an unmeasurable blob **passes**. Refusing there
+    would turn *"we could not measure"* into *"the provider was wrong"*, blocking a correct asset
+    over our own gap.
+  - **SVG reads `viewBox` first** — that is the *ratio*, which is what an aspect check actually
+    wants — and refuses to read `width="8cm"` as pixels, because a physical unit's pixel ratio
+    depends on the renderer.
+  - **JPEG skips C4/C8/CC** while walking to an SOF marker. They sit inside the SOF numeric range
+    and are not frame headers; reading one yields a plausible, wrong size.
+
+  The PNG, JPEG and GIF branches were validated against real files before the synthetic fixtures were
+  written.
+
+  **`motion` and `video` are not asked for an aspect** — a Lottie recolours and scales, and footage
+  is framed by its own row. A check that fired on those would flag correct input, which is how a
+  check gets switched off.
+
+  **Migration:** every existing project's raster briefs will be reported by `--check` until they
+  state an `aspect`. That is deliberate and matches how the plan already treats an unpriced row —
+  refuse rather than invent — and the fix is one field per brief. `plan.md` gains an aspect column
+  rendering an unstated one as **unstated** rather than blank, because a blank cell reads as
+  "nothing to say here" when it is the row about to buy an unknown shape.
+
+- **The `motion` kind was hollow: a completely static SVG passed as a motion asset.** (#641) Filed
+  after the maintainer named the intended direction — *illustration-driven design, animated
+  illustration art* — and the kind meant to carry it checked the **file extension**, which the
+  animated and the static case share:
+
+  ```
+  a completely STATIC svg, recorded as kind=motion -> svg
+  an arbitrary JSON with no animation, as kind=motion -> json
+  ```
+
+  The row went `done`, entered the manifest, and the surface animated nothing. Every other kind
+  asserts something about the bytes; this one asserted a file type.
+
+  Now an SVG must carry `<animate>`, `<animateTransform>`, `<animateMotion>`, `<set>`, `@keyframes`
+  or an `animation:` rule — **both SMIL and a stylesheet**, because checking only for SMIL would
+  refuse the token-recolourable idiom our own doctrine points at. A JSON must be shaped like a Lottie
+  (`v`, `fr`, `op`, `layers`); any JSON at all used to pass.
+
+  **And the doctrine that was missing entirely.** `generation_gate` *defined* the kind as *"Lottie
+  JSON or an animated SVG… authored directly by the agent for nothing"*, and searching every shipped
+  reference for `Lottie`, `animated SVG` or `SMIL` returned **zero hits**. `motion.md` is 371 lines
+  about how a *button* moves and mentions an illustration 0 times. New `visual-assets.md` §5.3
+  covers authoring one:
+
+  - **Two routes, chosen by duration, not taste.** Finite (strokes draw on, a lattice settles) never
+    engages WCAG 2.2.2, which needs motion lasting **more than five seconds**. Perpetual owes the
+    page a **pause control** — and we ship no pause affordance, so **author finite** for now. Worth
+    recording that Material 3's own style pages animate their illustration fields *and ship a visible
+    pause button*: perpetual motion is legitimate, just not free.
+  - **`separable marks` is named as the animatability property.** The brief already asks for *"6-8
+    separable marks"* and read as a composition note; independently addressable parts are exactly
+    what can be staggered or drawn on, so the `static` and `motion` assets of one subject are the
+    same artwork rather than two commissions.
+  - **The static end-state is the deliverable, not a fallback.** A draw-on whose reduced-motion state
+    is "nothing drawn yet" renders an empty box for the user who asked for less motion.
+  - **`pen_to_svg` does not emit animation**, stated plainly rather than discovered after composing.
+
+  Fixtures: `generate_asset.py` 147 → **166**, `asset_plan.py` 105 → **107**; four new mutation
+  guards. One pre-existing guard's `if missing:` anchor became ambiguous when the Lottie check added
+  a second one and was made multi-line — an ambiguous anchor is a mutation that silently moves to a
+  different rule.
+
+- **The chat-image adapter silently dropped the style reference.** (#643) Self-reported, one day
+  after it shipped in v1.87.0. `call_openrouter_chat_image` accepted a `reference` parameter and
+  never used it, while `call_gemini` and `call_openrouter` both send theirs:
+
+  ```
+  call_gemini:                2 use(s) of the reference
+  call_openrouter:            2 use(s) of the reference
+  call_openrouter_chat_image: 0 use(s) of the reference
+  ```
+
+  `generate.md` §3c calls a style reference **"the single biggest lever on consistency"**, so a
+  project that had approved one got none of its benefit and no warning — on the newest raster
+  adapter, added precisely because it serves the shape the current top image models use.
+
+  The doctrine had already ruled out exactly this: `call_openrouter_svg` documents its own ignoring
+  because *"pretending otherwise would make consistency look guaranteed when it is not"*. Use it or
+  say you cannot; the new adapter did neither.
+
+  It now sends the reference as a multimodal content list — `{type: "text"}` + `{type: "image_url"}`,
+  the shape OpenRouter's reference documents for image input. With no reference the content stays a
+  plain string, so nothing changes for a project without one.
+
+- **Every adapter declared a style reference as `image/png`, whatever it was.** Found in the same
+  place. A `.jpg` exported from a brand deck was declared PNG, and a provider that validates the
+  declared type against the bytes rejects the call — losing the reference exactly when it was meant
+  to be doing the most work. New `reference_mime()` sniffs it via the existing `sniff_extension`, so
+  there is one format detector in the file rather than two that can disagree.
+
+  **Why it shipped: nothing asserted it.** The #629 fixtures covered the *response* exhaustively —
+  text-only replies, non-data URLs, empty decodes, missing costs — and never looked at the
+  *request*. The signature accepted a reference, so it read as handled. Fixtures now capture the
+  outgoing body. 136 → **147** assertions, two mutation guards, one of which surfaced the familiar
+  follow-on: with the reference dropped `content` is a string, and iterating it yields characters
+  whose `.get` raises, so the run died before printing its own failure.
 
 ### 1.25.0 — 2026-08-09 (release v1.87.0)
 

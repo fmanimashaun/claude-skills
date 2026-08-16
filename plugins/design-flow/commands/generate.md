@@ -177,6 +177,8 @@ rather than inventing a requirement.
       "mood": "calm, precise",
       "palette": ["monochrome, single-hue only"],
       "ground": "transparent",
+      "aspect": "21:9",
+      "frame": "full-bleed band",
       "deliverable": "raster line art, 6-8 separable marks",
       "avoid": ["human figures", "rendered text", "photographic backdrops"]
     }
@@ -222,7 +224,47 @@ A surface with no `acceptance` entry is **pinned to the cheapest rung**. That is
 rule — without a stated check, "the cheap model wasn't good enough" has no trigger and *best output*
 collapses into *the agent liked it*.
 
-## 3b. `style` is required, and it is a closed set
+## 3b. `aspect` is required for a raster or vector row, and it is checked twice
+
+**Stating the shape is the difference between an asset that fits its band and one cropped to
+nothing.** Until this existed the composed prompt carried style, subject, mood, palette, ground and
+an avoid-list — and never said whether it wanted a 21:9 full-bleed band or a square card inset. Then
+it accepted whatever came back: a 1x1 PNG passed as a hero.
+
+So it is checked at both ends:
+
+| when | what happens |
+|---|---|
+| `asset_plan.py --check` | a `static`/`vector` row whose brief states no `aspect` is **reported, before the spend** |
+| at record time | the returned bytes are measured and refused if they miss by more than **2%** |
+
+The tolerance is stated rather than implied: 2% accepts a 1024x576 for `16:9` exactly and a 1024x580
+(0.7% off). A square delivered for a wide band misses by 78%, which is the failure this exists to
+catch.
+
+`motion` and `video` are **not** asked for an aspect — a Lottie recolours and scales, and footage is
+framed by its own row. A check that fired on those would flag correct input, which is how a check
+gets switched off.
+
+**Dimensions that cannot be read pass.** PNG, JPEG, GIF, WebP and SVG are measured from their
+headers with no dependency; anything else is unmeasurable, and refusing there would turn *"we could
+not measure"* into *"the provider was wrong"* — blocking a correct asset over our own gap.
+
+`frame` is optional and reaches the prompt as composed-for context: *"a full-bleed band"* versus
+*"a circular inset"* changes where the subject sits, and the container is part of the design.
+
+## 3c. A `motion` asset must actually move
+
+The kind used to check the **extension only**, which the animated and the static case share — so a
+completely static SVG was accepted, the row went `done`, and the surface animated nothing. Any JSON
+at all passed as "Lottie".
+
+Now an SVG must carry `<animate>`, `<animateTransform>`, `<animateMotion>`, `<set>`, `@keyframes` or
+an `animation:` rule; a JSON must be shaped like a Lottie (`v`, `fr`, `op`, `layers`). See
+`visual-assets.md` §5.3 for how to author one, which route is shippable today, and why the static
+end-state is the deliverable rather than a fallback.
+
+## 3d. `style` is required, and it is a closed set
 
 A brief that says only *"calm, abstract"* is not a specification. Mailchimp's illustration is
 monochrome ink line-work on a saturated brand ground; Headspace's is flat vector with rounded
@@ -243,7 +285,7 @@ Two consequences worth acting on:
   on a brand-coloured panel — the panel is CSS. Generating line art rather than a full-colour scene
   is cheaper, survives a pack swap without re-generating, and is markedly easier to keep consistent.
 
-## 3c. What the aggregator must support
+## 3e. What the aggregator must support
 
 The contract, not the vendor:
 
@@ -529,7 +571,7 @@ credential to leak.
 
 ### Adding a provider
 
-One adapter ships, as a reference implementation of the §3c contract. Adding another is a function
+One adapter ships, as a reference implementation of the §3e contract. Adding another is a function
 in `ADAPTERS`, not a redesign — which is the point of naming a contract rather than a vendor. An
 unknown aggregator is refused with the shipped names listed, never silently skipped.
 

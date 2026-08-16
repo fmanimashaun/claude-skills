@@ -183,6 +183,31 @@ before running a sweep.
 Nothing here is wired into CI. It costs money, it is opt-in, and it must never
 gate a promotion. `results/` is committed output, not a build artifact.
 
+## What this benchmark covers, and what it deliberately does not
+
+Three skills are staged in the `real` arm — `rails-8`, `hotwire`, `fidara-design` — and **every one
+of them now has at least one case**. That is asserted rather than remembered:
+`selftest.py` fails if a skill is staged and no case is tagged with its name.
+
+The check exists because `hotwire` was staged for the whole life of this benchmark with **zero**
+cases (#646). That is worse than an untested skill. Its tokens occupied the real arm's context and
+contributed no signal, so every win or loss was attributed to the other two. The `weak` arm exists
+to stop us mistaking *"any instructions help"* for *"our doctrine helps"*; a staged-but-unmeasured
+skill undermines the same rigour from the other direction.
+
+**The other four shipped skills have no cases, and that is a decision rather than a gap:**
+
+| skill | why no case |
+|---|---|
+| `code-review` | It reviews a **diff**. This benchmark's unit is "write the files into a fresh scaffold", which produces no diff to review — measuring it needs a different harness, not another case. |
+| `quality-pass` | Advisory by design and explicitly **never a merge condition**. Scoring it pass/fail would contradict the doctrine it measures. |
+| `derived-artifacts` | About how a *generator* reads its source. There is no generator in the scaffold. |
+| `parallel-session-lane` | About several agent sessions sharing one repo. A single-run benchmark cannot express the condition it governs. |
+
+None of these is staged in the `real` arm, so none of them dilutes a measurement. **Written down
+because an unexplained absence reads exactly like an oversight** — and the next person to notice
+four uncovered skills should find the reasoning rather than re-derive it.
+
 ## Known limitations
 
 Stated rather than discovered later:
