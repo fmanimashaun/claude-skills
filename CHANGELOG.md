@@ -3310,6 +3310,38 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **A research record could settle on a style the generator would refuse.** (#636)
+  `research_record.check` validated `style` for **presence only**, so a record naming an
+  off-taxonomy direction passed here, passed `asset_plan.check_research`, and was refused by
+  `generation_gate` three steps later with *"unknown illustration style"* — **after the plan was
+  written and costed**. Now checked at record time, which is the same move `--check` already makes
+  for a surface with no brief: a refusal belongs before the spend.
+
+  `STYLES` is **imported** from `generation_gate` rather than re-listed — a second copy would drift
+  the first time the taxonomy gained an entry, which is the defect one level up.
+
+  **The same hole existed one level down** and was found by grepping for the pattern rather than by
+  waiting for a report: a `signature_exceptions` entry could declare an off-taxonomy style and pass
+  identically. Both now check.
+
+- **A chosen direction carried no recognition traits, so `design-critic` had nothing to walk.**
+  (#637) The record captured what was *borrowed* — `mechanism`, `adopt`, `reject` per reference — and
+  never what the result should look like when it worked. The critic had the references and no list,
+  making its output as good as the model's taste that day: exactly the variance the research pass
+  exists to remove.
+
+  `recognition_traits` is now three to five short, checkable phrases, published into the generated
+  `project-design/SKILL.md` **as a checklist** because a reviewer walks a list and skims a paragraph.
+  The pattern is borrowed from `websiteprompts.com/design`, which pairs each of its fourteen
+  directions with exactly four, under *"See the style. Recognize its traits. Prompt it clearly."*
+
+  **Completeness only, never quality.** Whether a trait is a good one is judgement. The ceiling — six
+  — is the load-bearing half: *a list long enough to argue with is a list nobody walks*. And they are
+  read by `design-critic`, never `design-auditor`: a gate on whether a surface "reads as
+  minimalist-ink" is the gate #476 killed.
+
 ### 1.47.1 — 2026-08-16 (release v1.88.1)
 
 - **`visual-assets.md` claimed we ship no pause affordance; the catalogue ships two.** (#654)
@@ -7650,6 +7682,30 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **`subject` had no contract: `"a person working"`, `"teaching"` and `"x"` all composed into paid
+  prompts.** (#642) `compose_prompt` validated presence only, so the field that decides *what the
+  picture is of* was the one field in the brief nothing checked.
+
+  The contract is the one every purpose-built illustration generator publishes —
+  **[who] + [doing what] + [with which objects] + [where]** — and the three anti-patterns it names
+  are vagueness, assumed context, and an unclear action.
+
+  **Conditional on the style, and that is the load-bearing half.** It applies to the scene registers
+  (`character-world`, `cartoon`, `mixed-media`) and stays **silent** for the abstract ones, because
+  *"an abstract woven lattice"* is a correct and complete subject for `minimalist-ink`. A rule
+  demanding an action everywhere would flag our own worked fidara brief on its first run — #476's
+  lesson, and the reason that check would have been switched off within a week.
+
+  **What it cannot catch is stated rather than implied:** it reports an *absent* action or
+  environment, never a *vague* one. `"a person working"` passes the action test — "working" is a verb
+  — and is caught only for naming nowhere. Vagueness is judgement, and the contract in
+  `visual-assets.md` §4b is what a human reviews against.
+
+  A trivially short subject is refused in every register: `"x"` is not a subject for geometric work
+  either, and that needs no taxonomy knowledge.
 
 ### 1.26.0 — 2026-08-16 (release v1.88.0)
 

@@ -136,6 +136,44 @@ It is also the link that makes research mean anything downstream. Every brief in
 to this value: research monochrome ink line-work and brief a 3D render, and the plan refuses before
 anything is bought. Without it the record is a box that was ticked.
 
+### 5b-ii. The style must be one the pipeline accepts, and it is checked here
+
+`style` is not free text. It is the closed illustration taxonomy every asset brief is held to —
+`minimalist-ink`, `flat-vector`, `character-world`, `geometric`, `vintage-rustic`, `3d-render`,
+`cartoon`, `mixed-media` — and the record is checked against it **at record time**.
+
+That timing is the whole point. Validating presence only meant a record could settle on a direction
+the generator would refuse *three steps later*, after the plan had been written and costed. Same
+move `--check` already makes for a surface with no brief: a refusal belongs before the spend.
+
+If the direction genuinely is not in the list, that is **a decision about the taxonomy** — make it
+deliberately, not by discovering it at the point of sale.
+
+### 5b-iii. Say how you would recognise it
+
+A record that chose a style and stopped has told the next reader *what* was decided and not *how to
+tell whether the result hit it*. So `recognition_traits` — three to five short, checkable phrases:
+
+```json
+{
+  "style": "minimalist-ink",
+  "recognition_traits": ["monochrome line-work", "single ink weight", "no gradient", "high contrast"]
+}
+```
+
+**Traits are the checkable residue of a taste decision.** Not *"is this beautiful"* but *"does this
+have a single ink weight, yes or no"*. They reach the generated `project-design` skill as a
+checklist, and `design-critic` walks them.
+
+The pattern is borrowed: `websiteprompts.com/design` pairs each of its fourteen directions with
+exactly four numbered traits, under the heading *"See the style. Recognize its traits. Prompt it
+clearly."* Four is the shape to aim for, and the ceiling is load-bearing — **a list long enough to
+argue with is a list nobody walks.**
+
+**They are advisory and stay that way.** `design-critic` reads them; `design-auditor` does not. A
+gate on whether a surface "reads as minimalist-ink" is a gate on judgement, and the one time this
+repo tried that the threshold flagged its own worked example on the first real input.
+
 ### 5c. One deliberate exception: the rationed signature device
 
 Some visual systems are genuinely two-part — a **family** and one **signature device**. Stripe's

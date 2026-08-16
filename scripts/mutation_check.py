@@ -4110,6 +4110,30 @@ GUARDS: tuple[Guard, ...] = (
         # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
         mutations=(
             Mutation(
+                # #642. `subject: "x"` composed into a paid prompt. The floor needs no taxonomy
+                # knowledge and applies in every register.
+                "a trivially short subject is accepted, so 'x' buys a picture",
+                "    if len(subject) < 12:",
+                "    if False:",
+                "a trivially short subject is reported whatever the style",
+            ),
+            Mutation(
+                # A scene with no stated place has the room invented, differently every run -- which
+                # is the reroll a composed prompt exists to prevent.
+                "a scene subject needs no environment, so the model invents the room",
+                "    if not _PLACE.search(subject):",
+                "    if False:",
+                "a scene subject naming no environment is reported",
+            ),
+            Mutation(
+                # Widening the contract to abstract registers would flag "an abstract woven lattice"
+                # -- our own worked brief -- which is how a check gets switched off (#476).
+                "the subject contract widens to abstract styles and flags correct briefs",
+                '    if brief.get("style") not in SCENE_STYLES:\n        return out',
+                "    if False:\n        return out",
+                "an abstract subject in an abstract style is SILENT",
+            ),
+            Mutation(
                 # #640. Reported at REVIEW time or discovered after the charge, by looking at the
                 # page. There is no third option.
                 "an unstated aspect stops being reported, so the row buys a shape nobody chose",
@@ -4405,9 +4429,29 @@ GUARDS: tuple[Guard, ...] = (
         name="research_record",
         subject="plugins/design-flow/scripts/research_record.py",
         selftest="plugins/design-flow/scripts/research_record.py",   # --selftest lives in the module
-        # No `needs`: every fixture is a dict literal, and nothing here touches the network -- which
+        # #636 added the import of `STYLES`, and the standing rule applies: a guard's `needs` is
+        # EVERYTHING the subject opens, so an added import is an added need. Without it every
+        # mutation dies on ModuleNotFoundError and reads as "caught" while proving nothing.
+        needs=("plugins/design-flow/scripts/generation_gate.py",),
+        # Otherwise every fixture is a dict literal and nothing here touches the network -- which
         # matters more than usual, because the subject is about BROWSING other people's sites.
         mutations=(
+            Mutation(
+                # #636. Presence-only let a record settle on a style every brief would later refuse
+                # -- discovered by the generator three steps on, after the plan was costed.
+                "the chosen style stops being held to the taxonomy",
+                "    if chosen and chosen not in STYLES:",
+                "    if False:",
+                "a style outside the taxonomy is reported",
+            ),
+            Mutation(
+                # #637. Without traits `design-critic` has the references and no list to walk, so its
+                # output is as good as the model's taste that day.
+                "a record may choose a direction and never say how to recognise it",
+                '    if record.get("style") and not traits:',
+                "    if False:",
+                "a record that chose a style and stated no traits is reported",
+            ),
             Mutation(
                 # #632. The record is the ONLY place an exception may be declared, so its validation
                 # is the only thing standing between "a decision, made once, in the open" and any
