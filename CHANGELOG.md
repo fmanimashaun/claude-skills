@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-16c (v1.91.1)
 
 - **The wiki published `>-` where five of seven skill descriptions belonged.** (#680) Reported as
   *"the wiki should have full documentation of what the project is about, not just recording version
