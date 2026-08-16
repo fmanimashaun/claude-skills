@@ -2144,7 +2144,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.22.3 — 2026-08-16 (release v1.91.2)
 
 - **The Stop gate reported a false RED on a green suite, blocking every turn-stop.** (#683) It ran
   `bundle exec rspec` on the **bare `PATH`**. Under mise/rbenv/asdf the shims are often not on
@@ -3180,7 +3180,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.3.1 — 2026-08-16 (release v1.91.2)
 
 - **The cloud-deploy briefing sat at repo-root `.env`, where `bin/dev` reads it — booting local
   development in production.** (#682) Reported downstream with the full failure chain.
