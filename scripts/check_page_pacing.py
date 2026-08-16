@@ -81,9 +81,13 @@ END = "<!-- page-pacing:end -->"
 # A band row: `| 1 | Hero -- ... | Hero section | card | 1 | prose |`. The leading integer is what
 # rejects the header and the `|---|` separator, so no extra parsing state is needed -- the same
 # trick `check_shared_shapes.py` plays with its digit column.
-BAND = re.compile(
-    r"^\|\s*(?P<n>\d+)\s*\|\s*(?P<band>[^|]+?)\s*\|\s*(?P<composed>[^|]+?)\s*\|"
-    r"\s*(?P<tone>[^|]+?)\s*\|\s*(?P<columns>[^|]+?)\s*\|\s*(?P<width>[^|]+?)\s*\|\s*$")
+#
+# #639. IMPORTED FROM THE PLUGIN, not kept here. `compose_brief.py` reads the same table at runtime
+# to build a composition brief, and two parsers of one table drift -- after which the maintainer
+# gate and the shipped generator disagree about what the doctrine says. The direction is deliberate:
+# maintainer tooling may read shipped code, never the reverse (`plugin-boundaries` rule 3).
+sys.path.insert(0, str(REPO / "plugins" / "design-flow" / "scripts"))
+from compose_brief import BAND_ROW as BAND  # noqa: E402
 
 # The two prose claims. Applied to the marked block with newlines collapsed, so a claim staying on
 # one line is not something an author has to remember.
