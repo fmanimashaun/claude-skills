@@ -462,9 +462,86 @@ def check_spec_accompanies_behavior(workspace: Path) -> list[Finding]:
 # Registry
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# stimulus-discipline (#646)
+#
+# The hotwire skill was STAGED in the real arm and measured by nothing, so its doctrine could
+# neither help nor hurt the score while still occupying the arm's context. This is the case that
+# measures it.
+#
+# Every assertion below is one line of `stimulus.md` §10 "Patterns and anti-patterns":
+#
+#   :314  "treat the HTML as the API (a designer should wire your controller without reading JS)"
+#   :319  "Don't: render HTML strings in controllers (that's the server's job)"
+#   :321  "`querySelector` across the document (targets/outlets)"
+#   :322  "listen for `DOMContentLoaded`/`turbo:load` globally when `connect()` ... does it locally"
+#
+# ONE DOCTRINE LINE IS DELIBERATELY NOT CHECKED. :320-321 says don't "hold state in instance fields
+# that must survive navigation". The qualifier *must survive navigation* is the whole rule, and it is
+# not decidable from the source -- `this.timeout = setTimeout(...)` in a controller is both ordinary
+# and correct. A rule that flagged every `this.x =` would fail the shipped disclosure controller and
+# manufacture a false regression, which is exactly what "a gate must be fair" forbids. Left to human
+# review rather than approximated.
+_DOC_QUERY = re.compile(r"\bdocument\s*\.\s*(querySelector(All)?|getElementById|getElementsBy\w+)\b")
+_GLOBAL_LIFECYCLE = re.compile(
+    r"""(document|window)\s*\.\s*addEventListener\s*\(\s*["'](DOMContentLoaded|turbo:load)["']""")
+# innerHTML assignment, or insertAdjacentHTML -- building markup in JS rather than asking the
+# server for a Turbo Stream.
+_HTML_STRING = re.compile(r"\.\s*(innerHTML|outerHTML)\s*=|\.\s*insertAdjacentHTML\s*\(")
+
+STIMULUS_GLOBS = ("app/javascript/controllers/**/*.js",)
+
+
+def check_stimulus_discipline(workspace: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    # The scaffold ships `disclosure_controller.js`; only a NEW controller is the agent's work.
+    written = [p for p in iter_files(workspace, STIMULUS_GLOBS)
+               if p.name not in ("index.js", "application.js", "disclosure_controller.js")]
+    if not written:
+        return [Finding("stimulus-discipline", "app/javascript/controllers", 0,
+                        "no Stimulus controller was written, so the task was not attempted")]
+
+    for path in written:
+        lines = read_lines(path, strip_comments=False)
+        body = "\n".join(lines)
+        where = rel(path, workspace)
+
+        for i, line in enumerate(lines, start=1):
+            code = line.split("//", 1)[0]
+            if _DOC_QUERY.search(code):
+                findings.append(Finding(
+                    "stimulus-discipline", where, i,
+                    "queries across the document; declare a target and use it instead "
+                    "(stimulus.md:321)"))
+            if _GLOBAL_LIFECYCLE.search(code):
+                findings.append(Finding(
+                    "stimulus-discipline", where, i,
+                    "a global DOMContentLoaded/turbo:load listener; `connect()` on the right "
+                    "element does this locally (stimulus.md:322)"))
+            if _HTML_STRING.search(code):
+                findings.append(Finding(
+                    "stimulus-discipline", where, i,
+                    "builds HTML in the controller; that is the server's job -- request a Turbo "
+                    "Stream (stimulus.md:319)"))
+
+        # THE HTML IS THE API. A controller with no declared target reaches for the DOM some other
+        # way, and a designer cannot wire it without reading the JS.
+        if "static targets" not in body:
+            findings.append(Finding(
+                "stimulus-discipline", where, 0,
+                "declares no `static targets`, so the HTML is not the API -- a designer cannot "
+                "wire this without reading the JS (stimulus.md:314)"))
+    return findings
+
+
 RULES: dict[str, Rule] = {
     r.name: r
     for r in (
+        Rule("stimulus-discipline",
+             "skills/hotwire/references/stimulus.md:314-322",
+             "a Stimulus controller declares targets and stays out of the document, the "
+             "server's markup job, and global lifecycle events",
+             check_stimulus_discipline),
         Rule("scoped-index",
              "skills/rails-8/references/auth-security.md:121",
              "index/collection reads scope through Current, not the global model",
