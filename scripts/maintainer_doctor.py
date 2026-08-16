@@ -163,6 +163,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # literals (it is deliberately standalone). Move one and not the others and `--scaffold` creates
     # a folder nothing writes to while `--run` writes into one the scaffold never made — both halves
     # still "work", on different paths, and nothing else in the repo would notice.
+    # #639. The composition brief — which owned asset fills which band, and why that one. Its two
+    # load-bearing properties are the ones only a fixture can hold: `avoid` outranks `use_cases`, and
+    # the band matches while the SURFACE only excludes (folding the surface into the match made every
+    # band on one page take the same asset).
+    ("design-flow composition brief selftest",
+     ("python3", "plugins/design-flow/scripts/compose_brief.py", "--selftest")),
     ("design-flow asset layout",
      ("python3", "scripts/check_asset_layout.py")),
     ("design-flow asset layout selftest",

@@ -77,6 +77,11 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 - `/design-flow:generate`
 
 
+**Ungrouped** — shipped but not yet placed in a group above
+
+- `/design-flow:compose`
+
+
 
 ## `qa-flow`
 
@@ -133,4 +138,4 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 ---
 
-**42 commands** across 4 plugins.
+**43 commands** across 4 plugins.

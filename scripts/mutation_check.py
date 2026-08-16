@@ -2328,7 +2328,13 @@ GUARDS: tuple[Guard, ...] = (
         # mutation below is INERT -- which run_baseline reported rather than passing silently.
         needs=("skills/fidara-design/references/page-anatomies.md",
                "skills/fidara-design/references/coverage.md",
-               "skills/fidara-design/references/foundations-tokens.md"),
+               "skills/fidara-design/references/foundations-tokens.md",
+               # #639. It now imports the band parser from the shipped plugin rather than
+               # keeping a second copy, so the plugin module and its own import are needs.
+               # Third time this rule has bitten in one session: an added import is an
+               # added need, and without it every mutation dies on ModuleNotFoundError.
+               "plugins/design-flow/scripts/compose_brief.py",
+               "plugins/design-flow/scripts/doctrine_path.py"),
         mutations=(
             Mutation(
                 "the measured row count stops being compared, so a stale 14 passes",
@@ -3984,6 +3990,54 @@ GUARDS: tuple[Guard, ...] = (
                 '    return {"variables": {k: v for k, v in (doc.get("variables") or {}).items() if k in ours},',
                 '    return {"variables": {k: v for k, v in (doc.get("variables") or {}).items()},',
                 "a composition alongside the library is NOT drift",
+            ),
+        ),
+    ),
+    Guard(
+        # #639. The composition brief. Every mutation below leaves it PRODUCING A PLAUSIBLE BRIEF —
+        # bands present, assets named, a table rendered — while answering the one question it exists
+        # for wrongly. That is this flow's signature failure, so the fixtures must be provably able
+        # to see it.
+        name="compose_brief",
+        subject="plugins/design-flow/scripts/compose_brief.py",
+        selftest="plugins/design-flow/scripts/compose_brief.py",
+        # It reads the real band table through the doctrine resolver, so the skill and the resolver
+        # are both needs -- and without them every mutation dies on "cannot find fidara-design",
+        # which reads as "caught" while proving nothing.
+        needs=("plugins/design-flow/scripts/doctrine_path.py",
+               "skills/fidara-design/references/page-anatomies.md"),
+        mutations=(
+            Mutation(
+                # `avoid` is "the one people skip and the one that matters most". A stated
+                # prohibition must outrank a stated permission, or the field means nothing at the
+                # only moment it could act.
+                "`avoid` stops excluding, so a forbidden asset fills the band it is barred from",
+                "        if blocked:",
+                "        if False:",
+                "`avoid` excludes an asset whose use_cases match",
+            ),
+            Mutation(
+                # Folding the surface into the match context made every band on `marketing-hero`
+                # take the asset whose use case said "marketing hero" -- one asset, whole page.
+                "the surface name rejoins the match, so every band takes the same asset",
+                '    context = significant(f"{band.band} {band.composed}")',
+                '    context = significant(f"{band.band} {band.composed} {surface}")',
+                "a band with no matching asset takes none",
+            ),
+            Mutation(
+                # A brief pointing at an asset that is not there sends the builder looking for it.
+                "a band may name an asset that is not on disk",
+                '        if b.get("asset") and not (root / b["asset"]).is_file():',
+                "        if False:",
+                "...and one naming a missing asset does not",
+            ),
+            Mutation(
+                # Degraded-but-honest is the contract: a silently thinner brief reads as a simpler
+                # page rather than as missing inputs.
+                "a brief stops saying which inputs it was composed without",
+                '                              ("manifest.json", bool(owned))) if not present],',
+                '                              ("manifest.json", bool(owned))) if False],',
+                "...that names what it was composed without",
             ),
         ),
     ),
