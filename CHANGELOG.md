@@ -7683,7 +7683,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.28.0 — 2026-08-16 (release v1.90.0)
 
 - **The prompt library held asset prompts only, and `/design-flow:variants` threw away its own
   answer.** (#638) Every writer into the library lived in `generate_asset.py` — the bought path,
