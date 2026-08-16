@@ -134,6 +134,39 @@ def read_bands(doc: Path) -> list[Band]:
     return bands
 
 
+def governing_section(doc: Path, surface: str) -> str | None:
+    """The `page-anatomies.md` section that governs this surface, if the catalogue names one. #676.
+
+    THE CATALOGUE CARRIES EXACTLY ONE STRUCTURED BAND SEQUENCE -- the paced block, whose own text
+    scopes it "for a product landing page". Pricing, About, Error and Auth are prose and ERB with no
+    band table at all. So every surface composed here gets the LANDING spine, and until now the brief
+    never said so: a pricing brief that is silently a landing brief is the correct-looking-but-wrong
+    output this flow keeps producing.
+
+    The fix is honesty, not invention. Manufacturing band tables for the other archetypes is exactly
+    what `/design-flow:component` step 1 forbids, and what the pacing section itself avoided by
+    composing "only from rows that already exist: no new token, no new `@utility`, no new archetype."
+
+    So this is a LOOKUP against the catalogue's own headings, with no taxonomy of our own: if a
+    section is named for this surface, the brief points at it and says the sequence is borrowed.
+    """
+    if not doc.is_file():
+        return None
+    target = significant(surface)
+    if not target:
+        return None
+    for line in doc.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("## "):
+            continue
+        heading = line[3:].strip()
+        # A heading matches when the surface's words are all in it -- "pricing" finds "## Pricing",
+        # and "marketing-hero" does not match "## Landing", which is correct: the spine IS landing's,
+        # so a hero surface is not borrowing anything.
+        if target <= significant(heading):
+            return heading
+    return None
+
+
 def significant(text: str) -> set[str]:
     """Words that could evidence a match. 3+ letters, not a stopword, crudely singularised.
 
@@ -145,6 +178,50 @@ def significant(text: str) -> set[str]:
     """
     words = {w for w in re.findall(r"[a-z]{3,}", text.lower()) if w not in _STOP}
     return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words}
+
+
+def surface_scoped_out(entry: dict, surface: str) -> bool:
+    """Is this row scoped to surfaces that do not include this one? #676.
+
+    Symmetric with `bands` and opt-in the same way. Without it a `use_case` written for one page
+    matches a like-named band on another -- `"/how-it-works - a mark beside the flywheel"` suggesting
+    the asset in a *How it works* band on `/problem`, which a second real run reported as noise.
+
+    NO PREFIX-SNIFFING. Inferring scope from a leading `"/how-it-works - …"` would be convention-
+    guessing, which is the family of shortcut that produced #672's four defects. A row says which
+    surfaces it is for, or it is for all of them.
+    """
+    scoped = entry.get("surfaces")
+    if not isinstance(scoped, list) or not scoped:
+        return False
+    target = significant(surface)
+    return not any(significant(str(sc)) & target for sc in scoped)
+
+
+def surface_relevant(entry: dict, surface: str) -> str | None:
+    """Does this row say it belongs on this SURFACE, whatever band? #676.
+
+    THE SURFACE ONLY EVER EXCLUDED. `avoid` saw it and `surfaces` scoped by it, but nothing let a
+    row be *relevant* because of it -- so a row saying `"surfaces": ["/problem"]`, or a `use_case`
+    reading `"/problem - one mark punctuating the capital-visibility narrative"`, was invisible on
+    `/problem`. Surface-scoped metadata was dead: written, validated, consumed by nothing.
+
+    WHY THIS DOES NOT MAKE IT A CANDIDATE IN EVERY BAND. That is the exact bug an earlier fixture
+    caught -- fold the surface into the relevance context and one asset fills the whole page. Knowing
+    a row belongs on this PAGE says nothing about WHICH BAND, and inventing one would be the tool
+    making the design decision.
+
+    So it is reported relevant-but-unplaced: the honest third state between "suggested here" and
+    "absent". The reader sees the asset, sees the project intended it for this page, and is told the
+    one thing that would place it -- a `bands` entry.
+    """
+    for sc in (entry.get("surfaces") or []):
+        if significant(str(sc)) & significant(surface):
+            return f"its `surfaces` lists {sc!r}"
+    for use in (entry.get("use_cases") or []):
+        if significant(str(use)) & significant(surface):
+            return f"its `use_cases` name this surface: {str(use)!r}"
+    return None
 
 
 def band_named(entry: dict, band: Band) -> bool:
@@ -202,6 +279,9 @@ def rank_candidates(band: Band, surface: str, owned: list[dict]) -> tuple[list[d
 
     for entry in owned:
         name = entry.get("name") or entry.get("file") or "(unnamed)"
+        if surface_scoped_out(entry, surface):
+            rejected.append(f"{name} — its `surfaces` does not list {surface!r}")
+            continue
         blocked = next((a for a in (entry.get("avoid") or [])
                         if significant(str(a)) & forbid_context), None)
         if blocked:
@@ -268,7 +348,12 @@ def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
     if doctrine is None:
         raise Unusable("cannot find the `fidara-design` skill, so there is no band sequence to "
                        "compose from. Looked in:\n" + doctrine_path.describe(Path(__file__)))
-    bands = read_bands(doctrine / "references" / "page-anatomies.md")
+    anatomy_doc = doctrine / "references" / "page-anatomies.md"
+    bands = read_bands(anatomy_doc)
+    # #676. SAY WHICH SEQUENCE THIS IS. There is one structured band table in the catalogue and it
+    # scopes itself "for a product landing page", so every surface gets the landing spine — which is
+    # fine, and was silent, which was not.
+    governs = governing_section(anatomy_doc, surface)
 
     research: dict = {}
     rpath = root / RESEARCH_PATH
@@ -288,12 +373,14 @@ def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
 
     brief_bands = []
     placements: dict[str, list[int]] = {}
+    suggested_anywhere: set[str] = set()
     inventory = sorted({(e.get("name") or e.get("file") or "(unnamed)") for e in owned})
     for band in bands:
         candidates, rejected = rank_candidates(band, surface, owned)
         top = candidates[0] if candidates else None
         if top:
             placements.setdefault(top["name"], []).append(band.n)
+        suggested_anywhere.update(c["name"] for c in candidates)
         if candidates:
             why = top["why"]
         elif rejected:
@@ -338,6 +425,23 @@ def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
         # #672 defect 3. Computed across bands, which `pick_asset` could not do at all: it ran per
         # band with no accumulator, so a per-surface cap was unrepresentable rather than unenforced.
         "cap_breaches": cap_breaches(surface, owned, placements),
+        # #676. Rows the project scoped to THIS surface that no band matched. Dead metadata until
+        # now: the surface only ever excluded, so a row saying "I am for /problem" was invisible on
+        # /problem. Listed rather than placed, because knowing the page is not knowing the band.
+        "unplaced": [
+            {"name": e.get("name") or e.get("file") or "(unnamed)",
+             "file": e.get("file"), "why": surface_relevant(e, surface)}
+            for e in owned
+            if surface_relevant(e, surface)
+            and (e.get("name") or e.get("file") or "(unnamed)") not in suggested_anywhere
+        ],
+        "anatomy": {
+            "sequence": "How a page is paced — the product-landing spine",
+            # Borrowed when the catalogue names a DIFFERENT section for this surface. A hero surface
+            # is not borrowing: `## Landing` says its sections ARE bands 1, 2, 5 and 7 of the spine.
+            "borrowed": bool(governs),
+            "governed_by": governs,
+        },
         "bands": brief_bands,
     }
 
@@ -365,6 +469,18 @@ def render(brief: dict) -> str:
     if brief.get("recognition_traits"):
         out.append("Recognise it by: "
                    + ", ".join(f"**{_cell(t)}**" for t in brief["recognition_traits"]) + ".\n")
+    # #676. NAME THE SEQUENCE. Every surface composes from the one structured band table, which
+    # scopes itself to a product landing page — usable when said, silently wrong when not.
+    anatomy = brief.get("anatomy") or {}
+    if anatomy.get("borrowed"):
+        out.append(f"> **Composed from _{_cell(anatomy['sequence'])}_, which is borrowed here.** The "
+                   f"catalogue governs this surface in **§{_cell(anatomy['governed_by'])}** of "
+                   f"`page-anatomies.md`, and that section carries no band table — it is prose and "
+                   f"ERB. The bands below are the landing spine, which is the closest structured "
+                   f"sequence the catalogue has; read §{_cell(anatomy['governed_by'])} for what this "
+                   f"page actually owes, because this brief does not encode it.\n")
+    elif anatomy.get("sequence"):
+        out.append(f"Composed from _{_cell(anatomy['sequence'])}_.\n")
     if brief.get("composed_without"):
         out.append(f"> **Composed without {', '.join(brief['composed_without'])}.** The bands are "
                    f"right; the asset column is guesswork until those exist.\n")
@@ -398,6 +514,17 @@ def render(brief: dict) -> str:
                 mark = "**stated**" if c.get("stated") else f"score {c['score']}"
                 out.append(f"- `{_cell(c['name'])}` ({mark}) — {_cell(c['why'])}")
             out.append("")
+
+    # #676. Owned, scoped to this surface, and placed in no band. Neither "suggested" nor "absent",
+    # and until now invisible — the surface only ever excluded, so surface-scoped metadata was dead.
+    if brief.get("unplaced"):
+        out.append("\n## Owned for this surface, but no band matched\n")
+        out.append("The project says these belong on this page and nothing says **where**. Knowing "
+                   "the page is not knowing the band, so they are listed rather than placed — name "
+                   "a band with a `bands` entry and the guess disappears.\n")
+        for u in brief["unplaced"]:
+            out.append(f"- `{_cell(u['name'])}` — {_cell(u['why'])}")
+        out.append("")
 
     if brief.get("cap_breaches"):
         out.append("\n## Over its own cap\n")
@@ -551,6 +678,85 @@ def selftest() -> int:
     # REPORTED, NEVER TRIMMED. Which band loses the asset is a design decision.
     ok("...saying it is reported rather than trimmed", "reported rather than trimmed" in breaches[0])
 
+    print("#676 — the anatomy is NAMED, and a borrowed one says so")
+    import doctrine_path as _dp
+    _doc = (_dp.find(Path(__file__).resolve()) or Path(".")) / "references" / "page-anatomies.md"
+    ok("a surface the catalogue governs is found", governing_section(_doc, "pricing") == "Pricing")
+    ok("...and one it does not is None", governing_section(_doc, "marketing-hero") is None)
+    # A hero surface is NOT borrowing: `## Landing` says its sections ARE bands 1, 2, 5 and 7 of the
+    # spine, so naming it as borrowed would be a false warning.
+    ok("...so a landing-ish surface is not falsely flagged",
+       governing_section(_doc, "problem") is None)
+    # THE WARNING MUST REACH THE PAGE, not just the JSON. Testing the lookup alone left the render
+    # unguarded — the mutation harness caught that, which is what it is for.
+    _borrowed = {"surface": "pricing", "intent": {"brief": "b", "so": "s"}, "bands": [],
+                 "anatomy": {"sequence": "How a page is paced — the product-landing spine",
+                             "borrowed": True, "governed_by": "Pricing"}}
+    _view = render(_borrowed)
+    ok("a borrowed anatomy is declared in the rendered brief", "borrowed here" in _view)
+    ok("...naming the section that actually governs the page", "§Pricing" in _view)
+    ok("...and saying this brief does not encode it", "does not encode it" in _view)
+    _native = {**_borrowed, "surface": "marketing-hero",
+               "anatomy": {**_borrowed["anatomy"], "borrowed": False, "governed_by": None}}
+    ok("...while a native surface simply names the sequence, with no warning",
+       "borrowed here" not in render(_native) and "Composed from" in render(_native))
+
+    print("#676 — `surfaces` scopes a row, and no prefix is sniffed")
+    # The use_case must overlap the band, or this fixture would pass for the wrong reason — it is
+    # `surfaces` under test, not the matcher.
+    SCOPED = {"file": "a.svg", "name": "accents",
+              "use_cases": ["a mark beside the how-it-works steps"],
+              "surfaces": ["/how-it-works"]}
+    FLYWHEEL = Band(5, "How it works — three numbered steps", "Steps", "card", "1", "prose")
+    cands, rej = rank_candidates(FLYWHEEL, "problem", [SCOPED])
+    ok("a row scoped elsewhere is excluded", cands == [])
+    ok("...saying which scope did it", any("`surfaces`" in r for r in rej))
+    cands, _ = rank_candidates(FLYWHEEL, "how-it-works", [SCOPED])
+    ok("...and on its own surface it is a candidate", len(cands) == 1)
+    # UNSCOPED ROWS ARE UNCHANGED, or this lands as a breaking change on every existing manifest.
+    unscoped = {k: v for k, v in SCOPED.items() if k != "surfaces"}
+    ok("a row with no `surfaces` matches everywhere, exactly as before",
+       len(rank_candidates(FLYWHEEL, "problem", [unscoped])[0]) == 1)
+
+    print("#676 — a surface-scoped row is RELEVANT on its surface, not merely un-excluded")
+    # The reporter's acceptance criterion: a surfaces-scoped use_case is considered only on its
+    # surface, AND relevant there with zero band-label overlap. Before this, `surfaces` could only
+    # exclude -- so a row saying "I am for /problem" was invisible on /problem.
+    SCOPED_ONLY = {"file": "p.svg", "name": "accents", "surfaces": ["/problem"],
+                   "use_cases": ["one mark punctuating the capital-visibility narrative"]}
+    ok("a row scoped to this surface is relevant here, with zero band overlap",
+       surface_relevant(SCOPED_ONLY, "problem") is not None)
+    ok("...and not on another surface", surface_relevant(SCOPED_ONLY, "pricing") is None)
+    # A use_case NAMING the surface counts too -- that is the "Home - …" convention in the wild.
+    ok("...a use_case naming the surface also counts",
+       surface_relevant({"use_cases": ["Home - honest-proof and three-outcomes bands"]}, "home")
+       is not None)
+    # IT MUST NOT BECOME A CANDIDATE IN EVERY BAND. That is the one-asset-whole-page bug an earlier
+    # fixture caught; knowing the page is not knowing the band.
+    HERO_B = Band(1, "Hero — the claim, the lede", "Hero section", "card", "1", "prose")
+    ok("...but relevance does NOT place it in a band", rank_candidates(HERO_B, "problem",
+                                                                      [SCOPED_ONLY])[0] == [])
+    _view = render({"surface": "problem", "intent": {"brief": "b", "so": "s"}, "bands": [],
+                    "unplaced": [{"name": "accents", "file": "p.svg",
+                                  "why": "its `surfaces` lists '/problem'"}]})
+    ok("...it is reported as owned-but-unplaced", "no band matched" in _view)
+    ok("...naming the one thing that would place it", "`bands` entry" in _view)
+
+    print("#676 — ranking, with two assets actually competing")
+    # The first real runs had ONE asset, so every shortlist was <=1 and the ordering never engaged.
+    # A foil belongs here rather than downstream: it costs nothing to run forever.
+    WEAK = {"file": "w.svg", "name": "weak", "use_cases": ["steps"]}
+    STRONG = {"file": "s.svg", "name": "strong", "use_cases": ["how it works, three numbered steps"]}
+    cands, _ = rank_candidates(FLYWHEEL, "problem", [WEAK, STRONG])
+    ok("both compete for one band", len(cands) == 2)
+    ok("...and the stronger overlap ranks first", cands[0]["name"] == "strong")
+    ok("...with scores that explain the order", cands[0]["score"] > cands[1]["score"])
+    # A STATED BAND OUTRANKS ANY PROSE MATCH, however strong -- that is the point of `bands`.
+    stated_weak = {**WEAK, "bands": ["How it works"]}
+    cands, _ = rank_candidates(FLYWHEEL, "problem", [stated_weak, STRONG])
+    ok("a stated `bands` beats a better prose overlap", cands[0]["name"] == "weak")
+    ok("...and is marked as stated rather than scored", cands[0]["stated"] is True)
+
     print("#672 defect 4 — plurals no longer miss")
     ok("`CTAs` and `CTA` are the same token",
        bool(significant("money CTAs") & significant("Closing CTA")))
@@ -566,7 +772,17 @@ def selftest() -> int:
         (root / RESEARCH_PATH).write_text(json.dumps({
             "style": "minimalist-ink",
             "recognition_traits": ["monochrome line-work", "single ink weight"]}), encoding="utf-8")
-        (root / MANIFEST_PATH).write_text(json.dumps({"assets": [lattice]}), encoding="utf-8")
+        # A second row scoped to the surface and matching NO band label — #676's second root cause,
+        # end to end. Testing `surface_relevant` and `render` separately left `compose` itself
+        # unguarded, and the mutation harness slipped straight between them.
+        scoped_only = {"file": "docs/assets/assets-library/accent.svg", "name": "Page accent",
+                       "surfaces": ["marketing-hero"],
+                       # Deliberately shares no word with any band label -- "one mark" collided
+                       # with band 2's "the customer marks, on one line" and made this a candidate,
+                       # which is the matcher working and the fixture testing the wrong thing.
+                       "use_cases": ["punctuating the capital-visibility narrative"]}
+        (root / MANIFEST_PATH).write_text(json.dumps({"assets": [lattice, scoped_only]}),
+                                          encoding="utf-8")
 
         brief = compose(root, "marketing-hero")
         ok("the brief has a band per paced row", len(brief["bands"]) >= 5)
@@ -586,6 +802,16 @@ def selftest() -> int:
         ok("...and pointing at the fix rather than the symptom",
            "`bands` entry" in empty["why"])
         ok("nothing was composed without", brief["composed_without"] == [])
+        # #676. Scoped to this surface, matched no band, and therefore neither suggested nor absent.
+        ok("a surface-scoped row with no band match is reported as unplaced",
+           [u["name"] for u in brief["unplaced"]] == ["Page accent"])
+        ok("...saying which scope made it relevant", "`surfaces`" in brief["unplaced"][0]["why"])
+        # AND IT IS NOT PLACED ANYWHERE. Relevance to a page is not knowledge of a band; suggesting
+        # it in every band is the one-asset-whole-page bug an earlier fixture caught.
+        ok("...and is suggested in no band",
+           all(b["suggested_name"] != "Page accent" for b in brief["bands"]))
+        ok("...while the row that DID match a band is not listed as unplaced",
+           "Hero lattice" not in [u["name"] for u in brief["unplaced"]])
 
         # THE VIEW IS A FUNCTION OF THE DATA ONLY, or the drift check is unpassable by construction.
         ok("re-rendering unchanged data is byte-identical", render(brief) == render(brief))

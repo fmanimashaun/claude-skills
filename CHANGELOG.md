@@ -7683,6 +7683,60 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.29.0 — 2026-08-16 (release v1.91.0)
+
+- **Every surface composed from the LANDING band spine, and the brief never said so.** (#676) From a
+  second real run: `/problem` and `/how-it-works` came back **byte-identical**. The reporter read
+  that as surface-inertness in asset matching. It is, and the cause is one level up.
+
+  `read_bands()` takes **no surface**. The catalogue carries exactly one structured band sequence,
+  and that block scopes itself in its own words — *"6–8 bands … **for a product landing page**"* —
+  while every other archetype is prose and ERB:
+
+  ```
+  Pricing -> table rows: 0    About -> 0    Error -> 0    Auth -> 0
+  ```
+
+  So `--surface pricing` returned the landing spine, silently, presented as pricing's composition:
+  the correct-looking-but-wrong output this flow keeps producing, one level above where it was
+  reported.
+
+  **The fix is honesty, not invention.** Manufacturing band tables for the other archetypes is what
+  `/design-flow:component` step 1 forbids, and what the pacing section itself avoided by composing
+  *"only from rows that already exist: no new token, no new `@utility`, no new archetype."* A brief
+  for a governed surface now opens by saying the spine is borrowed, names the section that governs
+  the page, and states that it does not encode it. The governing section is a **lookup against the
+  catalogue's own headings**, so a surface it does not name gets no false warning.
+
+- **The surface could only ever EXCLUDE, never make a row relevant.** (#676, second root cause —
+  found downstream after the first fix was designed, and it changed that fix's scope.) `avoid` saw
+  the surface and `surfaces` scoped by it, and nothing let a row be *relevant* because of it. So a
+  row saying `"surfaces": ["/problem"]`, or a `use_case` reading `"/problem — one mark punctuating
+  the capital-visibility narrative"`, was **invisible on `/problem`**: surface-scoped metadata
+  written, validated, and consumed by nothing — the same shape as `use_cases` before #639.
+
+  Such a row is now reported **owned for this surface, but no band matched**. Deliberately not made
+  a candidate in every band: that is the one-asset-whole-page bug an earlier fixture caught, and
+  knowing the page is not knowing the band. The honest third state between *suggested here* and
+  *absent*, with the one thing that would place it named — a `bands` entry.
+
+- **A `use_case` written for one page suggested its asset on another.** (#676) The concrete cost of
+  the trade #672 made deliberately: with the surface out of the match context, `"/how-it-works — a
+  mark beside the flywheel"` matched a *How it works* band on `/problem`. A row may now carry
+  **`surfaces`**, symmetric with `bands` and opt-in the same way; a row without it matches
+  everywhere, unchanged.
+
+  **No prefix-sniffing.** Reading scope out of a leading `"/how-it-works — …"` would be
+  convention-guessing — the family of shortcut that produced #672's four defects — and two
+  mechanisms for one thing drift.
+
+- **Ranking was never exercised.** Both real runs had a single asset, so every shortlist was ≤1
+  candidate and the ordering never engaged. That is a fixture gap rather than a downstream errand, so
+  a competing foil now lives in the selftest: two assets contest one band, the stronger overlap ranks
+  first, and a stated `bands` beats a better prose overlap. `compose_brief.py` 43 → **60**, four new
+  mutation guards — one of which survived at first because the fixture tested the lookup and left the
+  **rendered** warning unguarded.
+
 ### 1.28.1 — 2026-08-16 (release v1.90.1)
 
 - **The composition brief ASSIGNED assets from word overlap. Now it shortlists.** (#672) Reported
