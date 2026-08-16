@@ -9,6 +9,34 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The install description named the wrong agents.** (#653) Found immediately after #651, in the
+  same file, and the same class: the install surface saying something untrue.
+
+  ```
+  rails-flow:  ships 11, description claims "eight"
+  design-flow: ships 5,  description names 3
+  ```
+
+  `rails-flow` also named **`developer`** for a file called `rails-developer.md`, so a user who read
+  the description and went looking found nothing. `design-flow` omitted `design-critic` — the
+  advisory lens the whole `art-direction.md` enforcement model rests on — and `design-explorer`.
+  Both agents were added this month; the description was never touched.
+
+  New `misdescribed-agents` rule, **verified by restoring the old descriptions and watching it fire
+  on exactly the state the repo was in** — catching the wrong count and the subset separately.
+
+  **The escape hatch is the design.** `qa-flow` ships ten agents and names none; `pipeline` ships two
+  and names none. Both are correct, and a rule demanding a full list would fire on them and get
+  switched off. So: name none and it is silent; name one and you must name all.
+
+  That is also why it does not contradict `check_undocumented_plugins`, which refuses to check counts
+  because *"prose legitimately refers to subsets"*. That holds for CLAUDE.md essays. A manifest
+  description listing agents is answering *"what do I get?"*, and there a subset is a wrong answer.
+
+  Selftest 216 → **223**, pinning the count and the subset independently plus both silent cases, and
+  two mutation guards.
+
+
 - **Every plugin shipped with no licence, repository, homepage or keywords.** (#651) Found comparing
   our marketplace against `VectifyAI/OpenKB` (3.7k stars), which is also a Claude plugin marketplace
   and declares the full set.
