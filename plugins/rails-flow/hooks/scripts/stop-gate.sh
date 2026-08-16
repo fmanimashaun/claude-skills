@@ -129,9 +129,51 @@ if [ -n "$app_changed" ] && [ -z "$spec_changed" ]; then
   exit 2
 fi
 
+# RUN THROUGH THE PROJECT'S RUBY, not whatever `bundle` is on PATH (#683).
+#
+# Under mise/rbenv/asdf the shims are often NOT on PATH, so a bare `bundle` is the GLOBAL Ruby's.
+# Bundler then aborts on the Ruby/lockfile mismatch, the abort is a non-zero exit like any other,
+# and the gate reported "changed specs are RED" on a green suite — blocking every turn-stop.
+#
+# That is the worst failure a gate can have. `art-direction.md` states the consequence plainly: a
+# gate that fires on correct input gets switched off, and then nothing is checked at all.
+#
+# The runner is chosen by what the PROJECT pins, not by what is installed: a `.tool-versions` or
+# `.ruby-version` is the project saying "this Ruby", and the manager that owns that file is the one
+# that can honour it.
+_rf_bundle() {
+  if [ -f .tool-versions ] || [ -f .ruby-version ]; then
+    if command -v mise >/dev/null 2>&1 && mise current ruby >/dev/null 2>&1; then
+      mise exec -- bundle "$@"; return $?
+    fi
+    if command -v rbenv >/dev/null 2>&1; then rbenv exec bundle "$@"; return $?; fi
+    if command -v asdf >/dev/null 2>&1; then asdf exec bundle "$@"; return $?; fi
+  fi
+  bundle "$@"
+}
+
 if [ -n "$spec_changed" ] && command -v bundle >/dev/null 2>&1; then
   files="$(printf '%s\n' "$spec_changed" | tr '\n' ' ')"
-  if ! out="$(_rf_timeout 120 bundle exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then
+  if ! out="$(_rf_timeout 120 _rf_bundle exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then
+    # BOTH BRANCHES EXIT 2, and that is what makes a crude pattern match safe here: a
+    # misclassification changes the WORDING, never whether the finish is blocked. Getting it wrong
+    # in the cautious direction says "nothing is known about your specs" when they did fail — still
+    # blocking, still sending you to look. Getting it wrong the other way is the reported bug.
+    #
+    # A BUNDLER ABORT IS NOT A RED SUITE. Bundler exits non-zero for "your Ruby does not match the
+    # lockfile" exactly as it does for a failing example, and calling that RED sends the reader to
+    # look at specs that are fine. Name the environment when the output says environment.
+    case "$out" in
+      *"Your Ruby version"*|*"was resolved to"*|*"Could not find"*|*"command not found"*|*"Bundler::"*)
+        {
+          echo "rails-flow stop gate: could not RUN the changed specs — this is an environment"
+          echo "problem, not a failing suite. Nothing about your specs is known either way."
+          echo "The gate tried the project's Ruby via mise/rbenv/asdf and fell back to PATH."
+          printf '%s\n' "$out"
+        } >&2
+        exit 2
+        ;;
+    esac
     {
       echo "rails-flow stop gate: changed specs are RED — fix before finishing."
       printf '%s\n' "$out"
