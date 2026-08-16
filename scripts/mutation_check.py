@@ -4008,6 +4008,32 @@ GUARDS: tuple[Guard, ...] = (
                "skills/fidara-design/references/page-anatomies.md"),
         mutations=(
             Mutation(
+                # #676, second root cause. The surface only ever EXCLUDED -- `avoid` saw it and
+                # `surfaces` scoped by it, and nothing let a row be RELEVANT because of it. So a row
+                # saying "I am for /problem" was invisible on /problem: dead metadata.
+                "surface-scoped rows stop being reported, so the metadata is dead again",
+                '            if surface_relevant(e, surface)',
+                "            if False",
+                "a row scoped to this surface is relevant here, with zero band overlap",
+            ),
+            Mutation(
+                # #676. Every surface composes from the one structured band table, which scopes
+                # itself "for a product landing page". A pricing brief that is silently a landing
+                # brief is the correct-looking-but-wrong output this flow keeps producing.
+                "a borrowed anatomy stops being declared, so a pricing brief looks like pricing's",
+                "    if anatomy.get(\"borrowed\"):",
+                "    if False:",
+                "a surface the catalogue governs is found",
+            ),
+            Mutation(
+                # #676. Without it a `use_case` written for one page suggests the asset on another,
+                # which a second real run reported as noise on the wrong surface.
+                "a row scoped to other surfaces is suggested anyway",
+                "        if surface_scoped_out(entry, surface):",
+                "        if False:",
+                "a row scoped elsewhere is excluded",
+            ),
+            Mutation(
                 # #672 defect 1. A synonym miss used to be a silent `none`; naming the inventory is
                 # the difference between an absence a reader investigates and one they skim past.
                 "a band with no candidate stops naming what the project owns",
