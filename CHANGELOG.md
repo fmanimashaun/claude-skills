@@ -3310,7 +3310,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.48.0 — 2026-08-16 (release v1.89.0)
 
 - **A research record could settle on a style the generator would refuse.** (#636)
   `research_record.check` validated `style` for **presence only**, so a record naming an
@@ -7683,7 +7683,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.27.0 — 2026-08-16 (release v1.89.0)
 
 - **`subject` had no contract: `"a person working"`, `"teaching"` and `"x"` all composed into paid
   prompts.** (#642) `compose_prompt` validated presence only, so the field that decides *what the
