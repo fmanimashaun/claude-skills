@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-16b (v1.88.1)
 
 - **The install description named the wrong agents.** (#653) Found immediately after #651, in the
   same file, and the same class: the install surface saying something untrue.
@@ -3310,7 +3310,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.47.1 — 2026-08-16 (release v1.88.1)
 
 - **`visual-assets.md` claimed we ship no pause affordance; the catalogue ships two.** (#654)
   Self-reported. §5.1 said *"If a project genuinely wants perpetual ambient motion, it owes the page
