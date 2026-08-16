@@ -3310,6 +3310,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`visual-assets.md` claimed we ship no pause affordance; the catalogue ships two.** (#654)
+  Self-reported. §5.1 said *"If a project genuinely wants perpetual ambient motion, it owes the page
+  a pause affordance. **We do not ship one**, so we do not ship the loop."* And `components.md`
+  ships:
+
+  - **Carousel** (`:220`) — *"Prev/Next always; **play/pause**, stop-on-hover and stop-on-focus only
+    if it auto-rotates."*
+  - **Video player** (`:256`) — native media controls, with `:288` quoting 2.2.2's requirement for
+    *"a mechanism for the user to pause, stop, or hide it"* verbatim.
+
+  The catalogue even quotes the part of Understanding 2.2.2 that names **animations** as a common
+  example — so the criterion's own text made this directly relevant, and the claim was wrong anyway.
+
+  **It propagated.** §5.3 (added the day before, #641) inherited §5.1's WCAG reasoning — correctly —
+  and its unchecked inventory claim along with it, restating *"we ship no pause affordance"* in a
+  table. A wrong claim in shipped doctrine is a template.
+
+  Both now say what is true: pause affordances exist and are **bound to their own component**, the
+  Carousel's conditional on *its* auto-rotation, so neither is something a hero illustration can
+  reach for. The gap is a **reusable** control, not the idea of one — and that distinction matters
+  to whoever closes it, because the Carousel already has the right shape (a labelled toggle,
+  stop-on-hover, stop-on-focus). The practical advice is unchanged: author finite.
+
+  **How it happened, since that is the reusable part.** The WCAG half was verified against the spec;
+  the inventory half — a claim about *our own files* — was verified against nothing. AGENTS.md
+  already requires that a factual assertion about our own doctrine be *"made re-checkable by a
+  script, not asserted"*, and no script exists, so the rule held for whoever remembered it. Recorded
+  on #655 as a data point rather than answered with a one-off gate: over-fitting a single
+  cross-reference is how a linter becomes noise.
+
+  **Whether to generalise the Carousel's control into something the decorative layer can reuse is a
+  maintainer decision and is left open on #654** — it is new capability, and it should be weighed on
+  its own rather than slipped in with a correction.
+
 ### 1.47.0 — 2026-08-16 (release v1.88.0)
 
 - **`visual-assets.md` §5.3 — authoring an animated illustration.** (#641) The `motion` asset kind
