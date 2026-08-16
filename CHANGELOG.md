@@ -7,6 +7,47 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Every plugin shipped with no licence, repository, homepage or keywords.** (#651) Found comparing
+  our marketplace against `VectifyAI/OpenKB` (3.7k stars), which is also a Claude plugin marketplace
+  and declares the full set.
+
+  ```
+  rails-stack -> ['description', 'name', 'skills', 'source', 'strict', 'version']
+  rails-flow  -> ['description', 'name', 'source', 'strict']
+  qa-flow     -> ['description', 'name', 'source', 'strict']
+  pipeline    -> ['description', 'name', 'source', 'strict']
+  design-flow -> ['description', 'name', 'source', 'strict']
+  ```
+
+  The [official field table](https://code.claude.com/docs/en/plugin-marketplaces) supports `author`,
+  `homepage`, `repository`, `license`, `keywords` and `category` — checked before filing rather than
+  assumed, since it is a framework claim.
+
+  **`license` is the one with weight.** This repo ships an MIT `LICENSE` at its root and not one
+  distributed plugin said so: the licence existed and did not travel with the artefact. `repository`
+  is the one this repo's own feedback loop depends on — every issue in the tracker arrived from a
+  downstream project, and `/plugin marketplace` showed those users a name and a description with
+  nowhere to click.
+
+  **The licence is reconciled, not retyped.** The gate derives the SPDX id from the root `LICENSE`'s
+  own first line and fails if the manifest disagrees. A hardcoded `"MIT"` would be a second source of
+  truth that diverges the first time either changes — the defect this linter exists to catch.
+
+  **Why it went unnoticed:** `lint_self_consistency.py` already checked `marketplace.json` for
+  plugin/doc agreement — that every declared plugin is documented, that inventoried directories match
+  what it installs. Nothing checked the entries for *completeness*, so five bare ones looked exactly
+  like five complete ones. Same shape as `generation_gate.ENTRY_FIELDS`, where a row that only names
+  a file can dedupe and cannot answer the question a reader asks.
+
+  New `bare-plugin-entry` rule, **verified by stripping the fields and watching it fire on exactly
+  the state the repo was in**. It asserts presence, not content — a linter that argues about whether
+  a keyword list is good is one people switch off, the same boundary `undocumented-plugin` draws when
+  it refuses to check counts. Selftest 205 → **216**, with each of the six fields pinned individually
+  so the rule cannot quietly stop checking five of them, plus two mutation guards — required by the
+  mutation-coverage gate, which failed the build until they existed.
+
 ### 2026-08-16 (v1.88.0)
 
 - **`hotwire` was staged into the measured arm of the doctrine benchmark and exercised by zero
