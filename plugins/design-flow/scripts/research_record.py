@@ -34,6 +34,13 @@ import re
 import sys
 from pathlib import Path
 
+# #636. IMPORTED, not re-listed. `STYLES` is the closed illustration taxonomy every brief is
+# held to, and a second copy here would drift the first time one gains an entry -- after which
+# a record could settle on a style the gate later refuses. `generation_gate` is stdlib-only and
+# side-effect free on import.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from generation_gate import STYLES  # noqa: E402
+
 RECORD_PATH = Path("docs/design/reference-research.json")
 
 MIN_SOURCES = 3
@@ -86,6 +93,22 @@ def check(record: dict) -> list[str]:
             "no `style` chosen. The references disagree — that is why three are required — and "
             "choosing between them is the design. A record that gathers and does not choose is a "
             "mood board, and nothing downstream can hold a brief to it.")
+    # #636. AND IT MUST BE ONE THE PIPELINE ACCEPTS. Validating presence only let a record settle on
+    # a value every asset brief would later refuse: `research_record.check` passed it,
+    # `asset_plan.check_research` passed it, and `generation_gate.compose_prompt` refused it three
+    # steps later with "unknown illustration style" -- AFTER the plan was written and costed.
+    #
+    # Moving the refusal from run time to record time is the same move `asset_plan --check` already
+    # makes for a surface with no brief, and for the same reason: finding out after the spend is the
+    # wrong order.
+    chosen = record.get("style")
+    if chosen and chosen not in STYLES:
+        problems.append(
+            f"style {chosen!r} is not one of the taxonomy: {', '.join(STYLES)}. Every asset brief is "
+            f"held to this value, so a record that settles on something else is refused later, by "
+            f"the generator, after the plan has been costed. If the direction genuinely is not in "
+            f"the list, that is a decision about the taxonomy — make it deliberately rather than "
+            f"discovering it at the point of sale.")
     # #632. A DECLARED SIGNATURE EXCEPTION: a second style the research deliberately sanctions --
     # one rationed device (a luminous prism at the hero) beside a family of ink line marks. It is
     # validated HERE, in the record, and never accepted from a brief: an exception a brief could
@@ -113,6 +136,14 @@ def check(record: dict) -> list[str]:
                 f"{label}: {style!r} is already the chosen style, so exempting it means nothing. An "
                 f"exception naming the primary reads as though a second style were sanctioned when "
                 f"none is.")
+        # #636, one level down. An exception declaring a style outside the taxonomy passes here and
+        # is refused by the generator later, exactly as the primary was -- the same defect, and
+        # found by grepping for the pattern rather than by waiting for it to be reported.
+        if style and style not in STYLES:
+            problems.append(
+                f"{label}: {style!r} is not one of the taxonomy: {', '.join(STYLES)}. A sanctioned "
+                f"exception still has to be a style the generator will accept, or it is refused "
+                f"after the plan is costed like any other off-taxonomy value.")
         if style and style in seen_styles:
             problems.append(f"{label}: {style!r} is declared twice. Two entries for one style means "
                             f"two `max` values and two reasons, and nothing says which governs.")
@@ -128,6 +159,47 @@ def check(record: dict) -> list[str]:
                     f"{label}: `max` is {exc['max']!r}. A ration below 1 permits the style and then "
                     f"forbids every use of it, which is a refusal wearing a permission's clothes — "
                     f"drop the exception instead, and say why in the record.")
+    # #637. RECOGNITION TRAITS: how you would know the result hit the chosen direction.
+    #
+    # The record already captures what was BORROWED -- `mechanism`, `adopt`, `reject` per reference.
+    # It never captured what the result should LOOK like when it worked, so `design-critic` had the
+    # references and the adopted mechanisms and no list it could walk. Its output was therefore as
+    # good as the model's taste that day, which is the variance the research pass exists to remove.
+    #
+    # THE PATTERN IS BORROWED, and the source is worth naming: `websiteprompts.com/design` pairs each
+    # of its 14 directions with exactly four numbered traits, framed as "See the style. Recognize its
+    # traits. Prompt it clearly." Traits are the CHECKABLE RESIDUE of a taste decision -- not "is this
+    # beautiful" but "does this have mixed spans and strong alignment, yes or no".
+    #
+    # COMPLETENESS ONLY, never quality. Whether a trait is a good one is judgement, and
+    # `art-direction.md`'s "why none of this is gated" holds: #476 killed a monotony gate that flagged
+    # our own worked example on its first real input. This checks that a record which chose a
+    # direction also said how to recognise it -- the same kind of check `reject` already gets.
+    traits = record.get("recognition_traits")
+    if record.get("style") and not traits:
+        problems.append(
+            "no `recognition_traits`. The record chose a style and never said how you would know the "
+            "result hit it, so a reviewer has the references and no list to walk. Three to five "
+            "short, checkable phrases — 'modular tiles', 'strong alignment', 'compact summaries' — "
+            "not sentences of praise.")
+    elif traits is not None:
+        if not isinstance(traits, list):
+            problems.append("`recognition_traits` must be a list of short phrases.")
+        else:
+            blank = [i for i, t in enumerate(traits) if not str(t or "").strip()]
+            if blank:
+                problems.append(
+                    f"`recognition_traits` has {len(blank)} empty entr(y/ies). An empty trait pads "
+                    f"the list and checks nothing.")
+            # FOUR IS THE REFERENCE SHAPE and the ceiling is the load-bearing half: a list long
+            # enough to argue with is a list nobody walks, so the cap protects the mechanism rather
+            # than the reader's patience.
+            if len(traits) > 6:
+                problems.append(
+                    f"`recognition_traits` lists {len(traits)}. A reviewer walks four; a list long "
+                    f"enough to argue with is one nobody walks. Cut it to the traits that would "
+                    f"actually distinguish this direction from a near miss.")
+
     refs = record.get("references") or []
     if len(refs) < MIN_SOURCES:
         problems.append(
@@ -223,6 +295,22 @@ def emit_skill(record: dict, root: Path) -> Path:
     # whose research deliberately sanctioned a second one -- the same shape as writing a wrong rule
     # into a user's CLAUDE.md and then gating on it. Stated only when exceptions exist, so a project
     # without any reads exactly as strictly as before.
+    # #637. THE TRAITS REACH THE PROJECT'S OWN DOCTRINE, or the record holds a checklist nobody
+    # reads. This is the file `design-critic` is pointed at, so the traits belong beside the style
+    # they describe -- and framed as a checklist, because a reviewer walks a list and skims a
+    # paragraph.
+    traits = [str(t).strip() for t in (record.get("recognition_traits") or []) if str(t).strip()]
+    if traits:
+        lines += [
+            "### How to recognise it", "",
+            "Walk these against any surface built for this project. They are **advisory** — the lens,",
+            "not the gate. A near miss on one is a conversation; it is not a merge condition.", "",
+        ]
+        lines += [f"- [ ] {t}" for t in traits]
+        lines += ["",
+                  "Stated as checkable traits rather than praise, so a review can disagree with a",
+                  "specific one instead of with the whole design.", ""]
+
     exceptions = record.get("signature_exceptions") or []
     if exceptions:
         lines += [
@@ -313,9 +401,43 @@ def selftest() -> int:
         return {**base, **kw}
 
     GOOD = {"job": "a sceptical buyer deciding in one visit", "style": "minimalist-ink",
+            "recognition_traits": ["monochrome line-work", "single ink weight", "no gradient",
+                                   "high contrast"],
             "references": [ref(category="direct", reject="their comparison table"),
                            ref(category="adjacent"), ref(category="outside")]}
     expect("a complete record passes", check(GOOD) == [])
+
+    # #636. THE STYLE MUST BE ONE THE PIPELINE ACCEPTS, checked at RECORD time. Presence-only let a
+    # record settle on a value that `generation_gate` refused three steps later, after costing.
+    expect("a style outside the taxonomy is reported",
+           any("not one of the taxonomy" in p for p in check({**GOOD, "style": "bento-grid"})))
+    expect("...and one inside it is not",
+           not any("taxonomy" in p for p in check(GOOD)))
+    # Same defect one level down: a sanctioned exception still has to be a style the generator takes.
+    expect("an exception outside the taxonomy is reported",
+           any("not one of the taxonomy" in p for p in check(
+               {**GOOD, "signature_exceptions": [{"style": "bento-grid", "why": "a device"}]})))
+    expect("...and an in-taxonomy exception is not",
+           not any("taxonomy" in p for p in check(
+               {**GOOD, "signature_exceptions": [{"style": "3d-render", "why": "one prism"}]})))
+
+    # #637. RECOGNITION TRAITS -- how you would know the result hit the direction. Completeness only:
+    # whether a trait is a GOOD one is judgement, and gating judgement is what #476 killed.
+    expect("a record that chose a style and stated no traits is reported",
+           any("recognition_traits" in p
+               for p in check({k: v for k, v in GOOD.items() if k != "recognition_traits"})))
+    expect("an empty trait is reported",
+           any("empty entr" in p for p in check({**GOOD, "recognition_traits": ["ink", "  "]})))
+    expect("a list too long to walk is reported",
+           any("A reviewer walks four" in p
+               for p in check({**GOOD, "recognition_traits": [f"t{i}" for i in range(7)]})))
+    expect("a non-list is reported",
+           any("must be a list" in p for p in check({**GOOD, "recognition_traits": "ink"})))
+    # A record with NO style states no direction, so it owes no traits -- the check must not fire on
+    # a record that simply has not chosen yet, or it doubles up on the "no style chosen" finding.
+    expect("a record with no style is not asked for traits",
+           not any("recognition_traits" in p for p in check(
+               {k: v for k, v in GOOD.items() if k not in ("style", "recognition_traits")})))
 
     expect("a missing job is reported", any("`job`" in p for p in check({**GOOD, "job": ""})))
     expect("two references are too few",
@@ -366,6 +488,10 @@ def selftest() -> int:
         # is absent, not empty, or every project inherits a mechanism it never opted into.
         expect("...and saying nothing about exceptions when none are declared",
                "signature exception" not in body.lower())
+        # #637. The traits reach the generated skill, as a checklist a reviewer walks.
+        expect("...carrying the recognition traits", "single ink weight" in body)
+        expect("...as a checklist rather than prose", "- [ ] monochrome line-work" in body)
+        expect("...marked advisory, not a merge condition", "not the gate" in body)
 
     # #632. THE GENERATED SKILL IS DOCTRINE THE PROJECT'S OWN AGENT READS, so an absolute "every
     # brief carries this style" would be enforced against a project whose research sanctioned a

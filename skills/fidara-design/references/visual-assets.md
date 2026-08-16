@@ -494,6 +494,39 @@ already governs the accent as a restraint colour; three of these on one screen s
 
 ---
 
+## 4b. The subject contract — what the picture is OF
+
+`subject` is the field that decides what gets drawn, and it was the only one in the brief with no
+contract at all. `"a person working"`, `"teaching"` and even `"x"` all composed into paid prompts.
+
+**For a scene style** — `character-world`, `cartoon`, `mixed-media` — a subject is
+**[who] + [doing what] + [with which objects] + [where]**:
+
+> A young female designer in a casual sweater sits at a modern desk, sketching on a tablet with a
+> stylus, while a coffee mug and a notebook rest beside her.
+
+> A chef slicing vegetables in a restaurant kitchen, with a cutting board, knife, and fresh
+> ingredients on the counter.
+
+The anti-patterns are the same three every illustration generator publishes: **vagueness**
+(*"a person working"*), **assumed context** (*what tool? where?*), and an **unclear action**
+(*teaching? reading? writing?*). A model given no environment invents the room — differently every
+run, which is the reroll a composed prompt exists to prevent.
+
+**For the abstract registers this does not apply.** *"An abstract woven lattice"* is a correct and
+complete subject for `minimalist-ink` or `geometric`: no who, no action, no environment. `--check`
+stays silent there, deliberately — a rule demanding an action everywhere would flag the worked fidara
+brief on its first run.
+
+**What the check catches, and what it cannot.** It reports an **absent** action or environment before
+the spend. It cannot detect a **vague** one: *"a person working"* satisfies the action test because
+"working" is a verb, and is caught only for naming nowhere. A specific-looking, empty subject —
+*"a professional doing their job in an office"* — passes entirely. Vagueness is judgement; the
+contract above is what a human reviews against.
+
+A trivially short subject is refused **in every register**, since `"x"` is not a subject for
+geometric work either.
+
 ## 5. Motion for decoration — two named patterns
 
 **Both names are introduced here.** [#135](https://github.com/fmanimashaun/claude-skills/issues/135)
