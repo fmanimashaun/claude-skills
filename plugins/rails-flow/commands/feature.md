@@ -1,17 +1,44 @@
 ---
 description: Orchestrated feature development — plan, spec-first implementation, quality gates, PR, tool-gated merge
-argument-hint: <feature description>
+argument-hint: <feature description> [--pack small|standard]
 ---
 
 <!-- topology: sequential
      merge: n/a — each phase consumes the previous phase's output, so there is nothing to reconcile.
-            The eight agents are a pipeline, not a fan-out. -->
+            The agents are a pipeline, not a fan-out. -->
 
 # /rails-flow:feature — $ARGUMENTS
 
 Build the requested feature end-to-end using the orchestrated flow below. You are the
 orchestrator: delegate to the rails-flow subagents, keep your own context lean, and never
 skip a gate. Hooks enforce the guardrails mechanically — do not fight them.
+
+## Pack size — how many specialists review, never whether the work is proven (#656)
+
+`--pack standard` (**the default**) is the full pipeline. `--pack small` runs the same phases with
+fewer delegated specialists, for a change whose blast radius is genuinely small — a copy fix, a
+one-line guard, a rename.
+
+| | `small` | `standard` |
+|---|---|---|
+| plan, criteria, spec-first loop | yes | yes |
+| **Phase 4 quality gates** | **all of them** | **all of them** |
+| `code-reviewer` | yes | yes |
+| `security-auditor`, `design-auditor` | only if their trigger fires | only if their trigger fires |
+| substantial units delegated to `rails-developer` | you may do them directly | delegated |
+
+**Three things this is not.** It does not skip a gate — Phase 4 is identical at every size, because
+pack size is about *how many specialists review*, not *whether the work is proven*. It is not three
+plugins that differ by subsetting, which `plugin-boundaries` rule 2 forbids. And **the agent does not
+choose its own size**: scope is the human's call, and an agent that downgraded itself when a job
+*looked* small would be judging exactly the thing it is worst at.
+
+**A smaller pack must say what it did not run.** The final report names the specialists that were
+skipped — *"reviewed by code-reviewer only; security-auditor not run (no auth/API/data change)"*. A
+run that quietly did less is the failure mode; a run that says so is a decision the reviewer can see.
+
+**The default is unchanged**, deliberately. A flag you must opt *out* of to get rigour is the wrong
+way round.
 
 ## Phase 0 — Context
 
@@ -177,6 +204,12 @@ ladder lives there too.
 The project may not have a mutation tool configured. Then say so in one line and move on: *"no
 mutation tool configured; the specs are green and unproven."* That is an honest statement, and
 inventing a tool name would not be.
+
+### 4c. If the pack was `small`, name what did not run
+
+One line in the report, listing the specialists skipped and why. **Absent, the reader cannot tell a
+small pack from a standard one that quietly did less** — which is the whole risk this flag carries,
+and the reason it is stated rather than inferred.
 
 ## Phase 5 — PR
 
