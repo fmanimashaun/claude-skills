@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-20b (release v1.92.1)
 
 - **A CHANGELOG bullet could sit under a component that owns none of its code, and nothing caught
   it.** (#701) v1.92.0 shipped three such bullets under `## rails-stack (… skills)` whose code lives
