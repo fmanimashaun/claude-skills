@@ -352,12 +352,25 @@ release nobody had decided to cut. #144 reverted it.)
   - always bump the top-level `metadata.version` — it is the release tag label. Patch for
     fixes, minor for new capabilities.
 - **Every bump gets a CHANGELOG entry** under the component's section (newest first).
-- **One `### … (release vX.Y.Z)` block per actual promotion.** The workflow publishes
-  only the block whose heading matches the shipped tag. A promotion usually consolidates
-  several pieces of work, so put ALL their notes under the one release block for the tag
-  that ships — never leave `(release vX.Y.Z)` headings for versions that never get tagged,
-  or their notes vanish from the published release. (This bit us: v1.6.6 shipped three
-  fixes but first published one block's worth of notes.)
+- **One `### … (release vX.Y.Z)` block per COMPONENT that this promotion bumps** — and the
+  tag in every one of those headings must be the tag that actually ships. Never leave a
+  `(release vX.Y.Z)` heading for a version that never gets tagged: nothing publishes it and
+  its notes are simply gone. (v1.6.6 shipped three fixes and published one block's worth.)
+
+  This bullet used to say **one block per promotion, full stop**, which was true when a
+  promotion moved one component and became self-contradictory the moment the rule above it
+  said components version *independently*. Two bumped components necessarily means two
+  blocks. It was not a harmless wording problem: `release.yml` was written to that sentence
+  and `exit`ed at the next heading, so a two-component promotion published the first block
+  and silently dropped the rest. Four releases shipped that way before anyone diffed a
+  release body against the CHANGELOG — #682, #642, #640 and #643 never appeared in theirs.
+
+  `scripts/extract_release_notes.py` now emits **every** block for the tag, from one
+  implementation called by both `release.yml` and `release_local.sh`, and the
+  `release notes complete` gate refuses a promotion whose CHANGELOG holds a block that
+  would not publish. Do not put the extractor back into the shells: the
+  `duplicated-release-extractor` rule fails if either grows its own, because two copies kept
+  in step by a comment is what made this invisible for four releases (#699).
 
 ### Release cadence
 

@@ -163,6 +163,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # proves each validator fires AND stays silent -- including that an `advice` row with nothing
     # behind it is correct, without which the unenforced-guarantee rule is a blanket ban on advisory
     # doctrine, which `quality-pass` exists to argue against.
+    # #699. Asserts what PUBLISHES, not what exists: it runs the real extractor for
+    # marketplace.json's version and refuses any block written for the tag that would not appear.
+    ("release notes complete", ("python3", "scripts/extract_release_notes.py", "--check")),
+    ("release notes selftest", ("python3", "scripts/extract_release_notes.py", "--selftest")),
     ("doctrine map drift", ("python3", "scripts/doctrine_map.py", "--check")),
     ("doctrine map coverage", ("python3", "scripts/doctrine_map.py", "--audit-coverage")),
     ("doctrine map selftest", ("python3", "scripts/doctrine_map.py", "--selftest")),

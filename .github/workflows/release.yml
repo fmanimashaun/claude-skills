@@ -86,19 +86,13 @@ jobs:
         id: notes
         run: |
           notes="$(mktemp)"
-          # Grab the CHANGELOG block headed "### … (release vX.Y.Z)" up to the next "### ".
-          # The needle must match a HEADING, not merely a line mentioning the tag: prose
-          # referencing "(release vX.Y.Z)" would otherwise start the grab early and leak the
-          # preceding section's bullets into this release's notes. Keep the /^### / anchor
-          # here and in scripts/release_local.sh — the two must stay identical.
-          awk -v needle="(release ${{ steps.v.outputs.tag }})" '
-            /^### / && index($0, needle) { grab=1; next }
-            grab && /^### / { exit }
-            grab { print }
-          ' CHANGELOG.md > "$notes"
-          if [ ! -s "$notes" ]; then
-            printf 'Marketplace %s. See CHANGELOG.md for details.\n' "${{ steps.v.outputs.tag }}" > "$notes"
-          fi
+          # EVERY `### … (release vX.Y.Z)` block, not just the first (#699). The awk that used to
+          # live here `exit`ed at the next heading, so a promotion bumping two components published
+          # one component's notes and silently dropped the other's — four releases shipped that way.
+          # The extractor lives in ONE script called from here and from release_local.sh, because it
+          # was duplicated verbatim in both and a comment asking maintainers to keep them in step is
+          # the same unenforced claim as the bug. lint_self_consistency fails if either grows its own.
+          python scripts/extract_release_notes.py --tag "${{ steps.v.outputs.tag }}" > "$notes"
           printf '\nInstall: /plugin marketplace add %s\n' "$GITHUB_REPOSITORY" >> "$notes"
           echo "file=$notes" >> "$GITHUB_OUTPUT"
           echo "--- notes ---"; cat "$notes"

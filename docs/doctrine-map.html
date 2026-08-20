@@ -65,9 +65,12 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
 <ul class="enf">
 <li><code>rule:duplicate-unreleased</code></li>
+<li><code>rule:duplicated-release-extractor</code></li>
 <li><code>gate:self-consistency</code></li>
+<li><code>gate:release notes complete</code></li>
+<li><code>mutation:extract_release_notes</code></li>
 </ul>
-<p class="note">The rule catches the mechanical half -- two `### Unreleased` headings in one section, which a merge produces and which silently splits a component&#x27;s notes.</p>
+<p class="note">#699 rewrote both the claim and its enforcement. `duplicate-unreleased` catches two `### Unreleased` headings in one section; `release notes complete` runs the real extractor and refuses any block written for the tag that would not publish, which is the half that was missing while four releases dropped a component&#x27;s notes.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>`dist/` must be a clean build of `skills/**` before a release publishes.</h2>
