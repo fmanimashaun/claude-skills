@@ -11,6 +11,23 @@ the collision it prevents actually happened.
 
 ## 1. Confirm your worktree before any edit
 
+**This is enforced now, when a lane is assigned.** `rails-flow` ships a `PreToolUse` hook that
+refuses a **write** outside the lane in `RAILS_FLOW_LANE`. Until it existed, §1 was advice: a session
+that skipped it produced a clean-looking branch in the wrong worktree, silently, while another
+session was working there — and nothing said so until a human read a diff that did not belong.
+
+Three properties, each deliberate:
+
+- **Dormant with no lane assigned.** No `RAILS_FLOW_LANE`, no opinion — a single-session run must not
+  pay for a multi-session feature, and a guard that fired on ordinary work would be switched off.
+- **Writes only.** §2 also says do not diff other branches; refusing *reads* would break legitimate
+  context-gathering, and that over-reach is how a hook gets disabled.
+- **Fails closed.** With `python3` missing it scans the raw payload, so the path still matches.
+
+If the lane is wrong, change it deliberately. **Do not widen it to make one write pass** — that is
+the same move as adding a carve-out to silence a gate.
+
+
 - Work **only** inside the worktree you were assigned.
 - Never work in the **primary checkout** — the clone `git worktree list` prints first, without a
   `[branch]` of its own to spare. Another session occupies it. Resolve it rather than hardcoding

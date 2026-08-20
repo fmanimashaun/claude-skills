@@ -658,11 +658,11 @@ The `.claude/` hook and the plugins' hooks are **bash + `python3`**, and the flo
 **`gh`** (authenticated: `gh auth status`). On Windows, run Claude Code in **WSL or Git
 Bash** with `python3` and `gh` on PATH.
 
-**Hooks do NOT all fail open, and the two exceptions are deliberate.** This line used to say they
-did, flatly. Of the eleven hook scripts, nine are advisory — a status line, a linter, a
-cross-check — and a missing `python3` degrades them to silence, which is right: an advisory that
-blocks work when a dependency is absent is an advisory people disable. The two **gates** fail
-**closed**, verified by running them with `python3` shadowed by a stub that exits 127:
+**Hooks do NOT all fail open, and the exceptions are deliberate.** This line used to say they did,
+flatly. Of the twelve hook scripts, nine are advisory — a status line, a linter, a cross-check — and
+a missing `python3` degrades them to silence, which is right: an advisory that blocks work when a
+dependency is absent is an advisory people disable. The three **gates** fail **closed**, verified by
+running each with `python3` shadowed by a stub that exits 127:
 
 - `plugins/rails-flow/hooks/scripts/guard-bash.sh` — still exits **2**. Line 7 falls back to the raw
   JSON payload when the parse fails, and the payload still contains the command text, so every
@@ -670,6 +670,11 @@ blocks work when a dependency is absent is an advisory people disable. The two *
 - `plugins/qa-flow/hooks/scripts/release-gate.sh` — exits **2** when `python3` is missing *and* the
   command targets `main`, and **0** otherwise. Fail-closed **scoped to the command it guards**, which
   is the distinction that matters: a gate that failed closed on unrelated work would get switched off.
+- `plugins/rails-flow/hooks/scripts/guard-lane.sh` (#660) — exits **2** for a write outside
+  `RAILS_FLOW_LANE`, and **0** when no lane is assigned at all. Same scoping as the release gate, one
+  axis over: it is dormant unless a lane exists, so a single-session run never pays for a
+  multi-session feature. Its path normalisation is pure shell for this reason — one that needed
+  `python3` would take the fail-closed guarantee down with it.
 
 Which behaviour a new hook should have is not a matter of taste — classify it before writing it,
 using the guarantee-vs-advice test in **[`docs/harness-doctrine.md`](docs/harness-doctrine.md)**
