@@ -9,6 +9,29 @@ Several agent sessions may run against one repository at the same time. Every st
 exists to keep their HEADs, indexes, and diffs from colliding. Each rule was written after
 the collision it prevents actually happened.
 
+## 0. Getting into this mode
+
+Until #661 a human opened N terminals and assigned lanes by hand — this skill described a mode
+nothing could put you in. `rails-flow` now ships an assigner:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assign_lanes.py" app/models app/controllers --budget-usd 6
+```
+
+It prints the `git worktree add` per lane and the session command with `RAILS_FLOW_LANE` set. It
+**refuses** overlapping lanes, a single lane, a dirty tree, and a missing lane guard.
+
+**It prepares; it does not spawn.** Creating a worktree is mechanical and deciding when an agent
+starts is not, so it prints the commands rather than running them.
+
+**No tmux and no daemon**, deliberately. `swarm-forge` needs message passing because its roles cannot
+see each other's state; ours can — `compose_state.py` derives the driver's state *from the
+repository* and a work order is a committed file. Git is the handoff medium and it survives a reboot,
+which a tmux session does not.
+
+**Spend is reported, never enforced.** N sessions is N times the cost, and this script cannot see a
+provider balance — a cap it could not honour would be a promise nothing keeps.
+
 ## 1. Confirm your worktree before any edit
 
 **This is enforced now, when a lane is assigned.** `rails-flow` ships a `PreToolUse` hook that
