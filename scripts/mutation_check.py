@@ -88,6 +88,24 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #699. The rule this repo needed and did not have: two publish paths carrying the same
+            # extractor, kept in step by a comment. Both directions, because a partial fix is what
+            # made the bug survive its own discovery.
+            Mutation(
+                "a publish path stops delegating and nothing notices",
+                "        if script not in body:",
+                "        if False:",
+                # NOT the awk fixtures -- those trip the inline-shape check too, so they survived
+                # this mutation. This is the one that isolates the delegation half.
+                "a path that neither delegates nor shows a known extractor shape",
+            ),
+            Mutation(
+                "an inline extractor may sit alongside the delegation, so which one wins depends "
+                "on line order",
+                "        for shape in inline:",
+                "        for shape in ():",
+                "delegating and ALSO keeping an inline parser still fires",
+            ),
             Mutation(
                 # #653. rails-flow said "eight" and shipped eleven. The count is the part a reader
                 # remembers, and it is the text they read while deciding to install.
@@ -220,7 +238,9 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "the advisory figure stops subtracting the gates, so it drifts freely",
-                '    gates = sum(1 for s in scripts if s.name in {"guard-bash.sh", "release-gate.sh"})',
+                # #660 extracted the set to NAMED_GATES when guard-lane.sh joined it; the anchor
+                # follows the code and the assertion it guards is unchanged.
+                "    gates = sum(1 for s in scripts if s.name in NAMED_GATES)",
                 "    gates = 0",
                 "advisory is total minus the named gates",
             ),
@@ -1689,6 +1709,14 @@ GUARDS: tuple[Guard, ...] = (
             "evals",
         ),
         mutations=(
+            # The gate tally must exclude preconditions. Widening the filter is how the count goes
+            # back to being off by one, which put three wrong numbers in shipped text.
+            Mutation(
+                "the gate tally counts preconditions and diagnostics as gates",
+                '        return [r for r in self.results if r.name.startswith("gate: ")]',
+                "        return list(self.results)",
+                "the gate tally counted",
+            ),
             Mutation(
                 "an unignored corpora path stops being reported",
                 "                if not verdict:",
@@ -3028,6 +3056,113 @@ GUARDS: tuple[Guard, ...] = (
     # is an unresolved decision AND part of `todo.rb`. A rule that flags the second of each pair
     # gets the tool switched off, so the carve-outs are what need guarding.
     Guard(
+        # #699. The bug shipped four times, so the fixtures that matter are the ones the OLD awk
+        # would have failed -- two blocks under one tag, and a gate with teeth enough to refuse it.
+        name="extract_release_notes",
+        subject="scripts/extract_release_notes.py",
+        selftest="scripts/extract_release_notes.py",
+        needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh"),
+        mutations=(
+            Mutation(
+                "only the first block for a tag is grabbed -- the original bug, restored",
+                "            if needle in line:",
+                "            if needle in line and not out:",
+                "second component's notes present — the bug",
+            ),
+            Mutation(
+                # Without this the gate is the parser agreeing with itself.
+                "the check stops noticing a block that would not publish",
+                "        if stem not in produced:",
+                "        if False:",
+                "the check REFUSES the old first-block-only behaviour",
+            ),
+            Mutation(
+                # The closing paren is the whole reason v1.9.0 cannot match v1.92.0.
+                "the tag needle loses its closing paren, so a tag matches any tag it prefixes",
+                '    needle = f"(release {tag})"\n    lines = text.split',
+                '    needle = f"(release {tag}"\n    lines = text.split',
+                "a prefix tag does not match the longer one",
+            ),
+            Mutation(
+                "a tag with no block at all stops being a finding, so a release publishes a bare "
+                "pointer and the gate says nothing",
+                "    if not declared:",
+                "    if False:",
+                "no block is a CHECK finding",
+            ),
+        ),
+    ),
+    Guard(
+        # #655. The map's own failure mode is the one it exists to catch: a row that advertises
+        # enforcement which no longer exists reads as coverage. Each mutation removes one validator
+        # and names the fixture that must then fail.
+        name="doctrine_map",
+        subject="scripts/doctrine_map.py",
+        selftest="scripts/doctrine_map.py",
+        needs=(".claude-plugin", ".github", ".claude", "scripts", "plugins", "skills", "docs",
+               "CLAUDE.md", "AGENTS.md"),
+        mutations=(
+            Mutation(
+                "a reworded or deleted claim keeps its row, so the map advertises doctrine we no "
+                "longer state",
+                "        elif c.anchor not in body:",
+                "        elif False:",
+                "anchor missing fires",
+            ),
+            Mutation(
+                "a row may cite a gate, guard or rule that has been deleted",
+                "            ok, why = resolver.resolve(ref)",
+                '            ok, why = True, ""',
+                "bad gate fires",
+            ),
+            Mutation(
+                "a gap that got fixed stays listed as a gap -- the map going stale in the direction "
+                "nobody looks",
+                "            if resolved:",
+                "            if False:",
+                "resolved gap fires",
+            ),
+            Mutation(
+                # A hook script on disk that nothing invokes is precisely the shape of defect this
+                # map is for, so existence must not count as enforcement.
+                "an existing but unwired hook counts as enforcement",
+                '            return (name in self.hooks), f"hook script {name} exists but nothing wires it"',
+                '            return True, ""',
+                "an existing but unwired hook does not resolve",
+            ),
+        ),
+    ),
+    Guard(
+        # #661. Overlap is the whole safety property, and the budget note is the only place spend is
+        # ever mentioned across concurrent sessions -- silence there reads as "bounded".
+        name="assign_lanes",
+        subject="plugins/rails-flow/scripts/assign_lanes.py",
+        selftest="plugins/rails-flow/scripts/assign_lanes.py",
+        needs=("plugins/rails-flow/hooks/scripts/guard-lane.sh",),
+        mutations=(
+            Mutation(
+                "overlapping lanes are accepted, so two sessions edit one tree",
+                '            if a == b or a.startswith(b + "/") or b.startswith(a + "/"):',
+                "            if False:",
+                "'app' vs 'app/models' refused",
+            ),
+            Mutation(
+                # #660 must precede #661: an advisory protocol is survivable while nobody can enter
+                # the mode, and is not once a launcher can put four sessions in it.
+                "lanes are assigned without the guard that makes the protocol real",
+                "    if not GUARD.is_file():",
+                "    if False:",
+                "a missing lane guard refuses assignment",
+            ),
+            Mutation(
+                "spend stops being reported, so N sessions read as bounded",
+                '        return (f"**Spend is unbounded across {n} sessions and nothing here meters it.** Pass "',
+                '        return (f"across {n} sessions. Pass "',
+                "no budget says so plainly",
+            ),
+        ),
+    ),
+    Guard(
         name="check_handoff",
         subject="plugins/rails-flow/scripts/check_handoff.py",
         selftest="plugins/rails-flow/scripts/check_handoff_selftest.py",
@@ -3053,6 +3188,22 @@ GUARDS: tuple[Guard, ...] = (
             "plugins/rails-flow/agents",
         ),
         mutations=(
+            Mutation(
+                # #659. A plausible hex string tells an executor where to start and is worse than an
+                # absent one, because it will be trusted. Present-but-unusable is not passable, the
+                # rule this file already applies to a stop condition with no number.
+                "an unresolvable base commit is accepted, so the executor starts from nowhere",
+                "    if resolved is None:",
+                "    if False:",
+                "a plausible SHA this repository does not have",
+            ),
+            Mutation(
+                # A section naming no SHA at all leaves the one question it exists to answer open.
+                "a base-commit section with no SHA passes",
+                "    if not shas:",
+                "    if False:",
+                "a base commit that names no SHA at all",
+            ),
             Mutation(
                 "`retry` back in the attempt-cap vocabulary (the real bug a fixture found)",
                 '("attempt cap", ("attempt", "retries", "retry limit", "retry cap", "tries")),',

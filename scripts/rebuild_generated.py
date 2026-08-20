@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Rebuild every generated artefact that stamps the release version. #680.
+"""Rebuild every generated artefact whose bytes are committed. #680.
 
 WHY THIS EXISTS. Three committed files carry the marketplace version — `docs/coverage.html`,
-`docs/inventory.html` and `docs/wiki/Plugin-Reference.md` — and a fourth, `dist/*.skill`, is a
-deterministic build of the skills. Each has its own drift gate, so bumping a version invalidates all
-of them and the gates fail until each is rebuilt.
+`docs/inventory.html` and `docs/wiki/Plugin-Reference.md` — and `dist/*.skill` is a deterministic
+build of the skills. Each has its own drift gate, so bumping a version invalidates all of them and
+the gates fail until each is rebuilt.
+
+`docs/doctrine-map.html` (#655) stamps NO version, deliberately: it is read in-tree beside the
+sources it describes, where the drift gate is the freshness signal, so it has one fewer non-content
+input to be unpassable by. It is rebuilt here anyway, because its registry moves whenever a gate,
+guard or rule does — and one command beating four-from-memory is this script's whole reason.
 
 Until now the arm ran four commands, in order, from memory. **The v1.88.0 arm forgot the wiki and the
 gate caught it**, which is the gate working and the sequence being memory — the claims-vs-enforcement
@@ -31,6 +36,7 @@ BUILDERS = (
     ("coverage page", "build_coverage_artifact.py"),
     ("inventory page", "build_inventory.py"),
     ("wiki reference", "build_wiki.py"),
+    ("doctrine map", "doctrine_map.py"),
     ("dist/*.skill", "package_core.py"),
 )
 

@@ -525,6 +525,31 @@ def run() -> int:
             "of those is near the limit, that is a defect in the check, not a budget to raise."
         )
 
+    # THE GATE TALLY MUST EXCLUDE PRECONDITIONS. `check_is_marketplace_repo` is a PASS in the same
+    # results list as every gate, so the headline total has always been gates + 1 -- and three wrong
+    # gate counts reached shipped text before anyone noticed. Assert the split directly: the
+    # precondition is present, it is a PASS, and it is NOT counted as a gate.
+    _tick()
+    d = md.Doctor()
+    d.add(md.PASS, "this is the claude-skills marketplace repo")
+    d.add(md.PASS, "gate: one")
+    d.add(md.SKIP, "gate: two")
+    d.add(md.INFO, "some diagnostic")
+    gates = d.gate_results()
+    if len(gates) != 2:
+        FAILURES.append(
+            f"the gate tally counted {len(gates)} of 2 gates -- a precondition or a diagnostic is "
+            f"being counted as a gate, which is how '83 (was 80)' shipped against 82 and 79")
+    _tick()
+    if any(r.name == "this is the claude-skills marketplace repo" for r in d.gate_results()):
+        FAILURES.append("the repo-identity precondition is counted as a gate")
+    _tick()
+    if len(d.results) != 4 or sum(1 for r in d.results if r.status == md.PASS) != 2:
+        FAILURES.append(
+            "the headline total no longer counts every result -- it must stay a count of ALL "
+            "checks, with the gate count reported separately, or a reader loses the distinction "
+            "between a gate and a precondition entirely")
+
     # A shorter-than-default "allowance" would be a tightening wearing the name of an exemption.
     _tick()
     stingy = sorted(n for n, secs in md.SLOW_GATES.items() if secs <= md.DEFAULT_TIMEOUT)

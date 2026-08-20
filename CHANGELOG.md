@@ -7,6 +7,91 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-20 (release v1.92.0)
+
+- **The gate tally counted a precondition as a gate, and three wrong numbers reached shipped text
+  because of it.** `--gates-only` runs `check_is_marketplace_repo` — a **precondition**, fatal if it
+  fails, and not a gate — into the same results list, so the headline *"N passed"* has always been
+  gates **+ 1**. Anyone reading it as *"how many gates are there"* was off by one, and everyone did:
+  a CHANGELOG bullet in this very release claimed **83 (was 80)** against 82 and 79, a merged PR body
+  claimed 85 against 84, and the same 85 was reported to the maintainer. Two sessions then reconciled
+  84 against 85 as a **units disagreement between measurement methods** — it was not one. It was this.
+
+  The summary now prints the gate count separately and says which number to quote. The headline still
+  counts **every** check, because collapsing preconditions and diagnostics into the gate count is the
+  same conflation as rendering a SKIP as a PASS, which this tool exists to refuse.
+
+  **A number nobody can read correctly is a defect in the reporting, not in the reader.** Three
+  independent misreadings in one afternoon is the measurement, not the anecdote.
+
+  The fix is guarded, and getting there hit the day's recurring fixture defect a **third** time. The
+  filter started as a comprehension inside the summary's `print`, so the selftest recomputed the same
+  filter by hand — and the mutation that widened it to `list(self.results)` **survived**, because the
+  fixture was proving its own arithmetic rather than the code under test. It is now
+  `Doctor.gate_results()`, which the selftest calls and the mutation can reach.
+
+- **A promotion bumping two components published one component's notes and silently dropped the
+  other's.** (#699) `release.yml` extracted the release body with an awk that said
+  `grab && /^### / { exit }` — `exit`, not *stop grabbing*. So it took the **first**
+  `### … (release vX.Y.Z)` block and terminated. But this CHANGELOG has **one block per component**,
+  because the rule directly above it requires components to version independently, so any promotion
+  bumping two of them has two blocks carrying the same tag.
+
+  **It had already shipped four times when it was found**, and the loss is measurable by diffing
+  published release bodies against this file: **#682** (v1.91.2 — a deploy briefing that booted local
+  dev config in production), **#642** (v1.89.0), **#640** and **#643** (v1.88.0) never appeared in
+  their release notes. v1.92.0 was armed and would have dropped **130 of its 206 note lines, five of
+  nine bullets** — including a fix for five shipped ERB examples building HTML attributes by string
+  interpolation, one through `.html_safe`.
+
+  **Nothing caught it because the release succeeds either way.** The body is just shorter, and nobody
+  diffs a release body against the CHANGELOG. That is `claims-vs-enforcement` in our own release
+  machinery, against a rule this file states outright — and the rule was itself wrong: *"one block per
+  promotion"* was written when a promotion moved one component, and contradicted *"components version
+  independently"* from the moment that arrived. **The extractor was the defect, not the structure**;
+  collapsing to one block would have destroyed the per-component version attribution this CHANGELOG
+  carries throughout.
+
+  `scripts/extract_release_notes.py` emits **every** block for the tag, each under its
+  component/version heading with the `(release …)` bookkeeping stripped — a multi-component release
+  has to say which component version a note belongs to, and the old headings-stripped output could
+  not. It keeps the two things the awk got right: the **`^### ` anchor**, so a line merely *mentioning*
+  a tag never starts a grab (a verified failure, with a fixture), and the bare-pointer fallback so a
+  release never publishes an empty body.
+
+  **One implementation, called by both publish paths.** The awk was duplicated byte-for-byte in
+  `release.yml` and `release_local.sh`, kept in step by a comment asking maintainers to keep them in
+  step — the same unenforced claim as the bug, and the reason a half-fix would have left the fallback
+  path still mispublishing. Fixing the duplication is part of fixing the bug.
+
+  **Two gates, and the interesting one asserts what PUBLISHES rather than what exists.**
+  `release notes complete` runs the real extractor for `marketplace.json`'s version and compares the
+  set of blocks it emitted against an independent scan of the file — not a count against a count,
+  which would have caught this instance and missed the next extractor bug, since two blocks extracted
+  could be the wrong two. The selftest proves it has teeth by **simulating the old first-block-only
+  behaviour and asserting the check refuses it**; without that the gate would be the parser agreeing
+  with itself, and would have passed the very version it exists to refuse. `duplicated-release-extractor`
+  fails if either publish path stops delegating *or* regrows an inline parser — both directions,
+  because a call site that does both makes the published notes depend on line order.
+
+  This entry is the **third** `(release v1.92.0)` block in this file, which is the fix demonstrating
+  itself: before it, this release published 76 of 206 lines.
+
+  **Two of the repo's own harnesses caught defects in this fix before it landed.** The mutation
+  harness refused the commit outright — a new `lint_self_consistency` rule with no mutation touching
+  its function means *"nothing proves its fixtures would fail if the rule broke"*. Then the first
+  mutation written for it **survived**: the awk fixtures trip the inline-shape check as well as the
+  delegation check, so they could not prove the delegation half, and a fixture proving an adjacent
+  claim is this repo's most-repeated fixture defect. The isolating case is a publish path that neither
+  delegates nor shows any recognisable extractor shape — a rewrite in `sed`, which is the realistic
+  way delegation gets dropped.
+
+  **The doctrine map (#655) made its first real catch here, one release after landing.** Rewriting
+  that CLAUDE.md bullet broke the anchor on the row asserting it, and `rebuild_generated.py` failed
+  with *"the claim was reworded or deleted and this map still advertises it"* — which is precisely the
+  case it was built for: doctrine changed, and the row claiming to enforce it would otherwise have
+  gone on pointing at a sentence that no longer exists. The row now cites the new gate as well.
+
 ### 2026-08-16c (v1.91.1)
 
 - **The wiki published `>-` where five of seven skill descriptions belonged.** (#680) Reported as
@@ -2144,6 +2229,83 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.23.0 — 2026-08-20 (release v1.92.0)
+
+- **A work order never said which commit it was written against.** (#659) `check_handoff.py`
+  required eight sections and every one described what to **do**; none said from **where**. That is
+  survivable for an order executed immediately and not for a durable one — and these are committed
+  by design. `escalation.py` parks a question on an issue and resumes *"in a different session after
+  a restart"*, so an executor can pick up an order written against a tree that has moved: its
+  `scope` names files and its `verify` names commands, and neither is true of a branch three commits
+  later. The order still validated cleanly, because completeness was all we checked.
+
+  A ninth section now carries it, and the SHA is **resolved**: a plausible hex string that is not a
+  commit in this repository is refused, because an executor will start from it. Present-but-unusable
+  is not passable — the rule already applied to a stop condition with no number.
+
+  **Drift is reported, not refused** — *"written against a1b2c3d and HEAD is 4 commits ahead"*, as a
+  `NOTE:`. Work legitimately continues on a moved branch, and a gate refusing every stale order
+  would be switched off within a week.
+
+  **The two git calls are injectable, and that is not decoration.** The mutation harness stages the
+  module into a tempdir with **no git repository**, so a fixture resolving against the real repo
+  either crashes or reports every SHA missing — making every mutation read as "caught" for the wrong
+  reason. The gate caught exactly that: an `IndexError` from my first fixture, which had assumed a
+  repo. Selftest 81 → **86**, two mutation guards.
+
+  `handoff.md` gains the section in its template, because a gate already asserts the template and
+  the checker agree — and it fired the moment they diverged.
+
+- **Phase 4 now asks whether the specs would have caught it.** (#658) `test-runner` proves the suite
+  is **green**, and green says nothing about whether a spec would catch a regression:
+  `expect(invoice).to be_present` passes forever. Phase 3 already makes the criterion→proof mapping
+  mechanical — the spec cites `AC-2` — so **the citation was enforced and the proof was not.**
+
+  A new advisory pass mutates the changed unit and re-runs the specs citing its criteria. A surviving
+  mutant is reported **against the criterion whose spec missed it**: *"`AC-2`'s spec passes with
+  `line_items.any?` inverted — the criterion is cited but not proven."* That sentence is the
+  deliverable; *"coverage is 78%"* is not actionable.
+
+  **Advisory on purpose, and not out of timidity.** Equivalent mutants survive legitimately and no
+  tool eliminates them, so a blocking gate would refuse correct code on its first real input — what
+  killed the monotony gate in #476. Scoped strictly to the changed unit, because a whole-suite run
+  takes long enough that the flow gets skipped, and a skipped gate is worse than an advisory one. The
+  tool lives in **project config**: tool names rot inside a quarter, which is why the model ladder
+  lives there too. No tool configured is stated in one line rather than invented.
+
+  We run 529 mutations against our own gates. Shipping users a flow whose test gate was *"0
+  failures"* was a standard we held ourselves to and did not sell.
+
+- **`/fix` debugged before it diagnosed.** (#647) The command went Setup → Principles → Workflow and
+  straight to fixing. There was no step asking *what kind of failure is this?* — and the responses
+  genuinely diverge: a defect wants a reproduction and a criterion, an environment failure wants the
+  environment fixed, a wrong expectation wants the **test** changed, an upstream bug wants a pin and
+  a **stop**, a flake wants determinism and **not** a logic change.
+
+  A new **Phase 0** names the type and the evidence that chose it, in one line that lands in the
+  report. The two rows that say **stop** are the point: debugging our own code for an upstream bug has
+  no natural end, and "fixing" a flake by editing correct logic makes it worse while hiding the cause.
+
+  **Advisory, deliberately.** Classifying is judgement, and #476 settled how this repo treats gates on
+  judgement — the monotony threshold flagged our own worked example on its first real input. What is
+  mechanical is that a classification was *stated*, the same shape `check_criteria.py` already uses.
+  Its relationship to `/escalate` is stated too, since the two are easy to confuse at the point of
+  use: escalation asks a human a question and parks the thread; this decides what kind of problem you
+  have before choosing how to respond.
+
+- **Eleven agents ran for every job.** (#656) A one-line copy fix and a new payments subsystem took
+  the same route. `--pack small` now runs the same phases with fewer delegated specialists.
+
+  Three boundaries hold it in place. **Phase 4's quality gates are identical at every size** — pack
+  size is about how many specialists review, not whether the work is proven. It is **not** three
+  plugins differing by subsetting, which `plugin-boundaries` rule 2 forbids. And **the agent does not
+  choose its own size**: an agent that downgraded itself when a job *looked* small would be judging
+  exactly the thing it is worst at.
+
+  **A smaller pack must name what it did not run**, in the report. Absent that, a reader cannot tell a
+  small pack from a standard one that quietly did less — which is the whole risk the flag carries. The
+  default is unchanged: a flag you must opt *out* of to get rigour is the wrong way round.
+
 ### 1.22.3 — 2026-08-16 (release v1.91.2)
 
 - **The Stop gate reported a false RED on a green suite, blocking every turn-stop.** (#683) It ran
@@ -3408,6 +3570,138 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.49.0 — 2026-08-20 (release v1.92.0)
+
+- **We answered "what enforces this?" by grep, every session.** (#655) `docs/doctrine-map.html` is
+  generated from an explicit registry in `scripts/doctrine_map.py`: **32 claims**, each with where it
+  is stated and what makes it true — 24 enforced guarantees, 7 advisory, 1 tracked gap.
+
+  **There is no extractor, and that is the design.** The issue named its own biggest risk: pulling "a
+  claim" out of prose is the hard part, and a bad extractor is worse than none, because **a map that
+  misses claims reads as coverage.** So `CLAIMS` lives in the same file as the validators that check
+  it — `maintainer_doctor.GATES` and `mutation_check.GUARDS`'s shape — since a registry and its
+  checker in two files drift apart.
+
+  Six mechanical validators, so none is taste wearing a count (#476): a reworded claim breaks its
+  anchor; a row citing a deleted gate, guard or rule fails; a `guarantee` citing nothing must become
+  `advice` or a `gap` with an issue number; and a `gap` whose enforcement **now resolves** fails too —
+  the map going stale in the direction nobody looks. `hook:` resolves against the JSON that **wires** a
+  script, never against the filesystem, because an unwired hook is exactly the defect this map exists
+  to surface.
+
+  **An `advice` row with nothing behind it is correct**, and the selftest has an explicit negative test
+  for it — without which `unenforced guarantee` would be a blanket ban on advisory doctrine, which
+  `quality-pass` exists to argue against.
+
+  **The page stamps no version**, unlike `coverage.html`: that page is copied between machines so the
+  version is its only freshness signal, while this one is read in-tree beside the sources it describes,
+  where the drift gate *is* the signal. One fewer non-content input, and both committed pages here have
+  been unpassable by construction once each.
+
+  **It says on its face that it is a floor, not a ceiling.** The audit reports a declared source with
+  *zero* rows; nothing can report that a source with four rows was owed nine. A green artifact standing
+  in for work nobody did is the failure being replaced, so it does not get to be one.
+
+  Not OpenKB, which prompted the issue: it compiles documents with an **LLM**, so its bytes are not a
+  function of its inputs and no drift gate could hold them — the one generated artefact here that
+  nothing could check, in the repo that files bugs about exactly that. Took the idea, not the tool.
+
+  Two findings from building it, both the map catching its own kind of error before it shipped: the
+  base-commit contract (#659) is stated in `handoff.md`, **not** `feature.md` where the row first
+  pointed — a map pointing at the wrong file lies quietly. And the borrowed "gate the declared agent
+  count" idea was **cut**, because measuring it found no defect: `marketplace.json`'s *"eleven
+  specialist subagents"* matches the eleven files in `plugins/rails-flow/agents/`.
+
+  Gates: **82** (was 79) — drift, coverage audit, selftest. Plus four mutation guards over the
+  validators. (Corrected before publishing: the first draft said 83 was 80, counting the doctor's
+  repo-identity precondition as a gate. See the hygiene entry above.)
+
+- **We shipped the protocol for parallel sessions and no way to enter it.** (#661)
+  `parallel-session-lane` describes being one of N sessions — *"confirm your worktree, take one
+  coherent slice, stay in your subtree"* — and nothing in this marketplace ever put a session into
+  that mode. A human opened N terminals and assigned lanes by hand. **We wrote the coordination
+  rules and skipped the assignment.**
+
+  `assign_lanes.py` prints the `git worktree add` per lane and the session command with
+  `RAILS_FLOW_LANE` set. It **refuses** overlapping lanes — two sessions editing one tree while the
+  guard believes each is alone, so both diffs review clean and the collision surfaces at merge — and
+  refuses a single lane, a dirty tree, and a **missing lane guard**, which is how the #660-before-#661
+  ordering became mechanical rather than remembered.
+
+  **It prepares; it does not spawn.** Creating a worktree is mechanical and deciding when an agent
+  starts is not.
+
+  **No tmux, no daemon** — and that is a rejection of the borrowed design, not an omission.
+  `swarm-forge` needs message passing because its roles cannot see each other's state; ours can, since
+  `compose_state.py` derives the driver's state *from the repository*. Git is our handoff medium and it
+  survives a reboot, which a tmux session does not.
+
+  **Spend is reported, never enforced.** A cap this script cannot observe would be a promise nothing
+  keeps.
+
+  **The CHANGELOG contention is decided, not deferred.** Lanes are subtree-scoped, so two sessions do
+  not touch the same code — but both append here, and that conflict is expected, one hunk, resolved by
+  keeping both entries. A per-lane fragment merged at arm time would be a **second source of truth for
+  release notes**, exactly what `derived-artifacts` warns about, traded for avoiding a conflict git
+  handles well. **Take the conflict** — and this branch hit it on its way in, which is the argument in
+  practice.
+
+- **`parallel-session-lane` §1 was advice, and working in the wrong worktree was silent.** (#660) The
+  skill says *"Work only inside the worktree you were assigned"* and grepping every rails-flow hook
+  for `worktree` returned nothing. A session that skipped §1 produced a clean-looking branch in the
+  wrong place — while another session was working there — and nothing said so until a human read a
+  diff that did not belong. Claims-vs-enforcement, in a shipped skill, of the class `code-review`
+  names.
+
+  A `PreToolUse` hook now refuses a **write** outside `RAILS_FLOW_LANE`, on the fail-closed model of
+  `guard-bash.sh`. Three properties are the design, not caveats: **dormant** when no lane is assigned
+  (a single-session run must not pay for a multi-session feature, and a guard firing on ordinary work
+  gets switched off); **writes only**, because refusing reads would break legitimate context-gathering
+  and that over-reach is how a hook gets disabled; and **fails closed** — verified with `python3`
+  shadowed by a stub exiting 127, the same way the other two gates were.
+
+  **Running it found a bug reading it would not have.** The first version compared paths as strings,
+  so `./app/models/y.rb` was **blocked inside its own lane** — while the comment above it already
+  claimed both sides were resolved. Normalisation is pure shell, because a normaliser needing
+  `python3` would take the fail-closed guarantee with it.
+
+- **Five shipped ERB examples built HTML attributes by string interpolation, one through
+  `html_safe`.** Found by running `@herb-tools/linter` (an HTML-aware ERB parser; runs via `npx` on
+  WebAssembly, so no gem and no compile step) against all 119 `erb` blocks in this repo's markdown —
+  reading the tool would have found nothing, which is the fifth external repo to prove that.
+
+  The worst site was `component-implementations.md` in the disclosure component:
+
+  ```erb
+  <%= "role=region aria-labelledby=#{trigger_id}".html_safe if @region %>
+  ```
+
+  Three defects in one line. `html_safe` on an **interpolated** string marks record-derived content
+  as trusted — which our own doctrine forbids in two other files (`auth-security.md` §XSS and
+  `views-hotwire.md`: *"`raw`/`html_safe` only for content you trust"*), making this a
+  `doctrine-contradiction` of the class `code-review` names. The emitted attribute values are
+  **unquoted**, so a `trigger_id` containing a space silently splits one attribute into two. And it
+  sat two lines under our own comments about getting the disclosure accessibility contract right.
+
+  All five interpolated `name=value` sites now use **`tag.attributes`** — already this file's own
+  idiom at `:1335` and `:168`, with nested `data:`/`aria:` hashes used 28 times across these skills
+  and nil-omission already relied on at `reference-implementation.md:42`. So no framework API was
+  introduced and no `doctrine-verifier` verdict was required: the authority is our own shipped
+  doctrine. `tag.attributes` moved to the **end** of each tag, matching the two sites that were
+  already clean. The pattern is now at **0 occurrences** across `skills/` and `plugins/`.
+
+  **Four bare `<%= "hidden" unless … %>` sites were deliberately left alone.** `hidden` alone is
+  valid HTML and reads more clearly than `hidden="hidden"` in a document whose job is to show
+  markup. Herb flags them because its rule is positional, not semantic — it cannot tell
+  `tag.attributes` from raw interpolation. Rewriting correct markup to quiet a linter is the failure
+  `quality-pass` warns about: the five it was right about are fixed, the four it was not are left
+  as they are.
+
+- **`image_tag` shipped twice with no `alt`.** (`mail-storage-richtext.md`) Rails has not derived an
+  `alt` from the filename since **5.1**, so an omitted `alt:` emits an `<img>` carrying no alt
+  attribute at all — in a repo whose `fidara-design` skill is built around accessibility. Both calls
+  now pass one, and a bullet states the rule that decides between a described image and `alt: ""`.
 
 ### 1.48.0 — 2026-08-16 (release v1.89.0)
 

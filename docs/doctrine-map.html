@@ -1,0 +1,324 @@
+<title>Doctrine Map</title>
+<style>:root{--bg:#fbfbfa;--fg:#1a1a19;--mut:#6b6b66;--line:#e3e3e0;--card:#fff;
+--g:#0f7b3f;--a:#8a5a00;--x:#b3261e;--code:#f3f3f1}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161614;--fg:#ecebe7;
+--mut:#a3a099;--line:#2f2d29;--card:#1d1c1a;--g:#5fd08a;--a:#e0b25c;--x:#f2857c;--code:#232220}}
+:root[data-theme="dark"]{--bg:#161614;--fg:#ecebe7;--mut:#a3a099;--line:#2f2d29;--card:#1d1c1a;
+--g:#5fd08a;--a:#e0b25c;--x:#f2857c;--code:#232220}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,
+"Segoe UI",Roboto,sans-serif;margin:0;padding:2rem 1.25rem 4rem}
+main{max-width:70rem;margin:0 auto}
+h1{font-size:1.5rem;margin:0 0 .4rem}
+p.lede{color:var(--mut);margin:0 0 1.5rem;max-width:52rem}
+.tally{display:flex;gap:.6rem;flex-wrap:wrap;margin:0 0 1.25rem}
+.tally b{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:.35rem .7rem;
+font-weight:600;font-size:.85rem}
+.controls{display:flex;gap:.5rem;flex-wrap:wrap;margin:0 0 1rem}
+button{font:inherit;font-size:.85rem;padding:.35rem .75rem;border:1px solid var(--line);
+border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
+button[aria-pressed=true]{border-color:var(--fg);font-weight:600}
+.row{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.9rem 1rem;
+margin:0 0 .6rem}
+.row h2{font-size:1rem;font-weight:600;margin:0 0 .45rem;line-height:1.4}
+.meta{font-size:.8rem;color:var(--mut);display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.k{font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:.72rem}
+.k-guarantee{color:var(--g)}.k-advice{color:var(--a)}.k-gap{color:var(--x)}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.85em}
+ul.enf{margin:.5rem 0 0;padding-left:1.1rem;font-size:.85rem}
+ul.enf li{margin:.15rem 0}
+.none{color:var(--x);font-size:.85rem;margin:.5rem 0 0}
+.note{font-size:.85rem;color:var(--mut);margin:.5rem 0 0;border-left:2px solid var(--line);
+padding-left:.7rem}
+.floor{border:1px dashed var(--line);border-radius:8px;padding:.75rem 1rem;color:var(--mut);
+font-size:.85rem;margin:1.5rem 0 0}</style>
+<main>
+<h1>Doctrine &rarr; enforcement</h1>
+<p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
+<div class="tally"><b>32 claims</b><b>24 enforced guarantees</b><b>7 advisory</b><b>1 tracked gaps</b></div>
+<div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
+<div class="row" data-k="gap">
+<h2>A change to a skill states its type -- framework claim or architecture decision -- in the PR, before editing. Silence is not a claim of exemption.</h2>
+<div class="meta"><span class="k k-gap">gap</span><span>stated in <code>CLAUDE.md</code> &middot; #655</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">A trial reviewer&#x27;s single most-cited finding here was literally &#x27;missing change-type classification&#x27;, verbatim from CLAUDE.md. Mechanisable in principle -- a PR touching `skills/**` whose body names neither type -- but it would live in CI against the PR body, which no gate in this repo reads. Filed rather than hand-waved.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A promotion merges with `--merge`; a squash drops dev&#x27;s ancestry and the NEXT promotion cannot merge at all.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>script:scripts/maintainer_doctor.py</code></li>
+<li><code>mutation:maintainer_doctor</code></li>
+</ul>
+<p class="note">Asserted by the doctor&#x27;s `the last promotion carried dev&#x27;s ancestry` check, which asks both halves -- is main&#x27;s tip a merge, AND does it have a parent on dev. It is a DIAGNOSTIC, so --gates-only skips it; run the full doctor before a promotion.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Every component bump gets a CHANGELOG entry under that component&#x27;s section.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>rule:changelog-section-missing</code></li>
+<li><code>gate:self-consistency</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>One `### … (release vX.Y.Z)` block per actual promotion -- headings for versions that never get tagged make their notes vanish from the published release.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>rule:duplicate-unreleased</code></li>
+<li><code>rule:duplicated-release-extractor</code></li>
+<li><code>gate:self-consistency</code></li>
+<li><code>gate:release notes complete</code></li>
+<li><code>mutation:extract_release_notes</code></li>
+</ul>
+<p class="note">#699 rewrote both the claim and its enforcement. `duplicate-unreleased` catches two `### Unreleased` headings in one section; `release notes complete` runs the real extractor and refuses any block written for the tag that would not publish, which is the half that was missing while four releases dropped a component&#x27;s notes.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>`dist/` must be a clean build of `skills/**` before a release publishes.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>script:scripts/package_core.py</code></li>
+<li><code>hook:.github/workflows/release.yml</code></li>
+<li><code>hook:.github/workflows/gates.yml</code></li>
+</ul>
+<p class="note">Checked in BOTH workflows on purpose: a diagnostic is not a gate, and `--gates-only` (what CI runs) skips the doctor&#x27;s drift diagnostic.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A verification command whose verdict is swallowed by `|| echo` or `|| true` cannot block anything.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>script:scripts/lint_markdown_shell.py</code></li>
+<li><code>gate:markdown shell lint</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A lint that reports clean on input it never read is worse than no lint, so every fenced block must be provably reached.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>gate:markdown shell coverage</code></li>
+<li><code>gate:markdown code coverage</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A generated artifact&#x27;s bytes must be a function of its DATA only -- no SHA, no branch, no timestamp -- or its drift gate is unpassable by construction.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>gate:coverage artifact drift</code></li>
+<li><code>gate:inventory artifact drift</code></li>
+<li><code>gate:wiki reference drift</code></li>
+<li><code>mutation:build_coverage_artifact</code></li>
+</ul>
+<p class="note">A file inside a commit cannot name its own commit. Both committed pages here shipped that bug once each.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A drift gate compares the blob at `HEAD`, never the file on disk -- otherwise a page built and never committed passes the gate whose own message says it is not committed.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>gate:coverage artifact selftest</code></li>
+<li><code>gate:inventory artifact selftest</code></li>
+<li><code>mutation:build_coverage_artifact</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Regenerating `coverage.md` means regenerating `docs/coverage.html` too; they are built from the same data and both are committed.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>gate:coverage artifact drift</code></li>
+<li><code>script:scripts/rebuild_generated.py</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>`git add -A` is refused, even when the payload cannot be parsed.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>hook:plugins/rails-flow/hooks/scripts/guard-bash.sh</code></li>
+</ul>
+<p class="note">Verified by running it with python3 shadowed by a stub that exits 127: line 7 falls back to the raw JSON payload, which still contains the command text, so every pattern still matches and it still exits 2.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Every plugin in `marketplace.json` is documented, and every entry carries more than a bare name.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>rule:undocumented-plugin</code></li>
+<li><code>rule:bare-plugin-entry</code></li>
+<li><code>gate:self-consistency</code></li>
+<li><code>mutation:lint_self_consistency</code></li>
+</ul>
+<p class="note">The rule cannot tell that a mention sits in CLAUDE.md&#x27;s DISTRIBUTED list rather than in prose elsewhere, so the list itself is still on a human. Stated in CLAUDE.md, and true.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Nothing maintainer-only ships to clients, and every concern has exactly one home.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>rule:undocumented-skill</code></li>
+<li><code>rule:uninstallable-plugin</code></li>
+<li><code>gate:self-consistency</code></li>
+</ul>
+<p class="note">`plugin-boundaries` rule 2 forbids keeping a second copy behind to dodge the trade, which is why `derived-artifacts` and `parallel-session-lane` are read as files here.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A release attaches EVERY `dist/*.skill` via glob, never a hand-typed list.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
+<ul class="enf">
+<li><code>hook:.github/workflows/release.yml</code></li>
+<li><code>script:scripts/release_local.sh</code></li>
+</ul>
+<p class="note">A hand-typed list is how a release silently drops a newly added skill. Both paths glob, and CLAUDE.md says change one when you change the other.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>An advisory hook fails OPEN; a hook carrying a guarantee fails CLOSED, scoped to the command it guards.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>docs/harness-doctrine.md</code></span></div>
+<ul class="enf">
+<li><code>rule:hook-count-drift</code></li>
+<li><code>gate:self-consistency</code></li>
+<li><code>hook:plugins/rails-flow/hooks/scripts/guard-bash.sh</code></li>
+<li><code>hook:plugins/qa-flow/hooks/scripts/release-gate.sh</code></li>
+<li><code>hook:plugins/rails-flow/hooks/scripts/guard-lane.sh</code></li>
+</ul>
+<p class="note">The rule pins the advisory/gate split by count, so adding a hook without classifying it fails. A gate that failed closed on UNRELATED work would get switched off, which is why scoping is part of the claim rather than a refinement of it.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A generated asset&#x27;s prompt is recorded, so the asset is reproducible rather than merely present.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/design-flow/commands/generate.md</code></span></div>
+<ul class="enf">
+<li><code>gate:design-flow prompt library selftest</code></li>
+<li><code>mutation:prompt_library</code></li>
+<li><code>script:plugins/design-flow/scripts/prompt_library.py</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A style reference image is the biggest lever on cross-asset consistency, so a brief that omits one is flagged.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/design-flow/commands/generate.md</code></span></div>
+<ul class="enf">
+<li><code>mutation:generation_gate</code></li>
+<li><code>script:plugins/design-flow/scripts/generation_gate.py</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Composition SHORTLISTS assets and never assigns them; explicit `bands` and `surfaces` outrank prose.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/design-flow/commands/generate.md</code> &middot; #672 &middot; #676</span></div>
+<ul class="enf">
+<li><code>gate:design-flow composition brief selftest</code></li>
+<li><code>mutation:compose_brief</code></li>
+<li><code>script:plugins/design-flow/scripts/compose_brief.py</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>An acceptance criterion that no spec cites is unproven, and the work order says so.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-flow/commands/feature.md</code></span></div>
+<ul class="enf">
+<li><code>gate:acceptance criteria</code></li>
+<li><code>mutation:check_criteria</code></li>
+<li><code>script:plugins/rails-flow/scripts/check_criteria.py</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A work order names the commit it was written against, so a stale one is visible rather than plausible.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-flow/commands/handoff.md</code> &middot; #659</span></div>
+<ul class="enf">
+<li><code>gate:rails-flow work order</code></li>
+<li><code>mutation:check_handoff</code></li>
+<li><code>script:plugins/rails-flow/scripts/check_handoff.py</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A guarantee stated in prose that nothing makes true is a defect, not a style issue.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/code-review/SKILL.md</code></span></div>
+<ul class="enf">
+<li><code>script:scripts/lint_self_consistency.py</code></li>
+<li><code>gate:self-consistency</code></li>
+<li><code>mutation:lint_self_consistency</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A carve-out that silences a check needs a negative test proving the check still fires outside it.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/code-review/SKILL.md</code></span></div>
+<ul class="enf">
+<li><code>script:scripts/maintainer_doctor_selftest.py</code></li>
+<li><code>mutation:maintainer_doctor</code></li>
+</ul>
+<p class="note">`CORPORA_GATES` is pinned EXACTLY, in both directions, so re-adding a member takes a deliberate edit with a reason. That is the worked instance of this claim.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Derived numbers are read from the generator&#x27;s structured source, never regex-parsed out of its generated prose, and are asserted against the source&#x27;s declared totals.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/derived-artifacts/SKILL.md</code></span></div>
+<ul class="enf">
+<li><code>script:scripts/build_coverage_artifact.py</code></li>
+<li><code>gate:coverage artifact selftest</code></li>
+</ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Working in the wrong worktree during a parallel session is refused, not merely advised against.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #660</span></div>
+<ul class="enf">
+<li><code>hook:plugins/rails-flow/hooks/scripts/guard-lane.sh</code></li>
+</ul>
+<p class="note">Dormant without `RAILS_FLOW_LANE`, so it costs a normal session nothing; writes only, since a read outside your lane is how you learn what the other lanes did.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Two concurrent sessions are never assigned overlapping lanes.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #661</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/assign_lanes.py</code></li>
+<li><code>mutation:assign_lanes</code></li>
+<li><code>gate:rails-flow lane assigner selftest</code></li>
+</ul>
+<p class="note">The whole safety property: overlapping lanes mean two sessions editing one tree while the guard believes each is alone, so both diffs review clean and the collision surfaces at merge.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>A count or environment fact is re-measured against the live source at the moment it is stated, never carried forward from earlier in the session.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>AGENTS.md</code></span></div>
+<ul class="enf">
+<li><code>rule:unbounded-issue-query</code></li>
+</ul>
+<p class="note">Only the mechanical half is enforceable: an unbounded `gh issue list` measures one page carefully and calls it the total. Whether a stated number was actually re-run cannot be observed from the tree, so the rest is advice -- and it has already been got wrong.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>A version number is never assigned on a merge into `dev`, because on `dev` the claim that a user can install it is false.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>CLAUDE.md</code></span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">A stray bump on dev is a loaded gun -- the next promotion publishes whether or not anyone decided to ship. Nothing detects it: the workflow cannot tell an intended bump from an accidental one, and a gate that refused a bump on dev would refuse the arm commit, which is the one place it belongs.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>No skill claim is edited until `doctrine-verifier` confirms it against an authoritative source; INCONCLUSIVE leaves doctrine unchanged.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>CLAUDE.md</code></span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">Deliberately unenforced, and the reason is the interesting part: a gate here would have to read a verdict nothing records in the tree. The classification is &#x27;advice&#x27; about the MECHANISM, not about the rule -- the rule is non-negotiable and enforced by review.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>An issue body is a hypothesis, not a specification: every externally verifiable claim in it is checked before implementation, including for omissions.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>CLAUDE.md</code></span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">#142 cited four accordion keybindings &#x27;per the ARIA APG&#x27; that live only in a deleted 2017 example, and omitted a requirement APG states plainly. Not mechanisable: no gate can know what an upstream spec says today.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>A failing test is classified before it is debugged: defect, environment, wrong expectation, upstream, or flake -- and two of those say stop.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-flow/commands/fix.md</code> &middot; #647</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">Judgement by construction: which row a red test belongs to is the diagnosis. A gate would have to make that call to check it was made.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>The quality pass never blocks a merge -- a gate on taste gets switched off, and then nothing checks quality at all.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/quality-pass/SKILL.md</code></span></div>
+<ul class="enf">
+<li><code>gate:shared shapes</code></li>
+<li><code>script:scripts/check_shared_shapes.py</code></li>
+</ul>
+<p class="note">The one gate here refuses only a NUMBER in the worked example disagreeing with the repo -- claims-vs-enforcement on our own prose. Strengthening it into refusing copies would contradict the doctrine it guards.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>A gate that needs a carve-out on its first real input is taste wearing a count.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/quality-pass/SKILL.md</code> &middot; #476</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">#476: a monotony gate flagged our own worked example on first real input. Cited to keep later gates advisory; unenforceable by construction, since it is the rule for deciding whether to build a gate at all.</p>
+</div>
+<div class="floor"><strong>This map is a floor, not a ceiling.</strong> The audit can tell you a declared doctrine source has <em>no</em> rows; nothing here can tell you a source with four rows was not owed nine. A row count is evidence that someone looked, never proof the file is covered. Sources declared: <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>docs/harness-doctrine.md</code>, <code>skills/code-review/SKILL.md</code>, <code>skills/quality-pass/SKILL.md</code>, <code>skills/derived-artifacts/SKILL.md</code>, <code>skills/parallel-session-lane/SKILL.md</code>, <code>plugins/rails-flow/commands/feature.md</code>, <code>plugins/rails-flow/commands/handoff.md</code>, <code>plugins/rails-flow/commands/fix.md</code>, <code>plugins/design-flow/commands/generate.md</code>.</div>
+</main>
+<script>var btns=document.querySelectorAll('button[data-k]');
+function apply(k){
+  document.querySelectorAll('.row').forEach(function(r){
+    r.hidden = (k!=='all' && r.getAttribute('data-k')!==k);
+  });
+  btns.forEach(function(b){b.setAttribute('aria-pressed', String(b.dataset.k===k));});
+}
+btns.forEach(function(b){b.addEventListener('click',function(){apply(b.dataset.k);});});
+apply('all');</script>

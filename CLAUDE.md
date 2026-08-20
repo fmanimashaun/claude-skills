@@ -352,12 +352,25 @@ release nobody had decided to cut. #144 reverted it.)
   - always bump the top-level `metadata.version` — it is the release tag label. Patch for
     fixes, minor for new capabilities.
 - **Every bump gets a CHANGELOG entry** under the component's section (newest first).
-- **One `### … (release vX.Y.Z)` block per actual promotion.** The workflow publishes
-  only the block whose heading matches the shipped tag. A promotion usually consolidates
-  several pieces of work, so put ALL their notes under the one release block for the tag
-  that ships — never leave `(release vX.Y.Z)` headings for versions that never get tagged,
-  or their notes vanish from the published release. (This bit us: v1.6.6 shipped three
-  fixes but first published one block's worth of notes.)
+- **One `### … (release vX.Y.Z)` block per COMPONENT that this promotion bumps** — and the
+  tag in every one of those headings must be the tag that actually ships. Never leave a
+  `(release vX.Y.Z)` heading for a version that never gets tagged: nothing publishes it and
+  its notes are simply gone. (v1.6.6 shipped three fixes and published one block's worth.)
+
+  This bullet used to say **one block per promotion, full stop**, which was true when a
+  promotion moved one component and became self-contradictory the moment the rule above it
+  said components version *independently*. Two bumped components necessarily means two
+  blocks. It was not a harmless wording problem: `release.yml` was written to that sentence
+  and `exit`ed at the next heading, so a two-component promotion published the first block
+  and silently dropped the rest. Four releases shipped that way before anyone diffed a
+  release body against the CHANGELOG — #682, #642, #640 and #643 never appeared in theirs.
+
+  `scripts/extract_release_notes.py` now emits **every** block for the tag, from one
+  implementation called by both `release.yml` and `release_local.sh`, and the
+  `release notes complete` gate refuses a promotion whose CHANGELOG holds a block that
+  would not publish. Do not put the extractor back into the shells: the
+  `duplicated-release-extractor` rule fails if either grows its own, because two copies kept
+  in step by a comment is what made this invisible for four releases (#699).
 
 ### Release cadence
 
@@ -424,6 +437,56 @@ Three things it taught that are worth not relearning:
 It found four real copy-paste hazards in shipped skills, all of which raise on paste: a bare
 `rescue … end` with no `begin`, two prose-as-code lines (`Product.select(…) / .pluck(…)` — `/` is
 division), and two blocks mixing a class field with statements.
+
+### Which claims are enforced, and which are not — `docs/doctrine-map.html`
+
+One question got asked by grep more than once a session: **which claim in our markdown is made true
+by which gate, and which claims are made true by nothing.** That last set is the defect class above,
+and we were finding them one accident at a time — nothing read the manifest's `use_cases` (#639),
+nothing gated `marketplace.json` completeness (#651), a `--check || echo` made a release gate unable
+to block (#151).
+
+```bash
+python3 scripts/doctrine_map.py                   # rebuild the page
+python3 scripts/doctrine_map.py --check            # drift gate
+python3 scripts/doctrine_map.py --audit-coverage    # a declared source with no rows is a finding
+```
+
+**There is no extractor, and that is the design.** Pulling "a claim" out of prose is the hard part,
+and a bad extractor is worse than none — *a map that misses claims reads as coverage*. So `CLAIMS`
+is an explicit registry living in the same file as the validators that check it, the shape
+`maintainer_doctor.GATES` and `mutation_check.GUARDS` already use, because a registry and its checker
+in two files drift apart.
+
+Each row is `guarantee`, `advice`, or `gap`, using **[`docs/harness-doctrine.md`](docs/harness-doctrine.md)**'s
+existing test (*"if a model ignores this, what happens?"*) rather than new vocabulary. Six validators
+run, all mechanical — so none is taste wearing a count (#476):
+
+| validator | the defect it catches |
+|---|---|
+| `anchor missing` | the claim was reworded or deleted and the map still advertises it |
+| `unresolved enforcement` | the row cites a gate/guard/rule/script that no longer exists — **this map committing the very defect it is for** |
+| `unenforced guarantee` | a `guarantee` citing nothing; make it `advice`, or a `gap` with an issue |
+| `untracked gap` | a `gap` with no issue number, which is a shrug |
+| `resolved gap` | a `gap` whose enforcement now resolves — the row got fixed and nobody reclassified it |
+| `undeclared source` | a row points outside `DOCTRINE_SOURCES`, so the declared surface is wrong |
+
+Two things it deliberately does **not** do. An `advice` row with nothing behind it is **correct** —
+`quality-pass` never blocks a merge on purpose, and `art-direction.md` argues at length that gating
+judgement is worse than not gating it; the selftest has an explicit negative test for this, without
+which `unenforced guarantee` would be a blanket ban on advisory doctrine. And `hook:` resolves against
+the JSON that **wires** a script, never against the filesystem, because a hook sitting on disk that
+nothing invokes is exactly the shape this map exists to surface.
+
+**The map is a floor, not a ceiling, and the page says so.** `--audit-coverage` can tell you a
+declared source has *zero* rows; nothing can tell you a source with four rows was not owed nine. A
+row count is evidence that someone looked — never proof the file is covered. A green artifact standing
+in for work nobody did is the failure this replaces, so it does not get to be one.
+
+Not OpenKB, which prompted the issue: it compiles documents into a wiki **with an LLM**, so the bytes
+are not a function of the inputs and no drift gate could hold them — an LLM-compiled knowledge base
+would be the one generated artefact here that nothing could check, in the repo that files bugs about
+exactly that. Take the idea, not the tool.
 
 ## Verify our own claims, not just our shell
 
@@ -658,11 +721,11 @@ The `.claude/` hook and the plugins' hooks are **bash + `python3`**, and the flo
 **`gh`** (authenticated: `gh auth status`). On Windows, run Claude Code in **WSL or Git
 Bash** with `python3` and `gh` on PATH.
 
-**Hooks do NOT all fail open, and the two exceptions are deliberate.** This line used to say they
-did, flatly. Of the eleven hook scripts, nine are advisory — a status line, a linter, a
-cross-check — and a missing `python3` degrades them to silence, which is right: an advisory that
-blocks work when a dependency is absent is an advisory people disable. The two **gates** fail
-**closed**, verified by running them with `python3` shadowed by a stub that exits 127:
+**Hooks do NOT all fail open, and the exceptions are deliberate.** This line used to say they did,
+flatly. Of the twelve hook scripts, nine are advisory — a status line, a linter, a cross-check — and
+a missing `python3` degrades them to silence, which is right: an advisory that blocks work when a
+dependency is absent is an advisory people disable. The three **gates** fail **closed**, verified by
+running each with `python3` shadowed by a stub that exits 127:
 
 - `plugins/rails-flow/hooks/scripts/guard-bash.sh` — still exits **2**. Line 7 falls back to the raw
   JSON payload when the parse fails, and the payload still contains the command text, so every
@@ -670,6 +733,11 @@ blocks work when a dependency is absent is an advisory people disable. The two *
 - `plugins/qa-flow/hooks/scripts/release-gate.sh` — exits **2** when `python3` is missing *and* the
   command targets `main`, and **0** otherwise. Fail-closed **scoped to the command it guards**, which
   is the distinction that matters: a gate that failed closed on unrelated work would get switched off.
+- `plugins/rails-flow/hooks/scripts/guard-lane.sh` (#660) — exits **2** for a write outside
+  `RAILS_FLOW_LANE`, and **0** when no lane is assigned at all. Same scoping as the release gate, one
+  axis over: it is dormant unless a lane exists, so a single-session run never pays for a
+  multi-session feature. Its path normalisation is pure shell for this reason — one that needed
+  `python3` would take the fail-closed guarantee down with it.
 
 Which behaviour a new hook should have is not a matter of taste — classify it before writing it,
 using the guarantee-vs-advice test in **[`docs/harness-doctrine.md`](docs/harness-doctrine.md)**

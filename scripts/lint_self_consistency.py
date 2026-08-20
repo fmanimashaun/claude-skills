@@ -1655,8 +1655,13 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
             "hook-count-drift", "CLAUDE.md", 0,
             "the hook-script sentence is gone or reworded, so nothing reconciles the count against "
             "the scripts on disk -- restore it or drop this rule deliberately")], total
-    # The two fail-CLOSED gates CLAUDE.md names by path.
-    gates = sum(1 for s in scripts if s.name in {"guard-bash.sh", "release-gate.sh"})
+    # The fail-CLOSED gates CLAUDE.md names by path. A hardcoded set is right here rather than a
+    # heuristic: which hooks are gates is a DECISION recorded in that section, per the
+    # guarantee-vs-advice test, and inferring it from the scripts would let a new fail-closed hook
+    # silently join the set without anyone classifying it. Adding one is meant to be deliberate --
+    # this list is the deliberateness. `guard-lane.sh` joined it in #660.
+    NAMED_GATES = {"guard-bash.sh", "release-gate.sh", "guard-lane.sh"}
+    gates = sum(1 for s in scripts if s.name in NAMED_GATES)
     findings = []
     if m.group(1) != WORDS.get(total, str(total)):
         findings.append(Finding(
@@ -1739,6 +1744,58 @@ def check_changelog_section_missing() -> tuple[list[Finding], int]:
                 f"before adding one back, because the history it held is recoverable from git only "
                 f"until someone rewrites over it."))
     return findings, len(plugins)
+
+
+def check_duplicated_release_extractor() -> tuple[list[Finding], int]:
+    """The release-notes extractor lives in ONE script, and both publish paths must call it.
+
+    #699. `.github/workflows/release.yml` and `scripts/release_local.sh` each carried the same awk,
+    byte for byte, kept in step by a COMMENT asking maintainers to keep them in step. That comment
+    was the enforcement, which is to say there was none -- and when the awk turned out to `exit` at
+    the next heading instead of merely stopping the grab, a promotion bumping two components
+    published one component's notes and silently dropped the other's. It shipped four times: #682
+    (v1.91.2), #642 (v1.89.0), #640 and #643 (v1.88.0) never appeared in their release bodies.
+
+    So this rule is not about tidiness. Duplicating the extractor is how the bug becomes invisible
+    again: fix one copy, leave the other, and the fallback path still mispublishes. The check is
+    behavioural in the only way a linter can be here -- it asserts each publish path DELEGATES,
+    and that neither has regrown an inline parser.
+
+    Both directions matter. A call site that stops calling the script is a finding; so is one that
+    calls it AND keeps an awk, because then which one wins depends on line order.
+    """
+    paths = (".github/workflows/release.yml", "scripts/release_local.sh")
+    script = "extract_release_notes.py"
+    # Shapes of an inline extractor. The needle form catches a rewrite that renames `grab`.
+    inline = ("grab && /^### /", "-v needle=", "awk -v needle")
+    findings: list[Finding] = []
+    examined = 0
+    if not (ROOT / "scripts" / script).is_file():
+        return [Finding(
+            "duplicated-release-extractor", f"scripts/{script}", 1,
+            f"scripts/{script} is missing, so both publish paths must be carrying their own "
+            f"extractor again -- the #699 shape.")], 0
+    for rel in paths:
+        f = ROOT / rel
+        if not f.is_file():
+            continue
+        examined += 1
+        body = read(f)
+        if script not in body:
+            findings.append(Finding(
+                "duplicated-release-extractor", rel, 1,
+                f"{rel} does not call scripts/{script}, so it has its own release-notes "
+                f"extractor. That is how #699 stayed invisible: two copies, one comment asking "
+                f"for them to be kept in step, and a fallback path that still mispublished after "
+                f"the first copy was fixed."))
+        for shape in inline:
+            if shape in body:
+                findings.append(Finding(
+                    "duplicated-release-extractor", rel, 1,
+                    f"{rel} contains an inline extractor ({shape!r}) alongside the call to "
+                    f"scripts/{script}. Which one wins now depends on line order, so the "
+                    f"published notes depend on line order. Delete the inline copy."))
+    return findings, examined
 
 
 def check_undocumented_skill() -> tuple[list[Finding], int]:
@@ -2137,6 +2194,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     agents_md, agents_md_examined = check_unimported_agent_instructions()
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
+    rel_extract, rel_extract_examined = check_duplicated_release_extractor()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
@@ -2170,6 +2228,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "root_agent_instruction_files": agents_md_examined,
         "skill_directories_named_in_claude_md": undoc_skill_examined,
+        "publish_paths_checked_for_own_extractor": rel_extract_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
@@ -2179,7 +2238,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections,
+            + agents_md + undoc_skill + cl_sections + rel_extract,
             coverage)
 
 
@@ -2282,6 +2341,52 @@ def selftest() -> int:
     scenario("...a release block is not a section", rule=CSM, expect_finding=True,
              files={".claude-plugin/marketplace.json": MANIFEST,
                     "CHANGELOG.md": "# Changelog\n\n### rails-flow 1.0.0\n\n### qa-flow 1.0.0\n"})
+
+    # -- duplicated-release-extractor -------------------------------------
+    DRE = "duplicated-release-extractor"
+    _SCRIPT = "scripts/extract_release_notes.py"
+    _DELEG_YML = "run: python scripts/extract_release_notes.py --tag \"$TAG\" > \"$notes\"\n"
+    _DELEG_SH = "python3 scripts/extract_release_notes.py --tag \"$TAG\" > \"$NOTES\"\n"
+    _AWK = ("awk -v needle=\"(release $TAG)\" '\n"
+            "  /^### / && index($0, needle) { grab=1; next }\n"
+            "  grab && /^### / { exit }\n"
+            "  grab { print }\n' CHANGELOG.md\n")
+    scenario("both publish paths delegate to the one extractor", rule=DRE, expect_finding=False,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _DELEG_YML,
+                    "scripts/release_local.sh": _DELEG_SH})
+    # THE #699 SHAPE. The workflow kept its own copy, so fixing the script alone left the
+    # published notes coming from the awk.
+    scenario("...the workflow carries its own extractor", rule=DRE, expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _AWK,
+                    "scripts/release_local.sh": _DELEG_SH})
+    # The fallback path is the half a partial fix leaves behind, and the half nobody exercises
+    # until a runner will not start -- so it is checked in its own right, not by symmetry.
+    scenario("...the local fallback carries its own extractor", rule=DRE, expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _DELEG_YML,
+                    "scripts/release_local.sh": _AWK})
+    # BOTH at once. A call site that delegates AND keeps an awk makes the published notes depend
+    # on line order, which is worse than either alone because it reads as fixed.
+    scenario("...delegating and ALSO keeping an inline parser still fires", rule=DRE,
+             expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _DELEG_YML + _AWK,
+                    "scripts/release_local.sh": _DELEG_SH})
+    # ISOLATES THE DELEGATION CHECK. The awk fixtures above trip the inline-shape check as well,
+    # so they cannot prove the "does it delegate at all" half -- a mutation disabling that half
+    # survived them. This path neither delegates nor carries a recognisable extractor: a rewritten
+    # one, in sed or python or anything else, which is the realistic way delegation gets dropped.
+    scenario("...a path that neither delegates nor shows a known extractor shape", rule=DRE,
+             expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": "run: sed -n '/^### /,$p' CHANGELOG.md\n",
+                    "scripts/release_local.sh": _DELEG_SH})
+    # The script vanishing means both paths must be carrying their own again.
+    scenario("...a missing extractor script fires", rule=DRE, expect_finding=True,
+             files={".github/workflows/release.yml": _DELEG_YML,
+                    "scripts/release_local.sh": _DELEG_SH})
 
     # -- undocumented-skill -----------------------------------------------
     UDS = "undocumented-skill"

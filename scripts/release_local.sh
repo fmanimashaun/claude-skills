@@ -162,22 +162,18 @@ step "5. Extract release notes from CHANGELOG"
 NOTES="$(mktemp "${TMPDIR:-/tmp}/release-notes.XXXXXX")"
 trap 'rm -f "$NOTES"' EXIT
 
-# Grab the CHANGELOG block headed "### … (release vX.Y.Z)" up to the next "### ".
-# The needle must match a HEADING, not merely a line mentioning the tag: prose that
-# references "(release vX.Y.Z)" would otherwise start the grab early and leak the
-# preceding section's bullets into this release's notes. Verified failure mode, not
-# a hypothetical — keep the `/^### /` anchor.
-awk -v needle="(release $TAG)" '
-  /^### / && index($0, needle) { grab=1; next }
-  grab && /^### / { exit }
-  grab { print }
-' CHANGELOG.md > "$NOTES"
+# EVERY `### … (release vX.Y.Z)` block, not just the first (#699). One implementation,
+# shared with .github/workflows/release.yml — this file and that one carried the same awk
+# verbatim, kept in step by a comment asking nicely, which is the unenforced-claim shape
+# the bug itself had. The script keeps the `/^### /` anchor (a line merely MENTIONING the
+# tag must not start a grab — a verified failure, not a hypothesis) and the bare-pointer
+# fallback, so a release never publishes an empty body.
+python3 scripts/extract_release_notes.py --tag "$TAG" > "$NOTES"
 
-if [ ! -s "$NOTES" ]; then
-  say "WARNING: no '### … (release $TAG)' block found in CHANGELOG.md."
-  say "         Falling back to a bare pointer. The published notes will say nothing"
-  say "         about what shipped — add the block and re-run to get real notes."
-  printf 'Marketplace %s. See CHANGELOG.md for details.\n' "$TAG" > "$NOTES"
+if ! python3 scripts/extract_release_notes.py --check >/dev/null 2>&1; then
+  say "WARNING: the notes for $TAG are incomplete or missing — run"
+  say "         'python3 scripts/extract_release_notes.py --check' for the reason."
+  say "         Publishing anyway; the body above is what readers will get."
 fi
 printf '\nInstall: /plugin marketplace add %s\n' "$REPO" >> "$NOTES"
 

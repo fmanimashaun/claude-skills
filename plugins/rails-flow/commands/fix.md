@@ -39,6 +39,36 @@ proven by a spec. Never accumulate multiple unrelated fixes on one branch, and n
 straight onto an existing feature branch just because it's checked out — that's the ad-hoc path
 this flow exists to prevent. Say which issues you filed before you start fixing.
 
+## Phase 0 — classify the failure before you debug it (#647)
+
+**Not every problem is a bug. Not every bug needs debugging.** Name the failure type and the evidence
+that chose it, in one line, before touching code. The classification goes in the report, so a wrong
+call is visible in review rather than buried in a transcript.
+
+| type | the tell | first move | what debugging it costs |
+|---|---|---|---|
+| **defect** in our code | reproduces from a clean checkout at the stated commit | reproduce → criterion → failing spec → fix | correct |
+| **environment** | fails before any of our code runs: a missing key, a stale bundle, the wrong Ruby | fix the environment, then re-run | hours reading correct code |
+| **wrong expectation** | the test asserts something no doctrine or criterion ever promised | fix the test, or the doctrine — decide which | a "fix" that breaks correct behaviour |
+| **upstream** | reproduces in a minimal script with our code removed | pin, work around, report upstream — **and stop** | unbounded; there is no natural end |
+| **flake** | passes in isolation, fails in a suite; or depends on order, clock or a shared fixture | make it deterministic — **do not change the logic** | a chased ghost, and it returns |
+
+**The last two are the expensive misclassifications.** Debugging our own code for an upstream bug has
+no stopping point. "Fixing" a flake by editing correct logic makes it worse and hides the real cause.
+So both rows say **stop** rather than *continue carefully*.
+
+**This stays advisory.** Classifying is judgement, and this repo's record on gating judgement is
+explicit: `#476` proposed four monotony axes for `check_page_pacing.py` and the measurement killed
+them, because the threshold flagged **our own** worked example — *"a gate that needs a carve-out on
+its first real input is taste wearing a count."* A gate on *"is this really a flake?"* earns the same
+fate. What is mechanical is that a classification was **stated**, which is the shape
+`check_criteria.py` already uses: it requires criteria to exist without judging whether they are good.
+
+**It is not `/rails-flow:escalate`.** That is the async human-in-the-loop — it asks a human a question
+on a GitHub issue, parks the thread, and moves on. Use it when a decision is not yours to make. This
+happens earlier and usually needs no human at all: it decides **what kind of problem you have**
+before choosing how to respond.
+
 ## Principles (non-negotiable)
 
 1. **Implement, don't comment.** A TODO is not a fix.

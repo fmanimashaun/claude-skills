@@ -157,6 +157,21 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # are the ones a checker cannot infer and only a fixture can hold: the markdown view's bytes
     # are a function of the JSON alone, and a rung named `agent` is a ROLE recorded as an unknown
     # model rather than as a model called "agent".
+    # #661. The launcher refuses overlapping lanes, and overlap is its whole safety property: two
+    # sessions editing one tree while the guard believes each is alone review clean on both sides.
+    # #655. Both halves: the drift check asserts the page we ship is a clean build, and the selftest
+    # proves each validator fires AND stays silent -- including that an `advice` row with nothing
+    # behind it is correct, without which the unenforced-guarantee rule is a blanket ban on advisory
+    # doctrine, which `quality-pass` exists to argue against.
+    # #699. Asserts what PUBLISHES, not what exists: it runs the real extractor for
+    # marketplace.json's version and refuses any block written for the tag that would not appear.
+    ("release notes complete", ("python3", "scripts/extract_release_notes.py", "--check")),
+    ("release notes selftest", ("python3", "scripts/extract_release_notes.py", "--selftest")),
+    ("doctrine map drift", ("python3", "scripts/doctrine_map.py", "--check")),
+    ("doctrine map coverage", ("python3", "scripts/doctrine_map.py", "--audit-coverage")),
+    ("doctrine map selftest", ("python3", "scripts/doctrine_map.py", "--selftest")),
+    ("rails-flow lane assigner selftest",
+     ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
      ("python3", "plugins/design-flow/scripts/prompt_library.py", "--selftest")),
     # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as
@@ -377,6 +392,16 @@ class Doctor:
 
     def git(self, *args: str) -> tuple[int, str]:
         return self.run("git", *args)
+
+    def gate_results(self) -> list[Result]:
+        """Only the GATES, never a precondition or a diagnostic.
+
+        A method rather than a comprehension inside the summary print, because the selftest has to
+        be able to CALL it. The first version was inline, the selftest recomputed the same filter
+        by hand, and the mutation that widened it survived -- a fixture proving an adjacent claim
+        instead of the code under test.
+        """
+        return [r for r in self.results if r.name.startswith("gate: ")]
 
     def add(self, status: str, name: str, detail: str = "", remedy: str = "") -> Result:
         r = Result(status, name, detail, remedy)
@@ -875,6 +900,21 @@ class Doctor:
             f"\n{counts[PASS]} passed, {counts[FAIL]} failed, {counts[SKIP]} skipped, "
             f"{counts[INFO]} note(s)"
         )
+        # THE GATE TALLY, SEPARATELY. The line above counts every result, and `--gates-only` also
+        # runs `check_is_marketplace_repo` -- a PRECONDITION, not a gate. So the total has always
+        # been gates + 1, and anyone reading it as "how many gates are there" is off by one. Three
+        # wrong counts reached shipped text that way in one afternoon: a CHANGELOG bullet claiming
+        # "83 (was 80)" against 82 and 79, a PR body claiming 85 against 84, and the same 85 stated
+        # to the maintainer. Two sessions then reconciled 84 against 85 as a units disagreement, and
+        # it was not one -- it was this. A number nobody can read correctly is a defect in the
+        # reporting, not in the reader, which is the same argument as SKIP never rendering as PASS.
+        gates = self.gate_results()
+        if gates:
+            g = {s: sum(1 for r in gates if r.status == s) for s in (PASS, FAIL, SKIP)}
+            print(
+                f"of those, {len(gates)} are gates: {g[PASS]} passed, {g[FAIL]} failed, "
+                f"{g[SKIP]} skipped — quote THIS number as the gate count"
+            )
         # Skipped is called out deliberately: a check that did not run is not a check that
         # passed, and conflating the two is the defect this tool exists to prevent.
         if counts[SKIP]:

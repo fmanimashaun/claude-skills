@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -96,8 +97,20 @@ Note the PR number here, update `docs/brain/STATUS.md`, and record the rounding 
 `docs/brain/DECISIONS.md` as a `D-nnn` with its trade-off.
 """
 
+# #659. A REAL commit, resolved at import: the checker verifies the SHA exists, so a fixture with a
+# made-up one would fail for the right reason and prove nothing about the rest of the order.
+# A fixed, fake SHA plus a fake resolver: the checker's git calls are injected, so these fixtures
+# run identically in a repo and in the mutation harness's bare tempdir.
+_HEAD = "a1b2c3d4e5"
+_KNOWN = {"a1b2c3d4e5": "a1b2c3d4e5" + "0" * 30, "HEAD": "a1b2c3d4e5" + "0" * 30}
+_FAKE = (lambda sha: _KNOWN.get(sha), lambda base: 0)
+
+BASE = f"""## Base commit
+`{_HEAD}` on `feature/invoice-totals` — the tree this order was written against.
+"""
+
 GOOD = "# Work order — invoice-totals\n\n" + "\n".join(
-    (GOAL, CRITERIA, SCOPE, GUARDRAILS, STOP, VERIFY, EXECUTOR, DONE)
+    (BASE, GOAL, CRITERIA, SCOPE, GUARDRAILS, STOP, VERIFY, EXECUTOR, DONE)
 )
 
 
@@ -143,7 +156,7 @@ def drop(section: str) -> str:
 def expect_clean(label: str, body: str, *, criteria: Path | None = None) -> None:
     _tick()
     try:
-        findings = ch.check(ch.parse(_write(body)), criteria)
+        findings = ch.check(ch.parse(_write(body)), criteria, *_FAKE)
     except ch.Unusable as exc:
         FAILURES.append(f"{label}: expected clean, got UNUSABLE ({exc})")
         return
@@ -154,7 +167,7 @@ def expect_clean(label: str, body: str, *, criteria: Path | None = None) -> None
 def expect_findings(label: str, body: str, *, contains: str, criteria: Path | None = None) -> None:
     _tick()
     try:
-        findings = ch.check(ch.parse(_write(body)), criteria)
+        findings = ch.check(ch.parse(_write(body)), criteria, *_FAKE)
     except ch.Unusable as exc:
         FAILURES.append(f"{label}: expected findings, got UNUSABLE ({exc})")
         return
@@ -264,12 +277,47 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     for label, section in (
         ("goal", GOAL), ("acceptance criteria", CRITERIA), ("scope", SCOPE),
         ("guardrails", GUARDRAILS), ("stop conditions", STOP), ("verify", VERIFY),
-        ("executor", EXECUTOR), ("on completion", DONE),
+        ("executor", EXECUTOR), ("on completion", DONE), ("base commit", BASE),
     ):
         expect_findings(
             f"a work order with no {label!r} section", drop(section),
             contains=f"no `## {label}` section",
         )
+
+    # ---- #659: the base commit must be a commit THIS repository has ----------------------
+    # PRESENT-BUT-UNUSABLE IS NOT PASSABLE. A plausible hex string tells an executor where to start
+    # and is worse than an absent one, because it will be trusted -- the rule this file already
+    # applies to a stop condition with no number.
+    expect_findings(
+        "a base commit that names no SHA at all",
+        GOOD.replace(BASE, "## Base commit\nthe current branch\n"),
+        contains="states no commit",
+    )
+    expect_findings(
+        "a plausible SHA this repository does not have",
+        GOOD.replace(BASE, "## Base commit\n`deadbeef` on `feature/x`\n"),
+        contains="not a commit in this repository",
+    )
+    # DRIFT IS A NOTE, NOT A FAILURE. Work legitimately continues on a moved branch, and a gate
+    # refusing every stale order would be switched off within a week.
+    # An ANCESTOR base: resolvable, but HEAD has moved past it. Expressed through the fake resolver
+    # so the assertion is about the checker's behaviour and not about this repository's history.
+    _drift_fake = (lambda sha: {"bbbbbbbbbb": "b" * 40, "HEAD": "c" * 40}.get(sha),
+                   lambda base: 4)
+    _drifted = GOOD.replace(BASE, "## Base commit\n`bbbbbbbbbb` on `main`\n")
+    _tick()
+    _findings = ch.check(ch.parse(_write(_drifted)), None, *_drift_fake)
+    if not any("4 commit(s) ahead" in f for f in _findings):
+        FAILURES.append(f"an ancestor base should report drift: {_findings}")
+    # DRIFT IS A NOTE, NOT A FAILURE. Work legitimately continues on a moved branch, and a gate
+    # refusing every stale order would be switched off within a week.
+    _tick()
+    if [f for f in _findings if not f.startswith("NOTE:")]:
+        FAILURES.append(f"a drifted order must have no real findings: {_findings}")
+    # ...and no drift means no note at all, or the note becomes background noise.
+    _tick()
+    if any(f.startswith("NOTE:") for f in ch.check(ch.parse(_write(GOOD)), None, *_FAKE)):
+        FAILURES.append("an up-to-date base should produce no drift note")
 
     # ---- scope: in AND out, and the boundary has to be nameable --------------------------
     expect_findings(
@@ -426,7 +474,7 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     original = ch._criteria_parser
     ch._criteria_parser = lambda: None
     try:
-        without = ch.check(ch.parse(_write(GOOD)), log)
+        without = ch.check(ch.parse(_write(GOOD)), log, *_FAKE)
     finally:
         ch._criteria_parser = original
     if not any("UNVERIFIED, not satisfied" in f for f in without):

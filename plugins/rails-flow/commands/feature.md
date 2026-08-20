@@ -1,17 +1,44 @@
 ---
 description: Orchestrated feature development — plan, spec-first implementation, quality gates, PR, tool-gated merge
-argument-hint: <feature description>
+argument-hint: <feature description> [--pack small|standard]
 ---
 
 <!-- topology: sequential
      merge: n/a — each phase consumes the previous phase's output, so there is nothing to reconcile.
-            The eight agents are a pipeline, not a fan-out. -->
+            The agents are a pipeline, not a fan-out. -->
 
 # /rails-flow:feature — $ARGUMENTS
 
 Build the requested feature end-to-end using the orchestrated flow below. You are the
 orchestrator: delegate to the rails-flow subagents, keep your own context lean, and never
 skip a gate. Hooks enforce the guardrails mechanically — do not fight them.
+
+## Pack size — how many specialists review, never whether the work is proven (#656)
+
+`--pack standard` (**the default**) is the full pipeline. `--pack small` runs the same phases with
+fewer delegated specialists, for a change whose blast radius is genuinely small — a copy fix, a
+one-line guard, a rename.
+
+| | `small` | `standard` |
+|---|---|---|
+| plan, criteria, spec-first loop | yes | yes |
+| **Phase 4 quality gates** | **all of them** | **all of them** |
+| `code-reviewer` | yes | yes |
+| `security-auditor`, `design-auditor` | only if their trigger fires | only if their trigger fires |
+| substantial units delegated to `rails-developer` | you may do them directly | delegated |
+
+**Three things this is not.** It does not skip a gate — Phase 4 is identical at every size, because
+pack size is about *how many specialists review*, not *whether the work is proven*. It is not three
+plugins that differ by subsetting, which `plugin-boundaries` rule 2 forbids. And **the agent does not
+choose its own size**: scope is the human's call, and an agent that downgraded itself when a job
+*looked* small would be judging exactly the thing it is worst at.
+
+**A smaller pack must say what it did not run.** The final report names the specialists that were
+skipped — *"reviewed by code-reviewer only; security-auditor not run (no auth/API/data change)"*. A
+run that quietly did less is the failure mode; a run that says so is a decision the reviewer can see.
+
+**The default is unchanged**, deliberately. A flag you must opt *out* of to get rigour is the wrong
+way round.
 
 ## Phase 0 — Context
 
@@ -142,6 +169,47 @@ Run in order; loop fixes back through Phase 3 until every gate passes:
 2. `test-runner` → FULL suite, 0 failures
 3. `security-auditor` → only if auth, authorization, APIs, or data handling changed
 4. `design-auditor` → only if views/partials/Stimulus changed
+
+### 4b. Would the specs have caught it? — advisory, and it does not block
+
+`test-runner` proves the suite is **green**. Green says nothing about whether the specs would catch a
+regression: `expect(invoice).to be_present` passes forever and proves nothing. Phase 3 already makes
+the mapping from criterion to proof mechanical — the spec cites `AC-2` — and the **citation is
+enforced while the proof is not.** A spec can cite `AC-2` and assert something trivially true.
+
+So, for **the unit's changed code only**, mutate it and re-run **the specs that cite its criteria**:
+
+```bash
+bundle exec mutant run --since HEAD~1   # or the project's tool, from config
+```
+
+**A surviving mutant is reported against the criterion whose spec missed it**, never as a bare
+number:
+
+> `AC-2`'s spec passes with `line_items.any?` inverted — the criterion is cited but not proven.
+
+That wording is the deliverable. *"Coverage is 78%"* tells you nothing you can act on; the sentence
+above names the criterion, the mutation, and what to write next.
+
+**It is advisory on purpose, and this is not timidity.** Equivalent mutants — changes that do not
+alter behaviour — survive legitimately, and no tool eliminates them. A blocking gate would refuse
+correct code on its first real input, which is exactly what killed the monotony gate in `#476`:
+*"a gate that needs a carve-out on its first real input is taste wearing a count."*
+
+**Scope it strictly to the changed unit.** A whole-suite mutation run takes long enough that a flow
+demanding one gets skipped, and a skipped gate is worse than an advisory one. The tool and its flags
+live in **project config**, never here — tool names rot inside a quarter, which is why the model
+ladder lives there too.
+
+The project may not have a mutation tool configured. Then say so in one line and move on: *"no
+mutation tool configured; the specs are green and unproven."* That is an honest statement, and
+inventing a tool name would not be.
+
+### 4c. If the pack was `small`, name what did not run
+
+One line in the report, listing the specialists skipped and why. **Absent, the reader cannot tell a
+small pack from a standard one that quietly did less** — which is the whole risk this flag carries,
+and the reason it is stated rather than inferred.
 
 ## Phase 5 — PR
 

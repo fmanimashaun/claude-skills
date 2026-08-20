@@ -9,7 +9,47 @@ Several agent sessions may run against one repository at the same time. Every st
 exists to keep their HEADs, indexes, and diffs from colliding. Each rule was written after
 the collision it prevents actually happened.
 
+## 0. Getting into this mode
+
+Until #661 a human opened N terminals and assigned lanes by hand — this skill described a mode
+nothing could put you in. `rails-flow` now ships an assigner:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assign_lanes.py" app/models app/controllers --budget-usd 6
+```
+
+It prints the `git worktree add` per lane and the session command with `RAILS_FLOW_LANE` set. It
+**refuses** overlapping lanes, a single lane, a dirty tree, and a missing lane guard.
+
+**It prepares; it does not spawn.** Creating a worktree is mechanical and deciding when an agent
+starts is not, so it prints the commands rather than running them.
+
+**No tmux and no daemon**, deliberately. `swarm-forge` needs message passing because its roles cannot
+see each other's state; ours can — `compose_state.py` derives the driver's state *from the
+repository* and a work order is a committed file. Git is the handoff medium and it survives a reboot,
+which a tmux session does not.
+
+**Spend is reported, never enforced.** N sessions is N times the cost, and this script cannot see a
+provider balance — a cap it could not honour would be a promise nothing keeps.
+
 ## 1. Confirm your worktree before any edit
+
+**This is enforced now, when a lane is assigned.** `rails-flow` ships a `PreToolUse` hook that
+refuses a **write** outside the lane in `RAILS_FLOW_LANE`. Until it existed, §1 was advice: a session
+that skipped it produced a clean-looking branch in the wrong worktree, silently, while another
+session was working there — and nothing said so until a human read a diff that did not belong.
+
+Three properties, each deliberate:
+
+- **Dormant with no lane assigned.** No `RAILS_FLOW_LANE`, no opinion — a single-session run must not
+  pay for a multi-session feature, and a guard that fired on ordinary work would be switched off.
+- **Writes only.** §2 also says do not diff other branches; refusing *reads* would break legitimate
+  context-gathering, and that over-reach is how a hook gets disabled.
+- **Fails closed.** With `python3` missing it scans the raw payload, so the path still matches.
+
+If the lane is wrong, change it deliberately. **Do not widen it to make one write pass** — that is
+the same move as adding a carve-out to silence a gate.
+
 
 - Work **only** inside the worktree you were assigned.
 - Never work in the **primary checkout** — the clone `git worktree list` prints first, without a
