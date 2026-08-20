@@ -2144,6 +2144,38 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`/fix` debugged before it diagnosed.** (#647) The command went Setup → Principles → Workflow and
+  straight to fixing. There was no step asking *what kind of failure is this?* — and the responses
+  genuinely diverge: a defect wants a reproduction and a criterion, an environment failure wants the
+  environment fixed, a wrong expectation wants the **test** changed, an upstream bug wants a pin and
+  a **stop**, a flake wants determinism and **not** a logic change.
+
+  A new **Phase 0** names the type and the evidence that chose it, in one line that lands in the
+  report. The two rows that say **stop** are the point: debugging our own code for an upstream bug has
+  no natural end, and "fixing" a flake by editing correct logic makes it worse while hiding the cause.
+
+  **Advisory, deliberately.** Classifying is judgement, and #476 settled how this repo treats gates on
+  judgement — the monotony threshold flagged our own worked example on its first real input. What is
+  mechanical is that a classification was *stated*, the same shape `check_criteria.py` already uses.
+  Its relationship to `/escalate` is stated too, since the two are easy to confuse at the point of
+  use: escalation asks a human a question and parks the thread; this decides what kind of problem you
+  have before choosing how to respond.
+
+- **Eleven agents ran for every job.** (#656) A one-line copy fix and a new payments subsystem took
+  the same route. `--pack small` now runs the same phases with fewer delegated specialists.
+
+  Three boundaries hold it in place. **Phase 4's quality gates are identical at every size** — pack
+  size is about how many specialists review, not whether the work is proven. It is **not** three
+  plugins differing by subsetting, which `plugin-boundaries` rule 2 forbids. And **the agent does not
+  choose its own size**: an agent that downgraded itself when a job *looked* small would be judging
+  exactly the thing it is worst at.
+
+  **A smaller pack must name what it did not run**, in the report. Absent that, a reader cannot tell a
+  small pack from a standard one that quietly did less — which is the whole risk the flag carries. The
+  default is unchanged: a flag you must opt *out* of to get rigour is the wrong way round.
+
 ### 1.22.3 — 2026-08-16 (release v1.91.2)
 
 - **The Stop gate reported a false RED on a green suite, blocking every turn-stop.** (#683) It ran
