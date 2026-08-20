@@ -159,6 +159,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # model rather than as a model called "agent".
     # #661. The launcher refuses overlapping lanes, and overlap is its whole safety property: two
     # sessions editing one tree while the guard believes each is alone review clean on both sides.
+    # #655. Both halves: the drift check asserts the page we ship is a clean build, and the selftest
+    # proves each validator fires AND stays silent -- including that an `advice` row with nothing
+    # behind it is correct, without which the unenforced-guarantee rule is a blanket ban on advisory
+    # doctrine, which `quality-pass` exists to argue against.
+    ("doctrine map drift", ("python3", "scripts/doctrine_map.py", "--check")),
+    ("doctrine map coverage", ("python3", "scripts/doctrine_map.py", "--audit-coverage")),
+    ("doctrine map selftest", ("python3", "scripts/doctrine_map.py", "--selftest")),
     ("rails-flow lane assigner selftest",
      ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
