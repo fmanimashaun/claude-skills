@@ -3030,6 +3030,46 @@ GUARDS: tuple[Guard, ...] = (
     # is an unresolved decision AND part of `todo.rb`. A rule that flags the second of each pair
     # gets the tool switched off, so the carve-outs are what need guarding.
     Guard(
+        # #655. The map's own failure mode is the one it exists to catch: a row that advertises
+        # enforcement which no longer exists reads as coverage. Each mutation removes one validator
+        # and names the fixture that must then fail.
+        name="doctrine_map",
+        subject="scripts/doctrine_map.py",
+        selftest="scripts/doctrine_map.py",
+        needs=(".claude-plugin", ".github", ".claude", "scripts", "plugins", "skills", "docs",
+               "CLAUDE.md", "AGENTS.md"),
+        mutations=(
+            Mutation(
+                "a reworded or deleted claim keeps its row, so the map advertises doctrine we no "
+                "longer state",
+                "        elif c.anchor not in body:",
+                "        elif False:",
+                "anchor missing fires",
+            ),
+            Mutation(
+                "a row may cite a gate, guard or rule that has been deleted",
+                "            ok, why = resolver.resolve(ref)",
+                '            ok, why = True, ""',
+                "bad gate fires",
+            ),
+            Mutation(
+                "a gap that got fixed stays listed as a gap -- the map going stale in the direction "
+                "nobody looks",
+                "            if resolved:",
+                "            if False:",
+                "resolved gap fires",
+            ),
+            Mutation(
+                # A hook script on disk that nothing invokes is precisely the shape of defect this
+                # map is for, so existence must not count as enforcement.
+                "an existing but unwired hook counts as enforcement",
+                '            return (name in self.hooks), f"hook script {name} exists but nothing wires it"',
+                '            return True, ""',
+                "an existing but unwired hook does not resolve",
+            ),
+        ),
+    ),
+    Guard(
         # #661. Overlap is the whole safety property, and the budget note is the only place spend is
         # ever mentioned across concurrent sessions -- silence there reads as "bounded".
         name="assign_lanes",

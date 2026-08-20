@@ -425,6 +425,56 @@ It found four real copy-paste hazards in shipped skills, all of which raise on p
 `rescue … end` with no `begin`, two prose-as-code lines (`Product.select(…) / .pluck(…)` — `/` is
 division), and two blocks mixing a class field with statements.
 
+### Which claims are enforced, and which are not — `docs/doctrine-map.html`
+
+One question got asked by grep more than once a session: **which claim in our markdown is made true
+by which gate, and which claims are made true by nothing.** That last set is the defect class above,
+and we were finding them one accident at a time — nothing read the manifest's `use_cases` (#639),
+nothing gated `marketplace.json` completeness (#651), a `--check || echo` made a release gate unable
+to block (#151).
+
+```bash
+python3 scripts/doctrine_map.py                   # rebuild the page
+python3 scripts/doctrine_map.py --check            # drift gate
+python3 scripts/doctrine_map.py --audit-coverage    # a declared source with no rows is a finding
+```
+
+**There is no extractor, and that is the design.** Pulling "a claim" out of prose is the hard part,
+and a bad extractor is worse than none — *a map that misses claims reads as coverage*. So `CLAIMS`
+is an explicit registry living in the same file as the validators that check it, the shape
+`maintainer_doctor.GATES` and `mutation_check.GUARDS` already use, because a registry and its checker
+in two files drift apart.
+
+Each row is `guarantee`, `advice`, or `gap`, using **[`docs/harness-doctrine.md`](docs/harness-doctrine.md)**'s
+existing test (*"if a model ignores this, what happens?"*) rather than new vocabulary. Six validators
+run, all mechanical — so none is taste wearing a count (#476):
+
+| validator | the defect it catches |
+|---|---|
+| `anchor missing` | the claim was reworded or deleted and the map still advertises it |
+| `unresolved enforcement` | the row cites a gate/guard/rule/script that no longer exists — **this map committing the very defect it is for** |
+| `unenforced guarantee` | a `guarantee` citing nothing; make it `advice`, or a `gap` with an issue |
+| `untracked gap` | a `gap` with no issue number, which is a shrug |
+| `resolved gap` | a `gap` whose enforcement now resolves — the row got fixed and nobody reclassified it |
+| `undeclared source` | a row points outside `DOCTRINE_SOURCES`, so the declared surface is wrong |
+
+Two things it deliberately does **not** do. An `advice` row with nothing behind it is **correct** —
+`quality-pass` never blocks a merge on purpose, and `art-direction.md` argues at length that gating
+judgement is worse than not gating it; the selftest has an explicit negative test for this, without
+which `unenforced guarantee` would be a blanket ban on advisory doctrine. And `hook:` resolves against
+the JSON that **wires** a script, never against the filesystem, because a hook sitting on disk that
+nothing invokes is exactly the shape this map exists to surface.
+
+**The map is a floor, not a ceiling, and the page says so.** `--audit-coverage` can tell you a
+declared source has *zero* rows; nothing can tell you a source with four rows was not owed nine. A
+row count is evidence that someone looked — never proof the file is covered. A green artifact standing
+in for work nobody did is the failure this replaces, so it does not get to be one.
+
+Not OpenKB, which prompted the issue: it compiles documents into a wiki **with an LLM**, so the bytes
+are not a function of the inputs and no drift gate could hold them — an LLM-compiled knowledge base
+would be the one generated artefact here that nothing could check, in the repo that files bugs about
+exactly that. Take the idea, not the tool.
+
 ## Verify our own claims, not just our shell
 
 A trial reviewer spent a fortnight catching a class of bug our review missed, and it had no

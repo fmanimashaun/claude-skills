@@ -3488,6 +3488,49 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.49.0 — 2026-08-20 (release v1.92.0)
 
+- **We answered "what enforces this?" by grep, every session.** (#655) `docs/doctrine-map.html` is
+  generated from an explicit registry in `scripts/doctrine_map.py`: **32 claims**, each with where it
+  is stated and what makes it true — 24 enforced guarantees, 7 advisory, 1 tracked gap.
+
+  **There is no extractor, and that is the design.** The issue named its own biggest risk: pulling "a
+  claim" out of prose is the hard part, and a bad extractor is worse than none, because **a map that
+  misses claims reads as coverage.** So `CLAIMS` lives in the same file as the validators that check
+  it — `maintainer_doctor.GATES` and `mutation_check.GUARDS`'s shape — since a registry and its
+  checker in two files drift apart.
+
+  Six mechanical validators, so none is taste wearing a count (#476): a reworded claim breaks its
+  anchor; a row citing a deleted gate, guard or rule fails; a `guarantee` citing nothing must become
+  `advice` or a `gap` with an issue number; and a `gap` whose enforcement **now resolves** fails too —
+  the map going stale in the direction nobody looks. `hook:` resolves against the JSON that **wires** a
+  script, never against the filesystem, because an unwired hook is exactly the defect this map exists
+  to surface.
+
+  **An `advice` row with nothing behind it is correct**, and the selftest has an explicit negative test
+  for it — without which `unenforced guarantee` would be a blanket ban on advisory doctrine, which
+  `quality-pass` exists to argue against.
+
+  **The page stamps no version**, unlike `coverage.html`: that page is copied between machines so the
+  version is its only freshness signal, while this one is read in-tree beside the sources it describes,
+  where the drift gate *is* the signal. One fewer non-content input, and both committed pages here have
+  been unpassable by construction once each.
+
+  **It says on its face that it is a floor, not a ceiling.** The audit reports a declared source with
+  *zero* rows; nothing can report that a source with four rows was owed nine. A green artifact standing
+  in for work nobody did is the failure being replaced, so it does not get to be one.
+
+  Not OpenKB, which prompted the issue: it compiles documents with an **LLM**, so its bytes are not a
+  function of its inputs and no drift gate could hold them — the one generated artefact here that
+  nothing could check, in the repo that files bugs about exactly that. Took the idea, not the tool.
+
+  Two findings from building it, both the map catching its own kind of error before it shipped: the
+  base-commit contract (#659) is stated in `handoff.md`, **not** `feature.md` where the row first
+  pointed — a map pointing at the wrong file lies quietly. And the borrowed "gate the declared agent
+  count" idea was **cut**, because measuring it found no defect: `marketplace.json`'s *"eleven
+  specialist subagents"* matches the eleven files in `plugins/rails-flow/agents/`.
+
+  Gates: **83** (was 80) — drift, coverage audit, selftest. Plus four mutation guards over the
+  validators.
+
 - **We shipped the protocol for parallel sessions and no way to enter it.** (#661)
   `parallel-session-lane` describes being one of N sessions — *"confirm your worktree, take one
   coherent slice, stay in your subtree"* — and nothing in this marketplace ever put a session into
