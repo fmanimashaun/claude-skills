@@ -32,11 +32,14 @@ left committed-vs-gitignored open. Both halves are decided here, against the iss
 
 ## The shape (the headings are a contract)
 
-`check_handoff.py` requires all eight `##` sections. Each is there because leaving it out is a
+`check_handoff.py` requires all nine `##` sections. Each is there because leaving it out is a
 specific, observed failure — not for symmetry.
 
 ```markdown
 # Work order — <slug>
+
+## Base commit
+`a1b2c3d` on `feature/invoice-totals` — the tree this order was written against.
 
 ## Goal
 One paragraph: what is being built and the outcome that makes it worth doing. No implementation.
@@ -84,6 +87,17 @@ Update `docs/brain/STATUS.md`; a decision taken on the way goes to `docs/brain/D
 checker rejects a work order that points at the conversation ("as we discussed", "the plan I
 described above"), and rejects leftover `<placeholders>`, `TBD` and `TODO`. An executor cannot
 resolve either, and will guess — which is the exact failure the file exists to prevent.
+
+**The base commit is the section an executor reads first.** The other eight describe what to
+do; this one says from *where*. A work order is committed, so it is durable by design — and durable
+is when it bites: `/rails-flow:escalate` parks a question on an issue and resumes *"in a different
+session after a restart"*, so an order can be picked up against a tree that has moved. Its `scope`
+names files and its `verify` names commands, and neither is true of a branch three commits later.
+
+The checker **resolves** it: a plausible hex string that is not a commit in this repository is
+refused, because an executor will start from it. Drift is **reported, not refused** — *"written
+against `a1b2c3d`, HEAD is 4 commits ahead"* — since work legitimately continues on a moved branch
+and a gate refusing every stale order would be switched off.
 
 **Link, never copy.** The criteria section cites `AC-n` ids; it must not carry
 `Given … when … then …` lines of its own, and the checker enforces that. Two prose copies of one

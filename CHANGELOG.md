@@ -2144,6 +2144,53 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A work order never said which commit it was written against.** (#659) `check_handoff.py`
+  required eight sections and every one described what to **do**; none said from **where**. That is
+  survivable for an order executed immediately and not for a durable one — and these are committed
+  by design. `escalation.py` parks a question on an issue and resumes *"in a different session after
+  a restart"*, so an executor can pick up an order written against a tree that has moved: its
+  `scope` names files and its `verify` names commands, and neither is true of a branch three commits
+  later. The order still validated cleanly, because completeness was all we checked.
+
+  A ninth section now carries it, and the SHA is **resolved**: a plausible hex string that is not a
+  commit in this repository is refused, because an executor will start from it. Present-but-unusable
+  is not passable — the rule already applied to a stop condition with no number.
+
+  **Drift is reported, not refused** — *"written against a1b2c3d and HEAD is 4 commits ahead"*, as a
+  `NOTE:`. Work legitimately continues on a moved branch, and a gate refusing every stale order
+  would be switched off within a week.
+
+  **The two git calls are injectable, and that is not decoration.** The mutation harness stages the
+  module into a tempdir with **no git repository**, so a fixture resolving against the real repo
+  either crashes or reports every SHA missing — making every mutation read as "caught" for the wrong
+  reason. The gate caught exactly that: an `IndexError` from my first fixture, which had assumed a
+  repo. Selftest 81 → **86**, two mutation guards.
+
+  `handoff.md` gains the section in its template, because a gate already asserts the template and
+  the checker agree — and it fired the moment they diverged.
+
+- **Phase 4 now asks whether the specs would have caught it.** (#658) `test-runner` proves the suite
+  is **green**, and green says nothing about whether a spec would catch a regression:
+  `expect(invoice).to be_present` passes forever. Phase 3 already makes the criterion→proof mapping
+  mechanical — the spec cites `AC-2` — so **the citation was enforced and the proof was not.**
+
+  A new advisory pass mutates the changed unit and re-runs the specs citing its criteria. A surviving
+  mutant is reported **against the criterion whose spec missed it**: *"`AC-2`'s spec passes with
+  `line_items.any?` inverted — the criterion is cited but not proven."* That sentence is the
+  deliverable; *"coverage is 78%"* is not actionable.
+
+  **Advisory on purpose, and not out of timidity.** Equivalent mutants survive legitimately and no
+  tool eliminates them, so a blocking gate would refuse correct code on its first real input — what
+  killed the monotony gate in #476. Scoped strictly to the changed unit, because a whole-suite run
+  takes long enough that the flow gets skipped, and a skipped gate is worse than an advisory one. The
+  tool lives in **project config**: tool names rot inside a quarter, which is why the model ladder
+  lives there too. No tool configured is stated in one line rather than invented.
+
+  We run 529 mutations against our own gates. Shipping users a flow whose test gate was *"0
+  failures"* was a standard we held ourselves to and did not sell.
+
 ### 1.22.3 — 2026-08-16 (release v1.91.2)
 
 - **The Stop gate reported a false RED on a green suite, blocking every turn-stop.** (#683) It ran
