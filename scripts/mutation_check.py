@@ -3056,6 +3056,22 @@ GUARDS: tuple[Guard, ...] = (
         ),
         mutations=(
             Mutation(
+                # #659. A plausible hex string tells an executor where to start and is worse than an
+                # absent one, because it will be trusted. Present-but-unusable is not passable, the
+                # rule this file already applies to a stop condition with no number.
+                "an unresolvable base commit is accepted, so the executor starts from nowhere",
+                "    if resolved is None:",
+                "    if False:",
+                "a plausible SHA this repository does not have",
+            ),
+            Mutation(
+                # A section naming no SHA at all leaves the one question it exists to answer open.
+                "a base-commit section with no SHA passes",
+                "    if not shas:",
+                "    if False:",
+                "a base commit that names no SHA at all",
+            ),
+            Mutation(
                 "`retry` back in the attempt-cap vocabulary (the real bug a fixture found)",
                 '("attempt cap", ("attempt", "retries", "retry limit", "retry cap", "tries")),',
                 '("attempt cap", ("attempt", "retry", "retries", "tries")),',

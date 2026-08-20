@@ -75,6 +75,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -107,7 +108,18 @@ REQUIRED_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("verify", ("verify", "verification", "how to check")),
     ("executor", ("executor", "who runs this", "tier")),
     ("on completion", ("on completion", "what to record", "record on completion", "when done")),
+    # #659. WHAT STATE TO START FROM. The other eight describe what to DO; none said from WHERE.
+    # A work order is committed, so it is durable by design -- and durable is exactly when this
+    # bites: `escalation.py` parks a question on an issue and resumes "in a different session after
+    # a restart", so an executor can pick up an order written against a tree that has since moved.
+    # Its `scope` names files and its `verify` names commands, and neither is true of a branch three
+    # commits later. The order still validated cleanly, because completeness was all we checked.
+    ("base commit", ("base commit", "base", "written against", "from commit", "starting point")),
 )
+
+# A 7-40 char hex string on its own, or after a `` ` ``. Deliberately not anchored to the whole line:
+# the section reads "written against `a1b2c3d` on `feature/x`" as often as it reads a bare SHA.
+SHA_RE = re.compile(r"\b([0-9a-f]{7,40})\b")
 
 IN_ALIASES = ("in scope", "in-scope", "in", "included")
 OUT_ALIASES = ("out of scope", "out-of-scope", "not in scope", "out", "excluded")
@@ -484,7 +496,79 @@ def _executor_tier(section: Section, findings: list[str]) -> str | None:
     return tier
 
 
-def check(sections: list[Section], criteria: Path | None = None) -> list[str]:
+def _resolve(sha: str) -> str | None:
+    """The full SHA if this repository has that commit, else None. No network, no fetch."""
+    try:
+        out = subprocess.run(["git", "rev-parse", "--verify", f"{sha}^{{commit}}"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def _commits_ahead(base: str) -> int:
+    """How many commits HEAD is past `base`. 0 when it cannot be determined -- never a guess."""
+    try:
+        out = subprocess.run(["git", "rev-list", "--count", f"{base}..HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        return int(out.stdout.strip() or 0) if out.returncode == 0 else 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0
+
+
+def _check_base_commit(section: Section, findings: list[str],
+                       resolve=None, ahead=None) -> None:
+    """The stated base must be a commit this repository actually has. #659.
+
+    PRESENT-BUT-UNUSABLE IS NOT PASSABLE -- the rule this file already applies to a stop condition
+    with no number and to an unresolved placeholder. A plausible-looking hex string tells an executor
+    where to start and is worse than an absent one, because it will be trusted.
+
+    DRIFT IS REPORTED, NOT REFUSED. Work legitimately continues on a branch that has moved, and a
+    gate refusing every stale order would be switched off within a week. The value is that the
+    executor is TOLD -- "written against a1b2c3d, HEAD is 4 commits ahead" -- rather than discovering
+    it when `scope` names a file that no longer exists.
+    """
+    # INJECTABLE, and that is not decoration: the mutation harness stages this module into a
+    # tempdir with no git repository, so a fixture resolving against the real repo either crashes or
+    # reports every SHA missing -- making every mutation read as "caught" for the wrong reason. The
+    # environment touch is one seam, passed in.
+    resolve = resolve or _resolve
+    ahead = ahead or _commits_ahead
+    body = "\n".join(section.lines)
+    shas = SHA_RE.findall(body.lower())
+    if not shas:
+        findings.append(
+            "`## base commit` states no commit. It is the one section an executor reads BEFORE "
+            "doing anything -- `scope` names files and `verify` names commands, and neither is true "
+            "of a branch that has moved since. Put the SHA the order was written against.")
+        return
+    resolved = next((r for sha in shas if (r := resolve(sha))), None)
+    if resolved is None:
+        findings.append(
+            # Indexed through a default: with the empty-SHA guard above mutated away, `shas[0]`
+            # raises and the run dies before reporting anything -- and a crash is not a verdict. CI's
+            # full mutation sweep caught that where a single-guard run did not.
+            f"`## base commit` names {(shas[0] if shas else '(nothing)')!r}, which is not a commit "
+            f"in this repository. A "
+            f"plausible hex string is worse than an absent one: an executor will start from it. "
+            f"Present-but-unusable is not passable here, exactly as for a stop condition with no "
+            f"number.")
+        return
+    head = resolve("HEAD")
+    if head and head != resolved:
+        n = ahead(resolved)
+        if n:
+            # A NOTE, not a finding: this must not fail the order. Prefixed so a caller can tell it
+            # apart, and worded so the executor knows what to re-check rather than what to fix.
+            findings.append(
+                f"NOTE: written against {resolved[:10]} and HEAD is {n} commit(s) ahead. Not an "
+                f"error -- re-read `scope` and `verify` against the current tree before trusting "
+                f"them, because a moved branch is where a self-contained order stops being one.")
+
+
+def check(sections: list[Section], criteria: Path | None = None,
+          resolve=None, ahead=None) -> list[str]:
     findings: list[str] = []
     found: dict[str, Section] = {}
     for label, aliases in REQUIRED_SECTIONS:
@@ -507,6 +591,8 @@ def check(sections: list[Section], criteria: Path | None = None) -> list[str]:
         _check_verify(found["verify"], findings)
     if "acceptance criteria" in found:
         _check_criteria(found["acceptance criteria"], criteria, tier, findings)
+    if "base commit" in found:
+        _check_base_commit(found["base commit"], findings, resolve, ahead)
 
     # ---- self-containment: the promise that makes the file worth writing --------------------
     for section in sections:
