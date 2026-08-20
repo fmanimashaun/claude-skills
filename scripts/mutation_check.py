@@ -1709,6 +1709,14 @@ GUARDS: tuple[Guard, ...] = (
             "evals",
         ),
         mutations=(
+            # The gate tally must exclude preconditions. Widening the filter is how the count goes
+            # back to being off by one, which put three wrong numbers in shipped text.
+            Mutation(
+                "the gate tally counts preconditions and diagnostics as gates",
+                '        return [r for r in self.results if r.name.startswith("gate: ")]',
+                "        return list(self.results)",
+                "the gate tally counted",
+            ),
             Mutation(
                 "an unignored corpora path stops being reported",
                 "                if not verdict:",

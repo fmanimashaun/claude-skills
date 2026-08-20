@@ -9,6 +9,27 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-08-20 (release v1.92.0)
 
+- **The gate tally counted a precondition as a gate, and three wrong numbers reached shipped text
+  because of it.** `--gates-only` runs `check_is_marketplace_repo` — a **precondition**, fatal if it
+  fails, and not a gate — into the same results list, so the headline *"N passed"* has always been
+  gates **+ 1**. Anyone reading it as *"how many gates are there"* was off by one, and everyone did:
+  a CHANGELOG bullet in this very release claimed **83 (was 80)** against 82 and 79, a merged PR body
+  claimed 85 against 84, and the same 85 was reported to the maintainer. Two sessions then reconciled
+  84 against 85 as a **units disagreement between measurement methods** — it was not one. It was this.
+
+  The summary now prints the gate count separately and says which number to quote. The headline still
+  counts **every** check, because collapsing preconditions and diagnostics into the gate count is the
+  same conflation as rendering a SKIP as a PASS, which this tool exists to refuse.
+
+  **A number nobody can read correctly is a defect in the reporting, not in the reader.** Three
+  independent misreadings in one afternoon is the measurement, not the anecdote.
+
+  The fix is guarded, and getting there hit the day's recurring fixture defect a **third** time. The
+  filter started as a comprehension inside the summary's `print`, so the selftest recomputed the same
+  filter by hand — and the mutation that widened it to `list(self.results)` **survived**, because the
+  fixture was proving its own arithmetic rather than the code under test. It is now
+  `Doctor.gate_results()`, which the selftest calls and the mutation can reach.
+
 - **A promotion bumping two components published one component's notes and silently dropped the
   other's.** (#699) `release.yml` extracted the release body with an awk that said
   `grab && /^### / { exit }` — `exit`, not *stop grabbing*. So it took the **first**
@@ -3592,8 +3613,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   count" idea was **cut**, because measuring it found no defect: `marketplace.json`'s *"eleven
   specialist subagents"* matches the eleven files in `plugins/rails-flow/agents/`.
 
-  Gates: **83** (was 80) — drift, coverage audit, selftest. Plus four mutation guards over the
-  validators.
+  Gates: **82** (was 79) — drift, coverage audit, selftest. Plus four mutation guards over the
+  validators. (Corrected before publishing: the first draft said 83 was 80, counting the doctor's
+  repo-identity precondition as a gate. See the hygiene entry above.)
 
 - **We shipped the protocol for parallel sessions and no way to enter it.** (#661)
   `parallel-session-lane` describes being one of N sessions — *"confirm your worktree, take one
