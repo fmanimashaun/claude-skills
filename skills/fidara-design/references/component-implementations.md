@@ -165,7 +165,7 @@ end
 ```erb
 <%# alert_component.html.erb %>
 <div class="<%= classes %>" role="<%= role %>"
-     <%= "data-controller=dismiss" if @dismissible %> <%= tag.attributes(@attrs) %>>
+     <%= tag.attributes(data: { controller: ("dismiss" if @dismissible) }) %> <%= tag.attributes(@attrs) %>>
   <div class="cluster" style="--space: var(--space-2xs); --align: start">
     <span class="alert-icon with-icon shrink-0"><%= icon %></span>  <%# with-icon → svg 1em, currentColor %>
     <div class="stack" style="--space: var(--space-3xs)">
@@ -661,8 +661,8 @@ end
 ```erb
 <%# disclosure_component.html.erb %>
 <%# The heading contains ONLY the button (APG). A badge or overflow menu goes outside it. %>
-<div data-controller="disclosure" <%= "data-disclosure-group-value=#{@group}" if @group %>
-     data-state="<%= state %>">
+<div data-controller="disclosure" data-state="<%= state %>"
+     <%= tag.attributes(data: { disclosure_group_value: @group }) %>>
   <% if @heading %>
     <%= content_tag @heading, class: "m-0" do %>
       <button type="button" id="<%= trigger_id %>" class="<%= trigger_classes %> with-icon"
@@ -683,9 +683,9 @@ end
 
   <%# `hidden` AND aria-expanded — see the contract: aria-expanded alone leaves this in the %>
   <%# accessibility tree and the tab order. %>
-  <div id="<%= panel_id %>" data-disclosure-target="panel" <%= "hidden" unless @open %>
-       <%= "role=region aria-labelledby=#{trigger_id}".html_safe if @region %>
-       class="border-t border-border">
+  <div id="<%= panel_id %>" data-disclosure-target="panel" class="border-t border-border"
+       <%= "hidden" unless @open %>
+       <%= tag.attributes(@region ? { role: "region", aria: { labelledby: trigger_id } } : {}) %>>
     <div class="stack py-4" style="--space: var(--space-s)"><%= panel_content %></div>
   </div>
 </div>
@@ -892,7 +892,7 @@ end
 <div class="bg-card text-card-foreground rounded-lg border border-border border-l-4 <%= accent %>
             shadow-md pointer-events-auto px-3 py-2 flex items-start gap-2.5 w-fit max-w-full"
      role="<%= intent == :error ? 'alert' : 'status' %>"
-     data-controller="toast"<%= " data-toast-timeout-value=#{timeout_ms}" if timeout_ms %>>
+     data-controller="toast" <%= tag.attributes(data: { toast_timeout_value: timeout_ms }) %>>
   <% if icon.present? %><span class="shrink-0 mt-0.5" aria-hidden="true"><%= icon %></span><% end %>
   <div class="stack" style="--space: var(--space-3xs)">
     <span class="text-step--1 font-medium"><%= title %></span>
@@ -2180,7 +2180,7 @@ end
 <%# isolate + focus-visible:z-10 on children so the focus ring is not clipped by the overlap %>
 <div class="cluster isolate" style="--space: 0"
      role="<%= role %>" aria-label="<%= label %>"
-     <%= "data-controller=#{controller}" if controller %>>
+     <%= tag.attributes(data: { controller: controller }) %>>
   <%# each child: Ui::ButtonComponent(variant: :outline) with
       first:rounded-s-md last:rounded-e-md rounded-none [&:not(:first-child)]:-ms-px
       focus-visible:z-10 min-h-touch %>
