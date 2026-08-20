@@ -3030,6 +3030,43 @@ GUARDS: tuple[Guard, ...] = (
     # is an unresolved decision AND part of `todo.rb`. A rule that flags the second of each pair
     # gets the tool switched off, so the carve-outs are what need guarding.
     Guard(
+        # #699. The bug shipped four times, so the fixtures that matter are the ones the OLD awk
+        # would have failed -- two blocks under one tag, and a gate with teeth enough to refuse it.
+        name="extract_release_notes",
+        subject="scripts/extract_release_notes.py",
+        selftest="scripts/extract_release_notes.py",
+        needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh"),
+        mutations=(
+            Mutation(
+                "only the first block for a tag is grabbed -- the original bug, restored",
+                "            if needle in line:",
+                "            if needle in line and not out:",
+                "second component's notes present — the bug",
+            ),
+            Mutation(
+                # Without this the gate is the parser agreeing with itself.
+                "the check stops noticing a block that would not publish",
+                "        if stem not in produced:",
+                "        if False:",
+                "the check REFUSES the old first-block-only behaviour",
+            ),
+            Mutation(
+                # The closing paren is the whole reason v1.9.0 cannot match v1.92.0.
+                "the tag needle loses its closing paren, so a tag matches any tag it prefixes",
+                '    needle = f"(release {tag})"\n    lines = text.split',
+                '    needle = f"(release {tag}"\n    lines = text.split',
+                "a prefix tag does not match the longer one",
+            ),
+            Mutation(
+                "a tag with no block at all stops being a finding, so a release publishes a bare "
+                "pointer and the gate says nothing",
+                "    if not declared:",
+                "    if False:",
+                "no block is a CHECK finding",
+            ),
+        ),
+    ),
+    Guard(
         # #655. The map's own failure mode is the one it exists to catch: a row that advertises
         # enforcement which no longer exists reads as coverage. Each mutation removes one validator
         # and names the fixture that must then fail.

@@ -1746,6 +1746,58 @@ def check_changelog_section_missing() -> tuple[list[Finding], int]:
     return findings, len(plugins)
 
 
+def check_duplicated_release_extractor() -> tuple[list[Finding], int]:
+    """The release-notes extractor lives in ONE script, and both publish paths must call it.
+
+    #699. `.github/workflows/release.yml` and `scripts/release_local.sh` each carried the same awk,
+    byte for byte, kept in step by a COMMENT asking maintainers to keep them in step. That comment
+    was the enforcement, which is to say there was none -- and when the awk turned out to `exit` at
+    the next heading instead of merely stopping the grab, a promotion bumping two components
+    published one component's notes and silently dropped the other's. It shipped four times: #682
+    (v1.91.2), #642 (v1.89.0), #640 and #643 (v1.88.0) never appeared in their release bodies.
+
+    So this rule is not about tidiness. Duplicating the extractor is how the bug becomes invisible
+    again: fix one copy, leave the other, and the fallback path still mispublishes. The check is
+    behavioural in the only way a linter can be here -- it asserts each publish path DELEGATES,
+    and that neither has regrown an inline parser.
+
+    Both directions matter. A call site that stops calling the script is a finding; so is one that
+    calls it AND keeps an awk, because then which one wins depends on line order.
+    """
+    paths = (".github/workflows/release.yml", "scripts/release_local.sh")
+    script = "extract_release_notes.py"
+    # Shapes of an inline extractor. The needle form catches a rewrite that renames `grab`.
+    inline = ("grab && /^### /", "-v needle=", "awk -v needle")
+    findings: list[Finding] = []
+    examined = 0
+    if not (ROOT / "scripts" / script).is_file():
+        return [Finding(
+            "duplicated-release-extractor", f"scripts/{script}", 1,
+            f"scripts/{script} is missing, so both publish paths must be carrying their own "
+            f"extractor again -- the #699 shape.")], 0
+    for rel in paths:
+        f = ROOT / rel
+        if not f.is_file():
+            continue
+        examined += 1
+        body = read(f)
+        if script not in body:
+            findings.append(Finding(
+                "duplicated-release-extractor", rel, 1,
+                f"{rel} does not call scripts/{script}, so it has its own release-notes "
+                f"extractor. That is how #699 stayed invisible: two copies, one comment asking "
+                f"for them to be kept in step, and a fallback path that still mispublished after "
+                f"the first copy was fixed."))
+        for shape in inline:
+            if shape in body:
+                findings.append(Finding(
+                    "duplicated-release-extractor", rel, 1,
+                    f"{rel} contains an inline extractor ({shape!r}) alongside the call to "
+                    f"scripts/{script}. Which one wins now depends on line order, so the "
+                    f"published notes depend on line order. Delete the inline copy."))
+    return findings, examined
+
+
 def check_undocumented_skill() -> tuple[list[Finding], int]:
     """Every skill directory that exists must be NAMED in `CLAUDE.md`.
 
@@ -2142,6 +2194,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
     agents_md, agents_md_examined = check_unimported_agent_instructions()
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
+    rel_extract, rel_extract_examined = check_duplicated_release_extractor()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
@@ -2175,6 +2228,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "changelog_sections_with_unreleased": dup_unrel_examined,
         "root_agent_instruction_files": agents_md_examined,
         "skill_directories_named_in_claude_md": undoc_skill_examined,
+        "publish_paths_checked_for_own_extractor": rel_extract_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
@@ -2184,7 +2238,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections,
+            + agents_md + undoc_skill + cl_sections + rel_extract,
             coverage)
 
 

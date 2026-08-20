@@ -7,6 +7,61 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-20 (release v1.92.0)
+
+- **A promotion bumping two components published one component's notes and silently dropped the
+  other's.** (#699) `release.yml` extracted the release body with an awk that said
+  `grab && /^### / { exit }` — `exit`, not *stop grabbing*. So it took the **first**
+  `### … (release vX.Y.Z)` block and terminated. But this CHANGELOG has **one block per component**,
+  because the rule directly above it requires components to version independently, so any promotion
+  bumping two of them has two blocks carrying the same tag.
+
+  **It had already shipped four times when it was found**, and the loss is measurable by diffing
+  published release bodies against this file: **#682** (v1.91.2 — a deploy briefing that booted local
+  dev config in production), **#642** (v1.89.0), **#640** and **#643** (v1.88.0) never appeared in
+  their release notes. v1.92.0 was armed and would have dropped **130 of its 206 note lines, five of
+  nine bullets** — including a fix for five shipped ERB examples building HTML attributes by string
+  interpolation, one through `.html_safe`.
+
+  **Nothing caught it because the release succeeds either way.** The body is just shorter, and nobody
+  diffs a release body against the CHANGELOG. That is `claims-vs-enforcement` in our own release
+  machinery, against a rule this file states outright — and the rule was itself wrong: *"one block per
+  promotion"* was written when a promotion moved one component, and contradicted *"components version
+  independently"* from the moment that arrived. **The extractor was the defect, not the structure**;
+  collapsing to one block would have destroyed the per-component version attribution this CHANGELOG
+  carries throughout.
+
+  `scripts/extract_release_notes.py` emits **every** block for the tag, each under its
+  component/version heading with the `(release …)` bookkeeping stripped — a multi-component release
+  has to say which component version a note belongs to, and the old headings-stripped output could
+  not. It keeps the two things the awk got right: the **`^### ` anchor**, so a line merely *mentioning*
+  a tag never starts a grab (a verified failure, with a fixture), and the bare-pointer fallback so a
+  release never publishes an empty body.
+
+  **One implementation, called by both publish paths.** The awk was duplicated byte-for-byte in
+  `release.yml` and `release_local.sh`, kept in step by a comment asking maintainers to keep them in
+  step — the same unenforced claim as the bug, and the reason a half-fix would have left the fallback
+  path still mispublishing. Fixing the duplication is part of fixing the bug.
+
+  **Two gates, and the interesting one asserts what PUBLISHES rather than what exists.**
+  `release notes complete` runs the real extractor for `marketplace.json`'s version and compares the
+  set of blocks it emitted against an independent scan of the file — not a count against a count,
+  which would have caught this instance and missed the next extractor bug, since two blocks extracted
+  could be the wrong two. The selftest proves it has teeth by **simulating the old first-block-only
+  behaviour and asserting the check refuses it**; without that the gate would be the parser agreeing
+  with itself, and would have passed the very version it exists to refuse. `duplicated-release-extractor`
+  fails if either publish path stops delegating *or* regrows an inline parser — both directions,
+  because a call site that does both makes the published notes depend on line order.
+
+  This entry is the **third** `(release v1.92.0)` block in this file, which is the fix demonstrating
+  itself: before it, this release published 76 of 206 lines.
+
+  **The doctrine map (#655) made its first real catch here, one release after landing.** Rewriting
+  that CLAUDE.md bullet broke the anchor on the row asserting it, and `rebuild_generated.py` failed
+  with *"the claim was reworded or deleted and this map still advertises it"* — which is precisely the
+  case it was built for: doctrine changed, and the row claiming to enforce it would otherwise have
+  gone on pointing at a sentence that no longer exists. The row now cites the new gate as well.
+
 ### 2026-08-16c (v1.91.1)
 
 - **The wiki published `>-` where five of seven skill descriptions belonged.** (#680) Reported as

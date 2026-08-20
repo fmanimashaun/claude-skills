@@ -152,11 +152,15 @@ CLAIMS: tuple[Claim, ...] = (
         claim="One `### … (release vX.Y.Z)` block per actual promotion -- headings for versions that "
               "never get tagged make their notes vanish from the published release.",
         stated_in="CLAUDE.md",
-        anchor="One `### … (release vX.Y.Z)` block per actual promotion",
+        anchor="One `### … (release vX.Y.Z)` block per COMPONENT that this promotion bumps",
         kind=GUARANTEE,
-        enforced_by=("rule:duplicate-unreleased", "gate:self-consistency"),
-        note="The rule catches the mechanical half -- two `### Unreleased` headings in one section, "
-             "which a merge produces and which silently splits a component's notes.",
+        enforced_by=("rule:duplicate-unreleased", "rule:duplicated-release-extractor",
+                     "gate:self-consistency", "gate:release notes complete",
+                     "mutation:extract_release_notes"),
+        note="#699 rewrote both the claim and its enforcement. `duplicate-unreleased` catches two "
+             "`### Unreleased` headings in one section; `release notes complete` runs the real "
+             "extractor and refuses any block written for the tag that would not publish, which is "
+             "the half that was missing while four releases dropped a component's notes.",
     ),
     Claim(
         claim="`dist/` must be a clean build of `skills/**` before a release publishes.",
