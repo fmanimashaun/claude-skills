@@ -88,6 +88,36 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #701. Three clauses, three mutations -- a rule with N clauses needs a fixture that
+            # trips exactly one of each, or none of them is proven. That lesson cost three
+            # surviving mutants the day before this landed.
+            Mutation(
+                "a bullet filed under a component that owns none of its files is accepted",
+                "        elif owner_of_section not in owners:",
+                "        elif False:",
+                "maintainer tooling under the skills section fires",
+            ),
+            Mutation(
+                "a bullet naming no file is treated as placed, so the gate goes blind on the "
+                "commonest input",
+                "        if not owners:",
+                "        if False:",
+                "a bullet naming no file at all fires",
+            ),
+            Mutation(
+                # A path in a code sample is not evidence of ownership.
+                "a path that does not exist in the tree counts as evidence",
+                "        cited = {c for c in _BULLET_PATH.findall(body) if (ROOT / c).exists()}",
+                "        cited = set(_BULLET_PATH.findall(body))",
+                "a path that does not exist in the tree is not evidence",
+            ),
+            Mutation(
+                # Scope is what keeps this off 13,000 lines of published history.
+                "released blocks are judged too, so the gate fails on its first real input",
+                '            unreleased = line[4:].strip().lower().startswith("unreleased")',
+                "            unreleased = True",
+                "silent on a bullet under a RELEASED heading",
+            ),
             # #699. The rule this repo needed and did not have: two publish paths carrying the same
             # extractor, kept in step by a comment. Both directions, because a partial fix is what
             # made the bug survive its own discovery.

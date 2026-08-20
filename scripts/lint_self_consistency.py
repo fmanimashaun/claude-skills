@@ -1746,6 +1746,146 @@ def check_changelog_section_missing() -> tuple[list[Finding], int]:
     return findings, len(plugins)
 
 
+# #701. Path-shaped tokens inside backticks. `\.?/?` tolerates `./app/...`, and requiring at least
+# one `/` keeps bare names like `check_handoff.py` out -- a filename alone does not say which
+# component owns it, which is the whole question.
+_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)`")
+_BULLET_ISSUE = re.compile(r"\(#(\d+)\)")
+
+
+def _changelog_owner(path: str, plugins: list[str]) -> str:
+    """Which CHANGELOG section owns a repo path. Derived, never transcribed."""
+    parts = path.split("/")
+    if parts[0] == "plugins" and len(parts) > 1 and parts[1] in plugins:
+        return parts[1]
+    if parts[0] == "skills" or path.endswith(".skill"):
+        return "rails-stack"
+    return "repository"
+
+
+def _changelog_section_owner(heading: str, plugins: list[str]) -> str:
+    """Which component a `## ` heading is the section for. Same vocabulary as the paths."""
+    for name in plugins:
+        if name in heading:
+            return name
+    if "rails-stack" in heading:
+        return "rails-stack"
+    return "repository"
+
+
+def check_changelog_bullet_section() -> tuple[list[Finding], int]:
+    """A CHANGELOG bullet must cite a file in the component whose section it sits under.
+
+    #701. v1.92.0 shipped three bullets under `## rails-stack (…skills)` whose code lives in
+    `scripts/` and `plugins/rails-flow/` -- so a reader of the skills package's release notes found
+    `docs/doctrine-map.html`, maintainer tooling that ships to nobody. Before #699 this was
+    invisible, because the second block for a tag never published and nobody read it. Now every
+    block publishes and the per-component grouping is **user-facing on the release page**, which is
+    what turns a habit into something worth a gate.
+
+    SCOPED TO `### Unreleased`, and that is the design decision that keeps it honest. Bullets under
+    a released heading are already published; judging 13,000 lines of history would fail on its
+    first real input, which is #476's lesson -- a gate needing a carve-out immediately is taste
+    wearing a count. An Unreleased bullet is still being written, so a finding is actionable.
+
+    TWO DESIGNS FROM THE ISSUE WERE MEASURED AND REJECTED, because an issue body is a hypothesis:
+
+      * **Resolve an issue's changed paths from the commits referencing it.** `Refs #656` and
+        `Refs #658` each match ZERO commits -- both shipped inside a commit whose trailer named a
+        different issue, because CLAUDE.md makes grouping related issues on one branch the
+        *preferred* path. A mechanism that cannot see grouped work is incompatible with our own
+        branching doctrine. It also cannot run in CI at all: `gates.yml` uses `actions/checkout`
+        with no `fetch-depth`, so the clone is one commit deep and `git log --grep` finds nothing --
+        a gate reporting clean on input it never read.
+      * **Infer the owner from paths the bullet happens to mention.** Prototyped against the real
+        file: 6 of 7 bullets in v1.92.0 cite no resolvable path, so the gate would have been blind
+        to 86% of its input while reading green.
+
+    So it does not INFER the evidence, it REQUIRES it: a bullet that names no file in its own
+    component is a finding in its own right, the same shape as an acceptance criterion that names
+    neither an action nor an observable. A path must EXIST in the tree to count, which is what
+    stops a doctrine example like `./app/models/y.rb` -- a path in a code sample, not in this repo
+    -- from being read as evidence of ownership.
+
+    TWO SLUGS, NOT ONE, and that is forced by the mutation harness rather than chosen for taste.
+    `changelog-bullet-unplaceable` (no file named) and `changelog-bullet-misfiled` (files named, none
+    in this section) are separate clauses, and under a single slug neither is provable: disable the
+    first and the second fires on the very same input, so every fixture still passes and both
+    mutations survive. Both were written under one slug first and both survived. A rule with N
+    clauses needs a finding per clause, or the fixtures only prove that *something* fired.
+
+    ANY owning component is accepted, never exactly one. Multi-component issues are the normal case
+    here, not the exception: #660 legitimately touches a plugin hook and a skill. Demanding a single
+    owner would refuse correct entries.
+    """
+    manifest, doc = ROOT / ".claude-plugin" / "marketplace.json", ROOT / "CHANGELOG.md"
+    if not manifest.is_file() or not doc.is_file():
+        return [], 0
+    try:
+        plugins = [p["name"] for p in json.loads(read(manifest)).get("plugins", [])]
+    except (ValueError, KeyError, TypeError):
+        return [], 0
+
+    findings: list[Finding] = []
+    examined = 0
+    section = ""
+    unreleased = False
+    bullet: list[str] = []
+    bullet_line = 0
+
+    def judge() -> None:
+        nonlocal examined
+        if not bullet:
+            return
+        body = " ".join(bullet)
+        # `is None` rather than the falsy form, because a mutation anchor in mutation_check.py
+        # is the 4-space-indented falsy test from another rule, and the 8-space version here is a
+        # substring of it -- so writing it that way makes that anchor ambiguous and the harness
+        # refuses the whole guard. Quoting the offending string in this comment does it too.
+        m = _BULLET_ISSUE.search(body)
+        if m is None:
+            return
+        examined += 1
+        owner_of_section = _changelog_section_owner(section, plugins)
+        cited = {c for c in _BULLET_PATH.findall(body) if (ROOT / c).exists()}
+        owners = {_changelog_owner(c, plugins) for c in cited}
+        if not owners:
+            findings.append(Finding(
+                "changelog-bullet-unplaceable", "CHANGELOG.md", bullet_line,
+                f"the bullet for #{m.group(1)} under {section!r} names no file that exists in this "
+                f"repo, so nothing says which component it belongs to. Name a path it changed, in "
+                f"backticks. A release note that cannot be placed is one a reader cannot place "
+                f"either -- and every block for a tag publishes now, so the section heading is what "
+                f"a reader sees it under."))
+        elif owner_of_section not in owners:
+            findings.append(Finding(
+                "changelog-bullet-misfiled", "CHANGELOG.md", bullet_line,
+                f"the bullet for #{m.group(1)} sits under {section!r} (component "
+                f"{owner_of_section!r}) but every file it names belongs to "
+                f"{sorted(owners)}. Move it to the owning section, or name a path in this one if "
+                f"the change really touched it. Any owning component is accepted -- this fires only "
+                f"when none of them is the section it is in."))
+
+    for i, line in enumerate(read(doc).splitlines(), 1):
+        if line.startswith("## "):
+            judge(); bullet = []
+            section = line[3:].strip()
+            unreleased = False
+        elif line.startswith("### "):
+            judge(); bullet = []
+            unreleased = line[4:].strip().lower().startswith("unreleased")
+        elif unreleased:
+            if line.startswith("- "):
+                judge()
+                bullet, bullet_line = [line], i
+            elif bullet and (line.startswith("  ") or not line.strip()):
+                bullet.append(line)
+            elif line.strip():
+                judge(); bullet = []
+    judge()
+    return findings, examined
+
+
 def check_duplicated_release_extractor() -> tuple[list[Finding], int]:
     """The release-notes extractor lives in ONE script, and both publish paths must call it.
 
@@ -2195,6 +2335,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     agents_md, agents_md_examined = check_unimported_agent_instructions()
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
     rel_extract, rel_extract_examined = check_duplicated_release_extractor()
+    bullet_sec, bullet_sec_examined = check_changelog_bullet_section()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
@@ -2229,6 +2370,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "root_agent_instruction_files": agents_md_examined,
         "skill_directories_named_in_claude_md": undoc_skill_examined,
         "publish_paths_checked_for_own_extractor": rel_extract_examined,
+        "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
@@ -2238,7 +2380,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract,
+            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec,
             coverage)
 
 
@@ -2341,6 +2483,90 @@ def selftest() -> int:
     scenario("...a release block is not a section", rule=CSM, expect_finding=True,
              files={".claude-plugin/marketplace.json": MANIFEST,
                     "CHANGELOG.md": "# Changelog\n\n### rails-flow 1.0.0\n\n### qa-flow 1.0.0\n"})
+
+    # -- changelog-bullet-section ------------------------------------------
+    CBS = "changelog-bullet-misfiled"
+    CBU = "changelog-bullet-unplaceable"
+    _M2 = '{"plugins": [{"name": "rails-flow"}, {"name": "qa-flow"}]}'
+    def _cl(section, bullet, heading="### Unreleased"):
+        return f"# Changelog\n\n## {section}\n\n{heading}\n\n{bullet}\n"
+    # Files the fixtures cite. A path must EXIST to count as evidence, so they have to be here.
+    _TREE = {".claude-plugin/marketplace.json": _M2,
+             "plugins/rails-flow/hooks/scripts/guard-lane.sh": "#!/bin/sh\n",
+             "skills/parallel-session-lane/SKILL.md": "---\nname: x\n---\n",
+             "scripts/doctrine_map.py": "print(1)\n"}
+
+    scenario("a bullet placed in the section that owns its code", rule=CBS, expect_finding=False,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-flow (agentic flow plugin)",
+                 "- **The lane guard was advice.** (#660) `plugins/rails-flow/hooks/scripts/guard-lane.sh`\n"
+                 "  now refuses a write outside the lane.")})
+    # THE ACTUAL DEFECT: maintainer tooling filed under the shipped-skills section.
+    scenario("...maintainer tooling under the skills section fires", rule=CBS, expect_finding=True,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-stack (rails-8 + hotwire + fidara-design skills)",
+                 "- **A doctrine map.** (#655) `scripts/doctrine_map.py` generates it.")})
+    # MULTI-COMPONENT IS THE NORMAL CASE. #660 really touches a plugin hook AND a skill, so the
+    # bullet must be accepted under EITHER heading. Demanding a single owner would refuse correct
+    # entries on first input, which is #476's lesson.
+    _BOTH = ("- **Advice became a guarantee.** (#660) "
+             "`plugins/rails-flow/hooks/scripts/guard-lane.sh` refuses the write, and "
+             "`skills/parallel-session-lane/SKILL.md` §1 says so.")
+    scenario("...a two-component bullet is accepted under the plugin heading", rule=CBS,
+             expect_finding=False,
+             files={**_TREE, "CHANGELOG.md": _cl("rails-flow (agentic flow plugin)", _BOTH)})
+    scenario("...and accepted under the skill heading too", rule=CBS, expect_finding=False,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-stack (rails-8 + hotwire + fidara-design skills)", _BOTH)})
+    # ...but not under a THIRD, unrelated component. Without this the gate is the mapper agreeing
+    # with itself: every "accepted" case above would pass a rule that accepted everything.
+    scenario("...but refused under a third, unrelated heading", rule=CBS, expect_finding=True,
+             files={**_TREE, "CHANGELOG.md": _cl("qa-flow (independent QA plugin)", _BOTH)})
+    # EVIDENCE IS REQUIRED, NOT INFERRED. A bullet naming no file cannot be placed by a reader
+    # either, and 6 of 7 bullets in v1.92.0 were in this state -- so treating it as a pass would
+    # have made the gate blind to 86% of its input while reading green.
+    scenario("...a bullet naming no file at all fires", rule=CBU, expect_finding=True,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-flow (agentic flow plugin)",
+                 "- **Eleven agents ran for every job.** (#656) Now there is a pack size.")})
+    # A path inside a CODE SAMPLE is not evidence of ownership. `./app/models/y.rb` is a doctrine
+    # example in the real #660 bullet; reading it as a path would have placed that bullet by a
+    # filename that does not exist in this repo.
+    scenario("...a path that does not exist in the tree is not evidence", rule=CBU,
+             expect_finding=True,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-flow (agentic flow plugin)",
+                 "- **Lane scoping.** (#660) A write to `./app/models/y.rb` outside the lane is "
+                 "refused.")})
+    # A bare filename does not say which component owns it, which is the whole question.
+    scenario("...a bare filename with no directory is not evidence", rule=CBU, expect_finding=True,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-flow (agentic flow plugin)",
+                 "- **A work order says where it started.** (#659) `check_handoff.py` requires it.")})
+    # SCOPE. A released heading is already published; judging history would fail on first input.
+    scenario("...silent on a bullet under a RELEASED heading", rule=CBS, expect_finding=False,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-stack (rails-8 + hotwire + fidara-design skills)",
+                 "- **A doctrine map.** (#655) `scripts/doctrine_map.py` generates it.",
+                 heading="### 1.49.0 — 2026-08-20 (release v1.92.0)")})
+    # No issue reference means no claim about which component reported it.
+    scenario("...silent on a bullet with no issue reference", rule=CBS, expect_finding=False,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-stack (rails-8 + hotwire + fidara-design skills)",
+                 "- **Packaging is deterministic.** `scripts/doctrine_map.py` is unrelated.")})
+
+    # CBU needs its own silence fixtures, or "it fires" is all that is ever proven about it.
+    scenario("a bullet that names a real file is placeable", rule=CBU, expect_finding=False,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-flow (agentic flow plugin)",
+                 "- **The lane guard was advice.** (#660) "
+                 "`plugins/rails-flow/hooks/scripts/guard-lane.sh` refuses it.")})
+    scenario("...and a released bullet is out of scope for this half too", rule=CBU,
+             expect_finding=False,
+             files={**_TREE, "CHANGELOG.md": _cl(
+                 "rails-flow (agentic flow plugin)",
+                 "- **Eleven agents ran for every job.** (#656) Now there is a pack size.",
+                 heading="### 1.23.0 — 2026-08-20 (release v1.92.0)")})
 
     # -- duplicated-release-extractor -------------------------------------
     DRE = "duplicated-release-extractor"

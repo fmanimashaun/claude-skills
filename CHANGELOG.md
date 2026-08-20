@@ -7,6 +7,59 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-20b (release v1.92.1)
+
+- **A CHANGELOG bullet could sit under a component that owns none of its code, and nothing caught
+  it.** (#701) v1.92.0 shipped three such bullets under `## rails-stack (… skills)` whose code lives
+  in `scripts/doctrine_map.py` and `plugins/rails-flow/`, so a reader of the *skills* release notes
+  found maintainer tooling that ships to nobody. Invisible before #699 — the second block for a tag
+  never published, so nobody read it. Now every block publishes and the per-component grouping is
+  **user-facing on the release page**, which is what turns a habit into something worth a gate.
+
+  **Two designs the issue proposed were measured and rejected**, because an issue body is a
+  hypothesis:
+
+  - *Resolve an issue's changed paths from the commits referencing it.* `Refs #656` and `Refs #658`
+    each match **zero** commits — both shipped inside a commit whose trailer named a different issue,
+    because CLAUDE.md makes **grouping related issues on one branch the preferred path**. A mechanism
+    that cannot see grouped work is incompatible with our own branching doctrine. It also cannot run
+    in CI: `gates.yml` uses `actions/checkout` with no `fetch-depth`, so the clone is one commit deep
+    and `git log --grep` finds nothing — a gate reporting clean on input it never read.
+  - *Infer the owner from paths a bullet happens to mention.* Prototyped against the real file:
+    **6 of 7** bullets in v1.92.0 cite no resolvable path, so the gate would have been blind to 86%
+    of its input while reading green.
+
+  So it **requires** the evidence instead of inferring it. A bullet naming no file in its own
+  component is a finding in its own right — the same shape as an acceptance criterion naming neither
+  an action nor an observable. A path must **exist in the tree** to count, which is what stops
+  `./app/models/y.rb` — a path inside a doctrine code sample, in the real #660 bullet — from being
+  read as evidence of ownership.
+
+  **Scoped to `### Unreleased`,** and that is what keeps it honest rather than lenient. Bullets under
+  a released heading are already published; judging 13,000 lines of history would fail on its first
+  real input, which is #476's lesson — a gate needing an immediate carve-out is taste wearing a
+  count. An Unreleased bullet is still being written, so the finding is actionable. **This entry is
+  its first real input.**
+
+  **Any owning component is accepted, never exactly one.** Multi-component issues are the normal case
+  here: #660 legitimately touches a plugin hook *and* a skill. Demanding a single owner would refuse
+  correct entries.
+
+  **Two slugs, and the harness forced that rather than taste.** `changelog-bullet-unplaceable` and
+  `changelog-bullet-misfiled` began as one slug and **both mutations survived**: disable the
+  no-evidence clause and the misfiled clause fires on the very same input, so every fixture still
+  passed while proving only that *something* fired. A rule with N clauses needs a finding per clause.
+  That is the fourth surviving mutant in two days caused by a fixture proving an adjacent claim, and
+  the fourth found by mutation rather than by reading the fixture.
+
+  **The three v1.92.0 bullets are deliberately left where they are.** That release is published;
+  editing its block now would make this file disagree with the GitHub release body and leave two
+  records of one release. The gate covers what comes next, which is what the issue asked for.
+
+  241 self-consistency assertions, 88 mutations on that guard.
+
+## Repository hygiene
+
 ### 2026-08-20 (release v1.92.0)
 
 - **The gate tally counted a precondition as a gate, and three wrong numbers reached shipped text
