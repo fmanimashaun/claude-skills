@@ -393,6 +393,16 @@ class Doctor:
     def git(self, *args: str) -> tuple[int, str]:
         return self.run("git", *args)
 
+    def gate_results(self) -> list[Result]:
+        """Only the GATES, never a precondition or a diagnostic.
+
+        A method rather than a comprehension inside the summary print, because the selftest has to
+        be able to CALL it. The first version was inline, the selftest recomputed the same filter
+        by hand, and the mutation that widened it survived -- a fixture proving an adjacent claim
+        instead of the code under test.
+        """
+        return [r for r in self.results if r.name.startswith("gate: ")]
+
     def add(self, status: str, name: str, detail: str = "", remedy: str = "") -> Result:
         r = Result(status, name, detail, remedy)
         self.results.append(r)
@@ -890,6 +900,21 @@ class Doctor:
             f"\n{counts[PASS]} passed, {counts[FAIL]} failed, {counts[SKIP]} skipped, "
             f"{counts[INFO]} note(s)"
         )
+        # THE GATE TALLY, SEPARATELY. The line above counts every result, and `--gates-only` also
+        # runs `check_is_marketplace_repo` -- a PRECONDITION, not a gate. So the total has always
+        # been gates + 1, and anyone reading it as "how many gates are there" is off by one. Three
+        # wrong counts reached shipped text that way in one afternoon: a CHANGELOG bullet claiming
+        # "83 (was 80)" against 82 and 79, a PR body claiming 85 against 84, and the same 85 stated
+        # to the maintainer. Two sessions then reconciled 84 against 85 as a units disagreement, and
+        # it was not one -- it was this. A number nobody can read correctly is a defect in the
+        # reporting, not in the reader, which is the same argument as SKIP never rendering as PASS.
+        gates = self.gate_results()
+        if gates:
+            g = {s: sum(1 for r in gates if r.status == s) for s in (PASS, FAIL, SKIP)}
+            print(
+                f"of those, {len(gates)} are gates: {g[PASS]} passed, {g[FAIL]} failed, "
+                f"{g[SKIP]} skipped — quote THIS number as the gate count"
+            )
         # Skipped is called out deliberately: a check that did not run is not a check that
         # passed, and conflating the two is the defect this tool exists to prevent.
         if counts[SKIP]:
