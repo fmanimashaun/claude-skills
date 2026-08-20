@@ -2342,6 +2342,52 @@ def selftest() -> int:
              files={".claude-plugin/marketplace.json": MANIFEST,
                     "CHANGELOG.md": "# Changelog\n\n### rails-flow 1.0.0\n\n### qa-flow 1.0.0\n"})
 
+    # -- duplicated-release-extractor -------------------------------------
+    DRE = "duplicated-release-extractor"
+    _SCRIPT = "scripts/extract_release_notes.py"
+    _DELEG_YML = "run: python scripts/extract_release_notes.py --tag \"$TAG\" > \"$notes\"\n"
+    _DELEG_SH = "python3 scripts/extract_release_notes.py --tag \"$TAG\" > \"$NOTES\"\n"
+    _AWK = ("awk -v needle=\"(release $TAG)\" '\n"
+            "  /^### / && index($0, needle) { grab=1; next }\n"
+            "  grab && /^### / { exit }\n"
+            "  grab { print }\n' CHANGELOG.md\n")
+    scenario("both publish paths delegate to the one extractor", rule=DRE, expect_finding=False,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _DELEG_YML,
+                    "scripts/release_local.sh": _DELEG_SH})
+    # THE #699 SHAPE. The workflow kept its own copy, so fixing the script alone left the
+    # published notes coming from the awk.
+    scenario("...the workflow carries its own extractor", rule=DRE, expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _AWK,
+                    "scripts/release_local.sh": _DELEG_SH})
+    # The fallback path is the half a partial fix leaves behind, and the half nobody exercises
+    # until a runner will not start -- so it is checked in its own right, not by symmetry.
+    scenario("...the local fallback carries its own extractor", rule=DRE, expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _DELEG_YML,
+                    "scripts/release_local.sh": _AWK})
+    # BOTH at once. A call site that delegates AND keeps an awk makes the published notes depend
+    # on line order, which is worse than either alone because it reads as fixed.
+    scenario("...delegating and ALSO keeping an inline parser still fires", rule=DRE,
+             expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": _DELEG_YML + _AWK,
+                    "scripts/release_local.sh": _DELEG_SH})
+    # ISOLATES THE DELEGATION CHECK. The awk fixtures above trip the inline-shape check as well,
+    # so they cannot prove the "does it delegate at all" half -- a mutation disabling that half
+    # survived them. This path neither delegates nor carries a recognisable extractor: a rewritten
+    # one, in sed or python or anything else, which is the realistic way delegation gets dropped.
+    scenario("...a path that neither delegates nor shows a known extractor shape", rule=DRE,
+             expect_finding=True,
+             files={_SCRIPT: "print(1)\n",
+                    ".github/workflows/release.yml": "run: sed -n '/^### /,$p' CHANGELOG.md\n",
+                    "scripts/release_local.sh": _DELEG_SH})
+    # The script vanishing means both paths must be carrying their own again.
+    scenario("...a missing extractor script fires", rule=DRE, expect_finding=True,
+             files={".github/workflows/release.yml": _DELEG_YML,
+                    "scripts/release_local.sh": _DELEG_SH})
+
     # -- undocumented-skill -----------------------------------------------
     UDS = "undocumented-skill"
     scenario("a shipped skill named nowhere in CLAUDE.md", rule=UDS, expect_finding=True,

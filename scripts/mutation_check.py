@@ -88,6 +88,24 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #699. The rule this repo needed and did not have: two publish paths carrying the same
+            # extractor, kept in step by a comment. Both directions, because a partial fix is what
+            # made the bug survive its own discovery.
+            Mutation(
+                "a publish path stops delegating and nothing notices",
+                "        if script not in body:",
+                "        if False:",
+                # NOT the awk fixtures -- those trip the inline-shape check too, so they survived
+                # this mutation. This is the one that isolates the delegation half.
+                "a path that neither delegates nor shows a known extractor shape",
+            ),
+            Mutation(
+                "an inline extractor may sit alongside the delegation, so which one wins depends "
+                "on line order",
+                "        for shape in inline:",
+                "        for shape in ():",
+                "delegating and ALSO keeping an inline parser still fires",
+            ),
             Mutation(
                 # #653. rails-flow said "eight" and shipped eleven. The count is the part a reader
                 # remembers, and it is the text they read while deciding to install.

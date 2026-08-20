@@ -56,6 +56,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   This entry is the **third** `(release v1.92.0)` block in this file, which is the fix demonstrating
   itself: before it, this release published 76 of 206 lines.
 
+  **Two of the repo's own harnesses caught defects in this fix before it landed.** The mutation
+  harness refused the commit outright — a new `lint_self_consistency` rule with no mutation touching
+  its function means *"nothing proves its fixtures would fail if the rule broke"*. Then the first
+  mutation written for it **survived**: the awk fixtures trip the inline-shape check as well as the
+  delegation check, so they could not prove the delegation half, and a fixture proving an adjacent
+  claim is this repo's most-repeated fixture defect. The isolating case is a publish path that neither
+  delegates nor shows any recognisable extractor shape — a rewrite in `sed`, which is the realistic
+  way delegation gets dropped.
+
   **The doctrine map (#655) made its first real catch here, one release after landing.** Rewriting
   that CLAUDE.md bullet broke the anchor on the row asserting it, and `rebuild_generated.py` failed
   with *"the claim was reworded or deleted and this map still advertises it"* — which is precisely the
