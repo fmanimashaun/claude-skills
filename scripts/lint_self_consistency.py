@@ -1655,8 +1655,13 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
             "hook-count-drift", "CLAUDE.md", 0,
             "the hook-script sentence is gone or reworded, so nothing reconciles the count against "
             "the scripts on disk -- restore it or drop this rule deliberately")], total
-    # The two fail-CLOSED gates CLAUDE.md names by path.
-    gates = sum(1 for s in scripts if s.name in {"guard-bash.sh", "release-gate.sh"})
+    # The fail-CLOSED gates CLAUDE.md names by path. A hardcoded set is right here rather than a
+    # heuristic: which hooks are gates is a DECISION recorded in that section, per the
+    # guarantee-vs-advice test, and inferring it from the scripts would let a new fail-closed hook
+    # silently join the set without anyone classifying it. Adding one is meant to be deliberate --
+    # this list is the deliberateness. `guard-lane.sh` joined it in #660.
+    NAMED_GATES = {"guard-bash.sh", "release-gate.sh", "guard-lane.sh"}
+    gates = sum(1 for s in scripts if s.name in NAMED_GATES)
     findings = []
     if m.group(1) != WORDS.get(total, str(total)):
         findings.append(Finding(

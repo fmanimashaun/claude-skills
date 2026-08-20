@@ -3409,6 +3409,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`parallel-session-lane` §1 was advice, and working in the wrong worktree was silent.** (#660) The
+  skill says *"Work only inside the worktree you were assigned"* and grepping every rails-flow hook
+  for `worktree` returned nothing. A session that skipped §1 produced a clean-looking branch in the
+  wrong place — while another session was working there — and nothing said so until a human read a
+  diff that did not belong. Claims-vs-enforcement, in a shipped skill, of the class `code-review`
+  names.
+
+  A `PreToolUse` hook now refuses a **write** outside `RAILS_FLOW_LANE`, on the fail-closed model of
+  `guard-bash.sh`. Three properties are the design, not caveats: **dormant** when no lane is assigned
+  (a single-session run must not pay for a multi-session feature, and a guard firing on ordinary work
+  gets switched off); **writes only**, because refusing reads would break legitimate context-gathering
+  and that over-reach is how a hook gets disabled; and **fails closed** — verified with `python3`
+  shadowed by a stub exiting 127, the same way the other two gates were.
+
+  **Running it found a bug reading it would not have.** The first version compared paths as strings,
+  so `./app/models/y.rb` was **blocked inside its own lane** — while the comment above it already
+  claimed both sides were resolved. Normalisation is pure shell, because a normaliser needing
+  `python3` would take the fail-closed guarantee with it.
+
 ### 1.48.0 — 2026-08-16 (release v1.89.0)
 
 - **A research record could settle on a style the generator would refuse.** (#636)

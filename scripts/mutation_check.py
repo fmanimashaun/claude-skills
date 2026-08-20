@@ -220,7 +220,9 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "the advisory figure stops subtracting the gates, so it drifts freely",
-                '    gates = sum(1 for s in scripts if s.name in {"guard-bash.sh", "release-gate.sh"})',
+                # #660 extracted the set to NAMED_GATES when guard-lane.sh joined it; the anchor
+                # follows the code and the assertion it guards is unchanged.
+                "    gates = sum(1 for s in scripts if s.name in NAMED_GATES)",
                 "    gates = 0",
                 "advisory is total minus the named gates",
             ),
