@@ -2144,7 +2144,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.23.0 — 2026-08-20 (release v1.92.0)
 
 - **A work order never said which commit it was written against.** (#659) `check_handoff.py`
   required eight sections and every one described what to **do**; none said from **where**. That is
@@ -3486,7 +3486,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.49.0 — 2026-08-20 (release v1.92.0)
 
 - **We answered "what enforces this?" by grep, every session.** (#655) `docs/doctrine-map.html` is
   generated from an explicit registry in `scripts/doctrine_map.py`: **32 claims**, each with where it
@@ -3580,7 +3580,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   claimed both sides were resolved. Normalisation is pure shell, because a normaliser needing
   `python3` would take the fail-closed guarantee with it.
 
-- **Seven shipped ERB examples built HTML attributes by string interpolation, one through
+- **Five shipped ERB examples built HTML attributes by string interpolation, one through
   `html_safe`.** Found by running `@herb-tools/linter` (an HTML-aware ERB parser; runs via `npx` on
   WebAssembly, so no gem and no compile step) against all 119 `erb` blocks in this repo's markdown —
   reading the tool would have found nothing, which is the fifth external repo to prove that.
