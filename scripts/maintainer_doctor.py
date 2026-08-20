@@ -157,6 +157,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # are the ones a checker cannot infer and only a fixture can hold: the markdown view's bytes
     # are a function of the JSON alone, and a rung named `agent` is a ROLE recorded as an unknown
     # model rather than as a model called "agent".
+    # #661. The launcher refuses overlapping lanes, and overlap is its whole safety property: two
+    # sessions editing one tree while the guard believes each is alone review clean on both sides.
+    ("rails-flow lane assigner selftest",
+     ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
      ("python3", "plugins/design-flow/scripts/prompt_library.py", "--selftest")),
     # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as

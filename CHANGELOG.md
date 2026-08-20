@@ -3488,6 +3488,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **We shipped the protocol for parallel sessions and no way to enter it.** (#661)
+  `parallel-session-lane` describes being one of N sessions — *"confirm your worktree, take one
+  coherent slice, stay in your subtree"* — and nothing in this marketplace ever put a session into
+  that mode. A human opened N terminals and assigned lanes by hand. **We wrote the coordination
+  rules and skipped the assignment.**
+
+  `assign_lanes.py` prints the `git worktree add` per lane and the session command with
+  `RAILS_FLOW_LANE` set. It **refuses** overlapping lanes — two sessions editing one tree while the
+  guard believes each is alone, so both diffs review clean and the collision surfaces at merge — and
+  refuses a single lane, a dirty tree, and a **missing lane guard**, which is how the #660-before-#661
+  ordering became mechanical rather than remembered.
+
+  **It prepares; it does not spawn.** Creating a worktree is mechanical and deciding when an agent
+  starts is not.
+
+  **No tmux, no daemon** — and that is a rejection of the borrowed design, not an omission.
+  `swarm-forge` needs message passing because its roles cannot see each other's state; ours can, since
+  `compose_state.py` derives the driver's state *from the repository*. Git is our handoff medium and it
+  survives a reboot, which a tmux session does not.
+
+  **Spend is reported, never enforced.** A cap this script cannot observe would be a promise nothing
+  keeps.
+
+  **The CHANGELOG contention is decided, not deferred.** Lanes are subtree-scoped, so two sessions do
+  not touch the same code — but both append here, and that conflict is expected, one hunk, resolved by
+  keeping both entries. A per-lane fragment merged at arm time would be a **second source of truth for
+  release notes**, exactly what `derived-artifacts` warns about, traded for avoiding a conflict git
+  handles well. **Take the conflict** — and this branch hit it on its way in, which is the argument in
+  practice.
+
 - **`parallel-session-lane` §1 was advice, and working in the wrong worktree was silent.** (#660) The
   skill says *"Work only inside the worktree you were assigned"* and grepping every rails-flow hook
   for `worktree` returned nothing. A session that skipped §1 produced a clean-looking branch in the
