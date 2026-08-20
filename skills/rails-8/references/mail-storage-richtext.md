@@ -106,11 +106,16 @@ save via `params.expect(user: [:avatar])` / `images: []`. Purge with
 Rendering:
 
 ```erb
-<%= image_tag user.avatar.variant(:thumb) if user.avatar.attached? %>
-<%= image_tag post.hero.variant(resize_to_limit: [800, nil], format: :webp) %>
+<%= image_tag user.avatar.variant(:thumb), alt: user.name if user.avatar.attached? %>
+<%= image_tag post.hero.variant(resize_to_limit: [800, nil], format: :webp), alt: "" %>
 <%= link_to "Download", rails_blob_path(post.report, disposition: "attachment") %>
 ```
 
+- **`image_tag` never invents an `alt`** — Rails stopped deriving one from the
+  filename, so an omitted `alt:` ships an `<img>` with no alt attribute at all.
+  Name the image when it carries information the surrounding text does not
+  (`alt: user.name` for a lone avatar); pass `alt: ""` when an adjacent heading
+  or label already says it, as a post hero next to its `<h1>` does.
 - Variants need the `image_processing` gem (uncomment in Gemfile) and
   libvips (the generated Dockerfile installs it). `preprocessed: true`
   generates eagerly in a job instead of first-request.

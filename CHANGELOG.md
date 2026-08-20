@@ -3507,6 +3507,43 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   claimed both sides were resolved. Normalisation is pure shell, because a normaliser needing
   `python3` would take the fail-closed guarantee with it.
 
+- **Seven shipped ERB examples built HTML attributes by string interpolation, one through
+  `html_safe`.** Found by running `@herb-tools/linter` (an HTML-aware ERB parser; runs via `npx` on
+  WebAssembly, so no gem and no compile step) against all 119 `erb` blocks in this repo's markdown —
+  reading the tool would have found nothing, which is the fifth external repo to prove that.
+
+  The worst site was `component-implementations.md` in the disclosure component:
+
+  ```erb
+  <%= "role=region aria-labelledby=#{trigger_id}".html_safe if @region %>
+  ```
+
+  Three defects in one line. `html_safe` on an **interpolated** string marks record-derived content
+  as trusted — which our own doctrine forbids in two other files (`auth-security.md` §XSS and
+  `views-hotwire.md`: *"`raw`/`html_safe` only for content you trust"*), making this a
+  `doctrine-contradiction` of the class `code-review` names. The emitted attribute values are
+  **unquoted**, so a `trigger_id` containing a space silently splits one attribute into two. And it
+  sat two lines under our own comments about getting the disclosure accessibility contract right.
+
+  All five interpolated `name=value` sites now use **`tag.attributes`** — already this file's own
+  idiom at `:1335` and `:168`, with nested `data:`/`aria:` hashes used 28 times across these skills
+  and nil-omission already relied on at `reference-implementation.md:42`. So no framework API was
+  introduced and no `doctrine-verifier` verdict was required: the authority is our own shipped
+  doctrine. `tag.attributes` moved to the **end** of each tag, matching the two sites that were
+  already clean. The pattern is now at **0 occurrences** across `skills/` and `plugins/`.
+
+  **Four bare `<%= "hidden" unless … %>` sites were deliberately left alone.** `hidden` alone is
+  valid HTML and reads more clearly than `hidden="hidden"` in a document whose job is to show
+  markup. Herb flags them because its rule is positional, not semantic — it cannot tell
+  `tag.attributes` from raw interpolation. Rewriting correct markup to quiet a linter is the failure
+  `quality-pass` warns about: the five it was right about are fixed, the four it was not are left
+  as they are.
+
+- **`image_tag` shipped twice with no `alt`.** (`mail-storage-richtext.md`) Rails has not derived an
+  `alt` from the filename since **5.1**, so an omitted `alt:` emits an `<img>` carrying no alt
+  attribute at all — in a repo whose `fidara-design` skill is built around accessibility. Both calls
+  now pass one, and a bullet states the rule that decides between a described image and `alt: ""`.
+
 ### 1.48.0 — 2026-08-16 (release v1.89.0)
 
 - **A research record could settle on a style the generator would refuse.** (#636)
