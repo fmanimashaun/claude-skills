@@ -2282,7 +2282,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.24.0 — 2026-08-21 (release v1.93.0)
 
 - **Three opt-in checks, and a summary line you can actually read.** (#715, #716)
   `plugins/rails-flow/checks.json` gains `architecture-boundaries` (`archspec check`),
@@ -3787,7 +3787,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.50.0 — 2026-08-21 (release v1.93.0)
 
 - **Two gems that make our own boundaries executable.** (#715, #716) `ecosystem-gems.md` §13 adopts
   **archspec** (1.0.1) and **herb** (0.10.3), both dev/test, both exiting non-zero on a finding. The
