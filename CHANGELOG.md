@@ -2282,6 +2282,45 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`setup-flow` scaffolded a CI job pinned 41 releases back, and it went green.** (#713)
+  `plugins/rails-flow/commands/setup-flow.md` proposed a `doctrine` job checking this toolchain out
+  beside the user's repo at a literal `ref: v1.51.0`. Published at the time of writing: **v1.92.2**.
+
+  **The damage is that a stale pin works.** It clones, it runs, it goes green — so every project
+  scaffolded from that template enforced v1.51.0's rules in CI while the *same project's* local
+  session enforced current ones, and nothing in either place said the two disagreed. The user gets two
+  different answers to "does my repo pass the doctrine gates" depending on where the question is
+  asked. Everything since v1.51.0 was absent from those runs, including the three fixes shipped hours
+  earlier (#706, #707, #708).
+
+  **Bumping it is not the fix, and neither is the obvious gate.** A literal version inside shipped
+  doctrine is a clock nobody winds: it was right the day it was written and rotted for 41 releases
+  with every gate green, because nothing in this repo read it. Bumping resets the clock and guarantees
+  a repeat. And *"the pin must equal `metadata.version`"* would fail on every arm until someone edited
+  a command file — the same defect class, relocated into the release sequence.
+
+  So the template is now a **placeholder**, and the command resolves the real tag with
+  `gh release view --repo fmanimashaun/claude-skills --json tagName` before writing the file. The user
+  receives a pin that is current *and* explicit; nothing in our tree carries a version that can rot.
+  A placeholder also fails **loudly**, while CI is being configured — which is exactly when the tag
+  should be chosen — instead of quietly succeeding forever.
+
+  `scripts/lint_self_consistency.py`'s `pinned-toolchain-ref` and `pinned-toolchain-slug` refuse a
+  reintroduced literal in either shape. **Scoped to our own slug**, because `actions/checkout@v4` is
+  pinned by its own publisher and is none of our business — with a negative test proving a third
+  party's pin is left alone, and one proving a versioned `ref:` in a block that does not check *our*
+  repo out is ignored.
+
+  **Two slugs, not one**, for the two shapes: under a single slug neither clause is provable, because
+  disabling either makes the other fire on the same input and every fixture still passes. That is
+  exactly what let two mutations survive in #701, and splitting first meant no survivors here.
+
+  **Nobody would ever have reported this.** A stale pin produces no error. It surfaced only because
+  the audit prompt written for an existing project asks *"how far behind is your CI pin?"* — and the
+  answer turned out to have our own template as its cause.
+
 ### 1.23.1 — 2026-08-21 (release v1.92.2)
 
 - **The Stop gate refused every feature branch whose HEAD had moved past its base — every turn, with

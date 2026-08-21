@@ -88,6 +88,28 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #713. Three clauses, three mutations, two slugs -- a rule with N clauses needs a
+            # finding per clause or none of them is provable.
+            Mutation(
+                "a literal toolchain tag pinned for a user to copy stops being reported",
+                "        for match in _PINNED_REF.finditer(body):",
+                "        for match in ():",
+                "a literal toolchain tag pinned for a user to copy",
+            ),
+            Mutation(
+                "a tag hung off our own repo slug stops being reported",
+                "        for match in _SLUG_PIN.finditer(body):",
+                "        for match in ():",
+                "a literal tag pinned against our own repo slug",
+            ),
+            Mutation(
+                # Without the scope, a third party's pinned ref in one of our docs becomes our
+                # finding -- a rule that fires on correct input gets switched off.
+                "the scope to our own repository is dropped",
+                '        if "fmanimashaun/claude-skills" not in body:',
+                "        if False:",
+                "silent on a pinned ref that is not our repository",
+            ),
             # #701. Three clauses, three mutations -- a rule with N clauses needs a fixture that
             # trips exactly one of each, or none of them is proven. That lesson cost three
             # surviving mutants the day before this landed.
