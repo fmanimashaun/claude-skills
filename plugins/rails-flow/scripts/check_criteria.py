@@ -52,6 +52,21 @@ WHEN_RE = re.compile(r"\bwhen\b", re.I)
 THEN_RE = re.compile(r"\bthen\b", re.I)
 UNIT_RE = re.compile(r"^\s{0,3}#{2,4}\s+(.*\S)\s*$")
 
+# #707. `ID_RE` matches an `AC-n` token ANYWHERE, including running prose, and `parse()` used to
+# treat every matching line as a criterion definition. So an explanatory note under `## Notes` --
+# "so AC-6/AC-7 passing also proves the pipeline is wired" -- was read as a malformed criterion and
+# the whole file was rejected as UNUSABLE. Reported from a real acceptance doc whose nine criteria
+# were all well-formed; the only thing "wrong" was a true, useful sentence. Because this also runs
+# from the Stop gate, one such sentence blocked every turn-stop, and the documented remedy ("fix the
+# criteria, do not soften") was unactionable: the criteria were already correct.
+#
+# A DEFINITION is a list item whose id LEADS it. Prose that references criteria is the normal way to
+# write a note and is not a definition.
+DEF_RE = re.compile(r"^\s*[-*+]\s*(?:\*\*\s*)?AC-(\d+)\b")
+# Bolded ids -- the shape the docstring documents. Two of them on one line is two criteria crammed
+# together, which is what the one-per-line rule is actually for.
+BOLD_ID_RE = re.compile(r"\*\*\s*AC-(\d+)\s*\*\*")
+
 # Phrasings that read as criteria but assert nothing -- the issue's own "bad" list plus the
 # neighbours that travel with it. Matched on the THEN clause, where the observable belongs.
 RUBBER_STAMP = (
@@ -110,14 +125,36 @@ def parse(path: Path) -> list[Criterion]:
         if heading:
             unit = heading.group(1)
             continue
-        ids = ID_RE.findall(raw)
-        if not ids:
+        bold = BOLD_ID_RE.findall(raw)
+        lead = DEF_RE.match(raw)
+        if bold:
+            # The documented shape. Only the BOLDED ids count as definitions, so a criterion may
+            # reference another one in its own text -- `- **AC-7** Given AC-6 has passed, …` -- which
+            # the old rule rejected.
+            ids = bold
+        elif lead:
+            # A leading id without the bold markers is accepted, but keeps the strict one-per-line
+            # rule: with no marker there is nothing to tell a definition from a reference, so
+            # `- AC-1 and AC-2 Given …` must still fail. Bold the id to get in-text references.
+            ids = ID_RE.findall(raw)
+        else:
+            # PROSE. It mentions criteria; it does not define one. Not silently dropped, though: a
+            # line carrying a full Given/When/Then *is* trying to be a criterion, and skipping it
+            # would lose a real one -- worse than the false positive this fixes.
+            if (ID_RE.search(raw) and GIVEN_RE.search(raw)
+                    and WHEN_RE.search(raw) and THEN_RE.search(raw)):
+                raise Unusable(
+                    f"{path}:{line_no} reads like a criterion -- it has Given/When/Then and an "
+                    f"`AC-n` id -- but the id does not lead the line, so it is not a definition and "
+                    f"the mapping check would never see it. Write it as `- **AC-n** Given …`."
+                )
             continue
         if len(ids) > 1:
             raise Unusable(
-                f"{path}:{line_no} names {len(ids)} criterion ids on one line ({ids}); one "
-                "criterion per line, or the mapping check cannot attribute a spec to a "
-                "criterion"
+                f"{path}:{line_no} names {len(ids)} criterion ids on one definition line ({ids}); "
+                "one criterion per line, or the mapping check cannot attribute a spec to a "
+                "criterion. A criterion that merely REFERENCES another is fine -- bold only the id "
+                "being defined."
             )
         out.append(Criterion(num=int(ids[0]), unit=unit, line_no=line_no, text=raw))
 
