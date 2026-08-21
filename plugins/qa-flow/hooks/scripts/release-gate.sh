@@ -92,9 +92,32 @@ deny() { echo "BLOCKED by qa-flow release gate: $1" >&2; exit 2; }
 stamp="qa/CERTIFICATION"
 [ -f "$stamp" ] || deny "no certification found. Run /qa-flow:certify against staging first."
 
-verdict="$(python3 -c 'import json;print(json.load(open("qa/CERTIFICATION")).get("verdict",""))' 2>/dev/null || true)"
-csha="$(python3 -c 'import json;print(json.load(open("qa/CERTIFICATION")).get("sha",""))' 2>/dev/null || true)"
-[ "$verdict" = "PASS" ] || deny "certification verdict is not PASS. Re-certify."
+# #721. One reader, shared with qa-status.sh. Four inline `json.load` copies lived here and there,
+# kept in step by nothing -- the shape of #699, where two copies of an extractor meant a bug survived
+# its own discovery because only one got fixed.
+#
+# It also has to say WHAT is wrong. A live project sat permanently denied with "certification verdict
+# is not PASS" when the file was not JSON at all: json.load raised, `|| true` swallowed it, and the
+# gate named the wrong problem. Re-certifying does not replace a hand-written stamp, so the reader
+# re-certified and the loop closed. A gate that misdiagnoses is worse than one that merely blocks.
+#
+# Fail-closed is unchanged: `|| true` still swallows a missing python3 or a missing script, an empty
+# value still denies, and this whole block is still reached only for a command targeting `main`.
+reader="${CLAUDE_PLUGIN_ROOT:-}/scripts/read_certification.py"
+verdict="$(python3 "$reader" --field verdict 2>/dev/null || true)"
+csha="$(python3 "$reader" --field sha 2>/dev/null || true)"
+# TWO conditions, not one, because they need different sentences. Empty means the stamp could not
+# be READ -- ask the reader why. Non-empty but not PASS means the stamp is fine and the verdict is
+# genuinely negative; the reader has nothing to add, and calling --explain there produced the useless
+# "the stamp is readable and verdict is set" while denying the promotion. Caught by running it.
+if [ -z "$verdict" ]; then
+  why="$(python3 "$reader" --field verdict --explain 2>/dev/null || true)"
+  # A gate must still deny when it cannot explain itself.
+  deny "${why:-certification verdict could not be read. Re-certify.}"
+elif [ "$verdict" != "PASS" ]; then
+  deny "certification verdict is ${verdict}, not PASS. Fix the defects and re-certify."
+fi
+
 # #2: the sha binding IS the gate — empty/garbled sha must fail closed, not pass on PASS alone.
 [ -n "$csha" ] || deny "certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."
 
