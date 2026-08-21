@@ -2284,6 +2284,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Three opt-in checks, and a summary line you can actually read.** (#715, #716)
+  `plugins/rails-flow/checks.json` gains `architecture-boundaries` (`archspec check`),
+  `erb-parse-safety` (`herb analyze`) and `erb-lint` (`herb lint`). All are **opt-in via
+  `applies_when`** — an `Archspec.rb`, or `app/views` plus a `Gemfile.lock` — so a project that has
+  not adopted them reports **not-applicable, never a pass**. `erb-lint` declares `npx` in `requires`,
+  so a machine without Node routes to *"install it"* rather than to a false FAIL or to either tracker.
+
+  Verified end to end rather than by inspection: each check **FAILs on a real violation and goes `ok`
+  when the code is fixed**. The split between the two ERB checks is justified by observation, not
+  taste — `erb-parse-safety` reported `[ok]` on the very template where `erb-lint` reported
+  `Avoid raw() in ERB output`.
+
+- **A FAIL's detail was a version banner, then a wall of ANSI.** (#715, #716) These were the first
+  checks whose tool writes for a human, and `run_check` took `splitlines()[0]`. So a real failure read
+  `[FAIL] erb-parse-safety  Herb 🌿 v0.10.3`, and once colour was involved,
+  `[[1m[91merror[0m[0m] Avoid ...` with a hyperlink escape inside it — in a CI log, worse than the
+  banner, because it looks like corruption. **A summary nobody can read is a summary nobody reads**,
+  and then the routing that says whose tracker a failure belongs to stops being consulted at all.
+
+  `first_meaningful_line` strips CSI and OSC-8 escapes and prefers the first line naming a severity or
+  a `path:line:col`. **The first attempt was a denylist of banners** (`Herb`, `Node.js:`, `Running:`)
+  and `No .herb.yml found, using defaults` beat it immediately — a denylist of every way a tool can
+  clear its throat is a treadmill, and the line it misses is the one the user sees. It falls back to
+  the first line rather than to nothing, because a check that failed still has to say something.
+
 - **`setup-flow` scaffolded a CI job pinned 41 releases back, and it went green.** (#713)
   `plugins/rails-flow/commands/setup-flow.md` proposed a `doctrine` job checking this toolchain out
   beside the user's repo at a literal `ref: v1.51.0`. Published at the time of writing: **v1.92.2**.
@@ -3530,6 +3555,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   context). Synthesized from the fmworkflows/auctioneer agent systems, elevated
   to hooks-enforced, plugin-distributed, progressive-disclosure form.
 
+
 ## pipeline (lifecycle orchestrator)
 
 ### 1.3.1 — 2026-08-16 (release v1.91.2)
@@ -3760,6 +3786,49 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **Two gems that make our own boundaries executable.** (#715, #716) `ecosystem-gems.md` §13 adopts
+  **archspec** (1.0.1) and **herb** (0.10.3), both dev/test, both exiting non-zero on a finding. The
+  argument is theirs and it is ours: *"a tool can write code quickly, but it does not know your team's
+  boundaries unless those boundaries are executable."*
+
+  **Every claim in that section was verified by running the tools, and two conclusions reversed when
+  the commands were actually executed.** The first review inferred from the quickstart that
+  `architecture :rails` enforces a controllers→services→models layering this skill argues against.
+  Measured, it reports `ArchSpec passed: 4 files, 5 constants, 16 facts checked` and exits 0. And a
+  claim that the herb gem "has no `lint` command" came from **piping its help through `head -20`** and
+  asserting on the truncation — `herb lint` exists and delegates to the npm linter.
+
+  **The preset to avoid is `:vanilla_rails`**, and no doc reading would have found why: it requires
+  `app/components` to stay empty, which is where ViewComponents live. It reports
+  `view_components must stay empty` on a correct file — a checker firing on correct input, #476's
+  shape, in every project we scaffold. So §13 says **declare components explicitly and use no
+  preset**, and encodes the two forbidden-dependency claims this skill actually makes:
+  `models.md` §1 (never reference model classes in migrations) and `multi-tenancy.md` §1 (keep the
+  tenant concern off `ApplicationController` — an **auth** boundary whose stated guarantee is that a
+  tenant session grants zero admin access *structurally*).
+
+  **The trap that had to be written down, because it bit on the second config attempted:** components
+  **overlap**, and every rule applies to every component a file belongs to. Carving a sub-component out
+  of a preset's glob left the file in both, so the preset's own allow-list reported the carve-out as
+  forbidden — **two false errors per true one**, and five for two on a `can_only_be_used_by` variant.
+  `archspec explain` shows exactly this and is named as the first thing to run when a finding looks
+  wrong. Explicit components on the same fixture: two real violations, **zero** false positives, and
+  `ArchSpec passed: 9 files, 12 constants, 36 facts checked` once the code is corrected.
+
+  For herb, §13 names both commands because they are **not interchangeable**: `herb analyze` is
+  hermetic and catches ERB in attribute-*name* position, while `herb lint` — which shells out to
+  `npx @herb-tools/linter`, so it needs **Node** — is the half that catches `erb-no-unsafe-raw`,
+  *"Avoid `raw()` in ERB output… can cause cross-site scripting"*. Against one template `analyze`
+  reported `[ok]` where `lint` reported that error. And **`gem "herb-linter"` is called out as a
+  decoy**: it exists at 0.0.1 and its entire content is an empty module with an `Error` class, so
+  adding it installs nothing while reading in a Gemfile as though ERB linting were covered.
+
+  Also recorded: **never run `archspec check --update-todo`, and never let an agent run it.** The todo
+  file is a suppression baseline — writing to it turns a failing check into a passing one without
+  changing code. Their docs say the same in their own words.
 
 ### 1.49.0 — 2026-08-20 (release v1.92.0)
 

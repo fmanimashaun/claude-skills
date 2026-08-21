@@ -17,37 +17,133 @@
     {
       "id": "acceptance-criteria",
       "why": "Acceptance criteria that cannot fail grade nothing.",
-      "command": ["python3", "{plugin}/scripts/check_criteria.py", "{match:docs/acceptance/*.md}"],
-      "applies_when": ["docs/acceptance"],
-      "requires": ["python3"]
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_criteria.py",
+        "{match:docs/acceptance/*.md}"
+      ],
+      "applies_when": [
+        "docs/acceptance"
+      ],
+      "requires": [
+        "python3"
+      ]
     },
     {
       "id": "work-order",
       "why": "A work order an executor cannot run from is not self-contained.",
-      "command": ["python3", "{plugin}/scripts/check_handoff.py", "{match:docs/handoff/*.md}"],
-      "applies_when": ["docs/handoff"],
-      "requires": ["python3"]
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_handoff.py",
+        "{match:docs/handoff/*.md}"
+      ],
+      "applies_when": [
+        "docs/handoff"
+      ],
+      "requires": [
+        "python3"
+      ]
     },
     {
       "id": "product-brief",
       "why": "A brief that copies its own PRD is a second source of truth, and a citation that resolves to nothing reads as traceable while carrying nothing.",
-      "command": ["python3", "{plugin}/scripts/check_brief.py", "{match:docs/brain/BRIEF.md}", "--decisions", "docs/brain/DECISIONS.md"],
-      "applies_when": ["docs/brain/BRIEF.md"],
-      "requires": ["python3"]
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_brief.py",
+        "{match:docs/brain/BRIEF.md}",
+        "--decisions",
+        "docs/brain/DECISIONS.md"
+      ],
+      "applies_when": [
+        "docs/brain/BRIEF.md"
+      ],
+      "requires": [
+        "python3"
+      ]
     },
     {
       "id": "human-guide",
       "why": "A guide whose steps nobody can re-run is a sentiment.",
-      "command": ["python3", "{plugin}/scripts/check_guide.py", "{match:docs/GUIDE.md}", "--decisions", "docs/brain/DECISIONS.md"],
-      "applies_when": ["docs/GUIDE.md"],
-      "requires": ["python3"]
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_guide.py",
+        "{match:docs/GUIDE.md}",
+        "--decisions",
+        "docs/brain/DECISIONS.md"
+      ],
+      "applies_when": [
+        "docs/GUIDE.md"
+      ],
+      "requires": [
+        "python3"
+      ]
     },
     {
       "id": "architecture-graph-drift",
       "why": "The graph is regenerated at session end; a stale one describes an app that no longer exists.",
-      "command": ["python3", "{plugin}/scripts/architecture_graph.py", "--check"],
-      "applies_when": ["app", "docs/architecture/graph.json"],
-      "requires": ["python3"]
+      "command": [
+        "python3",
+        "{plugin}/scripts/architecture_graph.py",
+        "--check"
+      ],
+      "applies_when": [
+        "app",
+        "docs/architecture/graph.json"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "architecture-boundaries",
+      "why": "A forbidden dependency the doctrine states and nothing checks is a preference.",
+      "command": [
+        "bundle",
+        "exec",
+        "archspec",
+        "check"
+      ],
+      "applies_when": [
+        "Archspec.rb"
+      ],
+      "requires": [
+        "bundle"
+      ]
+    },
+    {
+      "id": "erb-parse-safety",
+      "why": "ERB in attribute-name position escapes nothing; a regex pass cannot see it.",
+      "command": [
+        "bundle",
+        "exec",
+        "herb",
+        "analyze",
+        "app/views"
+      ],
+      "applies_when": [
+        "app/views"
+      ],
+      "requires": [
+        "bundle"
+      ]
+    },
+    {
+      "id": "erb-lint",
+      "why": "raw() in a template bypasses escaping; analyze alone does not flag it.",
+      "command": [
+        "bundle",
+        "exec",
+        "herb",
+        "lint",
+        "app/views"
+      ],
+      "applies_when": [
+        "app/views"
+      ],
+      "requires": [
+        "bundle",
+        "npx"
+      ]
     }
   ]
 }

@@ -330,6 +330,48 @@ def route_of(result: Result) -> tuple[str, str]:
     return APP, DESTINATIONS[APP][1]
 
 
+# CSI colour/style runs, plus OSC-8 hyperlinks (`ESC ] 8 ; ; url ESC \\ text ESC ] 8 ; ; ESC \\`).
+# Both appear in real checker output the moment a tool decides it is talking to a human.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x1b\x07]*(?:\x07|\x1b\\)")
+# PREFER A POSITIVE SIGNAL, not a denylist of banners. The first version of this skipped known
+# preamble lines (`Herb`, `Node.js:`, `Running:`) and was immediately beaten by
+# `No .herb.yml found, using defaults` -- because a denylist of every way a tool can clear its
+# throat is a treadmill, and the one line it misses is the one a user sees.
+#
+# A finding names a severity or a location. Anything else is preamble by default.
+_FINDING = re.compile(r"\b(error|errors|warning|warnings|fail(ed|ure)?)\b|⚠|:\d+:\d+")
+
+
+def first_meaningful_line(output: str, returncode: int) -> str:
+    """The first line of a failing check's output that actually says something.
+
+    #715/#716. Registering the first checks whose tool writes for a human exposed two ways the old
+    `splitlines()[0]` reported nothing useful:
+
+      * `herb analyze` opens with `Herb 🌿 v0.10.3` and then `No .herb.yml found, using defaults`,
+        so a FAIL read `[FAIL] erb-parse-safety  Herb 🌿 v0.10.3` -- a version banner where the
+        finding belongs.
+      * `herb lint` colours its output, so the detail arrived as
+        `[[1m[91merror[0m[0m] Avoid ...` with a hyperlink escape inside it. In a CI log that is
+        worse than the banner: it is unreadable AND it looks like corruption.
+
+    A summary line nobody can read is a summary line nobody reads, and then the routing that tells
+    you WHOSE tracker a failure belongs to stops being consulted at all. So: strip the escapes,
+    skip the tool's own announcement, and fall back to the raw first line rather than to nothing --
+    a check that failed with only a banner still has to say so.
+    """
+    lines = [_ANSI.sub("", ln).strip() for ln in output.splitlines()]
+    lines = [ln for ln in lines if ln]
+    if not lines:
+        return f"exit {returncode}"
+    for line in lines:
+        if _FINDING.search(line):
+            return line[:160]
+    # No line names a severity or a location. Fall back to the first line rather than to nothing:
+    # a check that failed still has to say something, even if the tool only cleared its throat.
+    return lines[0][:160]
+
+
 def run_check(check: Check, project: Path) -> Result:
     why_not = applicability(check, project)
     if why_not:
@@ -350,8 +392,8 @@ def run_check(check: Check, project: Path) -> Result:
         except (OSError, subprocess.SubprocessError) as exc:
             return Result(check, ERROR, f"{type(exc).__name__}: {exc}")
         if done.returncode != 0:
-            first = (done.stdout + done.stderr).strip().splitlines()
-            return Result(check, FAIL, (first[0][:160] if first else f"exit {done.returncode}"))
+            return Result(check, FAIL, first_meaningful_line(done.stdout + done.stderr,
+                                                             done.returncode))
     return Result(check, PASS, f"{len(argvs)} invocation(s)")
 
 
@@ -660,6 +702,43 @@ def selftest() -> int:
         target = Path(c.command[1].replace("{plugin}", str(c.root))) if len(c.command) > 1 else None
         if target and target.suffix == ".py":
             check(f"{c.plugin}/{c.id} names a real script", target.is_file(), f"{target} missing")
+
+    # ---- #715/#716: a FAIL's detail must be readable ------------------------------------
+    # Registering the first checks whose tool writes for a human broke the summary line twice.
+    # Each clause gets a fixture that trips only it, so a mutation to either is provable.
+    #
+    # ANSI ONLY -- no severity word, no location -- so this proves the stripping, not the ranking.
+    _t = "\x1b[1m\x1b[91mbg-#{status}\x1b[0m interpolated"
+    check("ANSI escapes are stripped from the detail",
+          first_meaningful_line(_t, 1) == "bg-#{status} interpolated",
+          f"got {first_meaningful_line(_t, 1)!r}")
+    # An OSC-8 hyperlink, which is what made the real output look corrupted rather than merely ugly.
+    _t = "\x1b]8;;https://x/rule\x1b\\erb-no-unsafe-raw\x1b]8;;\x1b\\ tail"
+    check("OSC-8 hyperlinks are stripped too",
+          "\x1b" not in first_meaningful_line(_t, 1), f"got {first_meaningful_line(_t, 1)!r}")
+    # RANKING, with no escapes at all: the finding is the THIRD line, behind two preamble lines.
+    # `herb analyze` really does open with its banner and then a config notice.
+    _t = "Herb v0.10.3\nNo .herb.yml found, using defaults\nValidation errors:"
+    check("a banner and a config notice lose to a line naming a severity",
+          first_meaningful_line(_t, 1) == "Validation errors:",
+          f"got {first_meaningful_line(_t, 1)!r}")
+    # A LOCATION counts as a finding even with no severity word -- `path:line:col`.
+    _t = "Running: npx thing\napp/views/a.html.erb:2:6 unquoted attribute"
+    check("a path:line:col line counts as a finding",
+          first_meaningful_line(_t, 1).startswith("app/views/a.html.erb:2:6"),
+          f"got {first_meaningful_line(_t, 1)!r}")
+    # FALLBACK. Nothing names a severity or a location, and a failing check still has to say
+    # something -- returning "" would be a FAIL with no detail at all.
+    _t = "something opaque happened\nand then more of it"
+    check("falls back to the first line when nothing looks like a finding",
+          first_meaningful_line(_t, 3) == "something opaque happened",
+          f"got {first_meaningful_line(_t, 3)!r}")
+    check("empty output falls back to the exit code",
+          first_meaningful_line("   \n\n", 2) == "exit 2",
+          f"got {first_meaningful_line('   \n\n', 2)!r}")
+    check("the detail is capped at 160 chars",
+          len(first_meaningful_line("error " + "x" * 500, 1)) == 160,
+          f"got {len(first_meaningful_line('error ' + 'x' * 500, 1))}")
 
     # ---- #706: one root per PLUGIN, never one per cached version -------------------------
     # The fixture is the installed layout, because that is the one the old walk got wrong and the
