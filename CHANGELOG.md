@@ -2319,6 +2319,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
   Found by exercising the gate for #720 rather than by reading it: the same file, one layer down.
 
+- **The parallel-lane protocol never activated itself.** (#723) The guard (#660) is dormant without
+  `RAILS_FLOW_LANE`, and `assign_lanes.py` (#661) has to run *before* the sessions open — so
+  activation depended entirely on a human remembering, and the protocol shipped, sat dormant, and
+  the collision it prevents happened anyway.
+
+  Observed in one working directory with four unlaned sessions: one session's `git checkout -b`
+  **switched another session's branch out from under it mid-work**; uncommitted work from several
+  sessions piled into one tree; and the Stop gate **failed one session's turn over another session's
+  red specs**, because it evaluates one tree it assumes belongs to one session.
+
+  `plugins/rails-flow/hooks/scripts/session-start.sh` now detects sibling live sessions sharing this
+  working directory with no lane assigned, and names the three consequences plus the command to fix
+  it. **Detection is by marker, not process introspection** — each session start drops a marker keyed
+  by the working directory under `TMPDIR`, never inside the repo, because a status hook must not write
+  to someone's tree. Liveness is `kill -0` on the recorded PPID, so dead sessions prune themselves.
+
+  **It under-detects on purpose.** If PPID is not the session process, or a peer predates this
+  mechanism, it says nothing. A false nudge on ordinary single-session work is how an advisory gets
+  ignored — and this feature exists *because* an unheeded advisory is worth nothing. Missing a case
+  costs a reminder; crying wolf costs the channel.
+
+  Verified across all four states: silent alone, nudges with a live peer, silent once a lane is set,
+  and silent again once the peer dies.
+
 ### 1.24.0 — 2026-08-21 (release v1.93.0)
 
 - **Three opt-in checks, and a summary line you can actually read.** (#715, #716)
