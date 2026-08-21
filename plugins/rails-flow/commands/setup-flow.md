@@ -437,6 +437,48 @@ if the triggers already match (or the user declined), leave `ci.yml` untouched a
 rails-8 `testing.md` § *bin/ci*; if the `pipeline` plugin is installed, this aligns with its
 main-only release/build workflows.)
 
+### Executable boundaries — propose `Archspec.rb` as an approved diff (#715)
+
+The doctrine in `rails-8` `ecosystem-gems.md` §13 states two forbidden dependencies, and until a
+project has an `Archspec.rb` **nothing checks either of them** — the `architecture-boundaries` check
+reports *not-applicable*, forever. Offer the file; do not write it unasked.
+
+Propose exactly this, adjusting the two component paths to what the project actually has, and skip
+any rule whose paths are absent rather than inventing them:
+
+```ruby
+# Archspec.rb — at the project root, beside the Gemfile
+source "app/**/*.rb", "db/**/*.rb"
+
+component :models,             in: "app/models/**/*.rb"
+component :migrations,         in: "db/migrate/**/*.rb"
+component :tenant_concern,     in: "app/controllers/concerns/set_current_tenant.rb"
+component :shared_controllers, in: "app/controllers/application_controller.rb"
+
+# rails-8 models.md §1 — a migration that references a model breaks when the class evolves.
+migrations.cannot_use :models
+
+# rails-8 multi-tenancy.md §1 — the tenant concern must not reach ApplicationController, or the
+# admin plane inherits it and "a tenant session grants zero admin access" stops being structural.
+shared_controllers.cannot_use :tenant_concern
+```
+
+**No `architecture :preset` line.** `:vanilla_rails` requires `app/components` to stay empty and so
+fails any project using ViewComponents; `:rails` passes but enforces none of the above. Presets also
+make components **overlap**, and every rule applies to every component a file belongs to — which
+turns one real finding into three. §13 has the measured detail.
+
+Add the gem to the Gemfile's `:development, :test` group in the same diff, or the check reports a
+missing binary rather than a verdict:
+
+```ruby
+gem "archspec", "~> 1.0"
+gem "herb", "~> 0.10"
+```
+
+**Never offer `--update-todo`**, and if the project already has a todo file, say that it is a
+suppression baseline rather than treating it as configuration.
+
 ### The doctrine gate — propose it as an approved diff (#334)
 
 At that `dev → main` trigger the project runs **its own** matrix: tests, lint, Brakeman. **None of
@@ -454,17 +496,35 @@ branch moves. Propose one job that runs all of them:
       - uses: actions/checkout@v4
         with:
           repository: fmanimashaun/claude-skills
-          ref: v1.51.0            # PIN a tag: on `main`, your CI changes when we ship
+          ref: <PIN THE CURRENT TAG>   # never `main`: your CI would change when we ship
           path: .claude-toolchain
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: python3 .claude-toolchain/plugins/rails-flow/scripts/project_gates.py
 ```
 
+**Resolve `ref` before you write the file** — do not paste the placeholder:
+
+```bash
+gh release view --repo fmanimashaun/claude-skills --json tagName -q .tagName
+```
+
+Substitute that tag. If `gh` is unavailable, ask the user for a tag from
+<https://github.com/fmanimashaun/claude-skills/releases> rather than guessing one, and never fall
+back to `main`.
+
+**Why a placeholder and not a real version here** (#713). This block used to carry a literal
+`ref: v1.51.0`, and by the time anyone noticed it was **41 releases behind**. That is worse than an
+obviously-broken placeholder, because a stale pin *works*: every project scaffolded from it silently
+enforced v1.51.0's rules in CI while the same project's local session enforced current ones, and
+nothing in either place said the two disagreed. A literal version inside shipped doctrine is a clock
+nobody winds. `lint_self_consistency`'s `pinned-toolchain-ref` rule now refuses one.
+
 The runner discovers every sibling plugin's `checks.json` from that one checkout, so a single step
 covers all of them. **Pin the `ref`** — an unpinned `main` means our next release silently changes
 what your CI enforces, which is the same drift this whole toolchain exists to remove. Bump it
-deliberately, the way you bump any other dependency.
+deliberately, the way you bump any other dependency, and record which tag you pinned so the bump is
+a decision rather than a discovery.
 
 `project_gates.py` discovers which of the shipped checks apply to *this* repo and reports four
 states — **pass / FAIL / not-applicable / ERROR**. A project with no `qa/` directory reports the

@@ -88,6 +88,28 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #713. Three clauses, three mutations, two slugs -- a rule with N clauses needs a
+            # finding per clause or none of them is provable.
+            Mutation(
+                "a literal toolchain tag pinned for a user to copy stops being reported",
+                "        for match in _PINNED_REF.finditer(body):",
+                "        for match in ():",
+                "a literal toolchain tag pinned for a user to copy",
+            ),
+            Mutation(
+                "a tag hung off our own repo slug stops being reported",
+                "        for match in _SLUG_PIN.finditer(body):",
+                "        for match in ():",
+                "a literal tag pinned against our own repo slug",
+            ),
+            Mutation(
+                # Without the scope, a third party's pinned ref in one of our docs becomes our
+                # finding -- a rule that fires on correct input gets switched off.
+                "the scope to our own repository is dropped",
+                '        if "fmanimashaun/claude-skills" not in body:',
+                "        if False:",
+                "silent on a pinned ref that is not our repository",
+            ),
             # #701. Three clauses, three mutations -- a rule with N clauses needs a fixture that
             # trips exactly one of each, or none of them is proven. That lesson cost three
             # surviving mutants the day before this landed.
@@ -1860,6 +1882,28 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #715/#716. Three clauses in the detail line, three mutations -- the ANSI strip, the
+            # finding-preference ranking, and the empty-output fallback are independently provable.
+            Mutation(
+                "ANSI and hyperlink escapes reach the summary line again",
+                '    lines = [_ANSI.sub("", ln).strip() for ln in output.splitlines()]',
+                "    lines = [ln.strip() for ln in output.splitlines()]",
+                "ANSI escapes are stripped from the detail",
+            ),
+            Mutation(
+                # A banner denylist was the first attempt and `No .herb.yml found` beat it, so the
+                # ranking is the part that has to hold.
+                "the first line wins again, so a tool's banner masks its finding",
+                "        if _FINDING.search(line):",
+                "        if True:",
+                "a banner and a config notice lose to a line naming a severity",
+            ),
+            Mutation(
+                "a failing check with no output reports an empty detail",
+                '        return f"exit {returncode}"',
+                '        return ""',
+                "empty output falls back to the exit code",
+            ),
             # #706. The old walk assumed a flat layout; the installed one nests a version dir, so
             # "siblings" were other versions of the same plugin and real sibling plugins were never
             # found at all. Three mutations, one per clause -- the lesson from the last three days.

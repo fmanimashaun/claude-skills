@@ -1886,6 +1886,68 @@ def check_changelog_bullet_section() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# #713. A pinned toolchain tag inside shipped doctrine. `ref:` in a YAML block, or a bare
+# `@vX.Y.Z` next to our repo slug -- both are the same rotting literal.
+_PINNED_REF = re.compile(r"^\s*ref:\s*[\"']?(v\d+\.\d+\.\d+)", re.M)
+_SLUG_PIN = re.compile(r"fmanimashaun/claude-skills@(v\d+\.\d+\.\d+)")
+
+
+def check_pinned_toolchain_ref() -> tuple[list[Finding], int]:
+    """No shipped command may hardcode a version of THIS repo for a user to copy.
+
+    #713. `setup-flow` scaffolds a CI job that checks this toolchain out beside the user's repo, and
+    the template carried a literal `ref: v1.51.0`. By the time anyone looked it was **41 releases
+    behind** -- so every project scaffolded from it enforced v1.51.0's rules in CI while the same
+    project's local session enforced current ones, and nothing in either place said the two
+    disagreed.
+
+    That is worse than an obviously-broken placeholder, and the reason is the reason this rule
+    exists rather than a bump: **a stale pin works.** It clones, it runs, it goes green. A
+    placeholder fails at the moment the user sets CI up, which is exactly when the tag should be
+    chosen. A literal version inside shipped doctrine is a clock nobody winds, and the fix for a
+    clock nobody winds is not to wind it.
+
+    Deliberately NOT "the pin must equal `metadata.version`". That rule would fail on every arm
+    until someone edited a command file, making the release sequence depend on remembering this --
+    the same shape of defect, moved. The command now resolves the tag with `gh` at scaffold time, so
+    what the user receives is pinned and current while nothing in our tree rots.
+
+    TWO SLUGS for the two shapes (`pinned-toolchain-ref`, `pinned-toolchain-slug`), because under
+    one slug neither clause is provable: disable either and the other fires on the same input, so
+    every fixture still passes. That let two mutations survive in #701 and it is not repeating here.
+
+    Scoped to OUR repo's tags. `actions/checkout@v4` is a third-party action pinned by its own
+    publisher and none of our business; unversioned `ref:` lines (a branch, a placeholder, an
+    expression) are the shape being asked for.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted(ROOT.glob("plugins/*/commands/*.md")) + sorted(
+            ROOT.glob("plugins/*/agents/*.md")):
+        examined += 1
+        body = read(path)
+        rel = path.relative_to(ROOT).as_posix()
+        # Only a block that actually checks THIS repo out can carry a rotting pin of it.
+        if "fmanimashaun/claude-skills" not in body:
+            continue
+        for match in _PINNED_REF.finditer(body):
+            line = body[: match.start()].count("\n") + 1
+            findings.append(Finding(
+                "pinned-toolchain-ref", rel, line,
+                f"a literal {match.group(1)} is pinned for a user to copy. A stale pin WORKS -- it "
+                f"clones, runs and goes green while enforcing an old release's rules -- so it rots "
+                f"silently. The last one sat 41 releases behind. Use a placeholder and resolve the "
+                f"tag with `gh release view --repo fmanimashaun/claude-skills --json tagName` at "
+                f"scaffold time."))
+        for match in _SLUG_PIN.finditer(body):
+            line = body[: match.start()].count("\n") + 1
+            findings.append(Finding(
+                "pinned-toolchain-slug", rel, line,
+                f"a literal {match.group(1)} is pinned against our own repo slug. Same rot as a "
+                f"`ref:` pin: resolve it at scaffold time instead."))
+    return findings, examined
+
+
 def check_duplicated_release_extractor() -> tuple[list[Finding], int]:
     """The release-notes extractor lives in ONE script, and both publish paths must call it.
 
@@ -2335,6 +2397,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     agents_md, agents_md_examined = check_unimported_agent_instructions()
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
     rel_extract, rel_extract_examined = check_duplicated_release_extractor()
+    pinned_ref, pinned_ref_examined = check_pinned_toolchain_ref()
     bullet_sec, bullet_sec_examined = check_changelog_bullet_section()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
@@ -2370,6 +2433,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "root_agent_instruction_files": agents_md_examined,
         "skill_directories_named_in_claude_md": undoc_skill_examined,
         "publish_paths_checked_for_own_extractor": rel_extract_examined,
+        "shipped_docs_scanned_for_a_pinned_toolchain_tag": pinned_ref_examined,
         "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
@@ -2380,7 +2444,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec,
+            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref,
             coverage)
 
 
@@ -2567,6 +2631,31 @@ def selftest() -> int:
                  "rails-flow (agentic flow plugin)",
                  "- **Eleven agents ran for every job.** (#656) Now there is a pack size.",
                  heading="### 1.23.0 — 2026-08-20 (release v1.92.0)")})
+
+    # -- pinned-toolchain-ref / -slug --------------------------------------
+    PTR, PTS = "pinned-toolchain-ref", "pinned-toolchain-slug"
+    _CI = ("# Doctrine job\n\n```yaml\n  - uses: actions/checkout@v4\n"
+           "    with:\n      repository: fmanimashaun/claude-skills\n      ref: %s\n```\n")
+    scenario("a literal toolchain tag pinned for a user to copy", rule=PTR, expect_finding=True,
+             files={"plugins/rails-flow/commands/setup-flow.md": _CI % "v1.51.0"})
+    scenario("...silent on a placeholder", rule=PTR, expect_finding=False,
+             files={"plugins/rails-flow/commands/setup-flow.md": _CI % "<PIN THE CURRENT TAG>"})
+    # A THIRD PARTY's pin is none of our business and must not be swept up -- `actions/checkout@v4`
+    # is pinned by its own publisher and appears in the same block.
+    scenario("...silent on a third-party action's own pin", rule=PTR, expect_finding=False,
+             files={"plugins/rails-flow/commands/setup-flow.md": _CI % "${{ inputs.tag }}"})
+    # SCOPING. A versioned `ref:` in a block that does not check OUR repo out cannot rot on us.
+    scenario("...silent on a pinned ref that is not our repository", rule=PTR, expect_finding=False,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "```yaml\n  - uses: actions/checkout@v4\n    with:\n"
+                    "      repository: rails/rails\n      ref: v7.1.0\n```\n"})
+    # The other shape: a tag hung off our own slug.
+    scenario("a literal tag pinned against our own repo slug", rule=PTS, expect_finding=True,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "Install `fmanimashaun/claude-skills@v1.51.0` in CI.\n"})
+    scenario("...silent on the unpinned slug", rule=PTS, expect_finding=False,
+             files={"plugins/rails-flow/commands/setup-flow.md":
+                    "Install `fmanimashaun/claude-skills` in CI.\n"})
 
     # -- duplicated-release-extractor -------------------------------------
     DRE = "duplicated-release-extractor"
