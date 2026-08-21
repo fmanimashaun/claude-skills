@@ -312,12 +312,45 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     # DRIFT IS A NOTE, NOT A FAILURE. Work legitimately continues on a moved branch, and a gate
     # refusing every stale order would be switched off within a week.
     _tick()
-    if [f for f in _findings if not f.startswith("NOTE:")]:
+    if [f for f in _findings if not f.startswith(ch.NOTE_PREFIX)]:
         FAILURES.append(f"a drifted order must have no real findings: {_findings}")
     # ...and no drift means no note at all, or the note becomes background noise.
     _tick()
-    if any(f.startswith("NOTE:") for f in ch.check(ch.parse(_write(GOOD)), None, *_FAKE)):
+    if any(f.startswith(ch.NOTE_PREFIX) for f in ch.check(ch.parse(_write(GOOD)), None, *_FAKE)):
         FAILURES.append("an up-to-date base should produce no drift note")
+
+    # ---- #708: THE EXIT CODE IS THE CONTRACT, and nothing asserted it ---------------------
+    # The two assertions above test `check()`'s output shape. `stop-gate.sh` never sees that -- it
+    # keys off `main()`'s exit code, and `main()` counted the NOTE into `len(findings)` and returned
+    # 1. So a fixture saying "a drifted order must have no real findings" passed for two releases
+    # while the Stop gate refused every moved branch on every turn-stop. A fixture proving an
+    # ADJACENT claim, and the adjacent claim was the one nobody consumed.
+    #
+    # Patch the module-level resolvers, because `main()` reaches git directly and a temp file has no
+    # history. Restored in `finally` so a failure here cannot silently change later fixtures.
+    _tick()
+    _real_resolve, _real_ahead = ch._resolve, ch._commits_ahead
+    try:
+        ch._resolve = _drift_fake[0]
+        ch._commits_ahead = _drift_fake[1]
+        _code = ch.main([str(_write(_drifted))])
+    finally:
+        ch._resolve, ch._commits_ahead = _real_resolve, _real_ahead
+    if _code != 0:
+        FAILURES.append(
+            f"a NOTE-only result must exit 0 -- exit {_code} is what made the Stop gate refuse "
+            f"every feature branch whose HEAD had moved past its base")
+    # ...and a REAL finding alongside a note must still fail, or the fix has disarmed the check.
+    _tick()
+    _real_resolve, _real_ahead = ch._resolve, ch._commits_ahead
+    try:
+        ch._resolve = _drift_fake[0]
+        ch._commits_ahead = _drift_fake[1]
+        _code = ch.main([str(_write(_drifted.replace(SCOPE, "## Scope\n### In\n- the code\n")))])
+    finally:
+        ch._resolve, ch._commits_ahead = _real_resolve, _real_ahead
+    if _code == 0:
+        FAILURES.append("a real finding alongside a NOTE must still exit non-zero")
 
     # ---- scope: in AND out, and the boundary has to be nameable --------------------------
     expect_findings(
