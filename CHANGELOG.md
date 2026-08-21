@@ -2282,6 +2282,67 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.25.0 — 2026-08-21 (release v1.94.0)
+
+- **A `feat/*` branch got zero acceptance-criteria and work-order enforcement, silently.** (#720)
+  `plugins/rails-flow/hooks/scripts/stop-gate.sh` matched `feature/*|fix/*`, and git's own `feat/`
+  shorthand matched neither. So those two layers never ran — while the generic *"code changed without
+  a proving spec"* gate still fired, which **masked** the gap: the Stop gate looked like it was
+  working, and a feature finished green with its criteria unenforced. Reported from a live repo mixing
+  both spellings, on `feat/branded-error-surfaces`.
+
+  This is the #660 class again — a gate whose **activation condition** is quietly unmet, so it is
+  dormant exactly when relied upon.
+
+  `feat/*` now matches. **The more important half is the `*/*` arm**, because enumerating prefixes is
+  a treadmill — `bugfix/`, `hotfix/`, whatever a team picks next — and the prefix nobody added is the
+  one that goes unenforced in silence. Any other slashed branch that changed app code now gets a
+  one-line notice naming **what did not run**. It never blocks: scoping enforcement to the flow's own
+  branches is deliberate, and ad-hoc work must stay unblocked. **Making the skip visible is the fix;
+  making it fatal would be a different, worse bug.** Verified on `feature/`, `feat/`, `fix/` and
+  `chore/` — the first three enforce, the fourth advises and exits 0 on its own.
+
+- **A missing Gemfile was reported as a RED suite.** (#724) #683 taught
+  `plugins/rails-flow/hooks/scripts/stop-gate.sh` that a bundler abort
+  is not a failing suite, and its classifier was **one pattern short**: bundler says
+  `Could not locate Gemfile` when it cannot start at all, which `Could not find` (a missing *gem*)
+  does not cover. So a hook firing from a subdirectory, a monorepo whose app is not at the root, or a
+  half-initialised project got *"changed specs are RED — fix before finishing"* for a suite that never
+  executed — sending the reader to debug tests that are fine, which is the exact consequence #683's
+  own comment warns about.
+
+  Both branches still `exit 2`, which is what makes the crude match safe: a misclassification changes
+  the **wording**, never whether the finish is blocked. And a note for whoever touches it next — this
+  is the **second** member the denylist has been missing. If it needs a third, the shape is wrong and
+  it should key on a positive signal, the way the release-notes detail line had to after its own
+  banner denylist was beaten (#715).
+
+  Found by exercising the gate for #720 rather than by reading it: the same file, one layer down.
+
+- **The parallel-lane protocol never activated itself.** (#723) The guard (#660) is dormant without
+  `RAILS_FLOW_LANE`, and `assign_lanes.py` (#661) has to run *before* the sessions open — so
+  activation depended entirely on a human remembering, and the protocol shipped, sat dormant, and
+  the collision it prevents happened anyway.
+
+  Observed in one working directory with four unlaned sessions: one session's `git checkout -b`
+  **switched another session's branch out from under it mid-work**; uncommitted work from several
+  sessions piled into one tree; and the Stop gate **failed one session's turn over another session's
+  red specs**, because it evaluates one tree it assumes belongs to one session.
+
+  `plugins/rails-flow/hooks/scripts/session-start.sh` now detects sibling live sessions sharing this
+  working directory with no lane assigned, and names the three consequences plus the command to fix
+  it. **Detection is by marker, not process introspection** — each session start drops a marker keyed
+  by the working directory under `TMPDIR`, never inside the repo, because a status hook must not write
+  to someone's tree. Liveness is `kill -0` on the recorded PPID, so dead sessions prune themselves.
+
+  **It under-detects on purpose.** If PPID is not the session process, or a peer predates this
+  mechanism, it says nothing. A false nudge on ordinary single-session work is how an advisory gets
+  ignored — and this feature exists *because* an unheeded advisory is worth nothing. Missing a case
+  costs a reminder; crying wolf costs the channel.
+
+  Verified across all four states: silent alone, nudges with a live peer, silent once a lane is set,
+  and silent again once the peer dies.
+
 ### 1.24.0 — 2026-08-21 (release v1.93.0)
 
 - **Three opt-in checks, and a summary line you can actually read.** (#715, #716)
@@ -3786,6 +3847,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.50.1 — 2026-08-21 (release v1.94.0)
+
+- **`parallel-session-lane` §0 now says you will be told when you need it.** (#723)
+  `skills/parallel-session-lane/SKILL.md`'s §0 described a mode a human had to enter deliberately.
+  It now records that `rails-flow`'s SessionStart hook detects sibling live sessions sharing one
+  working directory with no lane assigned — and that the detection **under-detects** rather than risk
+  a false alarm on ordinary single-session work, because an advisory people learn to ignore is worth
+  nothing.
+
+  This bullet was **dropped once before reaching here**: resolving the #723 branch's CHANGELOG
+  conflict rebuilt the file from dev's side and re-grafted only the *rails-flow* body, so the
+  rails-stack note was silently lost while the skill change itself merged. Nothing caught it —
+  `changelog-section-missing` only asserts the section exists, and `changelog-bullet-*` only judges
+  bullets that are present. Filed as its own gap.
 
 ### 1.50.0 — 2026-08-21 (release v1.93.0)
 
@@ -6960,6 +7036,41 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### 1.25.1 — 2026-08-21 (release v1.94.0)
+
+- **A promotion was permanently denied, and the gate named the wrong reason.** (#721)
+  `plugins/qa-flow/hooks/scripts/release-gate.sh` read `qa/CERTIFICATION` with an inline
+  `json.load(...) || true`. On a non-conforming stamp the parse raised, the shell swallowed it, the
+  verdict came back empty, and the gate said *"certification verdict is not PASS. Re-certify."* — so
+  the reader re-certified, the same file stayed on disk, and **the loop closed**. `qa-status.sh`
+  printed *"certification stale"* forever for the same reason. **A gate that misdiagnoses is worse
+  than one that merely blocks: it sends you to fix something that is not broken.**
+
+  **The report asked for a text-stamp fallback, and the history says no such format was ever ours.**
+  Checked rather than taken on trust: the *first* commit to introduce the stamp (qa-flow 1.0.0,
+  2026-07-22) already prescribed JSON, every revision since says JSON, and `git log -S'Certified sha'`
+  is empty. There was no migration, so there is nothing to be compatible with — and adding a fallback
+  would bless a shape we never specified, making the schema permanently ambiguous. **One schema, and a
+  message that says exactly that.** `verify.md` was checked too, in case our own docs disagreed; it
+  says outright *"Verify never writes the certification stamp — only /qa-flow:certify does."*
+
+  `plugins/qa-flow/scripts/read_certification.py` now distinguishes **missing / not-JSON / not-object
+  / no-field / empty / ok**, and the not-JSON message quotes the file's first line and adds the part
+  that breaks the loop: *"Re-certifying without replacing this file will not help."*
+
+  **One reader, shared by both hooks.** There were **four** inline `json.load` copies across the two —
+  the shape of #699, where two copies of an extractor meant the bug survived its own discovery because
+  only one got fixed.
+
+  **Fail-closed is unchanged.** The script decides nothing; it reports and the hook denies. A missing
+  `python3`, a missing script or an unreadable file still yield no value and still deny, still scoped
+  to a command targeting `main`.
+
+  Two things caught by running it rather than reading it: a **lenient** reader would grep `PASS` out of
+  prose and unlock the promotion, so there is a negative fixture and a mutation for exactly that; and
+  my first wiring called `--explain` on a genuine `FAIL`, which answered *"the stamp is readable and
+  verdict is set"* while denying. Empty and not-PASS are now separate branches with separate sentences.
 
 ### 1.25.0 — 2026-08-08
 

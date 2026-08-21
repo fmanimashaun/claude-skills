@@ -259,6 +259,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                           "--agents", "plugins/rails-flow/agents",
                           "--tiers", "plugins/rails-flow/reference/model-tiers.md")),
+    # #721. The stamp has ONE schema and four ways of being unusable; the selftest pins that a text
+    # stamp containing the word PASS still does not read as PASS.
+    ("qa-flow certification reader",
+     ("python3", "plugins/qa-flow/scripts/read_certification.py", "--selftest")),
     ("qa-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
                        "--agents", "plugins/qa-flow/agents",
                        "--tiers", "plugins/qa-flow/reference/model-tiers.md")),
