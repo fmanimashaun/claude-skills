@@ -2282,7 +2282,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.23.1 — 2026-08-21 (release v1.92.2)
 
 - **The Stop gate refused every feature branch whose HEAD had moved past its base — every turn, with
   no honest way out.** (#708) `_check_base_commit` emits base drift as a `NOTE:` and has always said
