@@ -46,8 +46,21 @@ spec_changed="$(printf '%s\n' "$changed" | grep -E '^spec/.*_spec\.rb$' || true)
 # commits), where `rev-parse --abbrev-ref` answers the literal "HEAD" and the case below would
 # silently never match. Fall back for a detached HEAD, where there is no branch to scope to.
 branch="$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+# `feat/*` is here because it was NOT, and the gap was silent (#720). git's own shorthand is a
+# very common convention, and a `feat/` branch matched neither arm -- so the acceptance-criteria
+# and work-order layers never ran, while the generic "code changed without a proving spec" gate
+# below still fired. That is the worst shape: the Stop gate LOOKED like it was working, and a
+# feature finished green with its criteria unenforced. Reported from a live repo mixing both
+# spellings, on a branch named `feat/branded-error-surfaces`.
+#
+# The `*/*` arm is the part that generalises. Enumerating prefixes is a treadmill -- `bugfix/`,
+# `hotfix/`, `chore/`, whatever a team picks next -- and the prefix nobody added is exactly the
+# one that goes unenforced in silence. So any other slashed branch that CHANGED APP CODE gets a
+# one-line notice naming what did not run. It never blocks: scoping enforcement to the flow's own
+# branches is deliberate (see above), and ad-hoc work must stay unblocked. Making the skip
+# VISIBLE is the fix; making it fatal would be a different, worse bug.
 case "$branch" in
-  feature/*|fix/*)
+  feature/*|feat/*|fix/*)
     # Flatten nested branch names: `feature/team/foo` -> `team-foo`, not `team/foo`, which
     # would demand a nested docs/acceptance/team/ directory nobody would think to create and
     # block them with a path they never chose.
@@ -133,6 +146,18 @@ case "$branch" in
       fi
     fi
     ;;
+  */*)
+    # #720. Not one of the flow's branches, but app code changed -- so say what did not run.
+    # Advisory by design: this arm must never exit non-zero.
+    if [ -n "$app_changed" ]; then
+      {
+        echo "rails-flow stop gate: branch '$branch' is outside the flow's enforced set"
+        echo "(feature/*, feat/*, fix/*), so acceptance criteria and the work order were NOT"
+        echo "checked for this change. The proving-spec gate below still applies."
+        echo "Rename the branch, or accept that those two are unenforced here."
+      } >&2
+    fi
+    ;;
 esac
 
 if [ -n "$app_changed" ] && [ -z "$spec_changed" ]; then
@@ -180,7 +205,16 @@ if [ -n "$spec_changed" ] && command -v bundle >/dev/null 2>&1; then
     # lockfile" exactly as it does for a failing example, and calling that RED sends the reader to
     # look at specs that are fine. Name the environment when the output says environment.
     case "$out" in
-      *"Your Ruby version"*|*"was resolved to"*|*"Could not find"*|*"command not found"*|*"Bundler::"*)
+      # `Could not locate` is here because it was NOT, and the miss reported a red suite for a
+      # suite that never ran (#724). Bundler says "Could not locate Gemfile" when it cannot start
+      # at all -- a hook firing from a subdirectory, a monorepo whose app is not at the root, a
+      # half-initialised project -- and `Could not find` (a missing GEM) does not cover it.
+      #
+      # This is the second member this denylist has been missing. If it needs a third, the shape is
+      # wrong: key on a positive signal instead, the way the release-notes detail line had to after
+      # its own banner denylist was beaten (#715).
+      *"Your Ruby version"*|*"was resolved to"*|*"Could not find"*|*"Could not locate"*|\
+      *"command not found"*|*"Bundler::"*)
         {
           echo "rails-flow stop gate: could not RUN the changed specs — this is an environment"
           echo "problem, not a failing suite. Nothing about your specs is known either way."
