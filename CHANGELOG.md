@@ -2282,6 +2282,43 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A `feat/*` branch got zero acceptance-criteria and work-order enforcement, silently.** (#720)
+  `plugins/rails-flow/hooks/scripts/stop-gate.sh` matched `feature/*|fix/*`, and git's own `feat/`
+  shorthand matched neither. So those two layers never ran — while the generic *"code changed without
+  a proving spec"* gate still fired, which **masked** the gap: the Stop gate looked like it was
+  working, and a feature finished green with its criteria unenforced. Reported from a live repo mixing
+  both spellings, on `feat/branded-error-surfaces`.
+
+  This is the #660 class again — a gate whose **activation condition** is quietly unmet, so it is
+  dormant exactly when relied upon.
+
+  `feat/*` now matches. **The more important half is the `*/*` arm**, because enumerating prefixes is
+  a treadmill — `bugfix/`, `hotfix/`, whatever a team picks next — and the prefix nobody added is the
+  one that goes unenforced in silence. Any other slashed branch that changed app code now gets a
+  one-line notice naming **what did not run**. It never blocks: scoping enforcement to the flow's own
+  branches is deliberate, and ad-hoc work must stay unblocked. **Making the skip visible is the fix;
+  making it fatal would be a different, worse bug.** Verified on `feature/`, `feat/`, `fix/` and
+  `chore/` — the first three enforce, the fourth advises and exits 0 on its own.
+
+- **A missing Gemfile was reported as a RED suite.** (#724) #683 taught
+  `plugins/rails-flow/hooks/scripts/stop-gate.sh` that a bundler abort
+  is not a failing suite, and its classifier was **one pattern short**: bundler says
+  `Could not locate Gemfile` when it cannot start at all, which `Could not find` (a missing *gem*)
+  does not cover. So a hook firing from a subdirectory, a monorepo whose app is not at the root, or a
+  half-initialised project got *"changed specs are RED — fix before finishing"* for a suite that never
+  executed — sending the reader to debug tests that are fine, which is the exact consequence #683's
+  own comment warns about.
+
+  Both branches still `exit 2`, which is what makes the crude match safe: a misclassification changes
+  the **wording**, never whether the finish is blocked. And a note for whoever touches it next — this
+  is the **second** member the denylist has been missing. If it needs a third, the shape is wrong and
+  it should key on a positive signal, the way the release-notes detail line had to after its own
+  banner denylist was beaten (#715).
+
+  Found by exercising the gate for #720 rather than by reading it: the same file, one layer down.
+
 ### 1.24.0 — 2026-08-21 (release v1.93.0)
 
 - **Three opt-in checks, and a summary line you can actually read.** (#715, #716)
