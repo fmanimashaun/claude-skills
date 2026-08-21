@@ -1860,6 +1860,34 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #706. The old walk assumed a flat layout; the installed one nests a version dir, so
+            # "siblings" were other versions of the same plugin and real sibling plugins were never
+            # found at all. Three mutations, one per clause -- the lesson from the last three days.
+            Mutation(
+                "candidates stop collapsing by plugin identity, so every cached version runs",
+                "    best: dict[str, Path] = {}",
+                "    best: dict[str, Path] = {}\n    return sorted(candidates)",
+                "one root per plugin, not one per cached version",
+            ),
+            Mutation(
+                "the deeper scan is dropped, so sibling PLUGINS are never discovered",
+                "        if peer.is_dir() and peer != own.parent:",
+                "        if False:",
+                "sibling plugins are discovered",
+            ),
+            Mutation(
+                # The name is a version number in one layout and a plugin name in the other.
+                "identity is read from the directory name instead of the manifest",
+                '        data = json.loads(manifest.read_text(encoding="utf-8"))',
+                "        raise OSError",
+                "identity is read from plugin.json",
+            ),
+            Mutation(
+                "the one-level scan is dropped, so a flat source checkout finds only itself",
+                "    scan(own.parent)",
+                "    pass",
+                "a flat source-checkout layout still finds both plugins",
+            ),
             Mutation(
                 "a not-applicable check is counted as a pass",
                 '        return Result(check, NA, why_not)',

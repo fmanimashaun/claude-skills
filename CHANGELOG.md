@@ -2282,6 +2282,52 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`project_gates.py` ran every check once per CACHED plugin version, and never found the sibling
+  plugins at all.** (#706) `plugins/rails-flow/scripts/project_gates.py`'s `plugin_roots` took
+  `start.parents[1]` as the plugin directory and scanned
+  that directory's parent for siblings. Correct in a source checkout —
+  `plugins/rails-flow/scripts/x.py`, siblings are `plugins/*` — and wrong where the toolchain
+  actually runs:
+
+  ```
+  ~/.claude/plugins/cache/claude-skills/<plugin>/<version>/checks.json
+  ```
+
+  There `parents[1]` is a **version** directory, so "siblings" were other versions of the same
+  plugin. Measured on the reporting machine: **six** cached `rails-flow` versions and **fourteen**
+  `design-flow` ones, each shipping `checks.json`. Every check ran once per version, every count
+  inflated, and — worse — **one artifact was graded `[ok]` by some versions and `[FAIL]` by others**,
+  because their check logic differs. A single artifact with contradictory verdicts in one run destroys
+  the point of a single trustworthy gate.
+
+  **The quieter half is the more serious one.** The real sibling *plugins* live one level higher and
+  were never discovered, so **qa-flow's 8 checks and design-flow's 2 silently never ran locally** —
+  a coverage gap wearing an inflated count, which reads busier than the truth rather than quieter.
+  The docstring said "a plugin that is not installed contributes nothing"; an *installed* one
+  contributed nothing too, and nothing said so.
+
+  A pinned CI checkout has exactly one version on disk and sees neither half, which is why this
+  looked clean in CI while the documented *"one command, locally and in CI"* was wrong locally.
+
+  Candidates are now gathered from **both** shapes and collapsed by plugin identity, read from each
+  root's own `.claude-plugin/plugin.json` — authoritative, because the directory *name* is a version
+  number in one layout and a plugin name in the other, so reading it means guessing the layout. Both
+  layouts now yield **3 roots**, one per plugin, and the two previously invisible plugins are found.
+  The version you **invoked** wins for its own plugin, even if a higher one is cached: launching a
+  script and running a different version's checks would be surprising.
+
+  **The known limit is stated in the code rather than hidden.** "Highest cached" is a proxy for
+  "active" — a downgraded sibling leaves the newer version in the cache and its checks would be the
+  ones that run. The alternative, `installed_plugins.json`, does not exist in a source checkout or on
+  a CI runner, so keying on it would make the same repo grade differently by environment. That is the
+  worse failure. `/rails-flow:toolchain-check` is what surfaces version drift; this is not.
+
+  One mutation **survived** on the way in, and the fix was to delete rather than to add: the one-level
+  scan was subsumed by the deeper one, so no fixture could distinguish it. The two scans are now
+  disjoint. **A line no fixture can distinguish is a line that does nothing.**
+
 ### 1.23.0 — 2026-08-20 (release v1.92.0)
 
 - **A work order never said which commit it was written against.** (#659) `check_handoff.py`
