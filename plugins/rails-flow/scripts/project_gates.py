@@ -115,19 +115,119 @@ class Result:
     detail: str = ""
 
 
+def plugin_identity(root: Path) -> tuple[str, tuple[int, ...]]:
+    """`(plugin name, version tuple)` from the root's own `plugin.json`.
+
+    Authoritative rather than inferred: every installed plugin directory carries
+    `.claude-plugin/plugin.json` with both fields, in the cache and in a source checkout alike. The
+    directory NAME cannot serve -- in the installed layout it is a version number, and in a checkout
+    it is the plugin name, so reading it means guessing which layout you are in.
+
+    Falls back to the directory name at version `(0,)` when the manifest is unreadable. That keeps a
+    hand-assembled tree working while still collapsing duplicates of the same name.
+    """
+    manifest = root / ".claude-plugin" / "plugin.json"
+    name, raw = root.name, ""
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        name = str(data.get("name") or root.name)
+        raw = str(data.get("version") or "")
+    except (OSError, ValueError, TypeError):
+        pass
+    parts = []
+    for chunk in raw.split("."):
+        digits = "".join(c for c in chunk if c.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return name, tuple(parts) or (0,)
+
+
 def plugin_roots(start: Path) -> list[Path]:
-    """Every installed plugin directory that ships a `checks.json`.
+    """One directory per installed PLUGIN that ships a `checks.json` -- never one per version.
 
     Siblings are discovered rather than configured: plugins are installed independently, so a repo
     may have rails-flow and not design-flow. A plugin that is not installed contributes nothing --
     which is different from a check that is installed and does not apply, and the report says which.
+
+    #706. THE OLD WALK ASSUMED A FLAT LAYOUT AND THE INSTALLED ONE IS NESTED. It took
+    `start.parents[1]` as the plugin dir and scanned that dir's parent for siblings, which is right
+    in a source checkout (`plugins/rails-flow/scripts/x.py` -> siblings are `plugins/*`) and wrong
+    where the toolchain actually runs:
+
+        ~/.claude/plugins/cache/claude-skills/<plugin>/<version>/checks.json
+
+    There `parents[1]` is a VERSION dir, so "siblings" were other versions of the same plugin. Two
+    consequences, both measured on a real machine:
+
+      * every check ran once per cached version -- six for rails-flow, FOURTEEN for design-flow --
+        inflating every count and, worse, grading one artifact `[ok]` by some versions and `[FAIL]`
+        by others, because their check logic differs. A single artifact with contradictory verdicts
+        in one run destroys the point of a single trustworthy gate.
+      * the real sibling plugins live one level HIGHER and were never discovered at all, so
+        qa-flow's 8 checks and design-flow's 2 silently never ran locally -- a coverage gap wearing
+        an inflated count, which reads busier than the truth rather than quieter.
+
+    A pinned CI checkout has exactly one version on disk and never sees either half, which is why
+    this looked clean in CI while the documented "one command, locally and in CI" was wrong locally.
+
+    So: gather candidates from BOTH shapes, then collapse by plugin identity keeping the highest
+    version. Layout is discovered, not assumed.
+
+    KNOWN LIMIT, stated rather than hidden: "highest cached" is a proxy for "active". For the plugin
+    you invoked it is exact -- `own` wins its own name, because running a different version's checks
+    than the script you launched would be surprising. For SIBLING plugins it can disagree: a
+    downgraded plugin leaves the newer version in the cache and its checks would be the ones that
+    run. The alternative is `installed_plugins.json`, which `toolchain_version.py` reads with some
+    care -- and which does not exist in a source checkout or on a CI runner, so keying on it would
+    make the same repo grade differently by environment. That is a worse failure than a stale
+    sibling. `/rails-flow:toolchain-check` is the thing that surfaces version drift; this is not.
     """
-    own = start.resolve().parents[1]          # <plugin>/scripts/x.py -> <plugin>
-    roots = {own} if (own / "checks.json").is_file() else set()
-    for sibling in own.parent.iterdir():
-        if sibling.is_dir() and (sibling / "checks.json").is_file():
-            roots.add(sibling)
-    return sorted(roots)
+    own = start.resolve().parents[1]          # <plugin>/scripts/x.py -> <plugin>, or <plugin>/<ver>
+    candidates: set[Path] = set()
+    if (own / "checks.json").is_file():
+        candidates.add(own)
+
+    def scan(directory: Path) -> None:
+        try:
+            children = sorted(directory.iterdir())
+        except OSError:
+            return
+        for child in children:
+            if child.is_dir() and (child / "checks.json").is_file():
+                candidates.add(child)
+
+    # One level up: sibling PLUGINS in a flat source checkout, sibling VERSIONS in the cache.
+    scan(own.parent)
+    # Two levels up, one level down: every plugin's every version in the cache. Harmless in a
+    # checkout, where nothing at that depth ships a `checks.json`.
+    #
+    # `own.parent` is skipped here on purpose. Scanning it in both places made the line above
+    # unprovable -- a mutation deleting it survived, because this loop covers `own.parent` as one of
+    # grandparent's children. A line no fixture can distinguish is a line that does nothing, so the
+    # two scans are now disjoint and a mutation to either one fails a named fixture.
+    grandparent = own.parent.parent
+    try:
+        peers = sorted(grandparent.iterdir())
+    except OSError:
+        peers = []
+    for peer in peers:
+        if peer.is_dir() and peer != own.parent:
+            scan(peer)
+
+    # COLLAPSE BY IDENTITY. `own` wins ties on its own name, so the version you invoked is the one
+    # that runs even if a higher one is cached -- an explicit invocation is a choice, not an accident.
+    best: dict[str, Path] = {}
+    own_name = plugin_identity(own)[0] if own in candidates else None
+    for root in sorted(candidates):
+        name, version = plugin_identity(root)
+        if name == own_name and root == own:
+            best[name] = root
+            continue
+        if name == own_name and best.get(name) == own:
+            continue
+        current = best.get(name)
+        if current is None or plugin_identity(current)[1] < version:
+            best[name] = root
+    return sorted(best.values())
 
 
 def load_checks(roots: list[Path]) -> tuple[list[Check], list[str]]:
@@ -560,6 +660,82 @@ def selftest() -> int:
         target = Path(c.command[1].replace("{plugin}", str(c.root))) if len(c.command) > 1 else None
         if target and target.suffix == ".py":
             check(f"{c.plugin}/{c.id} names a real script", target.is_file(), f"{target} missing")
+
+    # ---- #706: one root per PLUGIN, never one per cached version -------------------------
+    # The fixture is the installed layout, because that is the one the old walk got wrong and the
+    # one every local run uses:  <cache>/<plugin>/<version>/checks.json
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = (Path(tmp) / "cache").resolve()
+        cache.mkdir(parents=True, exist_ok=True)
+
+        def plug(name: str, version: str) -> Path:
+            d = cache / name / version
+            (d / "scripts").mkdir(parents=True)
+            (d / ".claude-plugin").mkdir(parents=True)
+            (d / ".claude-plugin" / "plugin.json").write_text(
+                json.dumps({"name": name, "version": version}), encoding="utf-8")
+            (d / "checks.json").write_text(json.dumps({"checks": []}), encoding="utf-8")
+            (d / "scripts" / "project_gates.py").write_text("x\n", encoding="utf-8")
+            return d
+
+        for v in ("1.18.2", "1.19.0", "1.20.0", "1.22.2", "1.23.0"):
+            plug("rails-flow", v)
+        plug("qa-flow", "1.24.1")
+        plug("qa-flow", "1.25.0")
+        plug("design-flow", "1.29.0")
+        invoked = cache / "rails-flow" / "1.23.0" / "scripts" / "project_gates.py"
+
+        roots = plugin_roots(invoked)
+        names = [plugin_identity(r)[0] for r in roots]
+        # THE DEFECT: five cached rails-flow versions produced five roots and every check ran 5x,
+        # with one artifact graded ok by some versions and FAIL by others.
+        check("one root per plugin, not one per cached version", len(roots) == 3,
+              f"got {len(roots)}: {[f'{r.parent.name}/{r.name}' for r in roots]}")
+        check("no plugin appears twice", len(names) == len(set(names)), f"{names}")
+        # THE OTHER HALF, and the quieter one: sibling PLUGINS live a level higher than the old walk
+        # looked, so their checks silently never ran while the counts read busy.
+        check("sibling plugins are discovered", set(names) == {"rails-flow", "qa-flow", "design-flow"},
+              f"{sorted(names)}")
+        # A sibling with several cached versions collapses to the highest.
+        qa = [r for r in roots if plugin_identity(r)[0] == "qa-flow"]
+        check("a sibling collapses to its highest cached version",
+              len(qa) == 1 and qa[0].name == "1.25.0", f"{[r.name for r in qa]}")
+        # The version you INVOKED wins its own name, even though 1.23.0 is not the highest string
+        # sorted lexically and even if a higher one were cached: launching a script and running a
+        # different version's checks would be surprising.
+        mine = [r for r in roots if plugin_identity(r)[0] == "rails-flow"]
+        check("the invoked version wins for its own plugin",
+              len(mine) == 1 and mine[0].name == "1.23.0", f"{[r.name for r in mine]}")
+        plug("rails-flow", "1.24.0")
+        mine = [r for r in plugin_roots(invoked) if plugin_identity(r)[0] == "rails-flow"]
+        check("...even when a higher version is cached alongside",
+              len(mine) == 1 and mine[0].name == "1.23.0", f"{[r.name for r in mine]}")
+
+        # A FLAT layout still works -- that is the source-checkout shape, and breaking it would trade
+        # one wrong environment for another.
+        flat = (Path(tmp) / "plugins").resolve()
+        for name in ("rails-flow", "design-flow"):
+            d = flat / name
+            (d / "scripts").mkdir(parents=True)
+            (d / ".claude-plugin").mkdir(parents=True)
+            (d / ".claude-plugin" / "plugin.json").write_text(
+                json.dumps({"name": name, "version": "9.9.9"}), encoding="utf-8")
+            (d / "checks.json").write_text(json.dumps({"checks": []}), encoding="utf-8")
+        flat_roots = plugin_roots(flat / "rails-flow" / "scripts" / "project_gates.py")
+        check("a flat source-checkout layout still finds both plugins", len(flat_roots) == 2,
+              f"got {len(flat_roots)}")
+
+        # Identity comes from the MANIFEST, not the directory name -- the name is a version number in
+        # one layout and a plugin name in the other, so reading it means guessing the layout.
+        check("identity is read from plugin.json",
+              plugin_identity(cache / "rails-flow" / "1.23.0") == ("rails-flow", (1, 23, 0)),
+              f"{plugin_identity(cache / 'rails-flow' / '1.23.0')}")
+        # An unreadable manifest degrades to the directory name rather than crashing the whole run.
+        orphan = cache / "orphan" / "0.0.1"
+        (orphan / "scripts").mkdir(parents=True)
+        (orphan / "checks.json").write_text("{}", encoding="utf-8")
+        check("a missing manifest degrades to the directory name",
+              plugin_identity(orphan) == ("0.0.1", (0,)), f"{plugin_identity(orphan)}")
 
     if failures:
         print(f"SELFTEST FAILED -- {len(failures)} of {n} checks:", file=sys.stderr)

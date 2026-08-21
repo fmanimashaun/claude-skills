@@ -113,6 +113,22 @@ case "$branch" in
             printf '%s\n' "$hout"
           } >&2
           exit 2
+        else
+          # #708. Surface advisory NOTEs on the PASSING path, so base drift stays visible instead of
+          # being swallowed by a clean exit. Visibility was the whole reason the note exists.
+          #
+          # The verdict still comes from the EXIT CODE alone, deliberately. The issue suggested this
+          # gate filter `NOTE:` lines out of a failing count itself -- do not. This hook fails CLOSED
+          # by design, and a gate that decided pass/fail by parsing output would call a crash that
+          # printed nothing a pass. The contract belongs where the findings are produced, and that is
+          # where it now lives: `check_handoff.py` exits 0 when only notes remain.
+          notes="$(printf '%s\n' "$hout" | grep '^  - NOTE: ' || true)"
+          if [ -n "$notes" ]; then
+            {
+              echo "rails-flow stop gate: the work order holds. Advisory:"
+              printf '%s\n' "$notes"
+            } >&2
+          fi
         fi
       fi
     fi

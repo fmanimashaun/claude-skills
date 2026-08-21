@@ -1860,6 +1860,34 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #706. The old walk assumed a flat layout; the installed one nests a version dir, so
+            # "siblings" were other versions of the same plugin and real sibling plugins were never
+            # found at all. Three mutations, one per clause -- the lesson from the last three days.
+            Mutation(
+                "candidates stop collapsing by plugin identity, so every cached version runs",
+                "    best: dict[str, Path] = {}",
+                "    best: dict[str, Path] = {}\n    return sorted(candidates)",
+                "one root per plugin, not one per cached version",
+            ),
+            Mutation(
+                "the deeper scan is dropped, so sibling PLUGINS are never discovered",
+                "        if peer.is_dir() and peer != own.parent:",
+                "        if False:",
+                "sibling plugins are discovered",
+            ),
+            Mutation(
+                # The name is a version number in one layout and a plugin name in the other.
+                "identity is read from the directory name instead of the manifest",
+                '        data = json.loads(manifest.read_text(encoding="utf-8"))',
+                "        raise OSError",
+                "identity is read from plugin.json",
+            ),
+            Mutation(
+                "the one-level scan is dropped, so a flat source checkout finds only itself",
+                "    scan(own.parent)",
+                "    pass",
+                "a flat source-checkout layout still finds both plugins",
+            ),
             Mutation(
                 "a not-applicable check is counted as a pass",
                 '        return Result(check, NA, why_not)',
@@ -3218,6 +3246,21 @@ GUARDS: tuple[Guard, ...] = (
             "plugins/rails-flow/agents",
         ),
         mutations=(
+            # #708. The comment said the NOTE must not fail the order; nothing inspected the prefix,
+            # so the Stop gate refused every feature branch whose HEAD had moved past its base.
+            Mutation(
+                "a NOTE counts as a failing finding again, refusing every moved branch",
+                "    real = [f for f in findings if not f.startswith(NOTE_PREFIX)]",
+                "    real = list(findings)",
+                "a NOTE-only result must exit 0",
+            ),
+            Mutation(
+                # The other direction: the fix must not disarm the check it lives in.
+                "a real finding stops failing once a note is present",
+                "    if real:",
+                "    if False:",
+                "a real finding alongside a NOTE must still exit non-zero",
+            ),
             Mutation(
                 # #659. A plausible hex string tells an executor where to start and is worse than an
                 # absent one, because it will be trusted. Present-but-unusable is not passable, the
@@ -4643,6 +4686,29 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/rails-flow/scripts/check_criteria.py",
         selftest="plugins/rails-flow/scripts/check_criteria_selftest.py",
         mutations=(
+            # #707. `ID_RE` matches an `AC-n` anywhere, so an explanatory NOTE was parsed as a
+            # malformed criterion and the whole file rejected -- from the Stop gate, every turn.
+            Mutation(
+                "prose mentioning criteria is parsed as a criterion definition again",
+                "        lead = DEF_RE.match(raw)",
+                "        lead = ID_RE.search(raw)",
+                "a `## Notes` bullet naming two AC ids is prose, not a criterion",
+            ),
+            Mutation(
+                "bolded ids stop being the definition marker, so a criterion may not reference "
+                "another",
+                "        if bold:",
+                "        if False:",
+                "a criterion referencing another criterion in its text",
+            ),
+            Mutation(
+                # The dangerous direction: silently dropping a real criterion is worse than the
+                # false positive being fixed.
+                "a Given/When/Then line whose id does not lead is silently dropped",
+                "            if (ID_RE.search(raw) and GIVEN_RE.search(raw)",
+                "            if (False and ID_RE.search(raw) and GIVEN_RE.search(raw)",
+                "a Given/When/Then line whose id does not lead is reported, not dropped",
+            ),
             Mutation(
                 "empty criteria stop being unusable, so a brief with nothing in it is accepted",
                 "    if not out:",

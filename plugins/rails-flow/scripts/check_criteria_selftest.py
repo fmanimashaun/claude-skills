@@ -195,6 +195,42 @@ def run() -> int:
         "## Sign-in\n- **AC-1** and **AC-2** Given a user, when they submit, then it loads\n",
         contains="one criterion per line",
     )
+    # ---- #707: prose that REFERENCES criteria is not a criterion ---------------------
+    # The live repro, verbatim in shape from the acceptance doc that was rejected: nine well-formed
+    # criteria, and one true sentence under `## Notes` naming two ids. The old parser read the note
+    # as a malformed definition and failed the whole file -- from the Stop gate, so it blocked every
+    # turn-stop, with the criteria already correct and nothing honest to change.
+    expect_clean(
+        "a `## Notes` bullet naming two AC ids is prose, not a criterion",
+        GOOD + "\n## Notes\n\n- `check_authorization` forces every `Admin::` action to call "
+        "`authorize!`; a content action that forgot would raise `AuthorizationNotPerformed` -- so "
+        "AC-1/AC-2 passing also proves the pipeline is wired.\n",
+    )
+    # A criterion may REFERENCE another in its own text. Only the bolded id defines.
+    expect_clean(
+        "a criterion referencing another criterion in its text",
+        "## Sign-in\n"
+        "- **AC-1** Given a registered user, when they submit valid credentials, then the "
+        "dashboard loads\n"
+        "- **AC-2** Given AC-1 has passed, when the session expires, then the page shows a "
+        "sign-in prompt [error]\n",
+    )
+    # THE DANGEROUS DIRECTION. A line that is clearly TRYING to be a criterion must not be skipped
+    # silently -- losing a real criterion is worse than the false positive this fixes.
+    expect_unusable(
+        "a Given/When/Then line whose id does not lead is reported, not dropped",
+        "## Sign-in\n- **AC-1** Given a user, when they submit, then it loads\n"
+        "- Given a locked account, when they submit, then it is refused (AC-2)\n",
+        contains="does not lead the line",
+    )
+    # ...and the non-bold leading form keeps the strict rule, because with no marker there is
+    # nothing to tell a definition from a reference.
+    expect_unusable(
+        "two ids on a non-bold definition line still fails",
+        "## Sign-in\n- AC-1 and AC-2 Given a user, when they submit, then it loads\n",
+        contains="one criterion per line",
+    )
+
     _tick()
     try:
         cc.parse(Path(tempfile.mkdtemp(prefix="railsflow-criteria-")) / "absent.md")
