@@ -2282,7 +2282,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.25.0 — 2026-08-21 (release v1.94.0)
 
 - **A `feat/*` branch got zero acceptance-criteria and work-order enforcement, silently.** (#720)
   `plugins/rails-flow/hooks/scripts/stop-gate.sh` matched `feature/*|fix/*`, and git's own `feat/`
@@ -3847,6 +3847,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.50.1 — 2026-08-21 (release v1.94.0)
+
+- **`parallel-session-lane` §0 now says you will be told when you need it.** (#723)
+  `skills/parallel-session-lane/SKILL.md`'s §0 described a mode a human had to enter deliberately.
+  It now records that `rails-flow`'s SessionStart hook detects sibling live sessions sharing one
+  working directory with no lane assigned — and that the detection **under-detects** rather than risk
+  a false alarm on ordinary single-session work, because an advisory people learn to ignore is worth
+  nothing.
+
+  This bullet was **dropped once before reaching here**: resolving the #723 branch's CHANGELOG
+  conflict rebuilt the file from dev's side and re-grafted only the *rails-flow* body, so the
+  rails-stack note was silently lost while the skill change itself merged. Nothing caught it —
+  `changelog-section-missing` only asserts the section exists, and `changelog-bullet-*` only judges
+  bullets that are present. Filed as its own gap.
 
 ### 1.50.0 — 2026-08-21 (release v1.93.0)
 
@@ -7022,7 +7037,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.25.1 — 2026-08-21 (release v1.94.0)
 
 - **A promotion was permanently denied, and the gate named the wrong reason.** (#721)
   `plugins/qa-flow/hooks/scripts/release-gate.sh` read `qa/CERTIFICATION` with an inline
