@@ -6961,6 +6961,41 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **A promotion was permanently denied, and the gate named the wrong reason.** (#721)
+  `plugins/qa-flow/hooks/scripts/release-gate.sh` read `qa/CERTIFICATION` with an inline
+  `json.load(...) || true`. On a non-conforming stamp the parse raised, the shell swallowed it, the
+  verdict came back empty, and the gate said *"certification verdict is not PASS. Re-certify."* — so
+  the reader re-certified, the same file stayed on disk, and **the loop closed**. `qa-status.sh`
+  printed *"certification stale"* forever for the same reason. **A gate that misdiagnoses is worse
+  than one that merely blocks: it sends you to fix something that is not broken.**
+
+  **The report asked for a text-stamp fallback, and the history says no such format was ever ours.**
+  Checked rather than taken on trust: the *first* commit to introduce the stamp (qa-flow 1.0.0,
+  2026-07-22) already prescribed JSON, every revision since says JSON, and `git log -S'Certified sha'`
+  is empty. There was no migration, so there is nothing to be compatible with — and adding a fallback
+  would bless a shape we never specified, making the schema permanently ambiguous. **One schema, and a
+  message that says exactly that.** `verify.md` was checked too, in case our own docs disagreed; it
+  says outright *"Verify never writes the certification stamp — only /qa-flow:certify does."*
+
+  `plugins/qa-flow/scripts/read_certification.py` now distinguishes **missing / not-JSON / not-object
+  / no-field / empty / ok**, and the not-JSON message quotes the file's first line and adds the part
+  that breaks the loop: *"Re-certifying without replacing this file will not help."*
+
+  **One reader, shared by both hooks.** There were **four** inline `json.load` copies across the two —
+  the shape of #699, where two copies of an extractor meant the bug survived its own discovery because
+  only one got fixed.
+
+  **Fail-closed is unchanged.** The script decides nothing; it reports and the hook denies. A missing
+  `python3`, a missing script or an unreadable file still yield no value and still deny, still scoped
+  to a command targeting `main`.
+
+  Two things caught by running it rather than reading it: a **lenient** reader would grep `PASS` out of
+  prose and unlock the promotion, so there is a negative fixture and a mutation for exactly that; and
+  my first wiring called `--explain` on a genuine `FAIL`, which answered *"the stamp is readable and
+  verdict is set"* while denying. Empty and not-PASS are now separate branches with separate sentences.
+
 ### 1.25.0 — 2026-08-08
 
 - **The a11y-auditor cried wolf on every page of a conformant app** (Refs #578). The keyboard pass
