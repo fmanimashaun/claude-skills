@@ -19,6 +19,7 @@ you how each one is idiomatically used).
 10. Dev & debug: bullet, letter_opener, annotaterb, rack-mini-profiler, dotenv
 11. APIs, admin, charts, flags — quick hits
 12. Testing stack (pointer)
+13. Executable boundaries: archspec, herb
 
 ---
 
@@ -46,6 +47,8 @@ you how each one is idiomatically used).
 | View components | Partials + strict locals | Design-system scale, unit-tested views → **ViewComponent** |
 | Migration safety | Plain migrations | Deploying against live tables at scale → **strong_migrations** |
 | AI / LLM features | — (none built in) | **ruby_llm** — `ai-llm.md` |
+| Architecture boundaries | — (nothing checks them) | **Always — see §13.** A forbidden dependency this skill states and nothing checks is a preference, not a rule → **archspec** |
+| ERB correctness | `erb_lint` (unmaintained) | **Always — see §13.** HTML-aware parsing of `.html.erb` → **herb** |
 
 ## 2. Forms: simple_form
 
@@ -346,3 +349,156 @@ rspec-rails, factory_bot_rails, faker, capybara,
 selenium-webdriver, simplecov, webmock, vcr, rubocop-rspec — the full setup,
 configuration, and idioms live in `references/testing.md`. That file is this
 skill's testing doctrine; don't duplicate it here.
+
+---
+
+## 13. Executable boundaries: archspec, herb
+
+Both are **dev/test group**, both **exit non-zero on a finding**, and both exist for the same reason
+this file exists: *a rule nobody can run is a preference.* Herb's own docs put it better than we
+did — **"a tool can write code quickly, but it does not know your team's boundaries unless those
+boundaries are executable."** That is the whole argument for this section.
+
+Everything below was verified by **running the tools at the versions named**, not by reading their
+docs. Two of the conclusions reversed when the commands were actually executed, and both reversals
+are recorded, because the reading was plausible and wrong.
+
+### 13a. archspec — the boundaries this skill states
+
+```ruby
+group :development, :test do
+  gem "archspec", "~> 1.0"
+end
+```
+
+`archspec check` exits **1** on a violation and **0** clean, so it gates. It reads constant
+references, inheritance, `include`/`prepend`/`extend` — not a whole-program call graph, and it says
+so.
+
+**Do not use a preset.** Two measured reasons:
+
+- **`architecture :vanilla_rails` fails this stack**, because it requires `app/components` to stay
+  empty — and `app/components` is where ViewComponents live (`views-hotwire.md`, and the design
+  system's own components). It reports
+  `view_components must stay empty: use helpers and ERB partials [components.empty]` on a correct
+  file. A checker that fires on correct input gets switched off within a week.
+- **`architecture :rails` passes but enforces nothing this skill claims.** It is not wrong; it is
+  simply not about our rules.
+
+**Components overlap, and every rule applies to every component a file belongs to.** This is the
+trap, and it is not in the quickstart. Carving a sub-component out of a preset's glob leaves the file
+in *both*, so the preset's own allow-list then reports the carve-out as a forbidden dependency —
+**two false errors for every true one**, measured. `archspec explain` shows exactly this and is the
+first thing to run when a finding looks wrong:
+
+```
+$ bundle exec archspec explain app/controllers/tenant/invoices_controller.rb
+  components:
+    controllers: matched file pattern app/controllers/**/*.rb
+    tenant_controllers: matched file pattern app/controllers/tenant/**/*.rb
+```
+
+So declare components **explicitly** and omit `architecture` entirely. `Archspec.rb`:
+
+```ruby
+# Archspec.rb — at the project root, beside the Gemfile
+source "app/**/*.rb", "db/**/*.rb"
+
+component :models,             in: "app/models/**/*.rb"
+component :migrations,         in: "db/migrate/**/*.rb"
+component :tenant_concern,     in: "app/controllers/concerns/set_current_tenant.rb"
+component :shared_controllers, in: "app/controllers/application_controller.rb"
+
+# models.md §1 — never reference model classes in migrations: the class evolves, the migration
+# does not, and the failure lands on whoever next sets up a database.
+migrations.cannot_use :models
+
+# multi-tenancy.md §1 — keep the tenant concern off ApplicationController so the admin and public
+# planes cannot inherit it by accident. An AUTH boundary: that section's guarantee is that a tenant
+# session grants zero admin access *structurally*, rather than because a before_action remembered.
+shared_controllers.cannot_use :tenant_concern
+```
+
+Both rules cite the line they enforce, and that is the rule for adding a third: **a rule with no
+doctrine behind it is someone's taste wearing a config file.** Write the claim down first, or do not
+add the rule.
+
+Clean output on a corrected tree, so the check is silent when it should be:
+
+```
+ArchSpec passed: 9 files, 12 constants, 36 facts checked.
+```
+
+**Never run `archspec check --update-todo`, and never let an agent run it.** The todo file is a
+suppression baseline; writing to it converts a failing check into a passing one without changing any
+code. Their docs say the same thing — *"do not update the todo file to accept new generated code; fix
+the code, or change the rule intentionally."* For a genuinely deliberate exception, use an inline
+comment where a reviewer will see it, with a reason:
+
+```ruby
+# archspec:disable-next-line dependencies.forbid -- legacy admin export, removed with #1234
+```
+
+### 13b. herb — HTML-aware ERB
+
+```ruby
+group :development, :test do
+  gem "herb", "~> 0.10"
+end
+```
+
+A C parser with real bindings, not a regex pass, which is why it can reason about attribute position
+at all. **Two commands matter, and they are not interchangeable.**
+
+**`herb analyze <path>`** — pure gem, no network, exits **1** on findings and **0** clean. It catches
+parse- and validation-level errors:
+
+```
+⚠ SecurityError app/views/invoices/index.html.erb:2:47
+  ERB output tags (<%= %>) are not allowed in attribute position.
+```
+
+**`herb lint <path>`** — the full rule set, and the one that catches the dangerous class. The gem
+**delegates to the npm package**, installing it on demand:
+
+```
+$ bundle exec herb lint app/views
+Node.js: v24.11.0
+Running: npx @herb-tools/linter app/views
+
+[error] Avoid `raw()` in ERB output. It bypasses HTML escaping and can cause cross-site
+        scripting (XSS) vulnerabilities.  (erb-no-unsafe-raw)
+  → 2 │   <%= raw "<span class='#{cls}'>#{name}</span>" %>
+
+[error] Avoid outputting interpolated string `"bg-#{status}"`. Use separate `<%= %>` tags for
+        each dynamic value instead.  (erb-prefer-direct-output)  [Correctable]
+```
+
+So one Gemfile line gets you both — **provided Node is on PATH**, because `lint` shells out to
+`npx`. Run `analyze` where you need a hermetic, gem-only check, and `lint` where you want the rules.
+`analyze` alone does **not** flag `raw()`: against a template with four attribute hazards it reported
+one, and `erb-no-unsafe-raw` was not it. That gap is the whole reason both are named here.
+
+**Do not add `gem "herb-linter"`.** It exists on RubyGems at **0.0.1** and its entire content is an
+empty module with an `Error` class — a reserved name. Adding it installs nothing and enforces nothing
+while reading in the Gemfile as though ERB linting were covered. The `lint` command above is the real
+route; that gem is not.
+
+Also worth knowing, from the same CLI: **`herb actionview check <path>`** verifies that `render` calls
+resolve to partials that exist — a class of broken view that only shows up when the branch is
+exercised.
+
+What to *do* about it: never build an attribute by interpolating into markup — hand the values to
+Rails and let it escape them.
+
+```erb
+<%# wrong: the value lands in attribute position unescaped %>
+<%= raw "<span class='#{cls}'>#{name}</span>" %>
+
+<%# right: `tag` builds the element, `tag.attributes` builds a conditional attribute set %>
+<%= tag.span name, class: cls %>
+<div <%= tag.attributes(data: { controller: ("dismiss" if dismissible) }) %>>
+```
+
+Herb tells you *where*; this is the *instead*. `content_tag`/`tag.div` and the rest of the helper
+surface are in `views-hotwire.md` §2.

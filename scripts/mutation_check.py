@@ -1882,6 +1882,28 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #715/#716. Three clauses in the detail line, three mutations -- the ANSI strip, the
+            # finding-preference ranking, and the empty-output fallback are independently provable.
+            Mutation(
+                "ANSI and hyperlink escapes reach the summary line again",
+                '    lines = [_ANSI.sub("", ln).strip() for ln in output.splitlines()]',
+                "    lines = [ln.strip() for ln in output.splitlines()]",
+                "ANSI escapes are stripped from the detail",
+            ),
+            Mutation(
+                # A banner denylist was the first attempt and `No .herb.yml found` beat it, so the
+                # ranking is the part that has to hold.
+                "the first line wins again, so a tool's banner masks its finding",
+                "        if _FINDING.search(line):",
+                "        if True:",
+                "a banner and a config notice lose to a line naming a severity",
+            ),
+            Mutation(
+                "a failing check with no output reports an empty detail",
+                '        return f"exit {returncode}"',
+                '        return ""',
+                "empty output falls back to the exit code",
+            ),
             # #706. The old walk assumed a flat layout; the installed one nests a version dir, so
             # "siblings" were other versions of the same plugin and real sibling plugins were never
             # found at all. Three mutations, one per clause -- the lesson from the last three days.

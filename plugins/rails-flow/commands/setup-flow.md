@@ -437,6 +437,48 @@ if the triggers already match (or the user declined), leave `ci.yml` untouched a
 rails-8 `testing.md` § *bin/ci*; if the `pipeline` plugin is installed, this aligns with its
 main-only release/build workflows.)
 
+### Executable boundaries — propose `Archspec.rb` as an approved diff (#715)
+
+The doctrine in `rails-8` `ecosystem-gems.md` §13 states two forbidden dependencies, and until a
+project has an `Archspec.rb` **nothing checks either of them** — the `architecture-boundaries` check
+reports *not-applicable*, forever. Offer the file; do not write it unasked.
+
+Propose exactly this, adjusting the two component paths to what the project actually has, and skip
+any rule whose paths are absent rather than inventing them:
+
+```ruby
+# Archspec.rb — at the project root, beside the Gemfile
+source "app/**/*.rb", "db/**/*.rb"
+
+component :models,             in: "app/models/**/*.rb"
+component :migrations,         in: "db/migrate/**/*.rb"
+component :tenant_concern,     in: "app/controllers/concerns/set_current_tenant.rb"
+component :shared_controllers, in: "app/controllers/application_controller.rb"
+
+# rails-8 models.md §1 — a migration that references a model breaks when the class evolves.
+migrations.cannot_use :models
+
+# rails-8 multi-tenancy.md §1 — the tenant concern must not reach ApplicationController, or the
+# admin plane inherits it and "a tenant session grants zero admin access" stops being structural.
+shared_controllers.cannot_use :tenant_concern
+```
+
+**No `architecture :preset` line.** `:vanilla_rails` requires `app/components` to stay empty and so
+fails any project using ViewComponents; `:rails` passes but enforces none of the above. Presets also
+make components **overlap**, and every rule applies to every component a file belongs to — which
+turns one real finding into three. §13 has the measured detail.
+
+Add the gem to the Gemfile's `:development, :test` group in the same diff, or the check reports a
+missing binary rather than a verdict:
+
+```ruby
+gem "archspec", "~> 1.0"
+gem "herb", "~> 0.10"
+```
+
+**Never offer `--update-todo`**, and if the project already has a todo file, say that it is a
+suppression baseline rather than treating it as configuration.
+
 ### The doctrine gate — propose it as an approved diff (#334)
 
 At that `dev → main` trigger the project runs **its own** matrix: tests, lint, Brakeman. **None of
