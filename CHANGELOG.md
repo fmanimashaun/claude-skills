@@ -2284,6 +2284,58 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The Stop gate refused every feature branch whose HEAD had moved past its base — every turn, with
+  no honest way out.** (#708) `_check_base_commit` emits base drift as a `NOTE:` and has always said
+  in a comment that it "must not fail the order", *"prefixed so a caller can tell it apart"*. Nothing
+  ever inspected the prefix: `plugins/rails-flow/scripts/check_handoff.py`'s `main()` counted the note into `len(findings)` and returned 1, and
+  `plugins/rails-flow/hooks/scripts/stop-gate.sh` keys off that exit code. So a correct, delivered work order failed the
+  gate at HEAD 12 commits ahead and again at 16 — and "HEAD is N commits ahead" is the *normal* state
+  of any branch after its first commit.
+
+  **The only way out was falsifying the base SHA**, which is the exact softening the check exists to
+  prevent. That is the failure #659's own docstring warned about in the same breath as adding the
+  note — *"a gate refusing every stale order would be switched off within a week"*. **A comment
+  stating a contract is not the contract.** `main()` now partitions on the prefix and exits on real
+  findings only; the note prints on both paths, because drift that stops being visible stops being
+  re-checked. The spelling lives in one `NOTE_PREFIX` constant so producer and consumer cannot drift.
+
+  **The existing fixture passed throughout.** It asserted `check()`'s output had no real findings —
+  which was true. `plugins/rails-flow/hooks/scripts/stop-gate.sh` never sees that; it sees `main()`'s exit code, and nothing asserted
+  it. A fixture proving the **adjacent** claim, and the adjacent claim was the one nobody consumed.
+  The new fixtures call `main()` and assert both directions: a NOTE-only result exits 0, and a real
+  finding alongside a note still exits non-zero.
+
+  **The hook's half was deliberately NOT what the issue proposed.** It suggested `plugins/rails-flow/hooks/scripts/stop-gate.sh` filter
+  `NOTE:` lines out of a failing count itself. It does not: this hook fails **closed** by design, and
+  a gate deciding pass/fail by parsing output would read a crash that printed nothing as a pass. The
+  contract belongs where findings are produced. The hook now surfaces notes on the **passing** path
+  only, and the verdict still comes from the exit code alone.
+
+- **One true sentence in an acceptance doc rejected the whole file, and blocked every turn-stop.**
+  (#707) `plugins/rails-flow/scripts/check_criteria.py` parsed **every** line containing an `AC-n` token as a criterion
+  definition, because `ID_RE` is `\bAC-(\d+)\b` and matches running prose. A note reading *"so
+  AC-6/AC-7 passing also proves the pipeline is wired"* tripped the one-criterion-per-line rule and
+  the file came back `UNUSABLE` — with all nine of its actual criteria well-formed. This also runs
+  from the Stop gate, so the documented remedy (*"fix the criteria, do not soften"*) was
+  unactionable: the criteria were already correct, and the only "fix" was deleting a true, useful
+  note to satisfy a parser.
+
+  A **definition** is now a list item whose id **leads** it. Only bolded ids count as definitions in
+  the documented `- **AC-n** Given …` shape, so a criterion may reference another in its own text —
+  `- **AC-2** Given AC-1 has passed, …` — which the old rule rejected outright. A leading id without
+  bold markers keeps the strict one-per-line rule, because with no marker there is nothing to tell a
+  definition from a reference.
+
+  **The dangerous direction is guarded, not ignored.** Silently skipping a line would lose a real
+  criterion, which is worse than the false positive being fixed — so a line carrying a full
+  Given/When/Then *and* an `AC-n` id whose id does not lead is reported, telling the author to write
+  it in the definition shape rather than dropping it. Mutation-guarded in that direction too.
+
+- Both were found by **running the toolchain on a real project** (`fidara-ledger`, 21 Aug), not by
+  reading it — the sixth time that has been the only productive source. Both are the same class this
+  repo files most: **a gate that fires on correct input**, which trains people to bypass it and then
+  nothing is checked at all.
+
 - **`project_gates.py` ran every check once per CACHED plugin version, and never found the sibling
   plugins at all.** (#706) `plugins/rails-flow/scripts/project_gates.py`'s `plugin_roots` took
   `start.parents[1]` as the plugin directory and scanned

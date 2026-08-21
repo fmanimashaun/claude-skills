@@ -119,6 +119,10 @@ REQUIRED_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 # A 7-40 char hex string on its own, or after a `` ` ``. Deliberately not anchored to the whole line:
 # the section reads "written against `a1b2c3d` on `feature/x`" as often as it reads a bare SHA.
+# The one spelling of the advisory prefix, shared by the producer and the consumer. It was a bare
+# literal in one place and inspected in none, which is how the contract went unhonoured (#708).
+NOTE_PREFIX = "NOTE: "
+
 SHA_RE = re.compile(r"\b([0-9a-f]{7,40})\b")
 
 IN_ALIASES = ("in scope", "in-scope", "in", "included")
@@ -562,8 +566,8 @@ def _check_base_commit(section: Section, findings: list[str],
             # A NOTE, not a finding: this must not fail the order. Prefixed so a caller can tell it
             # apart, and worded so the executor knows what to re-check rather than what to fix.
             findings.append(
-                f"NOTE: written against {resolved[:10]} and HEAD is {n} commit(s) ahead. Not an "
-                f"error -- re-read `scope` and `verify` against the current tree before trusting "
+                f"{NOTE_PREFIX}written against {resolved[:10]} and HEAD is {n} commit(s) ahead. "
+                f"Not an error -- re-read `scope` and `verify` against the current tree before trusting "
                 f"them, because a moved branch is where a self-contained order stops being one.")
 
 
@@ -840,9 +844,31 @@ def main(argv: list[str] | None = None) -> int:
         print(f"UNUSABLE: {exc}", file=sys.stderr)
         return 2
 
-    if findings:
-        print(f"{len(findings)} work-order finding(s):", file=sys.stderr)
-        for finding in findings:
+    # #708. Partition on the `NOTE:` prefix, because a NOTE is REPORTED and never REFUSED.
+    #
+    # `_check_base_commit` has always said so in a comment -- "A NOTE, not a finding: this must not
+    # fail the order. Prefixed so a caller can tell it apart" -- and nothing ever inspected the
+    # prefix. Both consumers counted it: this function put it in `len(findings)` and exited 1, and
+    # `stop-gate.sh` keys off that exit code. So the Stop gate refused every feature branch whose
+    # HEAD had advanced past its stated base -- which is the normal state of any branch after its
+    # first commit. Reported from a real session at HEAD 12 and again at 16 commits ahead, failing
+    # every turn-stop, with no honest way out: the only "fix" was falsifying the base SHA, the exact
+    # softening the check exists to prevent.
+    #
+    # That is the failure #659's own docstring warned about in the same breath as adding the NOTE --
+    # "a gate refusing every stale order would be switched off within a week". A comment stating a
+    # contract is not the contract; this is.
+    notes = [f for f in findings if f.startswith(NOTE_PREFIX)]
+    real = [f for f in findings if not f.startswith(NOTE_PREFIX)]
+
+    # NOTES PRINT EITHER WAY, pass or fail. Drift that stops being visible is drift that stops being
+    # re-checked, and visibility was the entire point of emitting it.
+    for note in notes:
+        print(f"  - {note}", file=sys.stderr)
+
+    if real:
+        print(f"{len(real)} work-order finding(s):", file=sys.stderr)
+        for finding in real:
             print(f"  - {finding}", file=sys.stderr)
         print(
             "\nFix the work order, do not soften the check. An under-specified work order does not "
@@ -851,7 +877,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(f"validated: {'; '.join(checked)}")
+    print(f"validated: {'; '.join(checked)}"
+          + (f" ({len(notes)} note(s), not failures)" if notes else ""))
     return 0
 
 

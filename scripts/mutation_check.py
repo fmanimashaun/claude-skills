@@ -3246,6 +3246,21 @@ GUARDS: tuple[Guard, ...] = (
             "plugins/rails-flow/agents",
         ),
         mutations=(
+            # #708. The comment said the NOTE must not fail the order; nothing inspected the prefix,
+            # so the Stop gate refused every feature branch whose HEAD had moved past its base.
+            Mutation(
+                "a NOTE counts as a failing finding again, refusing every moved branch",
+                "    real = [f for f in findings if not f.startswith(NOTE_PREFIX)]",
+                "    real = list(findings)",
+                "a NOTE-only result must exit 0",
+            ),
+            Mutation(
+                # The other direction: the fix must not disarm the check it lives in.
+                "a real finding stops failing once a note is present",
+                "    if real:",
+                "    if False:",
+                "a real finding alongside a NOTE must still exit non-zero",
+            ),
             Mutation(
                 # #659. A plausible hex string tells an executor where to start and is worse than an
                 # absent one, because it will be trusted. Present-but-unusable is not passable, the
@@ -4671,6 +4686,29 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/rails-flow/scripts/check_criteria.py",
         selftest="plugins/rails-flow/scripts/check_criteria_selftest.py",
         mutations=(
+            # #707. `ID_RE` matches an `AC-n` anywhere, so an explanatory NOTE was parsed as a
+            # malformed criterion and the whole file rejected -- from the Stop gate, every turn.
+            Mutation(
+                "prose mentioning criteria is parsed as a criterion definition again",
+                "        lead = DEF_RE.match(raw)",
+                "        lead = ID_RE.search(raw)",
+                "a `## Notes` bullet naming two AC ids is prose, not a criterion",
+            ),
+            Mutation(
+                "bolded ids stop being the definition marker, so a criterion may not reference "
+                "another",
+                "        if bold:",
+                "        if False:",
+                "a criterion referencing another criterion in its text",
+            ),
+            Mutation(
+                # The dangerous direction: silently dropping a real criterion is worse than the
+                # false positive being fixed.
+                "a Given/When/Then line whose id does not lead is silently dropped",
+                "            if (ID_RE.search(raw) and GIVEN_RE.search(raw)",
+                "            if (False and ID_RE.search(raw) and GIVEN_RE.search(raw)",
+                "a Given/When/Then line whose id does not lead is reported, not dropped",
+            ),
             Mutation(
                 "empty criteria stop being unusable, so a brief with nothing in it is accepted",
                 "    if not out:",
