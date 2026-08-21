@@ -63,4 +63,60 @@ if [ -f .claude/skills/.manifest.tsv ]; then
   [ "$stale" -gt 0 ] && echo "- $stale curated doc(s) drifted from their project skills — run /rails-flow:curate"
 fi
 
+# ---------------------------------------------------------------------------------------
+# #723 — UNLANED CONCURRENCY. The lane guard (#660) is dormant unless RAILS_FLOW_LANE is set,
+# and `assign_lanes.py` (#661) has to be run BEFORE the sessions open. So the coordination
+# protocol was built, shipped, and never activated: activation depended on a human remembering.
+#
+# What that cost, observed in one working directory with four unlaned sessions: one session's
+# `git checkout -b` switched another's branch out from under it mid-work; uncommitted work from
+# several sessions piled into one tree; and the Stop gate failed one session's turn over ANOTHER
+# session's red specs, because it evaluates one tree it assumes belongs to one session.
+#
+# DETECTION IS BY MARKER, NOT BY PROCESS INTROSPECTION. Each session start drops a marker keyed
+# by this working directory, under TMPDIR — never inside the repo, because a status hook must not
+# write to someone's tree. Liveness is `kill -0` on the recorded PPID (the process that spawned
+# this hook), so dead sessions prune themselves.
+#
+# IT UNDER-DETECTS ON PURPOSE. If PPID is not the session process, or a peer started before this
+# mechanism shipped, we simply say nothing. A false nudge on ordinary single-session work is how
+# an advisory gets ignored, and this whole feature exists because an advisory nobody acts on is
+# worth nothing. Missing a case costs a reminder; crying wolf costs the channel.
+#
+# Advisory, and fails open at every step: no lane, no TMPDIR, no marker dir — all exit quietly.
+# ---------------------------------------------------------------------------------------
+if [ -z "${RAILS_FLOW_LANE:-}" ]; then
+  _rf_sess_dir="${TMPDIR:-/tmp}/rails-flow-sessions"
+  if mkdir -p "$_rf_sess_dir" 2>/dev/null; then
+    # cksum, not sha256sum: it is in POSIX and present everywhere this hook runs.
+    _rf_key="$(printf '%s' "$PWD" | cksum 2>/dev/null | tr -cd '0-9')"
+    if [ -n "$_rf_key" ]; then
+      _rf_f="$_rf_sess_dir/$_rf_key"
+      _rf_live=""
+      _rf_n=0
+      if [ -f "$_rf_f" ]; then
+        while IFS= read -r _rf_pid; do
+          case "$_rf_pid" in ''|*[!0-9]*) continue ;; esac
+          [ "$_rf_pid" = "$PPID" ] && continue          # do not count a previous run of ourselves
+          if kill -0 "$_rf_pid" 2>/dev/null; then
+            _rf_live="${_rf_live}${_rf_pid}
+"
+            _rf_n=$((_rf_n+1))
+          fi
+        done < "$_rf_f"
+      fi
+      printf '%s%s\n' "$_rf_live" "$PPID" > "$_rf_f" 2>/dev/null || true
+      if [ "$_rf_n" -gt 0 ]; then
+        _rf_total=$((_rf_n+1))
+        echo "- rails-flow: ${_rf_total} sessions share this working directory and NONE has a lane assigned."
+        echo "  Unlaned, they will collide: one session's branch switch moves another's HEAD, uncommitted"
+        echo "  work from several sessions piles into one tree, and the Stop gate judges one session by"
+        echo "  another's red specs. The lane guard is dormant without RAILS_FLOW_LANE."
+        echo "  Run: python3 \"\${CLAUDE_PLUGIN_ROOT}/scripts/assign_lanes.py\" <subtree> <subtree>"
+        echo "  then relaunch each session in its own worktree with RAILS_FLOW_LANE set."
+      fi
+    fi
+  fi
+fi
+
 exit 0

@@ -29,6 +29,16 @@ see each other's state; ours can — `compose_state.py` derives the driver's sta
 repository* and a work order is a committed file. Git is the handoff medium and it survives a reboot,
 which a tmux session does not.
 
+**You will be told when you need this.** (#723) Until now activation was entirely on a human
+remembering to run the assigner *before* opening the sessions — so the protocol shipped and stayed
+dormant, and four unlaned sessions in one directory did exactly what it exists to prevent: one
+session's branch switch moved another's HEAD mid-work, uncommitted work from several piled into one
+tree, and the Stop gate failed one session's turn over **another** session's red specs. `rails-flow`'s
+SessionStart hook now detects sibling live sessions sharing this working directory with no
+`RAILS_FLOW_LANE` set, and says so. It **under-detects deliberately** — a false nudge on ordinary
+single-session work is how an advisory gets ignored, and this exists because an unheeded advisory is
+worth nothing.
+
 **Spend is reported, never enforced.** N sessions is N times the cost, and this script cannot see a
 provider balance — a cap it could not honour would be a promise nothing keeps.
 
