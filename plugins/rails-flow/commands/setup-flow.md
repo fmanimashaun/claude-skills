@@ -454,17 +454,35 @@ branch moves. Propose one job that runs all of them:
       - uses: actions/checkout@v4
         with:
           repository: fmanimashaun/claude-skills
-          ref: v1.51.0            # PIN a tag: on `main`, your CI changes when we ship
+          ref: <PIN THE CURRENT TAG>   # never `main`: your CI would change when we ship
           path: .claude-toolchain
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: python3 .claude-toolchain/plugins/rails-flow/scripts/project_gates.py
 ```
 
+**Resolve `ref` before you write the file** — do not paste the placeholder:
+
+```bash
+gh release view --repo fmanimashaun/claude-skills --json tagName -q .tagName
+```
+
+Substitute that tag. If `gh` is unavailable, ask the user for a tag from
+<https://github.com/fmanimashaun/claude-skills/releases> rather than guessing one, and never fall
+back to `main`.
+
+**Why a placeholder and not a real version here** (#713). This block used to carry a literal
+`ref: v1.51.0`, and by the time anyone noticed it was **41 releases behind**. That is worse than an
+obviously-broken placeholder, because a stale pin *works*: every project scaffolded from it silently
+enforced v1.51.0's rules in CI while the same project's local session enforced current ones, and
+nothing in either place said the two disagreed. A literal version inside shipped doctrine is a clock
+nobody winds. `lint_self_consistency`'s `pinned-toolchain-ref` rule now refuses one.
+
 The runner discovers every sibling plugin's `checks.json` from that one checkout, so a single step
 covers all of them. **Pin the `ref`** — an unpinned `main` means our next release silently changes
 what your CI enforces, which is the same drift this whole toolchain exists to remove. Bump it
-deliberately, the way you bump any other dependency.
+deliberately, the way you bump any other dependency, and record which tag you pinned so the bump is
+a decision rather than a discovery.
 
 `project_gates.py` discovers which of the shipped checks apply to *this* repo and reports four
 states — **pass / FAIL / not-applicable / ERROR**. A project with no `qa/` directory reports the
