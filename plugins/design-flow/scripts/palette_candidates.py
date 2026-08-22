@@ -244,6 +244,17 @@ def snap(anchors: Anchors) -> dict[str, dict[str, str]]:
         "--info": normalise_hex(anchors.info),
         "--border": n["200"],           "--input": n["200"],
         "--ring": p_light,
+        # #750. Composed here because `bpl.ROLES` requires them and this function's own contract
+        # check (below) refuses a pack that omits any role -- which is what caught their absence.
+        #
+        # `--signal-foreground` is the DARKEST neutral, never white, and that is measured rather
+        # than stylistic: a mid-orange accent carries white at ~2.8:1 (fails AA) and dark ink at
+        # ~6.5:1 (passes). Same rule `--primary-foreground` follows on dark.
+        "--overlay": n["900"],
+        "--signal": normalise_hex(anchors.warning),
+        "--signal-foreground": n["900"],
+        "--primary-ink": p_light,       "--primary-hover": p_light,
+        "--success-ink": normalise_hex(anchors.success),
     }
     # Dark re-points the SURFACE roles. `--primary-foreground` is re-pointed too, and that is the
     # #304 defect in one line: re-pointing `--primary` alone leaves the label inheriting the light
@@ -258,6 +269,9 @@ def snap(anchors: Anchors) -> dict[str, dict[str, str]]:
         "--muted": n["800"],            "--muted-foreground": n["400"],
         "--accent": n["800"],           "--accent-foreground": n["50"],
         "--border": n["800"],           "--input": n["800"],
+        # A navy scrim over a navy ground separates nothing, so dark uses the darkest neutral.
+        "--overlay": n["900"],
+        "--primary-ink": p_dark,        "--primary-hover": p_dark,
     })
 
     missing = [r for r in bpl.ROLES if r not in light]

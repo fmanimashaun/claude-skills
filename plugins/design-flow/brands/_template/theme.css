@@ -55,6 +55,13 @@
   --info: var(--color-state-info);
   --border: var(--color-ink-200);         --input: var(--color-ink-200);
   --ring: var(--color-brand-500);
+  /* #750. Required roles. `--signal-foreground` is DARK on a warm accent by default: white on a
+     mid-orange is ~2.8:1 and fails AA, dark ink ~6.5:1 and passes. Re-point only if your accent is
+     dark enough to carry white -- and check it, do not assume. */
+  --overlay: var(--color-ink-900);           /* scrim, used at /50 */
+  --signal: var(--color-accent-500);         --signal-foreground: var(--color-ink-900);
+  --primary-ink: var(--color-brand-700);     --primary-hover: var(--color-brand-600);
+  --success-ink: var(--color-success-700);
 }
 
 .dark {

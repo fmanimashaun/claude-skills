@@ -19,7 +19,7 @@ skills/fidara-design/references/foundations-tokens.md rather than assumed):
 
   * `--background`'s companion is `--foreground`, NOT `--background-foreground`.
   * The feedback roles and `--ring` are deliberately NOT re-pointed on dark. Requiring a
-    dark value for all 22 roles would fail every correct pack — a wrong check is worse
+    dark value for every role would fail every correct pack — a wrong check is worse
     than no check, because people stop believing the ones that are right.
 
 Stdlib only, by design: a pack must be lintable in any clone with nothing installed.
@@ -64,6 +64,15 @@ ROLES = [
     "--destructive", "--destructive-foreground",
     "--success", "--warning", "--info",
     "--border", "--input", "--ring",
+    # #750. Added with the roles themselves, in the same commit, because this list is the ONLY thing
+    # that makes a role required -- `foundations-tokens.md` declaring one and this list omitting it
+    # means no pack must supply it, `pen_library` never exports it, and the doctrine is a suggestion.
+    # That is exactly what happened for the five below until a live project reported reaching for
+    # `bg-fm-navy/50` because `--overlay` existed nowhere.
+    "--overlay",
+    "--signal", "--signal-foreground",
+    "--primary-ink", "--primary-hover",
+    "--success-ink",
 ]
 
 # Surfaces whose value MUST change between light and dark. Everything else may legitimately
@@ -125,7 +134,7 @@ def selector_block(src: str, selector: str) -> str:
     """Body of the LAST matching block (a later block wins in CSS).
 
     Leading whitespace is tolerated on both the selector and its closing brace: a
-    formatter that indents `:root { … }` must not make the lint report all 22 roles
+    formatter that indents `:root { … }` must not make the lint report every role
     missing. Anchoring to column 1 produced exactly that false failure.
     """
     bodies = re.findall(

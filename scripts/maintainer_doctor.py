@@ -139,6 +139,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # whole feature: --check measures every candidate against 1.4.3 in both modes.
     # #745. The prompt carries the project's OWN tokens, so its selftest pins that a private
     # primitive never reaches the prompt and that a missing source is reported rather than omitted.
+    # #750. A scale that promises a step and does not declare it sends a project looking for one.
+    ("design-flow scale contiguity",
+     ("python3", "plugins/design-flow/scripts/check_scale_contiguity.py")),
+    ("design-flow scale contiguity selftest",
+     ("python3", "plugins/design-flow/scripts/check_scale_contiguity.py", "--selftest")),
     ("design-flow design prompt selftest",
      ("python3", "plugins/design-flow/scripts/design_prompt.py", "--selftest")),
     ("design-flow palette candidates",
