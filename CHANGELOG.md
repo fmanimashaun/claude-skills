@@ -3922,6 +3922,38 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The palette could not express the design that already existed.** (#750) Reported from a live
+  project and confirmed against its artboards: **every one sets `--background: var(--paper-50)`**, and
+  `skills/fidara-design/references/foundations-tokens.md` was slate-cool only. The project carried six local slate overrides — not a
+  preference, a gap. The warm ground is folded in as a **paired** palette (`--color-fm-paper-*` plus a
+  `slate-warm-*` variant), never a replacement, so cool-ground adopters are untouched.
+
+  Four roles were missing outright. **`--overlay` was absent from the plugin *and* every project using
+  it**, so a modal reached for `bg-fm-navy/50` — a raw primitive in a component, which roles-only
+  forbids and nothing could re-point. `--signal`/`--signal-foreground`, and `--success-ink` join it.
+  Every contrast pair was computed rather than assumed: white on `#FF6B35` is **2.84:1 and fails AA**,
+  slate-900 on it is **6.45:1 and passes** — the same rule `--primary-foreground` already follows.
+
+  **`--cerulean-ink` became `--primary-ink`.** A pigment name in the role layer is a Fidara primitive
+  no other brand pack could declare; #750 flagged the naming and this is it.
+
+- **The fluid scales promised steps they never declared.** (#750, found by studying the design rather
+  than reported) In `skills/fidara-design/references/foundations-tokens.md` the space comment read *"`--space-3xs … --space-3xl` + one-off pairs
+  (`--space-s-l`)"* and declared `2xs…l`, closing with *"… xl/2xl/3xl similarly"*. The type comment
+  announced *"`--text-step--2 … --text-step-5`"* and declared `-1…3`. **Nine promised tokens did not
+  exist**, including the pair the comment names outright.
+
+  **A hole is worse than a short scale**: a component stepping up from `3` lands on `5`, a 1.44×
+  jump where the scale's own ratio is 1.20. Nothing errors — the type is simply wrong on one surface,
+  and the next reader takes it for a choice.
+
+  Both scales are now complete, and **derived rather than chosen**. The type minima follow a clean
+  1.2 ratio to three decimals — `1.73 × 1.2 = 2.077` against the live design's `2.07` — and the space
+  steps follow the formula the four original steps already obey (`B = 1.44 × (max−min)`,
+  `A = min − 0.2B`).
+
 ### 1.51.0 — 2026-08-22 (release v1.96.0)
 
 - **A multi-page port shipped the same fact three times.** (#739)
@@ -8567,6 +8599,31 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **"22 roles" was a hardcoded literal, and adding a role changed nothing.** (#750)
+  `plugins/design-flow/scripts/brand_pack_lint.py`'s `ROLES` is the only thing that makes a role required — a pack that omits one renders
+  a stock colour silently. Five roles were added to the doctrine and the list did not move, so no pack
+  had to supply them and `pen_library` never exported them. The doctrine would have been a suggestion.
+
+  The count is now **derived** from that one list, and it earned its place immediately: it failed with
+  *"all 28 roles are exported (22)"*, then walked the fold-in through both shipped brand packs and
+  `palette_candidates.snap()`, each of which had to honour the new roles. Three places a literal would
+  have let drift silently. The stale `22` is gone from prose too — a number in a comment cannot notice
+  the thing it counts changing.
+
+- **A scale can no longer promise a step it does not declare.** (#750)
+  `plugins/design-flow/scripts/check_scale_contiguity.py` refuses two things: a **hole** in a declared
+  run, and a comment advertising `--x-a … --x-b` where either end is undeclared — *an ellipsis is not
+  a token*. Verified against the historical text, where it reports all four broken promises.
+
+  It has **no opinion on where a scale starts or stops**: a project needing only `s`…`l` is entitled
+  to that, and a rule demanding `3xl` would fire on correct work. Only holes and unkept promises.
+
+  An explicit exemption list for named pairs was written and then **deleted** — the mutation emptying
+  it survived, because `SPACE_ORDER` already *is* the ladder and the filter drops anything off it.
+  A line no fixture can distinguish is a line that does nothing.
 
 ### 1.31.0 — 2026-08-22 (release v1.97.0)
 

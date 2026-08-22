@@ -30,6 +30,17 @@ Dark mode re-points the *roles* under `.dark`; component classes never change.
   --color-fm-slate-300:#C8CDD8; --color-fm-slate-400:#8F96A3; --color-fm-slate-500:#5E6775;
   --color-fm-slate-600:#3D4654; --color-fm-slate-700:#2A3240; --color-fm-slate-800:#1C2531;
   --color-fm-slate-900:#0F1520; --color-fm-slate-950:#0A0E16;
+  /* WARM GROUND — a paired second ground, not a replacement (#750). The cool slate above stays
+     canonical; a warm-editorial surface adds these and re-points `--background` to paper-50.
+     Reported from a live project whose every artboard sets `--background: var(--paper-50)`: the
+     slate-only palette could not express the design that already existed, so the project carried
+     six local slate overrides instead. */
+  --color-fm-paper-50: #FAF7F2; --color-fm-paper-100:#F4EFE7; --color-fm-paper-200:#EAE3D7;
+  /* Warm-tuned slate, used ONLY with the paper ground: the cool steps read blue against warm
+     paper. Six steps differ; the rest are shared with the cool scale above. */
+  --color-fm-slate-warm-100:#EDF0F5; --color-fm-slate-warm-200:#DDE2EA;
+  --color-fm-slate-warm-300:#C4CBD8; --color-fm-slate-warm-600:#4A525F;
+  --color-fm-slate-warm-700:#363D4A; --color-fm-slate-warm-800:#232935;
   /* type families */
   --font-sans:    "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif; /* UI/body/headings */
   --font-display: "Newsreader", ui-serif, Georgia, serif;                       /* brand moments, italic tagline */
@@ -56,6 +67,21 @@ surface role has a `-foreground` companion** — always write `bg-X text-X-foreg
   --success: var(--color-fm-success);        --warning: var(--color-fm-warning);  --info: var(--color-fm-info);
   --border: var(--color-fm-slate-200);       --input: var(--color-fm-slate-200);
   --ring: var(--color-fm-cerulean-700);      /* focus ring, used at /30 opacity */
+  /* SCRIM. Missing from this file AND from every project using it (#750), so a modal reached for
+     `bg-fm-navy/50` directly — a raw primitive in a component, which roles-only forbids and which
+     nothing could re-point. Use at /50; it is a scrim, not a text surface, so no contrast pair
+     applies. */
+  --overlay: var(--color-fm-navy);
+  /* THE ONE RATIONED WARM ACCENT. Its foreground is DARK INK, not white, and that is measured:
+     white on #FF6B35 is 2.84:1 and fails AA; slate-900 on it is 6.45:1 and passes. Exactly the
+     rule `--primary-foreground` already follows on dark, for the same reason. */
+  --signal: var(--color-fm-orange);          --signal-foreground: var(--color-fm-slate-900);
+  /* Interaction and text variants the role layer was missing, so projects invented them. */
+  /* Named for the ROLE, not the pigment: `--cerulean-ink` would put a Fidara primitive in the role
+     layer, and no other brand pack could declare it. #750 flagged the naming; this is it. */
+  --primary-ink: #005FA3;                    /* primary as TEXT/icon on light — 6.63:1 on white */
+  --primary-hover: #0069B4;                  /* hover fill for a primary surface */
+  --success-ink: #15803D;                    /* success TEXT; --success stays the fill */
 }
 .dark {
   --background: var(--color-fm-navy);        --foreground: var(--color-fm-slate-50);
@@ -67,6 +93,10 @@ surface role has a `-foreground` companion** — always write `bg-X text-X-foreg
   --border: var(--color-fm-slate-800);       --input: var(--color-fm-slate-800);
   --primary: var(--color-fm-electric);       /* brand lifts to electric on dark */
   --primary-foreground: var(--color-fm-navy);  /* NOT white: white on electric is 2.73:1 */
+  --overlay: #000000;                        /* a navy scrim over a navy ground separates nothing */
+  --signal: var(--color-fm-orange);          --signal-foreground: var(--color-fm-slate-900);
+  --primary-ink: var(--color-fm-electric);   --primary-hover: var(--color-fm-cyan);
+  --success-ink: var(--color-fm-success);
 }
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);
@@ -96,19 +126,38 @@ the `clamp()`s; the shape:
 
 ```css
 @theme {
-  /* fluid type — --text-step--2 … --text-step-5 (compose with the type families above) */
+  /* fluid type — the WHOLE scale, declared. It read "--text-step--2 … --text-step-5" and declared
+     only -1…3, with a trailing "… up to step-5 for heroes" (#750). A scale that skips a step is
+     worse than one that stops: a component stepping up from 3 lands on 5, a 1.44x jump where the
+     scale's own ratio is 1.20. The minima follow that ratio to three decimals — 1.73 x 1.2 = 2.077
+     against the live design's 2.07 — so step-4 is DERIVED, not chosen. -2, 4 and 5 take the live
+     design's clamps, which continue the same progression. */
+  --text-step--2: clamp(0.7rem,   0.68rem + 0.1vw,  0.75rem);
   --text-step--1: clamp(0.833rem, 0.80rem + 0.15vw, 0.9rem);
   --text-step-0:  clamp(1rem,    0.95rem + 0.25vw, 1.125rem);   /* body; base 14–16px range */
   --text-step-1:  clamp(1.2rem,  1.12rem + 0.4vw,  1.42rem);
   --text-step-2:  clamp(1.44rem, 1.31rem + 0.65vw, 1.8rem);
-  --text-step-3:  clamp(1.73rem, 1.54rem + 0.97vw, 2.28rem);    /* … up to step-5 for heroes */
+  --text-step-3:  clamp(1.73rem, 1.54rem + 0.97vw, 2.28rem);
+  --text-step-4:  clamp(2.07rem, 1.80rem + 1.36vw, 2.75rem);
+  --text-step-5:  clamp(2.5rem,  1.95rem + 2.6vw,  3.66rem);    /* heroes */
 
-  /* fluid space — --space-3xs … --space-3xl + one-off pairs (--space-s-l) */
+  /* fluid space — the WHOLE scale, declared. It previously read "--space-3xs … --space-3xl" with
+     a trailing "… xl/2xl/3xl similarly", and declared only 2xs…l: five tokens the comment promised
+     and the file did not define (#750). A live project reached for xl/2xl/3xl, found nothing, and
+     carried local values — the doctrine said the step existed and it did not.
+     Each step: B = 1.44 x (max-min) in rem, A = min - 0.2B, which is the formula the four original
+     steps already follow — so these are derived from the scale, not chosen. */
+  --space-3xs: clamp(0.25rem, 0.23rem + 0.09vw, 0.3125rem);
   --space-2xs: clamp(0.5rem, 0.46rem + 0.18vw, 0.625rem);
   --space-xs:  clamp(0.75rem, 0.70rem + 0.27vw, 0.9375rem);
   --space-s:   clamp(1rem,   0.93rem + 0.36vw, 1.25rem);
   --space-m:   clamp(1.5rem, 1.39rem + 0.54vw, 1.875rem);
-  --space-l:   clamp(2rem,   1.86rem + 0.71vw, 2.5rem);         /* … xl/2xl/3xl similarly */
+  --space-l:   clamp(2rem,   1.86rem + 0.71vw, 2.5rem);
+  --space-xl:  clamp(3rem,   2.78rem + 1.08vw, 3.75rem);
+  --space-2xl: clamp(4rem,   3.71rem + 1.44vw, 5rem);
+  --space-3xl: clamp(6rem,   5.57rem + 2.16vw, 7.5rem);
+  /* one-off pair: spans s-min to l-max, for a gap that should grow faster than a single step */
+  --space-s-l: clamp(1rem,   0.57rem + 2.16vw, 2.5rem);
 
   /* structure */
   --measure: 65ch;                 /* long-form reading measure; cap running text at this */
