@@ -54,13 +54,37 @@ if [ -n "${branch:-}" ] && [ "$branch" != "main" ] && [ "$branch" != "dev" ]; th
 fi
 
 if [ -f .claude/skills/.manifest.tsv ]; then
+  # THREE outcomes per row, not two: matches, drifted, or COULD NOT BE HASHED. The last one used
+  # to be silently folded into "matches" -- the row was skipped by a `[ -n "$cur" ] &&` guard, so a
+  # machine that could not hash counted zero drift and printed nothing, indistinguishable from a
+  # clean tree while the rest of this hook ran normally and made the session look healthy. A check
+  # that did not run is not a pass.
+  #
+  # Counting unhashable rows -- rather than probing for the tool up front -- is deliberate. A
+  # `command -v` probe answers "is it installed", and the failure that actually matters is "did
+  # this row hash", which also covers a hasher that is present and broken. The probe below only
+  # PICKS a command; it is never the thing that decides the verdict.
+  #
+  # `sha256sum` is GNU coreutils and NOT POSIX -- the same portability point the cksum note below
+  # already makes about this very hook. Apple began shipping /sbin/sha256sum only recently; macOS
+  # has always had `shasum`, whose `-a 256` output is byte-identical in the field `cut` reads.
+  _rf_hash="sha256sum"
+  command -v sha256sum >/dev/null 2>&1 || _rf_hash="shasum -a 256"
   stale=0
+  unhashed=0
   while IFS="$(printf '\t')" read -r src hash; do
     [ -n "$src" ] && [ -f "$src" ] || continue
-    cur="$(sha256sum "$src" 2>/dev/null | cut -c1-12)"
-    [ -n "$cur" ] && [ "$cur" != "$hash" ] && stale=$((stale+1))
+    # Deliberately unquoted: $_rf_hash may carry the `-a 256` argument and must word-split.
+    # shellcheck disable=SC2086
+    cur="$($_rf_hash "$src" 2>/dev/null | cut -c1-12)"
+    if [ -z "$cur" ]; then
+      unhashed=$((unhashed+1))
+    elif [ "$cur" != "$hash" ]; then
+      stale=$((stale+1))
+    fi
   done < .claude/skills/.manifest.tsv
   [ "$stale" -gt 0 ] && echo "- $stale curated doc(s) drifted from their project skills — run /rails-flow:curate"
+  [ "$unhashed" -gt 0 ] && echo "- $unhashed curated doc(s) could NOT be hashed (no working sha256sum or shasum) — drift is UNKNOWN for them, not clean"
 fi
 
 # ---------------------------------------------------------------------------------------

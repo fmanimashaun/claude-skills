@@ -250,6 +250,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.
     ("project gates", ("python3", "plugins/rails-flow/scripts/project_gates.py", "--selftest")),
+    # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
+    # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
+    # under a working, absent, broken and shasum-only hasher.
+    ("curated drift signal", ("python3", "plugins/rails-flow/scripts/check_drift_signal.py", "--selftest")),
     # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
     # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
     # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,
