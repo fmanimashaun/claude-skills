@@ -8552,6 +8552,23 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The port step was unowned, and it is where the divergence enters.** (#739)
+  `plugins/design-flow/agents/design-porter.md` performs the translation under
+  `fidara-design`'s `design-handoff.md`. The evidence is a number: a whole-app `design-auditor` pass on
+  a live project found **20 alignable divergences**, concentrated in exactly the two surfaces that had
+  been ported ad-hoc from Claude Design canvases — raw hex, bespoke `.field`/`.label`, `form_with`
+  field forms, hand-rolled card and grid CSS, CDN fonts. A `ui-composer` composes *from* the system;
+  nothing owned translating a source *into* it.
+
+  The agent classifies the artboard first, strips the scaffolding, reconciles tokens rather than
+  copying values, and reports what it dropped and any token gap it found — because *"a port that
+  silently invented a value is worse than one that stopped and asked."*
+
+  Registered where an agent has to be: the model-tier table (`judgement` / `inherit`, since
+  `/design-flow:audit` and the specs grade it rather than a fixed oracle) and the marketplace
+  description. `misdescribed-agents` caught the description omission — *"names 5 of its 6 agents and
+  omits design-porter — a user choosing whether to install cannot see them."*
+
 - **A CDN font link was undetected, and every design export ships one.** (#738)
   `plugins/design-flow/scripts/llm_tell_detector.py` had no rule for it: `grep -rn googleapis plugins/design-flow skills/fidara-design` found only an unrelated API URL,
   while **both** Claude Design artboards read from a real project carry a `fonts.googleapis.com` link.

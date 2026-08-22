@@ -105,7 +105,7 @@
     },
     {
       "name": "design-flow",
-      "description": "Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 \u2014 applies the Fidara design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive @utility recipes + base ViewComponents; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:audit flags drift. Agents: ui-composer, design-auditor, design-critic, design-explorer, brand-guardian. Pairs with the fidara-design skill (bundled in rails-stack).",
+      "description": "Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 \u2014 applies the Fidara design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive @utility recipes + base ViewComponents; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:audit flags drift. Agents: ui-composer, design-auditor, design-critic, design-explorer, design-porter, brand-guardian. Pairs with the fidara-design skill (bundled in rails-stack).",
       "source": "./plugins/design-flow",
       "strict": false,
       "author": {
