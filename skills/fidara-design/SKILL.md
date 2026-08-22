@@ -61,6 +61,12 @@ prefix. See [references/brand.md](references/brand.md).
    repeated here would be a second copy with no arbiter, and the one that was here ("~16") had
    drifted to under half the real figure.
 5. **Interaction** — [references/interaction-stimulus.md](references/interaction-stimulus.md).
+6. **Porting a design** — [references/design-handoff.md](references/design-handoff.md).
+   The fixed mapping from a Claude Design artboard (JSX/TSX, or a `<x-dc>` canvas export) to
+   ERB, ViewComponents, simple_form, Turbo and Stimulus. Read it **before** translating one:
+   the canvas's `:root` block, inline styles and CDN font are preview scaffolding, its
+   `support.js` is a React runtime that is never ported, and a mailer artboard must carry no
+   Turbo or Stimulus at all.
    Behavior is Hotwire, not a JS framework: four reusable Stimulus mixins (list-navigation,
    focus-trap+restore, dismissable-layer, anchored-position) cover every overlay; style off
    `data-[state=…]` / `aria-*`. **Motion** is [references/motion.md](references/motion.md):

@@ -3922,6 +3922,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **A Claude Design artboard had no shipped route into Rails 8 + Hotwire.** (#738)
+  `skills/fidara-design/references/design-handoff.md` is the fixed mapping: source construct → the one
+  sanctioned Rails-Hotwire form. It **composes** `rails-8`, `hotwire` and this skill's own
+  `components.md` / `crud-modal-pattern.md` / `interaction-stimulus.md` rather than restating them.
+
+  **Read via the MCP from a real project rather than imagined.** Two artboards: one is 46 tables and
+  167 cells with 534 inline styles; the other has 320 inline styles, **zero classes**, and **755
+  `var(--…)` references over 50 declared tokens**. Both carry a `fonts.googleapis.com` link.
+
+  Three rules the measurement produced:
+
+  - **The canvas is a translation INPUT, not output.** The `:root` token block, the inline styles and
+    the CDN font are preview scaffolding and must not survive the commit. **`support.js` is never
+    ported at all** — it opens *"GENERATED from dc-runtime/src/*.ts — do not edit"* and is ~70KB of
+    React that exists to preview `<x-dc>` in a browser. Claude Design's own import instruction says
+    *"read these files the selection imports: `support.js`"*, which an agent can read as *port them*.
+  - **Classify the artboard before emitting anything** — mailer / static / interactive. The emails
+    artboard is table markup with no script: **Turbo and Stimulus are forbidden on a mailer**, because
+    mail clients run no JavaScript. Reaching for a Stimulus controller there renders in the preview
+    and does nothing in an inbox.
+  - **Name where a literal is correct** — email inline styles, static pages served without the
+    pipeline, `@font-face` family names, `data:` URI manifest colours — so the rule neither fires on
+    correct work nor gets an exception invented per port.
+
+  **A correction on the record:** the earlier claim that *"React is the preview runtime, not the design
+  language"* came from **two artboards**, both canvas exports. Claude Design emits **either** JSX/TSX
+  **or** a canvas export, so the reference covers both. n=2 was not a basis for that generalisation.
+
 ### 1.50.1 — 2026-08-21 (release v1.94.0)
 
 - **`parallel-session-lane` §0 now says you will be told when you need it.** (#723)
@@ -8519,6 +8549,48 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **The port step was unowned, and it is where the divergence enters.** (#739)
+  `plugins/design-flow/agents/design-porter.md` performs the translation under
+  `fidara-design`'s `design-handoff.md`. The evidence is a number: a whole-app `design-auditor` pass on
+  a live project found **20 alignable divergences**, concentrated in exactly the two surfaces that had
+  been ported ad-hoc from Claude Design canvases — raw hex, bespoke `.field`/`.label`, `form_with`
+  field forms, hand-rolled card and grid CSS, CDN fonts. A `ui-composer` composes *from* the system;
+  nothing owned translating a source *into* it.
+
+  The agent classifies the artboard first, strips the scaffolding, reconciles tokens rather than
+  copying values, and reports what it dropped and any token gap it found — because *"a port that
+  silently invented a value is worse than one that stopped and asked."*
+
+  Registered where an agent has to be: the model-tier table (`judgement` / `inherit`, since
+  `/design-flow:audit` and the specs grade it rather than a fixed oracle) and the marketplace
+  description. `misdescribed-agents` caught the description omission — *"names 5 of its 6 agents and
+  omits design-porter — a user choosing whether to install cannot see them."*
+
+- **A CDN font link was undetected, and every design export ships one.** (#738)
+  `plugins/design-flow/scripts/llm_tell_detector.py` had no rule for it: `grep -rn googleapis plugins/design-flow skills/fidara-design` found only an unrelated API URL,
+  while **both** Claude Design artboards read from a real project carry a `fonts.googleapis.com` link.
+  Carried into a commit it costs a render-blocking third-party request, a FOUT the self-hosted stack
+  does not have, and a privacy hop nobody chose.
+
+  `llm_tell_detector`'s `cdn-font-link` matches on the **host**, not on `<link>`, because the same
+  import arrives as `@import`, as a `preconnect`, and inside an inline `<style>` — and one shape
+  missed is the one that ships. `gstatic` is included because it is the font-*file* host, so a page
+  can carry it without ever naming googleapis. Negative fixtures prove silence on a self-hosted
+  `@font-face` and on an unrelated `googleapis` API URL.
+
+- **A new rule could land with no fixture and the suite still read green.** (#738) In
+  `plugins/design-flow/scripts/llm_tell_detector.py` — exactly how
+  `cdn-font-link` landed: 41 checks passed across 8 rules while one of those rules was never run. The
+  selftest now asserts **every** rule was exercised — verified by deleting the new fixtures and
+  watching it fail with *"rule(s) with no selftest fixture: ['cdn-font-link']"*.
+
+  The check is `unfixtured_rules()`, a **callable**, and it had to be: written inline, the mutation
+  removing it **survived**, because with every rule fixtured the assertion never fires in a healthy
+  tree and nothing could tell its presence from its absence. Same lesson as `gate_results()` — logic a
+  test can only re-derive is logic no test proves.
 
 ### 1.29.0 — 2026-08-16 (release v1.91.0)
 
