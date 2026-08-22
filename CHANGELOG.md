@@ -2328,7 +2328,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.27.0 — 2026-08-22 (release v1.100.0)
 
 - **A manifest row outside the inventory roots was classified "deleted" on every run.** (#762)
   `/rails-flow:curate` inventories `docs/**` minus `brain/` and `reviews/`, then diffed manifest rows
@@ -3961,7 +3961,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.52.2 — 2026-08-22 (release v1.100.0)
 
 - **`quality-pass`'s worked example: the shared-harness count 16 → 17.** (#764) The new
   `brand_pack_lint.py --selftest` uses the `check(label, ok, detail)` shape, so the number the
@@ -8655,7 +8655,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.34.0 — 2026-08-22 (release v1.100.0)
 
 - **A grouped `:root, .light { … }` selector made a pack's roles read as zero.** (#764)
   `selector_block` required the selector to abut its `{`, so `, .light` made the whole block
