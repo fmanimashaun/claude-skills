@@ -2328,6 +2328,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The audit that found seven of this week's issues existed only as a pasted prompt.** (#734)
+  `plugins/rails-flow/commands/toolchain-audit.md` ships it. Written on request, run twice against a
+  live project, it produced **#706, #707, #708** on the first run — two of which blocked *every*
+  turn-stop on a correct branch — and **#720, #721, #723** on the second, plus **#724** found while
+  fixing #720. Seven of the twenty-one issues closed this week trace to it. It lived in a session
+  scratchpad under `/private/tmp`, in no git history anywhere.
+
+  **The value is the specific steps, not the idea.** A fresh attempt at "audit your setup" would omit
+  the ones that actually found things: three states with *did-not-run* never reported as a pass;
+  `project_gates.py --list` **before** running anything, so the not-applicable set is visible rather
+  than inferred; asking **how far behind the CI pin is**, which is how #713 was found in our own
+  template; and reporting the resolved version of **each** of the five components, because the plugin
+  cache holds several versions of one plugin at once.
+
+  **Not folded into `setup-flow`, and that was measured rather than assumed.** That command is already
+  **635 lines** and its audit path is scoped to a single file — the section is literally *"Audit &
+  repair (existing CLAUDE.md)"*. This spans five plugins, the CI pin and project-local skills, and
+  overlaps setup-flow only by **invoking** it as one step of seven.
+
+  **Named `toolchain-audit`, deliberately.** `/rails-flow:toolchain-check` is the narrow version —
+  resolve installed vs published, exit 0/1/2 — and is step 1 here; the name should say which is which.
+  Plain `audit` was avoided because `/design-flow:audit` already exists and means UI drift.
+
+  It **invokes** the real checks rather than describing them, and it never repairs autonomously —
+  diffs are proposed and waited on, matching `setup-flow`'s existing contract.
+
 ### 1.25.0 — 2026-08-21 (release v1.94.0)
 
 - **A `feat/*` branch got zero acceptance-criteria and work-order enforcement, silently.** (#720)

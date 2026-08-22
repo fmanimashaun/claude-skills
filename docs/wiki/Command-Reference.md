@@ -49,6 +49,11 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 - `/rails-flow:setup-flow` — Scaffold, update, or repair the rails-flow conventions in this project — CLAUDE.md, GUARDRAILS.md, docs/brain.
 
 
+**Ungrouped** — shipped but not yet placed in a group above
+
+- `/rails-flow:toolchain-audit` — Audit an existing project's whole claude-skills setup — update the toolchain, verify the scaffolding, run every check that applies, and report in three states.
+
+
 
 ## `design-flow`
 
@@ -138,4 +143,4 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 ---
 
-**43 commands** across 4 plugins.
+**44 commands** across 4 plugins.
