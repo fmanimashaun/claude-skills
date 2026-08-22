@@ -66,7 +66,7 @@ ROLES = [
     "--border", "--input", "--ring",
     # #750. Added with the roles themselves, in the same commit, because this list is the ONLY thing
     # that makes a role required -- `foundations-tokens.md` declaring one and this list omitting it
-    # means no pack must supply it, `pen_library` never exports it, and the doctrine is a suggestion.
+    # means no pack must supply it, nothing downstream can rely on it, and the doctrine is a suggestion.
     # That is exactly what happened for the five below until a live project reported reaching for
     # `bg-fm-navy/50` because `--overlay` existed nowhere.
     "--overlay",

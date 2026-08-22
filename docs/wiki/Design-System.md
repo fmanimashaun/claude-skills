@@ -50,31 +50,25 @@ or a ladder climb with no stated acceptance check — each **before** any call.
 Groups are **atomic**: a hero still and the motion loop that animates it are one artefact in two
 files, so buying the loop alone is worse than buying neither.
 
-## pen.dev — optional, on both sides of the code boundary
+## Claude Design — composing before the code exists
 
-If a composition surface is available, design-flow uses it for two distinct jobs. **Neither is ever
-required**: no command stops for want of pen, and a machine without it behaves exactly as it did
-before the tier existed.
+Pre-code composition is Claude Design's job. `/design-flow:canvas` writes the prompt — carrying this
+project's **own** `@theme` role tokens, the real component catalog from `component-shapes.json`, and
+the band sequence for the surface — and `/design-flow:port` brings the chosen artboard back as ERB
+that uses the components the codebase actually has.
 
-**Making assets.** A custom icon or spot illustration is composed and then **compiled** to SVG, not
-exported — every design tool's SVG export emits hardcoded hex, which `design-auditor` refuses by
-name, while a compiled asset is `fill="var(--primary)"` and serves light and dark from one file. An
-OG or social card is **exported** raster instead, because its value is real type at a fixed size and
-there is nothing to compile to.
+That last part is what makes composing meaningful rather than decorative: **choose a composition
+made of components the codebase does not have and you have chosen something unbuildable.** So
+`check_component_shapes.py` fails the build if a component is added to the catalogue without a shape
+entry — a component missing from the catalog is one the canvas invents instead of reaching for.
 
-**Exploring screens.** Divergence in `/design-flow:variants` costs N × ERB — every option is a full
-`ui-composer` dispatch writing real view code before it can be compared. The `design-explorer` agent
-composes the options in pen instead, so the ERB price is paid once, for the one that won.
+`/design-flow:variants` remains the other route, and answers a different question: it generates N
+compositions as **running screens** plus a switcher, so an aesthetic decision is made by comparing
+real pages rather than pictures. It costs N × ERB, deliberately.
 
-**What joins the two is the mirrored library.** `pen_library.py` generates a `.pen` document from
-`theme.css` and `components.md` — the same rows `ui-composer` builds from — covering **all 51
-component rows** with role tokens in both themes. That is what makes exploring meaningful rather than
-decorative: compose from components the codebase does not have and you have chosen something
-unbuildable.
-
-The library file doubles as the scratchpad, so compositions live beside the components and a rebuild
-preserves them. `check_component_shapes.py` fails the build if a component is added to the catalogue
-without a shape, because a component missing from pen is one an agent reaches past and never misses.
+**A pen.dev tier used to sit here**, composing options and compiling icons to token-native SVG. It
+was retired in #766 — Claude Design covers the composition half, and keeping both meant two homes
+for one concern.
 
 ## Two files that are not the same thing
 
