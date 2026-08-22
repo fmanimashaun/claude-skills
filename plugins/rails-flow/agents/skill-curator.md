@@ -40,6 +40,19 @@ create, skills to update (with what changed in the source), skills to retire. Ap
 only after the user approves. After applying, refresh both manifest files and stage
 specific files only.
 
+**A source outside the inventory roots is TRACKED, not deleted.** The inventory decides what is
+*skill-worthy*; the manifest decides what is *watched for drift*. They are different questions and
+conflating them was a bug (#762). A row is a **deleted source** when `[ ! -f "$src" ]` — the file is
+gone. A row whose file exists but sits outside `docs/**`, or under `brain/` or `reviews/`, is
+neither new nor deleted: hash it, report drift on it, and **never** propose retiring its skill.
+
+This is what lets a project watch its canonical decision log — typically `docs/brain/DECISIONS.md`,
+the ADR-lite shape `/rails-flow:brain` itself encourages. Add the row by hand and it is watched. It
+stays excluded from *skill-worthiness*, so it is never auto-proposed as a new skill; the exclusion
+at the top of this file is unchanged. Before this, such a row was classified deleted-with-orphaned-
+skill on **every** run — permanent false noise, and an invitation for a later run to retire a live
+skill. The SessionStart drift loop was already path-agnostic, so it needed no change.
+
 ## Agent proposals
 
 When a skill cluster warrants a dedicated specialist (e.g. a brand skill dense enough
