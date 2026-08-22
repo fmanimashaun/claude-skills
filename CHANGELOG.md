@@ -8568,7 +8568,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.31.0 — 2026-08-22 (release v1.97.0)
 
 - **Nothing generated the Claude Design prompt, so every canvas came back speaking its own
   vocabulary.** (#745) `/design-flow:canvas` and `plugins/design-flow/scripts/design_prompt.py`.
