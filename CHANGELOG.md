@@ -7,6 +7,52 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-22 (release v1.94.1)
+
+- **A component could change with no CHANGELOG entry, and every gate stayed green.** (#728) CLAUDE.md
+  says it outright — *"Every bump gets a CHANGELOG entry under the component's section"* — and nothing
+  made it true. `changelog-section-missing` only asserts the `## ` heading **exists**;
+  `changelog-bullet-misfiled` and `-unplaceable` only judge bullets already **present**. A component
+  whose files changed with no bullet at all passed everything.
+
+  It bit on the v1.94.0 arm, and the omission was mine: resolving a CHANGELOG conflict I rebuilt the
+  file from dev's side and re-grafted only the rails-flow body, so the rails-stack bullet was silently
+  lost while `skills/parallel-session-lane/SKILL.md` merged fine. It surfaced because the arm script
+  happened to assert the number of `### Unreleased` headings — **an assertion in throwaway code, not
+  in the repo.**
+
+  Why it matters more than a missing line: every block for a tag publishes now (#699), so the
+  CHANGELOG **is** the release notes. A dropped bullet ships a component version with no account of
+  what changed in it — and a reader cannot tell that from a component that legitimately changed
+  nothing, because both look identical: a bump with silence beneath it.
+
+  `scripts/check_changelog_coverage.py` compares the base's CHANGELOG to this one and requires a new
+  bullet in the section of every component whose files changed. **Verified against the real omission,
+  not a fixture** — replayed over the actual commit range `0a9aff0..c3b15f6`, it reports
+  *"rails-stack: files changed but its CHANGELOG section gained no bullet."*
+
+  **It is a diagnostic, not a gate, and that is forced.** It diffs against `origin/main`, and
+  `gates.yml` uses `actions/checkout` with no `fetch-depth` — a one-commit clone — so as a gate it
+  would report clean on input it never read. The live check runs in `maintainer_doctor.py` (skipped by
+  `--gates-only`, exactly like the promotion-ancestry check) and the **selftest** is the gate. Same
+  split as `coverage matrix drift`. That constraint was inherited from #701, not rediscovered.
+
+  **`repository` is excluded deliberately.** `scripts/`, `docs/` and the root files are maintainer
+  tooling that ships to nobody, and the rule is about a component *bump*; demanding a note for every
+  script edit would fire on correct work, and a check that does that gets switched off.
+
+  One fixture had to be crash-proofed: under the mutation that empties the findings list, `f[0]` raised
+  instead of failing — and **a crash is not a verdict**, so the harness refused it until it failed
+  honestly.
+
+- **#722 closed as measured and declined.** It reported five `checks.json` gates as *"green-by-absence"*.
+  Running the tool shows every not-applicable listed by name with its reason and never counted as a
+  pass — `project_gates.py:24` says so in as many words — and two of its instances are misquoted
+  against the manifest. Its first fix direction, seeding stub artifacts, would make those gates fire
+  while grading nothing: the very anti-pattern the issue is named after. The real residue (nothing
+  distinguishes *opt-in, not adopted* from *should exist, missing*) has **no defect behind it**, so it
+  is recorded on the issue rather than built.
+
 ### 2026-08-20b (release v1.92.1)
 
 - **A CHANGELOG bullet could sit under a component that owns none of its code, and nothing caught

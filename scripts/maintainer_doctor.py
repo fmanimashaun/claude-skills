@@ -261,6 +261,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
                           "--tiers", "plugins/rails-flow/reference/model-tiers.md")),
     # #721. The stamp has ONE schema and four ways of being unusable; the selftest pins that a text
     # stamp containing the word PASS still does not read as PASS.
+    # #728. The live check needs `origin/main` and CI clones one commit deep, so only the SELFTEST
+    # is a gate; the live comparison is a diagnostic below. Same split as `coverage matrix drift`.
+    ("changelog coverage selftest",
+     ("python3", "scripts/check_changelog_coverage.py", "--selftest")),
     ("qa-flow certification reader",
      ("python3", "plugins/qa-flow/scripts/read_certification.py", "--selftest")),
     ("qa-flow tiers", ("python3", "plugins/rails-flow/scripts/check_handoff.py",
@@ -571,6 +575,32 @@ class Doctor:
             "git pull --ff-only" + ("" if ahead == "0" else "  (you have unpushed commits)"),
         )
 
+    def check_changelog_coverage(self) -> None:
+        """#728. A component whose files changed since `main` must have gained a CHANGELOG bullet.
+
+        A DIAGNOSTIC, not a gate: it diffs against `origin/main`, and CI checks out one commit deep,
+        so as a gate it would report clean on input it never read. It is about the promotion, which
+        is when `origin/main` is present and the question is actually being asked.
+        """
+        code, out = self.git("rev-parse", "--verify", "origin/main")
+        if code != 0 or not out.strip():
+            self.add(SKIP, "changelog coverage", "no `origin/main` to compare against",
+                     "git fetch origin main")
+            return
+        script = REPO / "scripts" / "check_changelog_coverage.py"
+        if not script.is_file():
+            self.add(SKIP, "changelog coverage", f"{script.name} is missing")
+            return
+        proc = subprocess.run([sys.executable, str(script)], cwd=REPO,
+                              capture_output=True, text=True)
+        if proc.returncode == 0:
+            self.add(PASS, "every changed component has a CHANGELOG entry")
+            return
+        detail = (proc.stderr or proc.stdout).strip().splitlines()
+        self.add(FAIL, "a component changed with no CHANGELOG entry",
+                 "; ".join(d.strip(" -") for d in detail[1:4]),
+                 "add a bullet under that component's `## ` section")
+
     def check_unshipped(self) -> None:
         """Informational: unshipped work is normal, it is not a fault."""
         code, out = self.git("diff", "--stat", "dev", "origin/main")
@@ -872,6 +902,7 @@ class Doctor:
         self.check_promotion_was_a_merge()
         self.check_no_direct_to_main()
         self.check_unshipped()
+        self.check_changelog_coverage()
         self.check_corpora()
         self.check_corpora_ignored()
         self.check_dist_clean()
