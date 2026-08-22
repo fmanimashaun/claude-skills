@@ -86,7 +86,31 @@ exception:
 
 Reaching for a literal outside this list is the divergence, not an exception to it.
 
-## 6. Preserve the design exactly; align the implementation
+## 6. Porting more than one artboard: one fact, one owner
+
+A canvas repeats itself on purpose. Each artboard has to stand alone as a picture, so the value
+proposition, the spec block and the headline figure get restated on the landing, the pricing page and
+the partner page — three artboards, one fact, three copies.
+
+**Pages are not pictures.** Port that repetition and you have created three places to update and no
+arbiter between them; the first edit that lands in one of them makes the other two wrong, silently,
+because nothing compares them. This is the same defect as a second source of truth anywhere else — it
+is just wearing a design.
+
+So when a port spans several surfaces: **pick the page that owns each fact, and have the others link
+to it.** The owner is usually the page a reader arrives at to answer that question. Cross-link from the
+rest rather than restating.
+
+Two things this is not. It is **not** a rule against repeating a *component* — a card used on three
+pages is reuse, and reuse is the point. And it is **not** licence to drop content the design needs; if
+a page genuinely reads wrong without the fact, that is a signal the fact belongs there and the *other*
+page should link to **it**. What is forbidden is the same sentence, maintained in three files, because
+a canvas needed each frame to be self-contained.
+
+Say which page you made the owner, and where you linked from. A reviewer cannot see that decision in
+the diff.
+
+## 7. Preserve the design exactly; align the implementation
 
 Visual parity is non-negotiable — same layout, rhythm, type scale, colour, motion, states. The
 alignment is *visual-preserving*: where the app's role tokens already equal the canvas literals,
@@ -94,7 +118,7 @@ tokenising `#0077CC` to `var(--primary)` is pixel-identical rather than an appro
 equality rather than assuming it; where the design needs a value the tokens cannot express, that is a
 **token gap to raise**, never a literal smuggled in.
 
-## 7. The port is not done until
+## 8. The port is not done until
 
 - Specs are green, including one proving any new behaviour.
 - `/design-flow:audit` reports no drift: no raw hex, no bespoke field or layout CSS, on-catalogue
