@@ -3922,7 +3922,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.52.0 — 2026-08-22 (release v1.98.0)
 
 - **The palette could not express the design that already existed.** (#750) Reported from a live
   project and confirmed against its artboards: **every one sets `--background: var(--paper-50)`**, and
@@ -8600,7 +8600,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.32.0 — 2026-08-22 (release v1.98.0)
 
 - **"22 roles" was a hardcoded literal, and adding a role changed nothing.** (#750)
   `plugins/design-flow/scripts/brand_pack_lint.py`'s `ROLES` is the only thing that makes a role required — a pack that omits one renders
