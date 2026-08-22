@@ -2740,6 +2740,28 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/rendered_conformance.py",
                "plugins/design-flow/scripts/conformance_collector.js"),
         mutations=(
+            # #738. A CDN font link is preview scaffolding from a design export. Both real Claude
+            # Design artboards carry one, and nothing detected it.
+            Mutation(
+                "a CDN font link stops being a tell, so a design export ships one",
+                '            re.compile(r"fonts\\.googleapis\\.com|fonts\\.gstatic\\.com"),',
+                '            re.compile(r"(?!x)x"),',
+                "a Google Fonts stylesheet link",
+            ),
+            Mutation(
+                # Matching only the stylesheet host would miss the preconnect and the font files.
+                "only the stylesheet host matches, so the font-file host slips through",
+                'r"fonts\\.googleapis\\.com|fonts\\.gstatic\\.com"',
+                'r"fonts\\.googleapis\\.com"',
+                "a preconnect to the font FILE host",
+            ),
+            Mutation(
+                # The gap that let this rule land unfixtured in the first place.
+                "a rule with no fixture stops being reported, so the suite reads green over it",
+                "    return sorted(set(names if names is not None else BY_NAME) - exercised)",
+                "    return []",
+                "unfixtured_rules must name a rule with no fixture",
+            ),
             # Three of these four are bugs I actually shipped into the first draft, kept as
             # mutations because a bug that happened once is the best evidence a fixture is load-
             # bearing rather than decorative.

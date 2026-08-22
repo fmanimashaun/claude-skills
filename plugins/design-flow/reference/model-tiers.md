@@ -17,6 +17,7 @@ org's `availableModels`, so it buys nothing.
 | `brand-guardian` | judgement | `inherit` | — |
 | `design-critic` | judgement | `inherit` | — |
 | `design-explorer` | judgement | `inherit` | — |
+| `design-porter` | judgement | `inherit` | — |
 <!-- design-flow:tiers:end -->
 
 ## Why nothing here is mechanical, despite the plugin owning three linters
