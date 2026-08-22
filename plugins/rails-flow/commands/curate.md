@@ -15,6 +15,12 @@ skill, scope the run to it.
 
 ## Phase 1 — Inventory and diff
 
+> **The inventory scope and the manifest are separate questions.** The exclusions below decide what
+> is *skill-worthy*; the manifest decides what is *watched for drift*. A manifest row whose file
+> still exists is **never** a deleted source just because it sits outside the inventory roots — so a
+> project can hand-add `docs/brain/DECISIONS.md` and get a drift signal without that log ever being
+> proposed as a skill (#762). "Deleted" means the file is gone.
+
 Delegate to `skill-curator`: inventory `docs/**` (excluding `docs/brain/` and
 `docs/reviews/`), load `.claude/skills/.manifest.tsv` if present, and compute the
 delta — new skill-worthy docs, drifted sources (hash mismatch), deleted sources with

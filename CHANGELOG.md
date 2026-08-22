@@ -2328,6 +2328,45 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A manifest row outside the inventory roots was classified "deleted" on every run.** (#762)
+  `/rails-flow:curate` inventories `docs/**` minus `brain/` and `reviews/`, then diffed manifest rows
+  against that inventory — so a row whose file *existed* but sat outside the scope was reported as a
+  deleted source with an orphaned skill, every single run, inviting a later run to retire a live
+  skill. The inventory decides what is **skill-worthy**; the manifest decides what is **watched for
+  drift**, and conflating the two was the bug. A row is deleted when the *file is gone*, nothing else.
+  A project can now hand-add `docs/brain/DECISIONS.md` — the ADR-lite shape `/rails-flow:brain` itself
+  encourages — and get a drift signal on its canonical decision log without that log ever being
+  proposed as a skill. The `docs/brain/` exclusion from skill-worthiness is unchanged, and the
+  SessionStart drift loop needed no change: it was already path-agnostic, as the report showed.
+  Maintainer decision (architecture, no upstream to cite): recorded on #762.
+  Files: `plugins/rails-flow/agents/skill-curator.md`, `plugins/rails-flow/commands/curate.md`.
+
+- **The drift signal reported a false clean when it could not hash.** Found while verifying #762,
+  filed nowhere — the reporter measured `sha256sum` at `/sbin/sha256sum` and correctly ruled it out
+  as a confounder *on their machine*, which is exactly why nobody had seen it. The loop hashed each
+  row with a bare `sha256sum` and skipped any row that produced no output, so a machine without a
+  working hasher counted zero drift and **printed nothing at all** — indistinguishable from a clean
+  tree, while the rest of the hook ran normally and made the session look healthy. Measured:
+  `stale=1` with the hasher present, `stale=0` with it shadowed.
+
+  Three outcomes per row now, not two — matches, drifted, or **could not be hashed** — and the third
+  is reported. Counting unhashable rows rather than probing for the tool is deliberate: a `command -v`
+  probe answers *is it installed*, and the failure that matters is *did this row hash*, which also
+  covers a hasher that is present and broken. The first draft of this fix used the probe and **the
+  test caught it** — an executable stub exiting 127 satisfies `command -v`, then hashes nothing.
+  `sha256sum` is GNU coreutils, not POSIX; `shasum -a 256` is the macOS fallback. Line 91 of the same
+  file already made that portability argument about `cksum`, thirty lines below the bug.
+
+  `plugins/rails-flow/scripts/check_drift_signal.py --selftest` (**9 checks**) drives the **real
+  hook** end-to-end in a throwaway git repo under four hasher shapes — working, absent, present-but-
+  broken, and shasum-only — because a test that recomputed the loop could not witness the shell
+  changing. Registered as a gate. Four mutations, all caught; the `shasum` fallback **survived** the
+  first round, since it is unreachable on any machine that has `sha256sum`, so the shasum-only
+  fixture exists to witness it. Files: `plugins/rails-flow/hooks/scripts/session-start.sh`,
+  `plugins/rails-flow/scripts/check_drift_signal.py`, `scripts/maintainer_doctor.py`.
+
 ### 1.26.0 — 2026-08-22 (release v1.95.0)
 
 - **The audit that found seven of this week's issues existed only as a pasted prompt.** (#734)
