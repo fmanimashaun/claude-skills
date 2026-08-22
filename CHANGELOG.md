@@ -8600,7 +8600,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.33.0 — 2026-08-22 (release v1.99.0)
 
 - **"Wrap between markers" named no marker.** (#754)
   `plugins/design-flow/commands/setup.md`'s idempotency contract said generated
