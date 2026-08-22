@@ -81,7 +81,21 @@ user has to answer before the pack can be created.
 ## Idempotency
 
 Own only what you scaffold; re-runnable. Wrap generated `@theme`/token blocks and `@utility`
-recipes between markers; on re-run refresh inside the markers only, leaving hand edits intact.
+recipes between **these exact markers** — as CSS comments, so they survive in `application.css`:
+
+```css
+/* design-flow:tokens:begin — managed by /design-flow:setup; edits here are overwritten on re-run */
+…
+/* design-flow:tokens:end */
+```
+
+**Inside is the plugin's; outside is yours.** A local extension — a project's own primitive, an extra
+role it needs — goes **outside** the markers and is never touched. On re-run, refresh inside only.
+
+The marker used to be unspecified (#754): the contract said "between markers" and named none, so every
+scaffold invented its own string and "hand edits stay intact" held only if the next run guessed the
+same one. It also left `check_token_drift.py` nothing to key on — without a line between plugin-owned
+and project-owned tokens, a drift check either flags every legitimate extension or checks nothing.
 Never overwrite an existing customized component without showing a diff. Stage only files you
 authored; `git status` after.
 

@@ -140,6 +140,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #745. The prompt carries the project's OWN tokens, so its selftest pins that a private
     # primitive never reaches the prompt and that a missing source is reported rather than omitted.
     # #750. A scale that promises a step and does not declare it sends a project looking for one.
+    # #750/#754. Only the SELFTEST is a gate: the live comparison needs a PROJECT's css, which this
+    # repo does not have. The check ships for adopters to run; the selftest proves it works.
+    ("design-flow token drift selftest",
+     ("python3", "plugins/design-flow/scripts/check_token_drift.py", "--selftest")),
     ("design-flow scale contiguity",
      ("python3", "plugins/design-flow/scripts/check_scale_contiguity.py")),
     ("design-flow scale contiguity selftest",
