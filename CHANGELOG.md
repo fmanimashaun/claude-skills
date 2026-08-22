@@ -3922,7 +3922,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.52.1 — 2026-08-22 (release v1.99.1)
 
 - **Our own modal example taught the misuse a downstream project was reported for.** (#758)
   `skills/fidara-design/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
@@ -8608,7 +8608,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.33.1 — 2026-08-22 (release v1.99.1)
 
 - **A brand primitive used as a component colour was silent, while a stock palette step was caught.**
   (#758) `plugins/design-flow/scripts/llm_tell_detector.py` flagged `text-gray-500` and said nothing
