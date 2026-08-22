@@ -700,14 +700,6 @@ motion, which is worse than the animation. Author the finished frame first, then
 **This is now asserted rather than requested**: an SVG recorded as `kind: motion` with no animation
 construct, or a JSON that is not shaped like a Lottie, is refused at record time.
 
-#### `pen_to_svg` does not emit animation
-
-Stated plainly because the alternative is discovering it after composing. The compiler turns a
-`.pen` document into token-native **static** SVG — it carries no `<animate>`, no `@keyframes`. Use it
-to author the still, then add the movement by hand or in a motion tool. A `.pen` composition is the
-right place to decide *which marks* move; it is not the place the movement is authored.
-
-
 ## 6. Per-surface prescriptions — the pages with nothing to screenshot
 
 This is where the visual gap is widest, and it is exactly where convention reaches for illustration.

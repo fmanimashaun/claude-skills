@@ -86,15 +86,17 @@ Each pass sees something only it can, and the earlier ones cannot substitute for
 
 | # | pass | subject | blocks? | what only it sees |
 |---|---|---|---|---|
-| 1 | **intent** | the composition, before code | **no** | is this the researched style; does it use the library; is the copy real |
+| 1 | **intent** | the Claude Design output, before code | **no** | is this the researched style; does it use the catalog; is the copy real |
 | 2 | **source** | the ERB | **yes** | role tokens, `-foreground` pairing, ARIA presence, primitives, motion **count** |
 | 3 | **rendered** | the running browser | **yes** | computed contrast, resolved tokens, focus rules that no longer match |
 
 **Pass 1 never blocks, and it cannot judge conformance.** A design cannot state whether the
 implementation has a focus ring, whether ARIA is correct, or whether `min-h-touch` is held — those
-are properties of code that does not exist yet. Run it with
-`pen_compose.py --intent <composition>` when a composition preceded the code; say plainly that it
-was skipped when none did.
+are properties of code that does not exist yet. It is a **read**, not a script: when a Claude Design
+artboard preceded the ERB, open it and check it against the brief and the catalog the way
+`/design-flow:port` §2 does. **Say plainly that Pass 1 was skipped when no composition preceded the
+code** — most `/design-flow:component` work has none, and a skipped pass must never read as a
+passed one.
 
 **Say which passes ran.** A pass that was skipped and a pass that passed must never look alike —
 that is the whole reason `maintainer_doctor` reports `skip` as a third state rather than folding it

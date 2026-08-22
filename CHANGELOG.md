@@ -8647,6 +8647,52 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The pen.dev adapter is retired.** (#766) pen was the **pre-code composition surface**: compose N
+  options from a generated library, compare them, then pay the ERB price once for the winner. Claude
+  Design now fills that role — `/design-flow:canvas` writes the prompt carrying this project's own
+  role tokens, its real component catalog and the surface's band sequence, and `/design-flow:port`
+  brings the chosen artboard back as ERB. Keeping both meant two homes for one concern, which
+  `plugin-boundaries` rule 2 forbids. Maintainer decision (architecture, no upstream to cite):
+  recorded on #766.
+
+  **Deleted** — these existed only to drive pen: `pen_library.py` (828 lines), `pen_compose.py`
+  (330), `pen_to_svg.py` (530), and the `design-explorer` agent, whose stated premise was *"Explores
+  N compositions of one brief in pen.dev"*. Its degrade path was **stepping aside**, not composing
+  in code, and `variants.md` already carried the divergence-axis doctrine independently — so nothing
+  remained for it once the tier went.
+
+  **Kept, deliberately:** `component-shapes.json`, because `design_prompt.py:catalog()` reads its
+  top-level keys to build the catalog a canvas composes from — removing pen must not take the
+  catalog with it. And `/design-flow:variants`, whose value was never pen-specific: it still
+  generates N compositions as **running screens** plus a switcher, answering a different question
+  from the canvas (compare real pages, not pictures).
+
+  **Reworked rather than deleted:** `check_component_shapes.py`. Its consumer changed — the sidecar
+  can still drift from `components.md`, and that drift now means *the canvas invents a component*
+  instead of *pen omits one*, so the reconciliation matters more, not less. Its cross-check of
+  `PART_KINDS`/`SHAPE_KINDS` against `pen_library.py`'s source was **removed** rather than retargeted:
+  a reconciliation with one side is not a check, and leaving it pointed at a new file would have been
+  a gate that cannot fail. The kinds stay enforced against the sidecar itself.
+
+  Also stripped: the `pen` rung and its adapter from `generate_asset.py` (`KEYLESS` back to `{agent}`),
+  the optional-surface section of `/design-flow:setup`, section 4a of `/design-flow:generate`, the
+  cheap-tier section of `/design-flow:variants`, the `pen_to_svg` note in `visual-assets.md`, the
+  `design-explorer` row in `model-tiers.md` and in the marketplace description, three doctor gates,
+  three mutation guards and two now-stale `generate_asset` mutations. `/design-flow:audit`'s Pass 1
+  keeps its subject — "the composition, before code" is a Claude Design artboard now — but is a
+  **read** rather than a script, and still reports `skipped` when no composition preceded the ERB.
+
+  The `mcp__pencil__*` MCP server is a separate concern and is untouched.
+
+  Files: `plugins/design-flow/commands/setup.md`, `plugins/design-flow/commands/generate.md`,
+  `plugins/design-flow/commands/variants.md`, `plugins/design-flow/commands/audit.md`,
+  `plugins/design-flow/reference/model-tiers.md`, `plugins/design-flow/scripts/generate_asset.py`,
+  `plugins/design-flow/scripts/brand_pack_lint.py`, `scripts/check_component_shapes.py`,
+  `skills/fidara-design/references/visual-assets.md`,
+  `skills/fidara-design/references/component-shapes.json`.
+
 ### 1.33.1 — 2026-08-22 (release v1.99.1)
 
 - **A brand primitive used as a component colour was silent, while a stock palette step was caught.**

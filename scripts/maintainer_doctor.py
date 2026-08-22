@@ -156,16 +156,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--selftest")),
     # #602. A compiler whose whole value is "no literal colour survives" needs the assertion that
     # says so to run somewhere other than a maintainer's memory.
-    ("design-flow pen-to-svg selftest",
-     ("python3", "plugins/design-flow/scripts/pen_to_svg.py", "--selftest")),
     # #603. The library is a PROJECTION of the brand pack, so the assertions that matter are that
     # regeneration is byte-identical and that it never eats the designer's own compositions.
     # #617. The resolver that finds `fidara-design` from BOTH the clone and the installed cache —
     # the layout no fixture exercised until a user hit it.
     ("design-flow doctrine path selftest",
      ("python3", "plugins/design-flow/scripts/doctrine_path.py", "--selftest")),
-    ("design-flow pen library selftest",
-     ("python3", "plugins/design-flow/scripts/pen_library.py", "--selftest")),
     # #625. The library that keeps the composed prompt, the model and the money. Two of its rules
     # are the ones a checker cannot infer and only a fixture can hold: the markdown view's bytes
     # are a function of the JSON alone, and a rung named `agent` is a ROLE recorded as an unknown
@@ -203,8 +199,6 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/check_asset_layout.py", "--selftest")),
     # #600/#601. The branch that matters is the silent skip: an absent surface must degrade to
     # today's behaviour rather than stopping, and only a fixture can hold that true.
-    ("design-flow pen compose selftest",
-     ("python3", "plugins/design-flow/scripts/pen_compose.py", "--selftest")),
     # #609. "pen mirrors the whole catalogue" is a claim; without this it is a claim nothing makes
     # true, and the drift is silent in the worst direction — a component simply not appearing.
     ("component shapes reconciled",
