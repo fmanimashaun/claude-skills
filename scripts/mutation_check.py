@@ -1677,6 +1677,47 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        # #750/#754. The marker is the line between "the plugin's" and "yours", and every mutation
+        # here erases that line in a different direction.
+        name="check_token_drift",
+        subject="plugins/design-flow/scripts/check_token_drift.py",
+        selftest="plugins/design-flow/scripts/check_token_drift.py",
+        needs=("skills",),
+        mutations=(
+            Mutation(
+                # The one that would get the check switched off: flagging correct work.
+                "the whole file is compared, so extending OUTSIDE the markers reads as drift",
+                "    theirs = {m.group(1): \" \".join(m.group(2).split()) for m in DECL.finditer(block)}",
+                "    theirs = {m.group(1): \" \".join(m.group(2).split()) for m in DECL.finditer(css)}",
+                "a local token OUTSIDE the markers is silent",
+            ),
+            Mutation(
+                # Target the VERDICT, not the branch: skipping the branch makes `finditer(None)`
+                # raise, and a crash is not a verdict.
+                "an unmanaged file reports clean, which is the lie this exists to prevent",
+                '        return "unmanaged", [',
+                '        return "clean", [',
+                "no marker is 'unmanaged', not 'clean'",
+            ),
+            Mutation(
+                "a token the plugin added stops being reported, so an adopter never learns",
+                "    for tok in sorted(set(ours) - set(theirs)):",
+                "    for tok in ():",
+                "a token the plugin adds is reported missing",
+            ),
+            Mutation(
+                # Without normalisation a reformat reads as a value change -- noise that teaches
+                # people to ignore the report.
+                # The CSS side is what the fixture varies; normalising only the doc side would
+                # leave this undetectable, which is how the first attempt survived.
+                "whitespace stops being normalised, so reformatting reads as drift",
+                '    theirs = {m.group(1): " ".join(m.group(2).split()) for m in DECL.finditer(block)}',
+                "    theirs = {m.group(1): m.group(2) for m in DECL.finditer(block)}",
+                "reformatting is not drift",
+            ),
+        ),
+    ),
+    Guard(
         # #750. Two clauses -- a hole in a declared run, and a comment promising a step the file
         # never declares -- and both shipped simultaneously, so both need their own fixture.
         name="check_scale_contiguity",

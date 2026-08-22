@@ -8600,6 +8600,40 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.33.0 — 2026-08-22 (release v1.99.0)
+
+- **"Wrap between markers" named no marker.** (#754)
+  `plugins/design-flow/commands/setup.md`'s idempotency contract said generated
+  token blocks go *"between markers"* and `grep -c 'design-flow:.*:begin'` returned **0**. So every
+  scaffold invented its own string, and *"hand edits stay intact"* held only if the next run guessed
+  the same one. The marker is now spelled out — `/* design-flow:tokens:begin */ … :end` — with the
+  sentence that makes it useful: **inside is the plugin's, outside is yours**, and a local extension
+  belongs outside.
+
+- **A project's tokens drifted from the plugin's and nothing ever compared them.** (#750)
+  `plugins/design-flow/scripts/check_token_drift.py`. The scaffold runs once, the plugin ships new
+  tokens, and no one looks again — which is how a warm ground, six re-tuned slate steps and four
+  missing roles accumulated unnoticed until a hand-written repo-vs-plugin diff found them.
+
+  **The line between ours and theirs is the whole design.** A brand pack is *supposed* to add tokens;
+  a project is *supposed* to extend. A check flagging every difference would fire on correct work and
+  be switched off within a week. So it compares **only inside the marker** — which is why #754 had to
+  be fixed first, and why that half was not built with the fold-in.
+
+  Four outcomes, and only one is a problem you caused: **missing** (the plugin moved, you are behind),
+  **changed** (re-tuned inside the managed block, where a re-run will eat it), **extra** (a local
+  token on the wrong side of the marker), and **unmanaged** — no marker at all, which is where most
+  existing projects are and which is **reported as its own state, never as a pass**. Calling that
+  clean would be the exact lie the check exists to prevent.
+
+  Only the **selftest** is a gate: the live comparison needs a *project's* CSS, which this repo does
+  not have. Shipping the check without gating it here is the honest split.
+
+  Two mutations had to be retargeted before they held. One skipped the unmanaged branch and made
+  `finditer(None)` **raise** — a crash is not a verdict — so it now targets the verdict instead. The
+  other normalised whitespace on the *doctrine* side while the fixture varies the *CSS* side, so it
+  **survived**; it now mutates the side the fixture actually exercises.
+
 ### 1.32.0 — 2026-08-22 (release v1.98.0)
 
 - **"22 roles" was a hardcoded literal, and adding a role changed nothing.** (#750)
