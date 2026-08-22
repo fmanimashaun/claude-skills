@@ -51,7 +51,13 @@ tokens cannot express, that is a **token gap to raise**, not a literal to smuggl
 sanctioned form. Forms are `simple_form_for` + `f.input`; modals are the Turbo-Frame flow in
 `crud-modal-pattern.md`; layout is the primitives, not breakpoint utilities and child margins.
 
-**6. Implement every state the design shows** — empty, loading, validation-error, success — not only
+**6. If the port spans several surfaces, pick one owner per fact.** A canvas restates the value
+proposition on three artboards because each frame has to stand alone as a picture. Pages do not: port
+that repetition and you have three places to update and no arbiter, so the first edit makes the other
+two wrong in silence. Choose the owning page, link from the rest, and **say which page you made the
+owner** — a reviewer cannot see that decision in the diff. §6 of the handoff.
+
+**7. Implement every state the design shows** — empty, loading, validation-error, success — not only
 the one the artboard illustrates. An artboard shows a moment; a surface has to hold all of them.
 
 ## What you never do

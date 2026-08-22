@@ -3924,6 +3924,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A multi-page port shipped the same fact three times.** (#739)
+  `skills/fidara-design/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
+  every artboard has to stand alone as a picture, so the value proposition and the headline figure get
+  restated across the landing, pricing and partner frames. **Pages are not pictures.** Port that
+  repetition and there are three places to update with no arbiter between them; the first edit that
+  lands in one makes the other two wrong, silently, because nothing compares them.
+
+  Pick the page that owns each fact and link from the rest. Two things it is deliberately **not**: a
+  rule against repeating a *component* (a card on three pages is reuse, which is the point), and
+  licence to drop content — if a page reads wrong without the fact, the fact belongs there and the
+  other page links to **it**.
+
+  Named as a gap by measuring rather than assumed complete: `grep -rli "one-fact-one-owner"` across
+  `skills/` and `plugins/` returned **nothing**, so #739's fifth criterion was the one thing the first
+  pass missed. The agent now reports which page it made the owner, because a reviewer cannot see that
+  decision in the diff.
+
+
 - **A Claude Design artboard had no shipped route into Rails 8 + Hotwire.** (#738)
   `skills/fidara-design/references/design-handoff.md` is the fixed mapping: source construct → the one
   sanctioned Rails-Hotwire form. It **composes** `rails-8`, `hotwire` and this skill's own
