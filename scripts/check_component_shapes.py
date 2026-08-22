@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Reconcile `component-shapes.json` against `components.md` — so "pen mirrors all" stays true (#609).
+"""Reconcile `component-shapes.json` against `components.md` — so the catalogue is whole (#609).
 
-WHY THIS EXISTS. `pen_library.py` mirrors the design system into pen by reading a declared skeleton
-per catalogue row. A sidecar can drift from the prose it accompanies, and the drift is silent in the
-worst direction: a component added to the catalogue and not to the shapes file simply **does not
-appear in pen**, so an agent composing a screen reaches for what is there and never learns what is
-missing. Without this check, "pen mirrors the whole catalogue" is a claim nothing makes true — the
-claims-vs-enforcement defect this repo is built around.
+WHY THIS EXISTS. `design_prompt.py` builds the component catalog a Claude Design canvas may compose
+from by reading this file's top-level keys (`catalog()`), so a sidecar that drifts from the prose it
+accompanies is silent in the worst direction: a component added to the catalogue and not to the
+shapes file simply **is not offered to the canvas**, and the canvas invents one instead — which is
+the exact failure `/design-flow:canvas` exists to prevent. Without this check, "the canvas composes
+from the real catalogue" is a claim nothing makes true — the claims-vs-enforcement defect this repo
+is built around.
+
+It was written for `pen_library.py`, which mirrored the same file into a pen.dev library and was
+retired in #766. The consumer changed; the reconciliation did not, because the file is still a
+sidecar to `components.md` and can still drift from it.
 
 WHAT IT ASSERTS, and each half matters:
 
@@ -36,9 +41,10 @@ CATALOGUE = ROOT / "skills" / "fidara-design" / "references" / "components.md"
 SHAPES = ROOT / "skills" / "fidara-design" / "references" / "component-shapes.json"
 THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 
-# Kinds `pen_library.part_node` can draw. Named here rather than imported: this is a maintainer gate
-# and that is a shipped plugin script, so importing across the boundary would work here and break
-# for a user. The selftest asserts the two agree, which is the honest way to hold a duplicated list.
+# The declared vocabulary for a shape entry. These began as the kinds `pen_library.part_node` could
+# draw; with pen retired (#766) nothing generates from them, but they stay enforced as a schema so a
+# typo in the sidecar is refused rather than silently carried. There is no longer a second list to
+# reconcile against, so the selftest no longer asserts one — see the note where that check was.
 PART_KINDS = {"box", "pill", "text", "field", "line", "avatar", "icon-slot", "column"}
 SHAPE_KINDS = {"control", "pill", "banner", "surface", "panel", "bar", "bare"}
 
@@ -212,16 +218,11 @@ def selftest() -> int:
                for p in check(MD, {**OK, "Card": {"shape": "surface", "parts": [
                    {"kind": "column", "of": [{"kind": "box", "fill": "nope"}]}]}}, ROLES)))
 
-    # THE DUPLICATED KIND LISTS must agree with the generator that owns them. Held by assertion
-    # because a maintainer gate cannot import a shipped plugin script.
-    checks += 1
-    gen = (ROOT / "plugins" / "design-flow" / "scripts" / "pen_library.py").read_text()
-    for kind in PART_KINDS:
-        if f'"{kind}"' not in gen:
-            failures.append(f"part kind {kind!r} is unknown to pen_library.py")
-    for kind in SHAPE_KINDS:
-        if f'"{kind}"' not in gen:
-            failures.append(f"shape kind {kind!r} is unknown to pen_library.py")
+    # THE DUPLICATED KIND LISTS used to be reconciled against `pen_library.py`, the generator that
+    # owned them. That generator is gone (#766) and the lists are now a schema with a single owner --
+    # this file -- so there is nothing left to disagree with. Deleted rather than pointed at a new
+    # file: a reconciliation with one side is not a check, and leaving it would be a gate that
+    # cannot fail. The kinds are still enforced against the sidecar itself, above.
 
     for f in failures:
         print(f"FAIL {f}")

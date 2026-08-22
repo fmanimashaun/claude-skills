@@ -195,49 +195,12 @@ Report the **pack slug, the lint output, the failing step, and the exact build/r
 pack-related failure is almost always a doctrine or lint defect rather than a project problem —
 which is precisely why it belongs upstream instead of being patched locally.
 
-## Optional: the composition surface (pen.dev) — tell the developer, never require it
-
-Report what this machine has, and what it would gain. **Never install anything, and never block on
-it.** A design-flow command that stopped for want of a third-party tool would be a prerequisite in
-all but name, and this one is strictly additive.
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_compose.py" --surface --mcp-available
-```
-
-Pass `--mcp-available` only if you can see the `mcp__pencil__*` tools **and** a document is open. It
-always exits **0**; `"usable": false` is a normal answer on a machine that has never had pen.
-
-**What it adds, so the developer can judge whether to bother:**
-
-| with pen | without pen |
-|---|---|
-| explore N compositions cheaply, pay the ERB price only for the winner | every variant costs a full `ui-composer` dispatch |
-| custom icons composed beside real Lucide glyphs, compiled to **token-native SVG** | icons authored blind, or bought from a model that cannot render text |
-| OG / social cards composed with real type at a fixed size | a diffusion model that cannot render accurate text or repeat a brand |
-
-**How to add it later** — this is a per-developer choice, not a project decision, and either surface
-is enough:
-
-- **The desktop app + MCP** — interactive composition; needs the app running with a document open.
-- **The CLI** — `npm install -g @pen.dev/cli`, headless, so it also works unattended and in CI.
-
-Then scaffold the library once, so compositions are built from real components rather than drawings
-of them:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pen_library.py" --pack <slug> --out design/fidara.lib.pen
-```
-
-**Say plainly that it is optional.** A developer who skips this must see no difference in any
-command's behaviour — that is the contract, and it is asserted rather than promised.
-
 ## Report
 
 Files created, brand selected, ViewComponent decision, and the entry points:
 `/design-flow:component` to author UI, `/design-flow:audit` to check drift. Remind that a new
-`@theme` needs a Tailwind rebuild. **State whether a composition surface was found**, in one line —
-a developer setting up on a new machine should learn that the optional tier exists here rather than
-discovering it months later in a command's output. Finally: if any generated component fails to compile or
+`@theme` needs a Tailwind rebuild. Point at **`/design-flow:canvas`** for pre-code composition —
+it writes a Claude Design prompt carrying this project's own tokens and component catalog, and
+`/design-flow:port` brings the result back as ERB. Finally: if any generated component fails to compile or
 render in this app, it's a toolchain defect — report it with **`/rails-flow:report`**
 (component `design-flow` / `fidara-design`) so the doctrine gets fixed upstream.

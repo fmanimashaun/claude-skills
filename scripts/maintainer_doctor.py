@@ -150,22 +150,24 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/design-flow/scripts/check_scale_contiguity.py", "--selftest")),
     ("design-flow design prompt selftest",
      ("python3", "plugins/design-flow/scripts/design_prompt.py", "--selftest")),
+    # #764. The CSS parser five call sites share had no suite of its own -- it was exercised only
+    # incidentally, as a dependency of other guards, which is exactly how a grouped `:root, .light`
+    # selector stayed invisible to it while every consumer read the empty string as "declares
+    # nothing". A shared parser with no direct fixtures is one silent failure for all of them.
+    ("design-flow brand pack lint",
+     ("python3", "plugins/design-flow/scripts/brand_pack_lint.py", "--selftest")),
     ("design-flow palette candidates",
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
     ("design-flow palette candidates selftest",
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--selftest")),
     # #602. A compiler whose whole value is "no literal colour survives" needs the assertion that
     # says so to run somewhere other than a maintainer's memory.
-    ("design-flow pen-to-svg selftest",
-     ("python3", "plugins/design-flow/scripts/pen_to_svg.py", "--selftest")),
     # #603. The library is a PROJECTION of the brand pack, so the assertions that matter are that
     # regeneration is byte-identical and that it never eats the designer's own compositions.
     # #617. The resolver that finds `fidara-design` from BOTH the clone and the installed cache —
     # the layout no fixture exercised until a user hit it.
     ("design-flow doctrine path selftest",
      ("python3", "plugins/design-flow/scripts/doctrine_path.py", "--selftest")),
-    ("design-flow pen library selftest",
-     ("python3", "plugins/design-flow/scripts/pen_library.py", "--selftest")),
     # #625. The library that keeps the composed prompt, the model and the money. Two of its rules
     # are the ones a checker cannot infer and only a fixture can hold: the markdown view's bytes
     # are a function of the JSON alone, and a rung named `agent` is a ROLE recorded as an unknown
@@ -203,8 +205,6 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/check_asset_layout.py", "--selftest")),
     # #600/#601. The branch that matters is the silent skip: an absent surface must degrade to
     # today's behaviour rather than stopping, and only a fixture can hold that true.
-    ("design-flow pen compose selftest",
-     ("python3", "plugins/design-flow/scripts/pen_compose.py", "--selftest")),
     # #609. "pen mirrors the whole catalogue" is a claim; without this it is a claim nothing makes
     # true, and the drift is silent in the worst direction — a component simply not appearing.
     ("component shapes reconciled",
@@ -256,6 +256,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.
     ("project gates", ("python3", "plugins/rails-flow/scripts/project_gates.py", "--selftest")),
+    # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
+    # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
+    # under a working, absent, broken and shasum-only hasher.
+    ("curated drift signal", ("python3", "plugins/rails-flow/scripts/check_drift_signal.py", "--selftest")),
     # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
     # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
     # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,

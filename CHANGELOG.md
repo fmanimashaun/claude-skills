@@ -2328,6 +2328,45 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.27.0 — 2026-08-22 (release v1.100.0)
+
+- **A manifest row outside the inventory roots was classified "deleted" on every run.** (#762)
+  `/rails-flow:curate` inventories `docs/**` minus `brain/` and `reviews/`, then diffed manifest rows
+  against that inventory — so a row whose file *existed* but sat outside the scope was reported as a
+  deleted source with an orphaned skill, every single run, inviting a later run to retire a live
+  skill. The inventory decides what is **skill-worthy**; the manifest decides what is **watched for
+  drift**, and conflating the two was the bug. A row is deleted when the *file is gone*, nothing else.
+  A project can now hand-add `docs/brain/DECISIONS.md` — the ADR-lite shape `/rails-flow:brain` itself
+  encourages — and get a drift signal on its canonical decision log without that log ever being
+  proposed as a skill. The `docs/brain/` exclusion from skill-worthiness is unchanged, and the
+  SessionStart drift loop needed no change: it was already path-agnostic, as the report showed.
+  Maintainer decision (architecture, no upstream to cite): recorded on #762.
+  Files: `plugins/rails-flow/agents/skill-curator.md`, `plugins/rails-flow/commands/curate.md`.
+
+- **The drift signal reported a false clean when it could not hash.** Found while verifying #762,
+  filed nowhere — the reporter measured `sha256sum` at `/sbin/sha256sum` and correctly ruled it out
+  as a confounder *on their machine*, which is exactly why nobody had seen it. The loop hashed each
+  row with a bare `sha256sum` and skipped any row that produced no output, so a machine without a
+  working hasher counted zero drift and **printed nothing at all** — indistinguishable from a clean
+  tree, while the rest of the hook ran normally and made the session look healthy. Measured:
+  `stale=1` with the hasher present, `stale=0` with it shadowed.
+
+  Three outcomes per row now, not two — matches, drifted, or **could not be hashed** — and the third
+  is reported. Counting unhashable rows rather than probing for the tool is deliberate: a `command -v`
+  probe answers *is it installed*, and the failure that matters is *did this row hash*, which also
+  covers a hasher that is present and broken. The first draft of this fix used the probe and **the
+  test caught it** — an executable stub exiting 127 satisfies `command -v`, then hashes nothing.
+  `sha256sum` is GNU coreutils, not POSIX; `shasum -a 256` is the macOS fallback. Line 91 of the same
+  file already made that portability argument about `cksum`, thirty lines below the bug.
+
+  `plugins/rails-flow/scripts/check_drift_signal.py --selftest` (**9 checks**) drives the **real
+  hook** end-to-end in a throwaway git repo under four hasher shapes — working, absent, present-but-
+  broken, and shasum-only — because a test that recomputed the loop could not witness the shell
+  changing. Registered as a gate. Four mutations, all caught; the `shasum` fallback **survived** the
+  first round, since it is unreachable on any machine that has `sha256sum`, so the shasum-only
+  fixture exists to witness it. Files: `plugins/rails-flow/hooks/scripts/session-start.sh`,
+  `plugins/rails-flow/scripts/check_drift_signal.py`, `scripts/maintainer_doctor.py`.
+
 ### 1.26.0 — 2026-08-22 (release v1.95.0)
 
 - **The audit that found seven of this week's issues existed only as a pasted prompt.** (#734)
@@ -3921,6 +3960,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.52.2 — 2026-08-22 (release v1.100.0)
+
+- **`quality-pass`'s worked example: the shared-harness count 16 → 17.** (#764) The new
+  `brand_pack_lint.py --selftest` uses the `check(label, ok, detail)` shape, so the number the
+  worked example quotes moved. `check_shared_shapes.py` caught it — which is the whole point of that
+  gate: it refuses a **number** in the example disagreeing with the repo, never a duplicate.
+  File: `skills/quality-pass/references/worked-example.md`.
 
 ### 1.52.1 — 2026-08-22 (release v1.99.1)
 
@@ -8607,6 +8654,108 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.34.0 — 2026-08-22 (release v1.100.0)
+
+- **A grouped `:root, .light { … }` selector made a pack's roles read as zero.** (#764)
+  `selector_block` required the selector to abut its `{`, so `, .light` made the whole block
+  invisible and the function returned `""` — which every caller reads as *"declares nothing"* rather
+  than *"I could not find it"*. A real project's **24** role tokens reported as none. This is the
+  same false failure the docstring already recorded for column-1 anchoring, one case further out:
+  the selector **list**.
+
+  It is one shared parser, so the blast radius was **four** call sites, not one: `brand_pack_lint`
+  raised a hard error and then abandoned every downstream check, `palette_candidates` saw no
+  declarations, and `design_prompt` silently omitted the prompt's token list — which is precisely
+  how a canvas invents a vocabulary. (`pen_library`'s two call sites went with #766.)
+
+  Fixed once, in the parser: the selector **list** is split on `,` and matched by **exact
+  membership**, so `:root.theme-a` — a compound that *narrows* — is correctly not a match. Grouping
+  `:root` with a scope class is not exotic; it is what this design system's own dark-mode guidance
+  leads to, since custom properties inherit and a `.light` island re-lights a subtree.
+
+  **The parser had no suite of its own** — it was exercised only incidentally, as another guard's
+  dependency, which is exactly how this survived. `brand_pack_lint.py --selftest` is new (**14
+  assertions**) and registered as a gate, with a `brand_pack_lint` mutation guard (**4 mutations**).
+  One mutation — dropping the `@` from the prelude character class — **survived** until a fixture
+  existed for a `:root` nested inside `@media`, which the guard keeps reachable and the pre-#764
+  parser also found. Files: `plugins/design-flow/scripts/brand_pack_lint.py`,
+  `scripts/maintainer_doctor.py`, `scripts/mutation_check.py`.
+
+- **`/design-flow:canvas` could not produce its artefact on any invocation.** (#763) Two defects
+  compounded: the default path emitted an `incomplete` prompt missing the catalog and the band
+  sequence, and supplying the documented `--refs` to fix that turned it into a traceback with **0
+  bytes on stdout**.
+
+  **Defect A** — `refs` was `HERE.parents[3] / "skills" / …`, the exact parent-counting
+  `doctrine_path` exists to replace. It resolves only in a **clone**; from an installed plugin the
+  cache interposes `<bundle>/<version>/`, so the path came out missing the
+  `claude-skills/rails-stack/<version>/` segment. That is **#617's defect class in a script #617's
+  fix never reached** — the two shapes differ in *depth*, not offset. Now routed through the shared
+  `doctrine_path.find()`, with `describe()` naming **every** root tried on failure.
+
+  **Defect B** — `bands_for` read `b.name` on `compose_brief.Band`, whose field is `band`. Because
+  the `except` wrapped only the `read_bands` call, the comprehension raised **uncaught**, where
+  every other gap in the script degrades into a reported problem.
+
+  **Also fixed, and it was the reporter's secondary observation:** `bands_for(refs, surface)` took
+  `surface` and never read it, so every surface got the **landing** spine unsaid — #676's defect
+  re-introduced at a new call site. It now returns provenance from `governing_section`, and the
+  brief says whose spine it is: named section, or *"this spine is borrowed"*.
+
+  **The root finding was that `--selftest` was green throughout.** It called `catalog()` and
+  `project_roles()` against temp fixtures and `compose()` against hand-built lists, and **never
+  reached `bands_for`** — the one branch that touches a real `Band`. It now covers the
+  resolved-anatomy branch and the installed cache layout, **and runs the real script end-to-end from
+  an installed-shaped tree**: the two resolver checks alone proved `doctrine_path` works but not that
+  `main` *uses* it, and a mutation restoring `HERE.parents[3]` survived them both. 13 → **25
+  assertions**; five mutations, all caught. Files:
+  `plugins/design-flow/scripts/design_prompt.py`.
+
+
+- **The pen.dev adapter is retired.** (#766) pen was the **pre-code composition surface**: compose N
+  options from a generated library, compare them, then pay the ERB price once for the winner. Claude
+  Design now fills that role — `/design-flow:canvas` writes the prompt carrying this project's own
+  role tokens, its real component catalog and the surface's band sequence, and `/design-flow:port`
+  brings the chosen artboard back as ERB. Keeping both meant two homes for one concern, which
+  `plugin-boundaries` rule 2 forbids. Maintainer decision (architecture, no upstream to cite):
+  recorded on #766.
+
+  **Deleted** — these existed only to drive pen: `pen_library.py` (828 lines), `pen_compose.py`
+  (330), `pen_to_svg.py` (530), and the `design-explorer` agent, whose stated premise was *"Explores
+  N compositions of one brief in pen.dev"*. Its degrade path was **stepping aside**, not composing
+  in code, and `variants.md` already carried the divergence-axis doctrine independently — so nothing
+  remained for it once the tier went.
+
+  **Kept, deliberately:** `component-shapes.json`, because `design_prompt.py:catalog()` reads its
+  top-level keys to build the catalog a canvas composes from — removing pen must not take the
+  catalog with it. And `/design-flow:variants`, whose value was never pen-specific: it still
+  generates N compositions as **running screens** plus a switcher, answering a different question
+  from the canvas (compare real pages, not pictures).
+
+  **Reworked rather than deleted:** `check_component_shapes.py`. Its consumer changed — the sidecar
+  can still drift from `components.md`, and that drift now means *the canvas invents a component*
+  instead of *pen omits one*, so the reconciliation matters more, not less. Its cross-check of
+  `PART_KINDS`/`SHAPE_KINDS` against `pen_library.py`'s source was **removed** rather than retargeted:
+  a reconciliation with one side is not a check, and leaving it pointed at a new file would have been
+  a gate that cannot fail. The kinds stay enforced against the sidecar itself.
+
+  Also stripped: the `pen` rung and its adapter from `generate_asset.py` (`KEYLESS` back to `{agent}`),
+  the optional-surface section of `/design-flow:setup`, section 4a of `/design-flow:generate`, the
+  cheap-tier section of `/design-flow:variants`, the `pen_to_svg` note in `visual-assets.md`, the
+  `design-explorer` row in `model-tiers.md` and in the marketplace description, three doctor gates,
+  three mutation guards and two now-stale `generate_asset` mutations. `/design-flow:audit`'s Pass 1
+  keeps its subject — "the composition, before code" is a Claude Design artboard now — but is a
+  **read** rather than a script, and still reports `skipped` when no composition preceded the ERB.
+
+  The `mcp__pencil__*` MCP server is a separate concern and is untouched.
+
+  Files: `plugins/design-flow/commands/setup.md`, `plugins/design-flow/commands/generate.md`,
+  `plugins/design-flow/commands/variants.md`, `plugins/design-flow/commands/audit.md`,
+  `plugins/design-flow/reference/model-tiers.md`, `plugins/design-flow/scripts/generate_asset.py`,
+  `plugins/design-flow/scripts/brand_pack_lint.py`, `scripts/check_component_shapes.py`,
+  `skills/fidara-design/references/visual-assets.md`,
+  `skills/fidara-design/references/component-shapes.json`.
 
 ### 1.33.1 — 2026-08-22 (release v1.99.1)
 

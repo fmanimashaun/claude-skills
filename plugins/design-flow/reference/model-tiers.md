@@ -16,7 +16,6 @@ org's `availableModels`, so it buys nothing.
 | `design-auditor` | judgement | `inherit` | — |
 | `brand-guardian` | judgement | `inherit` | — |
 | `design-critic` | judgement | `inherit` | — |
-| `design-explorer` | judgement | `inherit` | — |
 | `design-porter` | judgement | `inherit` | — |
 <!-- design-flow:tiers:end -->
 
