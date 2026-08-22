@@ -2858,6 +2858,29 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/rendered_conformance.py",
                "plugins/design-flow/scripts/conformance_collector.js"),
         mutations=(
+            # #758. The rule and its carve-out are separate clauses; each needs its own fixture.
+            Mutation(
+                # Two alternations, two mutations: emptying one leaves the other matching, so
+                # a single mutation would be caught by whichever fixture it happened to kill.
+                "the var() shape stops being caught",
+                '                       r"|var\\(\\s*--color-fm-[a-z0-9-]+\\s*\\)"),',
+                '                       r""),',
+                "through var() in an inline style",
+            ),
+            Mutation(
+                "the utility shape stops being caught",
+                '            re.compile(r"\\b(?:" + "|".join(COLOUR_UTILITIES) + r")-fm-[a-z0-9-]+\\b"',
+                '            re.compile(r"(?!x)x"',
+                "a brand primitive as a text utility",
+            ),
+            Mutation(
+                # Without the carve-out it fires on a pack BINDING a role -- correct work.
+                "the declaration carve-out is dropped, so binding a role reads as misuse",
+                "    return before.endswith(\"--\") or bool(TOKEN_DEFINITION.search(before))",
+                "    return False",
+                "silent when a role BINDS the primitive",
+            ),
+
             # #738. A CDN font link is preview scaffolding from a design export. Both real Claude
             # Design artboards carry one, and nothing detected it.
             Mutation(

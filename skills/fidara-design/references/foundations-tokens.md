@@ -68,7 +68,7 @@ surface role has a `-foreground` companion** — always write `bg-X text-X-foreg
   --border: var(--color-fm-slate-200);       --input: var(--color-fm-slate-200);
   --ring: var(--color-fm-cerulean-700);      /* focus ring, used at /30 opacity */
   /* SCRIM. Missing from this file AND from every project using it (#750), so a modal reached for
-     `bg-fm-navy/50` directly — a raw primitive in a component, which roles-only forbids and which
+     the navy primitive directly at 50% — a raw primitive in a component, which roles-only forbids
      nothing could re-point. Use at /50; it is a scrim, not a text surface, so no contrast pair
      applies. */
   --overlay: var(--color-fm-navy);
