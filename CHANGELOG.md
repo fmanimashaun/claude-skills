@@ -3961,6 +3961,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`quality-pass`'s worked example: the shared-harness count 16 → 17.** (#764) The new
+  `brand_pack_lint.py --selftest` uses the `check(label, ok, detail)` shape, so the number the
+  worked example quotes moved. `check_shared_shapes.py` caught it — which is the whole point of that
+  gate: it refuses a **number** in the example disagreeing with the repo, never a duplicate.
+  File: `skills/quality-pass/references/worked-example.md`.
+
 ### 1.52.1 — 2026-08-22 (release v1.99.1)
 
 - **Our own modal example taught the misuse a downstream project was reported for.** (#758)
@@ -8648,6 +8656,62 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## design-flow (UI/design plugin)
 
 ### Unreleased
+
+- **A grouped `:root, .light { … }` selector made a pack's roles read as zero.** (#764)
+  `selector_block` required the selector to abut its `{`, so `, .light` made the whole block
+  invisible and the function returned `""` — which every caller reads as *"declares nothing"* rather
+  than *"I could not find it"*. A real project's **24** role tokens reported as none. This is the
+  same false failure the docstring already recorded for column-1 anchoring, one case further out:
+  the selector **list**.
+
+  It is one shared parser, so the blast radius was **four** call sites, not one: `brand_pack_lint`
+  raised a hard error and then abandoned every downstream check, `palette_candidates` saw no
+  declarations, and `design_prompt` silently omitted the prompt's token list — which is precisely
+  how a canvas invents a vocabulary. (`pen_library`'s two call sites went with #766.)
+
+  Fixed once, in the parser: the selector **list** is split on `,` and matched by **exact
+  membership**, so `:root.theme-a` — a compound that *narrows* — is correctly not a match. Grouping
+  `:root` with a scope class is not exotic; it is what this design system's own dark-mode guidance
+  leads to, since custom properties inherit and a `.light` island re-lights a subtree.
+
+  **The parser had no suite of its own** — it was exercised only incidentally, as another guard's
+  dependency, which is exactly how this survived. `brand_pack_lint.py --selftest` is new (**14
+  assertions**) and registered as a gate, with a `brand_pack_lint` mutation guard (**4 mutations**).
+  One mutation — dropping the `@` from the prelude character class — **survived** until a fixture
+  existed for a `:root` nested inside `@media`, which the guard keeps reachable and the pre-#764
+  parser also found. Files: `plugins/design-flow/scripts/brand_pack_lint.py`,
+  `scripts/maintainer_doctor.py`, `scripts/mutation_check.py`.
+
+- **`/design-flow:canvas` could not produce its artefact on any invocation.** (#763) Two defects
+  compounded: the default path emitted an `incomplete` prompt missing the catalog and the band
+  sequence, and supplying the documented `--refs` to fix that turned it into a traceback with **0
+  bytes on stdout**.
+
+  **Defect A** — `refs` was `HERE.parents[3] / "skills" / …`, the exact parent-counting
+  `doctrine_path` exists to replace. It resolves only in a **clone**; from an installed plugin the
+  cache interposes `<bundle>/<version>/`, so the path came out missing the
+  `claude-skills/rails-stack/<version>/` segment. That is **#617's defect class in a script #617's
+  fix never reached** — the two shapes differ in *depth*, not offset. Now routed through the shared
+  `doctrine_path.find()`, with `describe()` naming **every** root tried on failure.
+
+  **Defect B** — `bands_for` read `b.name` on `compose_brief.Band`, whose field is `band`. Because
+  the `except` wrapped only the `read_bands` call, the comprehension raised **uncaught**, where
+  every other gap in the script degrades into a reported problem.
+
+  **Also fixed, and it was the reporter's secondary observation:** `bands_for(refs, surface)` took
+  `surface` and never read it, so every surface got the **landing** spine unsaid — #676's defect
+  re-introduced at a new call site. It now returns provenance from `governing_section`, and the
+  brief says whose spine it is: named section, or *"this spine is borrowed"*.
+
+  **The root finding was that `--selftest` was green throughout.** It called `catalog()` and
+  `project_roles()` against temp fixtures and `compose()` against hand-built lists, and **never
+  reached `bands_for`** — the one branch that touches a real `Band`. It now covers the
+  resolved-anatomy branch and the installed cache layout, **and runs the real script end-to-end from
+  an installed-shaped tree**: the two resolver checks alone proved `doctrine_path` works but not that
+  `main` *uses* it, and a mutation restoring `HERE.parents[3]` survived them both. 13 → **25
+  assertions**; five mutations, all caught. Files:
+  `plugins/design-flow/scripts/design_prompt.py`.
+
 
 - **The pen.dev adapter is retired.** (#766) pen was the **pre-code composition surface**: compose N
   options from a generated library, compare them, then pay the ERB price once for the winner. Claude
