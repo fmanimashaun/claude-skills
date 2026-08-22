@@ -2328,7 +2328,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.26.0 — 2026-08-22 (release v1.95.0)
 
 - **The audit that found seven of this week's issues existed only as a pasted prompt.** (#734)
   `plugins/rails-flow/commands/toolchain-audit.md` ships it. Written on request, run twice against a
