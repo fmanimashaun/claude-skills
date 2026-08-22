@@ -150,6 +150,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/design-flow/scripts/check_scale_contiguity.py", "--selftest")),
     ("design-flow design prompt selftest",
      ("python3", "plugins/design-flow/scripts/design_prompt.py", "--selftest")),
+    # #764. The CSS parser five call sites share had no suite of its own -- it was exercised only
+    # incidentally, as a dependency of other guards, which is exactly how a grouped `:root, .light`
+    # selector stayed invisible to it while every consumer read the empty string as "declares
+    # nothing". A shared parser with no direct fixtures is one silent failure for all of them.
+    ("design-flow brand pack lint",
+     ("python3", "plugins/design-flow/scripts/brand_pack_lint.py", "--selftest")),
     ("design-flow palette candidates",
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
     ("design-flow palette candidates selftest",

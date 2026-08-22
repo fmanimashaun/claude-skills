@@ -55,6 +55,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+# The SHARED doctrine resolver (#617), not a second local parent-count -- see the note in `main`.
+import doctrine_path  # noqa: E402  -- sibling module, reachable via the line above
+
 CATALOG = "component-shapes.json"
 ANATOMY = "page-anatomies.md"
 DEFAULT_THEME = Path("app/assets/tailwind/application.css")
@@ -97,21 +100,37 @@ def catalog(refs: Path) -> tuple[list[str], str | None]:
     return sorted(k for k in data if not k.startswith("_")), None
 
 
-def bands_for(refs: Path, surface: str) -> tuple[list[str], str | None]:
+def bands_for(refs: Path, surface: str) -> tuple[list[str], str | None, str | None]:
+    """The band sequence, plus where it came FROM, plus a problem if it could not be read (#763).
+
+    THE FIELD IS `band`, NOT `name`. `compose_brief.Band` is a frozen dataclass of
+    `(n, band, composed, tone, columns, width)`, so `b.name` raised `AttributeError` on every run
+    whose anatomy actually resolved -- and because the `except` below wrapped only `read_bands`, the
+    comprehension raised UNCAUGHT: exit 1 with zero bytes on stdout, where every other gap in this
+    script degrades into a reported problem. The `--selftest` was green throughout because no
+    fixture ever reached this branch; it called `catalog()` and `project_roles()` and stopped.
+
+    PROVENANCE IS RETURNED, not assumed. `surface` used to be accepted and ignored, so every surface
+    got the LANDING spine unsaid -- the exact defect #676 fixed for `compose`, re-introduced at a new
+    call site. The catalogue carries exactly ONE structured band sequence, scoped by its own text to
+    a product landing page, so the honest answer is not to invent tables for other archetypes but to
+    say whose spine this is. `governing_section` is the same lookup #676 introduced.
+    """
     doc = refs / ANATOMY
     try:
         import compose_brief as cb
         rows = cb.read_bands(doc)
+        section = cb.governing_section(doc, surface)
     except Exception as exc:                                              # noqa: BLE001
-        return [], f"could not read {doc}: {exc}"
-    names = [b.name for b in rows] if rows else []
+        return [], None, f"could not read {doc}: {exc}"
+    names = [b.band for b in rows] if rows else []
     if not names:
-        return [], f"{doc} declares no bands"
-    return names, None
+        return [], None, f"{doc} declares no bands"
+    return names, section, None
 
 
 def compose(surface: str, roles: dict[str, str], components: list[str],
-            bands: list[str], problems: list[str]) -> str:
+            bands: list[str], problems: list[str], band_section: str | None = None) -> str:
     out = [f"# Claude Design brief — {surface}", ""]
     if problems:
         # First, and loudly. A gap buried under 60 lines of tokens is a gap nobody acts on.
@@ -143,6 +162,14 @@ def compose(surface: str, roles: dict[str, str], components: list[str],
                 "The surface is paced as these bands, in order. Keep the order; a band may be "
                 "omitted, but say which and why.", ""]
         out += [f"{i}. {b}" for i, b in enumerate(bands, 1)] + [""]
+        # WHOSE spine this is, said out loud. The catalogue holds one band table and its own text
+        # scopes it to a product landing page, so a pricing brief that is silently a landing brief
+        # is the correct-looking-but-wrong output #676 named. Borrowed is fine; unsaid is not.
+        out += [f"This sequence is the catalogue's **{band_section}** section."
+                if band_section else
+                "The catalogue declares **one** band sequence, scoped by its own text to a product "
+                f"landing page. No section is named for `{surface}`, so this spine is **borrowed** — "
+                "keep the pacing, and drop or merge any band the surface has no content for.", ""]
 
     out += ["## Constraints", "",
             "- Semantic HTML. Every interactive control reachable by keyboard, with a visible focus "
@@ -221,6 +248,91 @@ def _selftest() -> int:
         check("...emits the tokens as CSS", "--primary: #0077CC;" in body)
         check("...and forbids inventing a component", "do not invent a component" in body)
 
+    # ---- THE RESOLVED-ANATOMY BRANCH (#763) -------------------------------------------------
+    # The branch that matters in production, and the one no fixture reached: the suite called
+    # `catalog()` and `project_roles()` against temp fixtures and `compose()` against hand-built
+    # lists, so `bands_for` -- the only path that touches a real `Band` -- was never exercised. It
+    # read `b.name` on a dataclass whose field is `band`, and every real run died on it while the
+    # suite stayed green. That is the same shape `doctrine_path`'s own selftest records for #617.
+    with tempfile.TemporaryDirectory() as td:
+        refs = Path(td) / "references"
+        refs.mkdir()
+        found = doctrine_path.find(Path(__file__).resolve())
+        src = (found / "references" / ANATOMY) if found else None
+        if src and src.is_file():
+            (refs / ANATOMY).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            names, section, prob = bands_for(refs, "pricing")
+            check("a resolved anatomy yields bands, not an exception", prob is None and bool(names))
+            # The LABELS must reach the output. Asserting only `bool(names)` would survive a field
+            # rename that produced a list of empty strings.
+            # TYPE FIRST, and the next check is GUARDED on it. `Band` has an int field (`n`), so a
+            # mutation picking the wrong attribute yields ints -- and `int in str` raises TypeError,
+            # which aborts the run instead of failing it. A crash is not a verdict, and the harness
+            # refuses one as a catch.
+            labels_ok = bool(names) and all(isinstance(n, str) and n.strip() for n in names)
+            check("...and the band labels are non-empty strings", labels_ok)
+            body = compose("pricing", {}, [], names, [], section)
+            check("...and they appear in the composed brief",
+                  labels_ok and all(str(n) in body for n in names))
+            # SURFACE IS HONOURED, not accepted and ignored (#676's defect at a new call site).
+            _, sect_p, _ = bands_for(refs, "pricing")
+            _, sect_d, _ = bands_for(refs, "dashboard")
+            check("the surface changes the provenance", sect_p != sect_d,
+                  )
+            check("...and an unnamed surface is told the spine is borrowed",
+                  "borrowed" in compose("zzz-nonesuch", {}, [], names, [], bands_for(refs, "zzz-nonesuch")[1]))
+        else:
+            print("  [skip] page-anatomies.md not resolvable — the resolved-anatomy checks did NOT run")
+
+    # ---- THE INSTALLED CACHE LAYOUT (#763 defect A) -------------------------------------------
+    # `HERE.parents[3]` resolved only in a clone. Built as a real tree, because the defect was in
+    # how a filesystem is actually shaped -- the same fixture shape `doctrine_path.selftest` uses.
+    with tempfile.TemporaryDirectory() as td:
+        cache = Path(td) / "cache" / "claude-skills"
+        scripts = cache / "design-flow" / "1.33.1" / "scripts"
+        scripts.mkdir(parents=True)
+        refs_installed = cache / "rails-stack" / "1.52.1" / "skills" / "fidara-design" / "references"
+        refs_installed.mkdir(parents=True)
+        got = doctrine_path.find(scripts / "design_prompt.py")
+        check("the installed layout resolves the references", got is not None)
+        check("...to the rails-stack bundle, not a clone-shaped guess",
+              got is not None and (got / "references").resolve() == refs_installed.resolve())
+        # THE NEGATIVE: parent-counting must NOT be what answers. `parents[3]` from that scripts dir
+        # is `<td>/cache`, which holds no `skills/fidara-design`, so a reintroduced hand-rolled
+        # offset fails this while `doctrine_path` passes it.
+        check("...and the old parents[3] guess would NOT have",
+              not (scripts.parents[3] / "skills" / "fidara-design" / "references").is_dir())
+
+        # AND THE SCRIPT ITSELF, run from that tree. The two checks above prove `doctrine_path`
+        # resolves; they cannot prove `main` USES it -- a mutation putting `HERE.parents[3]` back
+        # survived them both. Only running the real entry point from an installed-shaped tree
+        # closes that, which is exactly what the reporter did by hand.
+        import subprocess
+        for mod in ("design_prompt.py", "doctrine_path.py", "compose_brief.py",
+                    "palette_candidates.py"):
+            src_mod = HERE / mod
+            if src_mod.is_file():
+                (scripts / mod).write_text(src_mod.read_text(encoding="utf-8"), encoding="utf-8")
+        _found = doctrine_path.find(Path(__file__).resolve())
+        real_refs = (_found / "references") if _found else Path("/nonexistent")
+        if (scripts / "design_prompt.py").is_file() and real_refs.is_dir():
+            for f in (CATALOG, ANATOMY):
+                if (real_refs / f).is_file():
+                    (refs_installed / f).write_text((real_refs / f).read_text(encoding="utf-8"),
+                                                    encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(scripts / "design_prompt.py"),
+                                   "--surface", "pricing"],
+                                  capture_output=True, text=True, timeout=90, cwd=td)
+            check("the real script runs from an installed tree", proc.returncode in (0, 1),
+                  )
+            check("...and emits a prompt rather than nothing", len(proc.stdout) > 500)
+            check("...and does not report the catalog as missing",
+                  CATALOG not in proc.stderr)
+            check("...and does not report the anatomy as missing",
+                  ANATOMY not in proc.stderr)
+        else:
+            print("  [skip] could not stage an installed tree — that end-to-end check did NOT run")
+
     print(f"\n{ok} passed, {len(bad)} failed")
     for b in bad:
         print(f"  FAIL {b}")
@@ -238,7 +350,24 @@ def main(argv: list[str] | None = None) -> int:
     if a.selftest:
         return _selftest()
 
-    refs = a.refs or (HERE.parents[3] / "skills" / "fidara-design" / "references")
+    # #763 defect A. This was `HERE.parents[3] / "skills" / "fidara-design" / "references"` --
+    # the exact parent-counting `doctrine_path` exists to replace. It resolves only in a CLONE; from
+    # an installed plugin the cache interposes `<bundle>/<version>/`, so the path came out missing
+    # the `claude-skills/rails-stack/<version>/` segment and EVERY run reported the catalog and the
+    # band sequence as gaps. That is #617's defect class in a script #617's fix never reached: the
+    # two shapes differ in DEPTH, not offset, so no amount of parent-counting reconciles them.
+    if a.refs:
+        refs = a.refs
+    else:
+        found = doctrine_path.find(Path(__file__).resolve())
+        if found is None:
+            # Name every root tried. Naming one made #617 read as "the catalogue is missing" when
+            # the truth was "I looked in the wrong place".
+            print(f"cannot locate the fidara-design references. Tried:\n"
+                  f"{doctrine_path.describe(Path(__file__).resolve())}\n"
+                  f"Pass --refs explicitly if they live elsewhere.", file=sys.stderr)
+            return 2
+        refs = found / "references"
     problems: list[str] = []
     roles, p = project_roles(a.theme)
     if p:
@@ -246,11 +375,11 @@ def main(argv: list[str] | None = None) -> int:
     components, p = catalog(refs)
     if p:
         problems.append(p)
-    bands, p = bands_for(refs, a.surface)
+    bands, band_section, p = bands_for(refs, a.surface)
     if p:
         problems.append(p)
 
-    print(compose(a.surface, roles, components, bands, problems))
+    print(compose(a.surface, roles, components, bands, problems, band_section))
     for p in problems:
         print(f"incomplete: {p}", file=sys.stderr)
     return 1 if problems else 0

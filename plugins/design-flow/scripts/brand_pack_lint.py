@@ -38,6 +38,7 @@ Exit: 0 all packs complete · 1 at least one problem · 2 usage/environment.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import json
 import os
 import re
@@ -131,16 +132,36 @@ def strip_css_comments(src: str) -> str:
 
 
 def selector_block(src: str, selector: str) -> str:
-    """Body of the LAST matching block (a later block wins in CSS).
+    r"""Body of the LAST block whose selector LIST contains `selector` (a later block wins).
 
     Leading whitespace is tolerated on both the selector and its closing brace: a
     formatter that indents `:root { … }` must not make the lint report every role
     missing. Anchoring to column 1 produced exactly that false failure.
+
+    A SELECTOR LIST IS MATCHED BY MEMBERSHIP, not by the selector abutting its brace
+    (#764). `:root, .light { … }` is ordinary CSS and is what fidara-design's own
+    dark-mode guidance leads to -- a `.light` island re-lighting a subtree, since custom
+    properties inherit. The old pattern required `\s*\{` right after the selector, so the
+    `, .light` made the whole block invisible and every caller read the empty string as
+    "declares nothing" rather than "not found": a real pack's 24 role tokens were reported
+    as zero, `brand_pack_lint` raised a hard error and abandoned every downstream check,
+    and the canvas prompt silently omitted its token list. That is the same false failure
+    the paragraph above records for column-1 anchoring, one case further out.
+
+    MEMBERSHIP IS EXACT, so a compound narrows rather than matches: `:root.theme-a { … }`
+    is a different selector and does NOT count as `:root`, because it applies only when the
+    class is also present and its declarations are therefore not unconditional. Splitting on
+    `,` and comparing trimmed members gives that for free -- `:root.theme-a` != `:root`.
     """
-    bodies = re.findall(
-        r"^[ 	]*" + re.escape(selector) + r"\s*\{(.*?)^[ 	]*\}", src, re.S | re.M
-    )
-    return bodies[-1] if bodies else ""
+    out = ""
+    # The selector text is everything from a line start up to the block's `{`. `[^{}]` keeps
+    # it to ONE block's prelude, and the `@` guard skips at-rules (`@theme {`, `@media …`),
+    # whose prelude is not a selector list at all.
+    for m in re.finditer(r"^[ 	]*([^{}@]*?)\{(.*?)^[ 	]*\}", src, re.S | re.M):
+        members = [part.strip() for part in m.group(1).split(",")]
+        if selector in members:
+            out = m.group(2)
+    return out
 
 
 def declared_tokens(body: str) -> set[str]:
@@ -439,6 +460,98 @@ def check_contract_parity(path: str) -> int:
 # cli
 # --------------------------------------------------------------------------
 
+def selftest() -> int:
+    """Fixtures for the CSS parser five call sites share (#764).
+
+    `selector_block` had no suite of its own -- it was only ever exercised incidentally, as a
+    dependency of other guards -- which is exactly how a selector list stayed invisible to it while
+    `brand_pack_lint`, `palette_candidates` and `design_prompt` all read its empty string as "this
+    pack declares nothing". A shared parser with no direct fixtures is a single point of silent
+    failure for every consumer.
+    """
+    failures: list[str] = []
+    checks = 0
+
+    def check(label: str, ok: bool, detail: str = "") -> None:
+        nonlocal checks
+        checks += 1
+        if not ok:
+            failures.append(f"{label}{('  ' + detail) if detail else ''}")
+
+    def toks(css: str) -> list[str]:
+        return sorted(declared_tokens(selector_block(strip_css_comments(css), ":root")))
+
+    def block(sel: str) -> str:
+        return "@theme {\n  --color-brand: #0077CC;\n}\n" + sel + "\n  --background: #FAF7F2;\n  --primary: var(--color-brand);\n}\n"
+
+    WANT = ["--background", "--primary"]
+
+    # THE CONTROL. Without it every membership case below could pass on a parser that matched
+    # anything at all, and the bug being fixed would be untestable in the other direction.
+    check("a bare :root is read", toks(block(":root {")) == WANT, f"{toks(block(':root {'))}")
+
+    # #764, the reported shape and its whitespace variants. Each is ordinary CSS a formatter emits.
+    for label, sel in (("grouped", ":root, .light {"), ("no spaces", ":root,.light{"),
+                       ("spaced", ":root , .light {"), ("reversed", ".light, :root {"),
+                       ("indented", "  :root, .light {")):
+        check(f"a {label} selector list is read", toks(block(sel)) == WANT, f"{toks(block(sel))}")
+
+    ml = "@theme {\n  --x: 1px;\n}\n.light,\n:root {\n  --background: #FAF7F2;\n}\n"
+    check("a multi-line selector list is read", toks(ml) == ["--background"], f"{toks(ml)}")
+
+    # THE NEGATIVE, and it is the one that keeps the fix honest. A compound NARROWS the selector --
+    # `:root.theme-a` applies only when the class is present, so its declarations are not
+    # unconditional and must not be read as the pack's roles. Without this, "match if `:root`
+    # appears in the prelude" would pass every case above and be wrong.
+    check("a compound is NOT a member", toks(block(":root.theme-a {")) == [],
+          f"{toks(block(':root.theme-a {'))}")
+    check("a different selector is not matched", toks(block(".light {")) == [],
+          f"{toks(block('.light {'))}")
+
+    # AT-RULES are not selector lists. `@theme { ... }` must not be mistaken for a block.
+    check("an at-rule is not a selector block",
+          selector_block(strip_css_comments("@theme {\n  --color-x: red;\n}\n"), ":root") == "")
+
+    # ...and the `@` in the prelude character class is what makes a NESTED :root still reachable.
+    # Without it the regex matches the at-rule's own prelude first, consumes the inner block as its
+    # body, and the `:root` inside is never offered -- so a pack declaring roles inside `@media`
+    # would silently read as empty. The pre-#764 parser found that block, so dropping the guard
+    # would be a regression this fix introduced rather than a behaviour it preserved. A mutation
+    # removing `@` survived until this case existed; the `@theme` check above could not see it,
+    # because `["@theme"]` does not contain `":root"` either way.
+    nested = "@media (min-width: 40rem) {\n:root, .light {\n  --background: #000;\n}\n}\n"
+    check("a :root nested in an at-rule is still read",
+          declared_tokens(selector_block(strip_css_comments(nested), ":root")) == {"--background"},
+          repr(selector_block(strip_css_comments(nested), ":root")))
+
+    # LAST BLOCK WINS -- CSS cascade order, and the property the docstring promised before #764.
+    # Both directions, because one alone would pass on a parser that always returned the grouped
+    # block or always returned the bare one.
+    later_grouped = ":root {\n  --background: #111;\n}\n:root, .light {\n  --background: #FAF7F2;\n}\n"
+    later_bare = ":root, .light {\n  --background: #FAF7F2;\n}\n:root {\n  --background: #111;\n}\n"
+    check("a later grouped block wins", "#FAF7F2" in selector_block(strip_css_comments(later_grouped), ":root"),
+          repr(selector_block(strip_css_comments(later_grouped), ":root")))
+    check("a later bare block wins", "#111" in selector_block(strip_css_comments(later_bare), ":root"),
+          repr(selector_block(strip_css_comments(later_bare), ":root")))
+
+    # THE REAL PACK, so the fixtures above cannot drift away from the shape actually shipped.
+    # `parents[1]` is safe here where #617's parent-counting was not: this stays INSIDE one plugin,
+    # whose layout is fixed, rather than reaching across the clone/install boundary where the cache
+    # interposes `<bundle>/<version>/` and the two shapes differ in depth.
+    theme = Path(__file__).resolve().parents[1] / "brands" / "fidara" / "theme.css"
+    if theme.is_file():
+        got = declared_tokens(selector_block(strip_css_comments(theme.read_text(encoding="utf-8")), ":root"))
+        check("the shipped fidara pack still parses", len(got) >= 20, f"only {len(got)} role token(s)")
+    else:
+        print(f"  [skip] the shipped fidara pack ({theme}) is absent — that check did NOT run")
+
+    for f in failures:
+        print(f"FAIL {f}")
+    print(f"ran {checks} brand-pack-lint assertion(s)")
+    print("no findings." if not failures else f"{len(failures)} finding(s).")
+    return 1 if failures else 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="brand_pack_lint.py",
@@ -450,10 +563,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--roles-from", metavar="FILE",
                         help="re-derive the contract from foundations-tokens.md and report drift")
     parser.add_argument("--quiet", action="store_true", help="only report problems")
+    parser.add_argument("--selftest", action="store_true",
+                        help="run the parser fixtures and exit")
     parser.add_argument("--include-templates", action="store_true",
                         help="also lint `_`-prefixed template dirs (they fail by design until "
                              "copied and validated)")
     args = parser.parse_args(argv)
+
+    if args.selftest:
+        return selftest()
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
