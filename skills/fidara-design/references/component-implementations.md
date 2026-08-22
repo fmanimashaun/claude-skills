@@ -380,7 +380,7 @@ end
 ```erb
 <%# modal_component.html.erb — rendered into <turbo-frame id="modal">; modal controller = trap+dismiss %>
 <div data-controller="modal" data-action="keydown.esc->modal#close" class="fixed inset-0 z-50">
-  <div class="fixed inset-0 bg-fm-navy/50 backdrop-blur-sm" data-action="click->modal#backdrop"></div>
+  <div class="fixed inset-0 bg-overlay/50 backdrop-blur-sm" data-action="click->modal#backdrop"></div>
   <div class="<%= panel %> p-4 sm:p-0" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
        data-modal-target="panel">
     <div class="box stack" style="--space: var(--space-s)">
