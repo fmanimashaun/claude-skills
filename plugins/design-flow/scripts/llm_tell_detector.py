@@ -186,6 +186,23 @@ def _rules() -> tuple[Rule, ...]:
             exempt=_defines_a_token,
         ),
         Rule(
+            # #738. Measured absent: `grep -rn googleapis plugins/design-flow skills/fidara-design`
+            # found only an unrelated API URL, while BOTH Claude Design artboards read from a real
+            # project carry a `fonts.googleapis.com` link. A canvas export ships one as a preview
+            # convenience; carried into a commit it costs a render-blocking third-party request, a
+            # FOUT the self-hosted stack does not have, and a privacy hop nobody chose.
+            #
+            # Matched on the HOST, not on `<link>`, because the same import arrives as `@import`, as
+            # a `preconnect`, and inside an inline `<style>` -- and one shape missed is the one that
+            # ships. `gstatic` is the font-file host the stylesheet then pulls from, so a page can
+            # carry it without ever naming googleapis.
+            "cdn-font-link",
+            "design-handoff.md:2",
+            "a CDN font link is preview scaffolding from a design export, not something that ships. "
+            "Fonts are self-hosted; drop the link and let the font roles resolve",
+            re.compile(r"fonts\.googleapis\.com|fonts\.gstatic\.com"),
+        ),
+        Rule(
             "literal-font-family",
             "brand.md:263",
             "a literal font family bypasses the font-role layer (`--font-sans` / `--font-display`), "
@@ -215,6 +232,17 @@ def _rules() -> tuple[Rule, ...]:
 
 
 RULES: tuple[Rule, ...] = _rules()
+
+
+def unfixtured_rules(exercised: set[str], names: "list[str] | None" = None) -> list[str]:
+    """Rules the selftest never exercised. A callable, deliberately (#738).
+
+    Written inline first, and the mutation that removed it SURVIVED: with every rule fixtured, the
+    assertion never fires in a healthy tree, so nothing could distinguish it being there from it
+    being gone. The fixture has to call it with a synthetic set. Same shape as
+    `maintainer_doctor.gate_results` — logic a test can only re-derive is logic no test proves.
+    """
+    return sorted(set(names if names is not None else BY_NAME) - exercised)
 BY_NAME = {r.name: r for r in RULES}
 
 
@@ -412,8 +440,14 @@ def selftest() -> int:
     failures: list[str] = []
     checks = 0
 
+    # Which rules a fixture actually exercised. #738: a new rule landed with NO fixture and the
+    # selftest still reported green, because nothing asserted the set was complete -- a suite that
+    # reports clean over a rule it never ran is the coverage-gap class this repo files most.
+    exercised: set[str] = set()
+
     def case(label: str, source: str, *, rule: str, expect: bool) -> None:
         nonlocal checks
+        exercised.add(rule)
         checks += 1
         report = Report()
         scan_text(source, "t.erb", report)
@@ -486,6 +520,29 @@ def selftest() -> int:
          '<!-- design-flow-disable off-scale-radius: cropped asset -->\n<p class="text-gray-500">',
          rule="stock-palette-literal", expect=True)
 
+    # ---- cdn-font-link (#738) ---------------------------------------------------------------
+    # Both Claude Design artboards read from a real project carry one of these. A canvas export
+    # ships it as a preview convenience; carried into a commit it is a render-blocking third-party
+    # request the self-hosted stack does not have.
+    case("a Google Fonts stylesheet link",
+         '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader">',
+         rule="cdn-font-link", expect=True)
+    # The same import arrives in three other shapes, and one shape missed is the one that ships.
+    case("...a preconnect to the font FILE host",
+         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+         rule="cdn-font-link", expect=True)
+    case("...an @import inside a style block",
+         "@import url('https://fonts.googleapis.com/css2?family=Inter');",
+         rule="cdn-font-link", expect=True)
+    # SILENCE ON CORRECT WORK. Self-hosting is the sanctioned shape and must never fire, or the rule
+    # gets switched off by the people who did it right.
+    case("...silent on a self-hosted @font-face",
+         "@font-face{font-family:Newsreader;src:url('/fonts/newsreader.woff2') format('woff2')}",
+         rule="cdn-font-link", expect=False)
+    case("...silent on an unrelated googleapis API host",
+         'const url = "https://generativelanguage.googleapis.com/v1beta/models";',
+         rule="cdn-font-link", expect=False)
+
     # ---- markdown scans code, never prose ------------------------------------------------------
     checks += 1
     report = Report()
@@ -507,6 +564,22 @@ def selftest() -> int:
 
     # ---- every rule cites doctrine (criterion 3), and names are unique (criterion 2) ----------
     checks += 1
+    # EVERY RULE NEEDS A FIXTURE IN BOTH DIRECTIONS -- firing is half a rule. A rule nobody proved
+    # silent on correct input is one that gets switched off the first time it is wrong.
+    # Called with a synthetic set, so the check is proven rather than merely present.
+    checks += 1
+    if unfixtured_rules({"a"}, ["a", "b"]) != ["b"]:
+        failures.append("unfixtured_rules must name a rule with no fixture")
+    checks += 1
+    if unfixtured_rules({"a", "b"}, ["a", "b"]) != []:
+        failures.append("unfixtured_rules must stay silent when every rule is fixtured")
+
+    checks += 1
+    unexercised = unfixtured_rules(exercised)
+    if unexercised:
+        failures.append(f"rule(s) with no selftest fixture: {unexercised} — a rule the suite never "
+                        f"runs is reported green without being checked")
+
     if len(BY_NAME) != len(RULES):
         failures.append("rule names are not unique")
     for rule in RULES:
