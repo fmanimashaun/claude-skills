@@ -186,6 +186,36 @@ def _rules() -> tuple[Rule, ...]:
             exempt=_defines_a_token,
         ),
         Rule(
+            # #758. A stock step (`text-gray-500`) was caught and a BRAND PRIMITIVE used the same way
+            # was silent -- and the silent one is worse. `text-gray-500` announces itself as foreign;
+            # `text-fm-slate-400` looks correct, because it IS a brand token, spelled the brand's way.
+            # It is simply one layer too low: `.dark` re-points ROLES, so a primitive stays light-mode
+            # in dark mode; `check_token_contrast`'s PAIRS enumerate role-on-role, so nothing ever
+            # measures it; and a second brand cannot re-tune it.
+            #
+            # Live evidence: two artboards of one project disagreed on `--slate-400` (#8F96A3 vs
+            # #5E6775) because two call sites used the 400 as TEXT, found it illegible on warm paper
+            # (2.78:1, fails AA) and darkened the TOKEN rather than moving to `--slate-500`. No value
+            # of "400" fixes that -- a light neutral is not a text colour, and making it one makes it
+            # a 500. The disagreement was the symptom; this is the cause.
+            #
+            # `exempt=_defines_a_token` is the load-bearing part: a pack BINDING a primitive to a role
+            # (`--primary: var(--color-fm-cerulean)`) is the role layer doing its job, and a rule that
+            # fired on that would be switched off within a week.
+            "primitive-as-role",
+            "brand.md:165",
+            "a brand PRIMITIVE used as a component colour bypasses the role layer, so it cannot go "
+            "dark, cannot be re-tuned per brand, and appears in no contrast pair. Bind the role "
+            "(`text-muted-foreground`, `bg-card`) instead",
+            # NOT `-fm-[a-z]+-\d+`: that requires a numeric step and so missed `bg-fm-navy`, which
+            # is the exact usage #750 reported (a modal reaching for `bg-fm-navy/50` because
+            # `--overlay` did not exist). Unstepped primitives are the commoner misuse, not the
+            # rarer one. `-fm-` is unambiguous: no role carries that prefix.
+            re.compile(r"\b(?:" + "|".join(COLOUR_UTILITIES) + r")-fm-[a-z0-9-]+\b"
+                       r"|var\(\s*--color-fm-[a-z0-9-]+\s*\)"),
+            exempt=_defines_a_token,
+        ),
+        Rule(
             # #738. Measured absent: `grep -rn googleapis plugins/design-flow skills/fidara-design`
             # found only an unrelated API URL, while BOTH Claude Design artboards read from a real
             # project carry a `fonts.googleapis.com` link. A canvas export ships one as a preview
@@ -519,6 +549,24 @@ def selftest() -> int:
     case("a disable for a DIFFERENT rule does not suppress this one",
          '<!-- design-flow-disable off-scale-radius: cropped asset -->\n<p class="text-gray-500">',
          rule="stock-palette-literal", expect=True)
+
+    # ---- primitive-as-role (#758) -------------------------------------------------------
+    # The shape that was silent while the stock-palette equivalent was caught.
+    case("a brand primitive as a text utility", '<p class="text-fm-slate-400">hi</p>',
+         rule="primitive-as-role", expect=True)
+    case("...and as a background utility", '<div class="bg-fm-navy">',
+         rule="primitive-as-role", expect=True)
+    case("...and through var() in an inline style",
+         '<p style="color: var(--color-fm-slate-400)">hi</p>',
+         rule="primitive-as-role", expect=True)
+    # THE CARVE-OUT, and the reason the rule survives contact with a real pack: BINDING a primitive
+    # to a role is the role layer working. A rule firing here gets switched off within a week.
+    case("...silent when a role BINDS the primitive",
+         "  --primary: var(--color-fm-cerulean);", rule="primitive-as-role", expect=False)
+    case("...silent on the primitive's own declaration",
+         "  --color-fm-navy: #0C1B33;", rule="primitive-as-role", expect=False)
+    case("...silent on a role utility, which is the correct form",
+         '<p class="text-muted-foreground">hi</p>', rule="primitive-as-role", expect=False)
 
     # ---- cdn-font-link (#738) ---------------------------------------------------------------
     # Both Claude Design artboards read from a real project carry one of these. A canvas export

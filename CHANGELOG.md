@@ -3922,6 +3922,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Our own modal example taught the misuse a downstream project was reported for.** (#758)
+  `skills/fidara-design/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
+  a raw primitive in a component, which roles-only forbids. #750 reported exactly that usage from a
+  live project; the project copied it from here. It now binds `bg-overlay/50`, using the role added in
+  v1.98.0. Found the moment the new `primitive-as-role` rule ran against our own references.
+
 ### 1.52.0 — 2026-08-22 (release v1.98.0)
 
 - **The palette could not express the design that already existed.** (#750) Reported from a live
@@ -8599,6 +8607,43 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **A brand primitive used as a component colour was silent, while a stock palette step was caught.**
+  (#758) `plugins/design-flow/scripts/llm_tell_detector.py` flagged `text-gray-500` and said nothing
+  about `text-fm-slate-400` or `bg-fm-navy` — yet roles-only doctrine says a component binds a
+  **role**, never a primitive.
+
+  **The silent one is worse.** `text-gray-500` announces itself as foreign; `text-fm-slate-400` looks
+  *correct*, because it is a brand token spelled the brand's way. It is one layer too low, so it cannot
+  go dark (`.dark` re-points roles, not primitives), cannot be re-tuned per brand, and **appears in no
+  contrast pair** — `check_token_contrast`'s `PAIRS` enumerate role-on-role, so nothing ever measures
+  it.
+
+  Found by untangling a disagreement rather than by reading code. Two artboards of one project declared
+  `--slate-400` differently — `#8F96A3` vs `#5E6775` — and the usage explained why: landing referenced
+  the 400 **twice** against `--slate-500` **59 times**, and on paper-50 `#8F96A3` measures **2.78:1
+  (fails AA)** where `#5E6775` measures **5.35:1**. Two call sites used a light neutral as text, found
+  it illegible, and darkened the **token** instead of moving to `--slate-500`. A real fix at the wrong
+  layer: it silences two usages by collapsing a scale step for everything. **No value of "400" fixes
+  that** — making a light neutral legible as text makes it a 500.
+
+  **The carve-out is what makes the rule survivable.** A pack *binding* a primitive to a role
+  (`--primary: var(--color-fm-cerulean)`) is the role layer working, and a rule firing there would be
+  switched off within a week. `_defines_a_token` already drew that line for raw hex; this reuses it,
+  with negative fixtures for the binding and for the primitive's own declaration.
+
+  **The rule's first run found the misuse in our own doctrine.** `component-implementations.md`'s
+  modal example used `bg-fm-navy/50` — the exact usage #750 reported from a live project. **They did
+  not invent it; they copied it from us.** It now binds `bg-overlay/50`, which the role added in
+  v1.98.0 makes possible. That is the doctrine self-check earning its place: it holds our own
+  references to the rules we ship, and *"either a rule is wrong or the doctrine is — neither is
+  'tune the rule'."*
+
+  One correction during the build: the first pattern required a numeric step and so **missed
+  `bg-fm-navy`** — the exact usage #750 reported, a modal reaching for `bg-fm-navy/50` because
+  `--overlay` did not exist. Unstepped primitives are the commoner misuse, not the rarer one.
 
 ### 1.33.0 — 2026-08-22 (release v1.99.0)
 
