@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-22 (release v1.94.1)
 
 - **A component could change with no CHANGELOG entry, and every gate stayed green.** (#728) CLAUDE.md
   says it outright — *"Every bump gets a CHANGELOG entry under the component's section"* — and nothing
