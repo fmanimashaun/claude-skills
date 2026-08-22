@@ -191,7 +191,7 @@ fixed upstream. The same applies to a missing `.dark` re-point that the lint acc
 verification step — see the checklist in `/design-flow:setup`. Two subtleties the lint encodes, both easy to get wrong by
 hand: `--background`'s companion is `--foreground` (not `--background-foreground`), and the
 feedback roles plus `--ring` are deliberately **not** re-pointed on dark — requiring a dark
-value for all 22 roles would be a wrong check.
+value for every role would be a wrong check.
 
 ## Starting a pack when the client has no palette
 

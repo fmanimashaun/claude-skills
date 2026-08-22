@@ -589,7 +589,12 @@ def selftest() -> int:
     check("no literal colour anywhere in the components", "#" not in body)
     check("...while the variables carry the resolved hex",
           all(HEX_RE.match(e["value"]) for v in doc["variables"].values() for e in v["value"]))
-    check(f"all 22 roles are exported ({len(doc['variables'])})", len(doc["variables"]) == 22)
+    # #750. Was `== 22`, a literal that went stale the moment five roles were added to the doctrine
+    # -- and stale SILENTLY, because a hardcoded expectation cannot notice the thing it counts
+    # changing. Derived from the one list that defines a role.
+    import brand_pack_lint as _bpl   # the one list that defines a role
+    _n = len(_bpl.ROLES)
+    check(f"all {_n} roles are exported ({len(doc['variables'])})", len(doc["variables"]) == _n)
     # `.get` rather than `[...]`: a missing `theme` key must make this assertion FAIL, not raise.
     # A crash is not a verdict -- the mutation guard cannot tell which fixture caught a traceback.
     check("every role names BOTH theme modes",

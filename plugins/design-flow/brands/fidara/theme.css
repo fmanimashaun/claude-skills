@@ -44,6 +44,13 @@
   --info: var(--color-fm-info);
   --border: var(--color-fm-slate-200);      --input: var(--color-fm-slate-200);
   --ring: var(--color-fm-cerulean-700);
+  /* #750. Required roles, added with the doctrine that declares them -- a pack that omits one
+     makes the role unusable in a component, which is how a modal ended up reaching for
+     `bg-fm-navy/50` directly. */
+  --overlay: var(--color-fm-navy);           /* scrim, used at /50 */
+  --signal: var(--color-fm-orange);          --signal-foreground: var(--color-fm-slate-900);
+  --primary-ink: #005FA3;                    --primary-hover: #0069B4;
+  --success-ink: #15803D;
 }
 
 /* Dark re-points the SURFACE roles only. The feedback roles and --ring legitimately hold one
