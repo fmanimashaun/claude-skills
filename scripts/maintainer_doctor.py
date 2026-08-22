@@ -137,6 +137,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("token contrast selftest", ("python3", "scripts/check_token_contrast.py", "--selftest")),
     # #129. A candidate palette ships in a client's colours, so "measured, not asserted" is the
     # whole feature: --check measures every candidate against 1.4.3 in both modes.
+    # #745. The prompt carries the project's OWN tokens, so its selftest pins that a private
+    # primitive never reaches the prompt and that a missing source is reported rather than omitted.
+    ("design-flow design prompt selftest",
+     ("python3", "plugins/design-flow/scripts/design_prompt.py", "--selftest")),
     ("design-flow palette candidates",
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
     ("design-flow palette candidates selftest",
