@@ -3922,7 +3922,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.51.0 — 2026-08-22 (release v1.96.0)
 
 - **A multi-page port shipped the same fact three times.** (#739)
   `skills/fidara-design/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
@@ -8568,7 +8568,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.30.0 — 2026-08-22 (release v1.96.0)
 
 - **The port step was unowned, and it is where the divergence enters.** (#739)
   `plugins/design-flow/agents/design-porter.md` performs the translation under
