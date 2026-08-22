@@ -8568,6 +8568,49 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Nothing generated the Claude Design prompt, so every canvas came back speaking its own
+  vocabulary.** (#745) `/design-flow:canvas` and `plugins/design-flow/scripts/design_prompt.py`.
+
+  v1.96.0 shipped the inbound half — the port. But **the cost of a port is decided before it starts.**
+  Measured on a real artboard: `Ledger auth.dc.html` declares **50 of its own `:root` tokens** and
+  makes **755 `var(--…)`** references, and those names happened to match the project's. Nothing had
+  made them match; the prompt was hand-written and the alignment was luck. When it is not luck the
+  canvas invents a vocabulary, the port becomes a translation between two systems, and that is where
+  the **20 alignable divergences** came from.
+
+  The script emits only what would rot if retyped: the project's role tokens **read from its own
+  `@theme`**, the catalog **derived from `component-shapes.json`**, and the band sequence. All three
+  readers are **reused, not rewritten** — `palette_candidates`' `@theme` extractor (which carries the
+  `(?!\s+inline)` carve-out that stops Tailwind's alias re-export shadowing the role it aliases),
+  and `compose_brief.read_bands`. A second parser drifts from the first.
+
+  **Private primitives never reach the prompt**, because naming one invites the canvas to bind to it.
+  And it **degrades loudly**: a missing `@theme`, catalog or anatomy leads the document as a stated
+  gap rather than being silently omitted — a prompt that quietly drops the token list still looks
+  like a prompt, and the canvas it produces is the one nobody can port.
+
+  Two fixtures were wrong before they were right. One asserted `"no " in problem`, which the generic
+  OS error text matched incidentally, so the mutation removing the early return **survived**. The
+  other used `index()` where the mutation makes the string absent — it **crashed**, and a crash is
+  not a verdict.
+
+- **`design-porter` shipped unwired.** (#746) v1.96.0 added the agent with **no command dispatching to
+  it** — every other design-flow agent is reachable from at least one.
+  `plugins/design-flow/commands/port.md` is the missing entry point. That is the shape this repo
+  files most: a capability on disk that nothing invokes, the same argument `doctrine_map`'s `hook:`
+  resolver makes about a hook nothing wires. `/design-flow:port` is that entry point, and it is what
+  `/design-flow:canvas`'s closing step already pointed at.
+
+  `misdescribed-agents` had caught the *description* omission on the way in, which is why the gap was
+  narrow rather than obvious: **naming an agent is not the same as being able to reach it**, and no
+  rule checks the second.
+
+  `undeclared-skill-dependency` then caught the new command reading `fidara-design` without a stop
+  clause — because my line-wrap put a newline between "and" and "stop", and the rule matches
+  `and stop\b`. The precondition was there; the regex could not see it.
+
 ### 1.30.0 — 2026-08-22 (release v1.96.0)
 
 - **The port step was unowned, and it is where the divergence enters.** (#739)
