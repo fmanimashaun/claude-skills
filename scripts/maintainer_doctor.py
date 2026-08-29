@@ -263,6 +263,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # script and supplies a required subcommand -- so a manifest defect fails here rather
     # than on a user's first run.
     ("project gates", ("python3", "plugins/rails-flow/scripts/project_gates.py", "--selftest")),
+    # #779 / #778. Two claims the doctrine stated, nothing performed and nothing checked. Both
+    # landed missing on two unrelated greenfield apps from clean runs of the documented path --
+    # the recurrence is what made them structural rather than user error.
+    ("rails-flow ci runs tests",
+     ("python3", "plugins/rails-flow/scripts/check_ci_runs_tests.py", "--selftest")),
+    ("rails-flow mandated gems",
+     ("python3", "plugins/rails-flow/scripts/check_mandated_gems.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.
