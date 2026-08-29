@@ -8751,7 +8751,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.37.0 — 2026-08-29 (release v1.103.0)
 
 - **The drift check compared every project against the FIDARA baseline.** (#788) It resolved one
   fixed file — `foundations-tokens.md`, the fidara-flavoured doctrine carrying `--color-fm-*` — and
