@@ -129,7 +129,15 @@ No `fonts`, no `knobs`, no `chart_hues` — all inherited. That is the shape of 
 ```
 
 **Required:** `slug`, `name`, `chart_palette_validated: true`, and `variants` with at least one
-entry. **Optional overrides:** `fonts`, `knobs`, `chart_hues`, `default_variant`.
+entry. **Optional overrides:** `fonts`, `knobs`, `chart_hues`, `default_variant`, `wordmark`.
+
+**`wordmark` is a PACK property, never a variant's** (#771). A variant re-*labels* — `name`,
+`endorsement`, `mark`, and nothing else — so a second published lockup such as a landscape logo has
+nowhere to live on it. Before this, a pack shipping one carried a permanent *"not referenced by any
+variant"* warning it could never clear, and a warning nobody can clear is one everybody learns to
+ignore, which costs more than the orphan detection it buys. It names one `.svg` in `assets/`, is
+validated for existence exactly like a `mark`, and is then counted as referenced. **An asset named
+by neither a variant nor the wordmark is still reported** — the check was narrowed, not disabled.
 
 - `variants` — each carries only what re-labelling needs: display `name`, the `endorsement`
   string (or `null`), and which `mark` asset to use. **No variant carries values**, which is

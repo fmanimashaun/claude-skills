@@ -112,7 +112,7 @@ KNOB_ENUMS = {
 # calibrated defaults when absent — so their absence must never be an error, or every client
 # pack would be forced to restate choices it is not changing.
 REQUIRED_MANIFEST_KEYS = ["slug", "name", "chart_palette_validated", "variants"]
-OPTIONAL_OVERRIDES = ["fonts", "knobs", "chart_hues", "default_variant"]
+OPTIONAL_OVERRIDES = ["fonts", "knobs", "chart_hues", "default_variant", "wordmark"]
 REQUIRED_FONT_ROLES = ["sans", "display", "mono"]
 
 # A pack is tokens only. These signal component/layout CSS leaking in.
@@ -396,9 +396,37 @@ def lint_assets(pack_dir: str, report: Report, manifest: dict) -> None:
     else:
         report.fact(f"{len(present)} svg asset(s): {', '.join(present)}"
                     + (f" — marks in use: {', '.join(wanted)}" if wanted else ""))
-    unused = [f for f in present if wanted and f not in wanted]
+    # THE PACK-LEVEL WORDMARK (#771). A landscape logo is not a variant's property -- a variant
+    # re-LABELS (name, endorsement, mark), it does not re-theme -- so there was nowhere for a
+    # second published lockup to live, and every pack shipping one carried a permanent
+    # "not referenced by any variant" warning it could never clear. A warning nobody can clear is
+    # one everybody learns to ignore, which costs more than the orphan-detection it provides.
+    #
+    # So the PACK may name one, and it is then referenced rather than orphaned. This stays
+    # deliberately narrow: one optional string, validated for existence exactly like a mark. It is
+    # NOT a variant key, because the reason a variant cannot carry it still holds.
+    wordmark = manifest.get("wordmark")
+    if wordmark is not None:
+        # Each clause guards ITSELF rather than leaning on the one above. Written as an if/elif,
+        # removing the type check sent a non-string straight into os.path.join, which raised
+        # TypeError -- so the mutation proving that clause CRASHED the suite instead of failing it,
+        # and a crash is not a verdict. `named` short-circuits, so join only ever sees a str.
+        named = isinstance(wordmark, str) and wordmark.endswith(".svg")
+        # Its OWN isinstance, not `named and ...`: a mutation forcing `named` True defeated
+        # the short-circuit and crashed join. Each guard has to hold on its own.
+        exists = isinstance(wordmark, str) and os.path.exists(os.path.join(assets, wordmark))
+        if not named:
+            report.error(f"brand.json: wordmark must be an .svg filename, got {wordmark!r}")
+        elif not exists:
+            report.error(f"brand.json references wordmark {wordmark!r} but it is absent from "
+                         f"assets/ (present: {present or 'none'})")
+        else:
+            report.fact(f"wordmark: {wordmark}")
+
+    referenced = set(wanted) | ({wordmark} if isinstance(wordmark, str) else set())
+    unused = [f for f in present if referenced and f not in referenced]
     if unused:
-        report.warn(f"asset(s) not referenced by any variant: {unused}")
+        report.warn(f"asset(s) not referenced by any variant or wordmark: {unused}")
 
 
 def lint_pack(pack_dir: str) -> Report:
@@ -544,6 +572,48 @@ def selftest() -> int:
         check("the shipped fidara pack still parses", len(got) >= 20, f"only {len(got)} role token(s)")
     else:
         print(f"  [skip] the shipped fidara pack ({theme}) is absent — that check did NOT run")
+
+    # ---- THE PACK-LEVEL WORDMARK (#771) ------------------------------------------------------
+    # Four clauses, four fixtures. The LAST one is the one that matters: without it this change
+    # would be indistinguishable from simply deleting orphan detection, which is the failure mode
+    # of every "silence the warning" fix.
+    import tempfile as _tf
+
+    def assets_report(files: list[str], manifest: dict) -> Report:
+        with _tf.TemporaryDirectory() as td:
+            a = Path(td) / "assets"
+            a.mkdir()
+            for f in files:
+                (a / f).write_text("<svg/>", encoding="utf-8")
+            r = Report(td)
+            lint_assets(td, r, manifest)
+            return r
+
+    base = {"variants": {"v": {"name": "V", "endorsement": None, "mark": "m.svg"}}}
+
+    r = assets_report(["m.svg", "logo.svg"], {**base, "wordmark": "logo.svg"})
+    check("a declared wordmark is not an orphan",
+          not any("not referenced" in w for w in r.warnings), f"{r.warnings}")
+    check("...and it is reported as a fact", any("wordmark: logo.svg" in f for f in r.facts),
+          f"{r.facts}")
+
+    r = assets_report(["m.svg"], {**base, "wordmark": "logo.svg"})
+    check("a wordmark naming a missing file is an ERROR",
+          any("absent from assets" in e for e in r.errors), f"{r.errors}")
+
+    r = assets_report(["m.svg", "logo.svg"], {**base, "wordmark": 7})
+    check("a non-string wordmark is an ERROR",
+          any("must be an .svg filename" in e for e in r.errors), f"{r.errors}")
+
+    # THE NEGATIVE. An asset that nothing names is STILL an orphan -- the check this change
+    # narrowed must not have been switched off by it.
+    r = assets_report(["m.svg", "stale.svg"], base)
+    check("an unnamed asset is STILL reported as an orphan",
+          any("stale.svg" in w for w in r.warnings), f"{r.warnings}")
+    r = assets_report(["m.svg", "logo.svg", "stale.svg"], {**base, "wordmark": "logo.svg"})
+    check("...even alongside a declared wordmark",
+          any("stale.svg" in w for w in r.warnings) and not any("logo.svg" in w for w in r.warnings),
+          f"{r.warnings}")
 
     for f in failures:
         print(f"FAIL {f}")
