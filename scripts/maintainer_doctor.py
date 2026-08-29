@@ -315,6 +315,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
+    # #792. The reader BOTH coverage loaders depend on, which had no fixture of its own while
+    # `route_coverage --selftest` passed 70 checks over a parser it never called.
+    ("qa-flow config reader",
+     ("python3", "plugins/qa-flow/scripts/qa_config.py", "--selftest")),
     ("qa-flow blast radius", ("python3", "plugins/qa-flow/scripts/blast_radius.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
