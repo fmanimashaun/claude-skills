@@ -88,6 +88,38 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #777. The rule that stops #617's class recurring a fourth time. Four clauses: it must
+            # FIRE on a cross-plugin hop count, stay silent on the resolver, stay silent on prose,
+            # and stay silent on the resolver's own file.
+            Mutation(
+                # Half this corpus explains clone-vs-install in its docstring. Matching those
+                # reports the files DESCRIBING the defect alongside the ones committing it, which
+                # is how the first draft of this rule flagged brand_pack_lint.py:18.
+                "docstrings stop being excluded, so prose about the defect reads as the defect",
+                '            if id(node) in docstrings or "fidara-design" not in node.value:',
+                '            if "fidara-design" not in node.value:',
+                "a docstring naming the path is not a finding",
+            ),
+            Mutation(
+                # The fixture for this one must CONTAIN the literal or it proves silence for the
+                # wrong reason -- the first draft omitted it entirely and this mutation survived.
+                "the resolver-import exemption goes, so a correct caller is flagged",
+                '        if "doctrine_path" in text:\n            continue',
+                "        if False:\n            continue",
+                "the shared resolver is silent, fallback literal and all",
+            ),
+            Mutation(
+                "the resolver's own file stops being exempt, where the hops legitimately live",
+                '        if path.name == "doctrine_path.py":          # the resolver itself is where the hops live',
+                "        if False:",
+                "doctrine_path.py itself is exempt",
+            ),
+            Mutation(
+                "the rule matches nothing, so every clone-shaped path passes",
+                '            if id(node) in docstrings or "fidara-design" not in node.value:',
+                '            if id(node) in docstrings or "zzz-never" not in node.value:',
+                "__file__.parents reaching a sibling plugin's doctrine",
+            ),
             # #713. Three clauses, three mutations, two slugs -- a rule with N clauses needs a
             # finding per clause or none of them is provable.
             Mutation(
@@ -1762,7 +1794,11 @@ GUARDS: tuple[Guard, ...] = (
         name="check_token_drift",
         subject="plugins/design-flow/scripts/check_token_drift.py",
         selftest="plugins/design-flow/scripts/check_token_drift.py",
-        needs=("skills",),
+        # `doctrine_path.py` joins `needs` with #777: these now resolve the doctrine through the
+        # shared resolver, so without it the staged tempdir fails at IMPORT and the harness
+        # reports the guard INERT -- every mutation "caught" whether or not it breaks anything.
+        # A guard's needs is everything its subject imports, and that changed when the subject did.
+        needs=("skills", "plugins/design-flow/scripts/doctrine_path.py"),
         mutations=(
             Mutation(
                 # The one that would get the check switched off: flagging correct work.
@@ -1803,7 +1839,11 @@ GUARDS: tuple[Guard, ...] = (
         name="check_scale_contiguity",
         subject="plugins/design-flow/scripts/check_scale_contiguity.py",
         selftest="plugins/design-flow/scripts/check_scale_contiguity.py",
-        needs=("skills",),
+        # `doctrine_path.py` joins `needs` with #777: these now resolve the doctrine through the
+        # shared resolver, so without it the staged tempdir fails at IMPORT and the harness
+        # reports the guard INERT -- every mutation "caught" whether or not it breaks anything.
+        # A guard's needs is everything its subject imports, and that changed when the subject did.
+        needs=("skills", "plugins/design-flow/scripts/doctrine_path.py"),
         mutations=(
             Mutation(
                 "a hole in the space run stops being reported",

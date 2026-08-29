@@ -49,8 +49,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-REPO = HERE.parents[2]
-DOC = REPO / "skills" / "fidara-design" / "references" / "foundations-tokens.md"
+import doctrine_path                    # noqa: E402 -- same plugin, one resolver
+
+# THE SHARED RESOLVER, not parent-counting (#777). `parents[N]` is calibrated for the marketplace
+# CLONE; from an install the cache interposes `<plugin>/<version>/`, and the two shapes differ in
+# DEPTH rather than offset -- so no hop count reconciles them and this check simply never ran for
+# anyone who installed. That population is the least likely to notice, and the refusal below said
+# "the plugin side is missing", which reads as a broken install rather than a resolver bug.
+# Third recurrence of #617's class, second after the resolver existed.
+_DOCTRINE = doctrine_path.find(Path(__file__).resolve())
+DOC = ((_DOCTRINE / "references" / "foundations-tokens.md") if _DOCTRINE
+       else Path("foundations-tokens.md"))          # unresolvable: main() refuses, naming every root
 DEFAULT_CSS = Path("app/assets/tailwind/application.css")
 
 # The one place the marker is spelled. `setup.md` writes it; this reads it. Two spellings would
@@ -165,7 +174,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no {a.css} — nothing to compare", file=sys.stderr)
         return 2
     if not DOC.is_file():
-        print(f"no {DOC} — the plugin side is missing", file=sys.stderr)
+        # Name EVERY root tried. Naming one is what made #617 read as "the doctrine is missing"
+        # when the truth was "I looked in the wrong place", sending reporters to check a path that
+        # was never going to hold it.
+        print(f"cannot locate foundations-tokens.md. Tried:\n"
+              f"{doctrine_path.describe(Path(__file__).resolve())}", file=sys.stderr)
         return 2
     state, found = compare(a.css.read_text(encoding="utf-8"), DOC.read_text(encoding="utf-8"))
     if state == "clean":

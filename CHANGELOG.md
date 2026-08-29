@@ -8661,6 +8661,56 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Two checks could not run from an install — #617's class, third recurrence.** (#777)
+  `check_token_drift.py` and `check_scale_contiguity.py` resolved `fidara-design` by hop count
+  (`HERE.parents[2]` and `Path(__file__).resolve().parents[3]` — the same node), which is calibrated
+  for the marketplace **clone**. From an install the cache interposes `<plugin>/<version>/`, and the
+  two shapes differ in **depth**, not offset, so no hop count reconciles them. Both refused at
+  startup for every install user — including the `@theme` drift check #750 created
+  `check_token_drift.py` to perform, silently unverified for everyone who did not clone.
+
+  Two aggravating details from the report, both correct. The refusal said *"the plugin side is
+  missing"*, which reads as a **broken install** rather than a resolver bug — the same
+  misattribution `doctrine_path.describe()` was written for after #617. And `mutation_check` covers
+  both scripts, but that harness runs from the clone too, so the green it produced was **the clone
+  shape confirming itself**.
+
+  Both now call `doctrine_path.find()`, and name **every** root tried on failure. Verified from a
+  real install-shaped tree, not just the clone.
+
+  Both guards' `needs` gained `doctrine_path.py` — the harness caught this immediately and
+  correctly, reporting them **INERT**: the staged tempdir had no resolver, so the *unmutated*
+  selftest already failed at import and every mutation read as "caught" whether or not it broke
+  anything. A guard's `needs` is everything its subject imports, and that changed when the subject
+  did.
+
+  Files: `plugins/design-flow/scripts/check_token_drift.py`,
+  `plugins/design-flow/scripts/check_scale_contiguity.py`.
+
+- **A guard so this cannot be a fourth recurrence: `clone-shaped-doctrine-path`.** (#777) #617
+  produced the shared resolver, four siblings adopted it, two did not, and nothing made the second
+  fact follow from the first. The rule fails any `plugins/design-flow/scripts/*.py` that names
+  `skills/fidara-design` — a path that leaves the plugin, since that skill ships in **rails-stack** —
+  without importing `doctrine_path`.
+
+  **Keyed on the cross-plugin reach, not on filenames**: an allowlist goes stale the moment someone
+  adds a script, which is exactly how this recurred. **The exemption is structural too** — a path
+  staying inside design-flow (`brands/`, `assets/`) has a fixed offset and is correctly resolved by
+  hop count, so only `skills/fidara-design` is the rule's business.
+
+  Its first draft was a line-wise grep and flagged `brand_pack_lint.py:18`, a **docstring** — half
+  this corpus explains clone-vs-install in prose, so it reported the files *describing* the defect
+  alongside the ones committing it. Docstrings are now excluded **structurally** via `ast`: a no-op
+  string statement is a docstring, every other literal is in an expression, which is where a path is
+  actually built. Six fixtures, four mutations. One **survived**: the "resolver is silent" fixture
+  omitted the `fidara-design` literal entirely, so it proved silence for the wrong reason — it now
+  carries `llm_tell_detector.py`'s real shape, a resolver import **plus** a clone-path fallback.
+  Files: `plugins/design-flow/scripts/check_token_drift.py`,
+  `plugins/design-flow/scripts/check_scale_contiguity.py`, `scripts/lint_self_consistency.py`,
+  `scripts/mutation_check.py`.
+
 ### 1.35.0 — 2026-08-29 (release v1.101.0)
 
 - **A `reliance` brand pack — the first non-fidara pack.** (#771) Maps the Reliance Health Design
