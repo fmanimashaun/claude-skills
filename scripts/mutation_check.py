@@ -3091,6 +3091,39 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/rendered_conformance.py",
                "plugins/design-flow/scripts/conformance_collector.js"),
         mutations=(
+            # #782. The rule fired on the exact form its own message tells you to use, on every
+            # save via the PostToolUse hook. Four clauses: the value anchor, the shorthand branch,
+            # the @font-face exemption, and that the block CLOSES.
+            Mutation(
+                "the pattern goes back to matching any font-family declaration",
+                r'font(?:-family)?\s*:(?![^;}]*var\()',
+                r"font-family\s*:",
+                "the shorthand hides a literal too",
+            ),
+            Mutation(
+                # Dropping `(?:-family)?` leaves `font:` unchecked -- a silent path for a genuine
+                # literal, which is what it was before this fix.
+                "the shorthand branch is dropped, so `font:` hides a literal again",
+                r'font(?:-family)?\s*:(?![^;}]*var\()',
+                r'font-family\s*:(?![^;}]*var\()',
+                "the shorthand hides a literal too",
+            ),
+            Mutation(
+                # A self-hosted @font-face MUST name a literal family; without the exemption this
+                # rule and `cdn-font-link` demand opposite things.
+                "the @font-face exemption goes, so self-hosting trips the rule",
+                "        if in_font_face and rule.name in FONT_FACE_RULES:",
+                "        if False:",
+                "...and so does the multi-line form, declaration not first",
+            ),
+            Mutation(
+                # The widest possible false negative: everything after the first @font-face would
+                # be exempt for the rest of the file. The multi-line fixture alone did not see it.
+                "the @font-face block never closes",
+                '        return "}" not in line.split("@font-face", 1)[1], True',
+                "        return True, True",
+                "...and after a ONE-LINE @font-face too",
+            ),
             # #758. The rule and its carve-out are separate clauses; each needs its own fixture.
             Mutation(
                 # Two alternations, two mutations: emptying one leaves the other matching, so
