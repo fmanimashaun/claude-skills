@@ -144,6 +144,34 @@
         "bundle",
         "npx"
       ]
+    },
+    {
+      "id": "ci-runs-tests",
+      "why": "bin/ci reporting green having run zero specs is a gate that passes by not looking, and it is quoted as confidence.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_ci_runs_tests.py"
+      ],
+      "applies_when": [
+        "config/ci.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "mandated-gems",
+      "why": "A gem the doctrine marks Always, with no installer and no gate, is a preference — it landed missing twice on two clean runs.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_mandated_gems.py"
+      ],
+      "applies_when": [
+        "Gemfile"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

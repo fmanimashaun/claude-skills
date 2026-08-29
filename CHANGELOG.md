@@ -2328,6 +2328,55 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`bin/ci` could report green having run zero specs, and nothing noticed.** (#779, the enforcement
+  half #391 left open) `--skip-test` is mandated so the project gets RSpec — and Rails gates the test
+  steps in its own `config/ci.rb` template on **that same flag**, so a fresh scaffold has no `Tests:`
+  step. `bin/ci`, which this toolchain treats as the full gate, then passes by not looking, and is
+  quoted as confidence. #391 fixed the doctrine and said in its own text that enforcement was still
+  open; this arrived from a **second, unrelated greenfield app** — the recurrence is what makes it
+  structural rather than user error.
+
+  New gate `ci-runs-tests` (`check_ci_runs_tests.py`, **13 assertions**, 5 mutations). It keys on the
+  step's **command, never its label** — a step named `Tests` that runs rubocop is the exact false
+  confidence it exists to refuse. Three states: a repo with no `config/ci.rb` is **not applicable**,
+  reported by name, never a pass.
+
+  Two of my own defects, both caught by the harness rather than by reading: the first draft stripped
+  `#` comments before parsing, which **truncated a legitimate command containing a `#`** and reported
+  a project that *does* run its suite as one that does not — a false positive, the failure mode that
+  gets a gate switched off. It was also dead: `STEP`'s line anchor already excluded `# step`. And the
+  mutation for command-vs-label was rejected as a **coincidental catch** — the fixture named a step
+  labelled `Tests`, which is not a suite word, so a label-matching implementation failed it for the
+  same reason a command-matching one did. It now uses a step labelled `rspec` running rubocop, which
+  only a command-matching implementation refuses.
+
+- **A gem the doctrine marks "Always", with no installer and no gate.** (#778) `ecosystem-gems.md`
+  §2: *"simple_form is mandatory in this stack — no form, and no form element, is built any other
+  way."* Two of the three Always gems already have checks (archspec, herb, both `applies_when` their
+  config exists). simple_form had neither, and was missing on both affected scaffolds.
+
+  New gate `mandated-gems` (`check_mandated_gems.py`, **13 assertions**, 4 mutations). Its second
+  rule is claims-vs-enforcement inside the **user's own** project: `config.generators` naming
+  `fixture_replacement :factory_bot` without `factory_bot_rails` in the Gemfile is **inert** — every
+  `bin/rails generate` silently emits no factories. Conditional on purpose, with a negative fixture,
+  because the doctrine does not say every project carries factory_bot; only that config naming it
+  needs it.
+
+  Files: `plugins/rails-flow/scripts/check_mandated_gems.py`,
+  `plugins/rails-flow/checks.json`.
+
+- **And `/rails-flow:setup-flow` now performs all of it.** (#778, #779) Two new propose-a-diff
+  sections following the `Archspec.rb` precedent: the `Tests:` + `Tests: Seeds` steps taken verbatim
+  from `testing.md`, the `config.generators` block from `project-setup.md` §1, `factory_bot_rails`,
+  and `simple_form` with its installer generator. Each detects its own shape by running the gate
+  above, so the command and the check ask the same question. Offered as approved diffs, never written
+  unasked. Files: `plugins/rails-flow/scripts/check_ci_runs_tests.py`,
+  `plugins/rails-flow/scripts/check_mandated_gems.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
 ### 1.27.0 — 2026-08-22 (release v1.100.0)
 
 - **A manifest row outside the inventory roots was classified "deleted" on every run.** (#762)
@@ -3962,6 +4011,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
 ### Unreleased
+
+- **`quality-pass`'s worked example: the shared-harness count 17 → 19.** (#778, #779) Both new gates
+  use the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it, which is that gate's
+  whole job: it refuses a **number** in the example disagreeing with the repo, never a duplicate.
+  File: `skills/quality-pass/references/worked-example.md`.
+
 
 - **The version-facts warning named the weakest false signal and missed the strongest.** (#776) It
   warned about *third-party posts* claiming a Rails 8.2 release. The convincing artefact is an

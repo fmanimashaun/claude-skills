@@ -437,6 +437,71 @@ if the triggers already match (or the user declined), leave `ci.yml` untouched a
 rails-8 `testing.md` § *bin/ci*; if the `pipeline` plugin is installed, this aligns with its
 main-only release/build workflows.)
 
+### The `--skip-test` consequence — propose the `Tests:` steps as an approved diff (#779)
+
+`project-setup.md` mandates `--skip-test` so the project gets RSpec instead of Minitest. Rails gates
+the test steps in its own `config/ci.rb` template on **that same flag**, so a fresh scaffold has no
+`Tests:` step and `bin/ci` — which this toolchain treats as the full gate — reports **green having
+run zero specs**. #391 fixed the doctrine; nothing performed it, and it landed missing on two
+unrelated greenfield apps from clean runs of the documented path.
+
+**Detect the shape** — `config/ci.rb` exists, RSpec is present, and no step's *command* runs the
+suite. The `ci-runs-tests` check answers exactly this and is the same question:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_ci_runs_tests.py"
+```
+
+Exit **1** means propose the steps; exit **3** means the project has no `config/ci.rb` and there is
+nothing to offer. Take the block verbatim from `rails-8` `references/testing.md` — both steps, since
+Rails drops `Tests: Seeds` on the same flag — and insert it **before** the Style and Security steps,
+so a broken suite stops the run before the slower checks:
+
+```ruby
+  step "Tests: Seeds", "bin/rails db:test:prepare db:seed:replant"
+  step "Tests", "bin/rspec"
+```
+
+**Propose the generators block in the same diff**, because it fails the same way. `project-setup.md`
+§1 prescribes it "immediately after creation", and on both affected scaffolds `config/application.rb`
+carried only Rails' own `config.generators.system_tests = nil`:
+
+```ruby
+config.generators do |g|
+  g.test_framework :rspec, fixture: false
+  g.fixture_replacement :factory_bot, dir: "spec/factories"
+  g.system_tests nil
+end
+```
+
+**And `factory_bot_rails` with it** — `fixture_replacement :factory_bot` is **inert** without the
+gem, so `bin/rails generate` silently emits no factories. `bundle add factory_bot_rails --group
+'development,test'`. The `mandated-gems` check refuses that combination by name.
+
+Offer all three as one approved diff; do not write them unasked. Re-running is safe — every check
+above is idempotent, and a project that already has the steps reports exit 0.
+
+### The mandated gem nobody installs — propose `simple_form` as an approved diff (#778)
+
+`ecosystem-gems.md` §2: *"simple_form is mandatory in this stack — no form, and no form element, is
+built any other way."* It had **no installer and no gate**, and was missing on both scaffolds. Two of
+the three "Always" gems already have checks; this one did not.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mandated_gems.py"
+```
+
+On exit **1**, propose:
+
+```bash
+bundle add simple_form
+bin/rails generate simple_form:install
+```
+
+The generator writes `config/initializers/simple_form.rb` and the wrappers this stack's form
+partials assume. Do not hand-write that initializer — the generator's output is the version-correct
+one, and `ecosystem-gems.md` §2 says to configure it once and never fight it per-form.
+
 ### Executable boundaries — propose `Archspec.rb` as an approved diff (#715)
 
 The doctrine in `rails-8` `ecosystem-gems.md` §13 states two forbidden dependencies, and until a
