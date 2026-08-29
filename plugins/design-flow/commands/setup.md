@@ -172,6 +172,25 @@ Mobile (Hotwire Native parity) is Phase 2 — see references/mobile.md; this com
    (each with `name`, `endorsement`, `mark`). `Ui::Logo` reads identity from there — **never
    hardcode a brand name in a component.**
 
+   **Write the pack SLUG too** — `config.x.brand.pack = "<slug>"` (#788). It is the only record of
+   which pack this project scaffolded from, and `check_token_drift.py` needs it to know what to
+   compare the managed token block against. **`default_variant` is not a substitute**: for the
+   `fidara` pack it is `fmworkflows`, which is a variant, not a pack directory. Without the slug the
+   drift check refuses rather than guessing — correct, but it means the check cannot run.
+
+   ```ruby
+   # config/initializers/brand.rb
+   Rails.application.configure do
+     config.x.brand = ActiveSupport::OrderedOptions.new
+     config.x.brand.pack = "reliance"          # the pack this project scaffolded from
+     config.x.brand.default_variant = "reliance"
+     config.x.brand.variants = {
+       "reliance" => { name: "Reliance Health", endorsement: nil,             mark: "reliance-mark.svg" },
+       "retask"   => { name: "Retask",          endorsement: "by Reliance Health", mark: "reliance-mark.svg" },
+     }
+   end
+   ```
+
 ## Brand-pack verification — and file an issue when it fails
 
 The pack lint proves a pack is *internally* complete. It cannot prove the generated theme

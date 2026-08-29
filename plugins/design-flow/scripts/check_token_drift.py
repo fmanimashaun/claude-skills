@@ -57,6 +57,13 @@ import doctrine_path                    # noqa: E402 -- same plugin, one resolve
 # anyone who installed. That population is the least likely to notice, and the refusal below said
 # "the plugin side is missing", which reads as a broken install rather than a resolver bug.
 # Third recurrence of #617's class, second after the resolver existed.
+# The pack baselines. `parents[1]` is safe where #617's parent-counting was not: this stays INSIDE
+# design-flow, whose layout is fixed, rather than reaching across the clone/install boundary.
+BRANDS = Path(__file__).resolve().parents[1] / "brands"
+BRAND_RB = Path("config/initializers/brand.rb")
+# The pack SLUG, which is not `default_variant`. See `resolve_baseline`.
+PACK_DECL = re.compile(r"""\bconfig\.x\.brand\.pack\s*=\s*(?P<q>['"])(?P<slug>[a-z0-9_-]+)(?P=q)""")
+
 _DOCTRINE = doctrine_path.find(Path(__file__).resolve())
 DOC = ((_DOCTRINE / "references" / "foundations-tokens.md") if _DOCTRINE
        else Path("foundations-tokens.md"))          # unresolvable: main() refuses, naming every root
@@ -80,6 +87,56 @@ def managed_block(css: str) -> str | None:
 def plugin_tokens(doc_text: str) -> dict[str, str]:
     """Every token the doctrine declares, normalised for comparison."""
     return {m.group(1): " ".join(m.group(2).split()) for m in DECL.finditer(doc_text)}
+
+
+def project_pack(root: Path) -> str | None:
+    """The pack slug the project records, or None.
+
+    NOT `default_variant` (#788). `config/initializers/brand.rb` has always exposed
+    `default_variant` and `variants` -- `Ui::Logo` reads only those -- and for `reliance` the
+    default variant happens to EQUAL the slug, which makes the wrong inference look right. For
+    `fidara` the default variant is `fmworkflows`, and `brands/fmworkflows/` does not exist. So the
+    slug is read from an explicit `config.x.brand.pack`, which `/design-flow:setup` now writes.
+    """
+    f = root / BRAND_RB
+    if not f.is_file():
+        return None
+    m = PACK_DECL.search(f.read_text(encoding="utf-8"))
+    return m.group("slug") if m else None
+
+
+def resolve_baseline(brand: str | None, root: Path) -> tuple[Path | None, str]:
+    """`(baseline, slug)` for the pack this project uses, or `(None, reason)`.
+
+    THE BASELINE IS THE PACK, NOT THE DOCTRINE (#788). The managed block is written by
+    `/design-flow:setup <pack>` from `brands/<pack>/theme.css`, so that file is what it must match.
+    Comparing every project against `foundations-tokens.md` -- the fidara-flavoured doctrine --
+    made a `reliance` project report **119 findings, all false**: every `--color-fm-*` "missing"
+    (*re-run setup*), every `--color-rh-*` "extra", and every role the pack deliberately re-pointed
+    "changed" with the remediation *"take the plugin's value"*. That last one would have reverted
+    `--primary` from `#1171B0` (4.97:1) to `#137CC1` (4.26:1) -- reintroducing the WCAG 1.4.3
+    failure the pack exists to avoid (#771).
+
+    REFUSES RATHER THAN DEFAULTING, which is the actual fix. Falling back to fidara is what
+    produced confident, wrong remediation; a check that cannot tell which pack a project uses has
+    not measured anything, and saying so is the only honest answer.
+    """
+    slug = brand or project_pack(root)
+    if not slug:
+        return None, (
+            f"cannot determine this project's brand pack, so there is nothing to compare against.\n"
+            f"  Pass --brand <slug>, or record it in {BRAND_RB} as "
+            f"`config.x.brand.pack = \"<slug>\"`.\n"
+            f"  NOT guessed from `default_variant`: for the `fidara` pack that is `fmworkflows`, "
+            f"which is a variant, not a pack.\n"
+            f"  Comparing against a pack this project does not use would produce confident, wrong "
+            f"remediation — refusing instead.")
+    doc = BRANDS / slug / "theme.css"
+    if not doc.is_file():
+        available = sorted(d.name for d in BRANDS.glob("*") if (d / "theme.css").is_file())
+        return None, (f"no brand pack {slug!r} — looked for {doc}.\n"
+                      f"  This plugin ships: {', '.join(available) or 'none'}")
+    return doc, slug
 
 
 def compare(css: str, doc_text: str) -> tuple[str, list[str]]:
@@ -152,6 +209,82 @@ def _selftest() -> int:
     state, f = compare(wrap("--background:   #FFF ;\n--primary:\t#0077CC;\n"), doc)
     check("reformatting is not drift", state == "clean")
 
+    # ---- #788. WHICH pack is the baseline ------------------------------------------------------
+    import tempfile as _tf
+
+    def project(pack_rb: str | None) -> Path:
+        root = Path(_tf.mkdtemp(prefix="drift-"))
+        if pack_rb is not None:
+            (root / "config" / "initializers").mkdir(parents=True)
+            (root / "config" / "initializers" / "brand.rb").write_text(pack_rb, encoding="utf-8")
+        return root
+
+    # THE EXPLICIT FLAG.
+    doc, slug = resolve_baseline("reliance", project(None))
+    check("--brand selects that pack's theme.css",
+          doc is not None and slug == "reliance" and doc.name == "theme.css")
+    check("...and it is the pack's file, not the doctrine",
+          doc is not None and doc.parent.name == "reliance")
+
+    # THE RECORDED SLUG.
+    doc, slug = resolve_baseline(None, project(
+        'Rails.application.configure do\n  config.x.brand.pack = "reliance"\nend\n'))
+    check("config.x.brand.pack is read from brand.rb", doc is not None and slug == "reliance")
+
+    # THE CLAUSE THAT MAKES THE OBVIOUS FIX WRONG. `brand.rb` has always carried `default_variant`,
+    # and for `reliance` that EQUALS the slug -- so inferring from it looks right until `fidara`,
+    # whose default variant is `fmworkflows`, a variant with no pack directory. Resolution must not
+    # touch it.
+    doc, why = resolve_baseline(None, project(
+        'Rails.application.configure do\n'
+        '  config.x.brand.default_variant = "fmworkflows"\n'
+        '  config.x.brand.variants = {}\n'
+        'end\n'))
+    # Assert WHICH refusal, not merely that it refused. Reading `default_variant` and then failing
+    # to find `brands/fmworkflows/` also returns None -- so `doc is None` cannot tell the two apart,
+    # and the mutation was caught only incidentally by an unrelated fixture. The correct code never
+    # reads the file's default_variant at all, so its reason is "cannot determine", never
+    # "no brand pack 'fmworkflows'".
+    check("default_variant is NOT taken as the pack slug", doc is None)
+    check("...refusing because nothing RECORDS a pack, not because fmworkflows is missing",
+          doc is None and "cannot determine" in why and "no brand pack" not in why)
+
+    # REFUSING IS THE FIX. Defaulting to fidara is what produced 100+ false findings and a
+    # remediation that would revert a measured WCAG palette.
+    doc, why = resolve_baseline(None, project(None))
+    check("no recorded pack refuses rather than defaulting", doc is None)
+    check("...and never names fidara as the fallback", "fidara" not in why.split("`fidara`")[0])
+    check("...and tells the operator both ways to fix it",
+          "--brand" in why and "config.x.brand.pack" in why)
+
+    # AN UNKNOWN PACK names what actually ships, rather than a bare miss.
+    doc, why = resolve_baseline("nonesuch", project(None))
+    check("an unknown pack is refused", doc is None)
+    check("...naming the packs that ship", "fidara" in why and "reliance" in why)
+
+    # END TO END against the REAL reliance pack: in step is clean, and real drift is still caught.
+    rel = BRANDS / "reliance" / "theme.css"
+    if rel.is_file():
+        toks = plugin_tokens(rel.read_text(encoding="utf-8"))
+        body = "".join(f"  {k}: {v};\n" for k, v in toks.items())
+        state, f = compare(wrap(body), rel.read_text(encoding="utf-8"))
+        check("a reliance block matching its own pack is clean", state == "clean" and f == [])
+        # ...and the same block against the DOCTRINE is the reported defect, so the fixture above
+        # cannot be passing because the comparison stopped working.
+        if DOC.is_file():
+            state, f = compare(wrap(body), DOC.read_text(encoding="utf-8"))
+            check("...while the fidara doctrine would report it as drift", state == "drift")
+            check("...in the volume the report described", len(f) > 50)
+        # ...and real drift against the RIGHT pack is still caught, so "clean" above is not the
+        # comparison having quietly stopped. Mutate whichever token comes first rather than naming
+        # one: `plugin_tokens` is a dict comprehension, so a role re-pointed in `.dark` holds its
+        # DARK value here, and naming `--background` picked a string that was no longer present.
+        first = next(iter(toks))
+        drifted = "".join(f"  {k}: {'#010203' if k == first else v};\n" for k, v in toks.items())
+        state, f = compare(wrap(drifted), rel.read_text(encoding="utf-8"))
+        check("real drift against the right pack is STILL reported",
+              state == "drift" and any(x.startswith("changed: ") and first in x for x in f))
+
     if DOC.is_file():
         toks = plugin_tokens(DOC.read_text(encoding="utf-8"))
         check("the real doctrine parses to a non-trivial token set", len(toks) > 40)
@@ -166,6 +299,11 @@ def _selftest() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--css", type=Path, default=DEFAULT_CSS)
+    ap.add_argument("--brand", metavar="SLUG",
+                    help="the brand pack to compare against (default: read "
+                         "config.x.brand.pack from config/initializers/brand.rb)")
+    ap.add_argument("--root", type=Path, default=Path("."),
+                    help="project root holding config/initializers/brand.rb (default: .)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
@@ -173,16 +311,14 @@ def main(argv: list[str] | None = None) -> int:
     if not a.css.is_file():
         print(f"no {a.css} — nothing to compare", file=sys.stderr)
         return 2
-    if not DOC.is_file():
-        # Name EVERY root tried. Naming one is what made #617 read as "the doctrine is missing"
-        # when the truth was "I looked in the wrong place", sending reporters to check a path that
-        # was never going to hold it.
-        print(f"cannot locate foundations-tokens.md. Tried:\n"
-              f"{doctrine_path.describe(Path(__file__).resolve())}", file=sys.stderr)
+    doc, why = resolve_baseline(a.brand, a.root)
+    if doc is None:
+        print(f"cannot compare: {why}", file=sys.stderr)
         return 2
-    state, found = compare(a.css.read_text(encoding="utf-8"), DOC.read_text(encoding="utf-8"))
+    state, found = compare(a.css.read_text(encoding="utf-8"),
+                           doc.read_text(encoding="utf-8"))
     if state == "clean":
-        print(f"clean — {a.css}'s managed block is in step with the plugin")
+        print(f"clean — {a.css}'s managed block is in step with the {why!r} pack")
         return 0
     print(f"{state}: {len(found)} finding(s) in {a.css}", file=sys.stderr)
     for f in found:

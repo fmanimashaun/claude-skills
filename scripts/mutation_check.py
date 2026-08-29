@@ -1830,8 +1830,45 @@ GUARDS: tuple[Guard, ...] = (
         # shared resolver, so without it the staged tempdir fails at IMPORT and the harness
         # reports the guard INERT -- every mutation "caught" whether or not it breaks anything.
         # A guard's needs is everything its subject imports, and that changed when the subject did.
-        needs=("skills", "plugins/design-flow/scripts/doctrine_path.py"),
+        # `brands/` joins `needs` with #788: the baseline is now the PACK, and the fixtures
+        # parse the real reliance theme, so without it the staged tempdir fails and the
+        # harness reports the guard INERT -- every mutation "caught" regardless. A guard's
+        # needs is everything its subject reads, and that changed when the baseline did.
+        needs=("skills", "plugins/design-flow/scripts/doctrine_path.py",
+               "plugins/design-flow/brands"),
         mutations=(
+            # #788. The baseline was ONE fixed file -- the fidara-flavoured doctrine -- so a
+            # reliance project read as 100+ false findings whose remediation ("take the plugin's
+            # value") would have reverted --primary from #1171B0 (4.97:1) to #137CC1 (4.26:1),
+            # reintroducing the WCAG 1.4.3 failure the pack exists to avoid.
+            Mutation(
+                "an undeterminable pack falls back to fidara instead of refusing",
+                "    slug = brand or project_pack(root)",
+                '    slug = brand or project_pack(root) or "fidara"',
+                "...and never names fidara as the fallback",
+            ),
+            Mutation(
+                # THE CLAUSE THAT MAKES THE OBVIOUS FIX WRONG. brand.rb has always carried
+                # default_variant, and for `reliance` it EQUALS the slug -- so the wrong inference
+                # looks right until `fidara`, whose default variant is `fmworkflows`, a variant with
+                # no pack directory.
+                "the pack is inferred from default_variant, which is a variant not a pack",
+                '    m = PACK_DECL.search(f.read_text(encoding="utf-8"))',
+                '    import re as _r; m = _r.search(r"default_variant\\s*=\\s*.(?P<slug>[a-z0-9_-]+)", f.read_text(encoding="utf-8"))',
+                "...refusing because nothing RECORDS a pack, not because fmworkflows is missing",
+            ),
+            Mutation(
+                "the baseline goes back to the doctrine, ignoring the pack entirely",
+                '    doc = BRANDS / slug / "theme.css"',
+                '    doc = _DOCTRINE / "references" / "foundations-tokens.md"',
+                "an unknown pack is refused",
+            ),
+            Mutation(
+                "a pack that does not ship is no longer refused",
+                "    if not doc.is_file():",
+                "    if False:",
+                "an unknown pack is refused",
+            ),
             Mutation(
                 # The one that would get the check switched off: flagging correct work.
                 "the whole file is compared, so extending OUTSIDE the markers reads as drift",
