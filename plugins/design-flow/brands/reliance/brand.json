@@ -1,0 +1,36 @@
+{
+  "slug": "reliance",
+  "name": "Reliance Health",
+  "fonts": {
+    "sans": "Noto Sans",
+    "display": "Montserrat",
+    "mono": "ui-monospace"
+  },
+  "knobs": {
+    "section_rhythm": "compact",
+    "radius": "md-controls-lg-cards",
+    "heading_ramp": "mid-range"
+  },
+  "chart_hues": [
+    "#137CC1",
+    "#8ACAEF",
+    "#288D68",
+    "#DC6803",
+    "#CB193B"
+  ],
+  "chart_palette_validated": true,
+  "wordmark": "reliance-logo-landscape.svg",
+  "default_variant": "reliance",
+  "variants": {
+    "reliance": {
+      "name": "Reliance Health",
+      "endorsement": null,
+      "mark": "reliance-mark.svg"
+    },
+    "retask": {
+      "name": "Retask",
+      "endorsement": "by Reliance Health",
+      "mark": "reliance-mark.svg"
+    }
+  }
+}

@@ -3961,6 +3961,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.52.3 — 2026-08-29 (release v1.101.0)
+
+- **`brand.md`: `wordmark` documented in the pack manifest contract.** (#771) It is a **pack**
+  property, never a variant's, and the reference states why — a variant re-labels, it does not
+  re-theme. File: `skills/fidara-design/references/brand.md`.
+
 ### 1.52.2 — 2026-08-22 (release v1.100.0)
 
 - **`quality-pass`'s worked example: the shared-harness count 16 → 17.** (#764) The new
@@ -8654,6 +8660,52 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.35.0 — 2026-08-29 (release v1.101.0)
+
+- **A `reliance` brand pack — the first non-fidara pack.** (#771) Maps the Reliance Health Design
+  System (`reliancehealthinc/reliance-design-system`) onto the role contract: 40 primitives, 28
+  roles, 16 dark re-points, 2 SVG assets. The concrete driver is **Retask**, an internal enrollee
+  onboarding platform for Nigeria, Egypt and Senegal.
+
+  **Its typeface pair is a functional requirement, not a preference.** Noto Sans carries all
+  in-product text for **pan-script coverage — Latin, Arabic and French diacritics**; Montserrat is
+  display/brand only. A pack inheriting fidara's Bricolage Grotesque could not render a substantial
+  share of the enrollee names this platform exists to capture. The linter's `WARN overrides fonts
+  (rare — records a deliberate deviation)` is the correct outcome: this is exactly the deliberate
+  deviation that warning exists to record.
+
+  **Four roles moved for WCAG 1.4.3**, mirroring what #304 did for `fm-cerulean`; measured against
+  `--background #F8F9FB` and re-verified here to two decimals: `--primary` brand-500 `#137CC1`
+  (4.26 / 4.49) → brand-600 `#1171B0` (4.97 / 5.23); `--success` → success-800; `--warning` →
+  warning-900; `--signal` → secondary-700. The marks keep the pure hues — 1.4.3 exempts logotypes.
+
+  **The dark block committed the #304 defect the pack's own light-mode work avoided.** It re-pointed
+  `--primary` straight back to brand-500 — **3.76:1** on the dark page, **3.35:1** on a dark card,
+  with an inherited white label at 4.49:1 — which `brand_pack_lint` cannot see, because contrast is
+  a separate gate and it exits 0. `check_token_contrast` failed all three dark pairs. Fixed the way
+  `fidara/theme.css` already documents: re-point `--primary` **with its companion**. No colour can
+  satisfy both dark pairs while carrying white (white-on-X needs L ≤ 0.175, X-on-`#061F30` needs
+  L ≥ 0.224), so the label inverts. Now brand-100 `#C9DBFF` — an upstream registry step, nothing
+  invented — at 12.08 / 10.78, label `--primary-foreground` ink-900 at 12.08.
+
+  Files: `plugins/design-flow/brands/reliance/brand.json`,
+  `plugins/design-flow/brands/reliance/theme.css`,
+  `plugins/design-flow/brands/reliance/assets/reliance-mark.svg`,
+  `plugins/design-flow/brands/reliance/assets/reliance-logo-landscape.svg`.
+
+- **A pack may declare a `wordmark`; a variant still may not.** (#771) A variant re-*labels* —
+  `name`, `endorsement`, `mark` — so a second published lockup had nowhere to live, and a pack
+  shipping one carried a permanent *"not referenced by any variant"* warning it could never clear.
+  A warning nobody can clear is one everybody learns to ignore, which costs more than the orphan
+  detection it buys. `wordmark` is one optional `.svg`, validated for existence exactly like a mark.
+
+  **The check was narrowed, not disabled**, and that is the fixture that matters: an asset named by
+  neither a variant nor the wordmark is still reported. `brand_pack_lint --selftest` 14 → **20
+  assertions**; the guard 4 → **8 mutations**. One mutation **crashed** instead of failing —
+  forcing the type check true defeated a short-circuit and sent an int into `os.path.join` — so each
+  guard now holds on its own rather than leaning on the one above it. A crash is not a verdict.
+  Files: `plugins/design-flow/scripts/brand_pack_lint.py`, `scripts/mutation_check.py`.
 
 ### 1.34.0 — 2026-08-22 (release v1.100.0)
 

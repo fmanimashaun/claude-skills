@@ -1680,6 +1680,37 @@ GUARDS: tuple[Guard, ...] = (
                 "a :root nested in an at-rule is still read",
             ),
             Mutation(
+                # #771. A pack shipping a second published lockup carried a permanent
+                # "not referenced" warning it could never clear, and a warning nobody can clear is
+                # one everybody learns to ignore. Narrowing that check must not DISABLE it.
+                "orphan detection is switched off, so a stale asset stops being reported",
+                "    referenced = set(wanted) | ({wordmark} if isinstance(wordmark, str) else set())",
+                "    referenced = set(present)",
+                "an unnamed asset is STILL reported as an orphan",
+            ),
+            Mutation(
+                "a declared wordmark stops counting as referenced, so the warning returns",
+                "    referenced = set(wanted) | ({wordmark} if isinstance(wordmark, str) else set())",
+                "    referenced = set(wanted)",
+                "a declared wordmark is not an orphan",
+            ),
+            Mutation(
+                # A wordmark naming a file nobody shipped renders nothing -- the same failure the
+                # mark check exists to prevent, which is why this is an error and not a warning.
+                "a wordmark naming a missing file stops being an error",
+                "        exists = isinstance(wordmark, str) and os.path.exists(os.path.join(assets, wordmark))",
+                "        exists = True",
+                "a wordmark naming a missing file is an ERROR",
+            ),
+            Mutation(
+                # Each guard holds on its OWN. Written as `named and ...`, forcing `named` True
+                # defeated the short-circuit and crashed os.path.join -- a crash is not a verdict.
+                "a non-string wordmark is accepted",
+                '        named = isinstance(wordmark, str) and wordmark.endswith(".svg")',
+                "        named = True",
+                "a non-string wordmark is an ERROR",
+            ),
+            Mutation(
                 # CSS cascade order. Returning the first match silently prefers a superseded block.
                 "the FIRST matching block wins, reversing the CSS cascade",
                 "            out = m.group(2)\n    return out",
