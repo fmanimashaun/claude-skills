@@ -2328,7 +2328,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.28.0 — 2026-08-29 (release v1.102.0)
 
 - **`bin/ci` could report green having run zero specs, and nothing noticed.** (#779, the enforcement
   half #391 left open) `--skip-test` is mandated so the project gets RSpec — and Rails gates the test
@@ -4010,7 +4010,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.53.0 — 2026-08-29 (release v1.102.0)
 
 - **`brand.md` shows how to resolve a font role, and the `@font-face` exception.** (#782) Before
   this, no reference file carried a `font-family` declaration at all, so the detector's
@@ -8751,7 +8751,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.36.0 — 2026-08-29 (release v1.102.0)
 
 - **`literal-font-family` fired on the correct form, on every save.** (#782) The rule matched a
   bare `font-family\s*:` with **no regard for the value**, so every conformant stylesheet was
