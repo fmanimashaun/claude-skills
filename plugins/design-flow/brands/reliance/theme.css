@@ -1,0 +1,102 @@
+/* reliance brand pack — theme layer ONLY.
+   A pack is a theme, not a fork: primitives, role mapping, dark re-points. Nothing else.
+   No @utility, no @apply, no component CSS — those are system-level and shared by every pack.
+
+   Primitives are lifted verbatim from the Reliance Health Design System
+   (reliancehealthinc/reliance-design-system, packages/design-system). The ramp names and
+   hex values are theirs; only the role mapping below is fidara's contract.
+
+   Verify with:
+     python3 scripts/brand_pack_lint.py brands/reliance                                     */
+
+@theme {
+  /* Primitives are PRIVATE to this pack. The `rh-` prefix mirrors the upstream token
+     registry; nothing outside a pack may reference a primitive by name. The role layer
+     below is the only public contract. */
+
+  /* brand — Reliance blue */
+  --color-rh-brand-50:  #E1F1FF;  --color-rh-brand-100: #C9DBFF;
+  --color-rh-brand-500: #137CC1;  --color-rh-brand-600: #1171B0;
+  --color-rh-brand-700: #0D5889;  --color-rh-brand-800: #094063;
+  --color-rh-brand-900: #083451;
+
+  /* secondary — Reliance coral */
+  --color-rh-secondary-50:  #FEF1EE;  --color-rh-secondary-300: #F6A48C;
+  --color-rh-secondary-500: #F27754;  --color-rh-secondary-700: #AC543C;
+
+  /* neutral — 9 shades */
+  --color-rh-neutral-25:  #FFFFFF;  --color-rh-neutral-50:  #F8F9FB;
+  --color-rh-neutral-100: #EFEFEF;  --color-rh-neutral-150: #DFDFDF;
+  --color-rh-neutral-200: #C5C6C7;  --color-rh-neutral-400: #9B9B9B;
+  --color-rh-neutral-600: #4F4F4F;  --color-rh-neutral-900: #000000;
+
+  /* feedback */
+  --color-rh-success-50:  #EFFFF5;  --color-rh-success-700: #288D68;
+  --color-rh-success-800: #1F6D51;  --color-rh-success-900: #18543E;
+  --color-rh-error-25:    #FFECEB;  --color-rh-error-50:    #FFF1F3;
+  --color-rh-error-600:   #CB193B;  --color-rh-error-700:   #9E142E;
+  --color-rh-error-900:   #5E0C1B;
+  --color-rh-warning-50:  #FFFAF0;  --color-rh-warning-700: #DC6803;
+  --color-rh-warning-800: #BF5D07;  --color-rh-warning-900: #9B4B06;
+  --color-rh-info-50:     #F0F8FF;  --color-rh-info-500:    #137CC1;
+  --color-rh-info-600:    #1171B0;  --color-rh-info-700:    #0D5889;
+
+  /* dark-mode surfaces. The upstream system has no dark mode; these are derived from the
+     brand-900 hue so dark stays recognisably Reliance rather than neutral grey. */
+  --color-rh-ink-900: #061F30;  --color-rh-ink-800: #08293E;
+  --color-rh-ink-700: #0B354F;  --color-rh-ink-600: #114562;
+}
+
+/* Semantic roles — THE PUBLIC API. Components consume only these.
+
+   Contrast note. Reliance blue #137CC1 is 4.26:1 on --background and carries white at
+   4.49:1 — both under WCAG 1.4.3's 4.5:1, so it cannot be --primary. brand-600 #1171B0
+   is 4.97:1 and 5.23:1 and is used instead. The mark keeps #137CC1 (1.4.3 exempts
+   logotypes); only the role moves. Same reasoning moves --success to success-800
+   (#288D68 is 3.91:1) and --warning to warning-900 (#DC6803 is 3.31:1). */
+:root {
+  --background: var(--color-rh-neutral-50);    --foreground: var(--color-rh-neutral-900);
+  --card: var(--color-rh-neutral-25);          --card-foreground: var(--color-rh-neutral-900);
+  --popover: var(--color-rh-neutral-25);       --popover-foreground: var(--color-rh-neutral-900);
+  --primary: var(--color-rh-brand-600);        --primary-foreground: #FFFFFF;
+  --primary-hover: var(--color-rh-brand-700);
+  --primary-ink: var(--color-rh-brand-800);
+  --secondary: var(--color-rh-neutral-100);    --secondary-foreground: var(--color-rh-neutral-900);
+  --muted: var(--color-rh-neutral-100);        --muted-foreground: var(--color-rh-neutral-600);
+  --accent: var(--color-rh-brand-50);          --accent-foreground: var(--color-rh-brand-800);
+  --destructive: var(--color-rh-error-600);    --destructive-foreground: #FFFFFF;
+  --success: var(--color-rh-success-800);
+  --success-ink: var(--color-rh-success-900);
+  --warning: var(--color-rh-warning-900);
+  --info: var(--color-rh-info-600);
+  --border: var(--color-rh-neutral-150);       --input: var(--color-rh-neutral-150);
+  --ring: var(--color-rh-brand-600);
+  --overlay: var(--color-rh-neutral-900);
+  /* signal — the coral, used for emphasis that is neither action nor feedback.
+     secondary-500 #F27754 is 2.64:1, decorative only; secondary-700 carries text. */
+  --signal: var(--color-rh-secondary-700);     --signal-foreground: #FFFFFF;
+}
+
+/* Dark mode. Surfaces re-point onto the ink ramp; feedback roles and --ring keep one
+   value, per the contract. */
+.dark {
+  --background: var(--color-rh-ink-900);       --foreground: var(--color-rh-neutral-25);
+  --card: var(--color-rh-ink-800);             --card-foreground: var(--color-rh-neutral-25);
+  --popover: var(--color-rh-ink-800);          --popover-foreground: var(--color-rh-neutral-25);
+  /* THE #304 DEFECT, measured on this pack. The pack demoted brand-500 in LIGHT for failing
+     1.4.3, then re-pointed --primary straight back to it for dark -- where it is 3.76:1 on the
+     page and 3.35:1 on a card, and its inherited white label is 4.49:1. Re-pointing --primary
+     WITHOUT its companion --primary-foreground is exactly what fidara/theme.css names as #304.
+
+     No colour can satisfy both dark pairs while carrying WHITE: white-on-X needs X dark
+     (L <= 0.175), X-on-#061F30 needs X light (L >= 0.224). So the label inverts, as fidara's
+     does. brand-100 is the upstream registry's own step -- nothing invented:
+       --primary #C9DBFF on --background #061F30 = 12.08:1, on --card #08293E = 10.78:1
+       --primary-foreground #061F30 on #C9DBFF   = 12.08:1                                  */
+  --primary: var(--color-rh-brand-100);
+  --primary-foreground: var(--color-rh-ink-900);
+  --secondary: var(--color-rh-ink-700);        --secondary-foreground: var(--color-rh-neutral-25);
+  --muted: var(--color-rh-ink-700);            --muted-foreground: var(--color-rh-neutral-200);
+  --accent: var(--color-rh-ink-600);           --accent-foreground: var(--color-rh-neutral-25);
+  --border: var(--color-rh-ink-600);           --input: var(--color-rh-ink-600);
+}
