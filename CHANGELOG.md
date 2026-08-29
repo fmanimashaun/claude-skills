@@ -8751,6 +8751,41 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.37.0 — 2026-08-29 (release v1.103.0)
+
+- **The drift check compared every project against the FIDARA baseline.** (#788) It resolved one
+  fixed file — `foundations-tokens.md`, the fidara-flavoured doctrine carrying `--color-fm-*` — and
+  never asked which pack the project uses. There was no `--brand`, no read of the brand config, and
+  no reference to `brands/`, though `brands/reliance/theme.css` ships in the same plugin.
+
+  All four of its outcomes misfired at once on a non-fidara pack. Reconstructed here against the
+  real `reliance` theme: **162 findings** — 95 `missing` (*"re-run setup"*), 40 `extra`, 27
+  `changed`. **The `changed` rows are the harmful ones**: `reliance` demoted `--primary` from
+  `#137CC1` (4.26:1, fails 1.4.3) to `#1171B0` (4.97:1) in #771, and *"take the plugin's value"*
+  would have put the failing colour back — the check talking an adopter into reintroducing exactly
+  what the pack exists to avoid.
+
+  **The baseline is now the pack**, since the managed block is written by `/design-flow:setup <pack>`
+  from `brands/<pack>/theme.css` — that file is what it must match. Resolved from `--brand <slug>`,
+  else `config.x.brand.pack` in `config/initializers/brand.rb`, which `/design-flow:setup` now
+  writes.
+
+  **`default_variant` is not the slug, and that is what makes the obvious fix wrong.** `brand.rb`
+  has always exposed `default_variant` and `variants` — `Ui::Logo` reads only those — and for
+  `reliance` the default variant *equals* the slug, so inferring from it looks right. For `fidara`
+  it is `fmworkflows`, and `brands/fmworkflows/` does not exist. A fixture pins this, and its first
+  version could not: reading `default_variant` and then failing to find the pack **also** returns
+  None, so the mutation was caught only incidentally until the fixture asserted *which* refusal.
+
+  **It refuses rather than defaulting**, which is the actual fix. Falling back to fidara is what
+  produced confident, wrong remediation; a check that cannot tell which pack a project uses has not
+  measured anything. `--selftest` 11 → **25 assertions**; the guard 4 → **8 mutations**.
+
+  Visible only now because #777 (v1.102.0, this morning) fixed this script's path resolution — it
+  had refused at startup on every install, so the content defect beneath had never run.
+  Files: `plugins/design-flow/scripts/check_token_drift.py`,
+  `plugins/design-flow/commands/setup.md`, `scripts/mutation_check.py`.
+
 ### 1.36.0 — 2026-08-29 (release v1.102.0)
 
 - **`literal-font-family` fired on the correct form, on every save.** (#782) The rule matched a
