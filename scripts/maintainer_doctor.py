@@ -156,6 +156,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # nothing". A shared parser with no direct fixtures is one silent failure for all of them.
     ("design-flow brand pack lint",
      ("python3", "plugins/design-flow/scripts/brand_pack_lint.py", "--selftest")),
+    # ...and the lint RUN against the real packs, not only its own fixtures (#775). Only the
+    # selftest was gated, so `brand_pack_lint`'s dangling-`var()` check -- which is what owns
+    # "a role points at a primitive this pack does not define" -- never fired in CI on a shipped
+    # pack. A check that exists and runs nowhere is the shape this repo files bugs about.
+    ("design-flow brand packs conform",
+     ("python3", "plugins/design-flow/scripts/brand_pack_lint.py",
+      "plugins/design-flow/brands/fidara", "plugins/design-flow/brands/reliance")),
     ("design-flow palette candidates",
      ("python3", "plugins/design-flow/scripts/palette_candidates.py", "--check")),
     ("design-flow palette candidates selftest",

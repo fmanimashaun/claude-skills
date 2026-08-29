@@ -1630,6 +1630,38 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/palette_candidates.py",
                "plugins/design-flow/scripts/brand_pack_lint.py"),
         mutations=(
+            # #775. The two-tier split. WCAG has two thresholds; using one for both is taste
+            # wearing a count, and using the WRONG one fails a shipped pack for a rule no clause
+            # states.
+            Mutation(
+                "the two tiers collapse, so a focus ring is held to the text threshold",
+                "AA_LARGE = 3.0",
+                "AA_LARGE = 4.5",
+                "the two tiers are actually different numbers",
+            ),
+            Mutation(
+                # The `floors` fixtures read PAIRS directly, so they prove the tier is DECLARED and
+                # not that anything USES it -- this survived every one of them until the assertion
+                # moved onto measure()'s own output. Proving the table is not proving the reader.
+                "measure() ignores the per-pair floor and judges everything at 4.5",
+                "floor = pair[4] if len(pair) > 4 else AA_NORMAL",
+                "floor = AA_NORMAL",
+                "measure() gives a focus-ring row the 3:1 floor",
+            ),
+            Mutation(
+                # A pack predating a role, or a template with placeholder refs, must SKIP -- and a
+                # skip must never be counted as a pass, which is the whole three-state doctrine.
+                "an undeclared role reports a perfect ratio instead of skipping",
+                '            rows.append((mode, label, fg, bg, "", "", 0.0, 0.0))',
+                '            rows.append((mode, label, fg, bg, "#000", "#fff", 21.0, AA_NORMAL))',
+                "an undeclared role is skipped, not raised",
+            ),
+            Mutation(
+                "the dark half of the ink enumeration is dropped, leaving only the half that passed",
+                '    ("success ink on the page",       "--success-ink",        "--background", "dark"),',
+                '    ("xx ink on the page",       "--success-ink",        "--background", "light"),',
+                "every pair is measured in light AND dark",
+            ),
             Mutation(
                 "the gate narrows back to the doctrine file, so the packs go unmeasured (#129)",
                 "    return [repo / TOKENS.relative_to(REPO), *packs]",

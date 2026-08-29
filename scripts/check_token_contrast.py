@@ -76,7 +76,23 @@ SRGB_LINEAR_BREAKPOINT = 0.04045
 
 # (label, foreground token, background token, mode). Names are resolved through the file, so a
 # renamed token is a parse error rather than a silently skipped pair.
-PAIRS: tuple[tuple[str, str, str, str], ...] = (
+# TWO TIERS, because WCAG has two thresholds and using one for both is taste wearing a count (#775).
+# 1.4.3 governs TEXT at 4.5:1; 1.4.11 governs non-text UI components and graphical objects at 3:1.
+# A role's tier is decided by the CONTRACT's own vocabulary, not by preference:
+#
+#   `--ring` is a focus indicator -- a UI component state, so 1.4.11, 3:1.
+#   `--*-ink` roles exist to BE text (that is why `--success-ink` was added alongside `--success`),
+#     so 1.4.3, 4.5:1.
+#   The base feedback roles (`--success`, `--warning`, `--info`, `--signal`, `--destructive`) are
+#     NOT enumerated against the page, and that is deliberate. They serve as fills, borders and
+#     icons depending on the component, so the correct threshold depends on a usage this file cannot
+#     see from tokens alone -- and picking 4.5 or 3 for all of them would fail both shipped packs
+#     for a rule neither WCAG clause actually states. #775 measured it: fidara's bright hues clear
+#     dark and fail light; reliance's darkened ones clear light and fail dark. A single value cannot
+#     serve both grounds, which is a CONTRACT question, recorded in brand.md, not a checker's call.
+AA_LARGE = 3.0
+
+PAIRS: tuple[tuple[str, str, str, str] | tuple[str, str, str, str, float], ...] = (
     ("text-primary on the page",      "--primary",            "--background", "light"),
     ("text-primary on a card",        "--primary",            "--card",       "light"),
     ("primary button label",          "--primary-foreground", "--primary",    "light"),
@@ -91,6 +107,22 @@ PAIRS: tuple[tuple[str, str, str, str], ...] = (
     ("body text on the page",         "--foreground",         "--background", "dark"),
     ("body text on a card",           "--card-foreground",    "--card",       "dark"),
     ("muted text on a muted surface", "--muted-foreground",   "--muted",      "dark"),
+
+    # #775. Enumerated in BOTH modes. Every pack passed these in light and failed them in dark,
+    # because dark re-points its surfaces and these roles were never re-pointed with them -- an ink
+    # tuned for a light ground is illegible on a dark one, and a focus ring below 3:1 is not a ring.
+    ("focus ring on the page",        "--ring",               "--background", "light", AA_LARGE),
+    ("focus ring on a card",          "--ring",               "--card",       "light", AA_LARGE),
+    ("focus ring on the page",        "--ring",               "--background", "dark",  AA_LARGE),
+    ("focus ring on a card",          "--ring",               "--card",       "dark",  AA_LARGE),
+    ("success ink on the page",       "--success-ink",        "--background", "light"),
+    ("success ink on a card",         "--success-ink",        "--card",       "light"),
+    ("success ink on the page",       "--success-ink",        "--background", "dark"),
+    ("success ink on a card",         "--success-ink",        "--card",       "dark"),
+    ("primary ink on the page",       "--primary-ink",        "--background", "light"),
+    ("primary ink on a card",         "--primary-ink",        "--card",       "light"),
+    ("primary ink on the page",       "--primary-ink",        "--background", "dark"),
+    ("primary ink on a card",         "--primary-ink",        "--card",       "dark"),
 )
 
 # NOT enumerated, and the omission is deliberate rather than an oversight. `--destructive-foreground`
@@ -236,12 +268,33 @@ def sources(repo: Path = REPO) -> list[Path]:
     return [repo / TOKENS.relative_to(REPO), *packs]
 
 
-def measure(path: Path) -> list[tuple[str, str, str, str, str, str, float]]:
+def measure(path: Path) -> list[tuple[str, str, str, str, str, str, float, float]]:
+    """One row per enumerated pair, carrying the FLOOR that pair is judged against.
+
+    A pair whose role this pack does not declare is SKIPPED (floor 0.0, ratio 0.0) rather than
+    raising: `--success-ink` and `--primary-ink` arrived in v1.98.0 and `_template` predates them,
+    so demanding every pack declare every role would turn a real measurement into a scaffolding
+    error. The summary prints how many were skipped, because a pair that did not run is not a pass.
+    """
     scopes = parse_tokens(path.read_text(encoding="utf-8"))
     rows = []
-    for label, fg, bg, mode in PAIRS:
-        f, b = resolve(fg, scopes[mode]), resolve(bg, scopes[mode])
-        rows.append((mode, label, fg, bg, f, b, contrast(f, b)))
+    for pair in PAIRS:
+        label, fg, bg, mode = pair[:4]
+        floor = pair[4] if len(pair) > 4 else AA_NORMAL
+        scope = scopes.get(mode) or {}
+        try:
+            f, b = resolve(fg, scope), resolve(bg, scope)
+        except Unparseable:
+            # SKIPPED, not raised, in BOTH shapes -- an undeclared role, and a role declared but
+            # pointing at a primitive the pack does not define. The second is a real defect and
+            # `brand_pack_lint` OWNS it ("var() references not defined anywhere in this pack"),
+            # which `_template` trips on purpose: it fails by design until copied and validated.
+            # Raising here would make this gate red for a reason another gate already reports, and
+            # the first thing anyone would do is exempt the file -- losing the pairs that DO
+            # resolve. The skip is counted and printed, so it is never mistaken for a pass.
+            rows.append((mode, label, fg, bg, "", "", 0.0, 0.0))
+            continue
+        rows.append((mode, label, fg, bg, f, b, contrast(f, b), floor))
     return rows
 
 
@@ -254,6 +307,7 @@ def run(repo: Path = REPO) -> int:
 
     failures = 0
     total = 0
+    skipped = 0
     for path in inputs:
         rel = path.relative_to(repo).as_posix()
         try:
@@ -262,18 +316,24 @@ def run(repo: Path = REPO) -> int:
             print(f"CANNOT MEASURE {rel}: {exc}", file=sys.stderr)
             return 2
         print(f"{rel}")
-        for mode, label, fg, bg, f, b, ratio in rows:
-            mark = "ok  " if ratio >= AA_NORMAL else "FAIL"
-            print(f"  [{mark}] {mode:5} {label:24} {fg} {f} on {bg} {b} = {ratio:.2f}:1")
-        failures += sum(1 for r in rows if r[6] < AA_NORMAL)
-        total += len(rows)
+        for mode, label, fg, bg, f, b, ratio, floor in rows:
+            if not floor:
+                print(f"  [skip] {mode:5} {label:24} {fg} not declared by this pack — NOT a pass")
+                continue
+            mark = "ok  " if ratio >= floor else "FAIL"
+            print(f"  [{mark}] {mode:5} {label:24} {fg} {f} on {bg} {b} = {ratio:.2f}:1 "
+                  f"(floor {floor})")
+        failures += sum(1 for r in rows if r[7] and r[6] < r[7])
+        skipped += sum(1 for r in rows if not r[7])
+        total += sum(1 for r in rows if r[7])
 
     if failures:
-        print(f"\n{failures} pair(s) under WCAG 1.4.3's {AA_NORMAL}:1 for normal text, across "
-              f"{len(inputs)} token file(s).", file=sys.stderr)
+        print(f"\n{failures} pair(s) under their WCAG floor — 1.4.3's {AA_NORMAL}:1 for text, "
+              f"1.4.11's {AA_LARGE}:1 for UI components — across {len(inputs)} token file(s).",
+              file=sys.stderr)
         return 1
-    print(f"\n{total} text pairs across {len(inputs)} token file(s), "
-          f"all at or above {AA_NORMAL}:1.")
+    tail = f"; {skipped} pair(s) SKIPPED for an undeclared role (not passes)" if skipped else ""
+    print(f"\n{total} pair(s) across {len(inputs)} token file(s), each at or above its floor{tail}.")
     return 0
 
 
@@ -353,15 +413,84 @@ def selftest() -> int:
     checks += 1
     real = parse_tokens(TOKENS.read_text(encoding="utf-8"))
     try:
-        for _label, fg, bg, mode in PAIRS:
+        for pair in PAIRS:
+            _label, fg, bg, mode = pair[:4]
             resolve(fg, real[mode]); resolve(bg, real[mode])
     except Unparseable as exc:
         failures.append(f"a declared pair no longer resolves against the real tokens: {exc}")
+    # ---- THE TWO TIERS (#775) -----------------------------------------------------------------
+    # WCAG has two thresholds and using one for both is taste wearing a count. Each clause gets a
+    # fixture, because a rule with N clauses needs a finding per clause or none of them is provable.
+    floors = {pair[0]: (pair[4] if len(pair) > 4 else AA_NORMAL) for pair in PAIRS}
+    check("a focus ring is judged at 1.4.11's 3:1, not 1.4.3's 4.5",
+          floors.get("focus ring on a card") == AA_LARGE, f"{floors.get('focus ring on a card')}")
+    check("an -ink role is judged at 1.4.3's 4.5:1, because it exists to BE text",
+          floors.get("success ink on a card") == AA_NORMAL,
+          f"{floors.get('success ink on a card')}")
+    check("body text keeps 4.5, so the tier split did not lower the text floor",
+          floors.get("body text on a card") == AA_NORMAL)
+    check("the two tiers are actually different numbers", AA_LARGE < AA_NORMAL)
+
+    # BOTH MODES. Every one of these passed in light and failed in dark, because dark re-points its
+    # surfaces and these roles were not re-pointed with them. Enumerating light only would have
+    # measured the half that already worked.
+    for lbl in ("focus ring on a card", "success ink on a card", "primary ink on a card"):
+        modes = {pair[3] for pair in PAIRS if pair[0] == lbl}
+        check(f"{lbl!r} is enumerated in BOTH modes", modes == {"light", "dark"}, f"{modes}")
+
+    # THE BASE FEEDBACK ROLES ARE DELIBERATELY ABSENT. Their correct threshold depends on a usage
+    # this file cannot see from tokens, and choosing one would fail both shipped packs for a rule
+    # neither WCAG clause states. A negative test, so re-adding them is a deliberate act.
+    enumerated = {pair[1] for pair in PAIRS}
+    for role in ("--success", "--warning", "--info", "--signal", "--destructive"):
+        check(f"{role} is NOT enumerated against the page", role not in enumerated,
+              "if this is intended, the reasoning above PAIRS has to change with it")
+
+    # AN UNDECLARED ROLE IS SKIPPED, NEVER PASSED -- and never raised either, because a pack that
+    # predates a role (or a template with placeholder refs) is not a measurement failure.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as td:
+        f = Path(td) / "t.css"
+        f.write_text("@theme {\n  --color-t-blue: #005FA3;\n}\n"
+                     ":root {\n  --background: #FFFFFF;\n  --foreground: #000000;\n"
+                     "  --card: #FFFFFF;\n  --card-foreground: #000000;\n"
+                     "  --muted: #EEEEEE;\n  --muted-foreground: #555555;\n"
+                     "  --primary: #005FA3;\n  --primary-foreground: #FFFFFF;\n"
+                     "  --ring: #005FA3;\n}\n"
+                     ".dark {\n  --background: #10151C;\n  --foreground: #F7F8FA;\n"
+                     "  --card: #1B222C;\n  --card-foreground: #F7F8FA;\n"
+                     "  --muted: #1B222C;\n  --muted-foreground: #8B93A1;\n"
+                     "  --primary: #5AB0F5;\n  --primary-foreground: #10151C;\n"
+                     "  --ring: #5AB0F5;\n}\n",
+                     encoding="utf-8")
+        rows = measure(f)
+        skipped = [r for r in rows if not r[7]]
+        check("an undeclared role is skipped, not raised", bool(skipped), "no rows were skipped")
+        check("...and a skipped row carries no ratio to be mistaken for a pass",
+              all(r[6] == 0.0 for r in skipped))
+        check("...while the declared pairs still measure",
+              any(r[7] and r[6] > 0 for r in rows))
+
+        # THE FLOOR REACHES THE CONSUMER, asserted on `measure()`'s OWN output. The `floors` checks
+        # above read PAIRS directly, so they prove the tier is DECLARED and not that anything uses
+        # it -- a mutation collapsing `measure`'s floor to AA_NORMAL survived every one of them.
+        # Proving the table is not proving the reader.
+        ring = [r for r in rows if r[1].startswith("focus ring") and r[7]]
+        ink = [r for r in rows if "ink" in r[1] and r[7]]
+        check("measure() gives a focus-ring row the 3:1 floor",
+              bool(ring) and all(r[7] == AA_LARGE for r in ring),
+              f"{[(r[1], r[7]) for r in ring]}")
+        check("...and a text row the 4.5:1 floor",
+              all(r[7] == AA_NORMAL for r in rows if r[7] and r[1].startswith("body text")),
+              f"{[(r[1], r[7]) for r in rows if r[1].startswith('body text')]}")
+        if ink:
+            check("...and an -ink row the 4.5:1 floor", all(r[7] == AA_NORMAL for r in ink))
+
     check("PAIRS is not empty", len(PAIRS) >= 8, f"only {len(PAIRS)}")
     # A count is not coverage: `>= 8` is satisfied while a specific pair quietly leaves the set.
     # The muted-text pair is named because it was the one that WAS missing, and `_template`'s sat
     # at 2.71:1 unmeasured behind a green sweep.
-    labels = {(label, mode) for label, _fg, _bg, mode in PAIRS}
+    labels = {(pair[0], pair[3]) for pair in PAIRS}
     check("the muted-text pair is measured in both modes (it was the missing one, at 2.71:1)",
           {("muted text on a muted surface", "light"),
            ("muted text on a muted surface", "dark")} <= labels,
