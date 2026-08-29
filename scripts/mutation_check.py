@@ -88,6 +88,38 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #777. The rule that stops #617's class recurring a fourth time. Four clauses: it must
+            # FIRE on a cross-plugin hop count, stay silent on the resolver, stay silent on prose,
+            # and stay silent on the resolver's own file.
+            Mutation(
+                # Half this corpus explains clone-vs-install in its docstring. Matching those
+                # reports the files DESCRIBING the defect alongside the ones committing it, which
+                # is how the first draft of this rule flagged brand_pack_lint.py:18.
+                "docstrings stop being excluded, so prose about the defect reads as the defect",
+                '            if id(node) in docstrings or "fidara-design" not in node.value:',
+                '            if "fidara-design" not in node.value:',
+                "a docstring naming the path is not a finding",
+            ),
+            Mutation(
+                # The fixture for this one must CONTAIN the literal or it proves silence for the
+                # wrong reason -- the first draft omitted it entirely and this mutation survived.
+                "the resolver-import exemption goes, so a correct caller is flagged",
+                '        if "doctrine_path" in text:\n            continue',
+                "        if False:\n            continue",
+                "the shared resolver is silent, fallback literal and all",
+            ),
+            Mutation(
+                "the resolver's own file stops being exempt, where the hops legitimately live",
+                '        if path.name == "doctrine_path.py":          # the resolver itself is where the hops live',
+                "        if False:",
+                "doctrine_path.py itself is exempt",
+            ),
+            Mutation(
+                "the rule matches nothing, so every clone-shaped path passes",
+                '            if id(node) in docstrings or "fidara-design" not in node.value:',
+                '            if id(node) in docstrings or "zzz-never" not in node.value:',
+                "__file__.parents reaching a sibling plugin's doctrine",
+            ),
             # #713. Three clauses, three mutations, two slugs -- a rule with N clauses needs a
             # finding per clause or none of them is provable.
             Mutation(
@@ -1598,6 +1630,38 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/palette_candidates.py",
                "plugins/design-flow/scripts/brand_pack_lint.py"),
         mutations=(
+            # #775. The two-tier split. WCAG has two thresholds; using one for both is taste
+            # wearing a count, and using the WRONG one fails a shipped pack for a rule no clause
+            # states.
+            Mutation(
+                "the two tiers collapse, so a focus ring is held to the text threshold",
+                "AA_LARGE = 3.0",
+                "AA_LARGE = 4.5",
+                "the two tiers are actually different numbers",
+            ),
+            Mutation(
+                # The `floors` fixtures read PAIRS directly, so they prove the tier is DECLARED and
+                # not that anything USES it -- this survived every one of them until the assertion
+                # moved onto measure()'s own output. Proving the table is not proving the reader.
+                "measure() ignores the per-pair floor and judges everything at 4.5",
+                "floor = pair[4] if len(pair) > 4 else AA_NORMAL",
+                "floor = AA_NORMAL",
+                "measure() gives a focus-ring row the 3:1 floor",
+            ),
+            Mutation(
+                # A pack predating a role, or a template with placeholder refs, must SKIP -- and a
+                # skip must never be counted as a pass, which is the whole three-state doctrine.
+                "an undeclared role reports a perfect ratio instead of skipping",
+                '            rows.append((mode, label, fg, bg, "", "", 0.0, 0.0))',
+                '            rows.append((mode, label, fg, bg, "#000", "#fff", 21.0, AA_NORMAL))',
+                "an undeclared role is skipped, not raised",
+            ),
+            Mutation(
+                "the dark half of the ink enumeration is dropped, leaving only the half that passed",
+                '    ("success ink on the page",       "--success-ink",        "--background", "dark"),',
+                '    ("xx ink on the page",       "--success-ink",        "--background", "light"),',
+                "every pair is measured in light AND dark",
+            ),
             Mutation(
                 "the gate narrows back to the doctrine file, so the packs go unmeasured (#129)",
                 "    return [repo / TOKENS.relative_to(REPO), *packs]",
@@ -1762,7 +1826,11 @@ GUARDS: tuple[Guard, ...] = (
         name="check_token_drift",
         subject="plugins/design-flow/scripts/check_token_drift.py",
         selftest="plugins/design-flow/scripts/check_token_drift.py",
-        needs=("skills",),
+        # `doctrine_path.py` joins `needs` with #777: these now resolve the doctrine through the
+        # shared resolver, so without it the staged tempdir fails at IMPORT and the harness
+        # reports the guard INERT -- every mutation "caught" whether or not it breaks anything.
+        # A guard's needs is everything its subject imports, and that changed when the subject did.
+        needs=("skills", "plugins/design-flow/scripts/doctrine_path.py"),
         mutations=(
             Mutation(
                 # The one that would get the check switched off: flagging correct work.
@@ -1803,7 +1871,11 @@ GUARDS: tuple[Guard, ...] = (
         name="check_scale_contiguity",
         subject="plugins/design-flow/scripts/check_scale_contiguity.py",
         selftest="plugins/design-flow/scripts/check_scale_contiguity.py",
-        needs=("skills",),
+        # `doctrine_path.py` joins `needs` with #777: these now resolve the doctrine through the
+        # shared resolver, so without it the staged tempdir fails at IMPORT and the harness
+        # reports the guard INERT -- every mutation "caught" whether or not it breaks anything.
+        # A guard's needs is everything its subject imports, and that changed when the subject did.
+        needs=("skills", "plugins/design-flow/scripts/doctrine_path.py"),
         mutations=(
             Mutation(
                 "a hole in the space run stops being reported",
@@ -2069,6 +2141,87 @@ GUARDS: tuple[Guard, ...] = (
     # #334. Both mutations are ones I ACTUALLY MADE while writing it: a manifest command that cannot
     # run, and an assertion that looked like it caught that but did not. The second is the reason
     # this guard exists -- the vacuous version passed a re-introduced bug, and only mutation found it.
+    Guard(
+        # #779. The gate that stops a `bin/ci` being green on zero specs. Five mutations: it must
+        # FAIL a --skip-test file, PASS once a suite step exists, key on the COMMAND not the label,
+        # keep not-applicable as a third state, and distinguish "no steps at all" by its message.
+        name="check_ci_runs_tests",
+        subject="plugins/rails-flow/scripts/check_ci_runs_tests.py",
+        selftest="plugins/rails-flow/scripts/check_ci_runs_tests.py",
+        mutations=(
+            Mutation(
+                "every config/ci.rb passes, so the gate cannot fail",
+                "    if running:",
+                "    if True:",
+                "a --skip-test config/ci.rb FAILS",
+            ),
+            Mutation(
+                # A step NAMED "Tests" that runs rubocop is the exact false confidence this refuses.
+                "the step LABEL decides instead of the command",
+                "if SUITE.search(cmd)]",
+                "if SUITE.search(label)]",
+                "a step LABELLED rspec that runs rubocop still fails",
+            ),
+            Mutation(
+                "a repo with no config/ci.rb reads as a pass",
+                'return 3, f"not applicable — no {CI_RB} in this repo (nothing to check, NOT a pass)"',
+                'return 0, "ok"',
+                "no config/ci.rb is not-applicable, not a pass",
+            ),
+            Mutation(
+                # Both branches return 1, so a fixture checking only the verdict could not see this
+                # one go -- it asserts the MESSAGE.
+                "a ci.rb with no steps loses its own message",
+                "    if not declared:",
+                "    if False:",
+                "...saying it declares NO step, not that 0 of them ran the suite",
+            ),
+            Mutation(
+                # The line anchor is what excludes `# step ...`; there is no comment stripping,
+                # because stripping truncated a real command containing a `#`.
+                "STEP loses its line anchor, so a commented-out step counts",
+                'r"""^\\s*step\\s+',
+                'r"""\\s*step\\s+',
+                "a commented-out suite step does not count",
+            ),
+        ),
+    ),
+    Guard(
+        # #778. simple_form is marked Always and had neither an installer nor a gate. The second
+        # rule is claims-vs-enforcement inside the USER's project: config naming a gem they do not
+        # have is a claim nothing makes true.
+        name="check_mandated_gems",
+        subject="plugins/rails-flow/scripts/check_mandated_gems.py",
+        selftest="plugins/rails-flow/scripts/check_mandated_gems.py",
+        mutations=(
+            Mutation(
+                "simple_form stops being required, so the Always gem is a preference again",
+                '    if "simple_form" not in gems:',
+                "    if False:",
+                "a Gemfile without simple_form FAILS",
+            ),
+            Mutation(
+                # Conditional on purpose: the doctrine does not say every project carries factory_bot,
+                # only that config naming it needs it.
+                "factory_bot becomes unconditional, failing projects that never asked for it",
+                '    if application_rb and re.search(r"fixture_replacement\\s+:factory_bot", application_rb):',
+                "    if application_rb:",
+                "no fixture_replacement config, no factory_bot requirement",
+            ),
+            Mutation(
+                "a repo with no Gemfile reads as a pass",
+                'return 3, f"not applicable — no {GEMFILE} in this repo (nothing to check, NOT a pass)"',
+                'return 0, "ok"',
+                "no Gemfile is not-applicable, not a pass",
+            ),
+            Mutation(
+                "GEM loses its line anchor, so a commented-out gem counts as declared",
+                'r"""^\\s*gem\\s+',
+                'r"""\\s*gem\\s+',
+                "a commented-out gem does not count",
+            ),
+        ),
+    ),
     Guard(
         name="project_gates",
         subject="plugins/rails-flow/scripts/project_gates.py",
@@ -2938,6 +3091,39 @@ GUARDS: tuple[Guard, ...] = (
                "plugins/design-flow/scripts/rendered_conformance.py",
                "plugins/design-flow/scripts/conformance_collector.js"),
         mutations=(
+            # #782. The rule fired on the exact form its own message tells you to use, on every
+            # save via the PostToolUse hook. Four clauses: the value anchor, the shorthand branch,
+            # the @font-face exemption, and that the block CLOSES.
+            Mutation(
+                "the pattern goes back to matching any font-family declaration",
+                r'font(?:-family)?\s*:(?![^;}]*var\()',
+                r"font-family\s*:",
+                "the shorthand hides a literal too",
+            ),
+            Mutation(
+                # Dropping `(?:-family)?` leaves `font:` unchecked -- a silent path for a genuine
+                # literal, which is what it was before this fix.
+                "the shorthand branch is dropped, so `font:` hides a literal again",
+                r'font(?:-family)?\s*:(?![^;}]*var\()',
+                r'font-family\s*:(?![^;}]*var\()',
+                "the shorthand hides a literal too",
+            ),
+            Mutation(
+                # A self-hosted @font-face MUST name a literal family; without the exemption this
+                # rule and `cdn-font-link` demand opposite things.
+                "the @font-face exemption goes, so self-hosting trips the rule",
+                "        if in_font_face and rule.name in FONT_FACE_RULES:",
+                "        if False:",
+                "...and so does the multi-line form, declaration not first",
+            ),
+            Mutation(
+                # The widest possible false negative: everything after the first @font-face would
+                # be exempt for the rest of the file. The multi-line fixture alone did not see it.
+                "the @font-face block never closes",
+                '        return "}" not in line.split("@font-face", 1)[1], True',
+                "        return True, True",
+                "...and after a ONE-LINE @font-face too",
+            ),
             # #758. The rule and its carve-out are separate clauses; each needs its own fixture.
             Mutation(
                 # Two alternations, two mutations: emptying one leaves the other matching, so

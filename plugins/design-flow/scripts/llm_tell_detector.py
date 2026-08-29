@@ -237,7 +237,18 @@ def _rules() -> tuple[Rule, ...]:
             "brand.md:263",
             "a literal font family bypasses the font-role layer (`--font-sans` / `--font-display`), "
             "so a brand pack cannot change it. This is the 'Inter for everything' tell",
-            re.compile(r"font-\[[\"']?[A-Za-z]|font-family\s*:"),
+            # #782. The second alternation was a bare `font-family\s*:`, unanchored to any VALUE,
+            # so it fired on the exact role-token form the message tells you to use -- every
+            # conformant stylesheet, once per declaration, on every save via the PostToolUse hook.
+            # A checker that flags the correct form is the false positive this file's own docstring
+            # says gets it switched off.
+            #
+            # The obvious narrowing does NOT work and the report measured it: `font-family\s*:\s*
+            # (?!var\()` still matches, because `\s*` backtracks to zero width and the lookahead is
+            # then evaluated at the space before `var(`. Scan the VALUE instead --
+            # `(?![^;}]*var\()` looks ahead to the end of the declaration -- which also lets the
+            # `font:` shorthand share the branch, closing a path where a genuine literal was silent.
+            re.compile(r"font-\[[\"']?[A-Za-z]|font(?:-family)?\s*:(?![^;}]*var\()"),
         ),
         Rule(
             "off-scale-radius",
@@ -316,8 +327,35 @@ def _disables(line: str, previous: str) -> tuple[set[str], set[str]]:
     return ok, bare
 
 
+def _font_face_state(line: str, was_inside: bool) -> tuple[bool, bool]:
+    """(state for the NEXT line, whether THIS line sits in an @font-face block).
+
+    ONE implementation, called by both scanners. The markdown scanner having its own copy of a
+    judgement is the exact divergence this module already paid for once -- it did not call
+    `rule.exempt`, so our own token file reported raw-hex violations the `.css` path exempted.
+    Adding the block tracking to `scan_text` alone would have rebuilt that: `--doctrine-selfcheck`
+    flagged the `@font-face` example in `brand.md` while the same block in a `.css` file was fine.
+
+    Depth is not tracked because `@font-face` bodies do not nest -- they hold declarations, not
+    rules -- so a `}` closes, which also handles the one-line form.
+    """
+    if "@font-face" in line:
+        return "}" not in line.split("@font-face", 1)[1], True
+    if was_inside:
+        return "}" not in line, True
+    return False, False
+
+
+# Rules a self-hosted `@font-face` block legitimately violates. Naming a literal family is the
+# WHOLE POINT of such a block -- `cdn-font-link`'s message says "Fonts are self-hosted", so the two
+# rules would otherwise demand opposite things. Kept as an explicit set rather than a general
+# block-context mechanism because exactly one rule needs it, and a general mechanism with one user
+# is harder to reason about than a named exception (#782).
+FONT_FACE_RULES = frozenset({"literal-font-family"})
+
+
 def _scan_line(line: str, previous: str, path: str, index: int, report: Report,
-               *, bare_is_a_finding: bool = True) -> None:
+               *, bare_is_a_finding: bool = True, in_font_face: bool = False) -> None:
     """The ONE place a line is judged.
 
     This was two near-identical loops, and they had already drifted: the markdown scanner never
@@ -344,6 +382,11 @@ def _scan_line(line: str, previous: str, path: str, index: int, report: Report,
             continue
         if rule.exempt and rule.exempt(line, match):
             continue
+        # The ONE-LINE form is handled by the rule's own exempt; this covers the multi-line block,
+        # which is how every project that follows the self-hosting doctrine actually writes it. A
+        # `previous`-only check would not do: the declaration need not be the block's first line.
+        if in_font_face and rule.name in FONT_FACE_RULES:
+            continue
         report.findings.append(
             Finding(rule.name, path, index, line, rule.message, rule.doctrine))
 
@@ -352,8 +395,11 @@ def scan_text(text: str, path: str, report: Report) -> None:
     lines = text.splitlines()
     report.files += 1
     report.lines += len(lines)
+    in_font_face = False
     for index, line in enumerate(lines, 1):
-        _scan_line(line, lines[index - 2] if index >= 2 else "", path, index, report)
+        in_font_face, here = _font_face_state(line, in_font_face)
+        _scan_line(line, lines[index - 2] if index >= 2 else "", path, index, report,
+                   in_font_face=here)
 
 
 # `js` must not match the `js` in ```json -- the boundary bug this repo already fixed once in
@@ -372,6 +418,7 @@ def scan_markdown_blocks(text: str, path: str, report: Report) -> None:
     lines = text.splitlines()
     report.files += 1
     inside = False
+    in_font_face = False
     for index, line in enumerate(lines, 1):
         if not inside and FENCE.match(line):
             inside = True
@@ -382,8 +429,9 @@ def scan_markdown_blocks(text: str, path: str, report: Report) -> None:
         if not inside:
             continue
         report.lines += 1
+        in_font_face, here = _font_face_state(line, in_font_face)
         _scan_line(line, lines[index - 2] if index >= 2 else "", path, index, report,
-                   bare_is_a_finding=False)
+                   bare_is_a_finding=False, in_font_face=here)
 
 
 SCANNABLE = (".erb", ".html", ".rb", ".css", ".js", ".jsx", ".ts", ".tsx", ".vue", ".slim", ".haml")
@@ -526,6 +574,45 @@ def selftest() -> int:
     case("a plain declaration is NOT a token definition", "  background: #6366f1;",
          rule="raw-hex-literal", expect=True)
     case("a font role utility", '<p class="font-sans">', rule="literal-font-family", expect=False)
+
+    # ---- #782. The SILENT half this rule never had -------------------------------------------
+    # It matched a bare `font-family\s*:` with no regard for the value, so it fired on the exact
+    # form its own message tells you to use. Both gates were quiet: no fixture covered the CSS
+    # declaration, and `--doctrine-selfcheck` cannot help because not one reference file contains a
+    # `font-family` declaration -- a criterion-6 gate is only as good as the doctrine's examples.
+    case("a sans role token is NOT a literal", "h1 { font-family: var(--font-display); }",
+         rule="literal-font-family", expect=False)
+    case("a mono role token is NOT a literal", "code { font-family: var(--font-mono); }",
+         rule="literal-font-family", expect=False)
+    case("the shorthand with a role token is NOT a literal",
+         "p { font: 400 15px/1.6 var(--font-sans); }",
+         rule="literal-font-family", expect=False)
+    # A self-hosted @font-face MUST name a literal family -- that is what `cdn-font-link`'s
+    # "Fonts are self-hosted" message asks for, so without this the two rules demand opposites.
+    case("a one-line @font-face names a real family",
+         '@font-face{font-family:Newsreader;src:url("/f.woff2") format("woff2")}',
+         rule="literal-font-family", expect=False)
+    case("...and so does the multi-line form, declaration not first",
+         '@font-face {\n  src: url("/f.woff2") format("woff2");\n  font-family: "NotoSans";\n}',
+         rule="literal-font-family", expect=False)
+    # THE POSITIVES, so none of the above is satisfied by a rule that stopped firing.
+    case("a real literal still trips", 'h1 { font-family: "Inter", sans-serif; }',
+         rule="literal-font-family", expect=True)
+    case("the shorthand hides a literal too", 'p { font: 400 15px/1.6 "Inter", sans-serif; }',
+         rule="literal-font-family", expect=True)
+    # ...and the block must CLOSE, or everything after a @font-face would be exempt for the rest
+    # of the file -- the widest possible false negative, and the risk this fix introduces.
+    case("a literal AFTER a closed @font-face still trips",
+         '@font-face {\n  font-family: "NotoSans";\n}\nh1 { font-family: "Inter", sans-serif; }',
+         rule="literal-font-family", expect=True)
+    # BOTH closing shapes, because they are different branches. The multi-line block above closes on
+    # its own `}` line; a ONE-LINE @font-face closes on the same line it opens, and a mutation
+    # forcing the flag to stay on survived the multi-line fixture alone -- it would have exempted
+    # every literal in the rest of the file.
+    case("...and after a ONE-LINE @font-face too",
+         '@font-face{font-family:Newsreader;src:url("/f.woff2")}\n'
+         'h1 { font-family: "Inter", sans-serif; }',
+         rule="literal-font-family", expect=True)
     # The two tells our doctrine PRESCRIBES. If a future rule starts flagging these, the run goes
     # red here rather than in someone's project.
     case("prescribed modal backdrop", '<div class="bg-fm-navy/50 backdrop-blur-sm">',

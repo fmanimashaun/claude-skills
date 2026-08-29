@@ -97,6 +97,11 @@ surface role has a `-foreground` companion** — always write `bg-X text-X-foreg
   --signal: var(--color-fm-orange);          --signal-foreground: var(--color-fm-slate-900);
   --primary-ink: var(--color-fm-electric);   --primary-hover: var(--color-fm-cyan);
   --success-ink: var(--color-fm-success);
+  /* #775. Re-pointed for dark like the surfaces above, not left at their light values.
+     A focus ring is a UI component state (WCAG 1.4.11, 3:1); an `-ink` role exists to BE
+     text (1.4.3, 4.5:1). Held at their light values they measured 2.85:1 on this ground —
+     the ring below 3:1 is not a ring, and an ink tuned for a light ground is illegible. */
+  --ring: var(--color-fm-electric);
 }
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);

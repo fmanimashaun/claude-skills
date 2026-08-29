@@ -84,9 +84,29 @@ majestic monolith.
   experimental. Dropped into an app already on 3.2/3.3, follow the project —
   Rails permits it — but say the interpreter is unsupported, and note that the
   parser hazard in `references/controllers-routing.md` §7 applies there.
-- **There is no Rails 8.2 or 9.0** as of 2026-08-01 — no gem, no tag, no
+- **There is no Rails 8.2 or 9.0** as of 2026-08-29 — no gem, no tag, no
   announcement. Third-party posts claiming an 8.2 release have circulated and
   are wrong; check rubygems.org or the Rails blog before believing a number.
+  **The most convincing false signal is an OFFICIAL page, not a blog post.**
+  `edgeguides.rubyonrails.org/8_2_release_notes.html` returns **200**, is titled
+  *"Ruby on Rails 8.2 Release Notes"*, sits in the guides nav beside 8.1 and 8.0,
+  and carries **no banner saying it documents an unreleased version** (all four
+  re-verified 2026-08-29). Edge guides are built from `main`, where
+  `RAILS_VERSION` is `8.2.0.alpha`, so the page for the *next* version always
+  exists months ahead of it. **An `edgeguides.rubyonrails.org/<N>_<M>_release_notes.html`
+  page is not evidence of release.** Released guides live at
+  `guides.rubyonrails.org`; the tell is that an unreleased page is a **stub**,
+  with its "Highlights" and "Major Features" headings empty.
+- **Settle it mechanically rather than by reading a page** — two commands, both
+  authoritative, neither a judgement call:
+
+  ```bash
+  curl -s https://rubygems.org/api/v1/gems/rails.json | jq -r .version   # 8.1.3.1
+  git ls-remote --tags https://github.com/rails/rails 'refs/tags/v8.2*'  # empty
+  ```
+
+  A released version has **both** a gem and a tag. Absent either, it is not out,
+  whatever any page is titled.
 - New apps get `config.load_defaults 8.1` in `config/application.rb`.
 - If the user's app is on an older Rails, upgrade one minor version at a time
   (7.2 → 8.0 → 8.1) with `bin/rails app:update` and the framework-defaults

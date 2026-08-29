@@ -139,6 +139,26 @@ ignore, which costs more than the orphan detection it buys. It names one `.svg` 
 validated for existence exactly like a `mark`, and is then counted as referenced. **An asset named
 by neither a variant nor the wordmark is still reported** — the check was narrowed, not disabled.
 
+**A single-value feedback role cannot serve both grounds** (#775). `--success`, `--warning`,
+`--info`, `--signal` and `--destructive` are declared once and inherited by `.dark` unless
+re-pointed — and a value tuned dark enough to read on a light ground is too dark to read on a dark
+one. Both shipped packs prove it from opposite sides: fidara's bright hues clear dark and fail
+light; reliance's, darkened for 1.4.3 in light, clear light and fail dark. **Neither is a defect in
+the pack** — it is what one value for two grounds means.
+
+So the contract is: **re-point a feedback role in `.dark` whenever it must be legible there**, the
+same way surfaces already are. Two roles are enforced, at the two thresholds WCAG actually states:
+
+| role | clause | floor | why |
+|---|---|---|---|
+| `--ring` | **1.4.11** non-text | **3:1** | a focus indicator is a UI component state |
+| `--*-ink` | **1.4.3** text | **4.5:1** | an `-ink` role exists to *be* text — that is why `--success-ink` was added beside `--success` |
+
+The **base** feedback roles are deliberately not enumerated against the page. They serve as fills,
+borders or icons depending on the component, so the right threshold depends on a usage the token
+file cannot see — and picking one would fail both shipped packs for a rule neither clause states.
+Judge those on the rendered component, where `/design-flow:audit` pass 3 already looks.
+
 - `variants` — each carries only what re-labelling needs: display `name`, the `endorsement`
   string (or `null`), and which `mark` asset to use. **No variant carries values**, which is
   exactly what makes drift from its parent impossible. A single-brand pack declares one
@@ -366,6 +386,35 @@ Families are a **pack field** (`brand.json` → `fonts`); the three *roles* are 
   (`fidara`: Overpass Mono)
 
 Tracking: headings `-0.02em`; all-caps labels `+0.05–0.1em`; `antialiased`.
+
+**Resolve the role, never the family** — in a utility (`font-sans`) or, where you must write CSS,
+through the token:
+
+```css
+/* correct — the pack decides the family, so a rebrand is one file */
+body            { font-family: var(--font-sans); }
+h1, h2, h3      { font-family: var(--font-display); }
+code, pre       { font-family: var(--font-mono); }
+.receipt-number { font: 500 0.875rem/1.4 var(--font-mono); }
+
+/* wrong — a literal bypasses the role layer and no pack can change it */
+body { font-family: "Inter", sans-serif; } /* design-flow-disable literal-font-family: the wrong
+   form, shown deliberately — the checker is right to flag it, which is the point of the example */
+
+/* the ONE exception: a self-hosted @font-face must name the real family, which is what
+   declaring it here is for. `literal-font-family` exempts this block for that reason. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/fonts/bricolage-grotesque.woff2") format("woff2");
+  font-display: swap;
+}
+```
+
+That block is also the fixture `--doctrine-selfcheck` needs: before #782 not one reference file
+carried a `font-family` declaration, so the gate that asks *"does the checker flag our own
+doctrine?"* had nothing to bite on — and `literal-font-family` fired on every conformant stylesheet
+for two releases while reporting green here. **A criterion-6 gate is only as good as the doctrine's
+example coverage.**
 
 ### Money is `tabular-nums`, not `--font-mono` (#91)
 

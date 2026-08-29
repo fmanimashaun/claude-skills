@@ -2328,6 +2328,55 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.28.0 — 2026-08-29 (release v1.102.0)
+
+- **`bin/ci` could report green having run zero specs, and nothing noticed.** (#779, the enforcement
+  half #391 left open) `--skip-test` is mandated so the project gets RSpec — and Rails gates the test
+  steps in its own `config/ci.rb` template on **that same flag**, so a fresh scaffold has no `Tests:`
+  step. `bin/ci`, which this toolchain treats as the full gate, then passes by not looking, and is
+  quoted as confidence. #391 fixed the doctrine and said in its own text that enforcement was still
+  open; this arrived from a **second, unrelated greenfield app** — the recurrence is what makes it
+  structural rather than user error.
+
+  New gate `ci-runs-tests` (`check_ci_runs_tests.py`, **13 assertions**, 5 mutations). It keys on the
+  step's **command, never its label** — a step named `Tests` that runs rubocop is the exact false
+  confidence it exists to refuse. Three states: a repo with no `config/ci.rb` is **not applicable**,
+  reported by name, never a pass.
+
+  Two of my own defects, both caught by the harness rather than by reading: the first draft stripped
+  `#` comments before parsing, which **truncated a legitimate command containing a `#`** and reported
+  a project that *does* run its suite as one that does not — a false positive, the failure mode that
+  gets a gate switched off. It was also dead: `STEP`'s line anchor already excluded `# step`. And the
+  mutation for command-vs-label was rejected as a **coincidental catch** — the fixture named a step
+  labelled `Tests`, which is not a suite word, so a label-matching implementation failed it for the
+  same reason a command-matching one did. It now uses a step labelled `rspec` running rubocop, which
+  only a command-matching implementation refuses.
+
+- **A gem the doctrine marks "Always", with no installer and no gate.** (#778) `ecosystem-gems.md`
+  §2: *"simple_form is mandatory in this stack — no form, and no form element, is built any other
+  way."* Two of the three Always gems already have checks (archspec, herb, both `applies_when` their
+  config exists). simple_form had neither, and was missing on both affected scaffolds.
+
+  New gate `mandated-gems` (`check_mandated_gems.py`, **13 assertions**, 4 mutations). Its second
+  rule is claims-vs-enforcement inside the **user's own** project: `config.generators` naming
+  `fixture_replacement :factory_bot` without `factory_bot_rails` in the Gemfile is **inert** — every
+  `bin/rails generate` silently emits no factories. Conditional on purpose, with a negative fixture,
+  because the doctrine does not say every project carries factory_bot; only that config naming it
+  needs it.
+
+  Files: `plugins/rails-flow/scripts/check_mandated_gems.py`,
+  `plugins/rails-flow/checks.json`.
+
+- **And `/rails-flow:setup-flow` now performs all of it.** (#778, #779) Two new propose-a-diff
+  sections following the `Archspec.rb` precedent: the `Tests:` + `Tests: Seeds` steps taken verbatim
+  from `testing.md`, the `config.generators` block from `project-setup.md` §1, `factory_bot_rails`,
+  and `simple_form` with its installer generator. Each detects its own shape by running the gate
+  above, so the command and the check ask the same question. Offered as approved diffs, never written
+  unasked. Files: `plugins/rails-flow/scripts/check_ci_runs_tests.py`,
+  `plugins/rails-flow/scripts/check_mandated_gems.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
 ### 1.27.0 — 2026-08-22 (release v1.100.0)
 
 - **A manifest row outside the inventory roots was classified "deleted" on every run.** (#762)
@@ -3960,6 +4009,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.53.0 — 2026-08-29 (release v1.102.0)
+
+- **`brand.md` shows how to resolve a font role, and the `@font-face` exception.** (#782) Before
+  this, no reference file carried a `font-family` declaration at all, so the detector's
+  doctrine-self-check had no example to judge and `literal-font-family` shipped broken for two
+  releases while reporting green. The wrong form is shown too, carrying a documented disable —
+  the checker is right to flag it, which is the point of the example.
+  File: `skills/fidara-design/references/brand.md`.
+
+- **The contract now says a single-value feedback role cannot serve both grounds.** (#775) Both
+  shipped packs prove it from opposite sides — fidara's bright hues clear dark and fail light;
+  reliance's, darkened for 1.4.3 in light, clear light and fail dark. Neither is a pack defect; it
+  is what one value for two grounds means. `brand.md` records the rule and the two enforced
+  thresholds, and `foundations-tokens.md` re-points `--ring` for dark, which it had not.
+  Files: `skills/fidara-design/references/brand.md`,
+  `skills/fidara-design/references/foundations-tokens.md`.
+
+- **`quality-pass`'s worked example: the shared-harness count 17 → 19.** (#778, #779) Both new gates
+  use the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it, which is that gate's
+  whole job: it refuses a **number** in the example disagreeing with the repo, never a duplicate.
+  File: `skills/quality-pass/references/worked-example.md`.
+
+
+- **The version-facts warning named the weakest false signal and missed the strongest.** (#776) It
+  warned about *third-party posts* claiming a Rails 8.2 release. The convincing artefact is an
+  **official rubyonrails.org page**: `edgeguides.rubyonrails.org/8_2_release_notes.html` returns
+  **200**, is titled *"Ruby on Rails 8.2 Release Notes"*, sits in the guides nav beside 8.1 and 8.0,
+  and carries **no banner** marking it unreleased. Edge guides build from `main`, where
+  `RAILS_VERSION` is `8.2.0.alpha`, so the page for the *next* version always exists months ahead of
+  it — and an agent told to "check an official Rails source" lands there and gets a false positive.
+
+  **Verified against authoritative sources on 2026-08-29**, not taken from the report: rubygems.org's
+  API gives `8.1.3.1` as latest; `git ls-remote --tags rails/rails 'refs/tags/v8.2*'` is empty; the
+  edge page returns 200 with no unreleased banner. All four of the report's claims reproduced.
+
+  The bullet now names the trap, gives the tell (an unreleased page is a **stub** — empty
+  "Highlights" and "Major Features"), and adds two commands that settle it **mechanically** rather
+  than by reading a page: a released version has **both** a gem and a tag. The date stamp moves
+  2026-08-01 → 2026-08-29 because the claim was re-verified, not merely restated.
+  File: `skills/rails-8/SKILL.md`.
 
 ### 1.52.3 — 2026-08-29 (release v1.101.0)
 
@@ -8660,6 +8750,133 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.36.0 — 2026-08-29 (release v1.102.0)
+
+- **`literal-font-family` fired on the correct form, on every save.** (#782) The rule matched a
+  bare `font-family\s*:` with **no regard for the value**, so every conformant stylesheet was
+  flagged once per declaration — and the finding's own message names `--font-sans` / `--font-display`
+  as the thing to use, then flags them. `hooks/scripts/design-tells.sh` runs this PostToolUse on
+  every `.css`/`.erb` edit, so an author got it on each save: the false positive this module's own
+  docstring says gets a checker switched off.
+
+  **The obvious narrowing does not work**, and the report measured it before proposing anything:
+  `font-family\s*:\s*(?!var\()` still matches, because `\s*` backtracks to zero width and the
+  lookahead is then evaluated at the space before `var(`. The fix scans the **value** —
+  `(?![^;}]*var\()` — which also lets `font(?:-family)?` share the branch, closing a path where the
+  `font:` shorthand hid a genuine literal **silently**.
+
+  **A self-hosted `@font-face` must name a literal family** — that is exactly what `cdn-font-link`'s
+  *"Fonts are self-hosted"* asks for, so without an exemption the two rules demanded opposite things.
+  The one-line form is exempted by the rule; the **multi-line** form — which the report flagged as a
+  residual and declined to design — is handled by tracking the block, since the declaration need not
+  be its first line.
+
+  **That tracking lives in one helper called by both scanners.** Putting it only in `scan_text`
+  rebuilt the exact divergence this module already paid for: `--doctrine-selfcheck` flagged the
+  `@font-face` example in `brand.md` while the same block in a `.css` file was fine.
+
+  **Why both gates were silent, which is the structural half.** No fixture covered the CSS
+  declaration form, and `--doctrine-selfcheck` could not help because **not one reference file
+  contained a `font-family` declaration** — the criterion-6 gate that asks *"does the checker flag
+  our own doctrine?"* had nothing to bite on, and reported green for two releases. `brand.md` now
+  carries the worked example, correct and incorrect forms and the `@font-face` exception, so the gate
+  has a fixture. **A criterion-6 gate is only as good as the doctrine's example coverage.**
+
+  `--selftest` 56 → **65 checks**; the guard 11 → **15 mutations**. One survived: the "block closes"
+  mutation, because the multi-line fixture exercises a different branch from the one-line form — both
+  closing shapes now have a case. Files: `plugins/design-flow/scripts/llm_tell_detector.py`,
+  `scripts/mutation_check.py`.
+
+- **Six roles at 2.4–3.3:1 passed every gate, because `PAIRS` never enumerated them.** (#775)
+  `check_token_contrast` measured six pairs per mode and none of them covered `--ring`,
+  `--destructive`, `--success`, `--warning`, `--info`, `--signal` or the `-ink` roles.
+
+  **The decision, which was the deliverable.** WCAG has two thresholds and using one for both is
+  taste wearing a count, so the tier is decided by the **contract's own vocabulary**: `--ring` is a
+  focus indicator — a UI component state, **1.4.11, 3:1**; an `--*-ink` role exists to *be* text —
+  that is why `--success-ink` was added beside `--success` — so **1.4.3, 4.5:1**. Both are now
+  enumerated **in both modes**.
+
+  **The base feedback roles are deliberately still absent**, with a negative fixture so re-adding
+  them is a deliberate act. They serve as fills, borders or icons depending on the component, so the
+  right threshold depends on a usage the token file cannot see — and picking one would fail both
+  shipped packs for a rule neither clause states.
+
+  **13 real failures, every one in dark**, because dark re-points its surfaces and these roles were
+  never re-pointed with them: `--primary-ink` measured **1.38:1** on a reliance card. Fixed by
+  re-pointing in `.dark` — **not** by changing any brand colour. The doctrine file already did this
+  for its inks; the packs had simply not followed it.
+
+  **A prior decision I nearly overrode.** `check_token_contrast.py:95` already records that
+  `--destructive-foreground` on `--destructive` is *not* enumerated because *"which red a brand uses
+  is a maintainer decision, not something a checker gets to make while implementing an unrelated
+  issue"* (#129). fidara's white-on-`#EF4444` is 3.76:1 and stays reported there, not fixed here.
+
+  A skipped pair is now a **third state**, printed and counted — `_template` carries placeholder
+  `var()` refs on purpose, and `brand_pack_lint` owns that check. Raising here would have made this
+  gate red for a reason another gate already reports.
+
+  Files: `scripts/check_token_contrast.py`,
+  `plugins/design-flow/brands/fidara/theme.css`,
+  `plugins/design-flow/brands/reliance/theme.css`.
+
+- **`brand_pack_lint` ran against no shipped pack.** (#775) Only its *selftest* was gated, so its
+  dangling-`var()` check — the one that owns *"a role points at a primitive this pack does not
+  define"* — never fired in CI on a real pack. Now gated against `fidara` and `reliance`.
+  Files: `scripts/check_token_contrast.py`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`, `plugins/design-flow/brands/fidara/theme.css`,
+  `plugins/design-flow/brands/reliance/theme.css`,
+  `plugins/design-flow/brands/_template/theme.css`.
+
+
+- **Two checks could not run from an install — #617's class, third recurrence.** (#777)
+  `check_token_drift.py` and `check_scale_contiguity.py` resolved `fidara-design` by hop count
+  (`HERE.parents[2]` and `Path(__file__).resolve().parents[3]` — the same node), which is calibrated
+  for the marketplace **clone**. From an install the cache interposes `<plugin>/<version>/`, and the
+  two shapes differ in **depth**, not offset, so no hop count reconciles them. Both refused at
+  startup for every install user — including the `@theme` drift check #750 created
+  `check_token_drift.py` to perform, silently unverified for everyone who did not clone.
+
+  Two aggravating details from the report, both correct. The refusal said *"the plugin side is
+  missing"*, which reads as a **broken install** rather than a resolver bug — the same
+  misattribution `doctrine_path.describe()` was written for after #617. And `mutation_check` covers
+  both scripts, but that harness runs from the clone too, so the green it produced was **the clone
+  shape confirming itself**.
+
+  Both now call `doctrine_path.find()`, and name **every** root tried on failure. Verified from a
+  real install-shaped tree, not just the clone.
+
+  Both guards' `needs` gained `doctrine_path.py` — the harness caught this immediately and
+  correctly, reporting them **INERT**: the staged tempdir had no resolver, so the *unmutated*
+  selftest already failed at import and every mutation read as "caught" whether or not it broke
+  anything. A guard's `needs` is everything its subject imports, and that changed when the subject
+  did.
+
+  Files: `plugins/design-flow/scripts/check_token_drift.py`,
+  `plugins/design-flow/scripts/check_scale_contiguity.py`.
+
+- **A guard so this cannot be a fourth recurrence: `clone-shaped-doctrine-path`.** (#777) #617
+  produced the shared resolver, four siblings adopted it, two did not, and nothing made the second
+  fact follow from the first. The rule fails any `plugins/design-flow/scripts/*.py` that names
+  `skills/fidara-design` — a path that leaves the plugin, since that skill ships in **rails-stack** —
+  without importing `doctrine_path`.
+
+  **Keyed on the cross-plugin reach, not on filenames**: an allowlist goes stale the moment someone
+  adds a script, which is exactly how this recurred. **The exemption is structural too** — a path
+  staying inside design-flow (`brands/`, `assets/`) has a fixed offset and is correctly resolved by
+  hop count, so only `skills/fidara-design` is the rule's business.
+
+  Its first draft was a line-wise grep and flagged `brand_pack_lint.py:18`, a **docstring** — half
+  this corpus explains clone-vs-install in prose, so it reported the files *describing* the defect
+  alongside the ones committing it. Docstrings are now excluded **structurally** via `ast`: a no-op
+  string statement is a docstring, every other literal is in an expression, which is where a path is
+  actually built. Six fixtures, four mutations. One **survived**: the "resolver is silent" fixture
+  omitted the `fidara-design` literal entirely, so it proved silence for the wrong reason — it now
+  carries `llm_tell_detector.py`'s real shape, a resolver import **plus** a clone-path fallback.
+  Files: `plugins/design-flow/scripts/check_token_drift.py`,
+  `plugins/design-flow/scripts/check_scale_contiguity.py`, `scripts/lint_self_consistency.py`,
+  `scripts/mutation_check.py`.
 
 ### 1.35.0 — 2026-08-29 (release v1.101.0)
 
