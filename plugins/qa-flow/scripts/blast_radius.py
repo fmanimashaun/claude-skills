@@ -57,6 +57,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import qa_config  # noqa: E402 -- sibling module, one reader for qa.config.yml (#792)
+
 # --------------------------------------------------------------------------------------------
 # Risk axes
 # --------------------------------------------------------------------------------------------
@@ -258,7 +261,7 @@ def load_json(path: Path, what: str) -> dict:
 
 
 def load_config(path: Path) -> dict[str, object]:
-    """Read the `blast_radius:` block of `qa/qa.config.yml`. Two levels, no YAML dependency.
+    """Read the `blast_radius:` block, via the ONE shared reader (#792).
 
         blast_radius:
           exclude:
@@ -267,50 +270,16 @@ def load_config(path: Path) -> dict[str, object]:
             money:
               - app/models/ledger_entry.rb
 
-    Additive only: `high_risk` extends the built-in axes and can never empty one. The selftest
-    pins that, because a config key that silently disables a non-negotiable rule is the whole
-    loophole this tool exists to close.
+    Additive only: `high_risk` extends the built-in axes and can never empty one. The selftest pins
+    that, because a config key that silently disables a non-negotiable rule is the whole loophole
+    this tool exists to close.
+
+    This was a local parser sharing a defect with `route_coverage`'s: the key pattern was anchored
+    to end-of-line, so a key with a trailing comment was dropped -- and every key in the scaffolded
+    block carries one, so the whole section parsed to `{}`. Two separately-written copies of one
+    parser is how the same defect existed twice.
     """
-    if not path.is_file():
-        return {}
-    block: dict[str, object] = {}
-    section: str | None = None
-    subsection: str | None = None
-    inside = False
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        if re.match(r"^blast_radius:", raw):
-            inside = True
-            continue
-        if inside and re.match(r"^\S", raw):
-            break
-        if not inside or not raw.strip() or raw.strip().startswith("#"):
-            continue
-        two = re.match(r"^\s{2}([\w-]+):\s*(\[\s*\])?\s*$", raw)
-        four = re.match(r"^\s{4}([\w-]+):\s*(\[\s*\])?\s*$", raw)
-        item4 = re.match(r"^\s{4}-\s*['\"]?([^'\"#]+?)['\"]?\s*(?:#.*)?$", raw)
-        item6 = re.match(r"^\s{6}-\s*['\"]?([^'\"#]+?)['\"]?\s*(?:#.*)?$", raw)
-        if two:
-            section, subsection = two.group(1), None
-            block.setdefault(section, [])
-            continue
-        if four and section:
-            subsection = four.group(1)
-            nested = block.get(section)
-            if not isinstance(nested, dict):
-                nested = {}
-                block[section] = nested
-            nested.setdefault(subsection, [])
-            continue
-        if item6 and section and subsection:
-            nested = block.get(section)
-            if isinstance(nested, dict):
-                nested.setdefault(subsection, []).append(item6.group(1).strip())
-            continue
-        if item4 and section:
-            existing = block.get(section)
-            if isinstance(existing, list):
-                existing.append(item4.group(1).strip())
-    return block
+    return qa_config.load_section(path, "blast_radius")
 
 
 # --------------------------------------------------------------------------------------------

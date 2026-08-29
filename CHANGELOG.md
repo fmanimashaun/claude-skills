@@ -4010,6 +4010,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`quality-pass`'s worked example: the shared-harness count 19 → 20.** (#792) `qa_config.py`
+  uses the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it — that gate
+  refuses a **number** in the example disagreeing with the repo, never a duplicate.
+  File: `skills/quality-pass/references/worked-example.md`.
+
 ### 1.53.0 — 2026-08-29 (release v1.102.0)
 
 - **`brand.md` shows how to resolve a font role, and the `@font-face` exception.** (#782) Before
@@ -7341,6 +7348,47 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **Both `qa.config.yml` loaders silently discarded every key carrying a trailing comment — the
+  exact form `/qa-flow:setup-qa` scaffolds.** (#792) The key pattern was anchored to end-of-line
+  (`^\s{2}(\w+):\s*(\[\s*\])?\s*$`), so on the block the scaffolder writes **both loaders returned
+  `{}`**: the whole declared configuration dropped, with no warning. Measured on the literal
+  scaffold, which is worse than the report's reading — it found `blast_radius` keeping one key,
+  and on the scaffold verbatim it keeps none.
+
+  **The symptom never looked like config.** `route_coverage` printed `excluded by config: 0`, which
+  reads as *"you declared no exclusions"* rather than *"your exclusions were discarded"*, and
+  `--fail-on-untested` then failed on an inflated denominator — so it presented as a project
+  problem. That is the inverse of the risk `route_coverage`'s own docstring names: *"a suppression
+  that leaves no trace is how a coverage number quietly becomes a lie."* Declared-and-not-applied is
+  equally untraceable, and lands on the pessimistic side.
+
+  **A second defect the report did not separate:** the pattern accepted an **empty** inline list and
+  nothing else, so `exclude: ["/up", "/rails/"]` was dropped with no comment in sight. Both shapes
+  are valid YAML and both are natural to write.
+
+  **One reader now, not two.** `qa_config.load_section` replaces both copies — two separately
+  written parsers is how one defect existed twice. It handles trailing comments on keys and items,
+  empty and populated inline lists, block lists, and one level of nesting; **a `#` inside quotes is
+  data**, because stripping unconditionally is the false positive this repo shipped in a CI checker
+  hours earlier.
+
+  **Neither loader had a fixture** — `route_coverage --selftest` passed **70 checks** while
+  `load_config` was referenced only at its definition and its single call site. `qa_config
+  --selftest` is new (**14 assertions**, gated) with a 4-mutation guard. Two mutations survived
+  their first fixtures: the `$` anchor is now **inert** (comments are stripped before the match, so
+  what actually changed is the inline-list group), and the early section `break` agrees with the
+  `inside` reassignment on any well-formed file — it took a **duplicate top-level key** to tell them
+  apart. Files: `plugins/qa-flow/scripts/qa_config.py`,
+  `plugins/qa-flow/scripts/route_coverage.py`, `plugins/qa-flow/scripts/blast_radius.py`,
+  `scripts/maintainer_doctor.py`, `scripts/mutation_check.py`.
+
+  Both existing guards then went **INERT** — they import `qa_config` now, and the staged tempdir
+  did not have it, so the *unmutated* selftest failed and every mutation read as "caught". The
+  harness caught it immediately. Third time this week a guard's `needs` fell behind its subject's
+  imports: `needs` is everything the subject reads, and it changes when the subject does.
 
 ### 1.25.1 — 2026-08-21 (release v1.94.0)
 

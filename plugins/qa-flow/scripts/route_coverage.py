@@ -41,6 +41,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import validate_evidence as ve  # noqa: E402
+import qa_config  # noqa: E402 -- sibling module, one reader for qa.config.yml (#792)
 
 # Which validated profile carries a visited URL, and in which columns. Keyed by profile name so
 # a new pass is wired in one line.
@@ -298,30 +299,15 @@ def priority(cov: Coverage, auth_prefixes: list[str]) -> tuple[int, str]:
 # CLI
 # ---------------------------------------------------------------------------------------
 def load_config(path: Path) -> dict[str, object]:
-    """Read the `coverage:` block. Deliberately a tiny parser, not a YAML dependency."""
-    if not path.is_file():
-        return {}
-    block: dict[str, list[str]] = {}
-    current: str | None = None
-    in_coverage = False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if re.match(r"^coverage:", line):
-            in_coverage = True
-            continue
-        if in_coverage and re.match(r"^\S", line):
-            break  # dedented out of the block
-        if not in_coverage:
-            continue
-        key = re.match(r"^\s{2}(\w+):\s*(\[\s*\])?\s*$", line)
-        if key:
-            current = key.group(1)
-            block[current] = []
-            continue
-        item = re.match(r"^\s{4}-\s*['\"]?([^'\"#]+?)['\"]?\s*(?:#.*)?$", line)
-        if item and current:
-            block[current].append(item.group(1).strip())
-    return dict(block)
+    """Read the `coverage:` block, via the ONE shared reader (#792).
 
+    This was a local parser whose key pattern was anchored to end-of-line, so every key carrying a
+    trailing comment -- the exact form `/qa-flow:setup-qa` scaffolds -- was silently dropped, and a
+    real project's block parsed to `{}`. It also accepted only an EMPTY inline list, so
+    `exclude: ["/up"]` was lost with no comment in sight. `blast_radius` had a second copy with the
+    same defect; two parsers is how one defect existed twice, so there is one now.
+    """
+    return qa_config.load_section(path, "coverage")
 
 def cmd_enumerate(args: argparse.Namespace) -> int:
     routes: list[Route] = []
