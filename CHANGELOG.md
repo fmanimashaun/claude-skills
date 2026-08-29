@@ -4012,6 +4012,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The contract now says a single-value feedback role cannot serve both grounds.** (#775) Both
+  shipped packs prove it from opposite sides — fidara's bright hues clear dark and fail light;
+  reliance's, darkened for 1.4.3 in light, clear light and fail dark. Neither is a pack defect; it
+  is what one value for two grounds means. `brand.md` records the rule and the two enforced
+  thresholds, and `foundations-tokens.md` re-points `--ring` for dark, which it had not.
+  Files: `skills/fidara-design/references/brand.md`,
+  `skills/fidara-design/references/foundations-tokens.md`.
+
 - **`quality-pass`'s worked example: the shared-harness count 17 → 19.** (#778, #779) Both new gates
   use the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it, which is that gate's
   whole job: it refuses a **number** in the example disagreeing with the repo, never a duplicate.
@@ -8737,6 +8745,48 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## design-flow (UI/design plugin)
 
 ### Unreleased
+
+- **Six roles at 2.4–3.3:1 passed every gate, because `PAIRS` never enumerated them.** (#775)
+  `check_token_contrast` measured six pairs per mode and none of them covered `--ring`,
+  `--destructive`, `--success`, `--warning`, `--info`, `--signal` or the `-ink` roles.
+
+  **The decision, which was the deliverable.** WCAG has two thresholds and using one for both is
+  taste wearing a count, so the tier is decided by the **contract's own vocabulary**: `--ring` is a
+  focus indicator — a UI component state, **1.4.11, 3:1**; an `--*-ink` role exists to *be* text —
+  that is why `--success-ink` was added beside `--success` — so **1.4.3, 4.5:1**. Both are now
+  enumerated **in both modes**.
+
+  **The base feedback roles are deliberately still absent**, with a negative fixture so re-adding
+  them is a deliberate act. They serve as fills, borders or icons depending on the component, so the
+  right threshold depends on a usage the token file cannot see — and picking one would fail both
+  shipped packs for a rule neither clause states.
+
+  **13 real failures, every one in dark**, because dark re-points its surfaces and these roles were
+  never re-pointed with them: `--primary-ink` measured **1.38:1** on a reliance card. Fixed by
+  re-pointing in `.dark` — **not** by changing any brand colour. The doctrine file already did this
+  for its inks; the packs had simply not followed it.
+
+  **A prior decision I nearly overrode.** `check_token_contrast.py:95` already records that
+  `--destructive-foreground` on `--destructive` is *not* enumerated because *"which red a brand uses
+  is a maintainer decision, not something a checker gets to make while implementing an unrelated
+  issue"* (#129). fidara's white-on-`#EF4444` is 3.76:1 and stays reported there, not fixed here.
+
+  A skipped pair is now a **third state**, printed and counted — `_template` carries placeholder
+  `var()` refs on purpose, and `brand_pack_lint` owns that check. Raising here would have made this
+  gate red for a reason another gate already reports.
+
+  Files: `scripts/check_token_contrast.py`,
+  `plugins/design-flow/brands/fidara/theme.css`,
+  `plugins/design-flow/brands/reliance/theme.css`.
+
+- **`brand_pack_lint` ran against no shipped pack.** (#775) Only its *selftest* was gated, so its
+  dangling-`var()` check — the one that owns *"a role points at a primitive this pack does not
+  define"* — never fired in CI on a real pack. Now gated against `fidara` and `reliance`.
+  Files: `scripts/check_token_contrast.py`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`, `plugins/design-flow/brands/fidara/theme.css`,
+  `plugins/design-flow/brands/reliance/theme.css`,
+  `plugins/design-flow/brands/_template/theme.css`.
+
 
 - **Two checks could not run from an install — #617's class, third recurrence.** (#777)
   `check_token_drift.py` and `check_scale_contiguity.py` resolved `fidara-design` by hop count
