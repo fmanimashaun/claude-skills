@@ -1159,9 +1159,56 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        # #792. The ONE reader for qa.config.yml, extracted from two separately-written copies that
+        # carried the SAME defect. Neither had a fixture: `route_coverage --selftest` passed 70
+        # checks while `load_config` was referenced only at its definition and its one call site.
+        name="qa_config",
+        subject="plugins/qa-flow/scripts/qa_config.py",
+        selftest="plugins/qa-flow/scripts/qa_config.py",
+        mutations=(
+            Mutation(
+                # THE REPORTED DEFECT. A trailing comment on every key is what setup-qa scaffolds,
+                # so both loaders returned {} on the block the scaffolder writes.
+                "trailing comments stop being stripped, so every scaffolded key is dropped again",
+                '        elif ch == "#":\n            break',
+                '        elif ch == "#":\n            pass',
+                "the scaffolded coverage block is READ, not discarded",
+            ),
+            Mutation(
+                # THE SECOND DEFECT, which the report did not separate: only an EMPTY inline list
+                # was accepted, so `exclude: ["/up"]` was lost with no comment in sight.
+                "only an EMPTY inline list is accepted, so a populated one is dropped",
+                "(?P<inline>\\[.*\\])?",
+                "(?P<inline>\\[\\s*\\])?",
+                "a POPULATED inline list is read",
+            ),
+            Mutation(
+                # A `#` inside quotes is DATA. Stripping unconditionally is the false positive this
+                # repo shipped in a CI checker hours earlier.
+                "quote tracking goes, so a # inside a value truncates it",
+                "        if quote:\n            out.append(ch)\n            if ch == quote:\n                quote = None",
+                "        if False:\n            out.append(ch)\n            if ch == quote:\n                quote = None",
+                "a quoted # is data, not a comment",
+            ),
+            Mutation(
+                # The early break and the `inside` reassignment agree on a well-formed file, so this
+                # survived every fixture until one existed for a DUPLICATE top-level key.
+                "the section stops ending early, so a duplicate key merges into the first",
+                "                # grow. Without the break the second block merges into the first, silently.\n                break",
+                "                # grow. Without the break the second block merges into the first, silently.\n                pass",
+                "a duplicate section does not merge into the first",
+            ),
+        ),
+    ),
+    Guard(
         name="route_coverage",
         subject="plugins/qa-flow/scripts/route_coverage.py",
         selftest="plugins/qa-flow/scripts/route_coverage_selftest.py",
+        # `qa_config` joins `needs` with #792: both loaders now delegate to the one reader,
+        # so without it the staged tempdir fails at IMPORT and the harness reports the guard
+        # INERT -- every mutation "caught" regardless. A guard's needs is everything its
+        # subject imports, and that changed when the loader moved.
+        needs=("plugins/qa-flow/scripts/qa_config.py",),
         deps=("plugins/qa-flow/scripts/validate_evidence.py",),
         mutations=(
             Mutation(
@@ -1217,6 +1264,11 @@ GUARDS: tuple[Guard, ...] = (
         name="blast_radius",
         subject="plugins/qa-flow/scripts/blast_radius.py",
         selftest="plugins/qa-flow/scripts/blast_radius_selftest.py",
+        # `qa_config` joins `needs` with #792: both loaders now delegate to the one reader,
+        # so without it the staged tempdir fails at IMPORT and the harness reports the guard
+        # INERT -- every mutation "caught" regardless. A guard's needs is everything its
+        # subject imports, and that changed when the loader moved.
+        needs=("plugins/qa-flow/scripts/qa_config.py",),
         mutations=(
             # -- the reverse walk itself -------------------------------------------------------
             Mutation(
