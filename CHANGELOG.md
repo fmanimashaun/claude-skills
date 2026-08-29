@@ -4012,6 +4012,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`brand.md` shows how to resolve a font role, and the `@font-face` exception.** (#782) Before
+  this, no reference file carried a `font-family` declaration at all, so the detector's
+  doctrine-self-check had no example to judge and `literal-font-family` shipped broken for two
+  releases while reporting green. The wrong form is shown too, carrying a documented disable —
+  the checker is right to flag it, which is the point of the example.
+  File: `skills/fidara-design/references/brand.md`.
+
 - **The contract now says a single-value feedback role cannot serve both grounds.** (#775) Both
   shipped packs prove it from opposite sides — fidara's bright hues clear dark and fail light;
   reliance's, darkened for 1.4.3 in light, clear light and fail dark. Neither is a pack defect; it
@@ -8745,6 +8752,41 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## design-flow (UI/design plugin)
 
 ### Unreleased
+
+- **`literal-font-family` fired on the correct form, on every save.** (#782) The rule matched a
+  bare `font-family\s*:` with **no regard for the value**, so every conformant stylesheet was
+  flagged once per declaration — and the finding's own message names `--font-sans` / `--font-display`
+  as the thing to use, then flags them. `hooks/scripts/design-tells.sh` runs this PostToolUse on
+  every `.css`/`.erb` edit, so an author got it on each save: the false positive this module's own
+  docstring says gets a checker switched off.
+
+  **The obvious narrowing does not work**, and the report measured it before proposing anything:
+  `font-family\s*:\s*(?!var\()` still matches, because `\s*` backtracks to zero width and the
+  lookahead is then evaluated at the space before `var(`. The fix scans the **value** —
+  `(?![^;}]*var\()` — which also lets `font(?:-family)?` share the branch, closing a path where the
+  `font:` shorthand hid a genuine literal **silently**.
+
+  **A self-hosted `@font-face` must name a literal family** — that is exactly what `cdn-font-link`'s
+  *"Fonts are self-hosted"* asks for, so without an exemption the two rules demanded opposite things.
+  The one-line form is exempted by the rule; the **multi-line** form — which the report flagged as a
+  residual and declined to design — is handled by tracking the block, since the declaration need not
+  be its first line.
+
+  **That tracking lives in one helper called by both scanners.** Putting it only in `scan_text`
+  rebuilt the exact divergence this module already paid for: `--doctrine-selfcheck` flagged the
+  `@font-face` example in `brand.md` while the same block in a `.css` file was fine.
+
+  **Why both gates were silent, which is the structural half.** No fixture covered the CSS
+  declaration form, and `--doctrine-selfcheck` could not help because **not one reference file
+  contained a `font-family` declaration** — the criterion-6 gate that asks *"does the checker flag
+  our own doctrine?"* had nothing to bite on, and reported green for two releases. `brand.md` now
+  carries the worked example, correct and incorrect forms and the `@font-face` exception, so the gate
+  has a fixture. **A criterion-6 gate is only as good as the doctrine's example coverage.**
+
+  `--selftest` 56 → **65 checks**; the guard 11 → **15 mutations**. One survived: the "block closes"
+  mutation, because the multi-line fixture exercises a different branch from the one-line form — both
+  closing shapes now have a case. Files: `plugins/design-flow/scripts/llm_tell_detector.py`,
+  `scripts/mutation_check.py`.
 
 - **Six roles at 2.4–3.3:1 passed every gate, because `PAIRS` never enumerated them.** (#775)
   `check_token_contrast` measured six pairs per mode and none of them covered `--ring`,

@@ -387,6 +387,35 @@ Families are a **pack field** (`brand.json` → `fonts`); the three *roles* are 
 
 Tracking: headings `-0.02em`; all-caps labels `+0.05–0.1em`; `antialiased`.
 
+**Resolve the role, never the family** — in a utility (`font-sans`) or, where you must write CSS,
+through the token:
+
+```css
+/* correct — the pack decides the family, so a rebrand is one file */
+body            { font-family: var(--font-sans); }
+h1, h2, h3      { font-family: var(--font-display); }
+code, pre       { font-family: var(--font-mono); }
+.receipt-number { font: 500 0.875rem/1.4 var(--font-mono); }
+
+/* wrong — a literal bypasses the role layer and no pack can change it */
+body { font-family: "Inter", sans-serif; } /* design-flow-disable literal-font-family: the wrong
+   form, shown deliberately — the checker is right to flag it, which is the point of the example */
+
+/* the ONE exception: a self-hosted @font-face must name the real family, which is what
+   declaring it here is for. `literal-font-family` exempts this block for that reason. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/fonts/bricolage-grotesque.woff2") format("woff2");
+  font-display: swap;
+}
+```
+
+That block is also the fixture `--doctrine-selfcheck` needs: before #782 not one reference file
+carried a `font-family` declaration, so the gate that asks *"does the checker flag our own
+doctrine?"* had nothing to bite on — and `literal-font-family` fired on every conformant stylesheet
+for two releases while reporting green here. **A criterion-6 gate is only as good as the doctrine's
+example coverage.**
+
 ### Money is `tabular-nums`, not `--font-mono` (#91)
 
 **Money is not on that third list, and this is the boundary crossed most often.** A reference number,
