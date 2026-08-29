@@ -3961,6 +3961,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The version-facts warning named the weakest false signal and missed the strongest.** (#776) It
+  warned about *third-party posts* claiming a Rails 8.2 release. The convincing artefact is an
+  **official rubyonrails.org page**: `edgeguides.rubyonrails.org/8_2_release_notes.html` returns
+  **200**, is titled *"Ruby on Rails 8.2 Release Notes"*, sits in the guides nav beside 8.1 and 8.0,
+  and carries **no banner** marking it unreleased. Edge guides build from `main`, where
+  `RAILS_VERSION` is `8.2.0.alpha`, so the page for the *next* version always exists months ahead of
+  it — and an agent told to "check an official Rails source" lands there and gets a false positive.
+
+  **Verified against authoritative sources on 2026-08-29**, not taken from the report: rubygems.org's
+  API gives `8.1.3.1` as latest; `git ls-remote --tags rails/rails 'refs/tags/v8.2*'` is empty; the
+  edge page returns 200 with no unreleased banner. All four of the report's claims reproduced.
+
+  The bullet now names the trap, gives the tell (an unreleased page is a **stub** — empty
+  "Highlights" and "Major Features"), and adds two commands that settle it **mechanically** rather
+  than by reading a page: a released version has **both** a gem and a tag. The date stamp moves
+  2026-08-01 → 2026-08-29 because the claim was re-verified, not merely restated.
+  File: `skills/rails-8/SKILL.md`.
+
 ### 1.52.3 — 2026-08-29 (release v1.101.0)
 
 - **`brand.md`: `wordmark` documented in the pack manifest contract.** (#771) It is a **pack**
