@@ -4010,7 +4010,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.53.1 — 2026-08-29 (release v1.104.0)
 
 - **`quality-pass`'s worked example: the shared-harness count 19 → 20.** (#792) `qa_config.py`
   uses the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it — that gate
@@ -7349,7 +7349,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.26.0 — 2026-08-29 (release v1.104.0)
 
 - **Both `qa.config.yml` loaders silently discarded every key carrying a trailing comment — the
   exact form `/qa-flow:setup-qa` scaffolds.** (#792) The key pattern was anchored to end-of-line
