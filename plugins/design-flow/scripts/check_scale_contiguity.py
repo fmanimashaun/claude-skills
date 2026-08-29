@@ -43,8 +43,18 @@ import re
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
-DOC = REPO / "skills" / "fidara-design" / "references" / "foundations-tokens.md"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import doctrine_path                    # noqa: E402 -- same plugin, one resolver
+
+# THE SHARED RESOLVER, not parent-counting (#777). `parents[N]` is calibrated for the marketplace
+# CLONE; from an install the cache interposes `<plugin>/<version>/`, and the two shapes differ in
+# DEPTH rather than offset -- so no hop count reconciles them and this check simply never ran for
+# anyone who installed. That population is the least likely to notice, and the refusal below said
+# "the plugin side is missing", which reads as a broken install rather than a resolver bug.
+# Third recurrence of #617's class, second after the resolver existed.
+_DOCTRINE = doctrine_path.find(Path(__file__).resolve())
+DOC = ((_DOCTRINE / "references" / "foundations-tokens.md") if _DOCTRINE
+       else Path("foundations-tokens.md"))          # unresolvable: main() refuses, naming every root
 
 # The two scales, and how their step names order. `3xs < 2xs < xs < s < m < l < xl < 2xl < 3xl`.
 SPACE_ORDER = ["3xs", "2xs", "xs", "s", "m", "l", "xl", "2xl", "3xl"]
@@ -164,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.selftest:
         return _selftest()
     if not DOC.is_file():
-        print(f"no {DOC}", file=sys.stderr)
+        print(f"cannot locate foundations-tokens.md. Tried:\n"
+              f"{doctrine_path.describe(Path(__file__).resolve())}", file=sys.stderr)
         return 2
     found = findings(DOC.read_text(encoding="utf-8"))
     if found:

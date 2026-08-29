@@ -1948,6 +1948,75 @@ def check_pinned_toolchain_ref() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
+    """A design-flow script must reach `fidara-design` through `doctrine_path`, never by hop count.
+
+    #777, the THIRD recurrence of #617's class and the second after the shared resolver existed.
+    `parents[N]` is calibrated for the marketplace CLONE; from an install the cache interposes
+    `<plugin>/<version>/`, and the two shapes differ in DEPTH rather than offset, so no hop count
+    reconciles them. Both offenders refused with "the plugin side is missing" -- which reads as a
+    broken install rather than a resolver bug, sending reporters to check a path that was never
+    going to hold it.
+
+    The resolver landing and its callers migrating stayed two independent facts, and nothing made
+    the second follow from the first. That is what this rule fixes: #617 produced `doctrine_path`,
+    four siblings adopted it, two did not, and every gate stayed green because the whole harness
+    runs from the clone -- the clone shape confirming itself.
+
+    KEYED ON THE CROSS-PLUGIN REACH, not on a list of filenames. `fidara-design` ships in
+    rails-stack while these scripts ship in design-flow, so ANY design-flow script naming that path
+    is crossing a plugin boundary and must ask the resolver. A filename allowlist would be a
+    denylist wearing a different hat: it goes stale the moment someone adds a script, which is
+    exactly how this recurred.
+
+    THE EXEMPTION IS STRUCTURAL, not by name. A path that stays INSIDE design-flow -- `brands/`,
+    `assets/` -- has a fixed offset and is correctly resolved by hop count; only a path leaving the
+    plugin has the depth problem. So the rule fires on `skills/fidara-design`, and `parents[N]`
+    reaching a sibling directory of the same plugin is not its business.
+    """
+    import ast as _ast
+
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted(ROOT.glob("plugins/design-flow/scripts/*.py")):
+        if path.name == "doctrine_path.py":          # the resolver itself is where the hops live
+            continue
+        text = path.read_text(encoding="utf-8")
+        examined += 1
+        if "doctrine_path" in text:
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        try:
+            tree = _ast.parse(text)
+        except SyntaxError:                          # a broken file is another gate's finding
+            continue
+        # DOCSTRINGS ARE EXCLUDED STRUCTURALLY, not by pattern. Half this corpus explains the
+        # clone-vs-install problem in prose -- `brand_pack_lint.py` names the path in its module
+        # docstring and resolves nothing -- so a line-wise grep reports the files that describe the
+        # defect alongside the ones that commit it. A no-op string statement is a docstring; every
+        # other literal is in an expression, which is where a path actually gets built.
+        docstrings = {
+            id(node.body[0].value)
+            for node in _ast.walk(tree)
+            if isinstance(node, (_ast.Module, _ast.ClassDef, _ast.FunctionDef, _ast.AsyncFunctionDef))
+            and node.body and isinstance(node.body[0], _ast.Expr)
+            and isinstance(node.body[0].value, _ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+        }
+        for node in _ast.walk(tree):
+            if not (isinstance(node, _ast.Constant) and isinstance(node.value, str)):
+                continue
+            if id(node) in docstrings or "fidara-design" not in node.value:
+                continue
+            findings.append(Finding(
+                "clone-shaped-doctrine-path", rel, node.lineno,
+                "reaches `skills/fidara-design` (which ships in rails-stack) without importing "
+                "`doctrine_path`. Hop counts are calibrated for the clone; an install interposes "
+                "`<plugin>/<version>/` and the shapes differ in DEPTH, so the check never runs for "
+                "install users. Use `doctrine_path.find()`, and `describe()` in the refusal."))
+    return findings, examined
+
+
 def check_duplicated_release_extractor() -> tuple[list[Finding], int]:
     """The release-notes extractor lives in ONE script, and both publish paths must call it.
 
@@ -2398,6 +2467,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
     rel_extract, rel_extract_examined = check_duplicated_release_extractor()
     pinned_ref, pinned_ref_examined = check_pinned_toolchain_ref()
+    xplugin, xplugin_examined = check_cross_plugin_doctrine_path()
     bullet_sec, bullet_sec_examined = check_changelog_bullet_section()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
@@ -2434,6 +2504,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "skill_directories_named_in_claude_md": undoc_skill_examined,
         "publish_paths_checked_for_own_extractor": rel_extract_examined,
         "shipped_docs_scanned_for_a_pinned_toolchain_tag": pinned_ref_examined,
+        "design_flow_scripts_checked_for_a_clone_shaped_doctrine_path": xplugin_examined,
         "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
@@ -2444,7 +2515,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     return (dead + unenforced + undocumented + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref,
+            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
+            + xplugin,
             coverage)
 
 
@@ -2480,6 +2552,67 @@ def selftest() -> int:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
             failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+
+    # -- clone-shaped-doctrine-path (#777) --------------------------------
+    CSD = "clone-shaped-doctrine-path"
+    SCRIPTS = "plugins/design-flow/scripts"
+    RESOLVER = f"{SCRIPTS}/doctrine_path.py"
+
+    # THE DEFECT, in both spellings that shipped: `HERE.parents[2]` and
+    # `Path(__file__).resolve().parents[3]` land on the same node from that directory.
+    for label, expr in (("HERE.parents", "HERE.parents[2]"),
+                        ("__file__.parents", "Path(__file__).resolve().parents[3]")):
+        scenario(f"{label} reaching a sibling plugin's doctrine", {
+            RESOLVER: "def find(p):\n    return None\n",
+            f"{SCRIPTS}/check_thing.py":
+                'from pathlib import Path\n'
+                f'REPO = {expr}\n'
+                'DOC = REPO / "skills" / "fidara-design" / "references" / "foundations-tokens.md"\n',
+        }, rule=CSD, expect_finding=True)
+
+    # THE FIX is silent -- and the fixture must still CONTAIN the literal, or it proves silence
+    # for the wrong reason. The first draft omitted `fidara-design` entirely, so removing the
+    # resolver-import exemption changed nothing and that mutation survived. This is
+    # `llm_tell_detector.py`'s real shape: it imports the resolver AND keeps a clone-path fallback
+    # for the message, so only the exemption keeps it quiet.
+    scenario("the shared resolver is silent, fallback literal and all", {
+        RESOLVER: "def find(p):\n    return None\n",
+        f"{SCRIPTS}/check_thing.py":
+            'import os\n'
+            'import doctrine_path\n'
+            '_D = doctrine_path.find(__file__)\n'
+            'DOC = (os.path.join(str(_D), "references") if _D\n'
+            '       else os.path.join(REPO, "skills", "fidara-design", "references"))\n',
+    }, rule=CSD, expect_finding=False)
+
+    # PROSE IS NOT A PATH, and this is the clause that made the first draft useless: half this
+    # corpus explains the clone-vs-install problem in its docstring, so a line-wise grep reported
+    # the files DESCRIBING the defect alongside the ones committing it. Excluded structurally --
+    # a no-op string statement is a docstring; every other literal is in an expression.
+    scenario("a docstring naming the path is not a finding", {
+        RESOLVER: "def find(p):\n    return None\n",
+        f"{SCRIPTS}/check_thing.py":
+            '"""Source of truth is skills/fidara-design/references/foundations-tokens.md."""\n'
+            'from pathlib import Path\n'
+            'THEME = Path(__file__).resolve().parents[1] / "brands" / "fidara" / "theme.css"\n',
+    }, rule=CSD, expect_finding=False)
+
+    # AN INTRA-PLUGIN hop count is CORRECT and must stay silent: a path that never leaves the
+    # plugin has a fixed offset, and only a path crossing into rails-stack has the depth problem.
+    scenario("an intra-plugin parents[] is not a finding", {
+        RESOLVER: "def find(p):\n    return None\n",
+        f"{SCRIPTS}/check_thing.py":
+            'from pathlib import Path\n'
+            'THEME = Path(__file__).resolve().parents[1] / "brands" / "fidara" / "theme.css"\n',
+    }, rule=CSD, expect_finding=False)
+
+    # THE RESOLVER ITSELF is where the hops legitimately live.
+    scenario("doctrine_path.py itself is exempt", {
+        RESOLVER:
+            'from pathlib import Path\n'
+            'BASE = Path(__file__).resolve().parents[3]\n'
+            'SKILL_REL = "skills/fidara-design"\n',
+    }, rule=CSD, expect_finding=False)
 
     # -- dangling-conditional-floor (#531) --------------------------------
     DCF = "dangling-conditional-floor"
