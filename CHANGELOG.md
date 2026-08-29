@@ -3961,7 +3961,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.52.3 — 2026-08-29 (release v1.101.0)
 
 - **`brand.md`: `wordmark` documented in the pack manifest contract.** (#771) It is a **pack**
   property, never a variant's, and the reference states why — a variant re-labels, it does not
@@ -8661,7 +8661,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.35.0 — 2026-08-29 (release v1.101.0)
 
 - **A `reliance` brand pack — the first non-fidara pack.** (#771) Maps the Reliance Health Design
   System (`reliancehealthinc/reliance-design-system`) onto the role contract: 40 primitives, 28
