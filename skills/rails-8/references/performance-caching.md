@@ -169,8 +169,10 @@ responses identical for every user. Never on authenticated pages.
 Full query guidance lives in `models.md`; the performance-critical recap:
 
 - **N+1s** — `includes`/`preload` at the query site; `strict_loading` to make
-  lazy loads raise in development (the `bullet` gem adds dev warnings — see
-  `ecosystem-gems.md`).
+  lazy loads raise in development. To have the **suite** catch them, `prosopite`
+  (no request lifecycle needed); for warnings behind a dev browser, `bullet` —
+  which detects nothing in a model spec unless each example is wrapped. See
+  `ecosystem-gems.md` §10.
 - **Counter caches** — replace `product.reviews.count` (a COUNT query per
   row) with a maintained column:
 

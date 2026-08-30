@@ -16,7 +16,7 @@ you how each one is idiomatically used).
 7. Search & filtering: ransack, pg_search
 8. Background jobs: Solid Queue, full stop
 9. Model utilities: friendly_id, paper_trail, discard, aasm
-10. Dev & debug: bullet, letter_opener, annotaterb, rack-mini-profiler, dotenv
+10. Dev & debug: prosopite, bullet, letter_opener, annotaterb, rack-mini-profiler, dotenv
 11. APIs, admin, charts, flags — quick hits
 12. Testing stack (pointer)
 13. Executable boundaries: archspec, herb
@@ -38,7 +38,7 @@ you how each one is idiomatically used).
 | Slugs | `to_param` override | History/aliasing of slugs → **friendly_id** |
 | Audit trail | 8.1 `Rails.event` + your own log table | Full model versioning/undo → **paper_trail** |
 | Soft delete | An `archived_at` column + scopes | Uniform pattern across many models → **discard** |
-| N+1 detection | `strict_loading` | Want dev-log warnings instead of raises → **bullet** |
+| N+1 detection | `strict_loading` | Detecting in **specs** → **prosopite** (§10). Warnings behind a dev browser → **bullet** |
 | Uploads | Active Storage | (stick with Active Storage) |
 | JSON APIs | `render json:` / jbuilder | Serializer objects preferred → **blueprinter**/**alba**; OpenAPI docs → **rswag** |
 | HTTP client | `Net::HTTP` | Any nontrivial client code → **faraday** |
@@ -290,9 +290,64 @@ mount it behind admin auth like any ops surface.
 
 ## 10. Dev & debug quality-of-life
 
-- **bullet** — flags N+1s and unused eager loads in development
-  (`Bullet.enable = true; Bullet.add_footer = true` in an initializer's
-  dev block). Complements, not replaces, `strict_loading`.
+- **prosopite** — the N+1 detector for a **spec-driven guard**, and the default when you
+  want the suite to catch N+1s rather than a human noticing a footer. It watches queries
+  through ActiveSupport instrumentation and reports when *more than one query shares the
+  same call stack and the same query fingerprint*, so it needs **no middleware and no
+  request lifecycle**:
+
+  ```ruby
+  # spec/rails_helper.rb
+  config.before(:each) { Prosopite.scan }
+  config.after(:each)  { Prosopite.finish }
+  ```
+
+  ```ruby
+  # config/environments/test.rb
+  config.after_initialize do
+    Prosopite.rails_logger = true
+    Prosopite.raise = true                      # a detection fails the example
+    Prosopite.allow_stack_paths = %w[spec/factories db/seeds]
+  end
+  ```
+
+  `allow_stack_paths` filters by **call-stack origin**, and you will need it on the first
+  run: seeds and factories issue exactly the repeated-lookup shape the detector is built
+  to find, and that is test setup, not application N+1. A real project saw 162 of 418
+  examples fire on factory `Role` lookups before filtering.
+
+  It also catches shapes an association-based detector misses — N+1s **after record
+  creation**, non-association lookups (`Chair.find(l.chair_id)`), collection calls
+  (`first`, `last`, `pluck`), and `#becomes`.
+
+- **bullet** — flags N+1s and unused eager loads **behind a running dev server**
+  (`Bullet.enable = true; Bullet.add_footer = true` in an initializer's dev block), where
+  its Rack middleware wraps each request for you.
+
+  **It detects nothing in a model spec unless you wrap every example yourself.** Bullet's
+  own README: *"model tests and other tests that don't go through the Rack middleware
+  (like direct model method calls) require manual wrapping … Without proper wrapping,
+  Bullet cannot detect query problems in isolated unit tests."* So:
+
+  ```ruby
+  config.before(:each) { Bullet.start_request }
+  config.after(:each) do
+    Bullet.perform_out_of_channel_notifications if Bullet.notification?
+    Bullet.end_request
+  end
+  ```
+
+  Omit that and the gem sits in the Gemfile **looking like protection**. This is not a
+  Rails-version problem and must not be recorded as one — bullet ships `Gemfile.rails-8.0`
+  and `Gemfile.rails-8.1` and tests against both. A downstream project concluded "the
+  internals moved" and wrote it into a comment; the cause was the missing lifecycle.
+
+  Both **complement, not replace, `strict_loading`** — that raises, these report.
+
+- **Assert the detector still detects.** Whichever you pick, a guard that has quietly
+  stopped detecting is worse than none, so pin it with a spec that builds a known N+1 and
+  expects a failure, plus its eager-loaded twin that must stay silent. A detector with no
+  test is a claim nothing makes true.
 - **letter_opener** — opens sent mail in a browser tab:
   `config.action_mailer.delivery_method = :letter_opener` (development). The
   built-in alternative is mailer previews at `/rails/mailers`.
