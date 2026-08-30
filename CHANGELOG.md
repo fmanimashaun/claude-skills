@@ -4010,6 +4010,43 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **§10 recommended `bullet` for N+1 detection and never mentioned the request lifecycle it
+  needs.** (#796) An agent following that into a spec-driven guard gets a gem in the Gemfile that
+  **reports nothing** — protection that isn't.
+
+  **Verified against upstream rather than taken from the report.** The downstream project attributed
+  the silence to *"ActiveRecord internals that moved"* on Rails 8.1. That is **false**: bullet ships
+  `Gemfile.rails-8.0` and `Gemfile.rails-8.1` and tests against both. Its README gives the real
+  cause — *"model tests and other tests that don't go through the Rack middleware … require manual
+  wrapping … Without proper wrapping, Bullet cannot detect query problems in isolated unit tests."*
+  A model-level probe is silent on **any** Rails version without `start_request`/`end_request`.
+
+  Their **decision** was right and their **reason** was wrong, and they had written the reason into
+  a code comment "so nobody repeats them" — a wrong mechanism comment is worse than none, so the
+  version claim is explicitly refuted in §10 rather than merely omitted.
+
+  §10 now names **prosopite** for spec-driven detection: ActiveSupport instrumentation matching
+  *same call stack + same query fingerprint*, so no middleware and no request lifecycle — a
+  `scan`/`finish` pair is the whole setup. It also documents the shapes an association-based
+  detector misses (N+1s after record creation, `Chair.find(l.chair_id)`, `first`/`last`/`pluck`,
+  `#becomes`). `allow_stack_paths` is shown because seeds and factories issue exactly the
+  repeated-lookup shape the detector hunts — a real project saw **162 of 418** examples fire on
+  factory `Role` lookups before filtering.
+
+  **bullet keeps its place behind a dev server**, where its Rack middleware does the wrapping, with
+  the caveat stated and the manual wrapping shown. Both still complement rather than replace
+  `strict_loading` — that raises, these report.
+
+  And §10 now says to **assert the detector still detects**: a known N+1 that must fail, and its
+  eager-loaded twin that must stay silent. A detector with no test is a claim nothing makes true.
+
+  **Neither gem is mandated** — N+1 detection is a conditional row of the §1 decision table, and
+  demanding it would be the false positive that gets a gate switched off. Files:
+  `skills/rails-8/references/ecosystem-gems.md`,
+  `skills/rails-8/references/performance-caching.md`.
+
 ### 1.53.1 — 2026-08-29 (release v1.104.0)
 
 - **`quality-pass`'s worked example: the shared-harness count 19 → 20.** (#792) `qa_config.py`
