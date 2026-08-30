@@ -491,7 +491,23 @@ the three "Always" gems already have checks; this one did not.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mandated_gems.py"
 ```
 
-On exit **1**, propose:
+On exit **1**, propose whatever it names. Two shapes come out of it:
+
+**The prescribed testing stack** (#797). `skills/rails-8/references/testing.md` declares a complete
+Gemfile block and that file is this stack's testing doctrine, not a menu — yet nothing installed it
+and nothing checked it, so a scaffold could hold `rspec-rails` and no `simplecov`, `webmock` or
+`vcr` and report clean everywhere. The check names each missing gem and the exact command:
+
+```bash
+bundle add rspec-rails factory_bot_rails faker --group 'development,test'
+bundle add capybara selenium-webdriver simplecov webmock vcr rubocop-rspec --group test
+```
+
+Take the list from the **check's output**, not from this page — it is derived from `testing.md`, so
+this block is illustrative and the check is authoritative. **`database_cleaner-active_record` is
+deliberately not in it**: `testing.md` §2 says transactional fixtures already cover it.
+
+**The mandated form gem:**
 
 ```bash
 bundle add simple_form

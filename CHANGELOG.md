@@ -2328,6 +2328,60 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The doctrine prescribed 15 gems as literal `gem "…"` lines; 4 were installed and 2 were
+  checked.** (#797) `testing.md:40-54` declares a complete Gemfile block, and that file is described
+  as *"this skill's testing doctrine"* — not a menu. Nothing installed it and nothing verified it, so
+  a scaffold could hold `rspec-rails` and no `simplecov`, `webmock` or `vcr` and report clean
+  everywhere.
+
+  **`/rails-flow:toolchain-audit` could not see it, and that is not the audit's fault.** Step 3 runs
+  *"every shipped check that applies"*. There was no check — it correctly reported nothing wrong
+  because nothing was looking. Same shape as #779.
+
+  **This was #778's class, fixed one member at a time.** That issue said *"simple_form is an Always
+  gem with no installer and no gate"* and the fix installed and gated **simple_form**. The class was
+  *"the doctrine prescribes gems that nothing installs and nothing verifies"*. `code-review`'s own
+  rule says: when you find one instance, grep for the pattern. I did not.
+
+  **The list is DERIVED from the doctrine, and committed rather than read at runtime.**
+  `testing.md` ships in **rails-stack**; the checker ships in **rails-flow**. A runtime read crosses
+  that boundary — #617's class, which recurred twice after the shared resolver existed (#763, #777),
+  and `doctrine_path` is design-flow's and hardcodes `fidara-design`, so rails-flow cannot borrow it
+  without a second copy — which is exactly how #792's one defect came to live in two parsers. So
+  `derive_mandated_gems.py` writes `plugins/rails-flow/mandated_gems.json` beside the checker, and a
+  drift gate proves it still matches. Same shape as `coverage.md` → `docs/coverage.html`.
+
+  The fence is found by **content** (`group :development, :test do`), never "the first ruby fence" —
+  which would follow any edit that inserted an earlier one, failing as a silently shorter list.
+
+  **Situational gems are not demanded.** `pagy`, `pundit`, `ransack`, `bullet`, `prosopite`,
+  `rack-mini-profiler` are conditional rows of the §1 table and their absence is correct; a gate
+  firing on a conforming project is the false positive that gets it switched off (#476). And
+  `database_cleaner-active_record` is **commented out in the doctrine's own block** — requiring it
+  would contradict the file the list came from.
+
+  **Four defects in my own work, each caught by the harness rather than by reading:**
+
+  1. An explicit comment-skip, a `^` in the pattern and `re.match` **all did the same job**, so a
+     mutation removing any *one* survived every fixture. Two guards for one behaviour means neither
+     is testable — collapsed to one mechanism (`match`, not `search`), which a fixture now witnesses.
+     Second time today the same redundant guard appeared; `qa_config.declared_gems` carried it too.
+  2. The empty-derivation refusal sat inside `derive()`, which reads the real file, so **no fixture
+     could reach it**. Extracted `derive_from(text)`.
+  3. The "every gem is required" fixture looped over `testing_stack()` — so a mutation shrinking that
+     function **shrank the fixture with it**. It reads the artifact directly now: a test that
+     recomputes its subject cannot witness the subject changing.
+  4. The guard went **INERT** — fourth time today a guard's `needs` fell behind its subject.
+
+  `setup-flow` proposes the missing block, taking the list from the check's output rather than the
+  page, because the check is what is derived. Files:
+  `scripts/derive_mandated_gems.py`, `plugins/rails-flow/mandated_gems.json`,
+  `plugins/rails-flow/scripts/check_mandated_gems.py`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
 ### 1.28.0 — 2026-08-29 (release v1.102.0)
 
 - **`bin/ci` could report green having run zero specs, and nothing noticed.** (#779, the enforcement
@@ -4011,6 +4065,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
 ### Unreleased
+
+- **`quality-pass`'s worked example: the `Unusable` count 5 → 6.** (#797)
+  `derive_mandated_gems.py` declares one. `check_shared_shapes.py` caught it — that gate refuses a
+  **number** in the example disagreeing with the repo, never a duplicate. It also caught me bumping
+  the *wrong* row first: I assumed the `check(label, ok, detail)` harness had grown, and the new
+  script's helper is named `check_`, so it had not. Read the finding; do not infer it.
+  File: `skills/quality-pass/references/worked-example.md`.
 
 - **§10 recommended `bullet` for N+1 detection and never mentioned the request lifecycle it
   needs.** (#796) An agent following that into a spec-driven guard gets a gem in the Gemfile that

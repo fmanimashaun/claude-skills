@@ -2276,13 +2276,69 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        # #797. The list is DERIVED from the rails-8 doctrine and committed beside the checker,
+        # because a runtime read would cross a plugin boundary -- #617's class, already recurred
+        # twice. This guard covers the derivation; the drift gate covers the artifact.
+        name="derive_mandated_gems",
+        subject="scripts/derive_mandated_gems.py",
+        selftest="scripts/derive_mandated_gems.py",
+        needs=("skills/rails-8/references/testing.md",),
+        mutations=(
+            Mutation(
+                # `re.match` anchors at position 0, which is what excludes `# gem "x"`. An explicit
+                # comment-skip AND a `^` in the pattern both did the same job, so a mutation
+                # removing any ONE survived. Two guards for one behaviour means neither is testable.
+                "match becomes search, so a commented gem is derived as required",
+                "(GEM.match(l) for l in block.splitlines())",
+                "(GEM.search(l) for l in block.splitlines())",
+                "a COMMENTED gem is not derived",
+            ),
+            Mutation(
+                "an empty derivation is accepted, making the gate unable to fail",
+                "    if not gems:",
+                "    if False:",
+                "an all-commented fence refuses",
+            ),
+            Mutation(
+                # "the first ruby fence" would follow any edit that inserted an earlier one, and the
+                # failure would be a silently shorter list.
+                "the first fence is taken instead of the anchored one",
+                "    hits = [b for b in blocks if anchor in b]",
+                "    hits = blocks[:1]",
+                "an earlier unrelated fence is not chosen",
+            ),
+        ),
+    ),
+    Guard(
         # #778. simple_form is marked Always and had neither an installer nor a gate. The second
         # rule is claims-vs-enforcement inside the USER's project: config naming a gem they do not
         # have is a claim nothing makes true.
         name="check_mandated_gems",
         subject="plugins/rails-flow/scripts/check_mandated_gems.py",
         selftest="plugins/rails-flow/scripts/check_mandated_gems.py",
+        # The DERIVED artifact joins `needs` (#797): the checker reads it, so without
+        # it the staged tempdir yields an empty list and the unmutated selftest fails --
+        # the harness reports INERT. Fourth time today a guard's needs fell behind its
+        # subject; needs is everything the subject reads, artifacts included.
+        needs=("plugins/rails-flow/mandated_gems.json",),
         mutations=(
+            # #797. The doctrine wrote 15 gems as literal `gem` lines; 4 were installed by any
+            # command and 2 were checked. A project could hold rspec-rails and no simplecov,
+            # webmock or vcr and report clean everywhere.
+            Mutation(
+                "the prescribed testing stack stops being required",
+                "    missing = [g for g in testing_stack() if g not in gems]",
+                "    missing = []",
+                "a Gemfile missing simplecov FAILS",
+            ),
+            Mutation(
+                # DERIVED, not hardcoded: enforcing one gem and ignoring the other eight would pass
+                # a fixture that only ever removed simplecov.
+                "only the first gem is enforced instead of the whole derived list",
+                '        return list(json.loads(MANDATED.read_text(encoding="utf-8")).get("testing_stack") or [])',
+                '        return ["rspec-rails"]',
+                "EVERY gem in the derived list is required",
+            ),
             Mutation(
                 "simple_form stops being required, so the Always gem is a preference again",
                 '    if "simple_form" not in gems:',
