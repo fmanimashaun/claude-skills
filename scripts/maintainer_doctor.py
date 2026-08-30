@@ -270,6 +270,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-flow/scripts/check_ci_runs_tests.py", "--selftest")),
     ("rails-flow mandated gems",
      ("python3", "plugins/rails-flow/scripts/check_mandated_gems.py", "--selftest")),
+    # #797. The list rails-flow enforces is DERIVED from the rails-8 doctrine that declares it, and
+    # committed beside the checker -- a runtime read would cross a plugin boundary, which is #617's
+    # class and has already recurred twice. This proves the artifact still matches its source.
+    ("mandated gems derived",
+     ("python3", "scripts/derive_mandated_gems.py", "--check")),
+    ("mandated gems derived selftest",
+     ("python3", "scripts/derive_mandated_gems.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.
