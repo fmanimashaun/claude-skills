@@ -559,6 +559,73 @@ def run() -> int:
             "silently TIGHTENS a gate through a table whose whole purpose is to loosen one"
         )
 
+    # ---- A FAILING GATE'S FINDINGS, not just their count (#820) -------------------------------
+    # The doctor kept `out.splitlines()[-1]`, and most of our gates end with a `N finding(s)` --
+    # so what survived was reliably the count. On a runner the doctor is the ONLY thing that runs
+    # the gate, so the findings were then printed nowhere at all.
+    real = (
+        "scanned 95 python module(s); 1 json settings file(s); 16 declared component(s)\n"
+        "\n"
+        "[changelog-bullet-unplaceable] CHANGELOG.md:2373 -- names no file that exists.\n"
+        "\n"
+        "1 finding(s)."
+    )
+    summary, findings = md.gate_output(real, 1)
+    _tick()
+    if summary != "1 finding(s).":
+        FAILURES.append(f"the summary line is no longer the gate's last line: {summary!r}")
+    _tick()
+    if not any("changelog-bullet-unplaceable" in f for f in findings):
+        FAILURES.append(
+            f"a failing gate's FINDING is dropped, leaving only its count: {findings!r}")
+
+    # Anchored at the BOTTOM, opposite to project_gates.summarise: our gates put their preamble
+    # first and their report last, so the last lines are the ones worth keeping.
+    long_out = "\n".join(f"noise {i}" for i in range(30))
+    long_out += "\n" + "\n".join(f"[rule] finding {i}" for i in range(30)) + "\n30 finding(s)."
+    summary, findings = md.gate_output(long_out, 1)
+    _tick()
+    if not findings or "noise 0" in "\n".join(findings):
+        FAILURES.append(
+            "the cap keeps the EARLIEST lines, which for our gates is the stats preamble -- the "
+            f"findings sit just above the footer and are what must survive: {findings[:2]!r}")
+    _tick()
+    if not findings or "[rule] finding 29" not in findings[-1]:
+        FAILURES.append(f"the last finding before the footer is dropped: {findings[-1:]!r}")
+    _tick()
+    if not findings or "dropped" not in findings[0]:
+        FAILURES.append(
+            "the cap truncates SILENTLY -- a reader cannot tell the report was cut, which is this "
+            f"same defect one step along: {findings[:1]!r}")
+    _tick()
+    if len(findings) > md.MAX_GATE_FINDING_LINES + 1:
+        FAILURES.append(f"the cap does not bound the output: {len(findings)} line(s)")
+    _tick()
+    if md.gate_output("", 2) != ("exit 2", ()):
+        FAILURES.append(
+            f"a gate that failed with NO output reports nothing at all: {md.gate_output('', 2)!r}")
+
+    # THE CONSUMER, driven directly. Everything above proves `gate_output` carries the lines; none
+    # of it proves `report` PRINTS them, and emptying that loop survives every fixture that only
+    # calls the helper. Proving the helper is not proving the caller (#812, and again here).
+    import contextlib
+    import io
+    d = md.Doctor()
+    d.add(md.FAIL, "gate: whatever", "1 finding(s).", "python3 scripts/x.py",
+          ("[rule] the actual problem",))
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        d.report()
+    out = buf.getvalue()
+    _tick()
+    if "the actual problem" not in out:
+        FAILURES.append(f"report() prints the count but not the findings: {out!r}")
+    _tick()
+    if "the actual problem" in out and "python3 scripts/x.py" in out and \
+            out.index("the actual problem") > out.index("python3 scripts/x.py"):
+        FAILURES.append(
+            "the findings print AFTER the remedy -- what is wrong comes before how to re-run it")
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for f in FAILURES:

@@ -7,6 +7,50 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`scripts/maintainer_doctor.py` prints a failing gate's findings, not a count of them** (#820).
+  It kept `out.splitlines()[-1]`, and **44 of the 98 gate entries** (27 distinct scripts, counted at
+  the time of writing) end their output with an `N finding(s)` line — so the line
+  that survived was reliably the one carrying no information:
+
+  ```
+  [ FAIL ] gate: self-consistency
+             1 finding(s).
+             -> python3 scripts/lint_self_consistency.py
+  ```
+
+  This is #812 mirrored, in the tool that runs the gates rather than the one that runs the checks.
+  There `plugins/rails-flow/scripts/project_gates.py` kept the first meaningful line, which for our
+  checks is the `N finding(s):` **header**; here the doctor kept the last, which is the `N
+  finding(s).` **footer**. Both land on the count.
+
+  **In CI it was worse than it reads locally.** Locally the remedy line hands you the command, so
+  the cost is one extra run. On a runner there is no second run: `.github/workflows/gates.yml`
+  invokes the doctor with `--gates-only`, the doctor is the only thing that executes the gate, and
+  it does so with `capture_output=True`. It printed the count and discarded the rest — so the
+  finding was printed **nowhere at all**, and a red build meant checking the branch out locally to
+  learn what had failed.
+
+  `gate_output()` now returns the summary **and** the lines before it, and `report()` prints them
+  between the summary and the remedy — what is wrong, then how to re-run it.
+
+  **Anchored at the bottom, opposite to `summarise()`**, because the two shapes are mirrored: our
+  gates print their findings and then a footer counting them, while their preamble comes first
+  (`scripts/lint_self_consistency.py` opens with a 40-clause stats line). Keeping the *last* lines
+  drops the throat-clearing and keeps the report. Capped at 40 with a marker naming what was
+  dropped — truncating silently is this same defect one step along.
+
+  **No per-line cap, deliberately.** That stats line really is 1,900 characters, and clipping it
+  means choosing a width that happens to spare that one case while silently clipping some future
+  finding whose last clause was the actionable half. A relay prints what it was given.
+
+  Nine fixtures, eight mutations (guard 8 → 16, all caught). Two of them exist because emptying
+  `report()`'s print loop **survived** every fixture that only called `gate_output` — proving the
+  helper is not proving the caller, the same lesson as #812 one release earlier. The ordering
+  fixture needed a presence guard: without the loop it raised on `.index`, and a crash is not a
+  verdict.
+
 ### 2026-08-30 (release v1.106.0)
 
 - **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
