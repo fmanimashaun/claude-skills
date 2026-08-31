@@ -9108,6 +9108,69 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The drift check compared a stylesheet to a palette — 70 of 72 findings false.** (#814, following
+  #788) That issue fixed the comparison's **target**; this fixes its **kind**. `brands/reliance/
+  theme.css` says what a pack is in its own first lines — *"a theme, not a fork: primitives, role
+  mapping, dark re-points. **Nothing else.** No @utility, no @apply, no component CSS — those are
+  system-level and shared by every pack."* Meanwhile `/design-flow:setup` scaffolds the Utopia scale,
+  `--measure/--radius/--shadow-*/--duration`, the font roles and the `@theme inline` bridges **into
+  the managed block**. So the check reported design-flow's own scaffolding as an unexpected local
+  extension — **40 scale tokens + 28 bridges**.
+
+  **The advice was actively harmful.** *"A local extension belongs OUTSIDE the markers"*, applied to
+  `--radius`, moves the plugin's own token out of the plugin's own managed block — where the next
+  `setup` re-emits it inside, and the project ends with two definitions of every scale token.
+
+  **Three token classes now, not one.** Pack-owned (compared), system-owned (`setup`'s, not the
+  pack's business), project-owned (honestly `extra`). **System = doctrine MINUS pack**, deliberately
+  rather than a hardcoded scale list: the doctrine's non-colour names include the *roles*, and roles
+  are pack-owned — classifying them system would stop comparing the very thing this check exists for.
+  Doctrine-minus-pack is exactly what `setup` scaffolds and no pack declares, and it self-maintains.
+
+  **And it is theme-aware.** `--primary-hover` is brand-700 in light (darker, primary is brand-600)
+  and brand-50 in dark (lighter, primary is brand-100) — both correct, and reported `changed` because
+  the comparison collapsed the blocks. **Every token a dark theme exists to re-point produced a false
+  finding, in every project with a dark theme.** Now `:root` against `:root` and `.dark` against
+  `.dark`.
+
+  **Measured: a scaffold-shaped managed block goes 72 → 0**, and all five kinds of real drift are
+  still caught with exactly one finding each — a re-tuned `:root` role, a re-tuned `.dark` role, a
+  deleted pack role, a genuinely local token, and — **new** — a re-tuned primitive, which the old
+  check could not see at all because it stored `@theme` as names without values.
+
+  Two defects found under it: `managed_block` sliced between the marker **strings**, so its output
+  opened with ` */` and a theme-aware parser read `*/\n:root` as the selector — every block came back
+  empty. And `selector_block` returns only the **last** matching block, right for a value and wrong
+  for presence, so a second `:root` made every token in the first read as missing;
+  `selector_blocks` (plural) is the shared reader now, with `selector_block` as its last element.
+
+  A value-based rule for the `@theme inline` bridge was **removed rather than kept**: a mutation
+  deleting it survived every fixture, and it was *wrong* for the one case that would have
+  distinguished it — a bridge to a role the doctrine does not declare is a project extension, and
+  calling it system would hide it.
+
+  `--selftest` 25 → **32**; the guard 8 → **14 mutations**. Files:
+  `plugins/design-flow/scripts/check_token_drift.py`,
+  `plugins/design-flow/scripts/brand_pack_lint.py`, `scripts/mutation_check.py`.
+
+- **Brand conformance was checked once, at scaffold time, and never again.** (#815)
+  `check_token_drift` had exactly one caller — `/design-flow:setup` — so it ran at the single moment
+  drift is impossible.
+
+  **Token drift enters with no local edit**: the pack moves upstream, the project stands still. No
+  commit, no diff, no file touched — which rules out every change-triggered home. Not the PostToolUse
+  hook, not a PR review, not a pre-commit hook. Only a check that runs unconditionally against the
+  installed toolchain, which is what `project_gates.py` is. Registered as `token-drift`.
+
+  **And `brand-pack` is removed from that runner.** `brand_pack_lint` validates that a **pack** is
+  well-formed — an artifact the toolchain owns and a project only consumes — so on every correctly
+  configured project it reported *"no brands in this project"* forever, and the only action that
+  would make it apply is vendoring a pack, which the doctrine forbids. **No coverage is lost**: #775
+  already gates it against the shipped packs at `maintainer_doctor.py:163`. Files:
+  `plugins/design-flow/checks.json`.
+
 ### 1.37.0 — 2026-08-29 (release v1.103.0)
 
 - **The drift check compared every project against the FIDARA baseline.** (#788) It resolved one

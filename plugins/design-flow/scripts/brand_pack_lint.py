@@ -131,6 +131,22 @@ def strip_css_comments(src: str) -> str:
     return re.sub(r"/\*.*?\*/", "", src, flags=re.S)
 
 
+def selector_blocks(src: str, selector: str) -> list[str]:
+    """EVERY block whose selector list contains `selector`, in source order.
+
+    `selector_block` returns only the last, which is right for a VALUE (the cascade) and wrong for
+    PRESENCE: a stylesheet may legitimately declare `:root` more than once -- `/design-flow:setup`
+    scaffolds roles and the scale separately -- and taking the last made every token in the earlier
+    block read as absent. #814 hit that as 28 spurious `missing` findings. One implementation, two
+    views: `selector_block` is the last of these.
+    """
+    out = []
+    for m in re.finditer(r"^[ \t]*([^{}@]*?)\{(.*?)^[ \t]*\}", src, re.S | re.M):
+        if selector in [part.strip() for part in m.group(1).split(",")]:
+            out.append(m.group(2))
+    return out
+
+
 def selector_block(src: str, selector: str) -> str:
     r"""Body of the LAST block whose selector LIST contains `selector` (a later block wins).
 
@@ -153,25 +169,29 @@ def selector_block(src: str, selector: str) -> str:
     class is also present and its declarations are therefore not unconditional. Splitting on
     `,` and comparing trimmed members gives that for free -- `:root.theme-a` != `:root`.
     """
-    out = ""
-    # The selector text is everything from a line start up to the block's `{`. `[^{}]` keeps
-    # it to ONE block's prelude, and the `@` guard skips at-rules (`@theme {`, `@media …`),
-    # whose prelude is not a selector list at all.
-    for m in re.finditer(r"^[ 	]*([^{}@]*?)\{(.*?)^[ 	]*\}", src, re.S | re.M):
-        members = [part.strip() for part in m.group(1).split(",")]
-        if selector in members:
-            out = m.group(2)
-    return out
+    blocks = selector_blocks(src, selector)
+    return blocks[-1] if blocks else ""
 
 
 def declared_tokens(body: str) -> set[str]:
     return set(re.findall(r"(--[a-z0-9-]+)\s*:", body))
 
 
+def theme_bodies(src: str) -> list[str]:
+    """The body of every `@theme` block — `@theme`, `@theme inline`, any variant.
+
+    Separated from `theme_primitives` so a caller that needs VALUES has them. Names alone were
+    enough while the only question was "is this token declared"; #814 needs the value, because an
+    `@theme inline` bridge is recognised by pointing at a role (`--color-primary: var(--primary)`)
+    rather than by its name — a positive signal needs no list to go stale.
+    """
+    return re.findall(r"@theme[^{]*\{(.*?)^[ 	]*\}", src, re.S | re.M)
+
+
 def theme_primitives(src: str) -> set[str]:
     """Tokens defined in any @theme block (the pack's private primitives)."""
     found: set[str] = set()
-    for body in re.findall(r"@theme[^{]*\{(.*?)^[ 	]*\}", src, re.S | re.M):
+    for body in theme_bodies(src):
         found |= declared_tokens(body)
     return found
 

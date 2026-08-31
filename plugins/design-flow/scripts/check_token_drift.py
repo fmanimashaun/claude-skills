@@ -50,6 +50,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import doctrine_path                    # noqa: E402 -- same plugin, one resolver
+import brand_pack_lint as bpl           # noqa: E402 -- same plugin, one theme-aware parser
 
 # THE SHARED RESOLVER, not parent-counting (#777). `parents[N]` is calibrated for the marketplace
 # CLONE; from an install the cache interposes `<plugin>/<version>/`, and the two shapes differ in
@@ -78,10 +79,27 @@ DECL = re.compile(r"(--[a-z0-9-]+)\s*:\s*([^;\n]+)")
 
 
 def managed_block(css: str) -> str | None:
-    """Text between the markers, or None when the file is unmanaged."""
+    """CSS between the marker COMMENTS, or None when the file is unmanaged.
+
+    It used to slice between the marker STRINGS, so the returned text opened with the rest of the
+    begin comment (` */`) and closed with the start of the end comment (`/* `). That was harmless
+    while the only consumer was a declaration regex, and it broke the moment a theme-aware parser
+    arrived (#814): `selector_block` reads everything before a `{` as the selector prelude, so a
+    leading `*/` made `:root {` parse as the selector `*/\n:root` and match nothing. Every block in
+    the managed region came back empty and every pack token was reported `missing`.
+
+    So the slice runs to the end of the opening comment and from the start of the closing one.
+    """
     i = css.find(BEGIN)
-    j = css.find(END, i + 1) if i != -1 else -1
-    return css[i + len(BEGIN):j] if i != -1 and j != -1 else None
+    if i == -1:
+        return None
+    j = css.find(END, i + 1)
+    if j == -1:
+        return None
+    start = css.find("*/", i + len(BEGIN))
+    start = start + 2 if start != -1 and start < j else i + len(BEGIN)
+    end = css.rfind("/*", start, j)
+    return css[start:end if end != -1 else j]
 
 
 def plugin_tokens(doc_text: str) -> dict[str, str]:
@@ -139,6 +157,81 @@ def resolve_baseline(brand: str | None, root: Path) -> tuple[Path | None, str]:
     return doc, slug
 
 
+def theme_blocks(css: str) -> dict[str, dict[str, str]]:
+    """Declarations per theme, `{"@theme": {...}, ":root": {...}, ".dark": {...}}`.
+
+    THE CHECK USED TO COLLAPSE THEMES (#814). `plugin_tokens` is a dict comprehension over every
+    declaration in the file, so a role re-pointed in `.dark` overwrote its `:root` value and the
+    comparison was between whichever happened to come last on each side. `--primary-hover` is
+    brand-700 in light (darker on hover, because primary is brand-600) and brand-50 in dark (lighter,
+    because primary is brand-100) -- both correct, and reported `changed`. Every token a dark theme
+    exists to re-point produced a false finding, in every project with a dark theme.
+
+    `@theme` needs its own reader: `selector_block` deliberately skips at-rules (#764), so
+    primitives come from `theme_primitives` instead.
+    """
+    src = bpl.strip_css_comments(css)
+    out: dict[str, dict[str, str]] = {}
+    for sel in (":root", ".dark"):
+        # EVERY block for the selector, merged in source order -- presence is the union, and a later
+        # declaration wins the value, which is the cascade. Taking only the last (what
+        # `selector_block` does, correctly, for a value) made a project with a second `:root` report
+        # every token in the first as missing.
+        merged: dict[str, str] = {}
+        for body in bpl.selector_blocks(src, sel):
+            merged.update({m.group(1): " ".join(m.group(2).split()) for m in DECL.finditer(body)})
+        out[sel] = merged
+    # VALUES, not just names. `theme_primitives` answers "is it declared"; the comparison needs
+    # "is it the same", so a primitive re-tuned inside the managed block is `changed` rather than
+    # invisible. Storing `""` also forced a `sel != "@theme"` special case in the comparison, which
+    # is gone with it.
+    merged_theme: dict[str, str] = {}
+    for body in bpl.theme_bodies(src):
+        merged_theme.update({m.group(1): " ".join(m.group(2).split())
+                             for m in DECL.finditer(body)})
+    out["@theme"] = merged_theme
+    return out
+
+
+def pack_all(blocks: dict[str, dict[str, str]]) -> set[str]:
+    """Every name the pack declares, across all its theme blocks."""
+    return {n for blk in blocks.values() for n in blk}
+
+
+def classify(name: str, pack_names: set[str], doctrine_names: set[str]) -> str:
+    """Who OWNS this token: `pack`, `system`, or `project` (#814).
+
+    #788 pointed the comparison at the right target and left the KIND wrong: the reference is a
+    palette and the subject is a stylesheet. `brands/reliance/theme.css` says so in its own first
+    lines -- *"A pack is a theme, not a fork: primitives, role mapping, dark re-points. Nothing
+    else. No @utility, no @apply, no component CSS -- those are system-level and shared by every
+    pack."* Meanwhile `setup.md` scaffolds the Utopia scale, `--measure/--radius/--shadow-*/`
+    `--duration`, the font roles and the `@theme inline` bridges INTO the managed block. So the
+    check reported design-flow's own scaffolding as an unexpected local extension -- 68 of 72
+    findings -- and its advice, *"a local extension belongs OUTSIDE the markers"*, would have moved
+    the plugin's own scale tokens out of the plugin's own managed block, where the next `setup`
+    re-emits them inside and the project ends with two definitions of every scale token.
+
+    SYSTEM = DOCTRINE MINUS PACK, deliberately, rather than a hardcoded list of scale names. The
+    doctrine's non-colour names include the ROLES, and roles are pack-owned -- classifying them
+    system would stop comparing the very thing this check exists for. Doctrine-minus-pack is exactly
+    the set `setup` scaffolds and no pack declares, and it self-maintains: add a scale token to the
+    doctrine and it is system-owned; add it to a pack and it becomes pack-owned.
+
+    NO SEPARATE RULE FOR THE `@theme inline` BRIDGE, and it was removed rather than kept. A bridge
+    is named after the role it exposes -- `--color-primary: var(--primary)` -- and every role is in
+    the doctrine, so the clause above already classifies it. A value-based rule was therefore
+    untestable: a mutation deleting it survived every fixture. Worse, it was WRONG for the one case
+    that would have distinguished it -- a bridge to a role the doctrine does NOT declare is a
+    project extension, and calling it system would hide it.
+    """
+    if name in pack_names:
+        return "pack"
+    if name in doctrine_names:
+        return "system"
+    return "project"
+
+
 def compare(css: str, doc_text: str) -> tuple[str, list[str]]:
     """`(state, findings)`. State is `unmanaged`, `drift` or `clean`."""
     block = managed_block(css)
@@ -147,19 +240,39 @@ def compare(css: str, doc_text: str) -> tuple[str, list[str]]:
             f"no `{BEGIN}` marker — this file was scaffolded before the marker existed, or by hand. "
             f"Nothing can tell the plugin's tokens from yours, so nothing is checked. This is NOT a "
             f"pass: re-run /design-flow:setup to establish the managed block."]
-    theirs = {m.group(1): " ".join(m.group(2).split()) for m in DECL.finditer(block)}
-    ours = plugin_tokens(doc_text)
+    pack = theme_blocks(doc_text)
+    project = theme_blocks(block)
+    pack_names = {n for blk in pack.values() for n in blk}
+    doctrine_names = plugin_tokens(DOC.read_text(encoding="utf-8")) if DOC.is_file() else {}
     out: list[str] = []
-    for tok in sorted(set(ours) - set(theirs)):
-        out.append(f"missing: the plugin declares {tok} and the managed block does not — this "
-                   f"project is behind; re-run /design-flow:setup")
-    for tok in sorted(set(theirs) - set(ours)):
-        out.append(f"extra: {tok} is inside the managed block but the plugin does not declare it — "
-                   f"a local extension belongs OUTSIDE the markers, where a re-run will not eat it")
-    for tok in sorted(set(ours) & set(theirs)):
-        if ours[tok] != theirs[tok]:
-            out.append(f"changed: {tok} is {theirs[tok]!r} here and {ours[tok]!r} in the plugin — "
-                       f"re-tune it outside the markers, or take the plugin's value")
+
+    # PER THEME BLOCK. A role re-pointed in `.dark` is compared against the pack's `.dark`, never
+    # against its `:root` -- collapsing them made every dark re-point a false `changed` (#814).
+    for sel in ("@theme", ":root", ".dark"):
+        ours, theirs = pack.get(sel, {}), project.get(sel, {})
+        for tok in sorted(set(ours) - set(theirs)):
+            out.append(f"missing: the pack declares {tok} in `{sel}` and the managed block does "
+                       f"not — this project is behind; re-run /design-flow:setup")
+        for tok in sorted(set(ours) & set(theirs)):
+            if ours[tok] and ours[tok] != theirs[tok]:
+                out.append(f"changed: {tok} is {theirs[tok]!r} in `{sel}` here and {ours[tok]!r} in "
+                           f"the pack — re-tune it outside the markers, or take the pack's value")
+
+    # EXTRA is only ever the PROJECT's. A token the pack does not declare may still be the system's
+    # -- `setup` scaffolds the Utopia scale, the radius/shadow/duration/measure set, the font roles
+    # and the `@theme inline` bridges into this very block -- and telling someone to move those
+    # outside the markers is advice that breaks their app on the next re-run (#814).
+    seen: set[str] = set()
+    for sel in (":root", ".dark", "@theme"):
+        for tok in sorted(project.get(sel, {})):
+            if tok in seen:
+                continue
+            seen.add(tok)
+            if classify(tok, pack_names, set(doctrine_names)) == "project":
+                out.append(
+                    f"extra: {tok} is inside the managed block, and neither the pack nor the design "
+                    f"system declares it — a local extension belongs OUTSIDE the markers, where a "
+                    f"re-run will not eat it")
     return ("drift" if out else "clean"), out
 
 
@@ -173,27 +286,34 @@ def _selftest() -> int:
         else:
             bad.append(label)
 
-    doc = "--background: #FFF;\n--primary: #0077CC;\n"
+    # REAL CSS SHAPE, not bare declarations. The comparison is per theme block now (#814), so a
+    # fixture without `:root { }` tests a parse that never happens -- and the old fixtures were less
+    # structured than every real input, which is how a theme-blind comparison went unnoticed.
+    def blk(sel: str, body: str) -> str:
+        return f"{sel} {{\n{body}}}\n"
+
+    doc = blk(":root", "  --background: #FFF;\n  --primary: #0077CC;\n")
     wrap = lambda body: f"/* {BEGIN} */\n{body}/* {END} */\n"          # noqa: E731
 
-    state, f = compare(wrap("--background: #FFF;\n--primary: #0077CC;\n"), doc)
+    state, f = compare(wrap(blk(":root", "  --background: #FFF;\n  --primary: #0077CC;\n")), doc)
     check("an in-step managed block is clean", state == "clean" and f == [])
 
-    state, f = compare(wrap("--background: #FFF;\n"), doc)
+    state, f = compare(wrap(blk(":root", "  --background: #FFF;\n")), doc)
     check("a token the plugin adds is reported missing",
           state == "drift" and any(x.startswith("missing: ") and "--primary" in x for x in f))
 
-    state, f = compare(wrap("--background: #FFF;\n--primary: #0069B4;\n"), doc)
+    state, f = compare(wrap(blk(":root", "  --background: #FFF;\n  --primary: #0069B4;\n")), doc)
     check("a re-tuned value is reported changed",
           any(x.startswith("changed: ") and "--primary" in x for x in f))
 
-    state, f = compare(wrap("--background: #FFF;\n--primary: #0077CC;\n--mine: #123;\n"), doc)
+    state, f = compare(wrap(blk(":root", "  --background: #FFF;\n  --primary: #0077CC;\n  --mine: #123;\n")), doc)
     check("a local token INSIDE the markers is reported extra",
           any(x.startswith("extra: ") and "--mine" in x for x in f))
 
     # THE LINE THAT MAKES THIS SAFE. A project extending OUTSIDE the markers is doing the right
     # thing and must be silent -- a check that flagged it would be switched off within a week.
-    outside = wrap("--background: #FFF;\n--primary: #0077CC;\n") + "--mine: #123;\n--yours: #456;\n"
+    outside = (wrap(blk(":root", "  --background: #FFF;\n  --primary: #0077CC;\n"))
+               + blk(":root", "  --mine: #123;\n  --yours: #456;\n"))
     state, f = compare(outside, doc)
     check("a local token OUTSIDE the markers is silent", state == "clean" and f == [])
 
@@ -206,7 +326,7 @@ def _selftest() -> int:
     check("an unterminated marker is unmanaged", state == "unmanaged")
 
     # Whitespace is normalised, so reformatting is not drift.
-    state, f = compare(wrap("--background:   #FFF ;\n--primary:\t#0077CC;\n"), doc)
+    state, f = compare(wrap(blk(":root", "  --background:   #FFF ;\n  --primary:\t#0077CC;\n")), doc)
     check("reformatting is not drift", state == "clean")
 
     # ---- #788. WHICH pack is the baseline ------------------------------------------------------
@@ -265,8 +385,15 @@ def _selftest() -> int:
     # END TO END against the REAL reliance pack: in step is clean, and real drift is still caught.
     rel = BRANDS / "reliance" / "theme.css"
     if rel.is_file():
-        toks = plugin_tokens(rel.read_text(encoding="utf-8"))
-        body = "".join(f"  {k}: {v};\n" for k, v in toks.items())
+        # Rebuild the pack's own theme SHAPE, not a flattened list: the comparison is per block
+        # now (#814), and a flat fixture would pass while every real project failed.
+        # The honest "in step" case is a managed block carrying the pack's OWN content -- all three
+        # blocks, `@theme` included. Rebuilding only `:root`/`.dark` left the 40 primitives
+        # correctly reported missing, which was the check working and the fixture being partial.
+        rel_src = rel.read_text(encoding="utf-8")
+        packed = theme_blocks(rel_src)
+        body = bpl.strip_css_comments(rel_src)
+        toks = packed[":root"]
         state, f = compare(wrap(body), rel.read_text(encoding="utf-8"))
         check("a reliance block matching its own pack is clean", state == "clean" and f == [])
         # ...and the same block against the DOCTRINE is the reported defect, so the fixture above
@@ -279,8 +406,60 @@ def _selftest() -> int:
         # comparison having quietly stopped. Mutate whichever token comes first rather than naming
         # one: `plugin_tokens` is a dict comprehension, so a role re-pointed in `.dark` holds its
         # DARK value here, and naming `--background` picked a string that was no longer present.
+        # ---- THE SCAFFOLD SHAPE (#814) --------------------------------------------------------
+        # What `/design-flow:setup` actually writes: the pack's content PLUS the system scale and
+        # the `@theme inline` bridges. This reported 72 findings, 70 of them false, on an untouched
+        # scaffold -- design-flow's own output called an unexpected local extension.
+        doctrine = plugin_tokens(DOC.read_text(encoding="utf-8")) if DOC.is_file() else {}
+        if doctrine:
+            system = sorted(n for n in set(doctrine) - set(pack_all(packed))
+                            if not n.startswith("--color-"))
+            scale = "".join(f"  {n}: 1rem;\n" for n in system)
+            bridges = "".join(f"  --color-{r}: var(--{r});\n"
+                              for r in ("primary", "background", "card"))
+            scaffold = (body + f"@theme inline {{\n{bridges}}}\n" + blk(":root", scale))
+            state, f = compare(wrap(scaffold), rel_src)
+            check("a scaffold-shaped managed block is CLEAN", state == "clean" and not f)
+
+            # ...and it still catches every kind of REAL drift, or the line above is a gate that
+            # cannot fail. One finding each, so a case cannot pass on someone else's finding.
+            re_root = scaffold.replace("--primary: var(--color-rh-brand-600);", "--primary: #BADA55;", 1)
+            state, f = compare(wrap(re_root), rel_src)
+            check("a :root role re-tuned is still `changed`",
+                  len(f) == 1 and f[0].startswith("changed:") and "`:root`" in f[0])
+
+            # THEME-AWARE: the dark value is compared against the pack's DARK value. Collapsing the
+            # blocks made every dark re-point a false `changed` -- in every project with a dark theme.
+            re_dark = scaffold.replace("--primary: var(--color-rh-brand-100);", "--primary: #BADA55;", 1)
+            state, f = compare(wrap(re_dark), rel_src)
+            check("a .dark role re-tuned is `changed` against the pack's DARK value",
+                  len(f) == 1 and f[0].startswith("changed:") and "`.dark`" in f[0])
+
+            # A re-tuned PRIMITIVE, which the old check could not see at all: it stored `@theme`
+            # as names only, so a changed hex was invisible. Keeping values bought this.
+            prim = scaffold.replace("--color-rh-brand-600: #1171B0", "--color-rh-brand-600: #BADA55", 1)
+            state, f = compare(wrap(prim), rel_src)
+            check("a re-tuned primitive is `changed` in `@theme`",
+                  len(f) == 1 and f[0].startswith("changed:") and "`@theme`" in f[0])
+
+            gone = scaffold.replace("  --ring: var(--color-rh-brand-600);\n", "", 1)
+            state, f = compare(wrap(gone), rel_src)
+            check("a deleted pack role is still `missing`",
+                  len(f) == 1 and f[0].startswith("missing:") and "--ring" in f[0])
+
+            # EXTRA survives, but only for a token neither the pack NOR the system declares.
+            mine = scaffold.replace(blk(":root", scale), blk(":root", "  --my-thing: 4px;\n" + scale), 1)
+            state, f = compare(wrap(mine), rel_src)
+            check("a genuinely local token is still `extra`",
+                  len(f) == 1 and f[0].startswith("extra:") and "--my-thing" in f[0])
+
+            # ...and the SYSTEM tokens in that same block are NOT extra, which is the whole fix.
+            check("the system scale is not reported extra",
+                  not any("--radius" in x or "--space-" in x or "--measure" in x for x in f))
+
+        # Re-tune ONE role in `:root` and nothing else, so the finding can only be that value.
         first = next(iter(toks))
-        drifted = "".join(f"  {k}: {'#010203' if k == first else v};\n" for k, v in toks.items())
+        drifted = body.replace(f"{first}: {toks[first]};", f"{first}: #010203;", 1)
         state, f = compare(wrap(drifted), rel.read_text(encoding="utf-8"))
         check("real drift against the right pack is STILL reported",
               state == "drift" and any(x.startswith("changed: ") and first in x for x in f))

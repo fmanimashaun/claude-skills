@@ -14,18 +14,33 @@
   ],
   "checks": [
     {
-      "id": "brand-pack",
-      "why": "An incomplete brand pack fails at render time, in the client's colours.",
-      "command": ["python3", "{plugin}/scripts/brand_pack_lint.py", "--quiet", "{match:brands/*}"],
-      "applies_when": ["brands"],
-      "requires": ["python3"]
-    },
-    {
       "id": "variant-conformance",
       "why": "Variants that differ in anything but composition are a fork of the design system, and a switcher route left reachable in production ships every rejected screen.",
-      "command": ["python3", "{plugin}/scripts/variant_conformance.py", "."],
-      "applies_when": ["app/views/design_variants"],
-      "requires": ["python3"]
+      "command": [
+        "python3",
+        "{plugin}/scripts/variant_conformance.py",
+        "."
+      ],
+      "applies_when": [
+        "app/views/design_variants"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "token-drift",
+      "why": "A pack moves upstream and the project stands still — drift enters with NO local edit, so no change-triggered mechanism can catch it. Only an unconditional check can.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_token_drift.py"
+      ],
+      "applies_when": [
+        "app/assets/tailwind/application.css"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
