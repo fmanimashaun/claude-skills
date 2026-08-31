@@ -426,12 +426,55 @@ SLOW_GATES: dict[str, int] = {
 }
 
 
+# A failing gate's output exists NOWHERE else on a runner: the doctor is the only thing that
+# executes it, with capture_output=True. Truncating SILENTLY would be the same defect one step
+# along, so the marker names what was dropped and where to get it. Matches project_gates.py (#812).
+MAX_GATE_FINDING_LINES = 40
+
+
 @dataclass
 class Result:
     status: str
     name: str
     detail: str = ""
     remedy: str = ""
+    # Everything the gate said BEFORE its summary line (#820). The doctor kept `out.splitlines()[-1]`
+    # and threw the rest away -- and most of our gates end with a `N finding(s)` line, so what survived
+    # was reliably the one line carrying no information. #812 mirrored: there the aggregate kept the
+    # `N finding(s):` HEADER, here the doctor kept the FOOTER.
+    findings: tuple[str, ...] = ()
+
+
+def gate_output(out: str, code: int) -> tuple[str, tuple[str, ...]]:
+    """`(summary, the lines before it)` — a failing gate's output, not a line of it (#820).
+
+    The doctor used to keep `out.splitlines()[-1]`. That is the right line to put on a status row
+    and it was never the whole job: most of our gates end with a `N finding(s)` line, so the line that
+    survived was reliably a count and the findings above it were discarded. On a runner the doctor
+    is the ONLY thing that runs the gate, with `capture_output=True`, so those findings were then
+    printed nowhere at all -- a red build saying `1 finding(s).` and nothing else.
+
+    Anchored at the BOTTOM, opposite to `project_gates.summarise` (#812), because the two shapes are
+    mirrored: our gates print their findings and then a footer counting them, while their preamble
+    (`lint_self_consistency.py` opens with a 40-clause stats line) sits at the top. Keeping the last
+    lines drops the throat-clearing and keeps the report; the marker then names what was dropped,
+    since truncating silently is this same defect one step along.
+
+    Capped by line COUNT only -- deliberately no per-line cap, matching `project_gates.summarise`.
+    `lint_self_consistency.py` really does open with a 1,900-character stats line, and clipping it
+    would mean choosing a width that happens to spare that one case while silently clipping some
+    future finding whose last clause was the actionable half. A relay prints what it was given; a
+    gate that shouts is a defect in that gate, not in the thing repeating it.
+    """
+    lines = [ln.rstrip() for ln in out.splitlines() if ln.strip()]
+    if not lines:
+        return f"exit {code}", ()
+    rest = lines[:-1]
+    if len(rest) > MAX_GATE_FINDING_LINES:
+        dropped = len(rest) - MAX_GATE_FINDING_LINES
+        rest = [f"… {dropped} earlier line(s) dropped — run the command below for the rest"] + \
+            rest[-MAX_GATE_FINDING_LINES:]
+    return lines[-1], tuple(rest)
 
 
 @dataclass
@@ -466,8 +509,9 @@ class Doctor:
         """
         return [r for r in self.results if r.name.startswith("gate: ")]
 
-    def add(self, status: str, name: str, detail: str = "", remedy: str = "") -> Result:
-        r = Result(status, name, detail, remedy)
+    def add(self, status: str, name: str, detail: str = "", remedy: str = "",
+            findings: tuple[str, ...] = ()) -> Result:
+        r = Result(status, name, detail, remedy, findings)
         self.results.append(r)
         return r
 
@@ -926,8 +970,8 @@ class Doctor:
                          "install the missing interpreter, or state in the PR that the gate "
                          "could not run — a skip is not a pass")
             else:
-                tail = out.splitlines()[-1] if out else f"exit {code}"
-                self.add(FAIL, f"gate: {name}", tail, " ".join(cmd))
+                summary, findings = gate_output(out, code)
+                self.add(FAIL, f"gate: {name}", summary, " ".join(cmd), findings)
 
     # ---- driver ----------------------------------------------------------------------
     def diagnose(self, gates: bool, gates_only: bool = False) -> int:
@@ -977,6 +1021,10 @@ class Doctor:
             print(f"[{icon[r.status]}] {r.name}")
             if r.detail:
                 print(f"           {r.detail}")
+            # THE FINDINGS, not just their count (#820). Between the summary and the remedy: what
+            # is wrong, then how to re-run it. On a runner this is the only place they are printed.
+            for finding_line in r.findings:
+                print(f"             {finding_line}")
             if r.remedy and r.status in (FAIL, SKIP):
                 print(f"           -> {r.remedy}")
 

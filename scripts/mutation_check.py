@@ -2170,6 +2170,64 @@ GUARDS: tuple[Guard, ...] = (
             "evals",
         ),
         mutations=(
+            # #820. The doctor kept `out.splitlines()[-1]` of a failing gate, and most of our gates end
+            # with `N finding(s).` -- so what survived was reliably the count. On a runner the doctor is
+            # the ONLY thing that runs the gate (capture_output=True), so the findings were printed
+            # nowhere at all: a red build reading `1 finding(s).` and nothing else.
+            Mutation(
+                "a failing gate's findings are dropped again, leaving only its count",
+                '    rest = lines[:-1]',
+                '    rest = []',
+                "a failing gate's FINDING is dropped",
+            ),
+            # Bottom-anchored, opposite to project_gates.summarise: our gates put the preamble first
+            # (lint_self_consistency opens with a 40-clause stats line) and the report last. Keeping the
+            # EARLIEST lines keeps the throat-clearing and drops the findings.
+            Mutation(
+                'the cap keeps the EARLIEST lines, so a long gate reports its preamble',
+                '        rest = [f"… {dropped} earlier line(s) dropped — run the command below for the rest"] + \\\n            rest[-MAX_GATE_FINDING_LINES:]',
+                '        rest = rest[:MAX_GATE_FINDING_LINES]',
+                'the cap keeps the EARLIEST lines',
+            ),
+            Mutation(
+                'the cap truncates silently, so a reader cannot tell the report was cut',
+                '        rest = [f"… {dropped} earlier line(s) dropped — run the command below for the rest"] + \\\n            rest[-MAX_GATE_FINDING_LINES:]',
+                '        rest = rest[-MAX_GATE_FINDING_LINES:]',
+                'the cap truncates SILENTLY',
+            ),
+            Mutation(
+                'the cap is removed, so one noisy gate buries the other 97',
+                '    if len(rest) > MAX_GATE_FINDING_LINES:',
+                '    if False:',
+                'the cap does not bound the output',
+            ),
+            Mutation(
+                "the summary stops being the gate's last line",
+                '    return lines[-1], tuple(rest)',
+                '    return lines[0], tuple(rest)',
+                "the summary line is no longer the gate's last line",
+            ),
+            Mutation(
+                'a gate that failed with NO output reports nothing at all',
+                '        return f"exit {code}", ()',
+                '        return "", ()',
+                'a gate that failed with NO output',
+            ),
+            # Proving `gate_output` carries them is not proving `report` PRINTS them: emptying this
+            # survived every fixture that only called the helper, in #812 and again here.
+            Mutation(
+                'report() stops printing the findings',
+                '            for finding_line in r.findings:\n                print(f"             {finding_line}")',
+                '            for finding_line in ():\n                print(f"             {finding_line}")',
+                'report() prints the count but not the findings',
+            ),
+            Mutation(
+                'the findings print after the remedy instead of before it',
+                '            for finding_line in r.findings:\n                print(f"             {finding_line}")\n            if r.remedy and r.status in (FAIL, SKIP):\n                print(f"           -> {r.remedy}")',
+                '            if r.remedy and r.status in (FAIL, SKIP):\n                print(f"           -> {r.remedy}")\n            for finding_line in r.findings:\n                print(f"             {finding_line}")',
+                'the findings print AFTER the remedy',
+            ),
+
             # The gate tally must exclude preconditions. Widening the filter is how the count goes
             # back to being off by one, which put three wrong numbers in shipped text.
             Mutation(
