@@ -2368,7 +2368,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.30.1 — 2026-08-31 (release v1.107.0)
 
 - **`plugins/rails-flow/scripts/project_gates.py` prints the findings, not a count of them**
   (#812). The aggregate every
@@ -9138,7 +9138,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.38.0 — 2026-08-31 (release v1.107.0)
 
 - **The drift check compared a stylesheet to a palette — 70 of 72 findings false.** (#814, following
   #788) That issue fixed the comparison's **target**; this fixes its **kind**. `brands/reliance/
