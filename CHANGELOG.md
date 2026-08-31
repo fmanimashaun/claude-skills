@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-08-30 (release v1.106.0)
 
 - **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
   `docs/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
@@ -2368,7 +2368,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.30.0 — 2026-08-30 (release v1.106.0)
 
 - **`/rails-flow:setup-flow` asks whether the app is multi-locale, and RECORDS the answer.** (#799)
   Maintainer decision: *"let agent ask during setup — we can tell them if it is monolingual or not,
@@ -4212,7 +4212,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.55.0 — 2026-08-30 (release v1.106.0)
 
 - **`references/i18n.md` — the rails-8 skill had no internationalisation doctrine at all.** (#799)
   Three incidental mentions and no setup path: `SKILL.md:184` said *"when the app already uses"* a
