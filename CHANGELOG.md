@@ -2368,6 +2368,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/scripts/project_gates.py` prints the findings, not a count of them**
+  (#812). The aggregate every
+  downstream project is told to run reported `[FAIL] rails-flow/mandated-gems  1 finding(s):` --
+  a trailing colon promising a list, and nothing after it. The individual scripts had the finding,
+  the reason AND the fix ready to print; the aggregate threw all three away, so the one command
+  users actually run was the one that could not be acted on. `--json` had no `findings` key either,
+  so nothing downstream could recover them.
+
+  The cause was a helper doing the wrong job well. `first_meaningful_line` (#715/#716) answers
+  "what is the ONE line worth putting on a status row", which is right for a noisy external tool
+  whose banner would otherwise mask its finding. For our own checks that line is `N finding(s):` --
+  precisely the least informative line in the output. `summarise()` now returns the summary **and**
+  the lines after it; `report()` prints them indented under their check, `--json` carries them, and
+  the routing block names the finding instead of its count. Capped at 40 lines with a marker saying
+  what was dropped and where to get it: a check printing hundreds of lines belongs in its own run,
+  and truncating **silently** would be this same defect one step along.
+
+  `first_meaningful_line` is **deleted**, not kept alongside. `summarise` had re-implemented it line
+  for line, and of the two only the dead one was mutation-guarded -- CAUGHT for a behaviour no
+  production path had. Its three mutations moved onto the live function and its escape-stripping
+  history moved into that docstring, so #715/#716 stay guarded where they now run. Two guards for
+  one behaviour means neither is testable; the same rule that collapsed the comment-skip in
+  `check_ci_runs_tests`.
+
+  Four fixtures drive the two **consumers** directly -- `report()`'s stdout and `as_json()`'s dict --
+  because emptying either survived every fixture that only called the helper. Proving the helper is
+  not proving the caller. Selftest 97 -> 111 checks; 18 mutations on this guard, all caught.
+
 ### 1.30.0 — 2026-08-30 (release v1.106.0)
 
 - **`/rails-flow:setup-flow` asks whether the app is multi-locale, and RECORDS the answer.** (#799)
