@@ -7,6 +7,46 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-08-30 (release v1.106.0)
+
+- **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
+  `docs/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
+  which by nothing* — and its `DOCTRINE_SOURCES` were eleven files, all repo-process doctrine or
+  maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/fidara-design/` were
+  not declared sources at all**: the doctrine other people's agents follow verbatim, which is the
+  whole product.
+
+  Its own `undeclared source` and `--audit-coverage` rules could not help, because *"a declared
+  source with no rows is a finding"* only fires for a source that **was** declared. One never
+  declared reports nothing, forever. #779 said so in its own text: *"its 32 rows are repo-process
+  claims, so this shipped-setup claim has no row and no enforcement column."* Three shipped-doctrine
+  claims (#778/#797, #779, #792) were each found by a downstream project, one at a time.
+
+  **49 shipped files are now declared — and the mapped count RATCHETS.** Declaring them in
+  `DOCTRINE_SOURCES` would have failed the `doctrine map coverage` gate with 49 findings on the
+  first run: red on day one, switched off in a week, the exact failure #800 had just removed. And
+  bulk back-filling rows to make it green is worse — this file already says *"a green artifact
+  standing in for work nobody did is the failure this replaces."*
+
+  So `SHIPPED_SOURCES` is reported rather than required row-for-row, with `SHIPPED_FLOOR` as a
+  floor the mapped count may not fall below. Never red on day one, never sliding, and rising only
+  when someone actually maps a source. Same instrument as #800, one layer up.
+
+  **The floor counts FILES, not rows**, with a negative fixture for it: five rows in one file is not
+  broader coverage of the surface, and a row-counting floor would be met by adding a second row to a
+  file already mapped.
+
+  Five rows added — the claims that already have gates to cite: the prescribed testing stack
+  (#778/#797), the `Tests:` step (#779), the `spec/support` auto-loader (#803), the coverage ratchet
+  (#800), and simple_form (#778). Deliberately not more. **The page states that the remaining 47 are
+  UNMAPPED — not clean, and not claimed to be.** A row count is evidence someone looked, never proof
+  a file is covered.
+
+  No extractor, per the existing design: *"a bad extractor is worse than none — a map that misses
+  claims reads as coverage."* That holds harder for the shipped skills, which are much larger prose
+  files. Files: `scripts/doctrine_map.py`, `docs/doctrine-map.html`, `scripts/mutation_check.py`.
+
+
 ### 2026-08-22 (release v1.94.1)
 
 - **A component could change with no CHANGELOG entry, and every gate stayed green.** (#728) CLAUDE.md
@@ -2328,6 +2368,114 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.30.0 — 2026-08-30 (release v1.106.0)
+
+- **`/rails-flow:setup-flow` asks whether the app is multi-locale, and RECORDS the answer.** (#799)
+  Maintainer decision: *"let agent ask during setup — we can tell them if it is monolingual or not,
+  so it knows to setup or not."*
+
+  **Recording it is what makes a situational rule checkable at all.** Without a declaration there are
+  only two options and both are wrong: gate everyone, or gate nobody. With `config.x.locales` the
+  check has three honest states — conforming, drifted, and *not applicable because this project
+  declared monolingual*. Identical mechanism to `config.x.brand.pack` (#788), for the identical
+  reason: a check that cannot tell what a project chose has not measured anything.
+
+  `%w[en]` is written even for a monolingual app, and `None` and `["en"]` stay **different answers**
+  — *"nobody decided"* versus *"we chose one locale"* — with a fixture pinning it. Collapsing them
+  would make the not-applicable state a guess.
+
+  New `i18n-wired` check (**18 assertions**, 6 mutations, gated). Its load-bearing clause is the
+  **thread leak**: Rails' own guide says `I18n.locale` *"can leak into subsequent requests served by
+  the same thread/process… instead of `I18n.locale =` you can use `I18n.with_locale` which does not
+  have this leak issue."* Puma is threaded and reuses threads, so a locale set and never reset is
+  served to whoever gets that thread next — invisible in single-threaded local testing, and in
+  production a page in the previous visitor's language.
+
+  **Scoped to controllers.** `I18n.locale = :en` in an initializer sets the boot default and is
+  correct; the same line in a request cycle is the bug. Flagging both would fire on conforming setup.
+
+  Two mutations were rejected as **coincidental catches**: with a clause disabled the *next* clause
+  fires on the same input and the verdict is still `1`, so only the message distinguishes them.
+  A third **crashed** rather than failed (`len(None)`), and was replaced with the honest mutation —
+  treating an undeclared project as having *chosen* one locale. Files:
+  `plugins/rails-flow/scripts/check_i18n_setup.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
+
+- **Coverage now ratchets, and it gates.** (#800) `testing.md` shipped `minimum_coverage 90`
+  **commented out** with *"enable once realistic"*, and §11 repeated *"once the number is honest"*.
+  Nothing ever makes it realistic, so coverage went unenforced from the first commit to the last.
+
+  A downstream project reasoned it correctly — *"one set above where a repo sits turns every run red
+  and gets switched off in a week"* — which is true of a **fixed** threshold, and left nothing in its
+  place.
+
+  **`refuse_coverage_drop :line, :branch`** compares against `coverage/.last_run.json`, so the floor
+  is wherever the repo already sits: **never red on day one, never sliding, and rising by itself** as
+  specs are written. Every stage ratchets up, which is what "better coverage at every stage" actually
+  requires.
+
+  **Maintainer decision (#800): it gates.** *"Gate is the key, advise can be ignored."* That is
+  consistent with `quality-pass` rather than an exception to it — that doctrine refuses to gate
+  **judgement**, and *"is 83% good?"* is judgement while a **drop** is a measured regression against
+  a recorded baseline, the same class as this repo's drift gates.
+
+  New `coverage-ratchets` check (**14 assertions**, 6 mutations, gated). Three clauses, all
+  **static** so they hold on a fresh scaffold before any suite has run: the ratchet is present and
+  **uncommented**; no fixed `minimum_coverage <n>`; and if `.gitignore` excludes `coverage/` it keeps
+  `!/coverage/.last_run.json`, or the ratchet compares against nothing in CI — present, configured,
+  and remembering no baseline.
+
+  Deliberately **not** "does `.last_run.json` exist": it appears only after the first run, and
+  demanding it would fail a correct project for not having run yet. And
+  `minimum_coverage_by_file line: 0` is **prescribed**, so the forbidden-threshold pattern requires a
+  bare number — a mutation dropping that digit fails a project following the doctrine, which is the
+  false positive that gets a gate switched off.
+
+  **Code coverage and route coverage answer different questions**, and `testing.md` §11 now says so:
+  line and branch coverage cannot tell you a *flow* was exercised — a controller action can be 100%
+  covered by a unit spec that never issues a request. `qa-flow`'s `route_coverage --fail-on-untested`
+  gates that half, and a green suite means both. Files:
+  `plugins/rails-flow/scripts/check_coverage_ratchet.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
+
+- **A `spec/support` directory nothing loads, and a `capybara` nothing drives.** (#803) Reported
+  downstream: capybara in the Gemfile with no driver and no system specs.
+
+  **My first reading was wrong and is corrected on the issue.** I said `testing.md` omitted the
+  wiring. It does not — §8 has `spec/support/system.rb`, `driven_by :selenium, using:
+  :headless_chrome`, the `js: false` → `rack_test` fast path, a worked example and the never-`sleep`
+  rule. The defect is the class this repo keeps finding: **documented, scaffolded by nothing, checked
+  by nothing.** Grepping every shipped command for `spec/support` returned nothing.
+
+  **And one line makes all of it inert**, which is the higher-value half. `testing.md:99` says to
+  **uncomment** the auto-loader Rails generates commented out. Left as generated, every file under
+  `spec/support/` is dead — `system.rb`, `authentication_helpers.rb`, `webmock.rb`, `vcr.rb`, and
+  anything written by hand — with **no error and no output**. A support directory that loads nothing
+  looks exactly like one that works, and the specs that needed those helpers fail for reasons
+  pointing elsewhere. Same shape as the `Tests:` step Rails omits under `--skip-test` (#779): a
+  generated default the doctrine says to change, with nothing verifying it was changed.
+
+  New `spec-support-wired` check (**15 assertions**, 5 mutations, gated). Two clauses: support files
+  present ⇒ the auto-loader is present **and uncommented**; `capybara` declared ⇒ some spec calls
+  `driven_by`. The second is the inert-**gem** shape, mirroring the inert-**config** rule
+  `mandated-gems` already refuses.
+
+  Both loader spellings count — Rails generates `Dir[Rails.root.join(…)]`, `testing.md` shows
+  `Rails.root.glob`. Accepting one would fail a conforming project, which is the false positive that
+  gets a gate switched off. A project with no capybara is never asked for a driver.
+
+  **Maintainer decision recorded (#803):** system specs are the **developer** workflow; `qa/e2e` is
+  QA's, independent, and neither substitutes for the other. That decision is what makes the capybara
+  clause correct rather than arbitrary — it is now stated in `testing.md` §8 and in `setup-flow`, so
+  it is not re-litigated per project. Files:
+  `plugins/rails-flow/scripts/check_spec_support.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
 ### 1.29.0 — 2026-08-30 (release v1.105.0)
 
 - **The doctrine prescribed 15 gems as literal `gem "…"` lines; 4 were installed and 2 were
@@ -4063,6 +4211,69 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 1.55.0 — 2026-08-30 (release v1.106.0)
+
+- **`references/i18n.md` — the rails-8 skill had no internationalisation doctrine at all.** (#799)
+  Three incidental mentions and no setup path: `SKILL.md:184` said *"when the app already uses"* a
+  setup documented nowhere, and `grep -rn 'I18n\.|config.i18n|available_locales|rails-i18n' skills/`
+  returned **nothing**.
+
+  **Not hypothetical.** The `reliance` pack (#771) chose Noto Sans over inheriting fidara's
+  Bricolage Grotesque for **pan-script coverage — Latin, Arabic and French diacritics** — because
+  Retask serves Nigeria, Egypt and Senegal. The toolchain shipped a font decision justified by three
+  locales and nothing telling an agent how to serve a second one.
+
+  Six sections, both externally verifiable claims checked against upstream rather than assumed: the
+  Rails guide on `I18n.with_locale` and the thread leak, and `rails-i18n`'s `~> 8.1` line matching
+  our Rails floor. It also carries the gotcha the guide states and everyone hits — **lazy lookup
+  `t(".title")` is a VIEW-HELPER feature only**; in a controller, mailer, model or job it resolves to
+  nothing sensible.
+
+  **RTL is three owners, one boundary** — the recommendation asked for on #799. i18n owns `lang`/
+  `dir` (their value comes from `I18n.locale`); `fidara-design` owns logical properties, already at
+  `foundations-tokens.md:194`; `design-flow` owns checking it. **If every component uses logical
+  properties, flipping `dir` already works** — RTL is normally painful because physical properties
+  are written everywhere and then retrofitted, and the retrofit is the project, not the switch. So
+  this reference only has to set the attribute.
+
+  `SKILL.md:184`'s dangling *"when the app already uses"* now resolves to the declaration and the
+  reference. Files: `skills/rails-8/references/i18n.md`, `skills/rails-8/SKILL.md`,
+  `skills/rails-8/references/ecosystem-gems.md`.
+
+- **`quality-pass`'s worked example: the shared harness 22 → 23, its reach 8 → 9.** (#799)
+  `check_i18n_setup.py` uses the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught
+  both numbers.
+  File: `skills/quality-pass/references/worked-example.md`.
+
+
+- **`testing.md`: the commented-out `minimum_coverage 90` is replaced by the ratchet.** (#800) §2
+  enables `refuse_coverage_drop :line, :branch` from the first commit — there is no *"once it is
+  realistic"*, because the floor is wherever you already are. §11 explains why a fixed threshold is
+  the wrong instrument in **both** directions and says **do not re-add it, commented or otherwise**;
+  covers committing `coverage/.last_run.json` with the `.gitignore` exception, since a ratchet with
+  no memory in CI is not a ratchet; adds `minimum_coverage_by_file` because an aggregate hides a
+  hole; and states that code coverage and route coverage answer different questions.
+  File: `skills/rails-8/references/testing.md`.
+
+
+- **`testing.md` §8 states the boundary between developer system specs and QA's browser passes.**
+  (#803) They are different layers, not two homes for one question: system specs are the developer's
+  in-browser feedback, `qa-flow` is independent verification by someone who did not write the code,
+  and folding either into the other destroys what it is for. §8 also now says the support file does
+  nothing until `spec/support/**` is auto-loaded — the line Rails generates commented out.
+  File: `skills/rails-8/references/testing.md`.
+
+- **`quality-pass`'s worked example: the shared harness 21 → 22, its reach 7 → 8.** (#800)
+  `check_coverage_ratchet.py` uses the `check(label, ok, detail)` shape. `check_shared_shapes.py`
+  caught both numbers — the gate refuses a **number** in the example disagreeing with the repo.
+  File: `skills/quality-pass/references/worked-example.md`.
+
+- **`quality-pass`'s worked example: the shared harness 20 → 21, its reach 6 → 7.** (#803)
+  `check_spec_support.py` uses the `check(label, ok, detail)` shape and widens the largest install
+  root. `check_shared_shapes.py` caught both — that gate refuses a **number** in the example
+  disagreeing with the repo, never a duplicate.
+  File: `skills/quality-pass/references/worked-example.md`.
 
 ### 1.54.0 — 2026-08-30 (release v1.105.0)
 

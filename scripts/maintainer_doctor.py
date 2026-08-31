@@ -270,6 +270,19 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-flow/scripts/check_ci_runs_tests.py", "--selftest")),
     ("rails-flow mandated gems",
      ("python3", "plugins/rails-flow/scripts/check_mandated_gems.py", "--selftest")),
+    # #803. Rails generates the spec/support auto-loader COMMENTED and testing.md:99 says to
+    # uncomment it; left as generated, every support file is dead with no error and no output.
+    ("rails-flow spec support wired",
+     ("python3", "plugins/rails-flow/scripts/check_spec_support.py", "--selftest")),
+    # #800. Maintainer decision: "gate is the key, advise can be ignored." A coverage DROP is a
+    # measured regression against a recorded baseline, not judgement, so it gates honestly where a
+    # fixed threshold never could.
+    ("rails-flow coverage ratchets",
+     ("python3", "plugins/rails-flow/scripts/check_coverage_ratchet.py", "--selftest")),
+    # #799. Situational, resolved by asking at setup and RECORDING the answer — which is what lets
+    # the check have a real not-applicable state instead of gating everyone or nobody.
+    ("rails-flow i18n wired",
+     ("python3", "plugins/rails-flow/scripts/check_i18n_setup.py", "--selftest")),
     # #797. The list rails-flow enforces is DERIVED from the rails-8 doctrine that declares it, and
     # committed beside the checker -- a runtime read would cross a plugin boundary, which is #617's
     # class and has already recurred twice. This proves the artifact still matches its source.

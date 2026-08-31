@@ -2276,6 +2276,159 @@ GUARDS: tuple[Guard, ...] = (
         ),
     ),
     Guard(
+        # #799. i18n is situational, so the check is DECLARATION-DRIVEN: setup-flow asks and the
+        # answer is recorded as `config.x.locales`. Without a declaration there are only two
+        # options and both are wrong — gate everyone, or gate nobody.
+        name="check_i18n_setup",
+        subject="plugins/rails-flow/scripts/check_i18n_setup.py",
+        selftest="plugins/rails-flow/scripts/check_i18n_setup.py",
+        mutations=(
+            Mutation(
+                # Rails' own guide: I18n.locale "can leak into subsequent requests served by the
+                # same thread/process". Puma is threaded and reuses threads.
+                "assigning I18n.locale in a controller stops being a finding",
+                "    if uncommented(controller_text, ASSIGNS_LOCALE):",
+                "    if False:",
+                # The exit code alone cannot witness this: with the clause off, the NEXT clause
+                # fires on the same input and the verdict is still 1. Only the message differs.
+                "...naming the cross-request leak",
+            ),
+            Mutation(
+                "a project with no locale wrapper at all passes",
+                "    elif not uncommented(controller_text, WITH_LOCALE):",
+                "    elif False:",
+                "...saying every request renders in the default",
+            ),
+            Mutation(
+                "rails-i18n stops being required, so Rails' own strings stay English",
+                '    if gemfile is not None and "rails-i18n" not in declared_gems(gemfile):',
+                "    if False:",
+                "a missing rails-i18n FAILS",
+            ),
+            Mutation(
+                # Demanding locale files from a monolingual project is the false positive that
+                # gets a rule ignored.
+                "a declared monolingual project gets the full multi-locale ruleset",
+                "    if len(locales) < 2:",
+                "    if False:",
+                "a declared monolingual project is not-applicable",
+            ),
+            Mutation(
+                # None and ["en"] are DIFFERENT answers: "nobody decided" versus "we chose one".
+                # Collapsing them makes the not-applicable state a guess.
+                "an undeclared project is silently treated as having chosen one locale",
+                '    if locales is None:\n        return 3, ("not applicable — this project has not declared',
+                '    if locales is None:\n        locales = ["en"]\n    if False:\n        return 3, ("not applicable — this project has not declared',
+                "...and says a declaration is what setup-flow adds",
+            ),
+            Mutation(
+                "the declaration is never read, so nothing is ever applicable",
+                'for p in cfg.glob("**/*.rb")) if cfg.is_dir() else ""',
+                'for p in cfg.glob("**/*.nope")) if cfg.is_dir() else ""',
+                "a wrapped multi-locale app passes",
+            ),
+        ),
+    ),
+    Guard(
+        # #800. The doctrine shipped `minimum_coverage 90` COMMENTED with "enable once realistic",
+        # and nothing ever made it realistic -- coverage unenforced from the first commit to the
+        # last. A drop is a measured regression, not judgement, so it can gate.
+        name="check_coverage_ratchet",
+        subject="plugins/rails-flow/scripts/check_coverage_ratchet.py",
+        selftest="plugins/rails-flow/scripts/check_coverage_ratchet.py",
+        mutations=(
+            Mutation(
+                # The defect being replaced was a line shipped COMMENTED; a whole-file search would
+                # match it and report the exact problem as solved.
+                "the config is searched whole-file, so a commented ratchet counts",
+                'if not line.lstrip().startswith("#"))',
+                "if True)",
+                "a COMMENTED ratchet still fails",
+            ),
+            Mutation(
+                "the ratchet clause is off, so a coverage drop passes",
+                "    if not uncommented(spec_text, RATCHET):",
+                "    if False:",
+                "a SimpleCov config with no ratchet FAILS",
+            ),
+            Mutation(
+                "a fixed minimum_coverage stops being refused",
+                "    if uncommented(spec_text, FIXED_THRESHOLD):",
+                "    if False:",
+                "a fixed minimum_coverage FAILS even with the ratchet",
+            ),
+            Mutation(
+                # `minimum_coverage_by_file line: 0` is PRESCRIBED. Dropping the digit requirement
+                # would fail a project following the doctrine -- the false positive that gets a
+                # gate switched off.
+                "the threshold pattern loses its digit, so the prescribed per-file floor is flagged",
+                'FIXED_THRESHOLD = re.compile(r"\\bminimum_coverage\\s+\\d")',
+                'FIXED_THRESHOLD = re.compile(r"\\bminimum_coverage")',
+                "minimum_coverage_by_file is not the forbidden form",
+            ),
+            Mutation(
+                # Ignoring coverage/ without the exception means the ratchet compares against
+                # nothing in CI -- present, configured, and remembering no baseline.
+                "the gitignore clause is off, so the ratchet silently loses its memory",
+                "        if any(IGNORES_COVERAGE.match(l) for l in lines) and not any(",
+                "        if False and not any(",
+                "ignoring coverage/ with no exception FAILS",
+            ),
+            Mutation(
+                "a project without simplecov reads as a pass",
+                '        return 3, ("not applicable — `simplecov` is not declared in this project "',
+                '        return 0, ("ok "',
+                "no simplecov is not-applicable, not a pass",
+            ),
+        ),
+    ),
+    Guard(
+        # #803. Rails ships the spec/support auto-loader COMMENTED. Left as generated, every file
+        # under spec/support/ is dead with no error and no output -- a support directory that loads
+        # nothing looks exactly like one that works.
+        name="check_spec_support",
+        subject="plugins/rails-flow/scripts/check_spec_support.py",
+        selftest="plugins/rails-flow/scripts/check_spec_support.py",
+        mutations=(
+            Mutation(
+                # The whole point: a whole-file search matches the COMMENTED line and reports the
+                # exact defect as clean. `uncommented` goes line by line for this reason.
+                "the loader is searched whole-file, so a commented-out one counts",
+                'if not line.lstrip().startswith("#"))',
+                "if True)",
+                "a COMMENTED auto-loader still fails",
+            ),
+            Mutation(
+                "the auto-loader clause is switched off, so a dead support dir passes",
+                "    if support_files and not uncommented(helper_text, AUTOLOAD):",
+                "    if False:",
+                "support files with no auto-loader FAIL",
+            ),
+            Mutation(
+                # The inert-GEM clause, mirroring the inert-CONFIG rule mandated-gems refuses.
+                "capybara no longer needs a driver, so the gem drives nothing and passes",
+                "        if not DRIVEN_BY.search(spec_text):",
+                "        if False:",
+                "capybara with no driven_by FAILS",
+            ),
+            Mutation(
+                "a repo with no spec/ reads as a pass",
+                'return 3, f"not applicable — no {SPEC}/ in this repo (nothing to check, NOT a pass)"',
+                'return 0, "ok"',
+                "no spec/ is not-applicable, not a pass",
+            ),
+            Mutation(
+                # Rails generates `Dir[Rails.root.join(...)]`; testing.md shows `Rails.root.glob`.
+                # Accepting one spelling fails a project that used the other -- a false positive on
+                # conforming work, which is what gets a gate switched off.
+                "only one loader spelling is accepted, failing conforming projects",
+                "(?:Rails\\.root\\.glob|Dir\\[?\\s*Rails\\.root\\.join)",
+                "(?:Rails\\.root\\.glob)",
+                "the Dir[Rails.root.join] spelling also counts",
+            ),
+        ),
+    ),
+    Guard(
         # #797. The list is DERIVED from the rails-8 doctrine and committed beside the checker,
         # because a runtime read would cross a plugin boundary -- #617's class, already recurred
         # twice. This guard covers the derivation; the drift gate covers the artifact.
@@ -3841,6 +3994,38 @@ GUARDS: tuple[Guard, ...] = (
         needs=(".claude-plugin", ".github", ".claude", "scripts", "plugins", "skills", "docs",
                "CLAUDE.md", "AGENTS.md"),
         mutations=(
+            # #798. The map answered "which claim is enforced by what" for repo-process doctrine
+            # only -- skills/rails-8, hotwire and fidara-design were not declared sources at all,
+            # so the question was unanswerable for the doctrine users actually follow. Three claims
+            # (#778/#797, #779, #792) were each found by a downstream project, one at a time.
+            Mutation(
+                # 49 unmapped files would fail the coverage gate on the first run -- red on day one,
+                # which #800 spent a whole issue removing. So the mapped count RATCHETS.
+                "the shipped-surface ratchet never fires, so coverage can silently regress",
+                "    if len(mapped) < SHIPPED_FLOOR:",
+                "    if False:",
+                "one mapped file below a floor of 2 is a finding",
+            ),
+            Mutation(
+                "every shipped file counts as mapped, so the floor is met by declaring them",
+                "    mapped = sorted(s for s, n in shipped_counts.items() if n)",
+                "    mapped = sorted(shipped_counts)",
+                "two rows in ONE file does not meet a floor of 2 files",
+            ),
+            Mutation(
+                "no shipped row is counted, so mapping a source changes nothing",
+                "        if c.stated_in in shipped_counts:\n            shipped_counts[c.stated_in] += 1",
+                "        if False:\n            shipped_counts[c.stated_in] += 1",
+                "...and two mapped files meets it",
+            ),
+            Mutation(
+                # Both surfaces are declared; rejecting the shipped one would make every new row an
+                # `undeclared source` finding and the extension unusable.
+                "shipped sources are rejected as undeclared",
+                "        if c.stated_in not in sources and c.stated_in not in SHIPPED_SOURCES:",
+                "        if c.stated_in not in sources:",
+                "the real registry validates clean",
+            ),
             Mutation(
                 "a reworded or deleted claim keeps its row, so the map advertises doctrine we no "
                 "longer state",

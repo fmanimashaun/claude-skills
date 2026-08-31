@@ -181,8 +181,10 @@ generate, then trim what isn't needed.
 - **Callbacks:** fine for the object's own lifecycle (normalize, cache a
   column, enqueue its own follow-up job); avoid reaching into *other* models
   from callbacks — do that in the controller/job that orchestrates.
-- **I18n-ready copy** in views (`t(".title")`) when the app already uses
-  locales; hardcode English only in single-locale apps.
+- **I18n-ready copy** in views (`t(".title")`) when the app declares more than
+  one locale in `config.x.locales` — see `references/i18n.md` for the setup that
+  declaration implies. Hardcode English only in a project that declared a single
+  locale, which is a choice on record rather than an omission.
 - **Credentials, not ENV, for app secrets:** `Rails.application.credentials.dig(:stripe, :secret_key)`;
   edit via `bin/rails credentials:edit`.
 - Run `bin/rubocop` mentally: 2-space indent, `frozen_string_literal` not
@@ -252,6 +254,7 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/multi-tenancy.md` | **Isolation vs identification** (the two axes) — row-level isolation via association traversal, session-selected tenant (never in the URL), subdomain per *plane*, why not `default_scope`, the GlobalID/job-boundary hole, PostgreSQL RLS and its owner-bypass trap, opaque public ids vs UUID PKs |
 | `references/sso.md` | Enterprise SSO: multi-tenant OIDC (default) + SAML hatch, identities keyed [provider, issuer, uid], JIT roles, enabled-vs-enforced, tenant dashboard, cert rotation, SLO, audit, RSpec proving set |
 | `references/testing.md` | RSpec (pure — no matcher add-ons), FactoryBot/Faker, request/system specs, Capybara, WebMock/VCR, SimpleCov, `bin/ci`, `--skip-test` scaffolding |
+| `references/i18n.md` | **Internationalisation** — declared once (`config.x.locales`), `around_action` + `I18n.with_locale` (a `before_action` leaks across threads), lazy lookup, `lang`/`dir`, what must NOT be translated. **Situational**: `/rails-flow:setup-flow` asks. |
 | `references/performance-caching.md` | Solid Cache, fragment/russian-doll caching, HTTP caching/ETags, N+1s, `load_async`, counter caches, YJIT/jemalloc/Puma/Thruster, profiling |
 | `references/observability.md` | Active Support Instrumentation (hook catalog, subscribers, custom events), 8.1 `Rails.event`, `Rails.error`, log tagging, APM/OpenTelemetry wiring |
 | `references/advanced-active-record.md` | Composite primary keys, multiple databases (replicas, role switching, sharding), Active Record encryption + key rotation |

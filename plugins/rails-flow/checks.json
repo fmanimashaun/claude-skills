@@ -172,6 +172,48 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "spec-support-wired",
+      "why": "Rails ships the spec/support auto-loader COMMENTED; left as generated every support file is dead with no error, and a capybara nothing drives is protection that isn't.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_spec_support.py"
+      ],
+      "applies_when": [
+        "spec"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "coverage-ratchets",
+      "why": "A commented-out `minimum_coverage 90` never becomes realistic, so coverage goes unenforced for the life of the project; a DROP is a measured regression and can gate honestly.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_coverage_ratchet.py"
+      ],
+      "applies_when": [
+        "Gemfile"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "i18n-wired",
+      "why": "I18n.locale = in a controller leaks across requests on a threaded server, serving the previous visitor's language; and a declaration is what lets a situational rule be checked at all.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_i18n_setup.py"
+      ],
+      "applies_when": [
+        "config"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

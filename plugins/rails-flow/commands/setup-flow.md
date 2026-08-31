@@ -481,6 +481,111 @@ gem, so `bin/rails generate` silently emits no factories. `bundle add factory_bo
 Offer all three as one approved diff; do not write them unasked. Re-running is safe — every check
 above is idempotent, and a project that already has the steps reports exit 0.
 
+### Ask whether this project is monolingual, and RECORD the answer (#799)
+
+**Ask.** *"Will this app serve more than one language?"* Most will not, and demanding locale files
+everywhere is the false positive that gets a rule ignored — but demanding nothing leaves a
+multi-locale app silently monolingual.
+
+**Recording the answer is what makes a situational rule checkable at all.** Without a declaration
+there are only two options and both are wrong: gate everyone, or gate nobody. With one, the check
+gets three honest states — conforming, drifted, and *not applicable because this project declared
+monolingual*. Same mechanism as `config.x.brand.pack` (#788).
+
+```ruby
+# config/initializers/locales.rb
+Rails.application.configure do
+  config.x.locales = %w[en]                 # monolingual — one element, still DECLARED
+  # config.x.locales = %w[en ar fr]         # multi-locale
+end
+```
+
+Write `%w[en]` even for a monolingual app. It is the difference between *"this project chose one
+locale"* and *"nobody thought about it"*, and only the first can be checked.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_i18n_setup.py"
+```
+
+On a multi-locale answer, propose `skills/rails-8/references/i18n.md` §1–§2 — `available_locales`,
+`rails-i18n`, and the `around_action` wrapper. **Never a `before_action`**: Rails' guide says
+`I18n.locale` *"can leak into subsequent requests served by the same thread/process"*, and Puma is
+threaded, so a locale set and never reset is served to whoever gets that thread next.
+
+### Coverage that cannot catch a regression — propose the ratchet (#800)
+
+`testing.md` used to ship `minimum_coverage 90` **commented out** with *"enable once realistic"*.
+Nothing ever makes it realistic, so coverage goes unenforced from the first commit to the last.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_coverage_ratchet.py"
+```
+
+Exit **1** means propose the diff; exit **3** means no `simplecov` and nothing to offer.
+
+**The ratchet** — in the SimpleCov block:
+
+```ruby
+refuse_coverage_drop :line, :branch
+minimum_coverage_by_file line: 0     # inert at 0; raise deliberately
+```
+
+Today's number is the floor, so it is **never red on day one**, it **cannot slide**, and it **rises
+by itself** as specs are written. Do **not** propose a fixed `minimum_coverage <n>` — below where the
+repo sits it is inert, above it every run is red and it gets switched off.
+
+**Its memory** — `.gitignore`, or the ratchet compares against nothing in CI:
+
+```gitignore
+/coverage/
+!/coverage/.last_run.json
+```
+
+`coverage/.last_run.json` is the one file there that is not a build artifact. Committed, the diff
+also shows coverage moving.
+
+**Say plainly that this one gates.** A coverage *drop* is a measured regression against a recorded
+baseline, not a judgement about whether 83% is good — which is why it can block a merge where a
+threshold never could.
+
+### The support directory nothing loads — propose the wiring as an approved diff (#803)
+
+`testing.md` prescribes four files under `spec/support/` — `system.rb`, `authentication_helpers.rb`,
+`webmock.rb`, `vcr.rb` — and **Rails generates the auto-loader commented out**. Left as generated,
+every one of them is dead: no error, no output, and the specs that needed those helpers fail for
+reasons that point somewhere else. `testing.md:99` says to uncomment it; nothing checked that anyone
+had.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_spec_support.py"
+```
+
+Exit **1** means propose the wiring; exit **3** means no `spec/` and there is nothing to offer.
+
+**The auto-loader**, in `spec/rails_helper.rb` — uncomment the generated line, or add it:
+
+```ruby
+Rails.root.glob("spec/support/**/*.rb").sort_by(&:to_s).each { |f| require f }
+```
+
+**The driver**, when `capybara` is present — `spec/support/system.rb`, verbatim from `testing.md` §8:
+
+```ruby
+RSpec.configure do |config|
+  config.before(:each, type: :system) do
+    driven_by :selenium, using: :headless_chrome, screen_size: [1400, 1400]
+  end
+  # For specs with zero JavaScript, rack_test is ~10x faster:
+  config.before(:each, type: :system, js: false) { driven_by :rack_test }
+end
+```
+
+**System specs are the developer testing workflow, and `qa-flow` is not a substitute** (#803). The
+browser passes in `/qa-flow:crawl` and `/qa-flow:functional` are an **independent** layer — that
+independence is the whole value, and folding one into the other destroys it. A developer with no
+system specs has no browser feedback until QA runs; QA running the developer's specs is not
+independent verification.
+
 ### The mandated gem nobody installs — propose `simple_form` as an approved diff (#778)
 
 `ecosystem-gems.md` §2: *"simple_form is mandatory in this stack — no form, and no form element, is

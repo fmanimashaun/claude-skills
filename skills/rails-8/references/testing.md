@@ -77,7 +77,11 @@ require "simplecov"
 SimpleCov.start "rails" do
   enable_coverage :branch
   group "Jobs", "app/jobs"    # SimpleCov >= 1.0.0; was `add_group` before the rename
-  # minimum_coverage 90   # fail the suite below this — enable once realistic
+
+  # THE RATCHET. Today's number is the floor; a change that lowers it fails. Enabled from the
+  # first commit — there is no "once it is realistic", because the floor is wherever you already
+  # are. See §11 for why a fixed `minimum_coverage` is the wrong instrument.
+  refuse_coverage_drop :line, :branch
 end
 ```
 
@@ -330,6 +334,18 @@ RSpec.configure { |c| c.include AuthenticationHelpers, type: :request }
 
 ## 8. System specs — Capybara + Selenium
 
+**These are the DEVELOPER testing workflow, and qa-flow is not a substitute** (#803). System specs
+are how the person building a feature sees it work in a browser. `qa-flow`'s browser passes
+(`/qa-flow:crawl`, `/qa-flow:functional`, `bin/e2e`) are an **independent** layer judged by someone
+who did not write the code — that independence is their whole value, and folding either into the
+other destroys it. A developer with no system specs has no browser feedback until QA runs; QA
+running the developer's own specs is not independent verification. Both, deliberately.
+
+**The support file below does nothing until `spec/support/**` is auto-loaded** — see §2, where Rails
+generates that line **commented out**. `check_spec_support.py` refuses a support directory nothing
+loads, and a `capybara` no spec drives.
+
+
 `spec/support/system.rb`:
 
 ```ruby
@@ -444,8 +460,43 @@ test adapter queues everything; nothing runs unless you perform it.
 ## 11. Coverage, linting, CI, parallelism
 
 - **SimpleCov** (configured in §2) writes `coverage/index.html`; open it after
-  a run and chase untested *branches*, not just lines. Gate with
-  `minimum_coverage` once the number is honest.
+  a run and chase untested *branches*, not just lines.
+
+  **Gate the DROP, never an absolute number.** `refuse_coverage_drop :line, :branch`
+  compares against `coverage/.last_run.json`, so the floor is wherever the repo already
+  sits: it cannot be red on day one, it cannot slide, and it **rises by itself** as
+  specs are written. Every stage ratchets up.
+
+  A fixed `minimum_coverage 90` is the wrong instrument in both directions — set below
+  where the repo sits it is inert, and set above it every run is red and it is switched
+  off within a week. This file used to carry it commented out with *"enable once
+  realistic"*, and nothing ever made it realistic, so coverage went unenforced from the
+  first commit to the last. **Do not re-add it, commented or otherwise.**
+
+  This is the one coverage rule that *can* gate honestly. "Is 83% good?" is judgement,
+  and `quality-pass` is right that gating judgement gets it switched off. A **drop** is
+  not judgement — it is a measured regression against a recorded baseline, the same
+  class as this repo's drift gates.
+
+  **Commit `coverage/.last_run.json`.** It is the only file in `coverage/` that is not a
+  build artifact, and a ratchet with no memory in CI is not a ratchet. Committing also
+  makes the movement reviewable — the diff shows coverage going up. `.gitignore`
+  `coverage/` with an exception:
+
+  ```gitignore
+  /coverage/
+  !/coverage/.last_run.json
+  ```
+
+  **An aggregate hides a hole.** 83% overall can carry a file at 0%, so add
+  `minimum_coverage_by_file line: 0` and raise it deliberately: at 0 it is inert but
+  present, which makes tightening it a one-line decision rather than a new concept.
+
+- **Code coverage and route coverage answer different questions**, and neither alone
+  means "tested". Line and branch coverage cannot tell you a **flow** was exercised — a
+  controller action can be 100% covered by a unit spec that never issues a request.
+  `qa-flow`'s `route_coverage.py --fail-on-untested` gates that half. A green suite
+  means **both**.
 - **rubocop-rspec** — in `.rubocop.yml` (alongside rails-omakase):
 
 ```yaml
