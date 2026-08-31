@@ -32,6 +32,7 @@ you how each one is idiomatically used).
 | Authentication | `bin/rails g authentication` | Social login only → layer **omniauth** on top; never replace the generator |
 | Authorization | Scoping + model predicates (`auth-security.md`) | Role matrix outgrows conditionals → **pundit** / **cancancan** |
 | Pagination | — (none built in) | Any real list → **pagy** |
+| Internationalisation | `I18n` (English only for Rails' own strings) | More than one locale → **rails-i18n** for Rails' built-in messages, plus `references/i18n.md`. **Situational — setup-flow asks, and the answer is recorded in `config.x.locales`.** |
 | Filtering/search UI | Scopes + params | Admin-style arbitrary filters → **ransack**; full-text on PG → **pg_search** |
 | Jobs | **Solid Queue** | Ops dashboard → **mission_control-jobs**; the backend itself is settled |
 | Cron | `config/recurring.yml` (Solid Queue) | (rarely) — whenever/cron only for non-Rails jobs |

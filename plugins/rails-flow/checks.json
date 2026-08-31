@@ -200,6 +200,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "i18n-wired",
+      "why": "I18n.locale = in a controller leaks across requests on a threaded server, serving the previous visitor's language; and a declaration is what lets a situational rule be checked at all.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_i18n_setup.py"
+      ],
+      "applies_when": [
+        "config"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

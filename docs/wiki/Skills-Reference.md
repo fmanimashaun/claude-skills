@@ -14,7 +14,7 @@ standalone `.skill` for claude.ai.
 
 Playbook for building full-stack Ruby on Rails 8.1 applications "the Rails way" — vanilla Rails, Hotwire (Turbo + Stimulus), the Solid stack, Propshaft + importmap, RSpec testing, ecosystem gems, OpenAPI docs, AI features, observability, and Kamal 2 deployment.
 
-19 reference file(s): `advanced-active-record`, `ai-llm`, `api-documentation`, `auth-security`, `controllers-routing`, `deployment-kamal`, `ecosystem-gems`, `extending-rails`, `jobs-and-realtime`, `mail-storage-richtext`, `models`, `multi-tenancy`, `observability`, `performance-caching`, `project-setup`, `sso`, `style`, `testing`, `views-hotwire`
+20 reference file(s): `advanced-active-record`, `ai-llm`, `api-documentation`, `auth-security`, `controllers-routing`, `deployment-kamal`, `ecosystem-gems`, `extending-rails`, `i18n`, `jobs-and-realtime`, `mail-storage-richtext`, `models`, `multi-tenancy`, `observability`, `performance-caching`, `project-setup`, `sso`, `style`, `testing`, `views-hotwire`
 
 
 ## `hotwire`

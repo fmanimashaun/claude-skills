@@ -2370,6 +2370,39 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`/rails-flow:setup-flow` asks whether the app is multi-locale, and RECORDS the answer.** (#799)
+  Maintainer decision: *"let agent ask during setup — we can tell them if it is monolingual or not,
+  so it knows to setup or not."*
+
+  **Recording it is what makes a situational rule checkable at all.** Without a declaration there are
+  only two options and both are wrong: gate everyone, or gate nobody. With `config.x.locales` the
+  check has three honest states — conforming, drifted, and *not applicable because this project
+  declared monolingual*. Identical mechanism to `config.x.brand.pack` (#788), for the identical
+  reason: a check that cannot tell what a project chose has not measured anything.
+
+  `%w[en]` is written even for a monolingual app, and `None` and `["en"]` stay **different answers**
+  — *"nobody decided"* versus *"we chose one locale"* — with a fixture pinning it. Collapsing them
+  would make the not-applicable state a guess.
+
+  New `i18n-wired` check (**18 assertions**, 6 mutations, gated). Its load-bearing clause is the
+  **thread leak**: Rails' own guide says `I18n.locale` *"can leak into subsequent requests served by
+  the same thread/process… instead of `I18n.locale =` you can use `I18n.with_locale` which does not
+  have this leak issue."* Puma is threaded and reuses threads, so a locale set and never reset is
+  served to whoever gets that thread next — invisible in single-threaded local testing, and in
+  production a page in the previous visitor's language.
+
+  **Scoped to controllers.** `I18n.locale = :en` in an initializer sets the boot default and is
+  correct; the same line in a request cycle is the bug. Flagging both would fire on conforming setup.
+
+  Two mutations were rejected as **coincidental catches**: with a clause disabled the *next* clause
+  fires on the same input and the verdict is still `1`, so only the message distinguishes them.
+  A third **crashed** rather than failed (`len(None)`), and was replaced with the honest mutation —
+  treating an undeclared project as having *chosen* one locale. Files:
+  `plugins/rails-flow/scripts/check_i18n_setup.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
+
 - **Coverage now ratchets, and it gates.** (#800) `testing.md` shipped `minimum_coverage 90`
   **commented out** with *"enable once realistic"*, and §11 repeated *"once the number is honest"*.
   Nothing ever makes it realistic, so coverage went unenforced from the first commit to the last.
@@ -4180,6 +4213,39 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
 ### Unreleased
+
+- **`references/i18n.md` — the rails-8 skill had no internationalisation doctrine at all.** (#799)
+  Three incidental mentions and no setup path: `SKILL.md:184` said *"when the app already uses"* a
+  setup documented nowhere, and `grep -rn 'I18n\.|config.i18n|available_locales|rails-i18n' skills/`
+  returned **nothing**.
+
+  **Not hypothetical.** The `reliance` pack (#771) chose Noto Sans over inheriting fidara's
+  Bricolage Grotesque for **pan-script coverage — Latin, Arabic and French diacritics** — because
+  Retask serves Nigeria, Egypt and Senegal. The toolchain shipped a font decision justified by three
+  locales and nothing telling an agent how to serve a second one.
+
+  Six sections, both externally verifiable claims checked against upstream rather than assumed: the
+  Rails guide on `I18n.with_locale` and the thread leak, and `rails-i18n`'s `~> 8.1` line matching
+  our Rails floor. It also carries the gotcha the guide states and everyone hits — **lazy lookup
+  `t(".title")` is a VIEW-HELPER feature only**; in a controller, mailer, model or job it resolves to
+  nothing sensible.
+
+  **RTL is three owners, one boundary** — the recommendation asked for on #799. i18n owns `lang`/
+  `dir` (their value comes from `I18n.locale`); `fidara-design` owns logical properties, already at
+  `foundations-tokens.md:194`; `design-flow` owns checking it. **If every component uses logical
+  properties, flipping `dir` already works** — RTL is normally painful because physical properties
+  are written everywhere and then retrofitted, and the retrofit is the project, not the switch. So
+  this reference only has to set the attribute.
+
+  `SKILL.md:184`'s dangling *"when the app already uses"* now resolves to the declaration and the
+  reference. Files: `skills/rails-8/references/i18n.md`, `skills/rails-8/SKILL.md`,
+  `skills/rails-8/references/ecosystem-gems.md`.
+
+- **`quality-pass`'s worked example: the shared harness 22 → 23, its reach 8 → 9.** (#799)
+  `check_i18n_setup.py` uses the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught
+  both numbers.
+  File: `skills/quality-pass/references/worked-example.md`.
+
 
 - **`testing.md`: the commented-out `minimum_coverage 90` is replaced by the ratchet.** (#800) §2
   enables `refuse_coverage_drop :line, :branch` from the first commit — there is no *"once it is
