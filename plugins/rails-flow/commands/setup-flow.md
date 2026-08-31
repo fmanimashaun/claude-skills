@@ -481,6 +481,42 @@ gem, so `bin/rails generate` silently emits no factories. `bundle add factory_bo
 Offer all three as one approved diff; do not write them unasked. Re-running is safe — every check
 above is idempotent, and a project that already has the steps reports exit 0.
 
+### Coverage that cannot catch a regression — propose the ratchet (#800)
+
+`testing.md` used to ship `minimum_coverage 90` **commented out** with *"enable once realistic"*.
+Nothing ever makes it realistic, so coverage goes unenforced from the first commit to the last.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_coverage_ratchet.py"
+```
+
+Exit **1** means propose the diff; exit **3** means no `simplecov` and nothing to offer.
+
+**The ratchet** — in the SimpleCov block:
+
+```ruby
+refuse_coverage_drop :line, :branch
+minimum_coverage_by_file line: 0     # inert at 0; raise deliberately
+```
+
+Today's number is the floor, so it is **never red on day one**, it **cannot slide**, and it **rises
+by itself** as specs are written. Do **not** propose a fixed `minimum_coverage <n>` — below where the
+repo sits it is inert, above it every run is red and it gets switched off.
+
+**Its memory** — `.gitignore`, or the ratchet compares against nothing in CI:
+
+```gitignore
+/coverage/
+!/coverage/.last_run.json
+```
+
+`coverage/.last_run.json` is the one file there that is not a build artifact. Committed, the diff
+also shows coverage moving.
+
+**Say plainly that this one gates.** A coverage *drop* is a measured regression against a recorded
+baseline, not a judgement about whether 83% is good — which is why it can block a merge where a
+threshold never could.
+
 ### The support directory nothing loads — propose the wiring as an approved diff (#803)
 
 `testing.md` prescribes four files under `spec/support/` — `system.rb`, `authentication_helpers.rb`,

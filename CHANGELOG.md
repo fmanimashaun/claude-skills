@@ -2330,6 +2330,45 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Coverage now ratchets, and it gates.** (#800) `testing.md` shipped `minimum_coverage 90`
+  **commented out** with *"enable once realistic"*, and §11 repeated *"once the number is honest"*.
+  Nothing ever makes it realistic, so coverage went unenforced from the first commit to the last.
+
+  A downstream project reasoned it correctly — *"one set above where a repo sits turns every run red
+  and gets switched off in a week"* — which is true of a **fixed** threshold, and left nothing in its
+  place.
+
+  **`refuse_coverage_drop :line, :branch`** compares against `coverage/.last_run.json`, so the floor
+  is wherever the repo already sits: **never red on day one, never sliding, and rising by itself** as
+  specs are written. Every stage ratchets up, which is what "better coverage at every stage" actually
+  requires.
+
+  **Maintainer decision (#800): it gates.** *"Gate is the key, advise can be ignored."* That is
+  consistent with `quality-pass` rather than an exception to it — that doctrine refuses to gate
+  **judgement**, and *"is 83% good?"* is judgement while a **drop** is a measured regression against
+  a recorded baseline, the same class as this repo's drift gates.
+
+  New `coverage-ratchets` check (**14 assertions**, 6 mutations, gated). Three clauses, all
+  **static** so they hold on a fresh scaffold before any suite has run: the ratchet is present and
+  **uncommented**; no fixed `minimum_coverage <n>`; and if `.gitignore` excludes `coverage/` it keeps
+  `!/coverage/.last_run.json`, or the ratchet compares against nothing in CI — present, configured,
+  and remembering no baseline.
+
+  Deliberately **not** "does `.last_run.json` exist": it appears only after the first run, and
+  demanding it would fail a correct project for not having run yet. And
+  `minimum_coverage_by_file line: 0` is **prescribed**, so the forbidden-threshold pattern requires a
+  bare number — a mutation dropping that digit fails a project following the doctrine, which is the
+  false positive that gets a gate switched off.
+
+  **Code coverage and route coverage answer different questions**, and `testing.md` §11 now says so:
+  line and branch coverage cannot tell you a *flow* was exercised — a controller action can be 100%
+  covered by a unit spec that never issues a request. `qa-flow`'s `route_coverage --fail-on-untested`
+  gates that half, and a green suite means both. Files:
+  `plugins/rails-flow/scripts/check_coverage_ratchet.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
+
 - **A `spec/support` directory nothing loads, and a `capybara` nothing drives.** (#803) Reported
   downstream: capybara in the Gemfile with no driver and no system specs.
 
@@ -4102,12 +4141,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`testing.md`: the commented-out `minimum_coverage 90` is replaced by the ratchet.** (#800) §2
+  enables `refuse_coverage_drop :line, :branch` from the first commit — there is no *"once it is
+  realistic"*, because the floor is wherever you already are. §11 explains why a fixed threshold is
+  the wrong instrument in **both** directions and says **do not re-add it, commented or otherwise**;
+  covers committing `coverage/.last_run.json` with the `.gitignore` exception, since a ratchet with
+  no memory in CI is not a ratchet; adds `minimum_coverage_by_file` because an aggregate hides a
+  hole; and states that code coverage and route coverage answer different questions.
+  File: `skills/rails-8/references/testing.md`.
+
+
 - **`testing.md` §8 states the boundary between developer system specs and QA's browser passes.**
   (#803) They are different layers, not two homes for one question: system specs are the developer's
   in-browser feedback, `qa-flow` is independent verification by someone who did not write the code,
   and folding either into the other destroys what it is for. §8 also now says the support file does
   nothing until `spec/support/**` is auto-loaded — the line Rails generates commented out.
   File: `skills/rails-8/references/testing.md`.
+
+- **`quality-pass`'s worked example: the shared harness 21 → 22, its reach 7 → 8.** (#800)
+  `check_coverage_ratchet.py` uses the `check(label, ok, detail)` shape. `check_shared_shapes.py`
+  caught both numbers — the gate refuses a **number** in the example disagreeing with the repo.
+  File: `skills/quality-pass/references/worked-example.md`.
 
 - **`quality-pass`'s worked example: the shared harness 20 → 21, its reach 6 → 7.** (#803)
   `check_spec_support.py` uses the `check(label, ok, detail)` shape and widens the largest install
