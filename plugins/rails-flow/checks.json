@@ -186,6 +186,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "coverage-ratchets",
+      "why": "A commented-out `minimum_coverage 90` never becomes realistic, so coverage goes unenforced for the life of the project; a DROP is a measured regression and can gate honestly.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_coverage_ratchet.py"
+      ],
+      "applies_when": [
+        "Gemfile"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
