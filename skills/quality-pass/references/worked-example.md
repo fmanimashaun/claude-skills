@@ -62,7 +62,7 @@ and half of what follows turns on that boundary.
 
 | shape | files | reach | where |
 |---|---|---|---|
-| `class Unusable(RuntimeError)` | 5 | 5 | one plugin |
+| `class Unusable(RuntimeError)` | 6 | 5 | one plugin |
 | the `json.loads` -> `Unusable` prologue | 5 | 5 | one plugin |
 | the `check(label, ok, detail)` selftest harness | 20 | 6 | three plugins + non-shipped tooling |
 | the `SELFTEST FAILED --` reporter | 13 | 6 | two plugins + non-shipped tooling |
