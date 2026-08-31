@@ -1772,8 +1772,8 @@ GUARDS: tuple[Guard, ...] = (
                 # system's own dark-mode guidance leads to; requiring the selector to abut its brace
                 # made a real pack's 24 role tokens read as zero.
                 "a selector must abut its brace again, so a grouped `:root, .light` is invisible",
-                'for m in re.finditer(r"^[ \t]*([^{}@]*?)\\{(.*?)^[ \t]*\\}", src, re.S | re.M):',
-                'for m in re.finditer(r"^[ \t]*(" + re.escape(selector) + r")\\s*\\{(.*?)^[ \t]*\\}", src, re.S | re.M):',
+                'for m in re.finditer(r"^[ \\t]*([^{}@]*?)\\{(.*?)^[ \\t]*\\}", src, re.S | re.M):',
+                'for m in re.finditer(r"^[ \\t]*(" + re.escape(selector) + r")\\s*\\{(.*?)^[ \\t]*\\}", src, re.S | re.M):',
                 "a grouped selector list is read",
             ),
             Mutation(
@@ -1781,8 +1781,8 @@ GUARDS: tuple[Guard, ...] = (
                 # declarations are not the pack's unconditional roles. Substring matching would
                 # pass every positive case and still be wrong.
                 "membership becomes a substring test, so `:root.theme-a` counts as `:root`",
-                "        if selector in members:",
-                "        if any(selector in m for m in members):",
+                '        if selector in [part.strip() for part in m.group(1).split(",")]:',
+                '        if any(selector in part for part in m.group(1).split(",")):',
                 "a compound is NOT a member",
             ),
             Mutation(
@@ -1829,8 +1829,8 @@ GUARDS: tuple[Guard, ...] = (
             Mutation(
                 # CSS cascade order. Returning the first match silently prefers a superseded block.
                 "the FIRST matching block wins, reversing the CSS cascade",
-                "            out = m.group(2)\n    return out",
-                "            return m.group(2)\n    return out",
+                "    blocks = selector_blocks(src, selector)\n    return blocks[-1] if blocks else \"\"",
+                "    blocks = selector_blocks(src, selector)\n    return blocks[0] if blocks else \"\"",
                 "a later bare block wins",
             ),
         ),
@@ -1886,9 +1886,59 @@ GUARDS: tuple[Guard, ...] = (
         # parse the real reliance theme, so without it the staged tempdir fails and the
         # harness reports the guard INERT -- every mutation "caught" regardless. A guard's
         # needs is everything its subject reads, and that changed when the baseline did.
+        # `brand_pack_lint` joins `needs` with #814: the comparison is theme-aware now and uses
+        # that module's parser. Fifth time this week a guard's needs fell behind its subject.
         needs=("skills", "plugins/design-flow/scripts/doctrine_path.py",
+               "plugins/design-flow/scripts/brand_pack_lint.py",
                "plugins/design-flow/brands"),
         mutations=(
+            # #814. #788 pointed the comparison at the right TARGET and left its KIND wrong: the
+            # reference is a palette, the subject is a stylesheet. 72 findings on an untouched
+            # scaffold, 70 false, and the advice would have moved design-flow's own scale tokens
+            # out of design-flow's own managed block.
+            Mutation(
+                "the changed clause is off, so a re-tuned pack value passes",
+                "            if ours[tok] and ours[tok] != theirs[tok]:",
+                "            if False:",
+                "real drift against the right pack is STILL reported",
+            ),
+            Mutation(
+                # System = doctrine MINUS pack. Without it, `setup`'s own scale is reported as an
+                # unexpected local extension -- 40 of the 72.
+                "the system scale is reported as a local extension again",
+                '    if name in doctrine_names:\n        return "system"',
+                "    if False:\n        return \"system\"",
+                "the system scale is not reported extra",
+            ),
+            Mutation(
+                # Presence is the union across blocks; only the VALUE is last-wins. Taking the last
+                # block made every token in an earlier `:root` read as missing.
+                "only the last block per selector is read",
+                "        for body in bpl.selector_blocks(src, sel):",
+                "        for body in bpl.selector_blocks(src, sel)[-1:]:",
+                "a genuinely local token is still `extra`",
+            ),
+            Mutation(
+                # The slice used to run between the marker STRINGS, so it opened with ` */` and a
+                # theme-aware parser read `*/\n:root` as the selector. Every block came back empty.
+                "managed_block keeps the marker comment fragment",
+                '    start = css.find("*/", i + len(BEGIN))',
+                "    start = -1",
+                "reformatting is not drift",
+            ),
+            Mutation(
+                "@theme is never read, so primitives are invisible",
+                "    for body in bpl.theme_bodies(src):",
+                "    for body in bpl.theme_bodies(src)[:0]:",
+                "a re-tuned primitive is `changed` in `@theme`",
+            ),
+            Mutation(
+                # Names alone answer "is it declared"; the comparison needs "is it the same".
+                "@theme values are dropped, so a re-tuned primitive is invisible",
+                "                             for m in DECL.finditer(body)})",
+                "                             for m in list(DECL.finditer(body))[:0]})",
+                "a re-tuned primitive is `changed` in `@theme`",
+            ),
             # #788. The baseline was ONE fixed file -- the fidara-flavoured doctrine -- so a
             # reliance project read as 100+ false findings whose remediation ("take the plugin's
             # value") would have reverted --primary from #1171B0 (4.97:1) to #137CC1 (4.26:1),
@@ -1924,8 +1974,8 @@ GUARDS: tuple[Guard, ...] = (
             Mutation(
                 # The one that would get the check switched off: flagging correct work.
                 "the whole file is compared, so extending OUTSIDE the markers reads as drift",
-                "    theirs = {m.group(1): \" \".join(m.group(2).split()) for m in DECL.finditer(block)}",
-                "    theirs = {m.group(1): \" \".join(m.group(2).split()) for m in DECL.finditer(css)}",
+                "    project = theme_blocks(block)",
+                "    project = theme_blocks(css)",
                 "a local token OUTSIDE the markers is silent",
             ),
             Mutation(
@@ -1948,8 +1998,8 @@ GUARDS: tuple[Guard, ...] = (
                 # The CSS side is what the fixture varies; normalising only the doc side would
                 # leave this undetectable, which is how the first attempt survived.
                 "whitespace stops being normalised, so reformatting reads as drift",
-                '    theirs = {m.group(1): " ".join(m.group(2).split()) for m in DECL.finditer(block)}',
-                "    theirs = {m.group(1): m.group(2) for m in DECL.finditer(block)}",
+                '            merged.update({m.group(1): " ".join(m.group(2).split())',
+                '            merged.update({m.group(1): m.group(2)',
                 "reformatting is not drift",
             ),
         ),
@@ -2531,26 +2581,82 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #812. The aggregate everyone is told to run reported a finding COUNT and dropped the
+            # findings -- `[FAIL] mandated-gems  1 finding(s):`, a trailing colon promising a list
+            # and nothing after it. The individual scripts carry the finding, the reason AND the fix.
+            Mutation(
+                "the findings are dropped again, leaving only the count",
+                "    rest = [ln for ln in lines[idx + 1:] if ln.strip()]",
+                "    rest = []",
+                "...and the findings are CARRIED, not dropped",
+            ),
+            Mutation(
+                # Proving `summarise` carries them is not proving `report` prints them: emptying
+                # this survived every fixture that only called the helper.
+                "report() stops printing the findings",
+                '        for detail_line in r.findings:\n            print(f"      {detail_line}")',
+                '        for detail_line in ():\n            print(f"      {detail_line}")',
+                "report() PRINTS the findings, not only the count",
+            ),
+            Mutation(
+                "as_json() emits no findings key content",
+                '                     "findings": list(r.findings),',
+                '                     "findings": [],',
+                "...carrying every line",
+            ),
+            Mutation(
+                # A check printing hundreds of lines belongs in its own run. The cap is fine; a
+                # SILENT cap is this same defect one step along.
+                "the cap truncates silently, so a reader cannot tell what was dropped",
+                '            f"… {dropped} more line(s) — run the check directly for the rest"]',
+                '            ""]',
+                "...and the last line names what was dropped",
+            ),
+            Mutation(
+                "the summary is duplicated into the findings",
+                "    rest = [ln for ln in lines[idx + 1:] if ln.strip()]",
+                "    rest = [ln for ln in lines[idx:] if ln.strip()]",
+                "...and the last line names what was dropped",
+            ),
+            Mutation(
+                # `1 finding(s):` in a one-line routing view is the trailing colon in miniature.
+                "the routing view goes back to showing the count",
+                '    if r.findings and r.detail.rstrip().endswith(":"):',
+                "    if False:",
+                "the routing view shows the finding, not the count",
+            ),
+            Mutation(
+                "the findings lose their indent, so which check they belong to is lost",
+                '            print(f"      {detail_line}")',
+                '            print(f"{detail_line}")',
+                "...indented under their check, so the association is visible",
+            ),
             # #715/#716. Three clauses in the detail line, three mutations -- the ANSI strip, the
             # finding-preference ranking, and the empty-output fallback are independently provable.
             Mutation(
                 "ANSI and hyperlink escapes reach the summary line again",
-                '    lines = [_ANSI.sub("", ln).strip() for ln in output.splitlines()]',
-                "    lines = [ln.strip() for ln in output.splitlines()]",
+                '    lines = [_ANSI.sub("", ln).rstrip() for ln in output.splitlines()]',
+                "    lines = [ln.rstrip() for ln in output.splitlines()]",
                 "ANSI escapes are stripped from the detail",
             ),
             Mutation(
                 # A banner denylist was the first attempt and `No .herb.yml found` beat it, so the
                 # ranking is the part that has to hold.
                 "the first line wins again, so a tool's banner masks its finding",
-                "        if _FINDING.search(line):",
-                "        if True:",
+                "    idx = next((i for i, ln in enumerate(lines) if ln.strip() and _FINDING.search(ln)), None)",
+                "    idx = None",
                 "a banner and a config notice lose to a line naming a severity",
             ),
             Mutation(
+                "the summary line loses its length cap, so one long line wrecks the status row",
+                '    return lines[idx].strip()[:160], tuple(rest)',
+                "    return lines[idx].strip(), tuple(rest)",
+                "the detail is capped at 160 chars",
+            ),
+            Mutation(
                 "a failing check with no output reports an empty detail",
-                '        return f"exit {returncode}"',
-                '        return ""',
+                '        return f"exit {returncode}", ()',
+                '        return "", ()',
                 "empty output falls back to the exit code",
             ),
             # #706. The old walk assumed a flat layout; the installed one nests a version dir, so
