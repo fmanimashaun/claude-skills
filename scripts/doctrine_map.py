@@ -103,6 +103,40 @@ class Claim:
 # Every file whose prose this map considers doctrinal. Declared rather than globbed, because the
 # audit's only honest question is "does a source we call doctrine have zero rows" -- and a glob would
 # answer it about files nobody decided were doctrine.
+# ---------------------------------------------------------------------------------------------
+# THE SHIPPED SURFACE (#798) — the doctrine other people's agents follow, as opposed to the
+# repo-process doctrine below.
+#
+# WHY THIS IS A SECOND LIST. `DOCTRINE_SOURCES` requires every entry to carry at least one row, and
+# rightly: those eleven files were mapped deliberately. The shipped skills are ~46 files nobody has
+# mapped yet, and declaring them there would fail the `doctrine map coverage` gate with 46 findings
+# on the first run -- red on day one, switched off in a week, which is the failure #800 spent a whole
+# issue removing. Bulk back-filling rows to make it green is worse still: this file already says
+# "a green artifact standing in for work nobody did is the failure this replaces".
+#
+# SO IT RATCHETS, the same instrument as #800. The mapped count may not fall below `SHIPPED_FLOOR`.
+# Never red on day one -- the floor is what is mapped today. Never slides -- deleting a row fails.
+# Rises deliberately: map a source, raise the floor in the same commit.
+#
+# The gap is now TRACKED rather than invisible. Before this, "which shipped claim is enforced by
+# nothing?" could not be asked at all: a source never declared reports nothing, forever, and #779
+# said so in its own text -- "its 32 rows are repo-process claims, so this shipped-setup claim has
+# no row and no enforcement column". Three claims (#778/#797, #779, #792) were each found by a
+# downstream project one at a time because of it.
+SHIPPED_SOURCES: tuple[str, ...] = tuple(sorted(
+    p.as_posix()
+    for skill in ("rails-8", "hotwire", "fidara-design")
+    for p in (REPO / "skills" / skill).glob("**/*.md")
+    if p.is_file()
+    for p in [p.relative_to(REPO)]
+))
+
+# FILES mapped, not rows. Five rows in one file is not broader coverage of the surface, and the
+# question this tracks is "how much of the shipped doctrine has anyone looked at". Raise it in the
+# same commit that maps a new FILE. It is a floor, never a target: mapping all 49 is not the goal,
+# and a row count is evidence someone looked, never proof a file is covered.
+SHIPPED_FLOOR = 2
+
 DOCTRINE_SOURCES = (
     "CLAUDE.md",
     "AGENTS.md",
@@ -118,6 +152,77 @@ DOCTRINE_SOURCES = (
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    # ---- the SHIPPED doctrine (#798) ------------------------------------------------------
+    # Five claims that already have gates to cite. Deliberately not more: a row nobody derived is
+    # the green artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as
+    # unmapped rather than pretending they are covered.
+    Claim(
+        claim="The prescribed testing stack is not a menu — a project missing simplecov, webmock "
+              "or vcr is incomplete, not merely different.",
+        stated_in="skills/rails-8/references/testing.md",
+        anchor="group :development, :test do",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_mandated_gems.py",
+                     "script:scripts/derive_mandated_gems.py",
+                     "mutation:check_mandated_gems", "mutation:derive_mandated_gems"),
+        refs=(778, 797),
+        note="The list is DERIVED from this fence and committed beside the checker; a runtime read "
+             "would cross from rails-flow into rails-stack, which is #617's class. 15 gems were "
+             "written as literal `gem` lines while 4 were installed and 2 were checked.",
+    ),
+    Claim(
+        claim="`--skip-test` leaves `config/ci.rb` with no test step, so `bin/ci` reports green "
+              "having run zero specs unless the step is added back.",
+        stated_in="skills/rails-8/references/testing.md",
+        anchor="There is nothing to",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_ci_runs_tests.py",
+                     "mutation:check_ci_runs_tests"),
+        refs=(391, 779),
+        note="#391 fixed the doctrine and said the enforcement half was still open. The gate keys "
+             "on the step's COMMAND, never its label: a step named `Tests` that runs rubocop is the "
+             "exact false confidence it refuses.",
+    ),
+    Claim(
+        claim="`spec/support/**` is dead until the auto-loader Rails generates COMMENTED is "
+              "uncommented — every support file, with no error and no output.",
+        stated_in="skills/rails-8/references/testing.md",
+        anchor="Auto-load spec/support/**",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_spec_support.py",
+                     "mutation:check_spec_support"),
+        refs=(803,),
+        note="Same shape as the `Tests:` step Rails omits under --skip-test: a generated default "
+             "the doctrine says to change, with nothing verifying it was changed. The gate also "
+             "refuses a capybara no spec drives.",
+    ),
+    Claim(
+        claim="Coverage gates on the DROP, never an absolute number — a fixed `minimum_coverage` "
+              "is inert below the repo and red above it.",
+        stated_in="skills/rails-8/references/testing.md",
+        anchor="refuse_coverage_drop",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_coverage_ratchet.py",
+                     "mutation:check_coverage_ratchet"),
+        refs=(800,),
+        note="Maintainer decision: \"gate is the key, advise can be ignored\". Consistent with "
+             "quality-pass rather than an exception to it — that refuses to gate JUDGEMENT, and a "
+             "drop is a measured regression against a recorded baseline.",
+    ),
+    Claim(
+        claim="simple_form is mandatory in this stack — no form, and no form element, is built any "
+              "other way.",
+        stated_in="skills/rails-8/references/ecosystem-gems.md",
+        anchor="simple_form is mandatory in this stack",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_mandated_gems.py",
+                     "mutation:check_mandated_gems"),
+        refs=(778,),
+        note="Two of the three `Always` gems already had gates (archspec, herb, each applies_when "
+             "its config exists). This one had neither an installer nor a check, and was missing "
+             "on both affected scaffolds.",
+    ),
+
     # ---- the release flow -------------------------------------------------------------------
     Claim(
         claim="A promotion merges with `--merge`; a squash drops dev's ancestry and the NEXT "
@@ -555,9 +660,11 @@ def validate(claims: tuple[Claim, ...] = CLAIMS,
             findings.append(f"duplicate claim — {where}")
         seen.add((c.stated_in, c.anchor))
 
-        if c.stated_in not in sources:
+        # Both surfaces count (#798). The shipped skills are declared in SHIPPED_SOURCES, which
+        # ratchets rather than requiring a row per file -- see the note above that tuple.
+        if c.stated_in not in sources and c.stated_in not in SHIPPED_SOURCES:
             findings.append(
-                f"undeclared source — {c.stated_in} is not in DOCTRINE_SOURCES, so the declared "
+                f"undeclared source — {c.stated_in} is in neither DOCTRINE_SOURCES nor SHIPPED_SOURCES, so the declared "
                 f"doctrine surface is wrong rather than the row")
 
         if c.stated_in not in cache:
@@ -612,6 +719,29 @@ def audit_coverage(claims: tuple[Claim, ...] = CLAIMS,
             findings.append(
                 f"declared doctrine source with no rows: {s} — a source nobody mapped reads as "
                 f"covered")
+
+    # ---- THE SHIPPED SURFACE, ratcheted (#798) ------------------------------------------------
+    # Reported, not required row-for-row. 49 files nobody has mapped would fail this gate on the
+    # first run, and bulk back-filling to make it green is the exact "green artifact standing in
+    # for work nobody did" this file exists to prevent. So the MAPPED COUNT ratchets: never red on
+    # day one, never sliding, and rising only when someone actually maps a source.
+    shipped_counts = {s: 0 for s in SHIPPED_SOURCES}
+    for c in claims:
+        if c.stated_in in shipped_counts:
+            shipped_counts[c.stated_in] += 1
+    mapped = sorted(s for s, n in shipped_counts.items() if n)
+    lines.append("")
+    lines.append(f"  shipped doctrine surface: {len(mapped)} of {len(SHIPPED_SOURCES)} file(s) "
+                 f"mapped (floor {SHIPPED_FLOOR})")
+    for s in mapped:
+        lines.append(f"  {shipped_counts[s]:>3}  {s}")
+    lines.append("  the rest are UNMAPPED — not clean, and not claimed to be. A row count is "
+                 "evidence someone looked, never proof a file is covered.")
+    if len(mapped) < SHIPPED_FLOOR:
+        findings.append(
+            f"shipped doctrine coverage dropped: {len(mapped)} file(s) mapped, floor is "
+            f"{SHIPPED_FLOOR}. A row was deleted or its source renamed — restore it, or lower the "
+            f"floor deliberately and say why.")
     return findings, lines
 
 
@@ -852,7 +982,42 @@ def _selftest() -> int:
     check("no git state reaches the page",
           not re.search(r"\b[0-9a-f]{7,40}\b", render(collect())))
 
-    print(f"\n{ok} passed, {len(bad)} failed")
+    # ---- THE SHIPPED SURFACE RATCHET (#798) ---------------------------------------------------
+    # 49 shipped files nobody has mapped would fail `doctrine map coverage` on the first run -- red
+    # on day one, which #800 spent a whole issue removing. So the MAPPED FILE COUNT ratchets.
+    shipped = SHIPPED_SOURCES[:3]
+    ok_claim = Claim(claim="c", stated_in=shipped[0], anchor="x", kind=GUARANTEE,
+                     enforced_by=("script:scripts/doctrine_map.py",))
+    f, lines = audit_coverage(claims=(ok_claim,), sources=(), root=REPO)
+    check("a shipped source with a row is reported as mapped",
+          any("1 of " in l or f"  1  {shipped[0]}" in l for l in lines))
+    check("...and the unmapped rest are named as NOT clean",
+          any("UNMAPPED" in l and "not clean" in l for l in lines))
+
+    # THE RATCHET ITSELF: below the floor is a finding. Without this the count would be reported
+    # and never enforced -- a number on a page, which is the shape this map exists to replace.
+    import unittest.mock as _m
+    with _m.patch.object(sys.modules[__name__], "SHIPPED_FLOOR", 2):
+        f, _ = audit_coverage(claims=(ok_claim,), sources=(), root=REPO)
+        check("one mapped file below a floor of 2 is a finding",
+              any("shipped doctrine coverage dropped" in x for x in f))
+        f, _ = audit_coverage(claims=(ok_claim, Claim(
+            claim="c2", stated_in=shipped[1], anchor="y", kind=GUARANTEE,
+            enforced_by=("script:scripts/doctrine_map.py",))), sources=(), root=REPO)
+        check("...and two mapped files meets it", not any(
+            "shipped doctrine coverage dropped" in x for x in f))
+
+    # FILES, NOT ROWS. Two rows in ONE file is not broader coverage of the surface -- and a floor
+    # counting rows would be met by adding a second row to a file already mapped.
+    with _m.patch.object(sys.modules[__name__], "SHIPPED_FLOOR", 2):
+        two_rows_one_file = (ok_claim, Claim(claim="c3", stated_in=shipped[0], anchor="z",
+                                             kind=GUARANTEE,
+                                             enforced_by=("script:scripts/doctrine_map.py",)))
+        f, _ = audit_coverage(claims=two_rows_one_file, sources=(), root=REPO)
+        check("two rows in ONE file does not meet a floor of 2 files",
+              any("shipped doctrine coverage dropped" in x for x in f))
+
+        print(f"\n{ok} passed, {len(bad)} failed")
     for b in bad:
         print(f"  FAIL {b}")
     return 1 if bad else 0
