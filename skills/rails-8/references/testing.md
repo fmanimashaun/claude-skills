@@ -330,6 +330,18 @@ RSpec.configure { |c| c.include AuthenticationHelpers, type: :request }
 
 ## 8. System specs — Capybara + Selenium
 
+**These are the DEVELOPER testing workflow, and qa-flow is not a substitute** (#803). System specs
+are how the person building a feature sees it work in a browser. `qa-flow`'s browser passes
+(`/qa-flow:crawl`, `/qa-flow:functional`, `bin/e2e`) are an **independent** layer judged by someone
+who did not write the code — that independence is their whole value, and folding either into the
+other destroys it. A developer with no system specs has no browser feedback until QA runs; QA
+running the developer's own specs is not independent verification. Both, deliberately.
+
+**The support file below does nothing until `spec/support/**` is auto-loaded** — see §2, where Rails
+generates that line **commented out**. `check_spec_support.py` refuses a support directory nothing
+loads, and a `capybara` no spec drives.
+
+
 `spec/support/system.rb`:
 
 ```ruby

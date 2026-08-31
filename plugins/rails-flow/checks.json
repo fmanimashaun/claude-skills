@@ -172,6 +172,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "spec-support-wired",
+      "why": "Rails ships the spec/support auto-loader COMMENTED; left as generated every support file is dead with no error, and a capybara nothing drives is protection that isn't.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_spec_support.py"
+      ],
+      "applies_when": [
+        "spec"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

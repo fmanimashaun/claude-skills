@@ -270,6 +270,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-flow/scripts/check_ci_runs_tests.py", "--selftest")),
     ("rails-flow mandated gems",
      ("python3", "plugins/rails-flow/scripts/check_mandated_gems.py", "--selftest")),
+    # #803. Rails generates the spec/support auto-loader COMMENTED and testing.md:99 says to
+    # uncomment it; left as generated, every support file is dead with no error and no output.
+    ("rails-flow spec support wired",
+     ("python3", "plugins/rails-flow/scripts/check_spec_support.py", "--selftest")),
     # #797. The list rails-flow enforces is DERIVED from the rails-8 doctrine that declares it, and
     # committed beside the checker -- a runtime read would cross a plugin boundary, which is #617's
     # class and has already recurred twice. This proves the artifact still matches its source.

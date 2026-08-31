@@ -2328,6 +2328,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A `spec/support` directory nothing loads, and a `capybara` nothing drives.** (#803) Reported
+  downstream: capybara in the Gemfile with no driver and no system specs.
+
+  **My first reading was wrong and is corrected on the issue.** I said `testing.md` omitted the
+  wiring. It does not — §8 has `spec/support/system.rb`, `driven_by :selenium, using:
+  :headless_chrome`, the `js: false` → `rack_test` fast path, a worked example and the never-`sleep`
+  rule. The defect is the class this repo keeps finding: **documented, scaffolded by nothing, checked
+  by nothing.** Grepping every shipped command for `spec/support` returned nothing.
+
+  **And one line makes all of it inert**, which is the higher-value half. `testing.md:99` says to
+  **uncomment** the auto-loader Rails generates commented out. Left as generated, every file under
+  `spec/support/` is dead — `system.rb`, `authentication_helpers.rb`, `webmock.rb`, `vcr.rb`, and
+  anything written by hand — with **no error and no output**. A support directory that loads nothing
+  looks exactly like one that works, and the specs that needed those helpers fail for reasons
+  pointing elsewhere. Same shape as the `Tests:` step Rails omits under `--skip-test` (#779): a
+  generated default the doctrine says to change, with nothing verifying it was changed.
+
+  New `spec-support-wired` check (**15 assertions**, 5 mutations, gated). Two clauses: support files
+  present ⇒ the auto-loader is present **and uncommented**; `capybara` declared ⇒ some spec calls
+  `driven_by`. The second is the inert-**gem** shape, mirroring the inert-**config** rule
+  `mandated-gems` already refuses.
+
+  Both loader spellings count — Rails generates `Dir[Rails.root.join(…)]`, `testing.md` shows
+  `Rails.root.glob`. Accepting one would fail a conforming project, which is the false positive that
+  gets a gate switched off. A project with no capybara is never asked for a driver.
+
+  **Maintainer decision recorded (#803):** system specs are the **developer** workflow; `qa/e2e` is
+  QA's, independent, and neither substitutes for the other. That decision is what makes the capybara
+  clause correct rather than arbitrary — it is now stated in `testing.md` §8 and in `setup-flow`, so
+  it is not re-litigated per project. Files:
+  `plugins/rails-flow/scripts/check_spec_support.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/maintainer_doctor.py`,
+  `scripts/mutation_check.py`.
+
 ### 1.29.0 — 2026-08-30 (release v1.105.0)
 
 - **The doctrine prescribed 15 gems as literal `gem "…"` lines; 4 were installed and 2 were
@@ -4063,6 +4099,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`testing.md` §8 states the boundary between developer system specs and QA's browser passes.**
+  (#803) They are different layers, not two homes for one question: system specs are the developer's
+  in-browser feedback, `qa-flow` is independent verification by someone who did not write the code,
+  and folding either into the other destroys what it is for. §8 also now says the support file does
+  nothing until `spec/support/**` is auto-loaded — the line Rails generates commented out.
+  File: `skills/rails-8/references/testing.md`.
+
+- **`quality-pass`'s worked example: the shared harness 20 → 21, its reach 6 → 7.** (#803)
+  `check_spec_support.py` uses the `check(label, ok, detail)` shape and widens the largest install
+  root. `check_shared_shapes.py` caught both — that gate refuses a **number** in the example
+  disagreeing with the repo, never a duplicate.
+  File: `skills/quality-pass/references/worked-example.md`.
 
 ### 1.54.0 — 2026-08-30 (release v1.105.0)
 
