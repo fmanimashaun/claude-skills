@@ -113,6 +113,11 @@ class Result:
     check: Check
     status: str
     detail: str = ""
+    # Everything the check said AFTER its summary line (#812). The aggregate used to keep only the
+    # summary, so `[FAIL] mandated-gems  1 finding(s):` was the whole report -- a trailing colon
+    # promising a list, followed by nothing. The individual scripts carry the finding, the reason
+    # AND the fix; a reader got "something is wrong" and never "what".
+    findings: tuple[str, ...] = ()
 
 
 def plugin_identity(root: Path) -> tuple[str, tuple[int, ...]]:
@@ -342,34 +347,48 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x1b\x07]*(?:\x07|\x1b\\)")
 _FINDING = re.compile(r"\b(error|errors|warning|warnings|fail(ed|ure)?)\b|⚠|:\d+:\d+")
 
 
-def first_meaningful_line(output: str, returncode: int) -> str:
-    """The first line of a failing check's output that actually says something.
+# A check that prints hundreds of lines is a check whose output belongs in its own run, not inlined
+# in an aggregate. Truncating SILENTLY would be the same defect this fixes one step along, so the
+# marker names what was dropped and where to get it.
+MAX_FINDING_LINES = 40
 
-    #715/#716. Registering the first checks whose tool writes for a human exposed two ways the old
-    `splitlines()[0]` reported nothing useful:
+
+def summarise(output: str, returncode: int) -> tuple[str, tuple[str, ...]]:
+    """`(summary, the lines after it)` — the aggregate needs both (#812).
+
+    A one-line status row answers "what is the one line worth printing", which is right and was
+    never the whole job: our own checks emit `N finding(s):` and then the findings, so the summary
+    is precisely the LEAST informative line in the output -- a trailing colon promising a list, and
+    nothing after it. Everything before the summary is the tool clearing its throat (a version
+    banner, a config notice) and is dropped; everything after it is the report.
+
+    It absorbed `first_meaningful_line` (#715/#716), which it had re-implemented line for line --
+    two functions doing one job, and only the dead one was mutation-guarded. That history is why
+    the escape-stripping and banner-skipping below look defensive:
 
       * `herb analyze` opens with `Herb 🌿 v0.10.3` and then `No .herb.yml found, using defaults`,
         so a FAIL read `[FAIL] erb-parse-safety  Herb 🌿 v0.10.3` -- a version banner where the
         finding belongs.
       * `herb lint` colours its output, so the detail arrived as
-        `[[1m[91merror[0m[0m] Avoid ...` with a hyperlink escape inside it. In a CI log that is
-        worse than the banner: it is unreadable AND it looks like corruption.
+        `[[1m[91merror[0m[0m] Avoid ...`, with a hyperlink escape inside it. In a CI log that
+        is worse than the banner: unreadable AND it looks like corruption.
 
-    A summary line nobody can read is a summary line nobody reads, and then the routing that tells
-    you WHOSE tracker a failure belongs to stops being consulted at all. So: strip the escapes,
-    skip the tool's own announcement, and fall back to the raw first line rather than to nothing --
-    a check that failed with only a banner still has to say so.
+    A summary nobody can read is a summary nobody reads, and then the routing that says WHOSE
+    tracker a failure belongs to stops being consulted at all. Hence the fallback to the first
+    line rather than to nothing: a check that failed with only a banner still has to say so.
     """
-    lines = [_ANSI.sub("", ln).strip() for ln in output.splitlines()]
-    lines = [ln for ln in lines if ln]
-    if not lines:
-        return f"exit {returncode}"
-    for line in lines:
-        if _FINDING.search(line):
-            return line[:160]
-    # No line names a severity or a location. Fall back to the first line rather than to nothing:
-    # a check that failed still has to say something, even if the tool only cleared its throat.
-    return lines[0][:160]
+    lines = [_ANSI.sub("", ln).rstrip() for ln in output.splitlines()]
+    idx = next((i for i, ln in enumerate(lines) if ln.strip() and _FINDING.search(ln)), None)
+    if idx is None:
+        idx = next((i for i, ln in enumerate(lines) if ln.strip()), None)
+    if idx is None:
+        return f"exit {returncode}", ()
+    rest = [ln for ln in lines[idx + 1:] if ln.strip()]
+    if len(rest) > MAX_FINDING_LINES:
+        dropped = len(rest) - MAX_FINDING_LINES
+        rest = rest[:MAX_FINDING_LINES] + [
+            f"… {dropped} more line(s) — run the check directly for the rest"]
+    return lines[idx].strip()[:160], tuple(rest)
 
 
 def run_check(check: Check, project: Path) -> Result:
@@ -392,9 +411,22 @@ def run_check(check: Check, project: Path) -> Result:
         except (OSError, subprocess.SubprocessError) as exc:
             return Result(check, ERROR, f"{type(exc).__name__}: {exc}")
         if done.returncode != 0:
-            return Result(check, FAIL, first_meaningful_line(done.stdout + done.stderr,
-                                                             done.returncode))
+            summary, findings = summarise(done.stdout + done.stderr, done.returncode)
+            return Result(check, FAIL, summary, findings)
     return Result(check, PASS, f"{len(argvs)} invocation(s)")
+
+
+def routing_detail(r: Result) -> str:
+    """One line for the routing view — the first FINDING when the summary is only a count (#812).
+
+    `1 finding(s):` in a routing block is the trailing-colon problem in miniature: a promise of a
+    list, in a view that is deliberately one line per check. The routing view answers "whose tracker
+    does this belong to", so it stays one line -- but that line may as well be the finding rather
+    than its cardinality.
+    """
+    if r.findings and r.detail.rstrip().endswith(":"):
+        return r.findings[0].lstrip("- ").strip()[:160]
+    return r.detail
 
 
 def routed(results: list[Result], problems: list[str]) -> dict[str, list[tuple[str, str]]]:
@@ -407,7 +439,7 @@ def routed(results: list[Result], problems: list[str]) -> dict[str, list[tuple[s
     for r in sorted(results, key=lambda r: (r.check.plugin, r.check.id)):
         destination = route_of(r)[0]
         if destination in groups:
-            groups[destination].append((f"{r.check.plugin}/{r.check.id}", r.detail))
+            groups[destination].append((f"{r.check.plugin}/{r.check.id}", routing_detail(r)))
     # A manifest that will not parse is ours by the same argument an ERROR is: the project did not
     # write it. It never reaches `run_check`, so it has no Result to route.
     groups[DOCTRINE].extend(("checks.json", p) for p in problems)
@@ -419,6 +451,12 @@ def report(results: list[Result], problems: list[str]) -> int:
         mark = {PASS: "ok  ", FAIL: "FAIL", NA: "n/a ", ERROR: "ERR "}[r.status]
         line = f"  [{mark}] {r.check.plugin}/{r.check.id}"
         print(f"{line:44} {r.detail}" if r.detail else line)
+        # THE FINDINGS, not just their count (#812). `1 finding(s):` with nothing under it is a
+        # trailing colon promising a list -- and the individual scripts carry the finding, the
+        # reason AND the fix, all of which the aggregate discarded. This is the run people are told
+        # to make, so it has to be the one that says what to do.
+        for detail_line in r.findings:
+            print(f"      {detail_line}")
     for p in problems:
         print(f"  [ERR ] {p}", file=sys.stderr)
     fails = [r for r in results if r.status == FAIL]
@@ -460,6 +498,7 @@ def as_json(results: list[Result], problems: list[str]) -> str:
         destination, why = route_of(r)
         rows.append({"plugin": r.check.plugin, "id": r.check.id, "why": r.check.why,
                      "status": r.status, "detail": r.detail,
+                     "findings": list(r.findings),
                      "destination": destination or None, "routed_because": why or None})
     return json.dumps({
         "results": rows,
@@ -710,35 +749,98 @@ def selftest() -> int:
     # ANSI ONLY -- no severity word, no location -- so this proves the stripping, not the ranking.
     _t = "\x1b[1m\x1b[91mbg-#{status}\x1b[0m interpolated"
     check("ANSI escapes are stripped from the detail",
-          first_meaningful_line(_t, 1) == "bg-#{status} interpolated",
-          f"got {first_meaningful_line(_t, 1)!r}")
+          summarise(_t, 1)[0] == "bg-#{status} interpolated",
+          f"got {summarise(_t, 1)[0]!r}")
     # An OSC-8 hyperlink, which is what made the real output look corrupted rather than merely ugly.
     _t = "\x1b]8;;https://x/rule\x1b\\erb-no-unsafe-raw\x1b]8;;\x1b\\ tail"
     check("OSC-8 hyperlinks are stripped too",
-          "\x1b" not in first_meaningful_line(_t, 1), f"got {first_meaningful_line(_t, 1)!r}")
+          "\x1b" not in summarise(_t, 1)[0], f"got {summarise(_t, 1)[0]!r}")
     # RANKING, with no escapes at all: the finding is the THIRD line, behind two preamble lines.
     # `herb analyze` really does open with its banner and then a config notice.
     _t = "Herb v0.10.3\nNo .herb.yml found, using defaults\nValidation errors:"
     check("a banner and a config notice lose to a line naming a severity",
-          first_meaningful_line(_t, 1) == "Validation errors:",
-          f"got {first_meaningful_line(_t, 1)!r}")
+          summarise(_t, 1)[0] == "Validation errors:",
+          f"got {summarise(_t, 1)[0]!r}")
+    # ---- THE FINDINGS, not just their count (#812) --------------------------------------------
+    # `[FAIL] mandated-gems  1 finding(s):` was the whole report -- a trailing colon promising a
+    # list, followed by nothing. The individual scripts carry the finding, the reason AND the fix.
+    OURS = ("1 finding(s):\n"
+            "  - the prescribed testing stack is incomplete — missing `vcr`.\n"
+            "    testing.md declares the full block; that file is doctrine, not a menu.\n"
+            "    Install:  bundle add vcr --group test\n")
+    summary, findings = summarise(OURS, 1)
+    check("the summary is still the summary", summary == "1 finding(s):", f"got {summary!r}")
+    check("...and the findings are CARRIED, not dropped", len(findings) == 3, f"{findings}")
+    check("...including the fix, which is the only actionable line",
+          any("bundle add vcr" in f for f in findings), f"{findings}")
+    # Guarded: with the carry removed, `findings` is empty and `findings[0]` raises. A crash aborts
+    # the run before any labelled assertion reports, and a crash is not a verdict.
+    check("...with indentation preserved, so the shape survives",
+          bool(findings) and findings[0].startswith("  - "), f"{findings!r}")
+
+    # ---- THE TWO CONSUMERS, driven directly ---------------------------------------------------
+    # Everything above proves `summarise` carries the lines. Neither proves that `report` PRINTS
+    # them or that `as_json` EMITS them -- and emptying either survived every fixture above. Proving
+    # the helper is not proving the caller; this repo has paid for that lesson twice already.
+    _r = Result(Check("p", "i", "why", [], [], [], Path(".")), FAIL, "1 finding(s):",
+                ("  - the actual problem", "    Install:  bundle add vcr"))
+    import contextlib as _ctx, io as _io
+    _buf = _io.StringIO()
+    with _ctx.redirect_stdout(_buf):
+        report([_r], [])
+    _out = _buf.getvalue()
+    check("report() PRINTS the findings, not only the count",
+          "the actual problem" in _out and "bundle add vcr" in _out, f"{_out[:200]!r}")
+    check("...indented under their check, so the association is visible",
+          "      - the actual problem" in _out, f"{_out[:200]!r}")
+
+    _rec = json.loads(as_json([_r], []))["results"][0]
+    check("as_json() EMITS a findings key", "findings" in _rec, f"{sorted(_rec)}")
+    check("...carrying every line", _rec.get("findings") == list(_r.findings), f"{_rec.get('findings')}")
+
+    # A PRE-SUMMARY BANNER is still dropped: everything before the summary is the tool clearing its
+    # throat, and carrying it would put a version string where a finding belongs.
+    summary, findings = summarise("Herb v0.10.3\nNo .herb.yml found\nValidation errors:\n  a.erb:2 bad", 1)
+    check("a banner before the summary is not carried", not any("v0.10.3" in f for f in findings),
+          f"{findings}")
+    check("...while what follows the summary is", any("a.erb:2" in f for f in findings), f"{findings}")
+
+    # VOLUME IS CAPPED, and the cap SAYS SO. Silently truncating would be this same defect one step
+    # along -- a reader who cannot tell whether they saw everything.
+    many = "3 finding(s):\n" + "".join(f"  - finding {i}\n" for i in range(MAX_FINDING_LINES + 12))
+    summary, findings = summarise(many, 1)
+    check("a very long output is capped", len(findings) == MAX_FINDING_LINES + 1, f"{len(findings)}")
+    check("...and the last line names what was dropped",
+          bool(findings) and "more line(s)" in findings[-1] and "12" in findings[-1],
+          f"{findings[-1:]!r}")
+
+    # THE ROUTING VIEW stays one line, but that line is the finding rather than its cardinality.
+    r_count = Result(Check("p", "i", "why", [], [], [], Path(".")), FAIL, "1 finding(s):",
+                     ("  - the actual problem", "    and its fix"))
+    check("the routing view shows the finding, not the count",
+          routing_detail(r_count) == "the actual problem", f"{routing_detail(r_count)!r}")
+    # ...and a detail that is ALREADY a finding is left alone -- no colon, nothing to substitute.
+    r_plain = Result(Check("p", "i", "why", [], [], [], Path(".")), FAIL, "a.erb:2 unquoted attr", ())
+    check("a real one-line detail is left alone",
+          routing_detail(r_plain) == "a.erb:2 unquoted attr", f"{routing_detail(r_plain)!r}")
+
     # A LOCATION counts as a finding even with no severity word -- `path:line:col`.
     _t = "Running: npx thing\napp/views/a.html.erb:2:6 unquoted attribute"
     check("a path:line:col line counts as a finding",
-          first_meaningful_line(_t, 1).startswith("app/views/a.html.erb:2:6"),
-          f"got {first_meaningful_line(_t, 1)!r}")
+          summarise(_t, 1)[0].startswith("app/views/a.html.erb:2:6"),
+          f"got {summarise(_t, 1)[0]!r}")
     # FALLBACK. Nothing names a severity or a location, and a failing check still has to say
     # something -- returning "" would be a FAIL with no detail at all.
     _t = "something opaque happened\nand then more of it"
     check("falls back to the first line when nothing looks like a finding",
-          first_meaningful_line(_t, 3) == "something opaque happened",
-          f"got {first_meaningful_line(_t, 3)!r}")
+          summarise(_t, 3)[0] == "something opaque happened",
+          f"got {summarise(_t, 3)[0]!r}")
     check("empty output falls back to the exit code",
-          first_meaningful_line("   \n\n", 2) == "exit 2",
-          f"got {first_meaningful_line('   \n\n', 2)!r}")
+          summarise("   \n\n", 2)[0] == "exit 2",
+          f"got {summarise('   \n\n', 2)[0]!r}")
     check("the detail is capped at 160 chars",
-          len(first_meaningful_line("error " + "x" * 500, 1)) == 160,
-          f"got {len(first_meaningful_line('error ' + 'x' * 500, 1))}")
+          len(summarise("error " + "x" * 500, 1)[0]) == 160,
+          f"got {len(summarise('error ' + 'x' * 500, 1)[0])}")
 
     # ---- #706: one root per PLUGIN, never one per cached version -------------------------
     # The fixture is the installed layout, because that is the one the old walk got wrong and the

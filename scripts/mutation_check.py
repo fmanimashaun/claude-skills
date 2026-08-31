@@ -2581,26 +2581,82 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #812. The aggregate everyone is told to run reported a finding COUNT and dropped the
+            # findings -- `[FAIL] mandated-gems  1 finding(s):`, a trailing colon promising a list
+            # and nothing after it. The individual scripts carry the finding, the reason AND the fix.
+            Mutation(
+                "the findings are dropped again, leaving only the count",
+                "    rest = [ln for ln in lines[idx + 1:] if ln.strip()]",
+                "    rest = []",
+                "...and the findings are CARRIED, not dropped",
+            ),
+            Mutation(
+                # Proving `summarise` carries them is not proving `report` prints them: emptying
+                # this survived every fixture that only called the helper.
+                "report() stops printing the findings",
+                '        for detail_line in r.findings:\n            print(f"      {detail_line}")',
+                '        for detail_line in ():\n            print(f"      {detail_line}")',
+                "report() PRINTS the findings, not only the count",
+            ),
+            Mutation(
+                "as_json() emits no findings key content",
+                '                     "findings": list(r.findings),',
+                '                     "findings": [],',
+                "...carrying every line",
+            ),
+            Mutation(
+                # A check printing hundreds of lines belongs in its own run. The cap is fine; a
+                # SILENT cap is this same defect one step along.
+                "the cap truncates silently, so a reader cannot tell what was dropped",
+                '            f"… {dropped} more line(s) — run the check directly for the rest"]',
+                '            ""]',
+                "...and the last line names what was dropped",
+            ),
+            Mutation(
+                "the summary is duplicated into the findings",
+                "    rest = [ln for ln in lines[idx + 1:] if ln.strip()]",
+                "    rest = [ln for ln in lines[idx:] if ln.strip()]",
+                "...and the last line names what was dropped",
+            ),
+            Mutation(
+                # `1 finding(s):` in a one-line routing view is the trailing colon in miniature.
+                "the routing view goes back to showing the count",
+                '    if r.findings and r.detail.rstrip().endswith(":"):',
+                "    if False:",
+                "the routing view shows the finding, not the count",
+            ),
+            Mutation(
+                "the findings lose their indent, so which check they belong to is lost",
+                '            print(f"      {detail_line}")',
+                '            print(f"{detail_line}")',
+                "...indented under their check, so the association is visible",
+            ),
             # #715/#716. Three clauses in the detail line, three mutations -- the ANSI strip, the
             # finding-preference ranking, and the empty-output fallback are independently provable.
             Mutation(
                 "ANSI and hyperlink escapes reach the summary line again",
-                '    lines = [_ANSI.sub("", ln).strip() for ln in output.splitlines()]',
-                "    lines = [ln.strip() for ln in output.splitlines()]",
+                '    lines = [_ANSI.sub("", ln).rstrip() for ln in output.splitlines()]',
+                "    lines = [ln.rstrip() for ln in output.splitlines()]",
                 "ANSI escapes are stripped from the detail",
             ),
             Mutation(
                 # A banner denylist was the first attempt and `No .herb.yml found` beat it, so the
                 # ranking is the part that has to hold.
                 "the first line wins again, so a tool's banner masks its finding",
-                "        if _FINDING.search(line):",
-                "        if True:",
+                "    idx = next((i for i, ln in enumerate(lines) if ln.strip() and _FINDING.search(ln)), None)",
+                "    idx = None",
                 "a banner and a config notice lose to a line naming a severity",
             ),
             Mutation(
+                "the summary line loses its length cap, so one long line wrecks the status row",
+                '    return lines[idx].strip()[:160], tuple(rest)',
+                "    return lines[idx].strip(), tuple(rest)",
+                "the detail is capped at 160 chars",
+            ),
+            Mutation(
                 "a failing check with no output reports an empty detail",
-                '        return f"exit {returncode}"',
-                '        return ""',
+                '        return f"exit {returncode}", ()',
+                '        return "", ()',
                 "empty output falls back to the exit code",
             ),
             # #706. The old walk assumed a flat layout; the installed one nests a version dir, so
