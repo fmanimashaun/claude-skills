@@ -2328,7 +2328,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.29.0 — 2026-08-30 (release v1.105.0)
 
 - **The doctrine prescribed 15 gems as literal `gem "…"` lines; 4 were installed and 2 were
   checked.** (#797) `testing.md:40-54` declares a complete Gemfile block, and that file is described
@@ -4064,7 +4064,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.54.0 — 2026-08-30 (release v1.105.0)
 
 - **`quality-pass`'s worked example: the `Unusable` count 5 → 6.** (#797)
   `derive_mandated_gems.py` declares one. `check_shared_shapes.py` caught it — that gate refuses a
