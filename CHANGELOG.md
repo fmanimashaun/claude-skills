@@ -2370,7 +2370,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
-- **`project_gates.py` prints the findings, not a count of them** (#812). The aggregate every
+- **`plugins/rails-flow/scripts/project_gates.py` prints the findings, not a count of them**
+  (#812). The aggregate every
   downstream project is told to run reported `[FAIL] rails-flow/mandated-gems  1 finding(s):` --
   a trailing colon promising a list, and nothing after it. The individual scripts had the finding,
   the reason AND the fix ready to print; the aggregate threw all three away, so the one command
