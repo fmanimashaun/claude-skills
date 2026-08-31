@@ -279,6 +279,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # fixed threshold never could.
     ("rails-flow coverage ratchets",
      ("python3", "plugins/rails-flow/scripts/check_coverage_ratchet.py", "--selftest")),
+    # #799. Situational, resolved by asking at setup and RECORDING the answer — which is what lets
+    # the check have a real not-applicable state instead of gating everyone or nobody.
+    ("rails-flow i18n wired",
+     ("python3", "plugins/rails-flow/scripts/check_i18n_setup.py", "--selftest")),
     # #797. The list rails-flow enforces is DERIVED from the rails-8 doctrine that declares it, and
     # committed beside the checker -- a runtime read would cross a plugin boundary, which is #617's
     # class and has already recurred twice. This proves the artifact still matches its source.

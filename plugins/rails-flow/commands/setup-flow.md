@@ -481,6 +481,37 @@ gem, so `bin/rails generate` silently emits no factories. `bundle add factory_bo
 Offer all three as one approved diff; do not write them unasked. Re-running is safe — every check
 above is idempotent, and a project that already has the steps reports exit 0.
 
+### Ask whether this project is monolingual, and RECORD the answer (#799)
+
+**Ask.** *"Will this app serve more than one language?"* Most will not, and demanding locale files
+everywhere is the false positive that gets a rule ignored — but demanding nothing leaves a
+multi-locale app silently monolingual.
+
+**Recording the answer is what makes a situational rule checkable at all.** Without a declaration
+there are only two options and both are wrong: gate everyone, or gate nobody. With one, the check
+gets three honest states — conforming, drifted, and *not applicable because this project declared
+monolingual*. Same mechanism as `config.x.brand.pack` (#788).
+
+```ruby
+# config/initializers/locales.rb
+Rails.application.configure do
+  config.x.locales = %w[en]                 # monolingual — one element, still DECLARED
+  # config.x.locales = %w[en ar fr]         # multi-locale
+end
+```
+
+Write `%w[en]` even for a monolingual app. It is the difference between *"this project chose one
+locale"* and *"nobody thought about it"*, and only the first can be checked.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_i18n_setup.py"
+```
+
+On a multi-locale answer, propose `skills/rails-8/references/i18n.md` §1–§2 — `available_locales`,
+`rails-i18n`, and the `around_action` wrapper. **Never a `before_action`**: Rails' guide says
+`I18n.locale` *"can leak into subsequent requests served by the same thread/process"*, and Puma is
+threaded, so a locale set and never reset is served to whoever gets that thread next.
+
 ### Coverage that cannot catch a regression — propose the ratchet (#800)
 
 `testing.md` used to ship `minimum_coverage 90` **commented out** with *"enable once realistic"*.
