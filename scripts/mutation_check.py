@@ -3940,6 +3940,38 @@ GUARDS: tuple[Guard, ...] = (
         needs=(".claude-plugin", ".github", ".claude", "scripts", "plugins", "skills", "docs",
                "CLAUDE.md", "AGENTS.md"),
         mutations=(
+            # #798. The map answered "which claim is enforced by what" for repo-process doctrine
+            # only -- skills/rails-8, hotwire and fidara-design were not declared sources at all,
+            # so the question was unanswerable for the doctrine users actually follow. Three claims
+            # (#778/#797, #779, #792) were each found by a downstream project, one at a time.
+            Mutation(
+                # 49 unmapped files would fail the coverage gate on the first run -- red on day one,
+                # which #800 spent a whole issue removing. So the mapped count RATCHETS.
+                "the shipped-surface ratchet never fires, so coverage can silently regress",
+                "    if len(mapped) < SHIPPED_FLOOR:",
+                "    if False:",
+                "one mapped file below a floor of 2 is a finding",
+            ),
+            Mutation(
+                "every shipped file counts as mapped, so the floor is met by declaring them",
+                "    mapped = sorted(s for s, n in shipped_counts.items() if n)",
+                "    mapped = sorted(shipped_counts)",
+                "two rows in ONE file does not meet a floor of 2 files",
+            ),
+            Mutation(
+                "no shipped row is counted, so mapping a source changes nothing",
+                "        if c.stated_in in shipped_counts:\n            shipped_counts[c.stated_in] += 1",
+                "        if False:\n            shipped_counts[c.stated_in] += 1",
+                "...and two mapped files meets it",
+            ),
+            Mutation(
+                # Both surfaces are declared; rejecting the shipped one would make every new row an
+                # `undeclared source` finding and the extension unusable.
+                "shipped sources are rejected as undeclared",
+                "        if c.stated_in not in sources and c.stated_in not in SHIPPED_SOURCES:",
+                "        if c.stated_in not in sources:",
+                "the real registry validates clean",
+            ),
             Mutation(
                 "a reworded or deleted claim keeps its row, so the map advertises doctrine we no "
                 "longer state",

@@ -7,6 +7,46 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
+  `docs/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
+  which by nothing* — and its `DOCTRINE_SOURCES` were eleven files, all repo-process doctrine or
+  maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/fidara-design/` were
+  not declared sources at all**: the doctrine other people's agents follow verbatim, which is the
+  whole product.
+
+  Its own `undeclared source` and `--audit-coverage` rules could not help, because *"a declared
+  source with no rows is a finding"* only fires for a source that **was** declared. One never
+  declared reports nothing, forever. #779 said so in its own text: *"its 32 rows are repo-process
+  claims, so this shipped-setup claim has no row and no enforcement column."* Three shipped-doctrine
+  claims (#778/#797, #779, #792) were each found by a downstream project, one at a time.
+
+  **49 shipped files are now declared — and the mapped count RATCHETS.** Declaring them in
+  `DOCTRINE_SOURCES` would have failed the `doctrine map coverage` gate with 49 findings on the
+  first run: red on day one, switched off in a week, the exact failure #800 had just removed. And
+  bulk back-filling rows to make it green is worse — this file already says *"a green artifact
+  standing in for work nobody did is the failure this replaces."*
+
+  So `SHIPPED_SOURCES` is reported rather than required row-for-row, with `SHIPPED_FLOOR` as a
+  floor the mapped count may not fall below. Never red on day one, never sliding, and rising only
+  when someone actually maps a source. Same instrument as #800, one layer up.
+
+  **The floor counts FILES, not rows**, with a negative fixture for it: five rows in one file is not
+  broader coverage of the surface, and a row-counting floor would be met by adding a second row to a
+  file already mapped.
+
+  Five rows added — the claims that already have gates to cite: the prescribed testing stack
+  (#778/#797), the `Tests:` step (#779), the `spec/support` auto-loader (#803), the coverage ratchet
+  (#800), and simple_form (#778). Deliberately not more. **The page states that the remaining 47 are
+  UNMAPPED — not clean, and not claimed to be.** A row count is evidence someone looked, never proof
+  a file is covered.
+
+  No extractor, per the existing design: *"a bad extractor is worse than none — a map that misses
+  claims reads as coverage."* That holds harder for the shipped skills, which are much larger prose
+  files. Files: `scripts/doctrine_map.py`, `docs/doctrine-map.html`, `scripts/mutation_check.py`.
+
+
 ### 2026-08-22 (release v1.94.1)
 
 - **A component could change with no CHANGELOG entry, and every gate stayed green.** (#728) CLAUDE.md

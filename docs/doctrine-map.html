@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>32 claims</b><b>24 enforced guarantees</b><b>7 advisory</b><b>1 tracked gaps</b></div>
+<div class="tally"><b>37 claims</b><b>29 enforced guarantees</b><b>7 advisory</b><b>1 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="gap">
 <h2>A change to a skill states its type -- framework claim or architecture decision -- in the PR, before editing. Silence is not a claim of exemption.</h2>
@@ -263,6 +263,53 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>gate:rails-flow lane assigner selftest</code></li>
 </ul>
 <p class="note">The whole safety property: overlapping lanes mean two sessions editing one tree while the guard believes each is alone, so both diffs review clean and the collision surfaces at merge.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>simple_form is mandatory in this stack — no form, and no form element, is built any other way.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/ecosystem-gems.md</code> &middot; #778</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_mandated_gems.py</code></li>
+<li><code>mutation:check_mandated_gems</code></li>
+</ul>
+<p class="note">Two of the three `Always` gems already had gates (archspec, herb, each applies_when its config exists). This one had neither an installer nor a check, and was missing on both affected scaffolds.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>The prescribed testing stack is not a menu — a project missing simplecov, webmock or vcr is incomplete, not merely different.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #778 &middot; #797</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_mandated_gems.py</code></li>
+<li><code>script:scripts/derive_mandated_gems.py</code></li>
+<li><code>mutation:check_mandated_gems</code></li>
+<li><code>mutation:derive_mandated_gems</code></li>
+</ul>
+<p class="note">The list is DERIVED from this fence and committed beside the checker; a runtime read would cross from rails-flow into rails-stack, which is #617&#x27;s class. 15 gems were written as literal `gem` lines while 4 were installed and 2 were checked.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>`--skip-test` leaves `config/ci.rb` with no test step, so `bin/ci` reports green having run zero specs unless the step is added back.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #391 &middot; #779</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_ci_runs_tests.py</code></li>
+<li><code>mutation:check_ci_runs_tests</code></li>
+</ul>
+<p class="note">#391 fixed the doctrine and said the enforcement half was still open. The gate keys on the step&#x27;s COMMAND, never its label: a step named `Tests` that runs rubocop is the exact false confidence it refuses.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>`spec/support/**` is dead until the auto-loader Rails generates COMMENTED is uncommented — every support file, with no error and no output.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #803</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_spec_support.py</code></li>
+<li><code>mutation:check_spec_support</code></li>
+</ul>
+<p class="note">Same shape as the `Tests:` step Rails omits under --skip-test: a generated default the doctrine says to change, with nothing verifying it was changed. The gate also refuses a capybara no spec drives.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Coverage gates on the DROP, never an absolute number — a fixed `minimum_coverage` is inert below the repo and red above it.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/testing.md</code> &middot; #800</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_coverage_ratchet.py</code></li>
+<li><code>mutation:check_coverage_ratchet</code></li>
+</ul>
+<p class="note">Maintainer decision: &quot;gate is the key, advise can be ignored&quot;. Consistent with quality-pass rather than an exception to it — that refuses to gate JUDGEMENT, and a drop is a measured regression against a recorded baseline.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>A count or environment fact is re-measured against the live source at the moment it is stated, never carried forward from earlier in the session.</h2>
