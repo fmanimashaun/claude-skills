@@ -2426,6 +2426,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Every production `subprocess.run` carries a timeout** (#837). `plugins/rails-flow/scripts/compose_state.py`
+  called `gh` (network) with none, and `assign_lanes.py` called `git` with none — a hung `gh` inside the
+  Stop hook stalls past its 150 s budget with no message. `project_gates.run_check` itself always had
+  one; these were the sites that escaped. Network 120 s, local tools 60 s. The review counted nine
+  sites; four already had a timeout on a continuation line, so five were real.
 - **`plugins/rails-flow/scripts/architecture_graph.py`'s `--check` rebuilds with the cap the committed
   graph was built with** (#836). The truncation note (*"N flows beyond --max-flows=M were not emitted"*) sits
   inside the content digest, and `--check` always rebuilt at the default 80 — so a graph generated
@@ -7846,6 +7851,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **`plugins/qa-flow/scripts/interaction_report.py`'s `node --check` carries a timeout** (#837).
 - **`plugins/qa-flow/agents/a11y-auditor.md` names the `design-system` skill, not `fidara-design`**
   (#840) — the one qa-flow reference caught by the rename.
 - **`plugins/qa-flow/scripts/interaction_report.py`'s `--check-collector` exits 3 when `node` is
@@ -9310,6 +9316,9 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **`plugins/design-flow/scripts/rendered_conformance.py`'s `node --check` and `asset_plan.py`'s executor call
+  carry timeouts** (#837) — the executor's own `--timeout` budget plus 30 s of grace, so a wedged generator
+  cannot hold the plan open indefinitely.
 - **Every command, agent and script names the `design-system` skill, not `fidara-design`** (#840).
   The design system was renamed to say what it is — brand-neutral — and design-flow is where
   most of the 66 renamed references lived: eight commands (`plugins/design-flow/commands/setup.md`

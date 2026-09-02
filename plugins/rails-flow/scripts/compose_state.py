@@ -69,7 +69,7 @@ BLOCKING_LABELS = {
 def _gh(args: list[str]) -> object:
     if not shutil.which("gh"):
         raise SystemExit("cannot read the backlog: `gh` is not on PATH")
-    out = subprocess.run(["gh", *args], capture_output=True, text=True)
+    out = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=120)
     if out.returncode != 0:
         raise SystemExit(f"cannot read the backlog: gh {' '.join(args)} failed — {out.stderr.strip()}")
     return json.loads(out.stdout or "[]")

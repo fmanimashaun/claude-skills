@@ -39,7 +39,7 @@ class Refusal(Exception):
 
 
 def _git(*args: str) -> str:
-    out = subprocess.run(["git", *args], capture_output=True, text=True)
+    out = subprocess.run(["git", *args], capture_output=True, text=True, timeout=60)
     if out.returncode != 0:
         raise Refusal(f"git {' '.join(args)} failed: {out.stderr.strip()}")
     return out.stdout.strip()
