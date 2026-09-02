@@ -1,18 +1,18 @@
 ---
-description: Scaffold the Fidara design system into a Rails 8 + Hotwire + Tailwind v4 project — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode. Idempotent; brand-parameterized.
+description: Scaffold the design system into a Rails 8 + Hotwire + Tailwind v4 project — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode. Idempotent; brand-parameterized.
 argument-hint: "[brand pack: <pack> or <pack>:<variant>, e.g. fidara:fmworkflows]"
 ---
 
 # /design-flow:setup — $ARGUMENTS
 
-Install the **fidara-design** system into this project. Follow the skill doctrine
-(`skills/fidara-design/SKILL.md` + references) exactly — this command applies it.
+Install the **design-system** system into this project. Follow the skill doctrine
+(`skills/design-system/SKILL.md` + references) exactly — this command applies it.
 
 ## Preconditions
 
-**The `fidara-design` skill must be readable.** It ships in the **`rails-stack`** plugin, not
+**The `design-system` skill must be readable.** It ships in the **`rails-stack`** plugin, not
 this one, and no `plugin.json` can declare that — there is no `requires` field. So confirm you can read
-`fidara-design`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
+`design-system`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
 (`/plugin install rails-stack@claude-skills`) and stop.** Do not proceed from memory of the catalog:
 this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
 tokens and components that no gate will recognise (#513).
@@ -56,7 +56,7 @@ python3 "$CANDIDATES" --snap "#RRGGBB" --out brands/<pack> # client HAS a brand 
 ```
 
 - **No usable palette** — walk the decision path in
-  [references/brand.md](../../skills/fidara-design/references/brand.md) (*Starting a pack when the
+  [references/brand.md](../../skills/design-system/references/brand.md) (*Starting a pack when the
   client has no palette*). It is an ordered path: logo colour → does the product recede → hue
   family → formality. Ask for the client's sector and their logo colour; do not paste the whole
   catalogue and ask them to browse. Every candidate is already measured against WCAG 1.4.3 in
@@ -159,7 +159,7 @@ authored; `git status` after.
    surfaces, and the inline one is permanent — which is how a project ends up with all-permanent
    notices and no auto-dismiss anywhere.
 
-Use **[references/reference-implementation.md](../../skills/fidara-design/references/reference-implementation.md)**
+Use **[references/reference-implementation.md](../../skills/design-system/references/reference-implementation.md)**
 as the canonical source for steps 3–4: copy the ViewComponent pattern (Button/Card shown) and
 the four Stimulus mixins verbatim, then extend the catalog by mirroring those exact shapes.
 Mobile (Hotwire Native parity) is Phase 2 — see references/mobile.md; this command targets web.
@@ -195,7 +195,7 @@ Mobile (Hotwire Native parity) is Phase 2 — see references/mobile.md; this com
 
 The pack lint proves a pack is *internally* complete. It cannot prove the generated theme
 actually works in a real app, so **this first run is the verification**. Check all four, and on
-any failure file an issue with `/rails-flow:report` (component `design-flow` / `fidara-design`)
+any failure file an issue with `/rails-flow:report` (component `design-flow` / `design-system`)
 before continuing:
 
 1. **Tailwind builds.** The generated `@theme` + role layer compiles without error.
@@ -222,4 +222,4 @@ Files created, brand selected, ViewComponent decision, and the entry points:
 it writes a Claude Design prompt carrying this project's own tokens and component catalog, and
 `/design-flow:port` brings the result back as ERB. Finally: if any generated component fails to compile or
 render in this app, it's a toolchain defect — report it with **`/rails-flow:report`**
-(component `design-flow` / `fidara-design`) so the doctrine gets fixed upstream.
+(component `design-flow` / `design-system`) so the doctrine gets fixed upstream.

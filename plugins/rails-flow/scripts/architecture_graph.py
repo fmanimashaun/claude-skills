@@ -1250,7 +1250,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 /* Fidara dark palette, copied as LITERAL values on purpose: this file is a
    standalone artefact outside any app build, so it cannot read the `@theme`
    tokens in app/assets/tailwind/application.css. Source of truth for these
-   values: skills/fidara-design/references/foundations-tokens.md (.dark roles).
+   values: skills/design-system/references/foundations-tokens.md (.dark roles).
    One deliberate deviation: --ring lifts to electric, because cerulean at 30%
    is not a legible focus ring on a navy surface. */
 :root {

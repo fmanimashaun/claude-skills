@@ -213,7 +213,7 @@ contract; it cannot check the contract against reality. If a pack lints clean bu
 still renders a **stock Tailwind colour** in a real app, the contract itself is missing a role
 the components consume — and every future pack inherits that hole. That is a doctrine defect,
 not a project problem: report it with `/rails-flow:report` (component `design-flow` /
-`fidara-design`), naming the utility that rendered unbranded, so the contract and the lint are
+`design-system`), naming the utility that rendered unbranded, so the contract and the lint are
 fixed upstream. The same applies to a missing `.dark` re-point that the lint accepted, or a
 `Ui::Logo` endorsement on the wrong variant. First real run of a new pack **is** the
 verification step — see the checklist in `/design-flow:setup`. Two subtleties the lint encodes, both easy to get wrong by

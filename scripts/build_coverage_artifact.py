@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the fidara component coverage matrix as a filterable, shareable HTML page.
+"""Render the design-system component coverage matrix as a filterable, shareable HTML page.
 
 Run:  python3 scripts/build_coverage_artifact.py              # write the HTML
       python3 scripts/build_coverage_artifact.py --out P      # ...somewhere else
@@ -283,7 +283,7 @@ def provenance() -> dict:
     # be the thing that fails a build.
     watched = ["scripts/build_coverage.py", "scripts/build_coverage_artifact.py"]
     watched.append(str(bc.OUT.relative_to(REPO)) if bc.OUT.is_relative_to(REPO)
-                   else "skills/fidara-design/references/coverage.md")
+                   else "skills/design-system/references/coverage.md")
     dirty = dirty_paths(_git("status", "--porcelain", "--", *watched, raw=True) or "")
 
     released = None
@@ -462,11 +462,11 @@ def render(data: dict) -> str:
 
 # ----------------------------------------------------------------------- template
 
-TEMPLATE = r"""<title>fidara component coverage</title>
+TEMPLATE = r"""<title>design-system component coverage</title>
 <style>
 /* ---------------------------------------------------------------------- tokens
    Palette, type scale, spacing, radius and the light/dark role mapping are the
-   fidara kit's OWN, from skills/fidara-design/references/foundations-tokens.md:
+   fidara pack's OWN, from skills/design-system/references/foundations-tokens.md:
    fm-* primitives bound through the semantic role layer. The one thing a page
    documenting a design system must not do is invent a look. */
 :root {
@@ -731,7 +731,7 @@ footer .xc.fail{color:var(--bad-fg)} footer .xc.skip{color:var(--warn-fg)}
 
 <div class="shell">
   <header class="masthead">
-    <p class="eyebrow">fidara-design · component coverage</p>
+    <p class="eyebrow">design-system · component coverage</p>
     <h1>Component coverage</h1>
     <p class="tagline">Every row is buildable today — the only axis is how much the doctrine
       already tells you.</p>
@@ -753,7 +753,7 @@ footer .xc.fail{color:var(--bad-fg)} footer .xc.skip{color:var(--warn-fg)}
       <div class="v" id="t-fb">—</div>
     </div>
     <div class="tile span2">
-      <div class="k">fidara rows</div>
+      <div class="k">catalogue rows</div>
       <div class="v" id="t-rows">—</div>
       <div class="meter" id="meter" role="img" aria-labelledby="meter-key"></div>
       <div class="meter-key" id="meter-key"></div>
@@ -1023,7 +1023,7 @@ for (const p of DATA.primitives) {
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Render the fidara coverage matrix as a filterable HTML page.")
+        description="Render the design-system coverage matrix as a filterable HTML page.")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
                         help=f"where to write (default {DEFAULT_OUT.relative_to(REPO)})")
     parser.add_argument("--selftest", action="store_true",

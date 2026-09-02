@@ -15,7 +15,7 @@ What it verifies:
   6.              — no component-level CSS leaked into the pack
 
 Two subtleties this encodes, both easy to get wrong by hand (and both measured from
-skills/fidara-design/references/foundations-tokens.md rather than assumed):
+skills/design-system/references/foundations-tokens.md rather than assumed):
 
   * `--background`'s companion is `--foreground`, NOT `--background-foreground`.
   * The feedback roles and `--ring` are deliberately NOT re-pointed on dark. Requiring a
@@ -47,7 +47,7 @@ import sys
 # --------------------------------------------------------------------------
 # The role contract.
 #
-# Source of truth is skills/fidara-design/references/foundations-tokens.md (the `:root`
+# Source of truth is skills/design-system/references/foundations-tokens.md (the `:root`
 # and `.dark` blocks). It is duplicated here so the lint runs with no skill installed —
 # and because two copies drift, `--roles-from` re-derives it from that file and reports
 # any disagreement. Same discipline as the release-workflow/local-script mirror: if you
@@ -155,7 +155,7 @@ def selector_block(src: str, selector: str) -> str:
     missing. Anchoring to column 1 produced exactly that false failure.
 
     A SELECTOR LIST IS MATCHED BY MEMBERSHIP, not by the selector abutting its brace
-    (#764). `:root, .light { … }` is ordinary CSS and is what fidara-design's own
+    (#764). `:root, .light { … }` is ordinary CSS and is what design-system's own
     dark-mode guidance leads to -- a `.light` island re-lighting a subtree, since custom
     properties inherit. The old pattern required `\s*\{` right after the selector, so the
     `, .light` made the whole block invisible and every caller read the empty string as

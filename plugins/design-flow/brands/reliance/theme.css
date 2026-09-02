@@ -4,7 +4,7 @@
 
    Primitives are lifted verbatim from the Reliance Health Design System
    (reliancehealthinc/reliance-design-system, packages/design-system). The ramp names and
-   hex values are theirs; only the role mapping below is fidara's contract.
+   hex values are theirs; only the role mapping below is the design system's contract.
 
    Verify with:
      python3 scripts/brand_pack_lint.py brands/reliance                                     */

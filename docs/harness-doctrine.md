@@ -109,7 +109,7 @@ Two details of that guard are worth copying rather than relearning, both confirm
 
 ### #56 — a skill's non-negotiables contradicted by the skill's own reference recipes
 
-`fidara-design/SKILL.md` stated three hard non-negotiables. The worked recipes in its own
+`design-system/SKILL.md` stated three hard non-negotiables. The worked recipes in its own
 `references/component-implementations.md` contradicted all three: `rounded-[12px]` where the radius
 token vocabulary already had `rounded-lg`; two icon-only dismiss controls shipping `sr-only` labels but
 no `focus-visible` ring, in the same file where the Button and Input recipes carry one; and

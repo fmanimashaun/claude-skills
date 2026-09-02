@@ -16,7 +16,7 @@ is a small, measured candidate set.
 WHAT IT IS NOT — and this is the part to keep. It is **not a style menu**. The skill this ships
 inside is prescriptive on purpose: one radius language, one type scale, one component API, because
 consistency is the product. A catalogue of 192 palettes would directly undo the drift-killing
-fidara-design exists to do. Ten candidates exist to make the FIRST HOUR of a client engagement
+design-system exists to do. Ten candidates exist to make the FIRST HOUR of a client engagement
 fast and correct; after that a pack has exactly one palette, like every other pack.
 
 THE ONE MECHANISM. A palette is not stored as 22 hand-written roles. It is stored as a handful of

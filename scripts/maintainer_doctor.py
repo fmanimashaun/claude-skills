@@ -86,7 +86,7 @@ MUST_NOT_IGNORE = (
     "scripts/build_coverage.py",                    # not everything is ignored
     f"{CORPORA_DIR}-notes/README.md",               # exact name, not a prefix
     "docs/flowbite-notes.md",                       # `/flowbite*` is root-anchored
-    "skills/fidara-design/references/coverage.md",   # the drift guard needs this committed
+    "skills/design-system/references/coverage.md",   # the drift guard needs this committed
 )
 
 GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -171,7 +171,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # says so to run somewhere other than a maintainer's memory.
     # #603. The library is a PROJECTION of the brand pack, so the assertions that matter are that
     # regeneration is byte-identical and that it never eats the designer's own compositions.
-    # #617. The resolver that finds `fidara-design` from BOTH the clone and the installed cache —
+    # #617. The resolver that finds `design-system` from BOTH the clone and the installed cache —
     # the layout no fixture exercised until a user hit it.
     ("design-flow doctrine path selftest",
      ("python3", "plugins/design-flow/scripts/doctrine_path.py", "--selftest")),
@@ -378,7 +378,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #158. Both halves registered, for the reason spelled out on the tell-detector above: the
     # selftest proves each rule fires and stays silent on fixtures, the bare run asserts the four
     # SHIPPED skills actually route to every one of their 42 reference files. Only the second could
-    # have caught `fidara-design/references/coverage.md` sitting at depth 2, which it did.
+    # have caught `design-system/references/coverage.md` sitting at depth 2, which it did.
     ("skill routing", ("python3", "scripts/check_skill_routing.py")),
     ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),

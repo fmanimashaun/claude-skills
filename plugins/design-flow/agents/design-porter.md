@@ -3,7 +3,7 @@ name: design-porter
 description: >
   Ports a Claude Design output — React/JSX/TSX, or a `<x-dc>` canvas export with a `:root` token
   block, inline styles and a CDN font — into a Rails 8 + Hotwire app: faithful to the design AND
-  aligned to the fidara-design system by construction. Use when translating a Claude Design canvas
+  aligned to the design-system system by construction. Use when translating a Claude Design canvas
   or JSX mockup into ERB, ViewComponents, simple_form, Stimulus or Turbo. Exists because ad-hoc
   porting is where raw hex, bespoke field CSS, `form_with` field forms and CDN fonts enter a
   codebase — one live audit found 20 alignable divergences concentrated in the two ad-hoc-ported
@@ -17,7 +17,7 @@ canvas's scaffolding into the commit.
 
 ## Preconditions
 
-**`skills/fidara-design/references/design-handoff.md` is the mapping and it is the law.** It ships in
+**`skills/design-system/references/design-handoff.md` is the mapping and it is the law.** It ships in
 the **`rails-stack`** plugin, not this one, and no `plugin.json` can declare that dependency — there is
 no `requires` field. Confirm you can read it, together with `SKILL.md`, `components.md`,
 `crud-modal-pattern.md` and `interaction-stimulus.md`, before touching code. **If you cannot, name what

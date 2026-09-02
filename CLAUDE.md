@@ -7,7 +7,7 @@ people, and it carries its own maintenance tooling for you.
 
 - **Distributed (what users install):** the app-builder plugins listed in
   `.claude-plugin/marketplace.json` — `rails-stack` (which bundles the rails-8, hotwire,
-  fidara-design, code-review, quality-pass, derived-artifacts and parallel-session-lane skills),
+  design-system, code-review, quality-pass, derived-artifacts and parallel-session-lane skills),
   `rails-flow`, `qa-flow`, `pipeline`, `design-flow`
   — plus the `dist/*.skill` packages for claude.ai upload. Keep this list in step with the
   manifest: it omitted `design-flow` for as long as that plugin existed (#203).

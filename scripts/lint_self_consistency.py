@@ -39,7 +39,7 @@ WHAT IT CHECKS
   broken-doc-pointer          a documented path to one of OUR files that does not resolve: an
                               agent is told to read doctrine that cannot be opened, and the
                               pointer still reads as authoritative
-  controller-inventory-gap    markup in the fidara-design docs naming a Stimulus controller the
+  controller-inventory-gap    markup in the design-system docs naming a Stimulus controller the
                               controller inventory omits — the reader inherits a dependency the
                               doctrine never told them to build
 
@@ -382,7 +382,7 @@ def check_component_call_sites() -> tuple[list[Finding], int]:
 # Rule: controller-inventory-gap
 # ---------------------------------------------------------------------------
 #
-# fidara-design tells a reader which Stimulus controllers exist, in one inventory under
+# design-system tells a reader which Stimulus controllers exist, in one inventory under
 # `## Controller conventions`, and separately hands them markup carrying `data-controller="…"`.
 # Nothing reconciled the two, and they had drifted badly: the inventory said `carousel` was
 # "the only new controller the #95 rows need" while the shipped snippets prescribed `dropzone`,
@@ -397,7 +397,7 @@ def check_component_call_sites() -> tuple[list[Finding], int]:
 # (`search`, `multistep`, `countdown`) and appear in no reference markup at all. A rule firing
 # on those would be the false-positive kind that gets a linter switched off.
 
-_CONTROLLER_REFS = "skills/fidara-design/references"
+_CONTROLLER_REFS = "skills/design-system/references"
 _CONTROLLER_INVENTORY = f"{_CONTROLLER_REFS}/interaction-stimulus.md"
 _CONTROLLER_INVENTORY_HEADING = "## Controller conventions"
 
@@ -441,7 +441,7 @@ def controller_names(value: str) -> set[str]:
 
 
 def check_controller_inventory() -> tuple[list[Finding], int]:
-    """Every controller the fidara-design docs prescribe is named in the inventory."""
+    """Every controller the design-system docs prescribe is named in the inventory."""
     inventory_path = ROOT / _CONTROLLER_INVENTORY
     refs = ROOT / _CONTROLLER_REFS
     if not inventory_path.is_file() or not refs.is_dir():
@@ -1949,7 +1949,7 @@ def check_pinned_toolchain_ref() -> tuple[list[Finding], int]:
 
 
 def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
-    """A design-flow script must reach `fidara-design` through `doctrine_path`, never by hop count.
+    """A design-flow script must reach `design-system` through `doctrine_path`, never by hop count.
 
     #777, the THIRD recurrence of #617's class and the second after the shared resolver existed.
     `parents[N]` is calibrated for the marketplace CLONE; from an install the cache interposes
@@ -1963,7 +1963,7 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
     four siblings adopted it, two did not, and every gate stayed green because the whole harness
     runs from the clone -- the clone shape confirming itself.
 
-    KEYED ON THE CROSS-PLUGIN REACH, not on a list of filenames. `fidara-design` ships in
+    KEYED ON THE CROSS-PLUGIN REACH, not on a list of filenames. `design-system` ships in
     rails-stack while these scripts ship in design-flow, so ANY design-flow script naming that path
     is crossing a plugin boundary and must ask the resolver. A filename allowlist would be a
     denylist wearing a different hat: it goes stale the moment someone adds a script, which is
@@ -1971,7 +1971,7 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
 
     THE EXEMPTION IS STRUCTURAL, not by name. A path that stays INSIDE design-flow -- `brands/`,
     `assets/` -- has a fixed offset and is correctly resolved by hop count; only a path leaving the
-    plugin has the depth problem. So the rule fires on `skills/fidara-design`, and `parents[N]`
+    plugin has the depth problem. So the rule fires on `skills/design-system`, and `parents[N]`
     reaching a sibling directory of the same plugin is not its business.
     """
     import ast as _ast
@@ -2006,11 +2006,18 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
         for node in _ast.walk(tree):
             if not (isinstance(node, _ast.Constant) and isinstance(node.value, str)):
                 continue
-            if id(node) in docstrings or "fidara-design" not in node.value:
+            # A PATH SEGMENT OR A PATH, not a mention (#840). The skill was `fidara-design`, a string no
+            # English sentence contains; renamed to `design-system` it appears in argparse descriptions
+            # and log lines, and keying on the bare substring reported "Judge design-system
+            # conformance" as a doctrine reach. A reach is built either as `/ "skills" / "design-system"`
+            # (the segment alone, exactly) or as a joined path; prose is neither.
+            if id(node) in docstrings:
+                continue
+            if node.value != "design-system" and "skills/design-system" not in node.value:
                 continue
             findings.append(Finding(
                 "clone-shaped-doctrine-path", rel, node.lineno,
-                "reaches `skills/fidara-design` (which ships in rails-stack) without importing "
+                "reaches `skills/design-system` (which ships in rails-stack) without importing "
                 "`doctrine_path`. Hop counts are calibrated for the clone; an install interposes "
                 "`<plugin>/<version>/` and the shapes differ in DEPTH, so the check never runs for "
                 "install users. Use `doctrine_path.find()`, and `describe()` in the refusal."))
@@ -2156,7 +2163,7 @@ def check_unimported_agent_instructions() -> tuple[list[Finding], int]:
 def check_undeclared_skill_dependency() -> tuple[list[Finding], int]:
     """A command that reads a skill from ANOTHER plugin must check the skill is there.
 
-    #513. All four `design-flow` agents and five of its commands read `skills/fidara-design`, which
+    #513. All four `design-flow` agents and five of its commands read `skills/design-system`, which
     ships only inside the `rails-stack` bundle. No `plugin.json` carries a `requires` field -- checked,
     all four -- so nothing can declare the pairing, and `/plugin install design-flow@claude-skills`
     alone yields agents whose own text calls that doctrine "the law" about a file that is absent.
@@ -2174,7 +2181,7 @@ def check_undeclared_skill_dependency() -> tuple[list[Finding], int]:
     if not root.is_dir():
         return findings, 0
     # Which skills ship inside another plugin rather than beside the command that reads them.
-    FOREIGN_SKILL = "skills/fidara-design"
+    FOREIGN_SKILL = "skills/design-system"
     STOP = re.compile(r"and stop\b|must be readable", re.I)
     examined = 0
     for command in sorted(root.glob("*/commands/*.md")):
@@ -2247,7 +2254,7 @@ def check_orphaned_controller() -> tuple[list[Finding], int]:
     edit nobody makes is the bug this rule exists to catch.
     """
     findings: list[Finding] = []
-    impls = ROOT / "skills" / "fidara-design" / "references" / "component-implementations.md"
+    impls = ROOT / "skills" / "design-system" / "references" / "component-implementations.md"
     setup = ROOT / "plugins" / "design-flow" / "commands" / "setup.md"
     if not impls.is_file() or not setup.is_file():
         return findings, 0
@@ -2278,7 +2285,7 @@ def check_undeclared_component_label() -> tuple[list[Finding], int]:
     """Every shipped skill and plugin needs a `comp:` label in `.github/labels.yml`.
 
     #489. That file is the source of truth `/maintainer-setup-intake` provisions FROM, and it had
-    drifted two labels behind the live tracker: `comp:fidara-design` and `comp:design-flow` existed
+    drifted two labels behind the live tracker: `comp:design-system` and `comp:design-flow` existed
     on GitHub and sat on four open issues while being undeclared -- so a fresh clone would never
     create them, and `gh issue create --label comp:design-flow` fails outright. Auditing it for this
     rule found two MORE that were missing from both the file and GitHub (`code-review`,
@@ -2567,11 +2574,11 @@ def selftest() -> int:
             f"{SCRIPTS}/check_thing.py":
                 'from pathlib import Path\n'
                 f'REPO = {expr}\n'
-                'DOC = REPO / "skills" / "fidara-design" / "references" / "foundations-tokens.md"\n',
+                'DOC = REPO / "skills" / "design-system" / "references" / "foundations-tokens.md"\n',
         }, rule=CSD, expect_finding=True)
 
     # THE FIX is silent -- and the fixture must still CONTAIN the literal, or it proves silence
-    # for the wrong reason. The first draft omitted `fidara-design` entirely, so removing the
+    # for the wrong reason. The first draft omitted `design-system` entirely, so removing the
     # resolver-import exemption changed nothing and that mutation survived. This is
     # `llm_tell_detector.py`'s real shape: it imports the resolver AND keeps a clone-path fallback
     # for the message, so only the exemption keeps it quiet.
@@ -2582,7 +2589,7 @@ def selftest() -> int:
             'import doctrine_path\n'
             '_D = doctrine_path.find(__file__)\n'
             'DOC = (os.path.join(str(_D), "references") if _D\n'
-            '       else os.path.join(REPO, "skills", "fidara-design", "references"))\n',
+            '       else os.path.join(REPO, "skills", "design-system", "references"))\n',
     }, rule=CSD, expect_finding=False)
 
     # PROSE IS NOT A PATH, and this is the clause that made the first draft useless: half this
@@ -2592,7 +2599,7 @@ def selftest() -> int:
     scenario("a docstring naming the path is not a finding", {
         RESOLVER: "def find(p):\n    return None\n",
         f"{SCRIPTS}/check_thing.py":
-            '"""Source of truth is skills/fidara-design/references/foundations-tokens.md."""\n'
+            '"""Source of truth is skills/design-system/references/foundations-tokens.md."""\n'
             'from pathlib import Path\n'
             'THEME = Path(__file__).resolve().parents[1] / "brands" / "fidara" / "theme.css"\n',
     }, rule=CSD, expect_finding=False)
@@ -2611,7 +2618,7 @@ def selftest() -> int:
         RESOLVER:
             'from pathlib import Path\n'
             'BASE = Path(__file__).resolve().parents[3]\n'
-            'SKILL_REL = "skills/fidara-design"\n',
+            'SKILL_REL = "skills/design-system"\n',
     }, rule=CSD, expect_finding=False)
 
     # -- dangling-conditional-floor (#531) --------------------------------
@@ -2637,7 +2644,7 @@ def selftest() -> int:
 
     # -- flattened-conditional-role (#483) ---------------------------------
     FCR = "flattened-conditional-role"
-    DOCTRINE = ("skills/fidara-design/references/component-implementations.md",
+    DOCTRINE = ("skills/design-system/references/component-implementations.md",
                 "<div role=\"<%= intent == :error ? 'alert' : 'status' %>\">\n")
     STEP = "plugins/design-flow/commands/setup.md"
     scenario("one branch stated as a literal", rule=FCR, expect_finding=True,
@@ -2701,7 +2708,7 @@ def selftest() -> int:
     # THE ACTUAL DEFECT: maintainer tooling filed under the shipped-skills section.
     scenario("...maintainer tooling under the skills section fires", rule=CBS, expect_finding=True,
              files={**_TREE, "CHANGELOG.md": _cl(
-                 "rails-stack (rails-8 + hotwire + fidara-design skills)",
+                 "rails-stack (rails-8 + hotwire + design-system skills)",
                  "- **A doctrine map.** (#655) `scripts/doctrine_map.py` generates it.")})
     # MULTI-COMPONENT IS THE NORMAL CASE. #660 really touches a plugin hook AND a skill, so the
     # bullet must be accepted under EITHER heading. Demanding a single owner would refuse correct
@@ -2714,7 +2721,7 @@ def selftest() -> int:
              files={**_TREE, "CHANGELOG.md": _cl("rails-flow (agentic flow plugin)", _BOTH)})
     scenario("...and accepted under the skill heading too", rule=CBS, expect_finding=False,
              files={**_TREE, "CHANGELOG.md": _cl(
-                 "rails-stack (rails-8 + hotwire + fidara-design skills)", _BOTH)})
+                 "rails-stack (rails-8 + hotwire + design-system skills)", _BOTH)})
     # ...but not under a THIRD, unrelated component. Without this the gate is the mapper agreeing
     # with itself: every "accepted" case above would pass a rule that accepted everything.
     scenario("...but refused under a third, unrelated heading", rule=CBS, expect_finding=True,
@@ -2743,13 +2750,13 @@ def selftest() -> int:
     # SCOPE. A released heading is already published; judging history would fail on first input.
     scenario("...silent on a bullet under a RELEASED heading", rule=CBS, expect_finding=False,
              files={**_TREE, "CHANGELOG.md": _cl(
-                 "rails-stack (rails-8 + hotwire + fidara-design skills)",
+                 "rails-stack (rails-8 + hotwire + design-system skills)",
                  "- **A doctrine map.** (#655) `scripts/doctrine_map.py` generates it.",
                  heading="### 1.49.0 — 2026-08-20 (release v1.92.0)")})
     # No issue reference means no claim about which component reported it.
     scenario("...silent on a bullet with no issue reference", rule=CBS, expect_finding=False,
              files={**_TREE, "CHANGELOG.md": _cl(
-                 "rails-stack (rails-8 + hotwire + fidara-design skills)",
+                 "rails-stack (rails-8 + hotwire + design-system skills)",
                  "- **Packaging is deterministic.** `scripts/doctrine_map.py` is unrelated.")})
 
     # CBU needs its own silence fixtures, or "it fires" is all that is ever proven about it.
@@ -2924,7 +2931,7 @@ def selftest() -> int:
 
     # -- undeclared-skill-dependency (#513) -------------------------------
     USD_ = "undeclared-skill-dependency"
-    READS = "See skills/fidara-design/SKILL.md for the catalog.\n"
+    READS = "See skills/design-system/SKILL.md for the catalog.\n"
     scenario("a command reading a foreign skill with no stop instruction", rule=USD_,
              expect_finding=True, files={"plugins/x/commands/a.md": READS})
     scenario("...with the stop instruction is silent", rule=USD_, expect_finding=False,
@@ -2968,7 +2975,7 @@ def selftest() -> int:
     OC = "orphaned-controller"
     IMPL = "## Toast\ncode\n\n## Modal\ncode\n"
     def _setup(line: str) -> dict:
-        return {"skills/fidara-design/references/component-implementations.md": IMPL,
+        return {"skills/design-system/references/component-implementations.md": IMPL,
                 "plugins/design-flow/commands/setup.md": line}
     scenario("a controller whose component is not scaffolded", rule=OC, expect_finding=True,
              files=_setup("the `modal`/`toast` controllers built on them.\n`Ui::Modal`\n"))
@@ -2984,7 +2991,7 @@ def selftest() -> int:
     scenario("no implementations file is silent", rule=OC, expect_finding=False,
              files={"plugins/design-flow/commands/setup.md": "the `toast` controllers\n"})
     scenario("no setup file is silent", rule=OC, expect_finding=False,
-             files={"skills/fidara-design/references/component-implementations.md": IMPL})
+             files={"skills/design-system/references/component-implementations.md": IMPL})
 
     # -- undeclared-component-label (#489) --------------------------------
     UCL = "undeclared-component-label"
@@ -3964,7 +3971,7 @@ def selftest() -> int:
 
     # -- controller-inventory-gap (#95) ---------------------------------------
     CI = "controller-inventory-gap"
-    REFS = "skills/fidara-design/references"
+    REFS = "skills/design-system/references"
 
     def _inventory(*names: str) -> str:
         # The helper's own fenced example prescribes `dropdown`, and the rule reads every

@@ -96,8 +96,8 @@ GUARDS: tuple[Guard, ...] = (
                 # reports the files DESCRIBING the defect alongside the ones committing it, which
                 # is how the first draft of this rule flagged brand_pack_lint.py:18.
                 "docstrings stop being excluded, so prose about the defect reads as the defect",
-                '            if id(node) in docstrings or "fidara-design" not in node.value:',
-                '            if "fidara-design" not in node.value:',
+                '            if id(node) in docstrings:\n                continue',
+                '            if False:\n                continue',
                 "a docstring naming the path is not a finding",
             ),
             Mutation(
@@ -116,7 +116,7 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "the rule matches nothing, so every clone-shaped path passes",
-                '            if id(node) in docstrings or "fidara-design" not in node.value:',
+                '            if node.value != "design-system" and "skills/design-system" not in node.value:',
                 '            if id(node) in docstrings or "zzz-never" not in node.value:',
                 "__file__.parents reaching a sibling plugin's doctrine",
             ),
@@ -762,7 +762,7 @@ GUARDS: tuple[Guard, ...] = (
         # a staged mutant with no `references/` made the unmutated selftest exit 1 and every
         # mutation vacuously "caught". A directory, so a new reference doc is picked up rather than
         # quietly missing. `run_baseline` is what now proves this is sufficient.
-        needs=("skills/fidara-design/references",),
+        needs=("skills/design-system/references",),
         mutations=(
             Mutation(
                 "the totality guard stops naming unclassified corpus entries",
@@ -1676,7 +1676,7 @@ GUARDS: tuple[Guard, ...] = (
         # It reads the doctrine file and every shipped pack, and its parity fixtures import the
         # shipped module. Without these the mutant dies on a missing file and every mutation reads
         # as "caught" by a traceback rather than by the fixture named below.
-        needs=("skills/fidara-design/references/foundations-tokens.md",
+        needs=("skills/design-system/references/foundations-tokens.md",
                "plugins/design-flow/brands/fidara/theme.css",
                "plugins/design-flow/brands/_template/theme.css",
                "plugins/design-flow/scripts/palette_candidates.py",
@@ -2400,7 +2400,7 @@ GUARDS: tuple[Guard, ...] = (
         # real page, so the matrix source has to exist in the workdir. Without these the selftest dies
         # at import and EVERY mutation reports as "caught" — by a traceback, not by a fixture.
         deps=("scripts/build_coverage.py",),
-        needs=("skills/fidara-design/references/coverage.md",),
+        needs=("skills/design-system/references/coverage.md",),
         mutations=(
             Mutation(
                 "the drift comparison stops comparing, so a stale artifact passes",
@@ -3384,7 +3384,7 @@ GUARDS: tuple[Guard, ...] = (
         name="check_section_landmarks",
         subject="scripts/check_section_landmarks.py",
         selftest="scripts/check_section_landmarks.py",
-        needs=("skills/fidara-design/references",),
+        needs=("skills/design-system/references",),
         mutations=(
             Mutation(
                 "the name test accepts any aria-* attribute, so aria-hidden passes as a name",
@@ -3465,9 +3465,9 @@ GUARDS: tuple[Guard, ...] = (
         # The LAY-017 fixture (#476) re-derives its measurement from the REAL band table, so the
         # doc has to be staged. Without it the baseline selftest fails in the tempdir and every
         # mutation below is INERT -- which run_baseline reported rather than passing silently.
-        needs=("skills/fidara-design/references/page-anatomies.md",
-               "skills/fidara-design/references/coverage.md",
-               "skills/fidara-design/references/foundations-tokens.md",
+        needs=("skills/design-system/references/page-anatomies.md",
+               "skills/design-system/references/coverage.md",
+               "skills/design-system/references/foundations-tokens.md",
                # #639. It now imports the band parser from the shipped plugin rather than
                # keeping a second copy, so the plugin module and its own import are needs.
                # Third time this rule has bitten in one session: an added import is an
@@ -4300,7 +4300,7 @@ GUARDS: tuple[Guard, ...] = (
                "CLAUDE.md", "AGENTS.md"),
         mutations=(
             # #798. The map answered "which claim is enforced by what" for repo-process doctrine
-            # only -- skills/rails-8, hotwire and fidara-design were not declared sources at all,
+            # only -- skills/rails-8, hotwire and design-system were not declared sources at all,
             # so the question was unanswerable for the doctrine users actually follow. Three claims
             # (#778/#797, #779, #792) were each found by a downstream project, one at a time.
             Mutation(
@@ -4608,7 +4608,7 @@ GUARDS: tuple[Guard, ...] = (
     # #158. The routing regex is the mutation that matters here. Its whole job is telling a real
     # dispatch entry apart from prose that happens to name the file, and getting that wrong in the
     # LOOSE direction is silent: every reference looks routed and the gate reports clean forever.
-    # That is precisely how `fidara-design/references/coverage.md` hid at depth 2 while two other
+    # That is precisely how `design-system/references/coverage.md` hid at depth 2 while two other
     # reference files name it in passing.
     Guard(
         name="check_skill_routing",
@@ -5257,10 +5257,10 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/design-flow/scripts/compose_brief.py",
         selftest="plugins/design-flow/scripts/compose_brief.py",
         # It reads the real band table through the doctrine resolver, so the skill and the resolver
-        # are both needs -- and without them every mutation dies on "cannot find fidara-design",
+        # are both needs -- and without them every mutation dies on "cannot find design-system",
         # which reads as "caught" while proving nothing.
         needs=("plugins/design-flow/scripts/doctrine_path.py",
-               "skills/fidara-design/references/page-anatomies.md"),
+               "skills/design-system/references/page-anatomies.md"),
         mutations=(
             Mutation(
                 # #676, second root cause. The surface only ever EXCLUDED -- `avoid` saw it and

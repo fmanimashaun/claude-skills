@@ -348,13 +348,13 @@ def test_dirty_paths() -> None:
     porcelain = (
         " M scripts/build_coverage.py\n"       # unstaged  — the leading space is significant
         "M  scripts/build_coverage_artifact.py\n"  # staged
-        "MM skills/fidara-design/references/coverage.md\n"  # staged + further unstaged edits
+        "MM skills/design-system/references/coverage.md\n"  # staged + further unstaged edits
         "?? scripts/brand-new.py\n"            # untracked
     )
     got = dirty = art.dirty_paths(porcelain)
     want = sorted([
         "scripts/build_coverage.py", "scripts/build_coverage_artifact.py",
-        "skills/fidara-design/references/coverage.md", "scripts/brand-new.py",
+        "skills/design-system/references/coverage.md", "scripts/brand-new.py",
     ])
     check("dirty: every status form yields the WHOLE path", got == want, f"got {got}")
     check("dirty: no path lost its first character",

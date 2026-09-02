@@ -6,15 +6,15 @@ argument-hint: "[android | ios | both]"
 # /design-flow:tokens — $ARGUMENTS
 
 Generate native token files from the `@theme` single source of truth, so fully-native
-Android/iOS screens match the web. Follow `skills/fidara-design/references/native-tokens.md`.
+Android/iOS screens match the web. Follow `skills/design-system/references/native-tokens.md`.
 This runs in the **Rails app** (which owns the `@theme`); it writes outputs to `tmp/` for the
 maintainer to carry into the native repos — it **never** writes into a native app repo.
 
 ## Preconditions
 
-**The `fidara-design` skill must be readable.** It ships in the **`rails-stack`** plugin, not
+**The `design-system` skill must be readable.** It ships in the **`rails-stack`** plugin, not
 this one, and no `plugin.json` can declare that — there is no `requires` field. So confirm you can read
-`fidara-design`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
+`design-system`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
 (`/plugin install rails-stack@claude-skills`) and stop.** Do not proceed from memory of the catalog:
 this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
 tokens and components that no gate will recognise (#513).

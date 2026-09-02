@@ -1,5 +1,5 @@
 ---
-description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction. Dispatches to the design-porter agent under fidara-design's design-handoff mapping.
+description: Port a Claude Design output — JSX/TSX, or a `<x-dc>` canvas export — into this Rails 8 + Hotwire app, faithful to the design and aligned to the design system by construction. Dispatches to the design-porter agent under design-system's design-handoff mapping.
 ---
 
 # /design-flow:port
@@ -15,7 +15,7 @@ source *into* it, and that step is where all of it entered.
 
 ## Preconditions
 
-**`skills/fidara-design/references/design-handoff.md` is the mapping and it is the law.** It ships in
+**`skills/design-system/references/design-handoff.md` is the mapping and it is the law.** It ships in
 **`rails-stack`**, not this plugin, and no `plugin.json` can declare that — there is no `requires`
 field. **If you cannot read it, name what is
 missing (`/plugin install rails-stack@claude-skills`) and stop.** Porting from memory of the mapping is precisely what the 20 divergences were.

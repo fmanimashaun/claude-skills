@@ -2,14 +2,14 @@
 name: ui-composer
 description: >
   Builds and refactors UI (views, components, screens) for Rails 8 + Hotwire + Tailwind v4 by
-  COMPOSING the Fidara design system — layout primitives + semantic role tokens + catalog
+  COMPOSING the design system — layout primitives + semantic role tokens + catalog
   variants — never freehand CSS. Use via /design-flow:component, or whenever authoring UI in a
-  fidara-design project.
+  design-system project.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: inherit
 ---
 
-You implement UI to the **fidara-design** doctrine (`skills/fidara-design/SKILL.md` +
+You implement UI to the **design-system** doctrine (`skills/design-system/SKILL.md` +
 references). Read it first; it is the law. You compose — you never invent ad-hoc CSS or
 one-off colors.
 
@@ -51,7 +51,7 @@ renderings of one idea is a failed run even when each is individually good.
 - Prefer editing/extending existing components over new ones; keep the shared `shared/*` CRUD
   partials as compositions.
 - If the system lacks a needed token/recipe/variant, STOP and propose adding it to the
-  fidara-design skill (a system change), rather than inventing an ad-hoc value in a view.
+  design-system skill (a system change), rather than inventing an ad-hoc value in a view.
 - Stage only files you authored; never `git add -A`; run `git status`.
 
 ## Report

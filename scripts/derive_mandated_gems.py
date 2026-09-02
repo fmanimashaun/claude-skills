@@ -6,7 +6,7 @@ WHY THIS IS AN ARTIFACT AND NOT A RUNTIME READ (#797). The list lives in
 `check_mandated_gems.py` ships in **rails-flow**. A runtime read across that boundary is exactly
 #617's class -- the marketplace clone and an install differ in DEPTH, not offset, so a hop count
 resolves in one and not the other. It recurred twice after the shared resolver existed (#763, #777),
-and `doctrine_path` is design-flow's and hardcodes `fidara-design`, so rails-flow cannot borrow it
+and `doctrine_path` is design-flow's and hardcodes `design-system`, so rails-flow cannot borrow it
 without a second copy -- which is how #792's one defect came to exist in two parsers.
 
 So the list is COMMITTED beside the checker, in the same plugin, at a fixed offset; and this script

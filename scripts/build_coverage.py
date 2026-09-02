@@ -64,7 +64,7 @@ REPO = Path(__file__).resolve().parents[1]
 CORPORA_ROOT = REPO / "design-corpora"
 TW_ROOT = CORPORA_ROOT / "tailwind-ui" / "html" / "components"
 TW_FAMILIES = ("application-ui", "marketing", "ecommerce")
-OUT = REPO / "skills" / "fidara-design" / "references" / "coverage.md"
+OUT = REPO / "skills" / "design-system" / "references" / "coverage.md"
 # The catalogue proper: the two files that hold per-component entries. `verify_no_undeclared_
 # entry` reads THESE and not the whole blob, because the sentence it enforces is the Derivable
 # table's own "No dedicated CATALOGUE entry".
@@ -804,7 +804,7 @@ def resolve_build(entry: Entry) -> str:
 
 
 def reference_blob() -> str:
-    """Every shipped fidara-design reference doc, concatenated — the evidence corpus."""
+    """Every shipped design-system reference doc, concatenated — the evidence corpus."""
     refs = OUT.parent
     if not refs.is_dir():
         return ""

@@ -738,7 +738,7 @@ def render(data: dict) -> str:
 TEMPLATE = r"""<title>What this marketplace ships</title>
 <style>
 /* ---------------------------------------------------------------------- tokens
-   The fidara kit's own values, from skills/fidara-design/references/foundations-tokens.md:
+   The fidara pack's own values, from skills/design-system/references/foundations-tokens.md:
    fm-* primitives bound through the semantic role layer, exactly as docs/coverage.html
    does. A page about this marketplace has no business inventing a look. */
 :root {
@@ -1044,7 +1044,7 @@ footer .xc.fail{color:var(--bad-fg)} footer .xc.skip{color:var(--warn-fg)}
       <code>/plugin marketplace add</code> never installs them — anyone who clones the repo gets
       them, which is the point.</p>
     <p>Brand faces (Bricolage Grotesque · Newsreader · Overpass Mono) render if installed locally;
-      otherwise this falls back to the stacks the fidara token file itself declares.</p>
+      otherwise this falls back to the stacks the fidara pack's token file itself declares.</p>
   </footer>
 </div>
 

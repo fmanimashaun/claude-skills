@@ -291,17 +291,17 @@ def _selftest() -> int:
         cache = Path(td) / "cache" / "claude-skills"
         scripts = cache / "design-flow" / "1.33.1" / "scripts"
         scripts.mkdir(parents=True)
-        refs_installed = cache / "rails-stack" / "1.52.1" / "skills" / "fidara-design" / "references"
+        refs_installed = cache / "rails-stack" / "1.52.1" / "skills" / "design-system" / "references"
         refs_installed.mkdir(parents=True)
         got = doctrine_path.find(scripts / "design_prompt.py")
         check("the installed layout resolves the references", got is not None)
         check("...to the rails-stack bundle, not a clone-shaped guess",
               got is not None and (got / "references").resolve() == refs_installed.resolve())
         # THE NEGATIVE: parent-counting must NOT be what answers. `parents[3]` from that scripts dir
-        # is `<td>/cache`, which holds no `skills/fidara-design`, so a reintroduced hand-rolled
+        # is `<td>/cache`, which holds no `skills/design-system`, so a reintroduced hand-rolled
         # offset fails this while `doctrine_path` passes it.
         check("...and the old parents[3] guess would NOT have",
-              not (scripts.parents[3] / "skills" / "fidara-design" / "references").is_dir())
+              not (scripts.parents[3] / "skills" / "design-system" / "references").is_dir())
 
         # AND THE SCRIPT ITSELF, run from that tree. The two checks above prove `doctrine_path`
         # resolves; they cannot prove `main` USES it -- a mutation putting `HERE.parents[3]` back
@@ -344,13 +344,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--surface", default="surface")
     ap.add_argument("--theme", type=Path, default=DEFAULT_THEME)
     ap.add_argument("--refs", type=Path,
-                    help="fidara-design references dir (default: resolve from the plugin root)")
+                    help="design-system references dir (default: resolve from the plugin root)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
         return _selftest()
 
-    # #763 defect A. This was `HERE.parents[3] / "skills" / "fidara-design" / "references"` --
+    # #763 defect A. This was `HERE.parents[3] / "skills" / "design-system" / "references"` --
     # the exact parent-counting `doctrine_path` exists to replace. It resolves only in a CLONE; from
     # an installed plugin the cache interposes `<bundle>/<version>/`, so the path came out missing
     # the `claude-skills/rails-stack/<version>/` segment and EVERY run reported the catalog and the
@@ -363,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         if found is None:
             # Name every root tried. Naming one made #617 read as "the catalogue is missing" when
             # the truth was "I looked in the wrong place".
-            print(f"cannot locate the fidara-design references. Tried:\n"
+            print(f"cannot locate the design-system references. Tried:\n"
                   f"{doctrine_path.describe(Path(__file__).resolve())}\n"
                   f"Pass --refs explicitly if they live elsewhere.", file=sys.stderr)
             return 2

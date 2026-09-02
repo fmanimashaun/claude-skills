@@ -73,7 +73,7 @@ you actually got — installed versions drift from what you think you installed 
 |---|---|
 | `rails-8` | the stack — models, jobs, auth, APIs, deployment |
 | `hotwire` | Turbo, Stimulus, Hotwire Native |
-| `fidara-design` | the design system: tokens, components, art direction, reference research |
+| `design-system` | the design system: tokens, components, art direction, reference research |
 | `code-review` | correctness review classes — the bugs a reviewer must find |
 | `quality-pass` | reuse, simplification, efficiency, altitude — advisory, never blocking |
 | `derived-artifacts` | anything whose numbers come from somewhere else |

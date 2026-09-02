@@ -346,7 +346,7 @@ def compose(root: Path, surface: str, intent: str = "marketing") -> dict:
     # "I looked in the wrong place".
     doctrine = doctrine_path.find(Path(__file__))
     if doctrine is None:
-        raise Unusable("cannot find the `fidara-design` skill, so there is no band sequence to "
+        raise Unusable("cannot find the `design-system` skill, so there is no band sequence to "
                        "compose from. Looked in:\n" + doctrine_path.describe(Path(__file__)))
     anatomy_doc = doctrine / "references" / "page-anatomies.md"
     bands = read_bands(anatomy_doc)

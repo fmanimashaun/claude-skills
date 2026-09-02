@@ -58,7 +58,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-TOKENS = REPO / "skills" / "fidara-design" / "references" / "foundations-tokens.md"
+TOKENS = REPO / "skills" / "design-system" / "references" / "foundations-tokens.md"
 # Every brand pack this repo ships. A pack is the file a user's app is actually built from, so it
 # is not a lesser input than the doctrine file -- it is the more consequential one.
 PACK_GLOB = "plugins/design-flow/brands/*/theme.css"
@@ -530,8 +530,8 @@ def selftest() -> int:
     checks += 1
     with tempfile.TemporaryDirectory(prefix="token-contrast-selftest-") as tmp:
         empty = Path(tmp)
-        (empty / "skills" / "fidara-design" / "references").mkdir(parents=True)
-        (empty / "skills" / "fidara-design" / "references" / "foundations-tokens.md").write_text(
+        (empty / "skills" / "design-system" / "references").mkdir(parents=True)
+        (empty / "skills" / "design-system" / "references" / "foundations-tokens.md").write_text(
             doc, encoding="utf-8")
         try:
             sources(empty)

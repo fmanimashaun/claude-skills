@@ -27,7 +27,7 @@ THE RULES, each traceable to a documented requirement rather than to taste:
       > "Claude may partially read files when they're referenced from other referenced files ...
       >  resulting in incomplete information."
       -- https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
-      This is not hypothetical tidiness. `fidara-design/references/coverage.md` (230 lines of
+      This is not hypothetical tidiness. `design-system/references/coverage.md` (230 lines of
       component doctrine) was reachable ONLY from `brand.md` and `marketing-copy.md` -- depth two,
       the exact shape the docs say yields partial reads.
 
@@ -43,7 +43,7 @@ THE RULES, each traceable to a documented requirement rather than to taste:
 WHAT COUNTS AS ROUTING, and why it is not markdown-link syntax. The docs require the file be
 *referenced from* SKILL.md; they do not mandate `[]()`. Our shipped skills route via a dispatch
 table of `` `references/x.md` `` code spans (rails-8, hotwire) and via markdown links whose target
-is `references/x.md` (fidara-design). Demanding link syntax would fail all 19 rails-8 rows for a
+is `references/x.md` (design-system). Demanding link syntax would fail all 19 rails-8 rows for a
 rule the docs never state -- inventing strictness is as dishonest as missing a defect. So the test
 is that the **path** `references/<name>` appears. A bare prose mention of the bare filename does
 NOT count: `interaction-stimulus.md` says "`coverage.md` used to say ..." while routing nothing,
@@ -90,7 +90,7 @@ MAX_SKILL_LINES = 500
 # The skills we DISTRIBUTE (marketplace.json's rails-stack `skills` array). Asserted exactly, in
 # both directions, against the real tree — see "SCOPE" in the docstring.
 SHIPPED_SKILLS: frozenset[str] = frozenset({
-    "code-review", "fidara-design", "hotwire", "rails-8",
+    "code-review", "design-system", "hotwire", "rails-8",
     # Added deliberately when #360 shipped it. `quality-pass` is bundled in the rails-stack
     # plugin like the other four, so it is installed by users and its references must be
     # reachable from its own SKILL.md on the same terms.
@@ -254,7 +254,7 @@ def selftest() -> int:
 
         d = build(tmp, "silent-link", "# S\n\nSee [a](references/a.md) and [b](./references/b.md).\n",
                   ("a.md", "b.md"))
-        check("markdown links route, incl. a ./ prefix (fidara-design form)",
+        check("markdown links route, incl. a ./ prefix (design-system form)",
               rules(d) == [], f"got {rules(d)}")
 
         # THE PRECISION FIXTURE. A bare filename in prose is not routing -- this is the exact shape

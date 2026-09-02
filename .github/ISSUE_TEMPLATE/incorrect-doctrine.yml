@@ -10,7 +10,7 @@ body:
     id: component
     attributes:
       label: Which skill?
-      options: ["rails-8", "hotwire", "fidara-design"]
+      options: ["rails-8", "hotwire", "design-system"]
     validations:
       required: true
   - type: input
