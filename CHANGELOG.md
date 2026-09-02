@@ -4320,6 +4320,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Five doctrine defects from the 2026-08-31 review, three of them verified against upstream
+  first** (#831). **The 422 symbol is now `:unprocessable_content` everywhere** — twelve sites in
+  `skills/rails-8/references/controllers-routing.md`, `auth-security.md`, `testing.md`,
+  `views-hotwire.md`, `skills/fidara-design/references/crud-modal-pattern.md` and both `SKILL.md`s.
+  The review had it backwards: it flagged the one `_content` as the outlier. `doctrine-verifier`
+  found that Rack ≥ 3.1 lists `unprocessable_entity` in `OBSOLETE_SYMBOL_MAPPINGS` and **warns on
+  every lookup**, Rails 8.1 pins rack 3.2, and the 8.1 scaffold emits the new name through
+  `ActionDispatch::Constants::UNPROCESSABLE_CONTENT` (rack `lib/rack/utils.rb` @ v3.1.0; rails
+  `8-1-stable` `actionpack/lib/action_dispatch/constants.rb`; rails/rails#55603). The eleven
+  `_entity` sites were the defect. Boundary recorded at `skills/rails-8/SKILL.md` §Turbo-compatible
+  responses. **Hotwire Native iOS 1.3.0 → 1.3.1** (released 2026-08-14; Android 1.3.1 was already
+  right), and the heading — the only version block in the skills without a date — is dated. **The
+  form-builder comment had its direction backwards**: `checkbox`/`textarea`/`rich_textarea` are the
+  canonical names since Rails 8.0.0 (actionview and actiontext CHANGELOGs @ v8.0.0: *"Old names are
+  still available as aliases"*), not "modern aliases" of the old ones; it now says so with the
+  boundary. And `skills/rails-8/SKILL.md`'s version heading said 2026-08-01 over bullets
+  re-verified 2026-08-29.
+
 - **`skills/quality-pass/references/worked-example.md`: the measured copy-count for the `check()`
   selftest harness moves 23 → 24, reach 9 → 10** — `check_hook_gates.py` (#822–#826) is a new copy.
   `check_shared_shapes.py` refused the stale number, which is the gate doing its one job: the worked

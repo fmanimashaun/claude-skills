@@ -308,7 +308,7 @@ RSpec.describe "Products", type: :request do
 
     it "re-renders with 422 on invalid input" do
       post products_path, params: { product: { name: "" } }
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 

@@ -73,7 +73,7 @@ them into CRUD**.
      else
        # re-render the form INTO the modal frame with inline errors, HTTP 422
        render turbo_stream: turbo_stream.update("modal",
-         partial: "invoices/form_modal", locals: { invoice: @invoice }), status: :unprocessable_entity
+         partial: "invoices/form_modal", locals: { invoice: @invoice }), status: :unprocessable_content
      end
    end
    ```
