@@ -56,7 +56,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 - **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
   `docs/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
   which by nothing* — and its `DOCTRINE_SOURCES` were eleven files, all repo-process doctrine or
-  maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/fidara-design/` were
+  maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/design-system/` were
   not declared sources at all**: the doctrine other people's agents follow verbatim, which is the
   whole product.
 
@@ -4331,10 +4331,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The `fidara-design` skill is now `design-system`** (#840). Maintainer decision, recorded on the
+  issue: *"make the neutral to avoid confusion."* The skill is the brand-neutral design **system** —
+  which roles exist, the primitives, the catalog, scale, motion, a11y — and a brand pack is a theme
+  on top of it; naming the system after its first pack meant a Reliance project loaded a skill called
+  `fidara-design`, and the question *"what is fidara-design and how does it affect the reliance
+  brand pack?"* got asked because of the name alone. `skills/design-system/` and
+  `dist/design-system.skill`; the string is renamed in 66 files (every command, agent, script and
+  gate pinned to the path); the `fidara` pack and its private `fm-*` prefix are untouched, because
+  that is a real brand. **Downstream:** a project whose `.claude/skills/.manifest.tsv` names
+  `fidara-design` will report it missing after upgrade — `/rails-flow:curate` re-links.
+- **`skills/design-system/SKILL.md` routes by task instead of "read in order"** (#827). Following
+  its five-layer instruction loaded ~78k tokens before an agent wrote a button — the single largest
+  context cost in the toolchain, in a file that costs nothing until opened (#158's finding, recorded
+  in `check_skill_routing.py`). One table now, keyed on what the task involves, one row per
+  reference, the shape `rails-8/SKILL.md` already uses; the heading that said "five layers" over
+  eight items numbered 1–5, 6, 6, 7 is gone with it. Also corrected: *"code uses the `fm-*`
+  prefix"* — that is the fidara pack's private prefix, not the system's; `brand.md` already said a
+  pack may prefix its primitives however it likes and nothing outside the pack may name one. And
+  `component-shapes.json` is marked machine-read, so an agent stops spending 4.3k tokens on a
+  generator sidecar.
 - **Five doctrine defects from the 2026-08-31 review, three of them verified against upstream
   first** (#831). **The 422 symbol is now `:unprocessable_content` everywhere** — twelve sites in
   `skills/rails-8/references/controllers-routing.md`, `auth-security.md`, `testing.md`,
-  `views-hotwire.md`, `skills/fidara-design/references/crud-modal-pattern.md` and both `SKILL.md`s.
+  `views-hotwire.md`, `skills/design-system/references/crud-modal-pattern.md` and both `SKILL.md`s.
   The review had it backwards: it flagged the one `_content` as the outlier. `doctrine-verifier`
   found that Rack ≥ 3.1 lists `unprocessable_entity` in `OBSOLETE_SYMBOL_MAPPINGS` and **warns on
   every lookup**, Rails 8.1 pins rack 3.2, and the 8.1 scaffold emits the new name through
@@ -4476,15 +4496,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   doctrine-self-check had no example to judge and `literal-font-family` shipped broken for two
   releases while reporting green. The wrong form is shown too, carrying a documented disable —
   the checker is right to flag it, which is the point of the example.
-  File: `skills/fidara-design/references/brand.md`.
+  File: `skills/design-system/references/brand.md`.
 
 - **The contract now says a single-value feedback role cannot serve both grounds.** (#775) Both
   shipped packs prove it from opposite sides — fidara's bright hues clear dark and fail light;
   reliance's, darkened for 1.4.3 in light, clear light and fail dark. Neither is a pack defect; it
   is what one value for two grounds means. `brand.md` records the rule and the two enforced
   thresholds, and `foundations-tokens.md` re-points `--ring` for dark, which it had not.
-  Files: `skills/fidara-design/references/brand.md`,
-  `skills/fidara-design/references/foundations-tokens.md`.
+  Files: `skills/design-system/references/brand.md`,
+  `skills/design-system/references/foundations-tokens.md`.
 
 - **`quality-pass`'s worked example: the shared-harness count 17 → 19.** (#778, #779) Both new gates
   use the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it, which is that gate's
@@ -4514,7 +4534,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **`brand.md`: `wordmark` documented in the pack manifest contract.** (#771) It is a **pack**
   property, never a variant's, and the reference states why — a variant re-labels, it does not
-  re-theme. File: `skills/fidara-design/references/brand.md`.
+  re-theme. File: `skills/design-system/references/brand.md`.
 
 ### 1.52.2 — 2026-08-22 (release v1.100.0)
 
@@ -4527,7 +4547,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ### 1.52.1 — 2026-08-22 (release v1.99.1)
 
 - **Our own modal example taught the misuse a downstream project was reported for.** (#758)
-  `skills/fidara-design/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
+  `skills/design-system/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
   a raw primitive in a component, which roles-only forbids. #750 reported exactly that usage from a
   live project; the project copied it from here. It now binds `bg-overlay/50`, using the role added in
   v1.98.0. Found the moment the new `primitive-as-role` rule ran against our own references.
@@ -4536,7 +4556,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **The palette could not express the design that already existed.** (#750) Reported from a live
   project and confirmed against its artboards: **every one sets `--background: var(--paper-50)`**, and
-  `skills/fidara-design/references/foundations-tokens.md` was slate-cool only. The project carried six local slate overrides — not a
+  `skills/design-system/references/foundations-tokens.md` was slate-cool only. The project carried six local slate overrides — not a
   preference, a gap. The warm ground is folded in as a **paired** palette (`--color-fm-paper-*` plus a
   `slate-warm-*` variant), never a replacement, so cool-ground adopters are untouched.
 
@@ -4550,7 +4570,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   no other brand pack could declare; #750 flagged the naming and this is it.
 
 - **The fluid scales promised steps they never declared.** (#750, found by studying the design rather
-  than reported) In `skills/fidara-design/references/foundations-tokens.md` the space comment read *"`--space-3xs … --space-3xl` + one-off pairs
+  than reported) In `skills/design-system/references/foundations-tokens.md` the space comment read *"`--space-3xs … --space-3xl` + one-off pairs
   (`--space-s-l`)"* and declared `2xs…l`, closing with *"… xl/2xl/3xl similarly"*. The type comment
   announced *"`--text-step--2 … --text-step-5`"* and declared `-1…3`. **Nine promised tokens did not
   exist**, including the pair the comment names outright.
@@ -4567,7 +4587,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ### 1.51.0 — 2026-08-22 (release v1.96.0)
 
 - **A multi-page port shipped the same fact three times.** (#739)
-  `skills/fidara-design/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
+  `skills/design-system/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
   every artboard has to stand alone as a picture, so the value proposition and the headline figure get
   restated across the landing, pricing and partner frames. **Pages are not pictures.** Port that
   repetition and there are three places to update with no arbiter between them; the first edit that
@@ -4585,7 +4605,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 - **A Claude Design artboard had no shipped route into Rails 8 + Hotwire.** (#738)
-  `skills/fidara-design/references/design-handoff.md` is the fixed mapping: source construct → the one
+  `skills/design-system/references/design-handoff.md` is the fixed mapping: source construct → the one
   sanctioned Rails-Hotwire form. It **composes** `rails-8`, `hotwire` and this skill's own
   `components.md` / `crud-modal-pattern.md` / `interaction-stimulus.md` rather than restating them.
 
@@ -7803,6 +7823,8 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **`plugins/qa-flow/agents/a11y-auditor.md` names the `design-system` skill, not `fidara-design`**
+  (#840) — the one qa-flow reference caught by the rename.
 - **`plugins/qa-flow/scripts/interaction_report.py`'s `--check-collector` exits 3 when `node` is
   absent, not 0** (#829) — same defect and same fix as design-flow's collector; the doctor maps 0 to PASS.
   Its selftest also counted the skipped collector fixture as **passed** (`check("collector syntax
@@ -9265,6 +9287,14 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **Every command, agent and script names the `design-system` skill, not `fidara-design`** (#840).
+  The design system was renamed to say what it is — brand-neutral — and design-flow is where
+  most of the 66 renamed references lived: eight commands (`plugins/design-flow/commands/setup.md`
+  among them), five agents, seven scripts, the manifest description, and
+  `plugins/design-flow/README.md`. The `fidara` brand pack under `brands/fidara/` keeps
+  its name; only the reliance pack's header stops calling the role contract "fidara's". Prose
+  saying "the Fidara design system" in command and agent descriptions now says "the design
+  system".
 - **`plugins/design-flow/scripts/rendered_conformance.py`'s `--check-collector` exits 3 when `node`
   is absent, not 0** (#829). It printed *"skip … That is not a pass"* and returned 0, which the doctor
   renders as `ok` — so on every laptop without node the gate reported a pass for a check that did
@@ -9642,8 +9672,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   `plugins/design-flow/commands/variants.md`, `plugins/design-flow/commands/audit.md`,
   `plugins/design-flow/reference/model-tiers.md`, `plugins/design-flow/scripts/generate_asset.py`,
   `plugins/design-flow/scripts/brand_pack_lint.py`, `scripts/check_component_shapes.py`,
-  `skills/fidara-design/references/visual-assets.md`,
-  `skills/fidara-design/references/component-shapes.json`.
+  `skills/design-system/references/visual-assets.md`,
+  `skills/design-system/references/component-shapes.json`.
 
 ### 1.33.1 — 2026-08-22 (release v1.99.1)
 
@@ -10466,7 +10496,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   regex-parsing that is the failure `derived-artifacts` exists to prevent.
 
   So the drawable skeleton moved into a structured source beside it:
-  `skills/fidara-design/references/component-shapes.json`, one entry per row declaring parts, role
+  `skills/design-system/references/component-shapes.json`, one entry per row declaring parts, role
   tokens and layout. The generator reads it and emits **66 nodes covering 51 components**; nothing in
   `pen_library.py` names a component or its anatomy.
 
@@ -11402,7 +11432,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **FIX — two pointers added in v1.9.0 named a directory that does not exist.** `design-auditor`'s
   new Marketing-copy and Visual-assets checklist rows pointed at `references/marketing-copy.md` and
   `references/visual-assets.md`. There is no `plugins/design-flow/references/`; the files live under
-  `skills/fidara-design/references/`. An agent following either found nothing.
+  `skills/design-system/references/`. An agent following either found nothing.
   - **The same commit got this right three times and wrong twice**, which is the part worth
     recording. `/design-flow:component`'s three pointers were written as full paths *specifically*
     so the doc-pointer lint would validate them — and the auditor's two were not, so the lint could
@@ -14880,7 +14910,7 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
 - `scripts/build_coverage.py` enumerates the licensed reference corpora mechanically — **93** Tailwind
   UI leaf components across `application-ui` / `marketing` / `ecommerce`, plus Flowbite's **63**
   catalogue entries — and reconciles them against our own doctrine into **113 rows** in
-  `skills/fidara-design/references/coverage.md`.
+  `skills/design-system/references/coverage.md`.
 - **The guarantee is the totality guard, not the file.** Every corpus entry must be claimed by exactly
   one row or **the build fails and names the stragglers**, so a new upstream directory cannot be
   silently ignored and coverage cannot rot into a stale list. Double-claims are checked explicitly,

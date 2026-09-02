@@ -196,7 +196,7 @@ def run() -> int:
         # `subject`, `selftest` and `deps` are Python modules that get IMPORTED, so they must be
         # files. `needs` is different: it means "stage this beside the mutant", and a guard whose
         # selftest reads a whole directory of fixtures must be able to declare the directory —
-        # `build_coverage` needs all of `skills/fidara-design/references`, and naming files would
+        # `build_coverage` needs all of `skills/design-system/references`, and naming files would
         # silently miss the next one added, which is the rot that made five guards inert.
         #
         # `dev` fixed this concurrently and let `deps` be a directory too. Kept the stricter form:

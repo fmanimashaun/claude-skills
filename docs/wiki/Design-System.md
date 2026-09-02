@@ -1,12 +1,12 @@
 # Design system
 
-`fidara-design` is the design doctrine; `design-flow` is the flow that applies it. The system is
+`design-system` is the design doctrine; `design-flow` is the flow that applies it. The system is
 token-first: components read tokens, tokens come from a brand pack, and a brand swap is a config
 change rather than a rewrite.
 
 ## The order of work
 
-1. **[Reference research](https://github.com/fmanimashaun/claude-skills/blob/main/skills/fidara-design/references/reference-research.md)** — before
+1. **[Reference research](https://github.com/fmanimashaun/claude-skills/blob/main/skills/design-system/references/reference-research.md)** — before
    any design. Gather references for the *kind of problem*, work out **why** each works, and build
    from the mechanisms rather than the surface. Skip it and you do not get nothing: you get the
    median of everything the model has seen, which is the stock-SaaS look.

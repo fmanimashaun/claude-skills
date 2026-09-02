@@ -58,7 +58,7 @@ generated nothing:
 
     for c in ced38c4 5902250; do
       d=$(mktemp -d); mkdir -p "$d/doctrine"
-      git archive $c skills/fidara-design | tar -x -C "$d/doctrine" --strip-components=2
+      git archive $c skills/design-system | tar -x -C "$d/doctrine" --strip-components=2
       git show $c:plugins/design-flow/commands/setup.md > "$d/setup.md"
       python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py \
         --setup "$d/setup.md" --doctrine "$d/doctrine"; echo "$c -> exit=$?"
@@ -108,7 +108,7 @@ DEFAULT_SETUP = os.path.join(_HERE, "..", "commands", "setup.md")
 sys.path.insert(0, _HERE)
 import doctrine_path                                    # noqa: E402 — same plugin, one resolver
 _FOUND = doctrine_path.find(os.path.join(_HERE, "x.py"))
-DEFAULT_DOCTRINE = str(_FOUND) if _FOUND else os.path.join(_REPO, "skills", "fidara-design")
+DEFAULT_DOCTRINE = str(_FOUND) if _FOUND else os.path.join(_REPO, "skills", "design-system")
 
 # `Rails.configuration.x.<key>` or the equivalent `Rails.application.config.x.<key>`.
 # Captures the FIRST segment after `.x.` — that is the config key. A chained
@@ -286,7 +286,7 @@ def cross_check(setup_path: str, doctrine_dir: str) -> Report:
         report.no_input = True
         report.error(
             f"scanned 0 markdown file(s) under {doctrine_dir} — this check examined nothing, "
-            "which is NOT a pass. Point --doctrine at the fidara-design tree."
+            "which is NOT a pass. Point --doctrine at the design-system tree."
         )
         return report
 
@@ -538,7 +538,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--setup", default=DEFAULT_SETUP,
                         help="path to commands/setup.md")
     parser.add_argument("--doctrine", default=DEFAULT_DOCTRINE,
-                        help="path to the fidara-design doctrine tree")
+                        help="path to the design-system doctrine tree")
     parser.add_argument("--selftest", action="store_true",
                         help="run the near-miss fixtures and exit")
     parser.add_argument("--quiet", action="store_true", help="only print problems")

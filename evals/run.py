@@ -62,7 +62,7 @@ SUITE_PATH = EVALS_DIR / "suite.json"
 TOOLS = "Read,Write,Edit,Glob,Grep"
 
 # Skills bundled by the rails-stack plugin, per .claude-plugin/marketplace.json.
-RAILS_STACK_SKILLS = ("rails-8", "hotwire", "fidara-design")
+RAILS_STACK_SKILLS = ("rails-8", "hotwire", "design-system")
 
 
 @dataclass

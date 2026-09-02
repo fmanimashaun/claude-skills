@@ -15,7 +15,7 @@ divergences**.
 
 ## Preconditions
 
-**`skills/fidara-design/references/` must be readable.** It ships in **`rails-stack`**, not this
+**`skills/design-system/references/` must be readable.** It ships in **`rails-stack`**, not this
 plugin, and no `plugin.json` can declare that — there is no `requires` field. The catalog and the band
 sequence come from there. **If you cannot read it, name what is missing
 (`/plugin install rails-stack@claude-skills`) and stop.** A prompt composed from memory of the catalog
@@ -60,6 +60,6 @@ answered the brief or drifted from it.
 ## 5. When the canvas comes back
 
 Hand it to **`/design-flow:port`** (the `design-porter` agent) and read
-`fidara-design/references/design-handoff.md` first. If step 2 reported no gaps, the returned `:root`
+`design-system/references/design-handoff.md` first. If step 2 reported no gaps, the returned `:root`
 should carry **your** token names — which is what makes §2's *"drop the `:root` block"* safe by
 construction rather than by careful reading.

@@ -1,7 +1,7 @@
 /* fidara brand pack — theme layer ONLY.
    A pack is a theme, not a fork: primitives, role mapping, dark re-points. Nothing else.
    No @utility, no @apply, no component CSS — those are system-level and shared by every pack.
-   Values are the calibrated fidara set; see skills/fidara-design/references/foundations-tokens.md
+   Values are the calibrated fidara set; see skills/design-system/references/foundations-tokens.md
    for the reasoning behind each one. Verify with:
      python3 scripts/brand_pack_lint.py brands/fidara                                        */
 

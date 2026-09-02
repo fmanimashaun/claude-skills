@@ -22,7 +22,7 @@
     "real": {
       "label": "rails-stack",
       "plugin_dir": "__staged__",
-      "why": "Staged at run time from skills/{rails-8,hotwire,fidara-design} plus a plugin.json -- i.e. exactly what `/plugin marketplace add` gives a user, and deliberately NOT this repo's maintainer .claude/, which is not distributed."
+      "why": "Staged at run time from skills/{rails-8,hotwire,design-system} plus a plugin.json -- i.e. exactly what `/plugin marketplace add` gives a user, and deliberately NOT this repo's maintainer .claude/, which is not distributed."
     }
   },
   "$comment_defaults": [
@@ -74,7 +74,7 @@
         "no-inline-dark"
       ],
       "tags": [
-        "fidara-design",
+        "design-system",
         "tokens"
       ],
       "measures": "Whether the agent binds to the semantic role layer or hardcodes colours and sprinkles inline dark: variants. Doctrine: brand.md:87, foundations-tokens.md:247."

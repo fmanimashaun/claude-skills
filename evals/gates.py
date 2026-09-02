@@ -233,7 +233,7 @@ def check_scoped_index(workspace: Path) -> list[Finding]:
 # Rule: simple-form-convention
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/fidara-design/references/forms.md:3 ("Use `simple_form`")
+# Doctrine: skills/design-system/references/forms.md:3 ("Use `simple_form`")
 #           skills/rails-8/references/ecosystem-gems.md:29
 #             "| Forms | `form_with` + partials | Dozens of uniform CRUD forms
 #              -> **simple_form** |"
@@ -293,7 +293,7 @@ def check_simple_form_convention(workspace: Path) -> list[Finding]:
 # Rule: no-inline-dark
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/fidara-design/references/foundations-tokens.md:205
+# Doctrine: skills/design-system/references/foundations-tokens.md:205
 #   "fidara's role layer needs **zero**: `--primary` is re-pointed once under
 #    `.dark` and every component follows."
 #           foundations-tokens.md:247
@@ -326,7 +326,7 @@ def check_no_inline_dark(workspace: Path) -> list[Finding]:
 # Rule: no-literal-color
 # --------------------------------------------------------------------------
 
-# Doctrine: skills/fidara-design/references/brand.md:87
+# Doctrine: skills/design-system/references/brand.md:87
 #   "mark is not themeable. `Ui::Logo` is the only component permitted to carry
 #    literal colors."
 #
@@ -547,15 +547,15 @@ RULES: dict[str, Rule] = {
              "index/collection reads scope through Current, not the global model",
              check_scoped_index),
         Rule("simple-form-convention",
-             "skills/fidara-design/references/forms.md:3",
+             "skills/design-system/references/forms.md:3",
              "forms use simple_form_for where the project has adopted it",
              check_simple_form_convention),
         Rule("no-inline-dark",
-             "skills/fidara-design/references/foundations-tokens.md:247",
+             "skills/design-system/references/foundations-tokens.md:247",
              "zero inline dark: utilities in components/views",
              check_no_inline_dark),
         Rule("no-literal-color",
-             "skills/fidara-design/references/brand.md:87",
+             "skills/design-system/references/brand.md:87",
              "no literal colours outside Ui::Logo",
              check_no_literal_color),
         Rule("job-idempotent",

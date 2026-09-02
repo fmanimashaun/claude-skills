@@ -70,7 +70,7 @@ at the documented `evals/**/prompt.md` path.)
 `rails-stack` is declared `"source": "./"` — the repo root. Pointing `--plugin-dir`
 there would risk loading this repo's `.claude/` maintainer tooling, which
 `CLAUDE.md` says is explicitly **not** distributed. So the real arm is staged
-clean: `plugin.json` plus `skills/{rails-8,hotwire,fidara-design}`. That is a
+clean: `plugin.json` plus `skills/{rails-8,hotwire,design-system}`. That is a
 faithful reproduction of what `/plugin marketplace add` gives a user.
 
 ## Gates vs measurements
@@ -185,7 +185,7 @@ gate a promotion. `results/` is committed output, not a build artifact.
 
 ## What this benchmark covers, and what it deliberately does not
 
-Three skills are staged in the `real` arm — `rails-8`, `hotwire`, `fidara-design` — and **every one
+Three skills are staged in the `real` arm — `rails-8`, `hotwire`, `design-system` — and **every one
 of them now has at least one case**. That is asserted rather than remembered:
 `selftest.py` fails if a skill is staged and no case is tagged with its name.
 

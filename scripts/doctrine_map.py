@@ -125,7 +125,7 @@ class Claim:
 # downstream project one at a time because of it.
 SHIPPED_SOURCES: tuple[str, ...] = tuple(sorted(
     p.as_posix()
-    for skill in ("rails-8", "hotwire", "fidara-design")
+    for skill in ("rails-8", "hotwire", "design-system")
     for p in (REPO / "skills" / skill).glob("**/*.md")
     if p.is_file()
     for p in [p.relative_to(REPO)]

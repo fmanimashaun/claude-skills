@@ -6,15 +6,15 @@ argument-hint: "[surface: ios | android | both]"
 # /design-flow:mobile — $ARGUMENTS
 
 Add the **web side** of Hotwire Native parity so the same UI runs in the native shells with
-correct chrome. Delegate to **ui-composer**; follow `skills/fidara-design/references/mobile.md`
+correct chrome. Delegate to **ui-composer**; follow `skills/design-system/references/mobile.md`
 (doctrine) + `mobile-reference-implementation.md` (code). This is Phase 2 — web is already done;
 this does NOT modify any native app repo (Kotlin/Swift shells live there).
 
 ## Preconditions
 
-**The `fidara-design` skill must be readable.** It ships in the **`rails-stack`** plugin, not
+**The `design-system` skill must be readable.** It ships in the **`rails-stack`** plugin, not
 this one, and no `plugin.json` can declare that — there is no `requires` field. So confirm you can read
-`fidara-design`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
+`design-system`'s `SKILL.md` before doing anything. **If you cannot, name what is missing
 (`/plugin install rails-stack@claude-skills`) and stop.** Do not proceed from memory of the catalog:
 this command's own agents call that doctrine *"the law"*, and improvising it is how a scaffold invents
 tokens and components that no gate will recognise (#513).

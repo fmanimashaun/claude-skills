@@ -70,7 +70,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-REFS = REPO / "skills" / "fidara-design" / "references"
+REFS = REPO / "skills" / "design-system" / "references"
 DOC = REFS / "page-anatomies.md"
 COVERAGE = REFS / "coverage.md"
 TOKENS = REFS / "foundations-tokens.md"

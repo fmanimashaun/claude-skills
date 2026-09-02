@@ -3,12 +3,12 @@
 Part of the claude-skills marketplace. Install:
 ```
 /plugin marketplace add fmanimashaun/claude-skills
-/plugin install rails-stack@claude-skills    # the fidara-design skill (doctrine) rides here
+/plugin install rails-stack@claude-skills    # the design-system skill (doctrine) rides here
 /plugin install design-flow@claude-skills     # the commands + agents
 ```
 
 The **UI/design** side of the toolchain. It makes UI consistent, modern, and responsive
-across projects **without a designer or Figma**, by applying the **fidara-design** system
+across projects **without a designer or Figma**, by applying the **design-system** system
 (the doctrine, bundled in the `rails-stack` skill) through agentic commands.
 
 ## Commands
@@ -74,7 +74,7 @@ an edit, per the guarantee-vs-advice test in `docs/harness-doctrine.md`.
 
 ## The doctrine
 
-Everything follows the **fidara-design** skill (`skills/fidara-design/`): foundations/tokens,
+Everything follows the **design-system** skill (`skills/design-system/`): foundations/tokens,
 layout primitives, component catalog, forms, Stimulus interaction, responsive doctrine, brand.
 Read it first — this plugin is the *applier*, that skill is the *law*.
 

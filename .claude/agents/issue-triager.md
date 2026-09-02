@@ -21,7 +21,7 @@ and the version they were on.
 ## Classify on three axes
 
 1. **Component** (which artifact owns the problem) — apply exactly one `comp:*` label:
-   `comp:rails-8`, `comp:hotwire`, `comp:fidara-design` (the design-system skill),
+   `comp:rails-8`, `comp:hotwire`, `comp:design-system` (the design-system skill),
    `comp:rails-flow`, `comp:qa-flow`, `comp:pipeline`, `comp:design-flow` (the UI/design
    plugin), `comp:packaging` (the `dist/*.skill` build), `comp:marketplace` (manifest/registry).
    Infer from the title/body and the reported command or file path when unlabeled.

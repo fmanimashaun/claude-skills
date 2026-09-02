@@ -1,11 +1,11 @@
 ---
-description: Audit UI against the Fidara design system — flag drift (raw/brand colors in components, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus ring/ARIA, non-min-h-touch targets, hand-rolled layout CSS) and propose fixes. Optional browser mode measures conformance on the RENDERED page (literal colours after the cascade, numbered-step bindings, `dark:` count, focus rings, tap targets, radius language) instead of only reading source.
+description: Audit UI against the design system — flag drift (raw/brand colors in components, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus ring/ARIA, non-min-h-touch targets, hand-rolled layout CSS) and propose fixes. Optional browser mode measures conformance on the RENDERED page (literal colours after the cascade, numbered-step bindings, `dark:` count, focus rings, tap targets, radius language) instead of only reading source.
 argument-hint: "[path or view/component to audit; default: changed files]"
 ---
 
 # /design-flow:audit — $ARGUMENTS
 
-Review `$ARGUMENTS` (or the working diff) for drift from the **fidara-design** doctrine.
+Review `$ARGUMENTS` (or the working diff) for drift from the **design-system** doctrine.
 Delegate to the **design-auditor** agent. Report findings; don't rewrite in place unless asked.
 
 **Run `/design-flow:critique` alongside this, not instead of it.** They answer different questions and
