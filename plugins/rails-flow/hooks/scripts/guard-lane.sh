@@ -49,6 +49,20 @@ _norm() {
   done
   printf '%s' "$v"
 }
+# `..` IS REFUSED, NOT RESOLVED (#823). `_norm` collapses `/./` but a parent segment needs real
+# path arithmetic, and `app/models/../../config/routes.rb` walked straight past the prefix match
+# below -- a one-segment hole in a fail-closed guard. Refusing keeps this pure shell (python3 may
+# be absent) and costs nothing: no legitimate write names its target through `..`; the only reason
+# to is to leave the lane.
+case "/$path/" in
+  */../*)
+    {
+      echo "BLOCKED by rails-flow lane guard: a path containing '..' is refused while a lane is"
+      echo "assigned (lane: $lane). Name the file by its plain path instead."
+    } >&2
+    exit 2 ;;
+esac
+
 abs="$(_norm "$path")"
 lane_abs="$(_norm "$lane")"
 

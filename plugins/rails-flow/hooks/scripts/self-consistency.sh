@@ -23,7 +23,10 @@ esac
 [ -f "$file" ] || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
 
-script="${CLAUDE_PLUGIN_ROOT}/scripts/self_consistency.py"
+# `:-` because this runs under `set -u` and the variable is the harness's to set (#825): outside the
+# hook runtime -- a maintainer driving the script by hand, a test -- a bare expansion aborts the
+# shell with "unbound variable" instead of reaching the `[ -f ]` that would have exited 0 cleanly.
+script="${CLAUDE_PLUGIN_ROOT:-}/scripts/self_consistency.py"
 [ -f "$script" ] || exit 0
 
 out="$(python3 "$script" --file "$file" 2>&1)"
