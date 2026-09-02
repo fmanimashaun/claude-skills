@@ -29,9 +29,12 @@ concurrency:
 
 jobs:
   publish:
+    # Only main publishes (#833). `workflow_dispatch` above can be triggered from ANY ref, and without
+    # this guard that ref's docs/wiki would be mirrored to the public wiki. Same guard release.yml has.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify the pages are a clean build before mirroring
         run: |

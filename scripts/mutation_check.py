@@ -4260,6 +4260,27 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/extract_release_notes.py",
         needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh"),
         mutations=(
+            # #834. `--check` looked only at the tag being armed. A block for a tag that was never cut
+            # (v1.78.0) and a heading without the word `release` (v1.91.1) both published nothing,
+            # and nothing could say so after the fact. Two assertions over the WHOLE file now.
+            Mutation(
+                "the shape assertion is dropped, so a `(vX)` heading is treated as publishable",
+                "        if not PUBLISHING_SHAPE.search(line):",
+                "        if False:",
+                "all-tags: a heading naming a version WITHOUT the publishing shape is a finding",
+            ),
+            Mutation(
+                "the tag-existence assertion is dropped, so a ghost release block is fine again",
+                "        elif check_tags and tag not in tags:",
+                "        elif False:",
+                "all-tags: a (release vX) heading whose tag does not exist is a finding",
+            ),
+            Mutation(
+                "the line number is dropped from the finding",
+                '                f"{CHANGELOG}:{lineno}: heading names {tag} without the `(release {tag})` shape, so the "',
+                '                f"{CHANGELOG}: heading names {tag} without the `(release {tag})` shape, so the "',
+                "all-tags: the finding carries the line number",
+            ),
             Mutation(
                 "only the first block for a tag is grabbed -- the original bug, restored",
                 "            if needle in line:",

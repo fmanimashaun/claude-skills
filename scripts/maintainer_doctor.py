@@ -187,7 +187,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # doctrine, which `quality-pass` exists to argue against.
     # #699. Asserts what PUBLISHES, not what exists: it runs the real extractor for
     # marketplace.json's version and refuses any block written for the tag that would not appear.
-    ("release notes complete", ("python3", "scripts/extract_release_notes.py", "--check")),
+    ("release notes complete", ("python3", "scripts/extract_release_notes.py", "--check", "--all-tags")),
     ("release notes selftest", ("python3", "scripts/extract_release_notes.py", "--selftest")),
     ("doctrine map drift", ("python3", "scripts/doctrine_map.py", "--check")),
     ("doctrine map coverage", ("python3", "scripts/doctrine_map.py", "--audit-coverage")),
@@ -696,7 +696,7 @@ class Doctor:
             self.add(SKIP, "changelog coverage", f"{script.name} is missing")
             return
         proc = subprocess.run([sys.executable, str(script)], cwd=REPO,
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, timeout=DEFAULT_TIMEOUT)
         if proc.returncode == 0:
             self.add(PASS, "every changed component has a CHANGELOG entry")
             return

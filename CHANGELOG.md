@@ -9,6 +9,34 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Two release blocks that never published, and the gate that now catches the class** (#834).
+  `CHANGELOG.md` carried a `### … (release v1.78.0)` block for a tag that does not exist — armed as
+  1.78.0, re-armed to 1.79.0, and the v1.79.0 body has no trace of those notes — and a
+  `### … (v1.91.1)` heading missing the word `release`, which the extractor does not match, so
+  v1.91.1 shipped the bare-pointer body. `scripts/extract_release_notes.py`'s `--check` asked only
+  about the tag being armed, so neither could be seen after the fact. The v1.78.0 block is retitled
+  to the tag its content shipped under; the sixteen legacy `(vX.Y.Z)` headings take the publishing
+  shape so one shape holds throughout; and `--check --all-tags` (what the `release notes complete`
+  gate now runs) asserts over the **whole file**: every heading naming a version uses the shape that
+  publishes, and every `(release vX)` names a real tag. Against the pre-fix file it reports 17
+  findings; against the fixed one, none. Five fixtures, three mutations.
+- **`scripts/release_local.sh` is now the mirror of `release.yml` it always claimed to be** (#832).
+  Three ways it was not: the hosted `release` job `needs: gates` — the whole sweep runs before
+  anything publishes — and the script ran none of it; a failed notes check printed *"Publishing
+  anyway"*, so the gate that blocks in CI could not block in the one path that exists for when CI
+  is unavailable; and two bare `python3` calls bypassed the `$PY` probe whose purpose is machines
+  where only `python` is v3. It runs `maintainer_doctor.py --gates-only` before extracting notes,
+  fails on a notes finding, and uses `"$PY"` throughout.
+- **`wiki.yml` publishes only from `main`; two drift checks compare the HEAD blob; two subprocesses
+  gain timeouts** (#833). `workflow_dispatch` could be triggered from any ref and the job had no
+  `if: github.ref == 'refs/heads/main'`, so any branch's `docs/wiki` could be mirrored to the public
+  wiki — the guard `release.yml` already had (and `checkout@v4` → `@v7`, as the other workflows).
+  `scripts/build_wiki.py --check` and `scripts/derive_mandated_gems.py --check` read the working
+  copy, the exact trap CLAUDE.md records as fixed for `coverage.html`: a page rebuilt and never
+  staged passed locally and failed CI. Both read `git show HEAD:` now, and a dirty working copy no
+  longer changes their verdict. `maintainer_doctor.check_changelog_coverage` and
+  `rebuild_generated.py` ran subprocesses with no timeout where the doctor insists on one everywhere
+  else.
 - **`scripts/maintainer_doctor.py` prints a failing gate's findings, not a count of them** (#820).
   It kept `out.splitlines()[-1]`, and **44 of the 98 gate entries** (27 distinct scripts, counted at
   the time of writing) end their output with an `N finding(s)` line — so the line
@@ -275,8 +303,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   case it was built for: doctrine changed, and the row claiming to enforce it would otherwise have
   gone on pointing at a sentence that no longer exists. The row now cites the new gate as well.
 
-### 2026-08-16c (v1.91.1)
-
+### 2026-08-16c (release v1.91.1)
 - **The wiki published `>-` where five of seven skill descriptions belonged.** (#680) Reported as
   *"the wiki should have full documentation of what the project is about, not just recording version
   numbers."* The premise needed correcting — the wiki is **609 lines across 12 pages**, and only the
@@ -322,8 +349,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   because stopping early leaves the tree half-rebuilt — some gates pass, some do not, and the reason
   is invisible.
 
-### 2026-08-16b (v1.88.1)
-
+### 2026-08-16b (release v1.88.1)
 - **The install description named the wrong agents.** (#653) Found immediately after #651, in the
   same file, and the same class: the install surface saying something untrue.
 
@@ -391,8 +417,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   so the rule cannot quietly stop checking five of them, plus two mutation guards — required by the
   mutation-coverage gate, which failed the build until they existed.
 
-### 2026-08-16 (v1.88.0)
-
+### 2026-08-16 (release v1.88.0)
 - **`hotwire` was staged into the measured arm of the doctrine benchmark and exercised by zero
   cases.** (#646) Found reviewing four external agent-tooling repos against ours — Clerk's per-skill
   `evals/evals.json`, `jsm-agent-skill`, `swarm-forge`, and an Augment guide on spec-driven
@@ -436,8 +461,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `parallel-session-lane` needs concurrent sessions. None is staged, so none dilutes anything. An
   unexplained absence reads exactly like an oversight.
 
-### 2026-08-09 (v1.85.1)
-
+### 2026-08-09 (release v1.85.1)
 - **One cause reported as N findings — found in three places, fixed in all three.** The pattern:
   when a single action fixes every finding, emitting one per item buries the diagnosis under its own
   consequences, and anything reading the tail of the output learns the least useful of them.
@@ -474,8 +498,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `build_wiki.py` and drift-gated — but the hand-written ones are not, and nothing checks them. That
   asymmetry is worth knowing: a generated page rots loudly, a hand-written one rots silently.
 
-### 2026-08-09 (v1.85.0)
-
+### 2026-08-09 (release v1.85.0)
 - **Nothing asserted that a promotion is a merge commit, and a squash broke the next release.**
   (#597) CLAUDE.md has said *"Release = one promotion PR `dev → main` (a merge commit)"* for eleven
   releases. v1.83.0 was squash-merged anyway, and prose does not merge anything.
@@ -505,8 +528,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   content — but it means the full `maintainer_doctor.py` has to be run before a promotion, which
   CLAUDE.md now says.
 
-### 2026-08-08b (v1.81.0)
-
+### 2026-08-08b (release v1.81.0)
 - **The README was 913 lines and named version 1.3.1 while the marketplace shipped 1.80.0.** It also
   listed 5 of 42 commands and neither skill shipped that day, and **Install sat at line 732** — a
   reader had to scroll past seven hundred lines to use the thing. Re-authored to **194 lines** with
@@ -539,8 +561,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   repository does not exist — GitHub creates it only after the first page is saved in the web UI,
   and a release must not go red because a mirror target is uninitialised.
 
-### 2026-08-08 (v1.77.0)
-
+### 2026-08-08 (release v1.77.0)
 - **A committed `.claude/settings.example.json`, and the three-file distinction written down.** This
   repo was telling users (via `/rails-flow:setup-flow` §2c) to keep permissions in a copied local
   file while not doing it itself — the claims-vs-enforcement shape, in its own configuration.
@@ -558,8 +579,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   most real commands. `rm`, `curl`, `wget`, `kill`, `chmod` and package installers are deliberately
   absent — their blast radius outlives the run, so a prompt is correct friction even mid-run.
 
-### 2026-08-08 (v1.75.0)
-
+### 2026-08-08 (release v1.75.0)
 - **An `AGENTS.md` at this repo's root was read by nothing, for two whole releases.** Claude Code
   reads `CLAUDE.md`, **not** `AGENTS.md` — which is this repo's own shipped doctrine
   (`plugins/rails-flow/commands/setup-flow.md` §1b), written here and not applied here. So a file of
@@ -670,8 +690,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   It was validated against the **real damaged commit**, not a fixture approximation: replayed over
   `674cdad` it names all five missing plugins, and is silent on the restored file.
 
-### 2026-08-07 (v1.71.0)
-
+### 2026-08-07 (release v1.71.0)
 - **`dangling-conditional-floor`** (Refs #531) — if §2a offers a lower floor conditional on multi-factor
   auth, the file must carry MFA guidance. Structural, not a judgement: it asks whether the second factor
   is discussed at all, and cannot tell adequate doctrine from a stub. A file that never offers the
@@ -679,8 +698,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   mutations — and the fixtures had to be rebuilt once, because writing a bare `auth-security.md` tripped
   `password-floor-drift` as well and stole its mutation.
 
-### 2026-08-06 (v1.69.0)
-
+### 2026-08-06 (release v1.69.0)
 - **`hook-count-drift` — CLAUDE.md had two wrong numbers in one sentence.** It said *"of the ten hook
   scripts, eight are advisory"*; there are **eleven**, and nine are advisory. The eleventh is
   `design-flow`'s `design-tells.sh`. Both stale figures sat in the paragraph explaining which hooks fail
@@ -696,8 +714,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   total check — the advisory check fired too, and the mutation that disables the total comparison
   survived. It now uses a case where only the total is wrong.
 
-### 2026-08-06 (v1.68.0)
-
+### 2026-08-06 (release v1.68.0)
 - **`harness-doctrine.md` carried two stale counts about the rule it documents** (Refs #491). It said
   *"Four commands qualify today"* (five do) and *"two declared mutations"* (thirteen). Both were
   `claims-vs-enforcement` on our own doc — the exact class that file exists to warn about, in the
@@ -775,8 +792,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   the same reason the coverage page does, so a version bump invalidates it and `inventory artifact
   drift` fails until `python3 scripts/build_inventory.py` is re-run.
 
-### 2026-08-06 (v1.67.0)
-
+### 2026-08-06 (release v1.67.0)
 - **`duplicate-unreleased`** — at most one `### Unreleased` per component section. A manual error I
   made **twice in three releases**, both times identically: two changes each insert their bullet against
   the same `## <section>` anchor, so the second opens its own heading above the first. Nothing broke
@@ -821,8 +837,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   component in neither an inventory nor a gate is how `design-flow` fell out of the plugin list for as
   long as it existed (#203, #489).
 
-### 2026-08-05 (v1.64.0)
-
+### 2026-08-05 (release v1.64.0)
 - **`password-floor-drift`** (Refs #484) — the floor §2a *states* must equal the one its worked
   example *enforces*, because the reader copies the example. **Deliberately not a prose rule:** the
   obvious gate greps for "at least one uppercase" and would fire on the sentence that **forbids** it
@@ -830,8 +845,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   filed rather than repeat. A number-to-number join has no such ambiguity. Drift **above** the floor
   is reported too: two numbers for one rule is the defect, not the direction. 7 fixtures, 2 mutations.
 
-### 2026-08-05 (v1.63.0)
-
+### 2026-08-05 (release v1.63.0)
 - **`parallel-session-lane` — the protocol for running several sessions against this repo at once.**
   A maintainer skill in `.claude/skills/`, so it ships to nobody through the marketplace and arrives
   automatically for anyone who clones. Five steps, each written from a session that went wrong:
@@ -854,8 +868,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to catch. Verified against the pre-fix scaffold rather than assumed: it examines 4 paired
   controllers and reports **3**. 6 fixtures, 2 mutations.
 
-### 2026-08-05 (v1.62.0)
-
+### 2026-08-05 (release v1.62.0)
 - **The label taxonomy's source of truth was four components behind the repo** (Refs #489).
   `.github/labels.yml` is what `/maintainer-setup-intake` provisions **from**, and it declared 7
   `comp:*` labels for 9 live ones: `comp:fidara-design` and `comp:design-flow` existed on GitHub and
@@ -886,8 +899,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   it — a defect caught because the docstring promised block scoping the code did not do. 11
   fixtures, 4 mutations.
 
-### 2026-08-02 (v1.61.0)
-
+### 2026-08-02 (release v1.61.0)
 - **Four "monotony" gate rules considered and rejected, each with the measurement that killed it**
   (Refs #476). An external catalogue names four repetition axes that look like they belong beside
   `check_page_pacing.py`'s existing `tone-repeat` / `shape-repeat`. None earns a gate, for three
@@ -12517,7 +12529,7 @@ rather than by filename.
   `self_consistency`, all pre-dating this work — named rather than silently left, because a count
   nobody wrote down is how this went unnoticed.
 
-### 2026-08-08 (release v1.78.0)
+### 2026-08-08 (release v1.79.0)
 
 > ### The asset pipeline is complete: set up, plan, cost, generate, reconcile
 >
