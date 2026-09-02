@@ -91,11 +91,17 @@ def parse_rgb(value: str) -> tuple[float, float, float, float] | None:
     return r, g, b, a
 
 
+SRGB_LINEAR_BREAKPOINT = 0.04045  # WCAG 2.2 — see luminance()
+
+
 def luminance(rgb: tuple[float, float, float, float]) -> float:
     chan = []
     for v in rgb[:3]:
         c = v / 255
-        chan.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+        # 0.04045 is WCAG 2.2's sRGB linearisation breakpoint (2.0 said 0.03928; the current
+        # normative text does not). design-flow's palette_candidates.py already used 2.2's value, so
+        # the two shipped plugins disagreed on luminance for channels in [0.03928, 0.04045] (#830).
+        chan.append(c / 12.92 if c <= SRGB_LINEAR_BREAKPOINT else ((c + 0.055) / 1.055) ** 2.4)
     return 0.2126 * chan[0] + 0.7152 * chan[1] + 0.0722 * chan[2]
 
 
@@ -286,6 +292,13 @@ def selftest() -> int:
           contrast("rgba(0, 0, 0, 0.5)", "rgb(255, 255, 255)") is None)
     check("the maths matches the standard control",
           abs(contrast("rgb(118, 118, 118)", "rgb(255, 255, 255)") - 4.54) < 0.01,
+          "the reference 4.54:1 pair no longer computes")
+    # THE BREAKPOINT (#830). A channel of 10.25/255 = 0.0402 sits BETWEEN WCAG 2.0's 0.03928 and 2.2's
+    # 0.04045: under 2.2 it linearises as c/12.92; under 2.0 it takes the power branch. (10/255 =
+    # 0.0392 is below both, and a first draft of this fixture used it -- the regression mutation
+    # survived, because the probe never reached the region where the two formulas disagree.)
+    check("luminance uses the WCAG 2.2 breakpoint (0.04045), not 2.0's",
+          abs(luminance((10.25, 10.25, 10.25, 1.0)) - (10.25 / 255) / 12.92) < 1e-9,
           f"got {contrast('rgb(118, 118, 118)', 'rgb(255, 255, 255)')}")
 
     # SAME-THEME PAIRS MUST BE REFUSED: they always agree, so they would report parity while

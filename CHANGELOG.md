@@ -7772,6 +7772,18 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **`plugins/qa-flow/scripts/interaction_report.py`'s `--check-collector` exits 3 when `node` is
+  absent, not 0** (#829) — same defect and same fix as design-flow's collector; the doctor maps 0 to PASS.
+  Its selftest also counted the skipped collector fixture as **passed** (`check("collector syntax
+  gate", True)`), the "35 checks passed on a machine with no corpora" shape; the skip is printed
+  and no longer counted.
+- **`plugins/qa-flow/scripts/theme_parity.py` uses WCAG 2.2's sRGB breakpoint (0.04045)** (#830).
+  It used 2.0's 0.03928 while design-flow's `palette_candidates.py` used 2.2's, so two shipped
+  plugins computed different luminance for channels in [0.03928, 0.04045] — a pair passing one
+  contrast gate could fail the other. Named constant, pinned by a fixture at 10/255.
+
 ### 1.26.0 — 2026-08-29 (release v1.104.0)
 
 - **Both `qa.config.yml` loaders silently discarded every key carrying a trailing comment — the
@@ -9221,6 +9233,15 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **`plugins/design-flow/scripts/rendered_conformance.py`'s `--check-collector` exits 3 when `node`
+  is absent, not 0** (#829). It printed *"skip … That is not a pass"* and returned 0, which the doctor
+  renders as `ok` — so on every laptop without node the gate reported a pass for a check that did
+  not run, the exact SKIP-as-PASS defect the doctor's docstring exists to refuse. Its own selftest
+  had pinned the defect (`== 0`); it asserts 3 now. Exit 3 is the gate protocol's "ran, could not
+  check everything", rendered as SKIP with this line as the reason.
 
 ### 1.38.0 — 2026-08-31 (release v1.107.0)
 

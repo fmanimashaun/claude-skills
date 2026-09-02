@@ -1096,7 +1096,10 @@ def check_collector(node_bin: str = "node", collector: str = COLLECTOR) -> int:
     if shutil.which(node_bin) is None:
         print(f"  skip:  collector syntax ({collector}) — `{node_bin}` is not on PATH, so the "
               f"check did NOT run. That is not a pass.")
-        return 0
+        # Exit 3, not 0 (#829): the doctor maps 0 to PASS, so this printed "not a pass" and was
+        # counted as one on every laptop without node. 3 is the gate protocol's "ran, could not
+        # check everything", which the doctor renders as SKIP with this line as the reason.
+        return 3
     result = subprocess.run([node_bin, "--check", collector], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"  error: the shipped collector does not parse:\n{result.stderr.strip()}")
@@ -1720,8 +1723,9 @@ def selftest() -> int:                                        # noqa: C901 - a f
         # A missing node must SKIP (0 with a printed skip), not fail: a gate that dies for want of
         # a binary teaches people to ignore gates. Proven by pointing at a binary that cannot
         # exist, which is the only way to exercise this path on a machine that has node.
+        # == 3, not == 0 (#829): the old assertion pinned the defect -- 0 renders as PASS in the doctor.
         check("an absent node skips instead of failing",
-              check_collector(node_bin="node-that-does-not-exist") == 0,
+              check_collector(node_bin="node-that-does-not-exist") == 3,
               "the collector check failed rather than skipping when its interpreter was missing")
 
         check("a missing collector is an environment fault, not a syntax verdict",
