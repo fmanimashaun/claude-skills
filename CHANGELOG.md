@@ -2443,6 +2443,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The SessionStart drift nudge reads the manifest curators actually write** (#838).
+  `plugins/rails-flow/hooks/scripts/session-start.sh` read two columns and a 12-char digest — the
+  shape `skill-curator.md` specified — while every curator wrote three columns under a `# skill
+  source sha256` header with the full 64-char digest. Read as `src hash`, `$src` was the skill *name*,
+  `[ -f ]` failed, and `continue` skipped every row: on a real project whose sources changed daily,
+  the nudge **never fired once** and the session looked healthy. The guard added in #762 to stop
+  unhashable rows passing silently had a silent pass in front of it. The hook now accepts both
+  shapes, skips a `#` header, compares at the stored digest length, and **reports any row it cannot
+  parse** instead of skipping it; the spec says three columns and 64 chars, because that is what is
+  written. `check_drift_signal.py` drives the real hook with the real shape (six fixtures), and the
+  hook gains a mutation guard (three).
 - **Every production `subprocess.run` carries a timeout** (#837). `plugins/rails-flow/scripts/compose_state.py`
   called `gh` (network) with none, and `assign_lanes.py` called `git` with none — a hung `gh` inside the
   Stop hook stalls past its 150 s budget with no message. `project_gates.run_check` itself always had

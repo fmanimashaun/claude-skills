@@ -26,9 +26,10 @@ HOOK = Path(__file__).resolve().parents[1] / "hooks" / "scripts" / "session-star
 
 DRIFTED = "drifted from their project skills"
 UNHASHED = "could NOT be hashed"
+UNPARSED = "could not be PARSED"
 
 
-def run_hook(*, hashers: str, manifest_hash: str) -> str:
+def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None) -> str:
     """Run the real hook in a fresh git repo and return its stdout.
 
     hashers: "real" (inherit PATH), "broken" (both present but exit 127), "absent" (neither on
@@ -39,7 +40,8 @@ def run_hook(*, hashers: str, manifest_hash: str) -> str:
         root = Path(td) / "proj"
         (root / ".claude" / "skills").mkdir(parents=True)
         (root / "tracked.md").write_text("ORIGINAL\n")
-        (root / ".claude" / "skills" / ".manifest.tsv").write_text(f"tracked.md\t{manifest_hash}\n")
+        (root / ".claude" / "skills" / ".manifest.tsv").write_text(
+            manifest if manifest is not None else f"tracked.md\t{manifest_hash}\n")
         for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
                     ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
             subprocess.run(cmd, cwd=root, check=True, capture_output=True)
@@ -109,6 +111,25 @@ def selftest() -> int:
     # THE FALLBACK. Without this the `shasum -a 256` branch is unreachable on any machine that has
     # sha256sum -- every current macOS and most Linux -- so no fixture could witness it and deleting
     # it would pass the whole suite. A mutation confirmed exactly that before this case was added.
+    # THE SHAPE CURATORS ACTUALLY WRITE (#838): a `#` header, three columns, the full 64-char digest.
+    # The hook read two columns, so `$src` was the skill NAME, `[ -f ]` failed, and every row was
+    # skipped in silence -- the nudge never fired on a project whose sources changed daily.
+    real64 = subprocess.run(["shasum", "-a", "256", "-"], input=b"ORIGINAL\n", capture_output=True).stdout.split()[0].decode()
+    three = "# skill\tsource\tsha256\nretask-domain\ttracked.md\t{h}\n"
+    out = run_hook(hashers="real", manifest_hash="", manifest=three.format(h="0" * 64))
+    check("a 3-column manifest with a header and a 64-char digest reports real drift", DRIFTED in out, f"stdout={out!r}")
+    check("...and is not reported as unparseable", UNPARSED not in out, f"stdout={out!r}")
+    out = run_hook(hashers="real", manifest_hash="", manifest=three.format(h=real64))
+    check("a 3-column manifest whose 64-char digest MATCHES reports nothing",
+          DRIFTED not in out and UNPARSED not in out and UNHASHED not in out, f"stdout={out!r}")
+    # A row that fits neither shape, or names a source that is not a file, is REPORTED -- the
+    # silent `continue` in front of the unhashed guard was the whole defect.
+    out = run_hook(hashers="real", manifest_hash="", manifest="retask-domain\tdocs/gone.md\t" + "0" * 64 + "\n")
+    check("a row whose source is not a file is reported as unparseable, not skipped", UNPARSED in out, f"stdout={out!r}")
+    check("...and does not claim drift it could not measure", DRIFTED not in out, f"stdout={out!r}")
+    out = run_hook(hashers="real", manifest_hash="", manifest="just-one-field\n")
+    check("a one-field row is reported as unparseable", UNPARSED in out, f"stdout={out!r}")
+
     out = run_hook(hashers="shasum_only", manifest_hash="deadbeefdead")
     check("shasum alone still detects drift", DRIFTED in out, f"stdout={out!r}")
     check("...and is not reported as unhashable", UNHASHED not in out, f"stdout={out!r}")
@@ -123,12 +144,12 @@ def selftest() -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--selftest", action="store_true", help="run the fixtures")
-    args = ap.parse_args()
-    if not args.selftest:
-        ap.error("--selftest is the only mode")
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--selftest", action="store_true", help="drive the real hook under four hasher shapes")
+    ap.parse_args()
+    # Bare invocation runs the fixtures too: the mutation harness invokes a separate selftest file
+    # with no arguments, and a script that printed usage there would be INERT -- every mutation
+    # "caught" by an exit 2 (#838, the same trap check_hook_gates.py fell into first).
     return selftest()
 
 
