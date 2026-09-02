@@ -9,6 +9,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Prose that contradicted code, in fourteen places, and the rule that refuses the one class of it
+  that keeps recurring** (#835). Every one was this repo's own `claims-vs-enforcement` in its own docs,
+  found by the 2026-08-31 review and verified against the live source. `CLAUDE.md` said 35 gates (98),
+  27 fixtures (29), four builders (five), six validators (eight), 37 no-op merges (unreproducible),
+  described `release.yml` as three steps with a tag-existence no-op (its job `needs: gates` first, and
+  the no-op tests *release* existence), cited `check_handoff.py` without its plugin path, and said
+  "three states" where `docs/wiki/Contributing.md` said four for the same output. **The counts are
+  deleted from living prose, not corrected** — a number in prose is a second, unchecked copy of the
+  code, and five of them rotted in one file; the scripts print theirs. `README.md` stated the
+  one-block-per-release rule that #699 refuted, and omitted `toolchain-audit`, `canvas`, `port` and
+  `compose`; `plugins/design-flow/README.md` listed six of twelve commands and three of five agents,
+  and said "no bundled hooks" fifty lines after describing one. The rails-stack manifest description
+  named five of its seven skills. `docs/settings.allowlist.sample.json` was referenced by nothing and
+  is deleted. `scripts/lint_self_consistency.py` gains **`undocumented-command`** — a shipped
+  `/plugin:command` the root README (as `` `c` ``) or the plugin README (as `/p:c`) never names —
+  the sibling of `undocumented-plugin` one level down, presence-only for the same reason; four
+  fixtures, two mutations. Its own docstring said "Both rules are mechanical" about thirty-nine.
 - **Two release blocks that never published, and the gate that now catches the class** (#834).
   `CHANGELOG.md` carried a `### … (release v1.78.0)` block for a tag that does not exist — armed as
   1.78.0, re-armed to 1.79.0, and the v1.79.0 body has no trace of those notes — and a
@@ -4125,6 +4142,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### Unreleased
+
+- **`plugins/pipeline/README.md` gains a Commands section** (#835) — it listed none of its eight commands.
+  The new `undocumented-command` rule found it on its first run; each line is derived from the
+  command's own description, and says the command file is the authority.
+
 ### 1.3.1 — 2026-08-16 (release v1.91.2)
 
 - **The cloud-deploy briefing sat at repo-root `.env`, where `bin/dev` reads it — booting local
@@ -7851,6 +7874,8 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **`plugins/qa-flow/README.md` gains a Commands section** (#835) — it listed none of its seven commands;
+  found by the new `undocumented-command` rule on its first run.
 - **`plugins/qa-flow/scripts/interaction_report.py`'s `node --check` carries a timeout** (#837).
 - **`plugins/qa-flow/agents/a11y-auditor.md` names the `design-system` skill, not `fidara-design`**
   (#840) — the one qa-flow reference caught by the rename.

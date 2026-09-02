@@ -27,6 +27,8 @@ WHAT IT CHECKS
   undocumented-plugin         a plugin declared in marketplace.json that CLAUDE.md or
                               README.md never names — it ships while the doc describing
                               what ships omits it
+  undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
+                              plugin's README (as /p:c) never names — same defect, one level down
   unbounded-issue-query       a `gh issue/pr list` with no --limit: it defaults to 30, so
                               the call reports a page as the total
   component-without-call-site a documented component nothing demonstrates — a reader must
@@ -43,8 +45,9 @@ WHAT IT CHECKS
                               controller inventory omits — the reader inherits a dependency the
                               doctrine never told them to build
 
-Deliberately narrow. Both rules are mechanical with no judgement, so a finding is
-always real. Classes that need judgement (a docstring promising behaviour the code
+Deliberately narrow. Every rule is mechanical with no judgement, so a finding is
+always real. The list above is the first rules in the order they landed, not the whole
+set; `--selftest` exercises every rule id and prints the count. Classes that need judgement (a docstring promising behaviour the code
 lacks, a carve-out with no negative test) belong to the rubric and the reviewers,
 not here -- a linter with false positives gets disabled, and then catches nothing.
 
@@ -489,6 +492,38 @@ def check_controller_inventory() -> tuple[list[Finding], int]:
 # of the two audiences: CLAUDE.md is what orients a maintainer (or an agent reading it) about what
 # this repo ships, README.md is what orients a user.
 PLUGIN_DOCS = ("CLAUDE.md", "README.md")
+
+
+def check_undocumented_commands() -> tuple[list[Finding], int]:
+    """Every shipped `/plugin:command` must be named where a user looks for the command list (#835).
+
+    The sibling of `undocumented-plugin`, one level down. The root README lists each plugin's
+    commands as backticked bare names; the plugin's own README, where it has one, lists them as
+    `/plugin:command`. The 2026-08-31 review found four commands (`toolchain-audit`, `canvas`, `port`,
+    `compose`) in neither, and design-flow's README listing six of its twelve -- a command that ships
+    while the doc describing what ships omits it is invisible to the one audience it exists for.
+
+    PRESENCE, NOT COUNTS OR PLACEMENT, for the reason `check_undocumented_plugins` gives: a mention
+    anywhere in the file satisfies it, and that narrow guarantee is the honest one. It catches a
+    command documented NOWHERE in the file, which is the defect that actually shipped.
+    """
+    root_readme = ROOT / "README.md"
+    findings: list[Finding] = []
+    examined = 0
+    for cmd_file in sorted(ROOT.glob("plugins/*/commands/*.md")):
+        plugin = cmd_file.parents[1].name
+        command = cmd_file.stem
+        examined += 1
+        docs = [(root_readme, f"`{command}`"), (ROOT / "plugins" / plugin / "README.md", f"/{plugin}:{command}")]
+        for doc, needle in docs:
+            if not doc.is_file():
+                continue  # a tree without that doc cannot contradict it
+            if needle not in read(doc):
+                findings.append(Finding(
+                    "undocumented-command", doc.relative_to(ROOT).as_posix(), 0,
+                    f"`/{plugin}:{command}` ships (plugins/{plugin}/commands/{command}.md) but this file never "
+                    f"names it as {needle} -- a user reading the command list cannot learn it exists"))
+    return findings, examined
 
 
 def check_bare_plugin_entries() -> tuple[list[Finding], int]:
@@ -2447,6 +2482,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dead, dead_examined = check_dead_settings_keys(python_sources)
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
+    undoc_cmds, commands_examined = check_undocumented_commands()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -2485,6 +2521,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "json_settings_files_examined": dead_examined,
         "documented_flag_claims_examined": flag_examined,
         "declared_plugins": plugins_examined,
+        "commands_checked_for_documentation": commands_examined,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -2519,7 +2556,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + bare + misdesc + unbounded + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
@@ -3294,6 +3331,27 @@ def selftest() -> int:
         expect_finding=False,
         files={".claude-plugin/marketplace.json": _manifest(_FULL),
                "LICENSE": "Some bespoke terms\n"},
+    )
+
+    # -- undocumented-command (#835) --------------------------------------
+    # Four shipped commands were in neither README; design-flow's listed six of twelve.
+    scenario(
+        "a shipped command the root README never names", rule="undocumented-command", expect_finding=True,
+        files={"plugins/p/commands/go.md": "---\ndescription: x\n---\n", "README.md": "Commands: `stop`\n"},
+    )
+    scenario(
+        "a shipped command the PLUGIN README never names, though the root one does",
+        rule="undocumented-command", expect_finding=True,
+        files={"plugins/p/commands/go.md": "x\n", "README.md": "`go`\n", "plugins/p/README.md": "- `/p:stop`\n"},
+    )
+    scenario(
+        "a command named in both READMEs is not a finding", rule="undocumented-command", expect_finding=False,
+        files={"plugins/p/commands/go.md": "x\n", "README.md": "`go`\n", "plugins/p/README.md": "- `/p:go` does x\n"},
+    )
+    scenario(
+        "no plugin README at all is not a finding -- a tree without that doc cannot contradict it",
+        rule="undocumented-command", expect_finding=False,
+        files={"plugins/p/commands/go.md": "x\n", "README.md": "`go`\n"},
     )
 
     # -- undocumented-plugin (#203) ---------------------------------------

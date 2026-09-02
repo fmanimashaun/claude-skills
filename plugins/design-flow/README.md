@@ -8,8 +8,8 @@ Part of the claude-skills marketplace. Install:
 ```
 
 The **UI/design** side of the toolchain. It makes UI consistent, modern, and responsive
-across projects **without a designer or Figma**, by applying the **design-system** system
-(the doctrine, bundled in the `rails-stack` skill) through agentic commands.
+across projects **without a designer or Figma**, by applying the **design-system** skill
+(the doctrine, bundled in `rails-stack`) through agentic commands.
 
 ## Commands
 
@@ -39,12 +39,25 @@ across projects **without a designer or Figma**, by applying the **design-system
   Android (`colors.xml` + `Theme.Fidara`) and iOS (SwiftUI `Color`) tokens from the `@theme`
   so fully-native screens match by construction. Writes to `tmp/` for you to carry into the
   native repos; never modifies them.
+- `/design-flow:critique [path]` — the design *lens* where `audit` is the gate: is this surface
+  considered, or mechanically assembled? Advisory by design; see `references/art-direction.md`.
+- `/design-flow:canvas <brief>` — draft a design as a Claude Design canvas from the system's tokens
+  and catalog, for visual refinement before porting.
+- `/design-flow:port <artboard>` — port a Claude Design artboard to ERB, ViewComponents,
+  simple_form, Turbo and Stimulus per `references/design-handoff.md`.
+- `/design-flow:compose <brief>` — compose a surface from the catalog with the research layer
+  first (`reference-research.md`): three sources, mechanisms extracted, expressed in the pack's tokens.
+- `/design-flow:assets` and `/design-flow:generate` — the visual-asset pipeline: set up, plan,
+  cost, generate and reconcile the images a surface needs, under the tier hierarchy in
+  `references/visual-assets.md`.
 
 ## Agents
 
 - **ui-composer** — builds views/components by composing primitives + tokens to the doctrine.
 - **design-auditor** — the consistency gate (design-system-specific; complements rails-flow's).
-- **brand-guardian** — enforces token/brand/logo/icon usage and the two-brand model.
+- **brand-guardian** — enforces token/brand/logo/icon usage and the brand-pack model.
+- **design-critic** — the advisory lens behind `/design-flow:critique`; never blocks.
+- **design-porter** — ports a Claude Design artboard to the Rails stack behind `/design-flow:port`.
 
 ## Checks
 
@@ -80,4 +93,6 @@ Read it first — this plugin is the *applier*, that skill is the *law*.
 
 ## Platform note
 
-Commands/agents are model-driven (no bundled hooks). Works wherever Claude Code runs.
+One bundled hook: a PostToolUse `design-tells.sh` that runs `llm_tell_detector.py` on every edit
+(advisory — it fails open without `python3`). Everything else is model-driven. Works wherever Claude
+Code runs.

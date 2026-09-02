@@ -2,8 +2,8 @@ name: Gates
 
 # WHY THIS EXISTS. Until now, every automated check on a pull request in this repo belonged to a
 # THIRD PARTY -- AccessLint and GitGuardian. Our own workflow was `release.yml`, which fires only on
-# a push to `main`, after merge, and whose single check is the `dist/` drift guard. So the 35 gates
-# this repo builds, documents at length, and treats as its safety net ran **nowhere automatically**:
+# a push to `main`, after merge, and whose single check is the `dist/` drift guard. So the gates (35
+# at the time) this repo builds, documents at length, and treats as its safety net ran **nowhere automatically**:
 # they ran when a maintainer remembered to type `maintainer_doctor --gates`.
 #
 # That is the claims-vs-enforcement defect the repo warns about most, sitting in its own
