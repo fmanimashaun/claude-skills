@@ -1100,7 +1100,7 @@ def check_collector(node_bin: str = "node", collector: str = COLLECTOR) -> int:
         # counted as one on every laptop without node. 3 is the gate protocol's "ran, could not
         # check everything", which the doctor renders as SKIP with this line as the reason.
         return 3
-    result = subprocess.run([node_bin, "--check", collector], capture_output=True, text=True)
+    result = subprocess.run([node_bin, "--check", collector], capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         print(f"  error: the shipped collector does not parse:\n{result.stderr.strip()}")
         return 1

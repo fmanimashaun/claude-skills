@@ -412,7 +412,7 @@ def node_check_module(node_bin: str, source: bytes) -> tuple[int, str]:
     """
     import subprocess
     proc = subprocess.run([node_bin, "--input-type=module", "--check"],
-                          input=source, capture_output=True)
+                          input=source, capture_output=True, timeout=60)
     return proc.returncode, proc.stderr.decode("utf-8", "replace")
 
 

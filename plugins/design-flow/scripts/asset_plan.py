@@ -781,7 +781,7 @@ def run_plan(root: Path, rows: list[dict], executor: Path, timeout: int) -> list
             request["library_miss"] = row["library_miss"]
         proc = subprocess.run(
             [sys.executable, str(executor), "--request", "-", "--timeout", str(timeout)],
-            input=json.dumps(request), capture_output=True, text=True, cwd=root)
+            input=json.dumps(request), capture_output=True, text=True, cwd=root, timeout=timeout + 30)
         if proc.returncode == 0:
             # EXIT 0 IS NOT "DONE". The agent path exits 0 while handing back a BRIEF -- the gate
             # approved, and authorship is still outstanding. Reading the code alone marked the row
