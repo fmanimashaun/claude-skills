@@ -2414,6 +2414,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`plugins/rails-flow/scripts/project_gates.py` honours a check's own exit 3 (not applicable)
+  and exit 2 (cannot run) instead of grading both FAIL** (#828). `applicability()` decides n/a
+  from the manifest's `applies_when`; a check that has to *read* the project to know — i18n
+  with no `config.x.locales`, a coverage ratchet with no simplecov — says so itself with exit 3,
+  and the runner graded every one of those FAIL, counted it, and routed it to the project's
+  tracker: `[FAIL] rails-flow/i18n-wired  not applicable — …` on every project that had not
+  declared locales. That is the SKIP-as-FAIL inversion of the SKIP-as-PASS defect the runner's own
+  docstring exists to refuse, and it shipped in v1.107.0. Exit 3 → `n/a` with the check's reason,
+  unrouted like every other n/a; exit 2 (`cannot compare`, an unreadable input) → `ERROR`, routed
+  to doctrine, because failing to reach a verdict is ours to explain. Reproduced on a minimal
+  project before and after; six fixtures, two mutations.
 - **`plugins/rails-flow/hooks/scripts/stop-gate.sh` reported every changed spec as RED wherever a
   `timeout` binary exists** (#822) — every Linux box, CI runner and WSL. `_rf_timeout 120 _rf_bundle
   exec rspec …` handed a shell *function* to the external `timeout` binary, which cannot run one:

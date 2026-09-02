@@ -2741,6 +2741,21 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #828. Every non-zero exit was FAIL. A check's own n/a (exit 3) and cannot-run (exit 2)
+            # verdicts were graded FAIL, counted, and routed to the project's tracker.
+            Mutation(
+                "a check's exit 3 goes back to being graded FAIL",
+                "            if done.returncode == 3:",
+                "            if False:",
+                "a check that exits 3 is n/a, not FAIL",
+            ),
+            Mutation(
+                "a check's exit 2 goes back to being graded FAIL and routed to the app",
+                "            if done.returncode == 2:",
+                "            if False:",
+                "a check that exits 2 is ERROR, not FAIL",
+            ),
+
             # #812. The aggregate everyone is told to run reported a finding COUNT and dropped the
             # findings -- `[FAIL] mandated-gems  1 finding(s):`, a trailing colon promising a list
             # and nothing after it. The individual scripts carry the finding, the reason AND the fix.
