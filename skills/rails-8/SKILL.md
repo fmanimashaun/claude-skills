@@ -56,7 +56,7 @@ majestic monolith.
    `bin/setup`, `bin/dev`, `bin/ci`, `bin/rails db:prepare`, `kamal deploy`.
    Keep those commands working.
 
-## Version facts (verified 2026-08-01)
+## Version facts (verified 2026-08-29)
 
 - Current stable: **Rails 8.1.3.1** (2026-07-29) — a **security** release, not
   a routine one. It fixes **CVE-2026-66066** (GHSA-xr9x-r78c-5hrm, *critical*,
@@ -170,7 +170,11 @@ generate, then trim what isn't needed.
   `require/permit` in new 8.x code, never `permit!`.
 - **Turbo-compatible responses:** redirect after mutation with
   `status: :see_other` (303); re-render invalid forms with
-  `status: :unprocessable_entity` (422). Turbo silently breaks without these.
+  `status: :unprocessable_content` (422). Turbo silently breaks without these.
+  `:unprocessable_content` is the symbol on Rails 8.1: its bundled Rack (3.2) deprecates
+  `:unprocessable_entity` — same 422, but it **warns on every request** — and the 8.1 scaffold
+  emits the new name via `ActionDispatch::Constants::UNPROCESSABLE_CONTENT`. Use the old symbol
+  only on Rack < 3.1 (Rails <= 7.1 stacks).
 - **Partials take locals, not ivars.** Declare them:
   `<%# locals: (product:, show_price: true) %>` (strict locals).
 - **Time:** `Time.current`, `2.days.ago`, `travel_to` in tests. Never

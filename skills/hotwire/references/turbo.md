@@ -23,7 +23,8 @@ What the server must do:
 
 - **Successful form submission → redirect** (`303 See Other` for
   PATCH/PUT/DELETE so the follow-up is a GET).
-- **Failed validation → re-render the form with `422 Unprocessable Entity`.**
+- **Failed validation → re-render the form with `422 Unprocessable Content`** (`status:
+  :unprocessable_content`; Rack 3.1 renamed it, and `:unprocessable_entity` now warns).
 - **Server errors → `500`** (Turbo shows the response). A `200` containing a
   form response without redirect is the classic "my form does nothing" bug.
 

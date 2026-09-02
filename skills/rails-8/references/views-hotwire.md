@@ -85,7 +85,7 @@ respecting the app zone.
 
   <%= form.number_field :price, step: 0.01 %>
   <%= form.date_field :available_on %>
-  <%= form.checkbox :featured %>          <%# modern aliases: checkbox, textarea, rich_textarea %>
+  <%= form.checkbox :featured %>          <%# Rails 8.0+: checkbox/textarea/rich_textarea are the canonical names; check_box/text_area/rich_text_area are the legacy aliases %>
   <%= form.file_field :photo %>            <%# multipart handled automatically %>
   <%= form.rich_textarea :description %>   <%# Action Text %>
 
@@ -104,7 +104,7 @@ respecting the app zone.
   the double-bracket `variants_attributes: [[:id, :name, :_destroy]]` shape
   in `expect`.
 - Fields repopulate automatically on validation-failure re-render — which is
-  why `render :new, status: :unprocessable_entity` matters.
+  why `render :new, status: :unprocessable_content` matters.
 - CSRF token is embedded automatically; never disable
   `protect_from_forgery` for browser forms.
 
@@ -195,7 +195,7 @@ respond_to do |format|
     format.turbo_stream   # renders create.turbo_stream.erb
     format.html { redirect_to @post, status: :see_other }
   else
-    format.html { render :new, status: :unprocessable_entity }
+    format.html { render :new, status: :unprocessable_content }
   end
 end
 ```

@@ -44,12 +44,12 @@ Choose the *lowest* rung that solves the problem; most "we need Streams" cases
 are a Frame, and most "we need a Stimulus controller" cases are a Turbo
 attribute.
 
-## Version facts (as of this skill's writing)
+## Version facts (verified 2026-08-31)
 
 - **Turbo 8.0.23** (Jan 2026) — npm `@hotwired/turbo`, Rails gem
   `turbo-rails`. Turbo 8 added morphing page refreshes.
 - **Stimulus 3.2.2** — npm `@hotwired/stimulus`, Rails gem `stimulus-rails`.
-- **Hotwire Native**: iOS **1.3.0**, Android **1.3.1**; web bridge npm
+- **Hotwire Native**: iOS **1.3.1** (2026-08-14), Android **1.3.1** (2026-07-27); web bridge npm
   `@hotwired/hotwire-native-bridge`. Hotwire Native supersedes the old
   "Turbo Native" + "Strada" pair (Strada lives on as *bridge components*).
 - All are backend-agnostic; in Rails they ship by default via importmap.
@@ -59,7 +59,8 @@ attribute.
 ## Non-negotiable ground rules
 
 - **Server responses drive everything.** After a failed form submit, respond
-  `422 Unprocessable Entity`; after a successful mutation, redirect with
+  `422 Unprocessable Content` (`:unprocessable_content` on Rails 8.1 / Rack 3.1+; the older
+  `:unprocessable_entity` still means 422 but warns); after a successful mutation, redirect with
   `303 See Other`. Turbo silently misbehaves without these statuses.
 - **IDs are the contract.** Frames match on `id`; stream actions target `id`
   (or CSS with `targets`). Generate them consistently (`dom_id(record)` in

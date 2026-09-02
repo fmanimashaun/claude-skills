@@ -155,7 +155,7 @@ class ProductsController < ApplicationController
     if @product.save
       redirect_to @product, notice: "Product created.", status: :see_other
     else
-      render :new, status: :unprocessable_entity
+      render :new, status: :unprocessable_content
     end
   end
 
@@ -163,7 +163,7 @@ class ProductsController < ApplicationController
     if @product.update(product_params)
       redirect_to @product, notice: "Product updated.", status: :see_other
     else
-      render :edit, status: :unprocessable_entity
+      render :edit, status: :unprocessable_content
     end
   end
 
@@ -240,7 +240,7 @@ Every action renders its template by convention; explicit calls when
 deviating:
 
 ```ruby
-render :edit, status: :unprocessable_entity      # 422 — REQUIRED for form re-renders under Turbo
+render :edit, status: :unprocessable_content      # 422 — REQUIRED for form re-renders under Turbo
 redirect_to @product, status: :see_other         # 303 — REQUIRED after destructive/non-GET actions
 redirect_back_or_to root_path
 render json: @product                            # or: plain:, xml:, body:, file:, inline:
@@ -249,7 +249,7 @@ head :no_content
 ```
 
 Why: Turbo submits forms as fetch; a 200 re-render is treated as success and
-a 302 after DELETE can replay the DELETE. `:see_other` + `:unprocessable_entity`
+a 302 after DELETE can replay the DELETE. `:see_other` + `:unprocessable_content`
 are not optional style — they are correctness. Open-redirect protection:
 `redirect_to params[:return_to]` raises unless
 `allow_other_host: true` is explicit — keep it that way.

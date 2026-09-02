@@ -101,7 +101,7 @@ class RegistrationsController < ApplicationController
       start_new_session_for @user
       redirect_to root_path, notice: "Welcome!"
     else
-      render :new, status: :unprocessable_entity
+      render :new, status: :unprocessable_content
     end
   end
 end
@@ -325,7 +325,7 @@ class PasswordChangesController < ApplicationController
     if @user.update(params.expect(user: [:password, :password_confirmation]))
       redirect_to root_path, notice: "Password updated."
     else
-      render :edit, status: :unprocessable_entity
+      render :edit, status: :unprocessable_content
     end
   end
 end
