@@ -22,7 +22,8 @@ skill, scope the run to it.
 > proposed as a skill (#762). "Deleted" means the file is gone.
 
 Delegate to `skill-curator`: inventory `docs/**` (excluding `docs/brain/` and
-`docs/reviews/`), load `.claude/skills/.manifest.tsv` if present, and compute the
+`docs/reviews/`), load `.claude/skills/.manifest.tsv` if present (three columns under a
+`# skill\tsource\tsha256` header, full digests — the shape `session-start.sh` reads), and compute the
 delta — new skill-worthy docs, drifted sources (hash mismatch), deleted sources with
 orphaned skills.
 
