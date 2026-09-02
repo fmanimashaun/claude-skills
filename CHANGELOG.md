@@ -9,6 +9,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`scripts/extract_release_notes.py`'s `--check --all-tags` no longer reports the tag being armed as a
+  ghost release** (#834, follow-up). The tag `v` + `metadata.version` has no git tag *by definition* while
+  the arm PR is open — it is created at promotion — and the first arm after the gate landed (v1.108.0)
+  reported its own block as "names a tag that does not exist". The existence half now exempts exactly
+  that one tag; every other missing tag is still a finding. Two fixtures, one mutation.
 - **Prose that contradicted code, in fourteen places, and the rule that refuses the one class of it
   that keeps recurring** (#835). Every one was this repo's own `claims-vs-enforcement` in its own docs,
   found by the 2026-08-31 review and verified against the live source. `CLAUDE.md` said 35 gates (98),

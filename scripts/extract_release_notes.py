@@ -165,7 +165,7 @@ VERSION_HEADING = re.compile(r"^### .*\((?:release )?(v\d+\.\d+\.\d+)\)\s*$")
 PUBLISHING_SHAPE = re.compile(r"\(release v\d+\.\d+\.\d+\)")
 
 
-def _check_all_tags(text: str, tags: set[str], check_tags: bool = True) -> list[str]:
+def _check_all_tags(text: str, tags: set[str], check_tags: bool = True, arming: str | None = None) -> list[str]:
     """Findings across EVERY heading, not just the tag being armed (#834).
 
     `_check` asks whether THIS release would publish everything written for it. It cannot see two
@@ -184,7 +184,10 @@ def _check_all_tags(text: str, tags: set[str], check_tags: bool = True) -> list[
             findings.append(
                 f"{CHANGELOG}:{lineno}: heading names {tag} without the `(release {tag})` shape, so the "
                 f"extractor would not publish it — v1.91.1 shipped an empty body this way")
-        elif check_tags and tag not in tags:
+        # `arming` is the tag this checkout is about to cut. It has no git tag yet BY DEFINITION while
+        # the arm PR is open (the tag is created at promotion), so its absence is not a ghost release;
+        # the first arm after this gate landed reported its own v1.108.0 block as one.
+        elif check_tags and tag != arming and tag not in tags:
             findings.append(
                 f"{CHANGELOG}:{lineno}: `(release {tag})` names a tag that does not exist — nothing "
                 f"publishes this block and its notes are simply gone (the v1.78.0 defect)")
@@ -271,6 +274,10 @@ def _selftest() -> int:
           _check_all_tags(ghost, set(), check_tags=False) == [])
     check("all-tags: ...but the shape half still runs without tags",
           len(_check_all_tags(bare, set(), check_tags=False)) == 1)
+    check("all-tags: the tag being ARMED has no git tag yet, and that is not a ghost",
+          _check_all_tags(ghost, tags, arming="v1.78.0") == [])
+    check("all-tags: ...but another missing tag still is, with the same arming tag set",
+          len(_check_all_tags(ghost.replace("(release v1.92.0)", "(release v1.50.0)", 1), tags, arming="v1.78.0")) == 1)
     check("all-tags: a heading naming no version at all is not a finding",
           _check_all_tags("### 2026-08-20\n\n- x\n", set()) == [])
 
@@ -392,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
             # half; asserting it anyway reported 144 ghost releases in CI. The shape half still runs.
             # If that half is clean, exit 3: ran, could not check everything -- a SKIP, not a pass.
             tags_unseen = not tags
-            findings += _check_all_tags(text, tags, check_tags=not tags_unseen)
+            findings += _check_all_tags(text, tags, check_tags=not tags_unseen, arming=tag)
         if findings:
             print(f"{len(findings)} finding(s) for {tag}:", file=sys.stderr)
             for f in findings:

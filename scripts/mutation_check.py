@@ -4301,6 +4301,13 @@ GUARDS: tuple[Guard, ...] = (
         selftest="scripts/extract_release_notes.py",
         needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh"),
         mutations=(
+            Mutation(
+                "the tag being armed loses its exemption, so every arm reports its own release as a ghost",
+                "        elif check_tags and tag != arming and tag not in tags:",
+                "        elif check_tags and tag not in tags:",
+                "the tag being ARMED has no git tag yet",
+            ),
+
             # #834. `--check` looked only at the tag being armed. A block for a tag that was never cut
             # (v1.78.0) and a heading without the word `release` (v1.91.1) both published nothing,
             # and nothing could say so after the fact. Two assertions over the WHOLE file now.
@@ -4312,7 +4319,7 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "the tag-existence assertion is dropped, so a ghost release block is fine again",
-                "        elif check_tags and tag not in tags:",
+                "        elif check_tags and tag != arming and tag not in tags:",
                 "        elif False:",
                 "all-tags: a (release vX) heading whose tag does not exist is a finding",
             ),
