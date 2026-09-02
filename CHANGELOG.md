@@ -2414,6 +2414,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`plugins/rails-flow/scripts/architecture_graph.py`'s `--check` rebuilds with the cap the committed
+  graph was built with** (#836). The truncation note (*"N flows beyond --max-flows=M were not emitted"*) sits
+  inside the content digest, and `--check` always rebuilt at the default 80 — so a graph generated
+  with `--max-flows 200` on an app with more than 80 flows reported DRIFT on every run with nothing
+  changed, and the `architecture-graph-drift` gate was a permanent FAIL for that project. The graph
+  now records `max_flows` (outside the digest) and `--check` reads it back; an explicit flag still
+  wins. The second-largest script in the repo also gains its first `--selftest` (nine checks) and a
+  mutation guard (three).
 - **`plugins/rails-flow/scripts/project_gates.py` honours a check's own exit 3 (not applicable)
   and exit 2 (cannot run) instead of grading both FAIL** (#828). `applicability()` decides n/a
   from the manifest's `applies_when`; a check that has to *read* the project to know — i18n
