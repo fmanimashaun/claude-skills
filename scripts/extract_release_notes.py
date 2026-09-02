@@ -57,6 +57,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -155,6 +156,41 @@ def _check(text: str, tag: str) -> list[str]:
     return findings
 
 
+def existing_tags(root: Path = REPO) -> set[str]:
+    out = subprocess.run(["git", "tag"], cwd=root, capture_output=True, text=True, timeout=30)
+    return set(out.stdout.split())
+
+
+VERSION_HEADING = re.compile(r"^### .*\((?:release )?(v\d+\.\d+\.\d+)\)\s*$")
+PUBLISHING_SHAPE = re.compile(r"\(release v\d+\.\d+\.\d+\)")
+
+
+def _check_all_tags(text: str, tags: set[str]) -> list[str]:
+    """Findings across EVERY heading, not just the tag being armed (#834).
+
+    `_check` asks whether THIS release would publish everything written for it. It cannot see two
+    things that had already happened by the time it ran: a `(release v1.78.0)` block for a tag that
+    was re-armed to 1.79.0 and never cut -- so those notes published nowhere -- and a `(v1.91.1)`
+    heading missing the word `release`, which the extractor does not match, so v1.91.1 shipped a
+    bare-pointer body. Both are one grep, so both are asserted, over the whole file.
+    """
+    findings: list[str] = []
+    for lineno, line in enumerate(text.split("\n"), 1):
+        m = VERSION_HEADING.match(line)
+        if not m:
+            continue
+        tag = m.group(1)
+        if not PUBLISHING_SHAPE.search(line):
+            findings.append(
+                f"{CHANGELOG}:{lineno}: heading names {tag} without the `(release {tag})` shape, so the "
+                f"extractor would not publish it — v1.91.1 shipped an empty body this way")
+        elif tag not in tags:
+            findings.append(
+                f"{CHANGELOG}:{lineno}: `(release {tag})` names a tag that does not exist — nothing "
+                f"publishes this block and its notes are simply gone (the v1.78.0 defect)")
+    return findings
+
+
 # ---------------------------------------------------------------------------------------------
 # Selftest
 # ---------------------------------------------------------------------------------------------
@@ -214,6 +250,25 @@ def _selftest() -> int:
     check("the intervening older release is excluded", "unrelated older" not in notes)
     check("both headings present", notes.count("###") == 2)
     check("two blocks are clean", _check(two, "v1.92.0") == [])
+
+    # THE WHOLE-FILE ASSERTIONS (#834). Neither defect is visible to `_check`, which only asks about
+    # the tag being armed: a heading for a tag that was re-armed away and never cut, and a heading
+    # missing the word `release`, which the extractor does not match.
+    tags = {"v1.92.0", "v1.91.2"}
+    check("all-tags: a clean file has no findings", _check_all_tags(two, tags) == [])
+    ghost = two.replace("(release v1.91.2)", "(release v1.78.0)")
+    found = _check_all_tags(ghost, tags)
+    check("all-tags: a (release vX) heading whose tag does not exist is a finding",
+          len(found) == 1 and "does not exist" in found[0] and "v1.78.0" in found[0])
+    bare = two.replace("(release v1.91.2)", "(v1.91.2)")
+    found = _check_all_tags(bare, tags)
+    check("all-tags: a heading naming a version WITHOUT the publishing shape is a finding",
+          len(found) == 1 and "without the `(release v1.91.2)` shape" in found[0])
+    bare_line = bare.split("\n").index("### 1.22.3 — 2026-08-16 (v1.91.2)") + 1
+    check("all-tags: the finding carries the line number, so the reader can go straight there",
+          bool(found) and f":{bare_line}:" in found[0])
+    check("all-tags: a heading naming no version at all is not a finding",
+          _check_all_tags("### 2026-08-20\n\n- x\n", set()) == [])
 
     # The preserved anchor: prose mentioning the tag must NOT start a grab.
     prose = """# CHANGELOG
@@ -309,6 +364,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tag", help="tag to extract (default: v + marketplace.json metadata.version)")
     ap.add_argument("--check", action="store_true",
                     help="gate: every block written for the tag would publish")
+    ap.add_argument("--all-tags", action="store_true",
+                    help="with --check: every `(release vX)` heading must name an existing git tag, and every"
+                         " heading naming a version must use the shape that publishes")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
 
@@ -323,6 +381,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.check:
         findings = _check(text, tag)
+        if a.all_tags:
+            findings += _check_all_tags(text, existing_tags())
         if findings:
             print(f"{len(findings)} finding(s) for {tag}:", file=sys.stderr)
             for f in findings:
