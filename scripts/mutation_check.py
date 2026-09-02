@@ -4271,7 +4271,7 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "the tag-existence assertion is dropped, so a ghost release block is fine again",
-                "        elif tag not in tags:",
+                "        elif check_tags and tag not in tags:",
                 "        elif False:",
                 "all-tags: a (release vX) heading whose tag does not exist is a finding",
             ),

@@ -165,7 +165,7 @@ VERSION_HEADING = re.compile(r"^### .*\((?:release )?(v\d+\.\d+\.\d+)\)\s*$")
 PUBLISHING_SHAPE = re.compile(r"\(release v\d+\.\d+\.\d+\)")
 
 
-def _check_all_tags(text: str, tags: set[str]) -> list[str]:
+def _check_all_tags(text: str, tags: set[str], check_tags: bool = True) -> list[str]:
     """Findings across EVERY heading, not just the tag being armed (#834).
 
     `_check` asks whether THIS release would publish everything written for it. It cannot see two
@@ -184,7 +184,7 @@ def _check_all_tags(text: str, tags: set[str]) -> list[str]:
             findings.append(
                 f"{CHANGELOG}:{lineno}: heading names {tag} without the `(release {tag})` shape, so the "
                 f"extractor would not publish it — v1.91.1 shipped an empty body this way")
-        elif tag not in tags:
+        elif check_tags and tag not in tags:
             findings.append(
                 f"{CHANGELOG}:{lineno}: `(release {tag})` names a tag that does not exist — nothing "
                 f"publishes this block and its notes are simply gone (the v1.78.0 defect)")
@@ -267,6 +267,10 @@ def _selftest() -> int:
     bare_line = bare.split("\n").index("### 1.22.3 — 2026-08-16 (v1.91.2)") + 1
     check("all-tags: the finding carries the line number, so the reader can go straight there",
           bool(found) and f":{bare_line}:" in found[0])
+    check("all-tags: with NO tags visible the existence half is not asserted (no 144 ghosts)",
+          _check_all_tags(ghost, set(), check_tags=False) == [])
+    check("all-tags: ...but the shape half still runs without tags",
+          len(_check_all_tags(bare, set(), check_tags=False)) == 1)
     check("all-tags: a heading naming no version at all is not a finding",
           _check_all_tags("### 2026-08-20\n\n- x\n", set()) == [])
 
@@ -381,14 +385,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.check:
         findings = _check(text, tag)
+        tags_unseen = False
         if a.all_tags:
-            findings += _check_all_tags(text, existing_tags())
+            tags = existing_tags()
+            # A checkout with NO tags visible (`git clone --depth 1`) cannot answer the tag-existence
+            # half; asserting it anyway reported 144 ghost releases in CI. The shape half still runs.
+            # If that half is clean, exit 3: ran, could not check everything -- a SKIP, not a pass.
+            tags_unseen = not tags
+            findings += _check_all_tags(text, tags, check_tags=not tags_unseen)
         if findings:
             print(f"{len(findings)} finding(s) for {tag}:", file=sys.stderr)
             for f in findings:
                 print(f"  {f}", file=sys.stderr)
             return 1
         _, n = render(text, tag)
+        if tags_unseen:
+            print("skip: no git tags visible in this checkout, so `(release vX)` headings were not checked "
+                  "against real tags — a shallow clone; fetch tags to run that half. The shape half is clean.")
+            return 3
         print(f"clean — {n} block(s) for {tag} would publish")
         return 0
 
