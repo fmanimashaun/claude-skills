@@ -294,6 +294,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.
     ("curated drift signal", ("python3", "plugins/rails-flow/scripts/check_drift_signal.py", "--selftest")),
+    # #822-#826. The hooks are shell and had no behavioural test: `bash -n` proved they parsed and
+    # five defects sat in what they DID, none visible on a Mac. This drives every hook end to end
+    # under stub environments -- a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does,
+    # a `mise` that owns the Ruby. The environment is the fixture.
+    ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest")),
     # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
     # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
     # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,

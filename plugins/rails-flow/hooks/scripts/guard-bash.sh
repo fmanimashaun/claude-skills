@@ -22,7 +22,10 @@ if printf '%s' "$cmd" | grep -qE -- '--force-with-lease' && \
   deny "force-pushing a protected branch (main/dev/staging) requires explicit user approval."
 fi
 
-if printf '%s' "$cmd" | grep -qE 'git\s+add\s+(-A\b|--all\b|\.($|\s))'; then
+# Leading short flags are allowed through (`-v -A`), `-A` may sit inside a bundle (`-vA`), and the
+# repo-root spellings `./` and `:/` count as `.` (#826). The first version anchored `-A` and `.` to
+# the first argument, so all three passed.
+if printf '%s' "$cmd" | grep -qE 'git\s+add(\s+-[a-zA-Z]+)*\s+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\./?($|\s)|:/($|\s))'; then
   deny "stage specific files, never 'git add -A' / 'git add .' (GUARDRAILS: no accidental secrets or stray files)."
 fi
 

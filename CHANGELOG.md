@@ -2412,6 +2412,38 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/hooks/scripts/stop-gate.sh` reported every changed spec as RED wherever a
+  `timeout` binary exists** (#822) — every Linux box, CI runner and WSL. `_rf_timeout 120 _rf_bundle
+  exec rspec …` handed a shell *function* to the external `timeout` binary, which cannot run one:
+  `exec: _rf_bundle: not found`, read as a red suite, exit 2 on every turn that touched a spec.
+  Stock macOS ships neither `timeout` nor `gtimeout`, so #683 never saw it. The runner is now an argv
+  **prefix**, and RED is decided by a **positive signal** — RSpec's own `N examples, M failures`
+  summary line — instead of a denylist of Bundler phrases whose comment already said a third member
+  would mean the shape was wrong. GNU timeout's "failed to run command" was the third member.
+- **`plugins/rails-flow/hooks/scripts/guard-lane.sh` was bypassed by a `..` segment** (#823). The
+  normaliser collapsed `/./` and not `..`, so `app/models/../../config/routes.rb` walked past the
+  prefix match — a one-segment hole in a fail-closed guard. A path containing `..` is now refused
+  while a lane is assigned, in pure shell, so the guard still fails closed without python3.
+- **`plugins/rails-flow/hooks/scripts/lint-ruby.sh` reported "still reports offenses" after a
+  complete autocorrect, and never ran under mise** (#824). It required the literal ` 0 offenses`,
+  which RuboCop never prints after correcting anything — the summary counts *detected* offenses,
+  corrected ones included. It now counts the per-offense lines that lack `[Corrected]`. And it used
+  PATH's `bundle`, so on a project with a pinned Ruby under mise `bundle exec rubocop --version`
+  failed and the hook exited 0 on every edit; it now resolves the runner the way `stop-gate.sh` does.
+- **`plugins/rails-flow/hooks/scripts/self-consistency.sh` aborted on an unbound
+  `CLAUDE_PLUGIN_ROOT` under `set -u`** (#825) — `${…:-}`, as `stop-gate.sh` already did.
+- **`plugins/rails-flow/hooks/scripts/guard-bash.sh` missed `git add -v -A`, `git add ./` and
+  `git add :/`** (#826). The pattern anchored `-A` and `.` to the first argument.
+
+  All five were found in one review and none was visible on the maintainer's machine, because the
+  hooks are shell and shell had no behavioural test here — `bash -n` proved they parsed. They now
+  have one: `plugins/rails-flow/scripts/check_hook_gates.py` drives every hook end to end under
+  stub environments (a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does, a `mise`
+  that owns the Ruby), registered as the `hook gates` gate with a mutation guard per hook. Every
+  original hook fails its fixtures; every fixed one passes.
+
 ### 1.30.1 — 2026-08-31 (release v1.107.0)
 
 - **`plugins/rails-flow/scripts/project_gates.py` prints the findings, not a count of them**
@@ -4285,6 +4317,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`skills/quality-pass/references/worked-example.md`: the measured copy-count for the `check()`
+  selftest harness moves 23 → 24, reach 9 → 10** — `check_hook_gates.py` (#822–#826) is a new copy.
+  `check_shared_shapes.py` refused the stale number, which is the gate doing its one job: the worked
+  example's numbers must match the repo, or the decision it records ("do not extract") rests on a
+  measurement nobody can reproduce.
 
 ### 1.55.0 — 2026-08-30 (release v1.106.0)
 

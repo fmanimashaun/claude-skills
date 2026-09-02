@@ -2155,6 +2155,108 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #822. The Stop gate handed a shell FUNCTION to the external `timeout` binary and read the
+    # resulting `not found` as a RED suite -- on every machine that HAS a timeout binary, which is
+    # every one except a stock Mac. The shell had no behavioural test; `bash -n` said it parsed.
+    Guard(
+        name='hook_stop_gate',
+        subject='plugins/rails-flow/hooks/scripts/stop-gate.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the bundle runner goes back to being a function name that `timeout` cannot exec',
+                '  if ! out="$(_rf_timeout 120 $bundle_cmd exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then',
+                '  if ! out="$(_rf_timeout 120 _rf_bundle_prefix exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then',
+                'a PASSING suite under a real `timeout` binary lets the stop proceed',
+            ),
+            Mutation(
+                # Collapsing the positive signal makes every failure RED again, including the ones
+                # where rspec never started -- the #724 misdiagnosis, back.
+                'the RSpec summary line stops deciding RED, so an unrunnable suite is called red again',
+                '      *" example, "*|*" examples, "*)',
+                '      *)',
+                'called an environment problem, not a red suite',
+            ),
+        ),
+    ),
+    # #823. A fail-closed guard with a one-segment hole: `..` was normalised by nothing.
+    Guard(
+        name='hook_guard_lane',
+        subject='plugins/rails-flow/hooks/scripts/guard-lane.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the `..` refusal is removed, so a lane escape passes the prefix match again',
+                '  */../*)\n    {\n      echo "BLOCKED by rails-flow lane guard: a path containing \'..\' is refused while a lane is"',
+                '  */.../*)\n    {\n      echo "BLOCKED by rails-flow lane guard: a path containing \'..\' is refused while a lane is"',
+                'a `..` escape is blocked',
+            ),
+        ),
+    ),
+    # #824. Parsed RuboCop's summary for a string it never prints after correcting anything, and
+    # used PATH's bundle so under mise it silently never ran.
+    Guard(
+        name='hook_lint_ruby',
+        subject='plugins/rails-flow/hooks/scripts/lint-ruby.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'corrected offenses are counted as remaining again',
+                'remaining="$(printf \'%s\\n\' "$out" | grep -E \'^[RCWEF]: *[0-9]+: *[0-9]+:\' | grep -vc \'\\[Corrected\\]\' || true)"',
+                'remaining="$(printf \'%s\\n\' "$out" | grep -E \'^[RCWEF]: *[0-9]+: *[0-9]+:\' | grep -c \'\' || true)"',
+                'a file whose only offense was CORRECTED passes',
+            ),
+            Mutation(
+                'the runner ignores mise, so a pinned-Ruby project is never linted',
+                '  if command -v mise >/dev/null 2>&1 && mise current ruby >/dev/null 2>&1; then bundle_cmd="mise exec -- bundle"',
+                '  if command -v mise >/dev/null 2>&1 && mise current ruby >/dev/null 2>&1; then bundle_cmd="bundle"',
+                'under mise with a pinned Ruby the hook RUNS',
+            ),
+        ),
+    ),
+    # #825. `${CLAUDE_PLUGIN_ROOT}` bare under `set -u`.
+    Guard(
+        name='hook_self_consistency',
+        subject='plugins/rails-flow/hooks/scripts/self-consistency.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the expansion loses its default and aborts the shell when the variable is unset',
+                'script="${CLAUDE_PLUGIN_ROOT:-}/scripts/self_consistency.py"',
+                'script="${CLAUDE_PLUGIN_ROOT}/scripts/self_consistency.py"',
+                'with CLAUDE_PLUGIN_ROOT unset the hook exits 0',
+            ),
+        ),
+    ),
+    # #826. `-A` and `.` were anchored to the first argument of `git add`.
+    Guard(
+        name='hook_guard_bash',
+        subject='plugins/rails-flow/hooks/scripts/guard-bash.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the `git add` pattern goes back to first-argument anchoring',
+                'if printf \'%s\' "$cmd" | grep -qE \'git\\s+add(\\s+-[a-zA-Z]+)*\\s+(-[a-zA-Z]*A[a-zA-Z]*\\b|--all\\b|\\./?($|\\s)|:/($|\\s))\'; then',
+                'if printf \'%s\' "$cmd" | grep -qE \'git\\s+add\\s+(-A\\b|--all\\b|\\.($|\\s))\'; then',
+                '`git add -v -A` is blocked',
+            ),
+        ),
+    ),
     Guard(
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",

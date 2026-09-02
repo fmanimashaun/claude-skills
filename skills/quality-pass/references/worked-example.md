@@ -64,7 +64,7 @@ and half of what follows turns on that boundary.
 |---|---|---|---|
 | `class Unusable(RuntimeError)` | 6 | 5 | one plugin |
 | the `json.loads` -> `Unusable` prologue | 5 | 5 | one plugin |
-| the `check(label, ok, detail)` selftest harness | 23 | 9 | three plugins + non-shipped tooling |
+| the `check(label, ok, detail)` selftest harness | 24 | 10 | three plugins + non-shipped tooling |
 | the `SELFTEST FAILED --` reporter | 13 | 6 | two plugins + non-shipped tooling |
 | WCAG relative luminance | 3 | 1 | two plugins + non-shipped tooling |
 
