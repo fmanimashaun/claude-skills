@@ -102,16 +102,16 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <summary><b>rails-flow</b> — build, fix, review, remember</summary>
 
 `feature` `fix` `review` `issues` `brief` `curate` `explain` `graph` `handoff` `pr-comments`
-`report` `setup-flow` · **memory:** `brain` `brain-review` `brain-sync` · **autonomous:** `drive`
-`escalate` `toolchain-check`
+`report` `setup-flow` `toolchain-audit` · **memory:** `brain` `brain-review` `brain-sync` ·
+**autonomous:** `drive` `escalate` `toolchain-check`
 
 </details>
 
 <details>
 <summary><b>design-flow</b> — UI and the design system</summary>
 
-`setup` `component` `tokens` `variants` `mobile` `audit` `critique` · **assets:** `assets`
-`generate`
+`setup` `component` `tokens` `variants` `mobile` `audit` `critique` `canvas` `port` `compose` ·
+**assets:** `assets` `generate`
 
 </details>
 
@@ -185,7 +185,8 @@ the plugins above, not that file.
 ## Versioning
 
 Components version independently; the marketplace tag is the release label. Every change lands in
-[`CHANGELOG.md`](CHANGELOG.md) under its component, and a release publishes one block. Versions are
+[`CHANGELOG.md`](CHANGELOG.md) under its component, and a release publishes one block **per component it
+bumps**. Versions are
 assigned at promotion, never before — a version number on unshipped work is a claim about something
 you cannot install.
 

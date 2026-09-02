@@ -25,7 +25,9 @@ look procedural.
 - **Measure, never assume.** Every claim about the setup names the command run or the file read.
   "Looks fine" is not a result.
 - **Three states, not two.** pass / FAIL / **did-not-run**. A check that could not run is **not** a
-  pass, and you say so every time. This is the rule that found the most.
+  pass, and you say so every time. This is the rule that found the most. (`project_gates.py` splits
+  did-not-run into **not-applicable** and **ERROR**, which is why its report has four columns; the
+  discipline is the same.)
 - **Never repair autonomously.** Every setup command below is idempotent and several propose diffs.
   Show the diff and wait. Do not "fix" what may be a deliberate choice.
 - Ask before installing anything, before touching CI config, and before any commit.

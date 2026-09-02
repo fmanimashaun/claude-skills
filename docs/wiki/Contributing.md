@@ -29,8 +29,8 @@ not exist, and omitting one that does.
 python3 scripts/maintainer_doctor.py --gates-only
 ```
 
-Read the output as **four** states, not two: `ok` is verified, `FAIL` blocks, and **`skip` means the
-check did not run** — it is not a pass.
+Read the output as **three verdicts**, not two — plus an informational `note` that is not a verdict:
+`ok` is verified, `FAIL` blocks, and **`skip` means the check did not run** — it is not a pass.
 
 Two rules that catch most of what review would otherwise miss:
 

@@ -88,6 +88,20 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #835. Four shipped commands were documented nowhere; this is the rule that refuses it.
+            Mutation(
+                "the command rule stops looking at the plugin README",
+                '        docs = [(root_readme, f"`{command}`"), (ROOT / "plugins" / plugin / "README.md", f"/{plugin}:{command}")]',
+                '        docs = [(root_readme, f"`{command}`")]',
+                "a shipped command the PLUGIN README never names",
+            ),
+            Mutation(
+                "the command rule matches nothing, so an undocumented command passes",
+                "            if needle not in read(doc):",
+                "            if False:",
+                "a shipped command the root README never names",
+            ),
+
             # #777. The rule that stops #617's class recurring a fourth time. Four clauses: it must
             # FIRE on a cross-plugin hop count, stay silent on the resolver, stay silent on prose,
             # and stay silent on the resolver's own file.
