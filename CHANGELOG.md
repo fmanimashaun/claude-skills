@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-02 (release v1.108.0)
 
 - **`scripts/extract_release_notes.py`'s `--check --all-tags` no longer reports the tag being armed as a
   ghost release** (#834, follow-up). The tag `v` + `metadata.version` has no git tag *by definition* while
@@ -2446,7 +2446,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.31.0 — 2026-09-02 (release v1.108.0)
 
 - **The SessionStart drift nudge reads the manifest curators actually write** (#838).
   `plugins/rails-flow/hooks/scripts/session-start.sh` read two columns and a 12-char digest — the
@@ -4158,7 +4158,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.3.2 — 2026-09-02 (release v1.108.0)
 
 - **`plugins/pipeline/README.md` gains a Commands section** (#835) — it listed none of its eight commands.
   The new `undocumented-command` rule found it on its first run; each line is derived from the
@@ -4393,7 +4393,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.56.0 — 2026-09-02 (release v1.108.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 24 → 25, reach
   10 → 11** — `architecture_graph.py`'s first selftest (#836) is a new copy, and `check_shared_shapes.py`
@@ -7888,7 +7888,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.26.1 — 2026-09-02 (release v1.108.0)
 
 - **`plugins/qa-flow/README.md` gains a Commands section** (#835) — it listed none of its seven commands;
   found by the new `undocumented-command` rule on its first run.
@@ -9355,7 +9355,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.38.1 — 2026-09-02 (release v1.108.0)
 
 - **`plugins/design-flow/scripts/rendered_conformance.py`'s `node --check` and `asset_plan.py`'s executor call
   carry timeouts** (#837) — the executor's own `--timeout` budget plus 30 s of grace, so a wedged generator
