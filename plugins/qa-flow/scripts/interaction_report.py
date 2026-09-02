@@ -435,7 +435,8 @@ def check_collector(node_bin: str = "node") -> int:
     if shutil.which(node_bin) is None:
         print(f"  skip:  collector syntax ({COLLECTOR}) — `{node_bin}` is not on PATH, so the "
               f"check did NOT run. That is not a pass.")
-        return 0
+        # Exit 3, not 0 (#829): the doctor maps 0 to PASS; 3 renders as SKIP with this reason.
+        return 3
     rc, err = node_check_module(node_bin, collector.read_bytes())
     if rc != 0:
         print(f"{COLLECTOR} does not parse as an ES module:\n{err}", file=sys.stderr)
@@ -846,7 +847,8 @@ def selftest() -> int:
     # passed on anything at all. The fixture drives the real code path with real broken input.
     import shutil as _shutil
     if _shutil.which("node") is None:
-        check("collector syntax gate", True)  # counted, and the skip is printed by check_collector
+        # NOT counted as passed (#829): a skipped fixture that increments the pass tally is the
+        # "35 checks passed on a machine with no corpora" shape. The skip is printed and that is all.
         print("  skip:  node is absent, so the collector syntax fixtures did NOT run — not a pass.",
               file=sys.stderr)
     else:
@@ -856,8 +858,10 @@ def selftest() -> int:
         rc_ok, err_ok = node_check_module("node", b'import x from "y";\nawait 1;\nconst a = 1;\n')
         check("and stays silent on a valid ES module", rc_ok == 0, err_ok)
         check("the shipped collector passes it", check_collector("node") == 0)
+    # == 3, not == 0 (#829). This fixture used to assert 0 -- pinning the very defect: the doctor maps
+    # 0 to PASS, so "skip, not a pass" printed and a pass was recorded. 3 is the protocol's SKIP.
     check("a missing node is a SKIP, not a failure",
-          check_collector("node-that-does-not-exist") == 0,
+          check_collector("node-that-does-not-exist") == 3,
           "a gate that fails for want of a binary teaches people to ignore gates")
 
     import tempfile

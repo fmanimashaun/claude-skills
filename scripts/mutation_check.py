@@ -3022,6 +3022,14 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/qa-flow/scripts/theme_parity.py",
         selftest="plugins/qa-flow/scripts/theme_parity.py",
         mutations=(
+            # #830. Two shipped plugins used different sRGB breakpoints; design-flow had 2.2's.
+            Mutation(
+                "the luminance breakpoint regresses to WCAG 2.0's 0.03928",
+                "SRGB_LINEAR_BREAKPOINT = 0.04045",
+                "SRGB_LINEAR_BREAKPOINT = 0.03928",
+                "luminance uses the WCAG 2.2 breakpoint",
+            ),
+
             Mutation(
                 # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
                 "grouping drops `detail`, so two different defects merge under one rule name",
@@ -3068,6 +3076,14 @@ GUARDS: tuple[Guard, ...] = (
         # reason.
         needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
+            # #829. The skip returned 0, which the doctor renders as PASS.
+            Mutation(
+                "an absent node exits 0 again, so the doctor prints ok for a check that did not run",
+                "        # Exit 3, not 0 (#829): the doctor maps 0 to PASS; 3 renders as SKIP with this reason.\n        return 3",
+                "        return 0",
+                "a missing node is a SKIP, not a failure",
+            ),
+
             Mutation(
                 # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
                 "grouping drops `detail`, so two different defects merge under one rule name",
@@ -3792,6 +3808,14 @@ GUARDS: tuple[Guard, ...] = (
         # every mutation reads as caught by the wrong one.
         needs=("plugins/design-flow/scripts/conformance_collector.js",),
         mutations=(
+            # #829. The skip returned 0, which the doctor renders as PASS.
+            Mutation(
+                "an absent node exits 0 again, so the doctor prints ok for a check that did not run",
+                "        # check everything\", which the doctor renders as SKIP with this line as the reason.\n        return 3",
+                "        return 0",
+                "an absent node skips instead of failing",
+            ),
+
             # ---- literal-colour ----
             Mutation(
                 "the role-token basis stops silencing anything, so nothing is a literal colour",
