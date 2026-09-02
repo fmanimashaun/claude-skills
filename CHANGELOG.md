@@ -4339,6 +4339,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 24 → 25, reach
+  10 → 11** — `architecture_graph.py`'s first selftest (#836) is a new copy, and `check_shared_shapes.py`
+  refused the stale number, as it should.
 - **The `fidara-design` skill is now `design-system`** (#840). Maintainer decision, recorded on the
   issue: *"make the neutral to avoid confusion."* The skill is the brand-neutral design **system** —
   which roles exist, the primitives, the catalog, scale, motion, a11y — and a brand pack is a theme
