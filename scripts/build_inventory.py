@@ -59,7 +59,7 @@ every one of them broke a committed generated page in production:
      a page built and never `git add`ed passed the gate whose own message says "is not committed".
 
 REGENERATE IT WHEN THE VERSION MOVES. The page stamps the release version, exactly as
-`docs/coverage.html` does and for the same reason -- it is the only freshness signal a shared copy
+`docs/evidence/coverage.html` does and for the same reason -- it is the only freshness signal a shared copy
 carries. So the arm step invalidates it and `inventory artifact drift` fails until it is rebuilt.
 That is the gate working; the failure message names the command.
 
@@ -91,11 +91,11 @@ import maintainer_doctor as md  # noqa: E402  — the gate registry, imported no
 MARKETPLACE = REPO / ".claude-plugin" / "marketplace.json"
 PLUGINS = REPO / "plugins"
 MAINTAINER = REPO / ".claude"
-# COMMITTED, deliberately, beside `docs/coverage.html`. The first version of that page wrote to a
+# COMMITTED, deliberately, beside `docs/evidence/coverage.html`. The first version of that page wrote to a
 # gitignored path, so "the deliverable existed only on the machine that built it" -- no other
 # maintainer could see the thing it was for. `docs/` and not `skills/`, because anything under
 # `skills/` is packaged into a `.skill` and shipped to agents, which an HTML page is not.
-DEFAULT_OUT = REPO / "docs" / "inventory.html"
+DEFAULT_OUT = REPO / "docs" / "architecture" / "inventory.html"
 
 PLACEHOLDER = "__DATA__"
 KIND_AGENT, KIND_COMMAND, KIND_GATE = "agent", "command", "gate"
@@ -739,7 +739,7 @@ TEMPLATE = r"""<title>What this marketplace ships</title>
 <style>
 /* ---------------------------------------------------------------------- tokens
    The fidara pack's own values, from skills/design-system/references/foundations-tokens.md:
-   fm-* primitives bound through the semantic role layer, exactly as docs/coverage.html
+   fm-* primitives bound through the semantic role layer, exactly as docs/evidence/coverage.html
    does. A page about this marketplace has no business inventing a look. */
 :root {
   --fm-navy:#0C1B33; --fm-ink:#1A2B45; --fm-midnight:#152238;

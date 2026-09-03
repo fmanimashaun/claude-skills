@@ -454,7 +454,7 @@ def render_plan(rows: list[dict], config: dict) -> str:
 
     THE TABLE IS DERIVED, and that is the load-bearing property. A hand-maintained copy is a second
     source of truth that disagrees with the first within a week and disagrees SILENTLY, because a
-    stale table still looks like a table. Two rules follow, both learned from `docs/coverage.html`:
+    stale table still looks like a table. Two rules follow, both learned from `docs/evidence/coverage.html`:
 
       1. The bytes are a function of the DATA and nothing else -- no timestamp, no git SHA, no
          absolute path. Anything else makes the staleness check unpassable by construction, because

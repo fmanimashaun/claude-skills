@@ -65,7 +65,7 @@ part-of: #89
 Keys are `depends-on`, `blocks`, `part-of`; `#n` references only; the `deps` tag is
 required. A typo'd key or a block under the wrong tag is a reported error, not a silent
 no-op — so a malformed block gets fixed rather than ignored. Full rules:
-`docs/issue-dependency-graph.md`. You may edit issue **bodies** to add these; you still
+`docs/doctrine/issue-dependency-graph.md`. You may edit issue **bodies** to add these; you still
 never edit skills, plugins, or code.
 
 ## Order and report

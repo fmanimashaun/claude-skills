@@ -26,9 +26,9 @@ the build rather than quietly making the wiki wrong.
 
 ## Deeper reading, in the repository
 
-- [Architecture](https://github.com/fmanimashaun/claude-skills/blob/main/docs/architecture.md) — the design reasoning, and what was deliberately not adopted
-- [Harness doctrine](https://github.com/fmanimashaun/claude-skills/blob/main/docs/harness-doctrine.md) — when a hook fails open versus closed
-- [Code-review graph](https://github.com/fmanimashaun/claude-skills/blob/main/docs/code-review-graph.md) — the optional tool-gated review integration
+- [Architecture](https://github.com/fmanimashaun/claude-skills/blob/main/docs/doctrine/architecture.md) — the design reasoning, and what was deliberately not adopted
+- [Harness doctrine](https://github.com/fmanimashaun/claude-skills/blob/main/docs/doctrine/harness-doctrine.md) — when a hook fails open versus closed
+- [Code-review graph](https://github.com/fmanimashaun/claude-skills/blob/main/docs/doctrine/code-review-graph.md) — the optional tool-gated review integration
 - [`CLAUDE.md`](https://github.com/fmanimashaun/claude-skills/blob/main/CLAUDE.md) — the maintainer's guide to this repository
 
 ---

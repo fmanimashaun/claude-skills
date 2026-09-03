@@ -107,7 +107,7 @@ Going out of the computed order is allowed; doing it silently is not. Say so in 
 ## What fails, and what only advises
 
 This follows the general rule: **fail closed for gates, fail open for advisories** — now recorded in
-[`harness-doctrine.md`](harness-doctrine.md) §5, which also states the scoping this tool relies on
+[`doctrine/harness-doctrine.md`](doctrine/harness-doctrine.md) §5, which also states the scoping this tool relies on
 (fail closed for what the gate guards, exit 0 otherwise). It is still restated here as this tool's own
 contract, because a reader of this file should not have to follow a link to learn what exits non-zero.
 Note that CLAUDE.md's *Platform* sentence remains narrower than the general rule — it says only that

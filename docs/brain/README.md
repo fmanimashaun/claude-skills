@@ -24,4 +24,4 @@ dated evidence list; `confirmed` points at the DECISIONS entry it produced; `ref
 Commands: `/rails-flow:brain` (institutionalise a lesson) · `/rails-flow:brain-review` (weekly sweep:
 staleness, drift, contradictions; stamps `.last-review`) · `/rails-flow:brain-sync` (`publish` / `pull`
 to a shared hub; `local` to this machine's Claude memory). The maintainer's incident narrative that
-backs `CLAUDE.md` lives in `docs/maintainer-history.md`, not here — see `D-004`.
+backs `CLAUDE.md` lives in `docs/brain/history/maintainer-history.md`, not here — see `D-004`.

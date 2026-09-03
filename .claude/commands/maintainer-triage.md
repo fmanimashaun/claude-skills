@@ -64,7 +64,7 @@ Feed its four outputs into the table below:
 
 While triaging, add a `deps` block to any issue whose ordering you had to work out by
 reading prose — that is the reasoning that would otherwise be redone next time. Format:
-`docs/issue-dependency-graph.md`.
+`docs/doctrine/issue-dependency-graph.md`.
 
 ## Phase 4 — Post the queue
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Map every doctrinal claim in this repo to the thing that makes it true -- or to nothing.
 
-Run:  python3 scripts/doctrine_map.py                    # rebuild docs/doctrine-map.html
+Run:  python3 scripts/doctrine_map.py                    # rebuild docs/architecture/doctrine-map.html
       python3 scripts/doctrine_map.py --check             # drift gate (compares the blob at HEAD)
       python3 scripts/doctrine_map.py --audit-coverage    # which doctrine sources have no rows
       python3 scripts/doctrine_map.py --selftest          # prove each validator fires AND stays silent
@@ -49,7 +49,7 @@ wearing a count (#476):
 WHAT IS DELIBERATELY NOT A FAILURE. An `advice` row with no enforcement is correct and common --
 `art-direction.md` argues at length that gating judgement is worse than not gating it, and
 `quality-pass` never blocks a merge on purpose. The classification, `guarantee` vs `advice`, is
-`docs/harness-doctrine.md`'s existing test ("if a model ignores this, what happens?"), so this file
+`docs/doctrine/harness-doctrine.md`'s existing test ("if a model ignores this, what happens?"), so this file
 introduces no new vocabulary for it.
 
 THE PAGE STAMPS NO VERSION, unlike `coverage.html`. That page is copied between machines, so the
@@ -74,7 +74,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-PAGE = "docs/doctrine-map.html"
+PAGE = "docs/architecture/doctrine-map.html"
 
 GUARANTEE, ADVICE, GAP = "guarantee", "advice", "gap"
 KINDS = (GUARANTEE, ADVICE, GAP)
@@ -140,7 +140,7 @@ SHIPPED_FLOOR = 2
 DOCTRINE_SOURCES = (
     "CLAUDE.md",
     "AGENTS.md",
-    "docs/harness-doctrine.md",
+    "docs/doctrine/harness-doctrine.md",
     "skills/code-review/SKILL.md",
     "skills/quality-pass/SKILL.md",
     "skills/derived-artifacts/SKILL.md",
@@ -355,7 +355,7 @@ CLAIMS: tuple[Claim, ...] = (
         enforced_by=("script:scripts/build_coverage_artifact.py", "gate:coverage artifact selftest"),
     ),
     Claim(
-        claim="Regenerating `coverage.md` means regenerating `docs/coverage.html` too; they are built "
+        claim="Regenerating `coverage.md` means regenerating `docs/evidence/coverage.html` too; they are built "
               "from the same data and both are committed.",
         stated_in="CLAUDE.md",
         anchor="Regenerating `coverage.md` means regenerating the page too.",
@@ -367,7 +367,7 @@ CLAIMS: tuple[Claim, ...] = (
     Claim(
         claim="An advisory hook fails OPEN; a hook carrying a guarantee fails CLOSED, scoped to the "
               "command it guards.",
-        stated_in="docs/harness-doctrine.md",
+        stated_in="docs/doctrine/harness-doctrine.md",
         anchor="If a model ignores this, what happens?",
         kind=GUARANTEE,
         enforced_by=("rule:hook-count-drift", "gate:self-consistency",
