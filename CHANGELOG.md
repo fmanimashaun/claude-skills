@@ -9619,6 +9619,19 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`plugins/design-flow/scripts/check_token_drift.py`: a bridge is classified by the owner of its role; the knob-expanded
+  radius ramp is system-owned when the pack sets the knob** (#899, the residual of #814). `setup` emits `--color-<r>: var(--<r>)`
+  for every role, and the reliance pack declares six the doctrine never bridges — those bridges classified `project` and
+  were reported `extra`, with `--radius-md`/`--radius-xl` (the five-step ramp the `radius` knob expands to) making eight
+  false findings on a conformant project, and the `token-drift` gate red. Now a `--color-<r>` bridge belongs to whoever
+  owns `--<r>` (pack, system, or nobody — still `extra`); the ramp's step NAMES have one definition,
+  `brand_pack_lint.RADIUS_RAMP_STEPS`, beside the knob enum, and are system-owned only with the knob set. Fixtures are
+  shaped like what `setup` writes (every role bridged, the ramp, against the real reliance pack); the negative cases
+  (a bridge to a role nobody declares; the ramp without the knob; a local token) still fire. On the reporting project:
+  8 findings → clean, exit 0, no change to `application.css`. 35 fixtures, 17 mutations.
+
 ### 2026-09-03 (release v1.114.0)
 
 - **`plugins/design-flow/scripts/asset_plan.py`, `compose_brief.py`, `prompt_library.py`, `hooks/scripts/design-tells.sh`, `README.md`:

@@ -105,6 +105,8 @@ authored; `git status` after.
    `fm-*` is fidara's own choice, not a system prefix) + the 3 font roles,
    semantic roles via `@theme inline` with `:root`/`.dark`, the Utopia fluid `--text-step-*` /
    `--space-*` (`clamp()`) scale, `--measure/--radius/--shadow-*/--ease-out/--duration`,
+   the `radius` knob expanded to the five steps `brand_pack_lint.RADIUS_RAMP_STEPS` names (`--radius`,
+   `--radius-sm`, `--radius-md`, `--radius-lg`, `--radius-xl` — one definition, shared with `check_token_drift`),
    `@custom-variant dark`, `@plugin @tailwindcss/forms` + `typography`, and the `min-h-touch`/safe-area
    utilities. Add the pre-paint dark-mode `<script>` to the layout.
 2. **Layout `@utility` recipes** (layout-primitives.md): `stack`, `cluster`, `center`, `box`,

@@ -131,5 +131,25 @@ GUARD = Guard(
             '            merged.update({m.group(1): m.group(2)',
             "reformatting is not drift",
         ),
+        # #899. Eight false findings on a conformant reliance project: six bridges to roles the pack declares
+        # and the doctrine never bridges, and the two knob-expanded radius steps the doctrine does not list.
+        Mutation(
+            "a bridge is classified by its own name again, so a bridge to a pack-only role is `extra`",
+            '    if name.startswith("--color-") and m and name == "--color-" + m.group(1)[2:]:',
+            '    if False:',
+            "every role bridged, the knob's radius ramp -- is CLEAN",
+        ),
+        Mutation(
+            "a bridge to a role NOBODY declares is called system, hiding a real local extension",
+            '        if role in doctrine_names:\n            return "system"\n        return "project"',
+            '        return "system"',
+            "a bridge to a role neither pack nor doctrine declares is still `extra`",
+        ),
+        Mutation(
+            "the radius ramp is system-owned whether or not the pack sets the knob",
+            '    if (knobs or {}).get("radius") and name in bpl.RADIUS_RAMP_STEPS:',
+            '    if name in bpl.RADIUS_RAMP_STEPS:',
+            "without the radius knob, --radius-md and --radius-xl are `extra`",
+        ),
     ),
 )
