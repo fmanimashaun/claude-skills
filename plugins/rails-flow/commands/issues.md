@@ -63,8 +63,22 @@ label, filter to it. Otherwise triage everything:
 - **needs-info**: the issue lacks enough detail to act (no reproduction, ambiguous
   intent). Comment with the specific questions, label it `needs-info`, and skip —
   never fabricate requirements.
-- Order the workable queue: security/P1 first, then bugs, then features/chores,
-  oldest first within a tier. Post the queue to the user before starting.
+- **Compute the order, don't reason it out.** Priority alone does not give an order — a P1 sitting
+  behind an unstarted blocker is not the next task — and an order re-derived by hand each time is
+  the reasoning that gets redone next time:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_issue_ready.py" --queue
+  ```
+
+  Ready-now first (P1 > P2 > P3 > unranked, bugs before features, oldest first), blocked issues
+  under what blocks them, `needs-info` skipped and said so. **It exits non-zero and prints no queue
+  when the graph is wrong** — a cycle, an edge to an issue that does not exist. Those are filing
+  errors: fix the bodies, re-run; do not rank by priority instead. Post the queue to the user
+  before starting, and **quote its coverage line verbatim** (`N/M open issues declare edges`) — an
+  order computed from three declared edges out of forty is worth having and dishonest to report
+  without saying so. While triaging, add `depends-on:` lines to any issue whose ordering you had
+  to work out by reading prose.
 
 ## Grouping related issues on one branch
 

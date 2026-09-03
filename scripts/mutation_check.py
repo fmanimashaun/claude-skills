@@ -2364,6 +2364,38 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/rails-flow/scripts/check_issue_ready.py",
         selftest="plugins/rails-flow/scripts/check_issue_ready.py",
         mutations=(
+            # #849 part 1: the computed queue. Each of these is a way the order stops being computed.
+            Mutation(
+                "priority stops ordering the queue",
+                "        return (PRIORITY_RANK.get(prio, 9), 0 if labels & BUG_LABELS else 1, issue.get(\"createdAt\", \"\"), issue[\"number\"])",
+                "        return (0, 0 if labels & BUG_LABELS else 1, issue.get(\"createdAt\", \"\"), issue[\"number\"])",
+                "READY is ordered P1 before P2",
+            ),
+            Mutation(
+                "a blocked issue is ranked as ready",
+                "        (blocked if open_waits else ready).append((issue, open_waits))",
+                "        ready.append((issue, open_waits))",
+                "a P1 that is BLOCKED is not ranked as ready",
+            ),
+            Mutation(
+                "needs-info issues are queued as work",
+                "        if labels & SKIP_LABELS:\n            skipped.append(issue)\n            continue",
+                "        if False:\n            skipped.append(issue)\n            continue",
+                "needs-info is skipped",
+            ),
+            Mutation(
+                "a cycle is no longer a graph error, so the queue is printed from a wrong graph",
+                '                errors.append("cycle: " + " -> ".join(f"#{x}" for x in cycle))',
+                "                pass",
+                "a cycle is a graph error",
+            ),
+            Mutation(
+                "the coverage line stops counting",
+                "        if e[\"depends-on\"] or e[\"blocks\"]:\n            declared += 1",
+                "        if False:\n            declared += 1",
+                "the coverage line counts issues that declare edges",
+            ),
+
             Mutation(
                 "an issue whose dependency is still open is no longer refused",
                 "        open_waits = sorted(w for w in waits if w in open_numbers)",
