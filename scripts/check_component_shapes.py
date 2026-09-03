@@ -182,7 +182,7 @@ def selftest() -> int:
     empty = check(MD, {}, ROLES)
     expect(f"an empty sidecar is ONE finding, not one per row (got {len(empty)})", len(empty) == 1)
     expect("...and it names the systemic cause",
-           "covers none of the" in empty[0] and "before reading anything below" in empty[0])
+           bool(empty) and "covers none of the" in empty[0] and "before reading anything below" in empty[0])
     # ...while a PARTIAL gap is genuinely per-row, because each row is then a separate decision.
     partial = check(MD, {"Button": OK["Button"]}, ROLES)
     expect("a partial gap stays per-row", len(partial) == 1 and "`Card`" in partial[0])
