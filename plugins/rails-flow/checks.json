@@ -245,6 +245,21 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "docs-layout",
+      "why": "A file's directory answers the question a reader would ask to find it; without a map agents litter docs/ and nothing can say a file is misplaced. Reports root files, code in docs, binaries at a root, product content inside the brain, memos at the brain root, and the missing map; --propose prints the moves with their link rewrites.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/docs_layout.py",
+        "--report"
+      ],
+      "applies_when": [
+        "docs"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

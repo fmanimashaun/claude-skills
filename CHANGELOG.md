@@ -2496,6 +2496,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`plugins/rails-flow/scripts/docs_layout.py` — one `docs/` layout for every project: a map agents follow, a check
+  that enforces it, a `--propose` that reworks an existing tree** (#886). Eight directories, each answering one reader's
+  question (product · design · architecture · runbooks · evidence · wiki · brain); the rule is one sentence in
+  `docs/README.md`, which the tool reads — a project may declare one more directory there. `--report` classifies every
+  file (authored / generated / code / binary / memory) and names root files, code in docs, binaries at a root, product
+  content inside the brain, memos at the brain root, the missing map. `--propose` prints the `git mv` plan AND the
+  link rewrites it needs across the repo; a move referenced from a binary is refused, not guessed; `--write` applies
+  and asserts every rewritten link resolves; `--scaffold` lays down only what is missing. Case study: Retask-platform,
+  98 files — 45 authored, 32 binary, 1 code, 3 generated, 17 memory; the tool's first real report matched the review
+  by hand. `checks.json` `docs-layout`; `setup-flow` §4b. 29 fixtures, 13 mutations; the selftest caught a real
+  defect on the first run (a file both moved and link-rewritten came back at its old path).
 - **`plugins/rails-flow/scripts/brain_local_sync.py`: a memo-shaped file without frontmatter is reported `unreadable`, not
   skipped in silence** (#884, found on the second real brain). Retask-platform has four memos at its brain root; the
   bridge counted three, because one has no frontmatter `name`. A file under `memos/` or named `feedback_*`/`decision_*`
