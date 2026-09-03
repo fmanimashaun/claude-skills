@@ -8,6 +8,7 @@
 - [Commands](Command-Reference)
 - [Skills](Skills-Reference)
 - [Plugins](Plugin-Reference)
+- [Agents and gates](Agents-And-Gates)
 
 **Guides**
 - [Design system](Design-System)

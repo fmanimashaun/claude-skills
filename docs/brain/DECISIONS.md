@@ -31,10 +31,20 @@ one location for both.
 
 ## D-005 — The maintainer repo follows the shipped docs/ layout, with one declared directory (2026-09-03) `[decided]`
 **Choice:** `docs/` here is laid out by `docs_layout.py` like every project's: `doctrine/` (declared in the map — the
-maintainer's authored rules), `architecture/` (generated: `doctrine-map.html`, `inventory.html`), `evidence/`
+maintainer's authored rules), `architecture/` (generated: `doctrine-map.html`; `inventory.html` until D-006), `evidence/`
 (`coverage.html`, `audits/`), `brain/history/` (the relocated CLAUDE.md narrative), `wiki/` (generated). Root-file
 homes are the map's `## Root files` table, which the tool reads. **Alternatives:** leave the maintainer repo as the
 exception; invent a maintainer-only layout. **Rationale:** the tool's first real run on Retask-platform matched the
 hand review; a repo that ships a layout and does not keep it is the claims-vs-enforcement class. Refs #886.
 **Reversal condition:** a generated page that cannot live under `architecture/` or `evidence/` without a script losing
 its drift gate.
+
+## D-006 — One generated reference surface: the inventory page folds into the wiki (2026-09-03) `[decided]`
+**Choice:** `docs/architecture/inventory.html`, its generator `build_inventory.py`, its selftest and its two gates are
+retired; the data layer lives in `scripts/inventory_data.py` (readers imported, never re-parsed; verifications kept,
+one `inventory data selftest` gate) and renders as `docs/wiki/Agents-And-Gates.md` under the wiki's existing drift
+gate. `coverage.html` stays: the only browsable view of the design-system matrix. **Alternatives:** keep both and
+cross-link. **Rationale:** two generated views over one input set, each with its own generator, drift gate and
+selftest, is the shape this repo argues against everywhere else (`duplicated-release-extractor`); the filter chips
+are the one loss. Refs #892. **Reversal condition:** a reader who needs the cross-kind filter and cannot get it from
+a wiki search.

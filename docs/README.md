@@ -30,4 +30,3 @@ Files this layout cannot name by kind alone, and where they belong here. The too
 | `maintainer-history.md` | `brain/history/` |
 | `coverage.html` | `evidence/` |
 | `doctrine-map.html` | `architecture/` |
-| `inventory.html` | `architecture/` |
