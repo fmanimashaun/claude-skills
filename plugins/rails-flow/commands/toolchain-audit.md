@@ -84,6 +84,9 @@ Use its **audit & repair** path against the existing `CLAUDE.md`. Report:
 - Is `GUARDRAILS.md` present and current? Is `docs/brain/` seeded and consistent with the repo's real
   state rather than a months-old snapshot?
 - Should anything currently in `CLAUDE.md` move to `.claude/rules/`?
+- **Structure**: what does `claude_md_structure.py --report CLAUDE.md` say — how much is incident
+  narrative, is there a checklist near the top, is a ceiling recorded and held? Propose the relocation
+  diff; never summarise.
 
 Every proposed change as a diff with a one-line reason.
 

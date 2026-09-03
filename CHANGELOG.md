@@ -7,6 +7,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-03 (release v1.112.0)
+
+- **`CLAUDE.md` is rule-first, and the reasoning moved to `docs/maintainer-history.md`** (#870). It was 754
+  lines and ~12.7k tokens loaded by every session — 59 % of its words in paragraphs carrying an incident
+  rather than a rule — while `setup-flow.md` shipped the advice "keep CLAUDE.md under 200 lines" to users.
+  Now: a **"Ship a fix" checklist** of eleven steps at the top, each pointing at its section; every
+  section rule → one-clause why → the history section by name; the full previous text moved
+  **verbatim** to `docs/maintainer-history.md`, so nothing is lost and a reader who wants the story
+  still gets it. The restructure is measured by the gates that pin this file, not by reading: the
+  seventeen `doctrine_map` anchors, the hook-script count sentence, the plugin and skill names, the
+  `@AGENTS.md` import and every path pointer all survive verbatim and pass.
+
 ### 2026-09-03 (release v1.111.1)
 
 - **The mutation table is split into `scripts/mutations/*.py`, and `mutation coverage` leaves the per-PR
@@ -2463,6 +2475,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-03 (release v1.112.0)
+
+- **A CLAUDE.md auditor and builder** (#875). `plugins/rails-flow/scripts/claude_md_structure.py --report`
+  says what a project's `CLAUDE.md` is made of — rule, history, mixed and structure paragraphs, the share
+  of words that are incident narrative, whether a "start here" checklist sits near the top — and reads a
+  ceiling recorded in the file itself (`<!-- claude-md: max-lines N -->`). `--propose` prints the diff that
+  moves every pure-history paragraph **verbatim** to `docs/brain/claude-md-history.md` — the project's
+  in-repo memory — under a heading naming its section, leaving one pointer line per section, and
+  **refuses if any paragraph would not survive byte-for-byte**; `mixed` paragraphs are listed for a human
+  to split. `--set-ceiling` records the ceiling at the measured size, a ratchet. Registered in
+  `plugins/rails-flow/checks.json` as `claude-md-structure`: FAIL past the ceiling with the relocation
+  named, **not applicable** when no ceiling is recorded (a ceiling nobody set is not a pass).
+  `setup-flow`'s audit path and `toolchain-audit` step 2 run it. Maintainer: *"just flagging a CLAUDE.md is
+  too long does not help anyone … blind summarising is dangerous"* — so the tool never summarises; the
+  ceiling is on what loads at session start, not on what exists. Twenty fixtures, five mutations.
+
 ### 1.34.0 — 2026-09-03 (release v1.111.0)
 
 - **`/rails-flow:toolchain-audit` carries the maintainer doctor's contract, and `project_gates.py`
@@ -4470,6 +4498,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-03 (release v1.112.0)
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 26 → 27,
+  reach 12 → 13** — `claude_md_structure.py` (#875) is a new copy; `check_shared_shapes.py` refuses the
+  stale number.
+- **`skills/design-system/references/components.md` splits: the commerce entries move verbatim to
+  `skills/design-system/references/components-commerce.md`** (#871). The catalogue was 1,600 lines /
+  ~33.7k tokens, the largest single file an agent may be told to read, and the ten commerce entries
+  (Product card, Filter panel, Quick view, Cart drawer and cart line, Payment / card entry, Promo / discount code, Plan comparison / feature matrix, Seat / quantity selector, Saved payment methods, Subscription state and dunning) were ~40 % of it and irrelevant to every surface that does not sell.
+  17 in-file links inside the moved block now point back at `components.md#…`; five links in
+  `page-anatomies.md` point into the new file; `SKILL.md` routes it as its own row ("selling
+  something"). `scripts/build_coverage.py` and `scripts/check_component_shapes.py` read both files as
+  one catalogue — the headings are the same rows, and a matrix reading only the first would have
+  marked every commerce component `derivable` overnight. The pointer left in `components.md` is
+  deliberately not a heading: both scripts read every `## ` there as a catalogue row.
 
 ### 1.56.1 — 2026-09-03 (release v1.110.0)
 
