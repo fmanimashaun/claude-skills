@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-03 (release v1.111.1)
 
 - **The mutation table is split into `scripts/mutations/*.py`, and `mutation coverage` leaves the per-PR
   path** (#866). `scripts/mutation_check.py` was 6,245 lines, of which the `GUARDS` tuple was 5,986 —
