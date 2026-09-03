@@ -162,6 +162,7 @@ def diagnose(work: Path, *, fix: bool = False) -> md.Doctor:
         d.check_stale_main_ref()
         d.check_dev_current()
         d.check_promotion_was_a_merge()
+        d.check_promotion_ruleset()
         d.check_no_direct_to_main()
         d.check_unshipped()
         d.check_corpora()
@@ -186,7 +187,33 @@ def expect(label: str, d: md.Doctor, needle: str, status: str) -> md.Result | No
     return r
 
 
+def ruleset_fixtures() -> None:
+    """The doctor maps the shipped checker's exit code and nothing else; the fixtures drive all three."""
+    import json, tempfile
+    work = fixture()
+    d = diagnose(work)
+    expect("with a local origin the ruleset check is SKIP (n/a), never a pass", d, "merges only", md.SKIP)
+    with tempfile.TemporaryDirectory() as td:
+        good = Path(td) / "good.json"
+        good.write_text(json.dumps([{"id": 1, "name": "main: promotions merge, never squash", "target": "branch", "enforcement": "active",
+                                     "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+                                     "rules": [{"type": "deletion"}, {"type": "non_fast_forward"},
+                                               {"type": "pull_request", "parameters": {"allowed_merge_methods": ["merge"]}}]}]), encoding="utf-8")
+        empty = Path(td) / "none.json"; empty.write_text("[]", encoding="utf-8")
+        saved = md.RULESET_ARGS
+        try:
+            md.RULESET_ARGS = ("--from", str(good))
+            expect("a conforming ruleset is PASS", diagnose(work), "merges only", md.PASS)
+            md.RULESET_ARGS = ("--from", str(empty))
+            r = expect("no ruleset is FAIL with the finding and the --apply remedy", diagnose(work), "no merge-only ruleset", md.FAIL)
+            if r is not None and ("--apply" not in r.remedy or "covers refs/heads/main" not in r.detail):
+                FAILURES.append(f"ruleset FAIL lacks the finding or the remedy: {r.detail!r} / {r.remedy!r}")
+        finally:
+            md.RULESET_ARGS = saved
+
+
 def run() -> int:
+    ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------
     d = diagnose(fixture(corpora=True))
     _tick()

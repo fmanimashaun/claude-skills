@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The doctor asserts `main`'s merge-only ruleset, through the shipped checker** (#895). `scripts/maintainer_doctor.py`
+  gains `check_promotion_ruleset`: it runs `plugins/rails-flow/scripts/branch_rulesets.py --check --branch main` and maps
+  its exit — 0 PASS, 1 FAIL with the findings and the `--apply` remedy, 3 SKIP (n/a is never a pass). The ruleset itself
+  (`22200823`, PRs merge only · no deletion · no force-push on `refs/heads/main`) was applied on the maintainer's go-ahead
+  after the v1.114.0 promotion was squashed from the UI and dev's ancestry repaired. Fixtures drive all three verdicts
+  through `--from`; two mutations.
+
 ### 2026-09-03 (release v1.114.0)
 
 - **`docs/` reworked to the shipped layout by the shipped tool** (#886; D-005). `docs/README.md` is the map, with `doctrine/`
@@ -2500,6 +2509,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/scripts/branch_rulesets.py` — the release branch merges, never squashes, as a GitHub ruleset** (#895).
+  `--check` asserts an active ruleset covering the release branch with `pull_request` allowing only `merge`, `deletion`
+  and `non_fast_forward`; each missing piece is named; not applicable (no `gh`, unauthenticated, `origin` off GitHub,
+  API unreachable) is exit 3, never a pass. `--apply` creates the ruleset when none covers the branch and never edits
+  one someone else owns. `checks.json` `branch-ruleset`; `setup-flow` §8a says to run `--apply` only after the user
+  confirms. Why: the v1.114.0 promotion was squash-merged from the GitHub UI — content identical, ancestry gone, the
+  next promotion would not have merged. 19 fixtures, 9 mutations.
+
 ### 2026-09-03 (release v1.114.0)
 
 - **`plugins/rails-flow/scripts/docs_layout.py`: the map's `## Root files` table homes a root file the layout cannot name;
@@ -4583,6 +4602,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 30 → 31, reach 16 → 17**
+  — `branch_rulesets.py` (#895) is a new copy; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.114.0)
 
