@@ -391,6 +391,34 @@ def summarise(output: str, returncode: int) -> tuple[str, tuple[str, ...]]:
     return lines[idx].strip()[:160], tuple(rest)
 
 
+def tree_state(project: Path) -> dict[str, str] | None:
+    """`{path: status}` from `git status --porcelain -uall`, or None outside a git repo (then unasserted).
+
+    `-uall` because plain `--porcelain` collapses a new untracked directory to one row, so a check
+    that wrote `docs/architecture/graph.json` into a new folder would show as `docs/` -- still a
+    change, but not the path the reader needs.
+    """
+    try:
+        done = subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=project,
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    state: dict[str, str] = {}
+    for line in done.stdout.splitlines():
+        if len(line) > 3:
+            state[line[3:].split(" -> ")[-1]] = line[:2]
+    return state
+
+
+def tree_delta(before: dict[str, str] | None, after: dict[str, str] | None) -> list[str]:
+    """Paths whose status changed between two snapshots; empty when either side could not be read."""
+    if before is None or after is None:
+        return []
+    return sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+
+
 def run_check(check: Check, project: Path) -> Result:
     why_not = applicability(check, project)
     if why_not:
@@ -406,10 +434,22 @@ def run_check(check: Check, project: Path) -> Result:
         script = Path(argv[1]) if len(argv) > 1 else None
         if script is not None and script.suffix == ".py" and not script.is_file():
             return Result(check, ERROR, f"{script} does not exist — manifest and plugin disagree")
+        before = tree_state(project)
         try:
             done = subprocess.run(argv, cwd=project, capture_output=True, text=True, timeout=300)
         except (OSError, subprocess.SubprocessError) as exc:
             return Result(check, ERROR, f"{type(exc).__name__}: {exc}")
+        # A DIAGNOSTIC NEVER MUTATES THE PROJECT (#849). The maintainer doctor snapshots `dist/` and
+        # restores it byte-for-byte so that reading the tree cannot change it; this is the same
+        # contract for the shipped audit, asserted rather than assumed. A check that wrote files
+        # while being asked a question is a defect in the check -- ours, routed to doctrine -- and
+        # the user is told exactly which paths moved so nothing is committed by accident.
+        changed = tree_delta(before, tree_state(project))
+        if changed:
+            return Result(check, ERROR,
+                          f"this check MODIFIED the project during an audit — a diagnostic must never write: "
+                          f"{', '.join(changed[:6])}{' …' if len(changed) > 6 else ''}",
+                          tuple(f"  - {c}" for c in changed))
         if done.returncode != 0:
             summary, findings = summarise(done.stdout + done.stderr, done.returncode)
             # THE CHECK'S OWN VERDICT, not "non-zero means FAIL" (#828). `applicability()` above
@@ -613,6 +653,24 @@ def selftest() -> int:
         check("a check that exits 2 is ERROR, not FAIL", r.status == ERROR, f"got {r.status}")
         check("...routed to doctrine, not the app", route_of(r)[0] == DOCTRINE, route_of(r)[0])
         check("...carrying the check's reason", "brand pack" in r.detail, f"got {r.detail!r}")
+        # A DIAGNOSTIC NEVER MUTATES (#849). A check that writes into the project during an audit is
+        # ERROR and ours -- the user is told which path moved. Needs a git repo to assert; the
+        # project fixture becomes one here.
+        for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
+                    ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
+            subprocess.run(cmd, cwd=project, check=True, capture_output=True)
+        (root / "scripts" / "writer.py").write_text(
+            "import pathlib, sys; pathlib.Path('docs/generated.md').write_text('x'); sys.exit(0)\n", encoding="utf-8")
+        r = run_check(mk(command=["python3", str(root / "scripts/writer.py")]), project)
+        check("a check that WRITES during the audit is ERROR, even though it exited 0", r.status == ERROR, f"got {r.status}")
+        check("...naming the path it wrote", "docs/generated.md" in r.detail, f"got {r.detail!r}")
+        check("...and routed to doctrine: a check that mutates is ours to fix", route_of(r)[0] == DOCTRINE, route_of(r)[0])
+        (project / "docs" / "generated.md").unlink()
+        r = run_check(mk(), project)
+        check("a check that writes nothing is unaffected by the assertion", r.status == PASS, f"got {r.status}")
+        check("outside a git repo the assertion is unasserted, not a false ERROR",
+              tree_delta(None, {"a": "??"}) == [] and tree_state(Path(tmp) / "nowhere") is None)
+
         # A MISSING DEPENDENCY FAILS. This is the one that would otherwise read as a pass in CI.
         r = run_check(mk(requires=["definitely-not-a-real-binary-xyz"]), project)
         check("a missing dependency FAILS rather than skipping", r.status == FAIL, f"got {r.status}")

@@ -2446,6 +2446,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.34.0 — 2026-09-03 (release v1.111.0)
+
+- **`/rails-flow:toolchain-audit` carries the maintainer doctor's contract, and `project_gates.py`
+  asserts the half of it that can be asserted** (#849, part 3 of 3 — the last increment; the issue
+  closes with this release). *A diagnostic never mutates the project*: `plugins/rails-flow/scripts/project_gates.py`
+  now snapshots `git status --porcelain -uall` around every check, and a check that wrote a file while
+  being asked a question comes back **ERROR**, routed upstream, naming the path — the marketplace's
+  doctor snapshots `dist/` and restores it byte-for-byte for the same reason, and this is that
+  guarantee for the shipped audit, asserted rather than assumed. Outside a git repo it is unasserted,
+  not a false ERROR. *Repairs are SAFE or they wait*: `toolchain-audit.md` names the closed SAFE set
+  (fast-forward a local ref behind its remote; pull the integration branch when 0 ahead; make an
+  installed hook nudge executable) — applied only when asked, never rewriting history, and listed
+  under a new **Repaired (safe changes only)** report section; everything else is a diff that waits.
+  Five fixtures, two mutations.
+
+- **`/rails-flow:issues` computes its triage order instead of reasoning it out** (#849, part 1 of 3 —
+  `Refs`, the issue ships incrementally). `plugins/rails-flow/scripts/check_issue_ready.py --queue` reads
+  every open issue and prints a ranked queue: ready-now first (`prio:P1` > `P2` > `P3` > unranked, bugs
+  before features, oldest first), blocked issues under what blocks them, `needs-info` skipped and said
+  so, and a coverage line — `N/M open issues declare edges` — because an order computed from three
+  declared edges out of forty is worth having and dishonest to report without saying so. It exits
+  non-zero and prints **no queue** when the graph is wrong (a cycle; an edge to an issue that does not
+  exist): those are filing errors to fix, not something to hand-wave past by ranking on priority, which
+  is the habit the tool replaces. The same script, the same edges, the same strictness as the readiness
+  gate — one home for issue dependencies, as the marketplace's own `issue_graph.py` is for it. Twelve
+  fixtures, five mutations. `issues.md` Phase 1 runs it and quotes the coverage line verbatim.
+
 ### 1.33.0 — 2026-09-03 (release v1.110.0)
 
 - **`/rails-flow:issues` verifies an issue's claims before editing, refuses an issue that waits on open
