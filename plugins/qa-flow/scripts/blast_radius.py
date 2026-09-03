@@ -220,7 +220,7 @@ def read_changed(paths: list[str], from_file: str | None) -> list[str]:
     """Changed paths, one per line, from a file or `-` for stdin. Never derived by running git.
 
     Keeping git out means the tool is testable with a fixture and the input is a plain file the
-    reviewer can read -- `docs/harness-doctrine.md` §9. The caller writes
+    reviewer can read -- `docs/doctrine/harness-doctrine.md` §9. The caller writes
     `git diff --name-only <base>...HEAD > qa/reports/changed.txt` and that file is the evidence.
     """
     out: list[str] = list(paths)

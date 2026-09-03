@@ -145,9 +145,9 @@ Three loops, each with a different job:
 The separation is the point: a build agent that also signs off its own work is a build agent that
 signs off its own work.
 
-**Read next:** [architecture](docs/architecture.md) for the design reasoning and what we
-deliberately did *not* adopt · [harness doctrine](docs/harness-doctrine.md) for when a hook should
-fail open versus closed · [code-review graph](docs/code-review-graph.md) for the optional
+**Read next:** [architecture](docs/doctrine/architecture.md) for the design reasoning and what we
+deliberately did *not* adopt · [harness doctrine](docs/doctrine/harness-doctrine.md) for when a hook should
+fail open versus closed · [code-review graph](docs/doctrine/code-review-graph.md) for the optional
 tool-gated review integration.
 
 ---

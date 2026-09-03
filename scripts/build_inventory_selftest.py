@@ -3,7 +3,7 @@
 
 Run:  python3 scripts/build_inventory.py --selftest   (or execute this file directly)
 
-WHAT THIS IS DEFENDING. `docs/inventory.html` is a COMMITTED generated page, so it inherits the
+WHAT THIS IS DEFENDING. `docs/architecture/inventory.html` is a COMMITTED generated page, so it inherits the
 three failures `build_coverage_artifact.py` recorded, and every one of them reads as success:
 
   1. A page whose bytes depend on the CHECKOUT makes its own gate unpassable -- a file inside a

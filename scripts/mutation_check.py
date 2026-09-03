@@ -60,7 +60,7 @@ def discover(directory: Path = MUTATIONS_DIR) -> tuple[Guard, ...]:
     this one -- 159 commits, the third most-edited file in the repo. Now a guard is a small module
     beside the change that needs it. Discovery is a glob, not a list: a hand-typed registry of the
     directory's contents goes quiet the day a file is added, which is the coverage-gap class this
-    harness exists to catch (`docs/harness-doctrine.md`, instance 4).
+    harness exists to catch (`docs/doctrine/harness-doctrine.md`, instance 4).
     """
     import importlib.util
     guards: list[Guard] = []

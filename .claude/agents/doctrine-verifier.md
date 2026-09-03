@@ -42,6 +42,6 @@ skill targets is a REFUTE for that skill (note the boundary instead).
 - **INCONCLUSIVE** — sources conflict or don't cover it. Do NOT green-light an edit;
   say what additional evidence would settle it. Default to leaving doctrine unchanged.
 
-Honor the repo's `docs/audits/` doctrine-change protocol: the verification (sources,
+Honor the repo's `docs/evidence/audits/` doctrine-change protocol: the verification (sources,
 quotes, version boundary) is recorded so the edit is auditable after the fact. Hand the
 verdict to `skill-doctor`; only CONFIRMED authorizes an edit.

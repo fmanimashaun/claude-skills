@@ -33,8 +33,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the pointer's description is truncated, so recall matches on a fragment",
-            "    desc = memo[\"description\"].replace(\"\\\\\", \"\\\\\\\\\").replace('\"', '\\\\\"')",
-            "    desc = memo[\"description\"][:12]",
+            "    desc = _yaml_scalar(memo[\"description\"])",
+            "    desc = _yaml_scalar(memo[\"description\"][:12])",
             "the pointer carries the memo's own description verbatim",
         ),
         Mutation(
@@ -51,7 +51,7 @@ GUARD = Guard(
         ),
         Mutation(
             "divergence is never detected, so two bodies of one lesson silently coexist",
-            "        if l is not None and not l[\"pointer\"] and l[\"body\"] != m[\"body\"]:",
+            "        if l is not None and not l[\"pointer\"] and core_body(l[\"body\"]) != core_body(m[\"body\"]):",
             "        if False:",
             "a diverged pair reports both sides",
         ),
@@ -66,6 +66,38 @@ GUARD = Guard(
             "    if not store.is_dir():\n        print(f\"n/a: no auto-memory store at {store} — this harness keeps none for this path, or the path differs\")\n        return 3",
             "    if False:\n        return 3",
             "no auto-memory store is n/a",
+        ),
+        # Found on the first real store (#884): every accepted memo read as diverged because the
+        # trailer this tool appends was compared as body; and \" leaked out of quoted descriptions.
+        Mutation(
+            "the provenance trailer counts as body, so every accepted memo is diverged forever",
+            "    if lines and lines[-1].startswith(PROVENANCE_PREFIX):\n        lines = lines[:-1]",
+            "    if False:\n        lines = lines[:-1]",
+            "an accepted proposal is neither inbound, outbound nor diverged",
+        ),
+        Mutation(
+            "escapes in a double-quoted description leak into every memo and index line",
+            "        return inner.replace('\\\\\"', '\"').replace(\"\\\\\\\\\", \"\\\\\") if v[0] == '\"' else inner",
+            "        return inner",
+            "an escaped quote in a double-quoted description is unescaped",
+        ),
+        Mutation(
+            "a description with ': ' is written as a plain scalar, which YAML reads as a mapping",
+            "    if v and \": \" not in v and \" #\" not in v",
+            "    if v",
+            "a description containing ': ' is quoted",
+        ),
+        Mutation(
+            "a memo at the brain root is no longer reported misplaced, so a legacy layout looks canonical",
+            '                    "misplaced": (memo_path(memo_type or "feedback", key_of(str(meta["name"]))) if at_root else None)})',
+            '                    "misplaced": None})',
+            "reported misplaced",
+        ),
+        Mutation(
+            "a memo-shaped file without frontmatter is skipped in silence, so the count is short and nobody knows",
+            "            if p.parent != d or MEMO_SHAPED.match(p.name):\n                UNREADABLE.append(p)",
+            "            if False:\n                UNREADABLE.append(p)",
+            "reported unreadable",
         ),
     ),
 )

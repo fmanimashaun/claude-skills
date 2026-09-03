@@ -103,7 +103,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("self-consistency selftest", ("python3", "scripts/lint_self_consistency.py", "--selftest")),
     ("coverage matrix drift", ("python3", "scripts/build_coverage.py", "--check")),
     ("coverage matrix selftest", ("python3", "scripts/build_coverage.py", "--selftest")),
-    # The artifact is COMMITTED (docs/coverage.html), so it can go stale exactly as coverage.md
+    # The artifact is COMMITTED (docs/evidence/coverage.html), so it can go stale exactly as coverage.md
     # can — same shape, same gate, and the same corpora dependency. An earlier version of this
     # comment claimed neither gate needed the licensed kits, because `ENTRIES` is declared
     # statically. That was wrong and was proved wrong by running it: the page also EMBEDS the
@@ -114,7 +114,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # claim about work nobody did — the coverage-gap class. It was registered TWICE for a while, which
     # inflates the sweep count; GATE names are asserted unique in the selftest now.
     ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
-    # #509, and the same shape a second time: `docs/inventory.html` is COMMITTED, so it goes stale
+    # #509, and the same shape a second time: `docs/architecture/inventory.html` is COMMITTED, so it goes stale
     # the moment an agent, a command, a gate or a version moves — which is most PRs. Registered as
     # both halves for the reason stated above: the selftest proves the guards fire and stay silent
     # on fixtures, the drift check asserts the page we actually ship is a clean build.

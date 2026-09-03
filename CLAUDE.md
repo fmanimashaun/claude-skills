@@ -5,7 +5,7 @@
 
 This repo **is** a Claude plugin marketplace. It ships plugins and skills to other people, and it
 carries its own maintenance tooling for you. Rules first; the incident behind each rule is one click
-away in **`docs/maintainer-history.md`** (the section named in each rule), moved there verbatim so a
+away in **`docs/brain/history/maintainer-history.md`** (the section named in each rule), moved there verbatim so a
 session pays for reasoning only when it wants it. `AGENTS.md` is imported by the first line above and
 holds the harness-neutral rules (measure before you assert; write the mechanism out; end with the call).
 
@@ -23,8 +23,8 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
   SessionStart hook (`.claude/hooks/scripts/maintainer-status.sh`) — and `scripts/`.
 - If you are here to **build a Rails app**, you want the plugins, not this file.
 - **This file has a ceiling**, the `<!-- claude-md: max-lines N -->` marker above, enforced by
-  `claude-md-growth` — a ratchet at the measured size. A new fact goes to `docs/maintainer-history.md`,
-  one linking line here. Relocate, never summarise: `python3 plugins/rails-flow/scripts/claude_md_structure.py --propose CLAUDE.md --history docs/maintainer-history.md`.
+  `claude-md-growth` — a ratchet at the measured size. A new fact goes to `docs/brain/history/maintainer-history.md`,
+  one linking line here. Relocate, never summarise: `python3 plugins/rails-flow/scripts/claude_md_structure.py --propose CLAUDE.md --history docs/brain/history/maintainer-history.md`.
 
 ## Ship a fix — the checklist
 
@@ -64,7 +64,7 @@ issue on the promotion. (History: *Grouping related issues on one branch*, decis
 
 Skills are doctrine other people's agents follow verbatim, so **no skill claim is edited until
 `doctrine-verifier` confirms it against an authoritative source** (official docs for the version in
-scope, the framework changelog, `docs/audits/`). CONFIRMED authorises the edit; REFUTED closes the
+scope, the framework changelog, `docs/evidence/audits/`). CONFIRMED authorises the edit; REFUTED closes the
 issue with the citation; **INCONCLUSIVE leaves doctrine unchanged.** Record citation and version
 boundary in the CHANGELOG entry.
 
@@ -113,7 +113,7 @@ ancestry* check asserts both halves; `--gates-only` skips it, so run the full do
 | 2 | **Promote** — merge dev into main | `dev` → **`main`** | **Yes** — the push fires the workflow |
 
 Name step 1 `chore/arm-vX.Y.Z`, never `release/*`; title it "arm vX.Y.Z — version assignment (does not
-publish)". The arm regenerates the committed pages because `docs/coverage.html` stamps the release
+publish)". The arm regenerates the committed pages because `docs/evidence/coverage.html` stamps the release
 version. A fix merged to `dev` between the arm and the promotion is **folded into the armed block** —
 a promotion must carry no `Unreleased`, and a second arm would leave the first heading a ghost.
 
@@ -173,11 +173,11 @@ normalises deliberate elisions and Rails-only ERB (`form_with … do |f|`, `<%==
 ladder of contexts; widening the ladder to silence a failure is how the tool stops finding anything.
 (History: *Verify the shell we ship inside markdown*.)
 
-### Which claims are enforced — `docs/doctrine-map.html`
+### Which claims are enforced — `docs/architecture/doctrine-map.html`
 
 `python3 scripts/doctrine_map.py` (`--check`, `--audit-coverage`). `CLAIMS` is an explicit registry —
 there is no extractor, by design — of `guarantee` / `advice` / `gap` rows, using
-`docs/harness-doctrine.md`'s test (*if a model ignores this, what happens?*). Validators refuse an
+`docs/doctrine/harness-doctrine.md`'s test (*if a model ignores this, what happens?*). Validators refuse an
 anchor that vanished, an enforcement that no longer exists, an unenforced guarantee, an untracked gap,
 a resolved gap, an undeclared source. An `advice` row with nothing behind it is **correct**. The map is
 a floor, not a ceiling.
@@ -224,8 +224,8 @@ local `main` ref; check out and pull `dev`), never rewrites history, and restore
 after the drift rebuild: a diagnostic never mutates the repo. A failing gate prints its **findings**,
 not a count (#820).
 
-Two committed, generated pages: `docs/coverage.html` (`scripts/build_coverage_artifact.py`) and
-`docs/inventory.html`. **The rendered bytes must be a function of the DATA and nothing else.** No git
+Two committed, generated pages: `docs/evidence/coverage.html` (`scripts/build_coverage_artifact.py`) and
+`docs/architecture/inventory.html`. **The rendered bytes must be a function of the DATA and nothing else.** No git
 state, no corpora availability; the page stamps the release version only.
 **`--check` compares the blob at `HEAD`, never the file on disk**, so a page built and never
 `git add`ed fails honestly.
@@ -254,6 +254,6 @@ missing dependency gets disabled. Three **gates fail closed**, each scoped to wh
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (falls back to the raw payload;
 `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
 `plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned). Classify a new hook
-with `docs/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
+with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the
 environments that broke them (#822–#826).

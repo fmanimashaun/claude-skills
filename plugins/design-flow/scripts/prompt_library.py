@@ -17,7 +17,7 @@ This module is the missing store. Two files, one source:
     docs/assets/prompts-library/prompts.json   the source -- agents read this
     docs/assets/prompts-library/prompts.md     a VIEW of it -- humans read this, and it is generated
 
-The markdown is derived, never hand-kept, for the reason `docs/coverage.html` records: a
+The markdown is derived, never hand-kept, for the reason `docs/evidence/coverage.html` records: a
 hand-maintained second copy disagrees with the first within a week and disagrees SILENTLY, because
 a stale table still looks like a table. Two rules follow and both are load-bearing:
 

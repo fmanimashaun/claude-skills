@@ -11,7 +11,7 @@ without a second copy -- which is how #792's one defect came to exist in two par
 
 So the list is COMMITTED beside the checker, in the same plugin, at a fixed offset; and this script
 re-derives it from the doctrine and fails on any disagreement. Same shape as `coverage.md` ->
-`docs/coverage.html`: the artifact is the thing that runs, and a gate proves it still matches its
+`docs/evidence/coverage.html`: the artifact is the thing that runs, and a gate proves it still matches its
 source. Nothing at runtime crosses a plugin boundary.
 
 WHAT IS DERIVED, and the boundary is the point. Only the fenced Gemfile block in `testing.md` --

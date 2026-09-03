@@ -11,7 +11,7 @@ directory nothing writes is **indistinguishable from a gate that correctly found
 and it stays that way forever. Three of qa-flow's seven and two of rails-flow's five were in
 exactly that state -- `qa/routes.json` (the file is `qa/reports/routes.json`),
 `qa/manual-tests/manifest.json` (it is `qa/reports/<run>/manifest.json`), `docs/guides/*.md` (the
-artefact is `docs/GUIDE.md`), `docs/architecture.md` (it is `docs/architecture/graph.json`).
+artefact is `docs/GUIDE.md`), `docs/doctrine/architecture.md` (it is `docs/architecture/graph.json`).
 
 That is the `gate-that-cannot-fail` class, in the manifest that registers the gates.
 
@@ -227,7 +227,7 @@ def hints(entry: str, corpus: dict[str, set[str]], limit: int = 3) -> list[str]:
     """The corpus paths most likely to be what the manifest meant.
 
     Shared prefix alone is not enough to be useful: every `docs/*` entry shares one segment with
-    every other, so `docs/architecture.md` was pointed at `docs/reviews/`. The second term compares
+    every other, so `docs/doctrine/architecture.md` was pointed at `docs/reviews/`. The second term compares
     the entry's LAST segment against every segment of the candidate, which is what actually
     identifies `docs/architecture/graph.json` and `docs/GUIDE.md` as the intended artefacts.
     """

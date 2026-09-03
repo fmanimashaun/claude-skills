@@ -14,7 +14,7 @@ follow, and all three have already gone wrong in this toolchain:
     order is a guess and the fix for a symptom can land before the fix for its cause.
 
 This makes those three mechanical. It is deliberately **plain JSONL in git** — no graph database,
-no orchestration runtime (#138 criterion 8, and `docs/harness-doctrine.md` §9: prefer inspectable
+no orchestration runtime (#138 criterion 8, and `docs/doctrine/harness-doctrine.md` §9: prefer inspectable
 state). A record you can `git diff`, `grep`, and read without a running service.
 
 THE DIVISION OF LABOUR, which is the same one this toolchain uses everywhere. The agent decides

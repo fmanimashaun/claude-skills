@@ -7,6 +7,21 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-03 (release v1.114.0)
+
+- **`docs/` reworked to the shipped layout by the shipped tool** (#886; D-005). `docs/README.md` is the map, with `doctrine/`
+  declared and eight `## Root files` rules; nine moves — the maintainer's doctrine pages to `docs/doctrine/`, the generated
+  `doctrine-map.html` and `inventory.html` to `docs/architecture/`, `coverage.html` and `audits/` to `docs/evidence/`,
+  `maintainer-history.md` to `docs/brain/history/` (D-004 reversed) — with every path string rewritten by the tool across
+  CLAUDE.md, the wiki, the scripts that write those pages and the `doctrine_map` anchors that quote them. Generated pages
+  rebuilt at the new paths; drift gates green at HEAD.
+- **`docs/brain/` adopted in the maintainer repo; 17 memos brought in verbatim from this machine's Claude memory**
+  (#884). Scaffolded in the shape `setup-flow` §4 prescribes (README, STATUS, PROGRESS-LOG, DECISIONS D-001–D-004,
+  HYPOTHESES H-001, MEMORY). `brain_local_sync.py --propose` rendered the 17 `feedback` memories; each was accepted
+  as rendered — body verbatim, `[observed]` provenance — and indexed; the one `user` memory never crossed. The
+  first real run of the bridge, and it found three defects (rails-flow entry). `docs/brain/history/maintainer-history.md` stays
+  where it is (D-004).
+
 ### 2026-09-03 (release v1.113.0)
 
 - **`scripts/mutations/check_component_shapes.py`: the shapes reconciliation gets its mutation guard** (#874).
@@ -19,12 +34,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-03 (release v1.112.0)
 
-- **`CLAUDE.md` is rule-first, and the reasoning moved to `docs/maintainer-history.md`** (#870). It was 754
+- **`CLAUDE.md` is rule-first, and the reasoning moved to `docs/brain/history/maintainer-history.md`** (#870). It was 754
   lines and ~12.7k tokens loaded by every session — 59 % of its words in paragraphs carrying an incident
   rather than a rule — while `setup-flow.md` shipped the advice "keep CLAUDE.md under 200 lines" to users.
   Now: a **"Ship a fix" checklist** of eleven steps at the top, each pointing at its section; every
   section rule → one-clause why → the history section by name; the full previous text moved
-  **verbatim** to `docs/maintainer-history.md`, so nothing is lost and a reader who wants the story
+  **verbatim** to `docs/brain/history/maintainer-history.md`, so nothing is lost and a reader who wants the story
   still gets it. The restructure is measured by the gates that pin this file, not by reading: the
   seventeen `doctrine_map` anchors, the hook-script count sentence, the plugin and skill names, the
   `@AGENTS.md` import and every path pointer all survive verbatim and pass.
@@ -143,7 +158,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 ### 2026-08-30 (release v1.106.0)
 
 - **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
-  `docs/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
+  `docs/architecture/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
   which by nothing* — and its `DOCTRINE_SOURCES` were eleven files, all repo-process doctrine or
   maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/design-system/` were
   not declared sources at all**: the doctrine other people's agents follow verbatim, which is the
@@ -177,7 +192,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
   No extractor, per the existing design: *"a bad extractor is worse than none — a map that misses
   claims reads as coverage."* That holds harder for the shipped skills, which are much larger prose
-  files. Files: `scripts/doctrine_map.py`, `docs/doctrine-map.html`, `scripts/mutation_check.py`.
+  files. Files: `scripts/doctrine_map.py`, `docs/architecture/doctrine-map.html`, `scripts/mutation_check.py`.
 
 
 ### 2026-08-22 (release v1.94.1)
@@ -594,8 +609,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   listed 5 of 42 commands and neither skill shipped that day, and **Install sat at line 732** — a
   reader had to scroll past seven hundred lines to use the thing. Re-authored to **194 lines** with
   install at line 12, every skill and command named, and zero stale versions. The two deep sections
-  were **moved verbatim**, not deleted: `docs/architecture.md` (the design reasoning) and
-  `docs/code-review-graph.md` (a 225-line setup for an *optional* integration that was occupying a
+  were **moved verbatim**, not deleted: `docs/doctrine/architecture.md` (the design reasoning) and
+  `docs/doctrine/code-review-graph.md` (a 225-line setup for an *optional* integration that was occupying a
   quarter of the front page).
 
 - **A wiki, in the repository rather than GitHub's.** A GitHub wiki is a separate git repo — no pull
@@ -810,14 +825,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to learn why the count was 2, and a count with no evidence behind it is what makes a maintainer
   reword doctrine to appease the gate.
 
-- **`docs/inventory.html` — a generated, committed map of what this marketplace ships** (Refs #509).
+- **`docs/architecture/inventory.html` — a generated, committed map of what this marketplace ships** (Refs #509).
   27 agents, 37 commands, 4 model-tier tables and 64 gates existed with no map of any of it: the one
   question people ask ("which agent owns this, what gate covers it, which command drives it") cuts
   across all three kinds, so answering it meant reading four plugin trees. One filterable table now
   does. **Change type: repo tooling** — no doctrine change, no framework claim, so no
   `doctrine-verifier` verdict was sought.
 
-  Deliberately *not* the dashboard #509 was prompted by: same shape as `docs/coverage.html` instead —
+  Deliberately *not* the dashboard #509 was prompted by: same shape as `docs/evidence/coverage.html` instead —
   generated, committed, drift-gated, stdlib only, no runtime. Every source is **imported rather than
   re-parsed** (`maintainer_doctor.GATES`, `check_handoff.parse_tiers`), and the one source that could
   not be — agent frontmatter, because the page needs `description` and `tools` — is **reconciled**
@@ -1151,7 +1166,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   gone and the sentence points at the table instead. Found by the gate failing on the counts #129
   legitimately moved (a 12th `check()` harness, a 3rd luminance copy), which is the gate working.
 
-- **FIX — `docs/harness-doctrine.md` carried three stale gap-claims, and one of them told the reader
+- **FIX — `docs/doctrine/harness-doctrine.md` carried three stale gap-claims, and one of them told the reader
   to trust it** (found while working #128). §8 said a grep for
   `circuit.?breaker|stop condition|max attempts|bail out` across `plugins/` and `skills/` *"still
   returns none"* — it returns **26 hits in five files**, and has since the rails-flow half shipped.
@@ -1369,7 +1384,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   fallback passes the raw JSON payload and the command text is still in it; `release-gate.sh` exits
   **2** when `python3` is absent *and* the command targets `main`, **0** otherwise. That scoping is the
   load-bearing detail — a gate that failed closed on unrelated work would be switched off within a day.
-- **`docs/harness-doctrine.md` is now referenced from the maintenance guidance** (#132), closing its
+- **`docs/doctrine/harness-doctrine.md` is now referenced from the maintenance guidance** (#132), closing its
   last open acceptance criterion. It was cited only from a sibling doc, so the doctrine existed and the
   people who needed it — anyone adding a hook — had no pointer to it. The reference sits at the exact
   place the decision gets made, next to the fail-open/fail-closed split, with the guarantee-vs-advice
@@ -1422,7 +1437,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
     their phases with edges. That is tracker work rather than a repo change, and every declaration
     it adds is what makes the coverage caveat above stop firing.
 
-- **NEW `docs/harness-doctrine.md` — the rule we had been following without writing down** (#132):
+- **NEW `docs/doctrine/harness-doctrine.md` — the rule we had been following without writing down** (#132):
   *put your guarantees in the deterministic layer*, with the guarantee-vs-advice test (*"if a model
   ignores this, what happens?"*), the three tiers (prose / output contract / deterministic), the
   fail-open-for-advisories vs fail-closed-for-gates rule, and a classification checklist for anyone
@@ -1508,7 +1523,7 @@ is measured by the generator and cross-checked against `coverage.md`'s own Total
 - **The coverage matrix now ships as a page other machines can see.** `build_coverage_artifact.py`
   wrote to a **gitignored** path, so the deliverable existed only on the machine that built it — the
   defect the maintainer named directly (*"if the build is gitignore, then other maintainer machine
-  can't see it"*). Output moved to **`docs/coverage.html`**, committed, with a `--check` drift mode
+  can't see it"*). Output moved to **`docs/evidence/coverage.html`**, committed, with a `--check` drift mode
   wired into `maintainer_doctor.py` beside its selftest. All 113 rows classified, cross-checked
   against the Totals table committed in `coverage.md` on every run, so the two cannot silently
   diverge. **The per-state split is deliberately not quoted here** — it moved twice while this branch
@@ -1525,7 +1540,7 @@ is measured by the generator and cross-checked against `coverage.md`'s own Total
   and a fixture renders the page under two different fake checkouts and requires byte equality.
 - **FIX — the gate trusted the working copy, so it passed a page that was never committed.** It
   tested `args.out.is_file()` and compared the file on disk. Run against an untracked, *byte-identical*
-  `docs/coverage.html`, it exited **0** — the exact "invisible deliverable" failure above, waved
+  `docs/evidence/coverage.html`, it exited **0** — the exact "invisible deliverable" failure above, waved
   through by the gate built to close it, with the message *"is not committed"* one branch away. This
   is `claims-vs-enforcement` in new code, the third instance the `code-review` skill's own class has
   caught. It now compares the blob at `HEAD` via `committed_blob()`, verified against real git rather
@@ -1775,7 +1790,7 @@ is measured by the generator and cross-checked against `coverage.md`'s own Total
   `part-of`); the script reports **ready-now**, **blocked-by-what**, **critical path per epic**, and
   **priority-vs-graph contradictions in both directions** — including the costlier
   `low-priority-blocking-P1`. Wired into `/maintainer-triage` and `issue-triager`; format documented
-  in `docs/issue-dependency-graph.md`. Design decision (our own format, no upstream) recorded on #133.
+  in `docs/doctrine/issue-dependency-graph.md`. Design decision (our own format, no upstream) recorded on #133.
   - **The graph is a gate, the queue is advice.** A cycle, a dangling edge, a typo'd key or a
     declaration outside its fence exits non-zero and prints **no queue at all** — a ranked queue
     computed from a graph already known to be broken reads exactly like a correct one. Blocked work
@@ -2485,6 +2500,52 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-03 (release v1.114.0)
+
+- **`plugins/rails-flow/scripts/docs_layout.py`: the map's `## Root files` table homes a root file the layout cannot name;
+  a file that merely mentions a bare filename is no longer listed as a rewrite** (#886, found reworking this repo's own
+  `docs/`). A project teaches the tool its own names — `| \`*-doctrine.md\` | \`doctrine/\` |` — instead of confirming
+  `unsure` lines by hand; and `plan()` keeps only rewrites that change text, so a design-flow script naming an unrelated
+  `plan.md` no longer appears under "rewrites in code". Fixtures + mutations (33 / 16).
+- **`plugins/rails-flow/scripts/build_project_wiki.py` — a generated project wiki under `docs/wiki/`: reference pages that
+  mirror the codebase, drift-gated, rebuilt at ship** (#887). Architecture, Routes, Data-Model, Jobs-And-Queues, Components,
+  Dependencies and the sidebar, each a join over a structured source — `docs/architecture/graph.json` (nodes, edges, flows,
+  and the parser's own notes on what it could not model), `db/schema.rb`, `config/queue.yml` (verbatim), `config/recurring.yml`,
+  `Gemfile.lock`, `package.json`. Every count on a page is asserted against its source's total (a table the parser missed
+  is a PROBLEM, not a shorter page); every page names the graph's commit; bytes are a function of the inputs. `Home.md`
+  is hand-written, seeded once, never overwritten. `--check` is the `project-wiki-drift` check; `doc-updater` rebuilds the
+  wiki with the graph; `setup-flow` §6c documents it and the opt-in `wiki.yml` publish (off by default). Read-only on
+  Retask-platform: 142 nodes, 43 routes, 13 tables (13 declared), 14 foreign keys, 19 associations, 4 mailers with their
+  enqueuers, 263 gems — all six pages built, tree untouched. 23 fixtures, 11 mutations.
+- **`plugins/rails-flow/scripts/docs_layout.py` — one `docs/` layout for every project: a map agents follow, a check
+  that enforces it, a `--propose` that reworks an existing tree** (#886). Eight directories, each answering one reader's
+  question (product · design · architecture · runbooks · evidence · wiki · brain); the rule is one sentence in
+  `docs/README.md`, which the tool reads — a project may declare one more directory there. `--report` classifies every
+  file (authored / generated / code / binary / memory) and names root files, code in docs, binaries at a root, product
+  content inside the brain, memos at the brain root, the missing map. `--propose` prints the `git mv` plan AND the
+  link rewrites it needs across the repo; a move referenced from a binary is refused, not guessed; `--write` applies
+  and asserts every rewritten link resolves; `--scaffold` lays down only what is missing. Case study: Retask-platform,
+  98 files — 45 authored, 32 binary, 1 code, 3 generated, 17 memory; the tool's first real report matched the review
+  by hand. `checks.json` `docs-layout`; `setup-flow` §4b. 29 fixtures, 13 mutations; the selftest caught a real
+  defect on the first run (a file both moved and link-rewritten came back at its old path).
+- **`plugins/rails-flow/scripts/brain_local_sync.py`: a memo-shaped file without frontmatter is reported `unreadable`, not
+  skipped in silence** (#884, found on the second real brain). Retask-platform has four memos at its brain root; the
+  bridge counted three, because one has no frontmatter `name`. A file under `memos/` or named `feedback_*`/`decision_*`
+  that the parser cannot read is now a line in `--status`, `--brief` and `--json` with the remedy (add the frontmatter).
+  `STATUS.md` and the other root files are not memo-shaped and stay silent. Fixture + mutation (35 / 14).
+- **Memos live under `docs/brain/memos/<type>/<slug>.md`; the brain root holds only the index, STATUS, DECISIONS,
+  HYPOTHESES, PROGRESS-LOG and README** (#884; maintainer: a memo at the root "is a terrible structure"). `brain.md`,
+  `setup-flow` §4 and `brain-review` step 6 say so; `plugins/rails-flow/scripts/brain_local_sync.py` proposes into
+  `memos/<type>/`, still reads a root memo, and reports it **misplaced** with the path it belongs at (in `--status`,
+  `--brief` and `--json`) so an existing project can be reworked. Fixture + mutation.
+- **`plugins/rails-flow/scripts/brain_local_sync.py`: three defects the first real store surfaced, fixed** (#884).
+  Run against this repo's 18 auto-memories: (1) `\"` escapes inside a double-quoted `description` leaked into every
+  proposed memo and index line — `_unquote` now unescapes; (2) a description containing `: ` was written as a plain
+  scalar, which YAML reads as a mapping — `_yaml_scalar` quotes exactly when the line would be misread, in memos
+  and pointers alike; (3) every ACCEPTED proposal read as diverged forever because the provenance trailer the tool
+  appends was compared as body — `core_body` strips the tool's own trailer before comparing. Each has a fixture and
+  a mutation (32 fixtures, 12 mutations). After acceptance `--status` reports in sync, `--pull` plans nothing.
+
 ### 2026-09-03 (release v1.113.0)
 
 - **`plugins/rails-flow/scripts/brain_local_sync.py` — `/rails-flow:brain-sync local`, the bridge between `docs/brain/` and Claude Code's per-machine auto-memory** (#877).
@@ -2804,7 +2865,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   and `doctrine_path` is design-flow's and hardcodes `fidara-design`, so rails-flow cannot borrow it
   without a second copy — which is exactly how #792's one defect came to live in two parsers. So
   `derive_mandated_gems.py` writes `plugins/rails-flow/mandated_gems.json` beside the checker, and a
-  drift gate proves it still matches. Same shape as `coverage.md` → `docs/coverage.html`.
+  drift gate proves it still matches. Same shape as `coverage.md` → `docs/evidence/coverage.html`.
 
   The fence is found by **content** (`group :development, :test do`), never "the first ruby fence" —
   which would follow any edit that inserted an earlier one, failing as a silently shorter list.
@@ -3523,7 +3584,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `{match:docs/GUIDE.md}`, and it passes `--decisions docs/brain/DECISIONS.md` the way
     `product-brief` already does, so the "cite the decision log, do not restate it" rule is actually
     exercised rather than silently off.
-  - **`architecture-graph-drift` waited on `docs/architecture.md`.** `architecture_graph.py` writes
+  - **`architecture-graph-drift` waited on `docs/doctrine/architecture.md`.** `architecture_graph.py` writes
     a *directory* — `docs/architecture/{graph.json,index.html,graph.md}` (`--out` default
     `docs/architecture`), and its own drift message names `docs/architecture/graph.json`. Now
     `applies_when: ["app", "docs/architecture/graph.json"]`, which is the artefact `--check`
@@ -3578,7 +3639,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **What is deliberately NOT enforced, said out loud rather than implied.** One-question-at-a-
     time, every question carrying a recommendation, and stopping when the first slice is decidable
     are runtime interview behaviour that leaves no trace in the artifact — tier 1 prose per
-    [`docs/harness-doctrine.md`](docs/harness-doctrine.md) §1, and labelled as tier 1 in the command
+    [`docs/doctrine/harness-doctrine.md`](docs/doctrine/harness-doctrine.md) §1, and labelled as tier 1 in the command
     so nobody reads enforcement that does not exist. Success criteria are **not** graded for
     falsifiability here either: that is `check_criteria.py`'s job on `docs/acceptance/<slug>.md`, and
     enforcing one property twice at two fidelities is the second-source-of-truth failure this whole
@@ -4523,6 +4584,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 2026-09-03 (release v1.114.0)
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 28 → 30, reach 14 → 16**
+  — `docs_layout.py` (#886) and `build_project_wiki.py` (#887) are new copies; `check_shared_shapes.py` refuses the stale number.
+
 ### 2026-09-03 (release v1.113.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 27 → 28,
@@ -4916,7 +4982,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.49.0 — 2026-08-20 (release v1.92.0)
 
-- **We answered "what enforces this?" by grep, every session.** (#655) `docs/doctrine-map.html` is
+- **We answered "what enforces this?" by grep, every session.** (#655) `docs/architecture/doctrine-map.html` is
   generated from an explicit registry in `scripts/doctrine_map.py`: **32 claims**, each with where it
   is stated and what makes it true — 24 enforced guarantees, 7 advisory, 1 tracked gap.
 
@@ -5743,7 +5809,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   so there 3.2.2 genuinely applies.
 - **No coverage `ENTRIES` rows, and the gap is disclosed rather than left to be found** (Refs
   [#91](https://github.com/fmanimashaun/claude-skills/issues/91)). `coverage.md` and
-  `docs/coverage.html` need the licensed corpora to regenerate, so committing rows here would fail the
+  `docs/evidence/coverage.html` need the licensed corpora to regenerate, so committing rows here would fail the
   drift gate on the next maintainer's machine. **`verify_no_undeclared_entry` cannot see this gap**: it
   matches on row name, and the four new headings are named differently from the four `derivable` rows
   they back — the same shape as the `Command palette` row that guard was written for, in the half it
@@ -5898,7 +5964,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   says, not what it is taken to say.
 - **Not done in this slice, and deliberately** (#91): no rows were added to
   `scripts/build_coverage.py`'s `ENTRIES` for the four new catalogue entries and three anatomies.
-  `coverage.md` and `docs/coverage.html` can only be regenerated with the licensed corpora attached,
+  `coverage.md` and `docs/evidence/coverage.html` can only be regenerated with the licensed corpora attached,
   and committing an `ENTRIES` change without regenerating them would leave a stale matrix that fails
   the drift gate on the next maintainer's machine — the exact "damage still landed elsewhere" shape
   CLAUDE.md records for the corpora exemption. The rows and their evidence strings are listed on
@@ -8045,6 +8111,11 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 2026-09-03 (release v1.114.0)
+
+- **`plugins/qa-flow/scripts/blast_radius.py`: the maintainer doctrine its docstring cites moved** (#886) —
+  `docs/harness-doctrine.md` → `docs/doctrine/harness-doctrine.md`. Docstring only; no behaviour changed.
+
 ### 1.26.1 — 2026-09-02 (release v1.108.0)
 
 - **`plugins/qa-flow/README.md` gains a Commands section** (#835) — it listed none of its seven commands;
@@ -8542,7 +8613,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   regression scope from the change instead of reasoning it out. `/qa-flow:verify` Phase 2 and
   `qa-lead` now take its output as the mechanical floor, and every inclusion prints **the edge that
   justified it** — an unexplained scope list is a different guess, not a derivation.
-  - **Tier 3, deterministic** (`docs/harness-doctrine.md` §1/§10): a script with an exit code, not
+  - **Tier 3, deterministic** (`docs/doctrine/harness-doctrine.md` §1/§10): a script with an exit code, not
     an instruction an agent may reinterpret. It is a **check, not a hook**, so the advisory-vs-gate
     question does not arise; the ladder in §4 is walked in full — both-direction selftest, a
     declared mutation per rule, registered in `GATES`, and three states where a skip is not a pass.
@@ -9511,6 +9582,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-03 (release v1.114.0)
+
+- **`plugins/design-flow/scripts/asset_plan.py`, `compose_brief.py`, `prompt_library.py`, `hooks/scripts/design-tells.sh`, `README.md`:
+  the maintainer doctrine they cite moved** (#886) — `docs/harness-doctrine.md` → `docs/doctrine/harness-doctrine.md`,
+  `docs/coverage.html` → `docs/evidence/coverage.html`. Comment and docstring paths only; no behaviour changed.
 
 ### 1.38.1 — 2026-09-02 (release v1.108.0)
 
@@ -10540,7 +10617,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   `--scaffold` creates both **before the first `--run`**, each with a `README.md` — not a `.gitkeep`,
   because git does not track an empty directory and a bare `mkdir` would give the scaffolding machine
   a layout nobody else who clones the project ever sees. That is the invisible-deliverable failure
-  `docs/coverage.html` was committed to fix.
+  `docs/evidence/coverage.html` was committed to fix.
 
   **Kebab, not the space the layout was drawn with**: a path containing a space breaks every unquoted
   shell one-liner in our own docs, and `lint_markdown_shell.py` checks 191 of those. The founder's
@@ -11009,7 +11086,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
   Generated, never hand-maintained — a hand-kept table is a second source of truth that disagrees
   with the first within a week and disagrees *silently*, because a stale table still looks like a
-  table. Two properties carried over from `docs/coverage.html`: the bytes are a function of the
+  table. Two properties carried over from `docs/evidence/coverage.html`: the bytes are a function of the
   **data only** (no timestamp, no SHA, no absolute path — anything else makes the drift check
   unpassable by construction), and the totals come from `status_report()` rather than the renderer
   recounting rows. `save_plan()` re-renders at the single choke point so a mutation path added later
@@ -11634,7 +11711,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   matching nothing.
 - **Wired as a PostToolUse hook** on `Edit|Write|MultiEdit` for view and component surfaces, and as
   a second step in `/design-flow:audit`. **Advisory, therefore fail-open** per the
-  guarantee-vs-advice test in `docs/harness-doctrine.md` — verified by running it with `python3`
+  guarantee-vs-advice test in `docs/doctrine/harness-doctrine.md` — verified by running it with `python3`
   shadowed by a stub that exits 127 (exit 0, silent). design-flow had no `hooks/` directory before
   this; hooks load by convention, exactly as rails-flow's do.
 - Detector selftest: **40 checks across 7 rules**. Five declared mutations, all caught by their own
@@ -12348,7 +12425,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   connection-pool rules) — the single doctrine gap found by the framework audit
   against rails/rails 8-1-stable. mission_control-jobs expanded from a one-liner
   to mount-behind-auth + adapter-feature doctrine.
-- Audit record: docs/audits/2026-07-21-framework-gap-audit.md — 31-cluster
+- Audit record: docs/evidence/audits/2026-07-21-framework-gap-audit.md — 31-cluster
   coverage matrix vs the 75 official guides + turbo/stimulus/native sources;
   verdict: zero incorrect doctrine, versions exact, P3 backlog logged.
 
@@ -12573,7 +12650,7 @@ the wrong file.
   shape for the agent that runs the plan and the wrong shape for the human who has to review it —
   which is the step the plan exists for. Unpriced rows are marked **unpriced** rather than shown as
   `$0.00`, so the reason a run will refuse is visible in the document someone reads before deciding
-  to spend. Generated and drift-checked, carrying the two `docs/coverage.html` rules: the bytes are
+  to spend. Generated and drift-checked, carrying the two `docs/evidence/coverage.html` rules: the bytes are
   a function of the **data only**, and the totals come from `status_report()` rather than a second
   count.
 
@@ -13855,7 +13932,7 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
 
 ### 1.53.0 — 2026-08-01
 
-- **Agent topology is now declared by each command, and gated** (#137). `docs/harness-doctrine.md`
+- **Agent topology is now declared by each command, and gated** (#137). `docs/doctrine/harness-doctrine.md`
   gains **§8a**; every command dispatching two or more of its own plugin's agents carries
   `<!-- topology: … -->`, a `parallel` one carries a `merge:` rule, a `loop` carries `exit:`.
   Enforced by the new `undeclared-topology` rule in `lint_self_consistency.py`.
@@ -14235,7 +14312,7 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
 > `fidara-design` changed; `rails-8`, `hotwire` and `code-review` are byte-identical. `pipeline` is
 > untouched and stays at 1.1.5.
 
-- **The coverage matrix is browsable, committed, and gated** — `docs/coverage.html`, generated from
+- **The coverage matrix is browsable, committed, and gated** — `docs/evidence/coverage.html`, generated from
   `build_coverage.py` by import rather than by parsing, cross-checked against `coverage.md`'s own
   Totals table on every build. It was first written to a **gitignored** path, so the deliverable
   existed only on the machine that built it.
@@ -14270,7 +14347,7 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
   coverage rows and a Mega-menu/Dropdown correction. Verification **removed** a Tailwind claim that
   would have failed silently: `bg-gradient-to-*` is not deprecated in v4, it is *removed* with no
   alias, so the v3 name emits no class at all.
-- **Harness doctrine written down** — `docs/harness-doctrine.md`: put your guarantees in the
+- **Harness doctrine written down** — `docs/doctrine/harness-doctrine.md`: put your guarantees in the
   deterministic layer, with the guarantee-vs-advice test and the rule that **determinism is necessary,
   not sufficient**. A gate ran every time and still let behavioural code finish with no spec.
 - **The computed work queue became a gate at the point of use** — `issue_graph.py --ready` refuses,

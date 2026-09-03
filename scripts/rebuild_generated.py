@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Rebuild every generated artefact whose bytes are committed. #680.
 
-WHY THIS EXISTS. Three committed files carry the marketplace version — `docs/coverage.html`,
-`docs/inventory.html` and `docs/wiki/Plugin-Reference.md` — and `dist/*.skill` is a deterministic
+WHY THIS EXISTS. Three committed files carry the marketplace version — `docs/evidence/coverage.html`,
+`docs/architecture/inventory.html` and `docs/wiki/Plugin-Reference.md` — and `dist/*.skill` is a deterministic
 build of the skills. Each has its own drift gate, so bumping a version invalidates all of them and
 the gates fail until each is rebuilt.
 
-`docs/doctrine-map.html` (#655) stamps NO version, deliberately: it is read in-tree beside the
+`docs/architecture/doctrine-map.html` (#655) stamps NO version, deliberately: it is read in-tree beside the
 sources it describes, where the drift gate is the freshness signal, so it has one fewer non-content
 input to be unpassable by. It is rebuilt here anyway, because its registry moves whenever a gate,
 guard or rule does — and one command beating four-from-memory is this script's whole reason.
