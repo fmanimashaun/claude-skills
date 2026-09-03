@@ -10,9 +10,9 @@ when shaping the proposal, not after.
 
 ## 1. One stack-neutral core, stack-specific plugins layered on top
 
-- **Never fork a per-framework variant of the same plugin.** "A `fidara-design` for Rails
+- **Never fork a per-framework variant of the same plugin.** "A `design-system` for Rails
   and another for Next.js/React" is the wrong shape. The right shape is one stack-neutral
-  `fidara-design`, with the stack-specific parts living in the stack plugins that already
+  `design-system`, with the stack-specific parts living in the stack plugins that already
   exist (`rails-stack`, `hotwire`).
 - Why forking is wrong here specifically: **the portable half is the half that churns.**
   `components.md`, `coverage.md`, and `page-anatomies.md` are stack-neutral and among the
@@ -20,7 +20,7 @@ when shaping the proposal, not after.
   forever, with nothing checking that they agree.
 - Design the neutral core so that **adding a stack is a new plugin, not an edit to existing
   ones** — a Go + templ or Rust + Askama stack should be additive. Keep shared reference
-  files (e.g. `skills/fidara-design/references/coverage.md`) free of per-stack columns;
+  files (e.g. `skills/design-system/references/coverage.md`) free of per-stack columns;
   per-stack columns are what force a new stack to touch existing gates.
 - Follow the registration pattern that already works: `plugins/rails-flow/scripts/project_gates.py`
   discovers `checks.json` from sibling plugin directories, so a new stack ships a manifest

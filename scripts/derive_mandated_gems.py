@@ -6,7 +6,7 @@ WHY THIS IS AN ARTIFACT AND NOT A RUNTIME READ (#797). The list lives in
 `check_mandated_gems.py` ships in **rails-flow**. A runtime read across that boundary is exactly
 #617's class -- the marketplace clone and an install differ in DEPTH, not offset, so a hop count
 resolves in one and not the other. It recurred twice after the shared resolver existed (#763, #777),
-and `doctrine_path` is design-flow's and hardcodes `fidara-design`, so rails-flow cannot borrow it
+and `doctrine_path` is design-flow's and hardcodes `design-system`, so rails-flow cannot borrow it
 without a second copy -- which is how #792's one defect came to exist in two parsers.
 
 So the list is COMMITTED beside the checker, in the same plugin, at a fixed offset; and this script
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import re
 import sys
 from pathlib import Path
@@ -131,7 +132,16 @@ def check() -> int:
         print(f"MISSING {ARTIFACT.relative_to(ROOT)} — run this script without --check",
               file=sys.stderr)
         return 1
-    have = json.loads(ARTIFACT.read_text(encoding="utf-8"))
+    # The blob at HEAD, never the working copy (#833): a regenerated-but-unstaged artifact is the
+    # invisible-deliverable shape every other drift gate here already refuses.
+    committed = subprocess.run(
+        ["git", "show", f"HEAD:{ARTIFACT.relative_to(ROOT).as_posix()}"],
+        cwd=ROOT, capture_output=True, text=True, timeout=30)
+    if committed.returncode != 0:
+        print(f"MISSING {ARTIFACT.relative_to(ROOT)} at HEAD — regenerate and `git add` it",
+              file=sys.stderr)
+        return 1
+    have = json.loads(committed.stdout)
     if have.get("testing_stack") != want["testing_stack"]:
         print(f"DRIFT: {ARTIFACT.relative_to(ROOT)} disagrees with {DOCTRINE.name}\n"
               f"  doctrine: {want['testing_stack']}\n"

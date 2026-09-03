@@ -50,7 +50,7 @@ def main() -> int:
             failures.append(label)
             continue
         proc = subprocess.run([sys.executable, str(path)], cwd=ROOT,
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, timeout=600)
         if proc.returncode == 0:
             print(f"[ ok ] {label}")
         else:

@@ -412,6 +412,21 @@ def run_check(check: Check, project: Path) -> Result:
             return Result(check, ERROR, f"{type(exc).__name__}: {exc}")
         if done.returncode != 0:
             summary, findings = summarise(done.stdout + done.stderr, done.returncode)
+            # THE CHECK'S OWN VERDICT, not "non-zero means FAIL" (#828). `applicability()` above
+            # decides n/a from the manifest's `applies_when`; a check that has to READ the project
+            # to know -- i18n with no `config.x.locales`, a coverage ratchet with no simplecov --
+            # says so itself with exit 3, and this loop graded every one of those as FAIL, counted
+            # it in `N failed`, and routed it to the project's own tracker. A line reading
+            # `[FAIL] i18n-wired  not applicable — …` is the SKIP-as-FAIL inversion of the
+            # SKIP-as-PASS defect this runner's docstring exists to refuse.
+            #
+            # Exit 2 is "could not run/compare" -- a brand pack that cannot be determined, an
+            # unreadable input -- which is ours to explain, not the project's to fix: ERROR, routed
+            # to doctrine, carrying the check's reason.
+            if done.returncode == 3:
+                return Result(check, NA, summary, findings)
+            if done.returncode == 2:
+                return Result(check, ERROR, summary, findings)
             return Result(check, FAIL, summary, findings)
     return Result(check, PASS, f"{len(argvs)} invocation(s)")
 
@@ -581,6 +596,23 @@ def selftest() -> int:
         check("n/a says WHY", "qa" in r.detail, f"got {r.detail!r}")
         r = run_check(mk(command=["python3", str(root / "scripts/ok.py"), "{match:qa/*.csv}"]), project)
         check("an empty glob is n/a, not pass", r.status == NA, f"got {r.status}")
+        # THE THIRD WAY N/A ARISES (#828): the check itself, after reading the project. Exit 3 is
+        # its verdict, and every such verdict used to be graded FAIL and routed to the app.
+        (root / "scripts" / "na.py").write_text(
+            "import sys; print('not applicable — no config.x.locales declared (NOT a pass)'); sys.exit(3)\n",
+            encoding="utf-8")
+        r = run_check(mk(command=["python3", str(root / "scripts/na.py")]), project)
+        check("a check that exits 3 is n/a, not FAIL", r.status == NA, f"got {r.status}")
+        check("...carrying the check's own reason", "config.x.locales" in r.detail, f"got {r.detail!r}")
+        check("...and routed nowhere, like every other n/a", route_of(r)[0] == UNROUTED, route_of(r)[0])
+        # EXIT 2 IS OURS. "cannot compare" / "cannot run" is the toolchain failing to reach a verdict,
+        # which is doctrine's to explain and not the project's to fix.
+        (root / "scripts" / "cannot.py").write_text(
+            "import sys; print('cannot compare: no brand pack declared'); sys.exit(2)\n", encoding="utf-8")
+        r = run_check(mk(command=["python3", str(root / "scripts/cannot.py")]), project)
+        check("a check that exits 2 is ERROR, not FAIL", r.status == ERROR, f"got {r.status}")
+        check("...routed to doctrine, not the app", route_of(r)[0] == DOCTRINE, route_of(r)[0])
+        check("...carrying the check's reason", "brand pack" in r.detail, f"got {r.detail!r}")
         # A MISSING DEPENDENCY FAILS. This is the one that would otherwise read as a pass in CI.
         r = run_check(mk(requires=["definitely-not-a-real-binary-xyz"]), project)
         check("a missing dependency FAILS rather than skipping", r.status == FAIL, f"got {r.status}")

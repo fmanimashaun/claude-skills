@@ -155,6 +155,14 @@ done
 
 # --------------------------------------------------------- 5. release notes
 
+step "4b. Run the gate sweep the hosted release runs first"
+
+# release.yml makes its `release` job `needs: gates` -- the whole sweep, before anything publishes.
+# This script ran none of it (#832), so a local release could ship what CI would have refused.
+# `--gates-only` is the same set CI runs: content gates only, no clone diagnostics.
+"$PY" scripts/maintainer_doctor.py --gates-only \
+  || fail "the gate sweep failed — the hosted release would not have published this. Fix the failures above, then re-run."
+
 step "5. Extract release notes from CHANGELOG"
 
 # BSD/macOS mktemp requires a template — a bare `mktemp` aborts there, breaking exactly
@@ -168,13 +176,13 @@ trap 'rm -f "$NOTES"' EXIT
 # the bug itself had. The script keeps the `/^### /` anchor (a line merely MENTIONING the
 # tag must not start a grab — a verified failure, not a hypothesis) and the bare-pointer
 # fallback, so a release never publishes an empty body.
-python3 scripts/extract_release_notes.py --tag "$TAG" > "$NOTES"
+"$PY" scripts/extract_release_notes.py --tag "$TAG" > "$NOTES"
 
-if ! python3 scripts/extract_release_notes.py --check >/dev/null 2>&1; then
-  say "WARNING: the notes for $TAG are incomplete or missing — run"
-  say "         'python3 scripts/extract_release_notes.py --check' for the reason."
-  say "         Publishing anyway; the body above is what readers will get."
-fi
+# FAIL, not warn (#832). This printed "Publishing anyway" -- so the `release notes complete` gate
+# that BLOCKS a hosted release could not block here, in the one path that exists for when the
+# hosted runner is unavailable. A fallback that relaxes a gate is not a mirror of the workflow.
+"$PY" scripts/extract_release_notes.py --check \
+  || fail "the notes for $TAG are incomplete or would not publish — see the findings above. Fix the CHANGELOG heading(s), then re-run."
 printf '\nInstall: /plugin marketplace add %s\n' "$REPO" >> "$NOTES"
 
 say "--- notes ---"

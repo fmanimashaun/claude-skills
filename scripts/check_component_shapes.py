@@ -37,8 +37,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CATALOGUE = ROOT / "skills" / "fidara-design" / "references" / "components.md"
-SHAPES = ROOT / "skills" / "fidara-design" / "references" / "component-shapes.json"
+CATALOGUE = ROOT / "skills" / "design-system" / "references" / "components.md"
+SHAPES = ROOT / "skills" / "design-system" / "references" / "component-shapes.json"
 THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 
 # The declared vocabulary for a shape entry. These began as the kinds `pen_library.part_node` could

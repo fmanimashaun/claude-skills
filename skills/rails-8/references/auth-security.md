@@ -101,7 +101,7 @@ class RegistrationsController < ApplicationController
       start_new_session_for @user
       redirect_to root_path, notice: "Welcome!"
     else
-      render :new, status: :unprocessable_entity
+      render :new, status: :unprocessable_content
     end
   end
 end
@@ -325,7 +325,7 @@ class PasswordChangesController < ApplicationController
     if @user.update(params.expect(user: [:password, :password_confirmation]))
       redirect_to root_path, notice: "Password updated."
     else
-      render :edit, status: :unprocessable_entity
+      render :edit, status: :unprocessable_content
     end
   end
 end
@@ -482,10 +482,10 @@ The second example is the one that documents the policy: a passphrase with no di
 
 ### The UI half
 
-A live strength meter is worth having, and its contract is `fidara-design` → **Password strength**. It **may not render a character-class checklist** — that
+A live strength meter is worth having, and its contract is `design-system` → **Password strength**. It **may not render a character-class checklist** — that
 is the prohibited rule wearing a progress indicator, and it teaches the user that `Passw0rd!` beats a
 passphrase. What it can honestly show: length progress toward the floor, the confirmation-match
-state, and the server's blocklist verdict. See `fidara-design` → forms for the component contract.
+state, and the server's blocklist verdict. See `design-system` → forms for the component contract.
 
 ## 2b. Multi-factor — Rails ships none, and §2a already depends on it
 

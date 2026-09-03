@@ -7,12 +7,106 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-02 (release v1.108.0)
+
+- **`scripts/extract_release_notes.py`'s `--check --all-tags` no longer reports the tag being armed as a
+  ghost release** (#834, follow-up). The tag `v` + `metadata.version` has no git tag *by definition* while
+  the arm PR is open — it is created at promotion — and the first arm after the gate landed (v1.108.0)
+  reported its own block as "names a tag that does not exist". The existence half now exempts exactly
+  that one tag; every other missing tag is still a finding. Two fixtures, one mutation.
+- **Prose that contradicted code, in fourteen places, and the rule that refuses the one class of it
+  that keeps recurring** (#835). Every one was this repo's own `claims-vs-enforcement` in its own docs,
+  found by the 2026-08-31 review and verified against the live source. `CLAUDE.md` said 35 gates (98),
+  27 fixtures (29), four builders (five), six validators (eight), 37 no-op merges (unreproducible),
+  described `release.yml` as three steps with a tag-existence no-op (its job `needs: gates` first, and
+  the no-op tests *release* existence), cited `check_handoff.py` without its plugin path, and said
+  "three states" where `docs/wiki/Contributing.md` said four for the same output. **The counts are
+  deleted from living prose, not corrected** — a number in prose is a second, unchecked copy of the
+  code, and five of them rotted in one file; the scripts print theirs. `README.md` stated the
+  one-block-per-release rule that #699 refuted, and omitted `toolchain-audit`, `canvas`, `port` and
+  `compose`; `plugins/design-flow/README.md` listed six of twelve commands and three of five agents,
+  and said "no bundled hooks" fifty lines after describing one. The rails-stack manifest description
+  named five of its seven skills. `docs/settings.allowlist.sample.json` was referenced by nothing and
+  is deleted. `scripts/lint_self_consistency.py` gains **`undocumented-command`** — a shipped
+  `/plugin:command` the root README (as `` `c` ``) or the plugin README (as `/p:c`) never names —
+  the sibling of `undocumented-plugin` one level down, presence-only for the same reason; four
+  fixtures, two mutations. Its own docstring said "Both rules are mechanical" about thirty-nine.
+- **Two release blocks that never published, and the gate that now catches the class** (#834).
+  `CHANGELOG.md` carried a `### … (release v1.78.0)` block for a tag that does not exist — armed as
+  1.78.0, re-armed to 1.79.0, and the v1.79.0 body has no trace of those notes — and a
+  `### … (v1.91.1)` heading missing the word `release`, which the extractor does not match, so
+  v1.91.1 shipped the bare-pointer body. `scripts/extract_release_notes.py`'s `--check` asked only
+  about the tag being armed, so neither could be seen after the fact. The v1.78.0 block is retitled
+  to the tag its content shipped under; the sixteen legacy `(vX.Y.Z)` headings take the publishing
+  shape so one shape holds throughout; and `--check --all-tags` (what the `release notes complete`
+  gate now runs) asserts over the **whole file**: every heading naming a version uses the shape that
+  publishes, and every `(release vX)` names a real tag. Against the pre-fix file it reports 17
+  findings; against the fixed one, none. Five fixtures, three mutations.
+- **`scripts/release_local.sh` is now the mirror of `release.yml` it always claimed to be** (#832).
+  Three ways it was not: the hosted `release` job `needs: gates` — the whole sweep runs before
+  anything publishes — and the script ran none of it; a failed notes check printed *"Publishing
+  anyway"*, so the gate that blocks in CI could not block in the one path that exists for when CI
+  is unavailable; and two bare `python3` calls bypassed the `$PY` probe whose purpose is machines
+  where only `python` is v3. It runs `maintainer_doctor.py --gates-only` before extracting notes,
+  fails on a notes finding, and uses `"$PY"` throughout.
+- **`wiki.yml` publishes only from `main`; two drift checks compare the HEAD blob; two subprocesses
+  gain timeouts** (#833). `workflow_dispatch` could be triggered from any ref and the job had no
+  `if: github.ref == 'refs/heads/main'`, so any branch's `docs/wiki` could be mirrored to the public
+  wiki — the guard `release.yml` already had (and `checkout@v4` → `@v7`, as the other workflows).
+  `scripts/build_wiki.py --check` and `scripts/derive_mandated_gems.py --check` read the working
+  copy, the exact trap CLAUDE.md records as fixed for `coverage.html`: a page rebuilt and never
+  staged passed locally and failed CI. Both read `git show HEAD:` now, and a dirty working copy no
+  longer changes their verdict. `maintainer_doctor.check_changelog_coverage` and
+  `rebuild_generated.py` ran subprocesses with no timeout where the doctor insists on one everywhere
+  else.
+- **`scripts/maintainer_doctor.py` prints a failing gate's findings, not a count of them** (#820).
+  It kept `out.splitlines()[-1]`, and **44 of the 98 gate entries** (27 distinct scripts, counted at
+  the time of writing) end their output with an `N finding(s)` line — so the line
+  that survived was reliably the one carrying no information:
+
+  ```
+  [ FAIL ] gate: self-consistency
+             1 finding(s).
+             -> python3 scripts/lint_self_consistency.py
+  ```
+
+  This is #812 mirrored, in the tool that runs the gates rather than the one that runs the checks.
+  There `plugins/rails-flow/scripts/project_gates.py` kept the first meaningful line, which for our
+  checks is the `N finding(s):` **header**; here the doctor kept the last, which is the `N
+  finding(s).` **footer**. Both land on the count.
+
+  **In CI it was worse than it reads locally.** Locally the remedy line hands you the command, so
+  the cost is one extra run. On a runner there is no second run: `.github/workflows/gates.yml`
+  invokes the doctor with `--gates-only`, the doctor is the only thing that executes the gate, and
+  it does so with `capture_output=True`. It printed the count and discarded the rest — so the
+  finding was printed **nowhere at all**, and a red build meant checking the branch out locally to
+  learn what had failed.
+
+  `gate_output()` now returns the summary **and** the lines before it, and `report()` prints them
+  between the summary and the remedy — what is wrong, then how to re-run it.
+
+  **Anchored at the bottom, opposite to `summarise()`**, because the two shapes are mirrored: our
+  gates print their findings and then a footer counting them, while their preamble comes first
+  (`scripts/lint_self_consistency.py` opens with a 40-clause stats line). Keeping the *last* lines
+  drops the throat-clearing and keeps the report. Capped at 40 with a marker naming what was
+  dropped — truncating silently is this same defect one step along.
+
+  **No per-line cap, deliberately.** That stats line really is 1,900 characters, and clipping it
+  means choosing a width that happens to spare that one case while silently clipping some future
+  finding whose last clause was the actionable half. A relay prints what it was given.
+
+  Nine fixtures, eight mutations (guard 8 → 16, all caught). Two of them exist because emptying
+  `report()`'s print loop **survived** every fixture that only called `gate_output` — proving the
+  helper is not proving the caller, the same lesson as #812 one release earlier. The ordering
+  fixture needed a presence guard: without the loop it raised on `.index`, and a crash is not a
+  verdict.
+
 ### 2026-08-30 (release v1.106.0)
 
 - **The doctrine map's declared surface excluded every SHIPPED skill.** (#798) #655 built
   `docs/doctrine-map.html` to answer one question — *which claim is made true by which gate, and
   which by nothing* — and its `DOCTRINE_SOURCES` were eleven files, all repo-process doctrine or
-  maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/fidara-design/` were
+  maintainer-facing skills. **`skills/rails-8/`, `skills/hotwire/` and `skills/design-system/` were
   not declared sources at all**: the doctrine other people's agents follow verbatim, which is the
   whole product.
 
@@ -231,8 +325,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   case it was built for: doctrine changed, and the row claiming to enforce it would otherwise have
   gone on pointing at a sentence that no longer exists. The row now cites the new gate as well.
 
-### 2026-08-16c (v1.91.1)
-
+### 2026-08-16c (release v1.91.1)
 - **The wiki published `>-` where five of seven skill descriptions belonged.** (#680) Reported as
   *"the wiki should have full documentation of what the project is about, not just recording version
   numbers."* The premise needed correcting — the wiki is **609 lines across 12 pages**, and only the
@@ -278,8 +371,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   because stopping early leaves the tree half-rebuilt — some gates pass, some do not, and the reason
   is invisible.
 
-### 2026-08-16b (v1.88.1)
-
+### 2026-08-16b (release v1.88.1)
 - **The install description named the wrong agents.** (#653) Found immediately after #651, in the
   same file, and the same class: the install surface saying something untrue.
 
@@ -347,8 +439,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   so the rule cannot quietly stop checking five of them, plus two mutation guards — required by the
   mutation-coverage gate, which failed the build until they existed.
 
-### 2026-08-16 (v1.88.0)
-
+### 2026-08-16 (release v1.88.0)
 - **`hotwire` was staged into the measured arm of the doctrine benchmark and exercised by zero
   cases.** (#646) Found reviewing four external agent-tooling repos against ours — Clerk's per-skill
   `evals/evals.json`, `jsm-agent-skill`, `swarm-forge`, and an Augment guide on spec-driven
@@ -392,8 +483,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `parallel-session-lane` needs concurrent sessions. None is staged, so none dilutes anything. An
   unexplained absence reads exactly like an oversight.
 
-### 2026-08-09 (v1.85.1)
-
+### 2026-08-09 (release v1.85.1)
 - **One cause reported as N findings — found in three places, fixed in all three.** The pattern:
   when a single action fixes every finding, emitting one per item buries the diagnosis under its own
   consequences, and anything reading the tail of the output learns the least useful of them.
@@ -430,8 +520,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `build_wiki.py` and drift-gated — but the hand-written ones are not, and nothing checks them. That
   asymmetry is worth knowing: a generated page rots loudly, a hand-written one rots silently.
 
-### 2026-08-09 (v1.85.0)
-
+### 2026-08-09 (release v1.85.0)
 - **Nothing asserted that a promotion is a merge commit, and a squash broke the next release.**
   (#597) CLAUDE.md has said *"Release = one promotion PR `dev → main` (a merge commit)"* for eleven
   releases. v1.83.0 was squash-merged anyway, and prose does not merge anything.
@@ -461,8 +550,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   content — but it means the full `maintainer_doctor.py` has to be run before a promotion, which
   CLAUDE.md now says.
 
-### 2026-08-08b (v1.81.0)
-
+### 2026-08-08b (release v1.81.0)
 - **The README was 913 lines and named version 1.3.1 while the marketplace shipped 1.80.0.** It also
   listed 5 of 42 commands and neither skill shipped that day, and **Install sat at line 732** — a
   reader had to scroll past seven hundred lines to use the thing. Re-authored to **194 lines** with
@@ -495,8 +583,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   repository does not exist — GitHub creates it only after the first page is saved in the web UI,
   and a release must not go red because a mirror target is uninitialised.
 
-### 2026-08-08 (v1.77.0)
-
+### 2026-08-08 (release v1.77.0)
 - **A committed `.claude/settings.example.json`, and the three-file distinction written down.** This
   repo was telling users (via `/rails-flow:setup-flow` §2c) to keep permissions in a copied local
   file while not doing it itself — the claims-vs-enforcement shape, in its own configuration.
@@ -514,8 +601,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   most real commands. `rm`, `curl`, `wget`, `kill`, `chmod` and package installers are deliberately
   absent — their blast radius outlives the run, so a prompt is correct friction even mid-run.
 
-### 2026-08-08 (v1.75.0)
-
+### 2026-08-08 (release v1.75.0)
 - **An `AGENTS.md` at this repo's root was read by nothing, for two whole releases.** Claude Code
   reads `CLAUDE.md`, **not** `AGENTS.md` — which is this repo's own shipped doctrine
   (`plugins/rails-flow/commands/setup-flow.md` §1b), written here and not applied here. So a file of
@@ -626,8 +712,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   It was validated against the **real damaged commit**, not a fixture approximation: replayed over
   `674cdad` it names all five missing plugins, and is silent on the restored file.
 
-### 2026-08-07 (v1.71.0)
-
+### 2026-08-07 (release v1.71.0)
 - **`dangling-conditional-floor`** (Refs #531) — if §2a offers a lower floor conditional on multi-factor
   auth, the file must carry MFA guidance. Structural, not a judgement: it asks whether the second factor
   is discussed at all, and cannot tell adequate doctrine from a stub. A file that never offers the
@@ -635,8 +720,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   mutations — and the fixtures had to be rebuilt once, because writing a bare `auth-security.md` tripped
   `password-floor-drift` as well and stole its mutation.
 
-### 2026-08-06 (v1.69.0)
-
+### 2026-08-06 (release v1.69.0)
 - **`hook-count-drift` — CLAUDE.md had two wrong numbers in one sentence.** It said *"of the ten hook
   scripts, eight are advisory"*; there are **eleven**, and nine are advisory. The eleventh is
   `design-flow`'s `design-tells.sh`. Both stale figures sat in the paragraph explaining which hooks fail
@@ -652,8 +736,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   total check — the advisory check fired too, and the mutation that disables the total comparison
   survived. It now uses a case where only the total is wrong.
 
-### 2026-08-06 (v1.68.0)
-
+### 2026-08-06 (release v1.68.0)
 - **`harness-doctrine.md` carried two stale counts about the rule it documents** (Refs #491). It said
   *"Four commands qualify today"* (five do) and *"two declared mutations"* (thirteen). Both were
   `claims-vs-enforcement` on our own doc — the exact class that file exists to warn about, in the
@@ -731,8 +814,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   the same reason the coverage page does, so a version bump invalidates it and `inventory artifact
   drift` fails until `python3 scripts/build_inventory.py` is re-run.
 
-### 2026-08-06 (v1.67.0)
-
+### 2026-08-06 (release v1.67.0)
 - **`duplicate-unreleased`** — at most one `### Unreleased` per component section. A manual error I
   made **twice in three releases**, both times identically: two changes each insert their bullet against
   the same `## <section>` anchor, so the second opens its own heading above the first. Nothing broke
@@ -777,8 +859,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   component in neither an inventory nor a gate is how `design-flow` fell out of the plugin list for as
   long as it existed (#203, #489).
 
-### 2026-08-05 (v1.64.0)
-
+### 2026-08-05 (release v1.64.0)
 - **`password-floor-drift`** (Refs #484) — the floor §2a *states* must equal the one its worked
   example *enforces*, because the reader copies the example. **Deliberately not a prose rule:** the
   obvious gate greps for "at least one uppercase" and would fire on the sentence that **forbids** it
@@ -786,8 +867,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   filed rather than repeat. A number-to-number join has no such ambiguity. Drift **above** the floor
   is reported too: two numbers for one rule is the defect, not the direction. 7 fixtures, 2 mutations.
 
-### 2026-08-05 (v1.63.0)
-
+### 2026-08-05 (release v1.63.0)
 - **`parallel-session-lane` — the protocol for running several sessions against this repo at once.**
   A maintainer skill in `.claude/skills/`, so it ships to nobody through the marketplace and arrives
   automatically for anyone who clones. Five steps, each written from a session that went wrong:
@@ -810,8 +890,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   to catch. Verified against the pre-fix scaffold rather than assumed: it examines 4 paired
   controllers and reports **3**. 6 fixtures, 2 mutations.
 
-### 2026-08-05 (v1.62.0)
-
+### 2026-08-05 (release v1.62.0)
 - **The label taxonomy's source of truth was four components behind the repo** (Refs #489).
   `.github/labels.yml` is what `/maintainer-setup-intake` provisions **from**, and it declared 7
   `comp:*` labels for 9 live ones: `comp:fidara-design` and `comp:design-flow` existed on GitHub and
@@ -842,8 +921,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   it — a defect caught because the docstring promised block scoping the code did not do. 11
   fixtures, 4 mutations.
 
-### 2026-08-02 (v1.61.0)
-
+### 2026-08-02 (release v1.61.0)
 - **Four "monotony" gate rules considered and rejected, each with the measurement that killed it**
   (Refs #476). An external catalogue names four repetition axes that look like they belong beside
   `check_page_pacing.py`'s existing `tone-repeat` / `shape-repeat`. None earns a gate, for three
@@ -2367,6 +2445,73 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.31.0 — 2026-09-02 (release v1.108.0)
+
+- **The SessionStart drift nudge reads the manifest curators actually write** (#838).
+  `plugins/rails-flow/hooks/scripts/session-start.sh` read two columns and a 12-char digest — the
+  shape `skill-curator.md` specified — while every curator wrote three columns under a `# skill
+  source sha256` header with the full 64-char digest. Read as `src hash`, `$src` was the skill *name*,
+  `[ -f ]` failed, and `continue` skipped every row: on a real project whose sources changed daily,
+  the nudge **never fired once** and the session looked healthy. The guard added in #762 to stop
+  unhashable rows passing silently had a silent pass in front of it. The hook now accepts both
+  shapes, skips a `#` header, compares at the stored digest length, and **reports any row it cannot
+  parse** instead of skipping it; the spec says three columns and 64 chars, because that is what is
+  written. `check_drift_signal.py` drives the real hook with the real shape (six fixtures), and the
+  hook gains a mutation guard (three).
+- **Every production `subprocess.run` carries a timeout** (#837). `plugins/rails-flow/scripts/compose_state.py`
+  called `gh` (network) with none, and `assign_lanes.py` called `git` with none — a hung `gh` inside the
+  Stop hook stalls past its 150 s budget with no message. `project_gates.run_check` itself always had
+  one; these were the sites that escaped. Network 120 s, local tools 60 s. The review counted nine
+  sites; four already had a timeout on a continuation line, so five were real.
+- **`plugins/rails-flow/scripts/architecture_graph.py`'s `--check` rebuilds with the cap the committed
+  graph was built with** (#836). The truncation note (*"N flows beyond --max-flows=M were not emitted"*) sits
+  inside the content digest, and `--check` always rebuilt at the default 80 — so a graph generated
+  with `--max-flows 200` on an app with more than 80 flows reported DRIFT on every run with nothing
+  changed, and the `architecture-graph-drift` gate was a permanent FAIL for that project. The graph
+  now records `max_flows` (outside the digest) and `--check` reads it back; an explicit flag still
+  wins. The second-largest script in the repo also gains its first `--selftest` (nine checks) and a
+  mutation guard (three).
+- **`plugins/rails-flow/scripts/project_gates.py` honours a check's own exit 3 (not applicable)
+  and exit 2 (cannot run) instead of grading both FAIL** (#828). `applicability()` decides n/a
+  from the manifest's `applies_when`; a check that has to *read* the project to know — i18n
+  with no `config.x.locales`, a coverage ratchet with no simplecov — says so itself with exit 3,
+  and the runner graded every one of those FAIL, counted it, and routed it to the project's
+  tracker: `[FAIL] rails-flow/i18n-wired  not applicable — …` on every project that had not
+  declared locales. That is the SKIP-as-FAIL inversion of the SKIP-as-PASS defect the runner's own
+  docstring exists to refuse, and it shipped in v1.107.0. Exit 3 → `n/a` with the check's reason,
+  unrouted like every other n/a; exit 2 (`cannot compare`, an unreadable input) → `ERROR`, routed
+  to doctrine, because failing to reach a verdict is ours to explain. Reproduced on a minimal
+  project before and after; six fixtures, two mutations.
+- **`plugins/rails-flow/hooks/scripts/stop-gate.sh` reported every changed spec as RED wherever a
+  `timeout` binary exists** (#822) — every Linux box, CI runner and WSL. `_rf_timeout 120 _rf_bundle
+  exec rspec …` handed a shell *function* to the external `timeout` binary, which cannot run one:
+  `exec: _rf_bundle: not found`, read as a red suite, exit 2 on every turn that touched a spec.
+  Stock macOS ships neither `timeout` nor `gtimeout`, so #683 never saw it. The runner is now an argv
+  **prefix**, and RED is decided by a **positive signal** — RSpec's own `N examples, M failures`
+  summary line — instead of a denylist of Bundler phrases whose comment already said a third member
+  would mean the shape was wrong. GNU timeout's "failed to run command" was the third member.
+- **`plugins/rails-flow/hooks/scripts/guard-lane.sh` was bypassed by a `..` segment** (#823). The
+  normaliser collapsed `/./` and not `..`, so `app/models/../../config/routes.rb` walked past the
+  prefix match — a one-segment hole in a fail-closed guard. A path containing `..` is now refused
+  while a lane is assigned, in pure shell, so the guard still fails closed without python3.
+- **`plugins/rails-flow/hooks/scripts/lint-ruby.sh` reported "still reports offenses" after a
+  complete autocorrect, and never ran under mise** (#824). It required the literal ` 0 offenses`,
+  which RuboCop never prints after correcting anything — the summary counts *detected* offenses,
+  corrected ones included. It now counts the per-offense lines that lack `[Corrected]`. And it used
+  PATH's `bundle`, so on a project with a pinned Ruby under mise `bundle exec rubocop --version`
+  failed and the hook exited 0 on every edit; it now resolves the runner the way `stop-gate.sh` does.
+- **`plugins/rails-flow/hooks/scripts/self-consistency.sh` aborted on an unbound
+  `CLAUDE_PLUGIN_ROOT` under `set -u`** (#825) — `${…:-}`, as `stop-gate.sh` already did.
+- **`plugins/rails-flow/hooks/scripts/guard-bash.sh` missed `git add -v -A`, `git add ./` and
+  `git add :/`** (#826). The pattern anchored `-A` and `.` to the first argument.
+
+  All five were found in one review and none was visible on the maintainer's machine, because the
+  hooks are shell and shell had no behavioural test here — `bash -n` proved they parsed. They now
+  have one: `plugins/rails-flow/scripts/check_hook_gates.py` drives every hook end to end under
+  stub environments (a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does, a `mise`
+  that owns the Ruby), registered as the `hook gates` gate with a mutation guard per hook. Every
+  original hook fails its fixtures; every fixed one passes.
 
 ### 1.30.1 — 2026-08-31 (release v1.107.0)
 
@@ -4013,6 +4158,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.3.2 — 2026-09-02 (release v1.108.0)
+
+- **`plugins/pipeline/README.md` gains a Commands section** (#835) — it listed none of its eight commands.
+  The new `undocumented-command` rule found it on its first run; each line is derived from the
+  command's own description, and says the command file is the authority.
+
 ### 1.3.1 — 2026-08-16 (release v1.91.2)
 
 - **The cloud-deploy briefing sat at repo-root `.env`, where `bin/dev` reads it — booting local
@@ -4242,6 +4393,55 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 1.56.0 — 2026-09-02 (release v1.108.0)
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 24 → 25, reach
+  10 → 11** — `architecture_graph.py`'s first selftest (#836) is a new copy, and `check_shared_shapes.py`
+  refused the stale number, as it should.
+- **The `fidara-design` skill is now `design-system`** (#840). Maintainer decision, recorded on the
+  issue: *"make the neutral to avoid confusion."* The skill is the brand-neutral design **system** —
+  which roles exist, the primitives, the catalog, scale, motion, a11y — and a brand pack is a theme
+  on top of it; naming the system after its first pack meant a Reliance project loaded a skill called
+  `fidara-design`, and the question *"what is fidara-design and how does it affect the reliance
+  brand pack?"* got asked because of the name alone. `skills/design-system/` and
+  `dist/design-system.skill`; the string is renamed in 66 files (every command, agent, script and
+  gate pinned to the path); the `fidara` pack and its private `fm-*` prefix are untouched, because
+  that is a real brand. **Downstream:** a project whose `.claude/skills/.manifest.tsv` names
+  `fidara-design` will report it missing after upgrade — `/rails-flow:curate` re-links.
+- **`skills/design-system/SKILL.md` routes by task instead of "read in order"** (#827). Following
+  its five-layer instruction loaded ~78k tokens before an agent wrote a button — the single largest
+  context cost in the toolchain, in a file that costs nothing until opened (#158's finding, recorded
+  in `check_skill_routing.py`). One table now, keyed on what the task involves, one row per
+  reference, the shape `rails-8/SKILL.md` already uses; the heading that said "five layers" over
+  eight items numbered 1–5, 6, 6, 7 is gone with it. Also corrected: *"code uses the `fm-*`
+  prefix"* — that is the fidara pack's private prefix, not the system's; `brand.md` already said a
+  pack may prefix its primitives however it likes and nothing outside the pack may name one. And
+  `component-shapes.json` is marked machine-read, so an agent stops spending 4.3k tokens on a
+  generator sidecar.
+- **Five doctrine defects from the 2026-08-31 review, three of them verified against upstream
+  first** (#831). **The 422 symbol is now `:unprocessable_content` everywhere** — twelve sites in
+  `skills/rails-8/references/controllers-routing.md`, `auth-security.md`, `testing.md`,
+  `views-hotwire.md`, `skills/design-system/references/crud-modal-pattern.md` and both `SKILL.md`s.
+  The review had it backwards: it flagged the one `_content` as the outlier. `doctrine-verifier`
+  found that Rack ≥ 3.1 lists `unprocessable_entity` in `OBSOLETE_SYMBOL_MAPPINGS` and **warns on
+  every lookup**, Rails 8.1 pins rack 3.2, and the 8.1 scaffold emits the new name through
+  `ActionDispatch::Constants::UNPROCESSABLE_CONTENT` (rack `lib/rack/utils.rb` @ v3.1.0; rails
+  `8-1-stable` `actionpack/lib/action_dispatch/constants.rb`; rails/rails#55603). The eleven
+  `_entity` sites were the defect. Boundary recorded at `skills/rails-8/SKILL.md` §Turbo-compatible
+  responses. **Hotwire Native iOS 1.3.0 → 1.3.1** (released 2026-08-14; Android 1.3.1 was already
+  right), and the heading — the only version block in the skills without a date — is dated. **The
+  form-builder comment had its direction backwards**: `checkbox`/`textarea`/`rich_textarea` are the
+  canonical names since Rails 8.0.0 (actionview and actiontext CHANGELOGs @ v8.0.0: *"Old names are
+  still available as aliases"*), not "modern aliases" of the old ones; it now says so with the
+  boundary. And `skills/rails-8/SKILL.md`'s version heading said 2026-08-01 over bullets
+  re-verified 2026-08-29.
+
+- **`skills/quality-pass/references/worked-example.md`: the measured copy-count for the `check()`
+  selftest harness moves 23 → 24, reach 9 → 10** — `check_hook_gates.py` (#822–#826) is a new copy.
+  `check_shared_shapes.py` refused the stale number, which is the gate doing its one job: the worked
+  example's numbers must match the repo, or the decision it records ("do not extract") rests on a
+  measurement nobody can reproduce.
+
 ### 1.55.0 — 2026-08-30 (release v1.106.0)
 
 - **`references/i18n.md` — the rails-8 skill had no internationalisation doctrine at all.** (#799)
@@ -4363,15 +4563,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   doctrine-self-check had no example to judge and `literal-font-family` shipped broken for two
   releases while reporting green. The wrong form is shown too, carrying a documented disable —
   the checker is right to flag it, which is the point of the example.
-  File: `skills/fidara-design/references/brand.md`.
+  File: `skills/design-system/references/brand.md`.
 
 - **The contract now says a single-value feedback role cannot serve both grounds.** (#775) Both
   shipped packs prove it from opposite sides — fidara's bright hues clear dark and fail light;
   reliance's, darkened for 1.4.3 in light, clear light and fail dark. Neither is a pack defect; it
   is what one value for two grounds means. `brand.md` records the rule and the two enforced
   thresholds, and `foundations-tokens.md` re-points `--ring` for dark, which it had not.
-  Files: `skills/fidara-design/references/brand.md`,
-  `skills/fidara-design/references/foundations-tokens.md`.
+  Files: `skills/design-system/references/brand.md`,
+  `skills/design-system/references/foundations-tokens.md`.
 
 - **`quality-pass`'s worked example: the shared-harness count 17 → 19.** (#778, #779) Both new gates
   use the `check(label, ok, detail)` shape. `check_shared_shapes.py` caught it, which is that gate's
@@ -4401,7 +4601,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **`brand.md`: `wordmark` documented in the pack manifest contract.** (#771) It is a **pack**
   property, never a variant's, and the reference states why — a variant re-labels, it does not
-  re-theme. File: `skills/fidara-design/references/brand.md`.
+  re-theme. File: `skills/design-system/references/brand.md`.
 
 ### 1.52.2 — 2026-08-22 (release v1.100.0)
 
@@ -4414,7 +4614,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ### 1.52.1 — 2026-08-22 (release v1.99.1)
 
 - **Our own modal example taught the misuse a downstream project was reported for.** (#758)
-  `skills/fidara-design/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
+  `skills/design-system/references/component-implementations.md`'s modal scrim used `bg-fm-navy/50` —
   a raw primitive in a component, which roles-only forbids. #750 reported exactly that usage from a
   live project; the project copied it from here. It now binds `bg-overlay/50`, using the role added in
   v1.98.0. Found the moment the new `primitive-as-role` rule ran against our own references.
@@ -4423,7 +4623,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **The palette could not express the design that already existed.** (#750) Reported from a live
   project and confirmed against its artboards: **every one sets `--background: var(--paper-50)`**, and
-  `skills/fidara-design/references/foundations-tokens.md` was slate-cool only. The project carried six local slate overrides — not a
+  `skills/design-system/references/foundations-tokens.md` was slate-cool only. The project carried six local slate overrides — not a
   preference, a gap. The warm ground is folded in as a **paired** palette (`--color-fm-paper-*` plus a
   `slate-warm-*` variant), never a replacement, so cool-ground adopters are untouched.
 
@@ -4437,7 +4637,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   no other brand pack could declare; #750 flagged the naming and this is it.
 
 - **The fluid scales promised steps they never declared.** (#750, found by studying the design rather
-  than reported) In `skills/fidara-design/references/foundations-tokens.md` the space comment read *"`--space-3xs … --space-3xl` + one-off pairs
+  than reported) In `skills/design-system/references/foundations-tokens.md` the space comment read *"`--space-3xs … --space-3xl` + one-off pairs
   (`--space-s-l`)"* and declared `2xs…l`, closing with *"… xl/2xl/3xl similarly"*. The type comment
   announced *"`--text-step--2 … --text-step-5`"* and declared `-1…3`. **Nine promised tokens did not
   exist**, including the pair the comment names outright.
@@ -4454,7 +4654,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ### 1.51.0 — 2026-08-22 (release v1.96.0)
 
 - **A multi-page port shipped the same fact three times.** (#739)
-  `skills/fidara-design/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
+  `skills/design-system/references/design-handoff.md` §6. A canvas repeats itself **on purpose** —
   every artboard has to stand alone as a picture, so the value proposition and the headline figure get
   restated across the landing, pricing and partner frames. **Pages are not pictures.** Port that
   repetition and there are three places to update with no arbiter between them; the first edit that
@@ -4472,7 +4672,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 - **A Claude Design artboard had no shipped route into Rails 8 + Hotwire.** (#738)
-  `skills/fidara-design/references/design-handoff.md` is the fixed mapping: source construct → the one
+  `skills/design-system/references/design-handoff.md` is the fixed mapping: source construct → the one
   sanctioned Rails-Hotwire form. It **composes** `rails-8`, `hotwire` and this skill's own
   `components.md` / `crud-modal-pattern.md` / `interaction-stimulus.md` rather than restating them.
 
@@ -7688,6 +7888,23 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.26.1 — 2026-09-02 (release v1.108.0)
+
+- **`plugins/qa-flow/README.md` gains a Commands section** (#835) — it listed none of its seven commands;
+  found by the new `undocumented-command` rule on its first run.
+- **`plugins/qa-flow/scripts/interaction_report.py`'s `node --check` carries a timeout** (#837).
+- **`plugins/qa-flow/agents/a11y-auditor.md` names the `design-system` skill, not `fidara-design`**
+  (#840) — the one qa-flow reference caught by the rename.
+- **`plugins/qa-flow/scripts/interaction_report.py`'s `--check-collector` exits 3 when `node` is
+  absent, not 0** (#829) — same defect and same fix as design-flow's collector; the doctor maps 0 to PASS.
+  Its selftest also counted the skipped collector fixture as **passed** (`check("collector syntax
+  gate", True)`), the "35 checks passed on a machine with no corpora" shape; the skip is printed
+  and no longer counted.
+- **`plugins/qa-flow/scripts/theme_parity.py` uses WCAG 2.2's sRGB breakpoint (0.04045)** (#830).
+  It used 2.0's 0.03928 while design-flow's `palette_candidates.py` used 2.2's, so two shipped
+  plugins computed different luminance for channels in [0.03928, 0.04045] — a pair passing one
+  contrast gate could fail the other. Named constant, pinned by a fixture at 10/255.
+
 ### 1.26.0 — 2026-08-29 (release v1.104.0)
 
 - **Both `qa.config.yml` loaders silently discarded every key carrying a trailing comment — the
@@ -9138,6 +9355,26 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.38.1 — 2026-09-02 (release v1.108.0)
+
+- **`plugins/design-flow/scripts/rendered_conformance.py`'s `node --check` and `asset_plan.py`'s executor call
+  carry timeouts** (#837) — the executor's own `--timeout` budget plus 30 s of grace, so a wedged generator
+  cannot hold the plan open indefinitely.
+- **Every command, agent and script names the `design-system` skill, not `fidara-design`** (#840).
+  The design system was renamed to say what it is — brand-neutral — and design-flow is where
+  most of the 66 renamed references lived: eight commands (`plugins/design-flow/commands/setup.md`
+  among them), five agents, seven scripts, the manifest description, and
+  `plugins/design-flow/README.md`. The `fidara` brand pack under `brands/fidara/` keeps
+  its name; only the reliance pack's header stops calling the role contract "fidara's". Prose
+  saying "the Fidara design system" in command and agent descriptions now says "the design
+  system".
+- **`plugins/design-flow/scripts/rendered_conformance.py`'s `--check-collector` exits 3 when `node`
+  is absent, not 0** (#829). It printed *"skip … That is not a pass"* and returned 0, which the doctor
+  renders as `ok` — so on every laptop without node the gate reported a pass for a check that did
+  not run, the exact SKIP-as-PASS defect the doctor's docstring exists to refuse. Its own selftest
+  had pinned the defect (`== 0`); it asserts 3 now. Exit 3 is the gate protocol's "ran, could not
+  check everything", rendered as SKIP with this line as the reason.
+
 ### 1.38.0 — 2026-08-31 (release v1.107.0)
 
 - **The drift check compared a stylesheet to a palette — 70 of 72 findings false.** (#814, following
@@ -9508,8 +9745,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   `plugins/design-flow/commands/variants.md`, `plugins/design-flow/commands/audit.md`,
   `plugins/design-flow/reference/model-tiers.md`, `plugins/design-flow/scripts/generate_asset.py`,
   `plugins/design-flow/scripts/brand_pack_lint.py`, `scripts/check_component_shapes.py`,
-  `skills/fidara-design/references/visual-assets.md`,
-  `skills/fidara-design/references/component-shapes.json`.
+  `skills/design-system/references/visual-assets.md`,
+  `skills/design-system/references/component-shapes.json`.
 
 ### 1.33.1 — 2026-08-22 (release v1.99.1)
 
@@ -10332,7 +10569,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   regex-parsing that is the failure `derived-artifacts` exists to prevent.
 
   So the drawable skeleton moved into a structured source beside it:
-  `skills/fidara-design/references/component-shapes.json`, one entry per row declaring parts, role
+  `skills/design-system/references/component-shapes.json`, one entry per row declaring parts, role
   tokens and layout. The generator reads it and emits **66 nodes covering 51 components**; nothing in
   `pen_library.py` names a component or its anatomy.
 
@@ -11268,7 +11505,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **FIX — two pointers added in v1.9.0 named a directory that does not exist.** `design-auditor`'s
   new Marketing-copy and Visual-assets checklist rows pointed at `references/marketing-copy.md` and
   `references/visual-assets.md`. There is no `plugins/design-flow/references/`; the files live under
-  `skills/fidara-design/references/`. An agent following either found nothing.
+  `skills/design-system/references/`. An agent following either found nothing.
   - **The same commit got this right three times and wrong twice**, which is the part worth
     recording. `/design-flow:component`'s three pointers were written as full paths *specifically*
     so the doc-pointer lint would validate them — and the auditor's two were not, so the lint could
@@ -12353,7 +12590,7 @@ rather than by filename.
   `self_consistency`, all pre-dating this work — named rather than silently left, because a count
   nobody wrote down is how this went unnoticed.
 
-### 2026-08-08 (release v1.78.0)
+### 2026-08-08 (release v1.79.0)
 
 > ### The asset pipeline is complete: set up, plan, cost, generate, reconcile
 >
@@ -14746,7 +14983,7 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
 - `scripts/build_coverage.py` enumerates the licensed reference corpora mechanically — **93** Tailwind
   UI leaf components across `application-ui` / `marketing` / `ecommerce`, plus Flowbite's **63**
   catalogue entries — and reconciles them against our own doctrine into **113 rows** in
-  `skills/fidara-design/references/coverage.md`.
+  `skills/design-system/references/coverage.md`.
 - **The guarantee is the totality guard, not the file.** Every corpus entry must be claimed by exactly
   one row or **the build fails and names the stragglers**, so a new upstream directory cannot be
   silently ignored and coverage cannot rot into a stale list. Double-claims are checked explicitly,

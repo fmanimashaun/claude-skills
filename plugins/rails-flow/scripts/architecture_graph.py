@@ -1038,6 +1038,24 @@ def content_digest(core: dict) -> str:
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+DEFAULT_MAX_FLOWS = 80
+
+
+def check_cap(committed: dict | None, requested: int | None, default: int) -> int:
+    """The flow cap a run should build with (#836).
+
+    An explicit `--max-flows` always wins. Otherwise `--check` rebuilds with the cap the COMMITTED
+    graph records, because comparing a graph built at 200 against a rebuild at 80 reports drift on
+    every run with nothing in the tree having changed -- the truncation note sits inside the digest.
+    A graph from before the cap was recorded, or no graph at all, gets the default.
+    """
+    if requested is not None:
+        return requested
+    if committed is not None and isinstance(committed.get("max_flows"), int):
+        return committed["max_flows"]
+    return default
+
+
 def build_graph(root: str, max_flows: int) -> dict:
     core = GraphBuilder(root, max_flows).build()
     by_layer: dict[str, int] = {}
@@ -1052,6 +1070,11 @@ def build_graph(root: str, max_flows: int) -> dict:
         or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "commit": git_output(root, ["rev-parse", "--short", "HEAD"]) or "unknown",
         "content_digest": content_digest(core),
+        # The cap the graph was built with (#836). OUTSIDE the digest, which covers only nodes,
+        # edges, flows and notes -- but the truncation note IS in `notes`, so a graph built with
+        # --max-flows 200 and re-checked at the default 80 differed forever. `--check` rebuilds
+        # with this value unless told otherwise.
+        "max_flows": max_flows,
         "stats": {
             "nodes": len(core["nodes"]),
             "edges": len(core["edges"]),
@@ -1250,7 +1273,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 /* Fidara dark palette, copied as LITERAL values on purpose: this file is a
    standalone artefact outside any app build, so it cannot read the `@theme`
    tokens in app/assets/tailwind/application.css. Source of truth for these
-   values: skills/fidara-design/references/foundations-tokens.md (.dark roles).
+   values: skills/design-system/references/foundations-tokens.md (.dark roles).
    One deliberate deviation: --ring lifts to electric, because cerulean at 30%
    is not a legible focus ring on a navy surface. */
 :root {
@@ -1818,6 +1841,48 @@ def write_if_changed(path: str, content: str) -> bool:
     return True
 
 
+def selftest() -> int:
+    """The contract #836 fixed: the cap is recorded, --check rebuilds with it, the digest ignores it.
+
+    This file had no test at all -- the second-largest script in the repo. These fixtures cover the
+    one mechanism that was found broken; the graph builder itself is still exercised only by use.
+    """
+    import tempfile
+    failures: list[str] = []
+    checks = 0
+
+    def check(label: str, ok: bool, detail: str = "") -> None:
+        nonlocal checks
+        checks += 1
+        if not ok:
+            failures.append(f"{label}: {detail}" if detail else label)
+
+    check("an explicit --max-flows wins over the committed cap", check_cap({"max_flows": 200}, 5, 80) == 5)
+    check("--check rebuilds with the COMMITTED cap when none is given", check_cap({"max_flows": 200}, None, 80) == 200)
+    check("a graph from before the cap was recorded gets the default", check_cap({"schema": 1}, None, 80) == 80)
+    check("no committed graph at all gets the default", check_cap(None, None, 80) == 80)
+    check("a non-integer recorded cap is ignored, not crashed on", check_cap({"max_flows": "200"}, None, 80) == 80)
+
+    with tempfile.TemporaryDirectory() as td:
+        g7 = build_graph(td, 7)
+        g80 = build_graph(td, 80)
+        check("the graph RECORDS the cap it was built with", g7.get("max_flows") == 7, f"got {g7.get('max_flows')!r}")
+        check("...so --check can read it back", check_cap(g7, None, 80) == 7)
+        check("the digest does not depend on the cap when nothing was truncated",
+              g7["content_digest"] == g80["content_digest"])
+        core = {k: g7[k] for k in ("nodes", "edges", "flows", "notes")}
+        check("the digest is computed from the four core keys only -- the cap sits outside it",
+              content_digest(core) == g7["content_digest"])
+
+    if failures:
+        print(f"architecture_graph selftest: {len(failures)} of {checks} checks FAILED", file=sys.stderr)
+        for f in failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print(f"architecture_graph selftest: {checks} checks passed")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="architecture_graph.py",
@@ -1826,6 +1891,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", default=".", help="Rails app root (default: cwd)")
     parser.add_argument("--out", default="docs/architecture",
                         help="output directory, relative to --root")
+    parser.add_argument("--selftest", action="store_true", help="prove the cap-recording contract (#836)")
     parser.add_argument("--check", action="store_true",
                         help="drift check: regenerate and compare the content digest; "
                              "exit 1 if the committed graph is stale")
@@ -1843,11 +1909,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--enrich", action="store_true",
                         help="fold in graphify/code-review-graph edges (kept out of the digest)")
     parser.add_argument("--title", default=None, help="HTML title (default: <dir> architecture)")
-    parser.add_argument("--max-flows", type=int, default=80)
+    parser.add_argument("--max-flows", type=int, default=None,
+                        help=f"flow cap (default {DEFAULT_MAX_FLOWS}; --check defaults to the committed graph's cap)")
     parser.add_argument("--max-mermaid-nodes", type=int, default=60)
     parser.add_argument("--max-mermaid-flows", type=int, default=8)
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
+    if args.selftest:
+        return selftest()
 
     # Windows consoles default to a legacy code page, which turns the arrows in a
     # flow signature into mojibake (or backslash escapes on stderr). The artefacts
@@ -1873,7 +1942,7 @@ def main(argv: list[str]) -> int:
             print(message)
 
     if args.delta is not None:
-        new = load_graph_file(json_path) or build_graph(root, args.max_flows)
+        new = load_graph_file(json_path) or build_graph(root, check_cap(None, args.max_flows, DEFAULT_MAX_FLOWS))
         old = load_graph_at_ref(root, args.delta, json_rel)
         delta = compute_delta(old, new)
         if args.format == "json":
@@ -1882,10 +1951,10 @@ def main(argv: list[str]) -> int:
             print(render_delta_markdown(delta, new), end="")
         return 0
 
-    fresh = build_graph(root, args.max_flows)
+    committed = load_graph_file(json_path) if args.check else None
+    fresh = build_graph(root, check_cap(committed, args.max_flows, DEFAULT_MAX_FLOWS))
 
     if args.check:
-        committed = load_graph_file(json_path)
         if committed is None:
             if args.if_present:
                 say("architecture graph: not generated in this project — skipping the check "

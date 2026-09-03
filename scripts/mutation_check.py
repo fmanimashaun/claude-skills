@@ -88,6 +88,20 @@ GUARDS: tuple[Guard, ...] = (
         subject="scripts/lint_self_consistency.py",
         selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
         mutations=(
+            # #835. Four shipped commands were documented nowhere; this is the rule that refuses it.
+            Mutation(
+                "the command rule stops looking at the plugin README",
+                '        docs = [(root_readme, f"`{command}`"), (ROOT / "plugins" / plugin / "README.md", f"/{plugin}:{command}")]',
+                '        docs = [(root_readme, f"`{command}`")]',
+                "a shipped command the PLUGIN README never names",
+            ),
+            Mutation(
+                "the command rule matches nothing, so an undocumented command passes",
+                "            if needle not in read(doc):",
+                "            if False:",
+                "a shipped command the root README never names",
+            ),
+
             # #777. The rule that stops #617's class recurring a fourth time. Four clauses: it must
             # FIRE on a cross-plugin hop count, stay silent on the resolver, stay silent on prose,
             # and stay silent on the resolver's own file.
@@ -96,8 +110,8 @@ GUARDS: tuple[Guard, ...] = (
                 # reports the files DESCRIBING the defect alongside the ones committing it, which
                 # is how the first draft of this rule flagged brand_pack_lint.py:18.
                 "docstrings stop being excluded, so prose about the defect reads as the defect",
-                '            if id(node) in docstrings or "fidara-design" not in node.value:',
-                '            if "fidara-design" not in node.value:',
+                '            if id(node) in docstrings:\n                continue',
+                '            if False:\n                continue',
                 "a docstring naming the path is not a finding",
             ),
             Mutation(
@@ -116,7 +130,7 @@ GUARDS: tuple[Guard, ...] = (
             ),
             Mutation(
                 "the rule matches nothing, so every clone-shaped path passes",
-                '            if id(node) in docstrings or "fidara-design" not in node.value:',
+                '            if node.value != "design-system" and "skills/design-system" not in node.value:',
                 '            if id(node) in docstrings or "zzz-never" not in node.value:',
                 "__file__.parents reaching a sibling plugin's doctrine",
             ),
@@ -762,7 +776,7 @@ GUARDS: tuple[Guard, ...] = (
         # a staged mutant with no `references/` made the unmutated selftest exit 1 and every
         # mutation vacuously "caught". A directory, so a new reference doc is picked up rather than
         # quietly missing. `run_baseline` is what now proves this is sufficient.
-        needs=("skills/fidara-design/references",),
+        needs=("skills/design-system/references",),
         mutations=(
             Mutation(
                 "the totality guard stops naming unclassified corpus entries",
@@ -1676,7 +1690,7 @@ GUARDS: tuple[Guard, ...] = (
         # It reads the doctrine file and every shipped pack, and its parity fixtures import the
         # shipped module. Without these the mutant dies on a missing file and every mutation reads
         # as "caught" by a traceback rather than by the fixture named below.
-        needs=("skills/fidara-design/references/foundations-tokens.md",
+        needs=("skills/design-system/references/foundations-tokens.md",
                "plugins/design-flow/brands/fidara/theme.css",
                "plugins/design-flow/brands/_template/theme.css",
                "plugins/design-flow/scripts/palette_candidates.py",
@@ -2155,6 +2169,163 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #822. The Stop gate handed a shell FUNCTION to the external `timeout` binary and read the
+    # resulting `not found` as a RED suite -- on every machine that HAS a timeout binary, which is
+    # every one except a stock Mac. The shell had no behavioural test; `bash -n` said it parsed.
+    Guard(
+        name='hook_stop_gate',
+        subject='plugins/rails-flow/hooks/scripts/stop-gate.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the bundle runner goes back to being a function name that `timeout` cannot exec',
+                '  if ! out="$(_rf_timeout 120 $bundle_cmd exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then',
+                '  if ! out="$(_rf_timeout 120 _rf_bundle_prefix exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then',
+                'a PASSING suite under a real `timeout` binary lets the stop proceed',
+            ),
+            Mutation(
+                # Collapsing the positive signal makes every failure RED again, including the ones
+                # where rspec never started -- the #724 misdiagnosis, back.
+                'the RSpec summary line stops deciding RED, so an unrunnable suite is called red again',
+                '      *" example, "*|*" examples, "*)',
+                '      *)',
+                'called an environment problem, not a red suite',
+            ),
+        ),
+    ),
+    # #823. A fail-closed guard with a one-segment hole: `..` was normalised by nothing.
+    Guard(
+        name='hook_guard_lane',
+        subject='plugins/rails-flow/hooks/scripts/guard-lane.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the `..` refusal is removed, so a lane escape passes the prefix match again',
+                '  */../*)\n    {\n      echo "BLOCKED by rails-flow lane guard: a path containing \'..\' is refused while a lane is"',
+                '  */.../*)\n    {\n      echo "BLOCKED by rails-flow lane guard: a path containing \'..\' is refused while a lane is"',
+                'a `..` escape is blocked',
+            ),
+        ),
+    ),
+    # #824. Parsed RuboCop's summary for a string it never prints after correcting anything, and
+    # used PATH's bundle so under mise it silently never ran.
+    Guard(
+        name='hook_lint_ruby',
+        subject='plugins/rails-flow/hooks/scripts/lint-ruby.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'corrected offenses are counted as remaining again',
+                'remaining="$(printf \'%s\\n\' "$out" | grep -E \'^[RCWEF]: *[0-9]+: *[0-9]+:\' | grep -vc \'\\[Corrected\\]\' || true)"',
+                'remaining="$(printf \'%s\\n\' "$out" | grep -E \'^[RCWEF]: *[0-9]+: *[0-9]+:\' | grep -c \'\' || true)"',
+                'a file whose only offense was CORRECTED passes',
+            ),
+            Mutation(
+                'the runner ignores mise, so a pinned-Ruby project is never linted',
+                '  if command -v mise >/dev/null 2>&1 && mise current ruby >/dev/null 2>&1; then bundle_cmd="mise exec -- bundle"',
+                '  if command -v mise >/dev/null 2>&1 && mise current ruby >/dev/null 2>&1; then bundle_cmd="bundle"',
+                'under mise with a pinned Ruby the hook RUNS',
+            ),
+        ),
+    ),
+    # #825. `${CLAUDE_PLUGIN_ROOT}` bare under `set -u`.
+    Guard(
+        name='hook_self_consistency',
+        subject='plugins/rails-flow/hooks/scripts/self-consistency.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the expansion loses its default and aborts the shell when the variable is unset',
+                'script="${CLAUDE_PLUGIN_ROOT:-}/scripts/self_consistency.py"',
+                'script="${CLAUDE_PLUGIN_ROOT}/scripts/self_consistency.py"',
+                'with CLAUDE_PLUGIN_ROOT unset the hook exits 0',
+            ),
+        ),
+    ),
+    # #826. `-A` and `.` were anchored to the first argument of `git add`.
+    Guard(
+        name='hook_guard_bash',
+        subject='plugins/rails-flow/hooks/scripts/guard-bash.sh',
+        selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+        # The harness resolves every hook from the selftest's own location, so the whole
+        # directory is staged -- one hook's fixtures may exercise another's shape.
+        needs=('plugins/rails-flow/hooks/scripts',),
+        mutations=(
+            Mutation(
+                'the `git add` pattern goes back to first-argument anchoring',
+                'if printf \'%s\' "$cmd" | grep -qE \'git\\s+add(\\s+-[a-zA-Z]+)*\\s+(-[a-zA-Z]*A[a-zA-Z]*\\b|--all\\b|\\./?($|\\s)|:/($|\\s))\'; then',
+                'if printf \'%s\' "$cmd" | grep -qE \'git\\s+add\\s+(-A\\b|--all\\b|\\.($|\\s))\'; then',
+                '`git add -v -A` is blocked',
+            ),
+        ),
+    ),
+    # #836. The second-largest script in the repo had no test. `--check` rebuilt with the default cap
+    # whatever the committed graph was built with, and the truncation note sits inside the digest.
+    Guard(
+        name="architecture_graph",
+        subject="plugins/rails-flow/scripts/architecture_graph.py",
+        selftest="plugins/rails-flow/scripts/architecture_graph.py",
+        mutations=(
+            Mutation(
+                "the committed cap is ignored, so --check rebuilds at the default again",
+                '    if committed is not None and isinstance(committed.get("max_flows"), int):',
+                "    if False:",
+                "--check rebuilds with the COMMITTED cap",
+            ),
+            Mutation(
+                "the cap is no longer recorded in the graph",
+                '        "max_flows": max_flows,',
+                '        "max_flows": None,',
+                "the graph RECORDS the cap",
+            ),
+            Mutation(
+                "an explicit --max-flows stops winning",
+                "    if requested is not None:\n        return requested",
+                "    if False:\n        return requested",
+                "an explicit --max-flows wins",
+            ),
+        ),
+    ),
+    # #838. The SessionStart drift nudge read a two-column manifest while every curator wrote three,
+    # so every row was skipped in silence and the nudge never fired. The harness drives the REAL hook.
+    Guard(
+        name="hook_session_start",
+        subject="plugins/rails-flow/hooks/scripts/session-start.sh",
+        selftest="plugins/rails-flow/scripts/check_drift_signal.py",
+        needs=("plugins/rails-flow/hooks/scripts",),
+        mutations=(
+            Mutation(
+                "three-column rows are read as two again, so the skill name is taken for the source",
+                '    if [ -n "$f3" ]; then src="$f2"; hash="$f3"; else src="$f1"; hash="$f2"; fi',
+                '    src="$f1"; hash="$f2"',
+                "a 3-column manifest with a header and a 64-char digest reports real drift",
+            ),
+            Mutation(
+                "an unparseable row is skipped in silence again",
+                "      unparsed=$((unparsed+1))\n      continue",
+                "      continue",
+                "reported as unparseable, not skipped",
+            ),
+            Mutation(
+                "the digest is compared at 12 chars regardless of the stored length",
+                'cur="$($_rf_hash "$src" 2>/dev/null | cut -c1-${#hash})"',
+                'cur="$($_rf_hash "$src" 2>/dev/null | cut -c1-12)"',
+                "64-char digest MATCHES reports nothing",
+            ),
+        ),
+    ),
     Guard(
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
@@ -2170,6 +2341,64 @@ GUARDS: tuple[Guard, ...] = (
             "evals",
         ),
         mutations=(
+            # #820. The doctor kept `out.splitlines()[-1]` of a failing gate, and most of our gates end
+            # with `N finding(s).` -- so what survived was reliably the count. On a runner the doctor is
+            # the ONLY thing that runs the gate (capture_output=True), so the findings were printed
+            # nowhere at all: a red build reading `1 finding(s).` and nothing else.
+            Mutation(
+                "a failing gate's findings are dropped again, leaving only its count",
+                '    rest = lines[:-1]',
+                '    rest = []',
+                "a failing gate's FINDING is dropped",
+            ),
+            # Bottom-anchored, opposite to project_gates.summarise: our gates put the preamble first
+            # (lint_self_consistency opens with a 40-clause stats line) and the report last. Keeping the
+            # EARLIEST lines keeps the throat-clearing and drops the findings.
+            Mutation(
+                'the cap keeps the EARLIEST lines, so a long gate reports its preamble',
+                '        rest = [f"… {dropped} earlier line(s) dropped — run the command below for the rest"] + \\\n            rest[-MAX_GATE_FINDING_LINES:]',
+                '        rest = rest[:MAX_GATE_FINDING_LINES]',
+                'the cap keeps the EARLIEST lines',
+            ),
+            Mutation(
+                'the cap truncates silently, so a reader cannot tell the report was cut',
+                '        rest = [f"… {dropped} earlier line(s) dropped — run the command below for the rest"] + \\\n            rest[-MAX_GATE_FINDING_LINES:]',
+                '        rest = rest[-MAX_GATE_FINDING_LINES:]',
+                'the cap truncates SILENTLY',
+            ),
+            Mutation(
+                'the cap is removed, so one noisy gate buries the other 97',
+                '    if len(rest) > MAX_GATE_FINDING_LINES:',
+                '    if False:',
+                'the cap does not bound the output',
+            ),
+            Mutation(
+                "the summary stops being the gate's last line",
+                '    return lines[-1], tuple(rest)',
+                '    return lines[0], tuple(rest)',
+                "the summary line is no longer the gate's last line",
+            ),
+            Mutation(
+                'a gate that failed with NO output reports nothing at all',
+                '        return f"exit {code}", ()',
+                '        return "", ()',
+                'a gate that failed with NO output',
+            ),
+            # Proving `gate_output` carries them is not proving `report` PRINTS them: emptying this
+            # survived every fixture that only called the helper, in #812 and again here.
+            Mutation(
+                'report() stops printing the findings',
+                '            for finding_line in r.findings:\n                print(f"             {finding_line}")',
+                '            for finding_line in ():\n                print(f"             {finding_line}")',
+                'report() prints the count but not the findings',
+            ),
+            Mutation(
+                'the findings print after the remedy instead of before it',
+                '            for finding_line in r.findings:\n                print(f"             {finding_line}")\n            if r.remedy and r.status in (FAIL, SKIP):\n                print(f"           -> {r.remedy}")',
+                '            if r.remedy and r.status in (FAIL, SKIP):\n                print(f"           -> {r.remedy}")\n            for finding_line in r.findings:\n                print(f"             {finding_line}")',
+                'the findings print AFTER the remedy',
+            ),
+
             # The gate tally must exclude preconditions. Widening the filter is how the count goes
             # back to being off by one, which put three wrong numbers in shipped text.
             Mutation(
@@ -2240,7 +2469,7 @@ GUARDS: tuple[Guard, ...] = (
         # real page, so the matrix source has to exist in the workdir. Without these the selftest dies
         # at import and EVERY mutation reports as "caught" — by a traceback, not by a fixture.
         deps=("scripts/build_coverage.py",),
-        needs=("skills/fidara-design/references/coverage.md",),
+        needs=("skills/design-system/references/coverage.md",),
         mutations=(
             Mutation(
                 "the drift comparison stops comparing, so a stale artifact passes",
@@ -2581,6 +2810,21 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #828. Every non-zero exit was FAIL. A check's own n/a (exit 3) and cannot-run (exit 2)
+            # verdicts were graded FAIL, counted, and routed to the project's tracker.
+            Mutation(
+                "a check's exit 3 goes back to being graded FAIL",
+                "            if done.returncode == 3:",
+                "            if False:",
+                "a check that exits 3 is n/a, not FAIL",
+            ),
+            Mutation(
+                "a check's exit 2 goes back to being graded FAIL and routed to the app",
+                "            if done.returncode == 2:",
+                "            if False:",
+                "a check that exits 2 is ERROR, not FAIL",
+            ),
+
             # #812. The aggregate everyone is told to run reported a finding COUNT and dropped the
             # findings -- `[FAIL] mandated-gems  1 finding(s):`, a trailing colon promising a list
             # and nothing after it. The individual scripts carry the finding, the reason AND the fix.
@@ -2847,6 +3091,14 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/qa-flow/scripts/theme_parity.py",
         selftest="plugins/qa-flow/scripts/theme_parity.py",
         mutations=(
+            # #830. Two shipped plugins used different sRGB breakpoints; design-flow had 2.2's.
+            Mutation(
+                "the luminance breakpoint regresses to WCAG 2.0's 0.03928",
+                "SRGB_LINEAR_BREAKPOINT = 0.04045",
+                "SRGB_LINEAR_BREAKPOINT = 0.03928",
+                "luminance uses the WCAG 2.2 breakpoint",
+            ),
+
             Mutation(
                 # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
                 "grouping drops `detail`, so two different defects merge under one rule name",
@@ -2893,6 +3145,14 @@ GUARDS: tuple[Guard, ...] = (
         # reason.
         needs=("plugins/qa-flow/scripts/crawl_collector.js",),
         mutations=(
+            # #829. The skip returned 0, which the doctor renders as PASS.
+            Mutation(
+                "an absent node exits 0 again, so the doctor prints ok for a check that did not run",
+                "        # Exit 3, not 0 (#829): the doctor maps 0 to PASS; 3 renders as SKIP with this reason.\n        return 3",
+                "        return 0",
+                "a missing node is a SKIP, not a failure",
+            ),
+
             Mutation(
                 # The dangerous direction for a de-duplicator: a shorter report that hid a defect.
                 "grouping drops `detail`, so two different defects merge under one rule name",
@@ -3193,7 +3453,7 @@ GUARDS: tuple[Guard, ...] = (
         name="check_section_landmarks",
         subject="scripts/check_section_landmarks.py",
         selftest="scripts/check_section_landmarks.py",
-        needs=("skills/fidara-design/references",),
+        needs=("skills/design-system/references",),
         mutations=(
             Mutation(
                 "the name test accepts any aria-* attribute, so aria-hidden passes as a name",
@@ -3274,9 +3534,9 @@ GUARDS: tuple[Guard, ...] = (
         # The LAY-017 fixture (#476) re-derives its measurement from the REAL band table, so the
         # doc has to be staged. Without it the baseline selftest fails in the tempdir and every
         # mutation below is INERT -- which run_baseline reported rather than passing silently.
-        needs=("skills/fidara-design/references/page-anatomies.md",
-               "skills/fidara-design/references/coverage.md",
-               "skills/fidara-design/references/foundations-tokens.md",
+        needs=("skills/design-system/references/page-anatomies.md",
+               "skills/design-system/references/coverage.md",
+               "skills/design-system/references/foundations-tokens.md",
                # #639. It now imports the band parser from the shipped plugin rather than
                # keeping a second copy, so the plugin module and its own import are needs.
                # Third time this rule has bitten in one session: an added import is an
@@ -3617,6 +3877,14 @@ GUARDS: tuple[Guard, ...] = (
         # every mutation reads as caught by the wrong one.
         needs=("plugins/design-flow/scripts/conformance_collector.js",),
         mutations=(
+            # #829. The skip returned 0, which the doctor renders as PASS.
+            Mutation(
+                "an absent node exits 0 again, so the doctor prints ok for a check that did not run",
+                "        # check everything\", which the doctor renders as SKIP with this line as the reason.\n        return 3",
+                "        return 0",
+                "an absent node skips instead of failing",
+            ),
+
             # ---- literal-colour ----
             Mutation(
                 "the role-token basis stops silencing anything, so nothing is a literal colour",
@@ -4062,6 +4330,34 @@ GUARDS: tuple[Guard, ...] = (
         needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh"),
         mutations=(
             Mutation(
+                "the tag being armed loses its exemption, so every arm reports its own release as a ghost",
+                "        elif check_tags and tag != arming and tag not in tags:",
+                "        elif check_tags and tag not in tags:",
+                "the tag being ARMED has no git tag yet",
+            ),
+
+            # #834. `--check` looked only at the tag being armed. A block for a tag that was never cut
+            # (v1.78.0) and a heading without the word `release` (v1.91.1) both published nothing,
+            # and nothing could say so after the fact. Two assertions over the WHOLE file now.
+            Mutation(
+                "the shape assertion is dropped, so a `(vX)` heading is treated as publishable",
+                "        if not PUBLISHING_SHAPE.search(line):",
+                "        if False:",
+                "all-tags: a heading naming a version WITHOUT the publishing shape is a finding",
+            ),
+            Mutation(
+                "the tag-existence assertion is dropped, so a ghost release block is fine again",
+                "        elif check_tags and tag != arming and tag not in tags:",
+                "        elif False:",
+                "all-tags: a (release vX) heading whose tag does not exist is a finding",
+            ),
+            Mutation(
+                "the line number is dropped from the finding",
+                '                f"{CHANGELOG}:{lineno}: heading names {tag} without the `(release {tag})` shape, so the "',
+                '                f"{CHANGELOG}: heading names {tag} without the `(release {tag})` shape, so the "',
+                "all-tags: the finding carries the line number",
+            ),
+            Mutation(
                 "only the first block for a tag is grabbed -- the original bug, restored",
                 "            if needle in line:",
                 "            if needle in line and not out:",
@@ -4101,7 +4397,7 @@ GUARDS: tuple[Guard, ...] = (
                "CLAUDE.md", "AGENTS.md"),
         mutations=(
             # #798. The map answered "which claim is enforced by what" for repo-process doctrine
-            # only -- skills/rails-8, hotwire and fidara-design were not declared sources at all,
+            # only -- skills/rails-8, hotwire and design-system were not declared sources at all,
             # so the question was unanswerable for the doctrine users actually follow. Three claims
             # (#778/#797, #779, #792) were each found by a downstream project, one at a time.
             Mutation(
@@ -4409,7 +4705,7 @@ GUARDS: tuple[Guard, ...] = (
     # #158. The routing regex is the mutation that matters here. Its whole job is telling a real
     # dispatch entry apart from prose that happens to name the file, and getting that wrong in the
     # LOOSE direction is silent: every reference looks routed and the gate reports clean forever.
-    # That is precisely how `fidara-design/references/coverage.md` hid at depth 2 while two other
+    # That is precisely how `design-system/references/coverage.md` hid at depth 2 while two other
     # reference files name it in passing.
     Guard(
         name="check_skill_routing",
@@ -5058,10 +5354,10 @@ GUARDS: tuple[Guard, ...] = (
         subject="plugins/design-flow/scripts/compose_brief.py",
         selftest="plugins/design-flow/scripts/compose_brief.py",
         # It reads the real band table through the doctrine resolver, so the skill and the resolver
-        # are both needs -- and without them every mutation dies on "cannot find fidara-design",
+        # are both needs -- and without them every mutation dies on "cannot find design-system",
         # which reads as "caught" while proving nothing.
         needs=("plugins/design-flow/scripts/doctrine_path.py",
-               "skills/fidara-design/references/page-anatomies.md"),
+               "skills/design-system/references/page-anatomies.md"),
         mutations=(
             Mutation(
                 # #676, second root cause. The surface only ever EXCLUDED -- `avoid` saw it and

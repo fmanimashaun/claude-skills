@@ -182,20 +182,30 @@ fi
 # The runner is chosen by what the PROJECT pins, not by what is installed: a `.tool-versions` or
 # `.ruby-version` is the project saying "this Ruby", and the manager that owns that file is the one
 # that can honour it.
-_rf_bundle() {
+#
+# AN ARGV PREFIX, NOT A FUNCTION (#822). This used to be `_rf_bundle() { … }` and the call below
+# was `_rf_timeout 120 _rf_bundle exec rspec`. `_rf_timeout` execs the external `timeout` binary
+# wherever one exists, and an external binary cannot run a shell function: on every Linux box, CI
+# runner and WSL the gate printed `exec: _rf_bundle: not found` and read that as a RED suite --
+# blocking every turn that touched a spec, with the wrong diagnosis. Stock macOS has neither
+# `timeout` nor `gtimeout`, so #683 never saw it. The prefix is word-split on purpose: none of its
+# elements can contain a space, and `mapfile` would need bash 4, which macOS does not ship.
+_rf_bundle_prefix() {
   if [ -f .tool-versions ] || [ -f .ruby-version ]; then
     if command -v mise >/dev/null 2>&1 && mise current ruby >/dev/null 2>&1; then
-      mise exec -- bundle "$@"; return $?
+      printf '%s' "mise exec -- bundle"; return
     fi
-    if command -v rbenv >/dev/null 2>&1; then rbenv exec bundle "$@"; return $?; fi
-    if command -v asdf >/dev/null 2>&1; then asdf exec bundle "$@"; return $?; fi
+    if command -v rbenv >/dev/null 2>&1; then printf '%s' "rbenv exec bundle"; return; fi
+    if command -v asdf >/dev/null 2>&1; then printf '%s' "asdf exec bundle"; return; fi
   fi
-  bundle "$@"
+  printf '%s' "bundle"
 }
 
 if [ -n "$spec_changed" ] && command -v bundle >/dev/null 2>&1; then
   files="$(printf '%s\n' "$spec_changed" | tr '\n' ' ')"
-  if ! out="$(_rf_timeout 120 _rf_bundle exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then
+  bundle_cmd="$(_rf_bundle_prefix)"
+  # shellcheck disable=SC2086  # $bundle_cmd and $files are word-split by design
+  if ! out="$(_rf_timeout 120 $bundle_cmd exec rspec $files --fail-fast --no-color 2>&1 | tail -15)"; then
     # BOTH BRANCHES EXIT 2, and that is what makes a crude pattern match safe here: a
     # misclassification changes the WORDING, never whether the finish is blocked. Getting it wrong
     # in the cautious direction says "nothing is known about your specs" when they did fail — still
@@ -204,30 +214,30 @@ if [ -n "$spec_changed" ] && command -v bundle >/dev/null 2>&1; then
     # A BUNDLER ABORT IS NOT A RED SUITE. Bundler exits non-zero for "your Ruby does not match the
     # lockfile" exactly as it does for a failing example, and calling that RED sends the reader to
     # look at specs that are fine. Name the environment when the output says environment.
+    # A POSITIVE SIGNAL, NOT A DENYLIST (#822). This was a list of Bundler phrases -- "Your Ruby
+    # version", "Could not locate" (#724), "command not found" -- and its own comment said that if
+    # it ever needed a third member the shape was wrong. It needed one: GNU timeout says "failed to
+    # run command", which matched nothing, and the gate called an unrunnable command a red suite.
+    # So: RSpec ALWAYS prints a summary line (`3 examples, 1 failure`; `0 examples, 0 failures, 1
+    # error occurred outside of examples` for a spec that will not load). If that line is present
+    # the suite ran and the verdict is the suite's; if it is absent, rspec never started and the
+    # problem is the environment, whatever the wording. Both branches still exit 2.
     case "$out" in
-      # `Could not locate` is here because it was NOT, and the miss reported a red suite for a
-      # suite that never ran (#724). Bundler says "Could not locate Gemfile" when it cannot start
-      # at all -- a hook firing from a subdirectory, a monorepo whose app is not at the root, a
-      # half-initialised project -- and `Could not find` (a missing GEM) does not cover it.
-      #
-      # This is the second member this denylist has been missing. If it needs a third, the shape is
-      # wrong: key on a positive signal instead, the way the release-notes detail line had to after
-      # its own banner denylist was beaten (#715).
-      *"Your Ruby version"*|*"was resolved to"*|*"Could not find"*|*"Could not locate"*|\
-      *"command not found"*|*"Bundler::"*)
+      *" example, "*|*" examples, "*)
+        {
+          echo "rails-flow stop gate: changed specs are RED — fix before finishing."
+          printf '%s\n' "$out"
+        } >&2
+        ;;
+      *)
         {
           echo "rails-flow stop gate: could not RUN the changed specs — this is an environment"
           echo "problem, not a failing suite. Nothing about your specs is known either way."
           echo "The gate tried the project's Ruby via mise/rbenv/asdf and fell back to PATH."
           printf '%s\n' "$out"
         } >&2
-        exit 2
         ;;
     esac
-    {
-      echo "rails-flow stop gate: changed specs are RED — fix before finishing."
-      printf '%s\n' "$out"
-    } >&2
     exit 2
   fi
 fi

@@ -224,7 +224,7 @@ Form,Route,Surface,Status,HTTP,Requested URL,Final URL,Assertion,Controls,Unlabe
 
 For a form inside a modal, record `Surface: modal` and the CRUD expectation is a **422 re-render
 inside the modal frame** with inline errors. The doctrine is
-`skills/fidara-design/references/crud-modal-pattern.md:146` — *failure re-renders the form into the
+`skills/design-system/references/crud-modal-pattern.md:146` — *failure re-renders the form into the
 modal frame* — not `functional-tester`, which never specified it (#424: that pointer was dangling
 for three releases, and the criterion it stood in for was therefore asserted nowhere).
 
@@ -303,7 +303,7 @@ feature only *detects* the setting, so every finding here is "the author wrote n
 never "the browser failed to honour a promise". (Forced colors is the opposite: that one the user
 agent really does enforce.) Our own CSS gates motion inside
 `@media (prefers-reduced-motion: no-preference)` rather than overriding inside `reduce` — see
-`skills/fidara-design/references/motion.md`, which also records why that direction is ours and not a
+`skills/design-system/references/motion.md`, which also records why that direction is ours and not a
 published rule.
 
 **What gates, and what does not — the whole point of this mode:**

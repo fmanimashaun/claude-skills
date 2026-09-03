@@ -7,7 +7,7 @@ people, and it carries its own maintenance tooling for you.
 
 - **Distributed (what users install):** the app-builder plugins listed in
   `.claude-plugin/marketplace.json` — `rails-stack` (which bundles the rails-8, hotwire,
-  fidara-design, code-review, quality-pass, derived-artifacts and parallel-session-lane skills),
+  design-system, code-review, quality-pass, derived-artifacts and parallel-session-lane skills),
   `rails-flow`, `qa-flow`, `pipeline`, `design-flow`
   — plus the `dist/*.skill` packages for claude.ai upload. Keep this list in step with the
   manifest: it omitted `design-flow` for as long as that plugin existed (#203).
@@ -213,9 +213,9 @@ One command rebuilds every version-stamped artefact, and the arm should use it:
 python3 scripts/rebuild_generated.py     # coverage page, inventory, wiki, dist/*.skill
 ```
 
-It exists because the arm ran four builders in order from memory, and the **v1.88.0 arm forgot the
-wiki** — the gate caught it, which is the gate working and the sequence being memory. It runs all
-four even if one fails, because stopping early leaves the tree half-rebuilt: some gates then pass,
+It exists because the arm ran the builders in order from memory, and the **v1.88.0 arm forgot the
+wiki** — the gate caught it, which is the gate working and the sequence being memory. It runs every
+builder in `BUILDERS` even if one fails, because stopping early leaves the tree half-rebuilt: some gates then pass,
 some do not, and the reason is invisible.
 
 | # | Step | Branch / PR | Publishes? |
@@ -268,7 +268,7 @@ Corollary for reading branch state: judge `dev` against `main` with `git diff de
 should be **empty** right after a promotion. Do **not** read the ahead/behind counter — `main`
 accumulates one merge commit per release that `dev` never receives, so `dev` shows tens of
 commits "behind" while being content-identical. Merging `main` back into `dev` to make the
-counter look tidy is what produced 37 no-op merge commits on `dev` earlier; don't.
+counter look tidy is what produced dozens of no-op merge commits on `dev` earlier; don't.
 
 ## The gates run in CI now, and until recently they did not
 
@@ -276,8 +276,8 @@ counter look tidy is what produced 37 no-op merge commits on `dev` earlier; don'
 
 Before it existed, every automated check on a PR here belonged to a **third party** — AccessLint and
 GitGuardian. Our own workflow was `release.yml`, which fires only on a push to `main`, *after* merge,
-and whose single check is the `dist/` drift guard. So the 35 gates this file spends pages on ran
-**nowhere automatically**: they ran when a maintainer remembered to type the command. That is the
+and whose single check is the `dist/` drift guard. So the gates this file spends pages on — 35 at
+the time, `len(GATES)` in `scripts/maintainer_doctor.py` today — ran **nowhere automatically**: they ran when a maintainer remembered to type the command. That is the
 claims-vs-enforcement defect this repo warns about most, sitting in its own infrastructure.
 
 Two design points worth not undoing:
@@ -297,15 +297,17 @@ other**, exactly as with `release_local.sh`.
 
 ## Releases are automated — do NOT run `gh release` by hand
 
-`.github/workflows/release.yml` fires on every push to `main`:
+`.github/workflows/release.yml` fires on every push to `main`. Its `release` job `needs: gates` — the
+full sweep from `gates.yml` runs first, via `workflow_call`, so a merge commit no PR tested is still
+gated — and then:
 
 1. reads `metadata.version` from `.claude-plugin/marketplace.json` → tag `vX.Y.Z`;
-2. if that tag doesn't exist, builds `dist/*.skill` with `scripts/package_core.py`,
+2. if no **release** exists for that tag yet (`gh release view`), builds `dist/*.skill` with `scripts/package_core.py`,
    verifies committed `dist/` matches (drift guard), extracts notes from the CHANGELOG
    `(release vX.Y.Z)` block, and publishes the release with **every** `dist/*.skill`
    asset (a glob, never a hand-typed list — that is how a release silently drops a newly
    added skill);
-3. if the tag already exists (version wasn't bumped), it is a **no-op**.
+3. if a release already exists (version wasn't bumped), it is a **no-op**.
 
 So to ship: land the work on `dev` unversioned, then open the promotion PR that bumps
 `metadata.version` and merge it. The workflow does the rest. A corollary worth internalizing:
@@ -402,13 +404,13 @@ Treat a coverage gap as a defect in the linter, not a nuisance.
 ### The same argument applies to JS, Ruby and ERB — and they are the bigger surface
 
 `bash -n` on fenced blocks was the start, not the whole job. The other languages carry **more** code
-than the shell does — 154 ruby, 85 erb, 22 js blocks against 79 bash — and it is the same code an
-agent pastes into a user's project.
+than the shell does — several hundred ruby, erb and js blocks against a couple of hundred bash; both
+linters print the live counts — and it is the same code an agent pastes into a user's project.
 
 ```bash
 python3 scripts/lint_markdown_code.py                   # node --check / ruby -c per block
 python3 scripts/lint_markdown_code.py --audit-coverage  # prove no block is silently skipped
-python3 scripts/lint_markdown_code.py --selftest        # 27 fixtures, mostly SILENCE fixtures
+python3 scripts/lint_markdown_code.py --selftest        # mostly SILENCE fixtures; it prints the count
 ```
 
 **Its whole risk is false positives, so read that half first.** Reference docs are full of deliberate
@@ -459,8 +461,9 @@ is an explicit registry living in the same file as the validators that check it,
 in two files drift apart.
 
 Each row is `guarantee`, `advice`, or `gap`, using **[`docs/harness-doctrine.md`](docs/harness-doctrine.md)**'s
-existing test (*"if a model ignores this, what happens?"*) rather than new vocabulary. Six validators
-run, all mechanical — so none is taste wearing a count (#476):
+existing test (*"if a model ignores this, what happens?"*) rather than new vocabulary. The validators
+are all mechanical — so none is taste wearing a count (#476); the six below are the ones that name a
+defect class, and `validate()` also refuses an unknown kind and a duplicate claim:
 
 | validator | the defect it catches |
 |---|---|
@@ -527,7 +530,7 @@ are load-bearing rather than stylistic.
   nothing checks quality at all. That is why the gate this change added is **not** a duplication
   gate: `scripts/check_shared_shapes.py` refuses only a **number in the worked example
   disagreeing with the repo** — `claims-vs-enforcement` on our own prose, the same shape as
-  `check_handoff.py` reconciling a tier table against the agents it describes. Do not "strengthen"
+  `plugins/rails-flow/scripts/check_handoff.py` reconciling a tier table against the agents it describes. Do not "strengthen"
   it into refusing copies; that would contradict the doctrine it guards.
 
 The worked example (`skills/quality-pass/references/worked-example.md`) records the pass's first
@@ -592,8 +595,8 @@ corpora need attaching; and `git status --porcelain` **collapses a new untracked
 a new file can look like nothing at all. A checklist in prose would be the same
 claims-vs-enforcement defect this file keeps warning about, so it is a script that can fail.
 
-**Read its output as three states, not two.** `ok` is verified, `FAIL` blocks work, and **`skip`
-means the check did not run — it is not a pass.** That distinction is the whole point: the bug
+**Read its output as three verdicts, not two** — plus an informational `note` that is not a verdict.
+`ok` is verified, `FAIL` blocks work, and **`skip` means the check did not run — it is not a pass.** That distinction is the whole point: the bug
 that prompted this was `build_coverage.py --selftest` printing "35 checks passed" on a machine
 with no corpora while two checks against the real repo silently did nothing.
 

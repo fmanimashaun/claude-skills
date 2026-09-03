@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Where `fidara-design` lives — resolved for BOTH layouts, in one place (#617).
+"""Where `design-system` lives — resolved for BOTH layouts, in one place (#617).
 
 WHY THIS EXISTS. design-flow's scripts read doctrine that ships in a different plugin: the
-`fidara-design` skill, bundled in `rails-stack`. Three of them found it by counting `..` hops from
+`design-system` skill, bundled in `rails-stack`. Three of them found it by counting `..` hops from
 their own file, and that arithmetic is calibrated for the **marketplace clone**:
 
-    <clone>/plugins/design-flow/scripts/x.py   ->  ../../..  ->  <clone>/skills/fidara-design/
+    <clone>/plugins/design-flow/scripts/x.py   ->  ../../..  ->  <clone>/skills/design-system/
 
 From an **install** — which is what `${CLAUDE_PLUGIN_ROOT}` expands to for everyone who did not
 clone — the cache interposes `<plugin>/<version>/`:
@@ -35,7 +35,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SKILL_REL = Path("skills") / "fidara-design"
+SKILL_REL = Path("skills") / "design-system"
 
 
 def _version_key(name: str) -> tuple:
@@ -58,7 +58,7 @@ def candidates(script: Path) -> list[Path]:
 
 
 def find(script: Path) -> Path | None:
-    """The `fidara-design` directory, or None. Callers REFUSE on None rather than degrading."""
+    """The `design-system` directory, or None. Callers REFUSE on None rather than degrading."""
     for candidate in candidates(script):
         if candidate.is_dir():
             return candidate

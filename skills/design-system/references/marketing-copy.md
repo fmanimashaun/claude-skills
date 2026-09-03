@@ -65,7 +65,7 @@ carries **one row per archetype, using coverage.md's exact names**, so the corre
 re-checkable rather than asserted:
 
 ```bash
-grep "a section of a marketing page" skills/fidara-design/references/coverage.md \
+grep "a section of a marketing page" skills/design-system/references/coverage.md \
   | awk -F'|' '{print $2}' | sed 's/^ *//;s/ *$//'
 ```
 

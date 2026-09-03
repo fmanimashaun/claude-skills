@@ -9,7 +9,7 @@ tools: Read, Grep, Glob, Edit, Bash
 model: inherit
 ---
 
-You guard brand fidelity per `skills/fidara-design/references/brand.md` (+ foundations-tokens).
+You guard brand fidelity per `skills/design-system/references/brand.md` (+ foundations-tokens).
 
 ## The model
 

@@ -2,8 +2,8 @@ name: Gates
 
 # WHY THIS EXISTS. Until now, every automated check on a pull request in this repo belonged to a
 # THIRD PARTY -- AccessLint and GitGuardian. Our own workflow was `release.yml`, which fires only on
-# a push to `main`, after merge, and whose single check is the `dist/` drift guard. So the 35 gates
-# this repo builds, documents at length, and treats as its safety net ran **nowhere automatically**:
+# a push to `main`, after merge, and whose single check is the `dist/` drift guard. So the gates (35
+# at the time) this repo builds, documents at length, and treats as its safety net ran **nowhere automatically**:
 # they ran when a maintainer remembered to type `maintainer_doctor --gates`.
 #
 # That is the claims-vs-enforcement defect the repo warns about most, sitting in its own
@@ -32,6 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Tags too (#834). The `release notes complete` gate asserts every `(release vX)` heading names
+          # a real tag; a depth-1 checkout has no tags and reported 144 ghosts. release.yml already fetches
+          # the full history for the same reason -- change one, change the other.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:

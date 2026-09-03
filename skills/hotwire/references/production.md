@@ -667,7 +667,7 @@ objects are logic, and they are testable without a DOM.
 
 ### 4.2 Verdict on our four-mixin doctrine — **not contradicted, but not corroborated either**
 
-The `fidara-design` skill prescribes four reusable Stimulus mixins (list-navigation, focus-trap +
+The `design-system` skill prescribes four reusable Stimulus mixins (list-navigation, focus-trap +
 restore, dismissable-layer, anchored-position) composed into components. #99 asks whether real
 usage validates that. Read honestly:
 
@@ -823,7 +823,7 @@ else that changed. Do not reach for a drag library; do not re-render the dragged
 
 **One thing we do NOT take.** The controller cleans up in `dragEnd`, which the browser fires after
 a cancelled drag as well as a completed one — adequate for pointer-driven HTML5 drag. It is not the
-full gesture-abandonment contract the `fidara-design` skill requires for custom pointer gestures
+full gesture-abandonment contract the `design-system` skill requires for custom pointer gestures
 (window `blur`, `visibilitychange`, `pointercancel`, and the rest), because native `dragend` covers
 cases a hand-rolled pointer gesture must handle itself. Use this pattern for HTML5 drag; do not
 read it as licence to skip that contract when you build a gesture from raw pointer events.

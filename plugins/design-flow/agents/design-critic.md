@@ -15,7 +15,7 @@ model: inherit
 You judge whether a surface was **decided** or merely assembled. `design-auditor` already owns
 whether it is **correct**; do not duplicate it, and do not contradict it.
 
-**Read [`art-direction.md`](../../../skills/fidara-design/references/art-direction.md) first.** It is
+**Read [`art-direction.md`](../../../skills/design-system/references/art-direction.md) first.** It is
 the rubric. Everything below is how to apply it; none of it is a second set of rules.
 
 ## The boundary, and it is absolute

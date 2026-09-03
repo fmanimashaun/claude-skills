@@ -72,11 +72,25 @@ if [ -f .claude/skills/.manifest.tsv ]; then
   command -v sha256sum >/dev/null 2>&1 || _rf_hash="shasum -a 256"
   stale=0
   unhashed=0
-  while IFS="$(printf '\t')" read -r src hash; do
-    [ -n "$src" ] && [ -f "$src" ] || continue
+  unparsed=0
+  # TWO SHAPES, AND A ROW THAT FITS NEITHER IS COUNTED (#838). The curator writes three columns
+  # under a `# skill  source  sha256` header with the FULL 64-char digest; the spec and this loop
+  # said two columns and 12 chars. Read as `src hash`, `$src` was the skill NAME, `[ -f ]` failed,
+  # and `continue` skipped every row -- so the nudge never fired on a project whose sources changed
+  # daily, and the session looked healthy. The guard added to stop silent passes (unhashed rows)
+  # had a silent pass in front of it. So: a `#` line is a header; three fields are skill/src/hash,
+  # two are src/hash; anything else, or a source that is not a file, is UNPARSED and reported. The
+  # digest is compared at the STORED length, so 12- and 64-char manifests both work.
+  while IFS="$(printf '\t')" read -r f1 f2 f3 _rest; do
+    case "$f1" in ""|"#"*) continue ;; esac
+    if [ -n "$f3" ]; then src="$f2"; hash="$f3"; else src="$f1"; hash="$f2"; fi
+    if [ -z "$hash" ] || [ ! -f "$src" ]; then
+      unparsed=$((unparsed+1))
+      continue
+    fi
     # Deliberately unquoted: $_rf_hash may carry the `-a 256` argument and must word-split.
     # shellcheck disable=SC2086
-    cur="$($_rf_hash "$src" 2>/dev/null | cut -c1-12)"
+    cur="$($_rf_hash "$src" 2>/dev/null | cut -c1-${#hash})"
     if [ -z "$cur" ]; then
       unhashed=$((unhashed+1))
     elif [ "$cur" != "$hash" ]; then
@@ -85,6 +99,7 @@ if [ -f .claude/skills/.manifest.tsv ]; then
   done < .claude/skills/.manifest.tsv
   [ "$stale" -gt 0 ] && echo "- $stale curated doc(s) drifted from their project skills — run /rails-flow:curate"
   [ "$unhashed" -gt 0 ] && echo "- $unhashed curated doc(s) could NOT be hashed (no working sha256sum or shasum) — drift is UNKNOWN for them, not clean"
+  [ "$unparsed" -gt 0 ] && echo "- $unparsed manifest row(s) could not be PARSED (not \`<source>\t<sha256>\` or \`<skill>\t<source>\t<sha256>\`, or the source is not a file) — drift is UNKNOWN for them; run /rails-flow:curate"
 fi
 
 # ---------------------------------------------------------------------------------------

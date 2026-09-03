@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import re
 import sys
 from pathlib import Path
@@ -288,7 +289,13 @@ def main(argv: list[str]) -> int:
         want = build()
         path = WIKI / name
         if args.check:
-            if not path.is_file() or path.read_text(encoding="utf-8") != want:
+            # The blob at HEAD, never the working copy (#833). A page rebuilt and never staged is
+            # invisible to every other clone while sitting right there on disk; comparing the
+            # working copy waved exactly that through locally and failed it in CI.
+            committed = subprocess.run(
+                ["git", "show", f"HEAD:{path.relative_to(ROOT).as_posix()}"],
+                cwd=ROOT, capture_output=True, text=True, timeout=30)
+            if committed.returncode != 0 or committed.stdout != want:
                 drift.append(name)
         else:
             path.write_text(want, encoding="utf-8")

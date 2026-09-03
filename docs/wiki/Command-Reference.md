@@ -59,20 +59,20 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Setup** — design system, tokens and the brand pack
 
-- `/design-flow:setup` — Scaffold the Fidara design system into a Rails 8 + Hotwire + Tailwind v4 project — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode.
+- `/design-flow:setup` — Scaffold the design system into a Rails 8 + Hotwire + Tailwind v4 project — @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale), layout-primitive @utility recipes, base ViewComponents, dark mode.
 - `/design-flow:tokens` — Export native design tokens (Phase 3) from the Rails app's Tailwind @theme — generate Android (colors.xml + Theme.Fidara) and iOS (SwiftUI Color) token files so fully-native screens match the web by construction.
 
 
 **Build** — build UI against the system
 
-- `/design-flow:component` — Author or refactor a UI component per the Fidara design system.
+- `/design-flow:component` — Author or refactor a UI component per the design system.
 - `/design-flow:mobile` — Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->card-stack.
 - `/design-flow:variants` — Generate N brand-conformant compositions of one brief plus a dev-only switcher route.
 
 
 **Review** — conformance is the gate; taste is the lens
 
-- `/design-flow:audit` — Audit UI against the Fidara design system — flag drift (raw/brand colors in components, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus ring/ARIA, non-min-h-touch targets, hand-rolled layout CSS) and propose fixes.
+- `/design-flow:audit` — Audit UI against the design system — flag drift (raw/brand colors in components, brittle selectors, breakpoint misuse where an intrinsic primitive fits, missing focus ring/ARIA, non-min-h-touch targets, hand-rolled layout CSS) and propose fixes.
 - `/design-flow:critique` — Critique UI look-and-feel against the art-direction doctrine — visual hierarchy, focal point, per-surface aesthetic intent — and return ranked, concrete improvements.
 
 

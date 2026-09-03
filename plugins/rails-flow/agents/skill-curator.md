@@ -32,7 +32,12 @@ skill.
 
 Maintain two files:
 - `.claude/skills/MANIFEST.md` — human table: source doc → skill → last curated
-- `.claude/skills/.manifest.tsv` — machine lines: `<source-path>\t<sha256-12>`
+- `.claude/skills/.manifest.tsv` — machine lines, three tab-separated columns under one header:
+  `# skill\tsource\tsha256`, then `<skill>\t<source-path>\t<sha256>` with the **full 64-char** digest
+  (`sha256sum`/`shasum -a 256`). The SessionStart hook reads this shape and the older two-column
+  `<source-path>\t<sha256>` one, and compares at the stored length; it reports any row it cannot
+  parse rather than skipping it (#838 — the spec said two columns and 12 chars while every curator
+  wrote three and 64, and the drift nudge never fired).
 
 On every run: inventory `docs/**` (minus brain/, reviews/), diff against the manifest
 (new docs, hash drift, deleted sources), then propose a curation plan: skills to
