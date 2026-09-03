@@ -10,7 +10,11 @@ HERE = Path(__file__).resolve().parent
 
 
 def main(argv: list[str]) -> int:
-    root = Path(argv[0]) if argv else Path("docs/design")
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("root", nargs="?", default="docs/design", help="where the canvas manifests and port reports live")
+    a = ap.parse_args(argv)                      # project_gates asserts every check's script answers --help
+    root = Path(a.root)
     manifests = sorted(root.rglob("*.manifest.json")) if root.is_dir() else []
     if not manifests:
         print(f"n/a: no *.manifest.json under {root} -- `canvas_manifest.py extract` writes one per canvas")
