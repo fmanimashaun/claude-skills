@@ -867,6 +867,24 @@ seconds-long job. Two setup details worth stating to the user:
 - `generated_at`/`commit` are excluded from the digest, so this never fails merely because
   someone re-ran the generator.
 
+## 8a. The promotion merges, never squashes — make it a ruleset (#895)
+
+A `dev → main` promotion must be a **merge commit**. A squash keeps dev's content and drops its
+ancestry, so the merge base falls back and the **next** promotion cannot merge at all — phantom
+conflicts on files nobody edited twice. `gh pr merge --merge` is the rule; the Merge button's default
+is whatever the repository allows, and a human is not bound by a command doc. So the rule is a ruleset:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/branch_rulesets.py" --check     # the release branch: PRs merge only, no deletion, no force-push
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/branch_rulesets.py" --apply     # create it when NONE covers the branch — after the user says so
+```
+
+`--check` is the `branch-ruleset` check. **Not applicable is exit 3, never a pass**: no `gh`, `gh` not
+authenticated, `origin` not on GitHub, or the API unreachable. `--apply` changes what the Merge button
+offers on the user's repository — a public blast radius — so run it only after the user confirms, and
+never on a ruleset someone else owns: a partial one is reported with the pieces to add and left alone.
+PRs into `dev` keep whatever method the team uses; only the release branch is constrained.
+
 ## 8b. Issue labels the flow files with
 
 `/rails-flow:pr-comments` folds an out-of-scope review comment into the tracker with

@@ -275,6 +275,22 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "branch-ruleset",
+      "why": "A dev → main promotion must be a merge commit: a squash keeps the content and drops the ancestry, and the NEXT promotion cannot merge. `gh pr merge --merge` is doctrine a human can forget at the Merge button; a GitHub ruleset on the release branch (PRs merge only, no deletion, no force-push) is the mechanism. n/a without gh, unauthenticated, or off GitHub.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/branch_rulesets.py",
+        "--check"
+      ],
+      "applies_when": [
+        ".git"
+      ],
+      "requires": [
+        "python3",
+        "gh"
+      ]
     }
   ]
 }

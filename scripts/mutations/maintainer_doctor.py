@@ -16,6 +16,20 @@ GUARD = Guard(
         "evals",
     ),
     mutations=(
+        # #895. The doctor only MAPS the shipped checker's exit code; the two ways to get that wrong are
+        # a FAIL read as PASS and n/a read as PASS. Each is one branch.
+        Mutation(
+            "a failing ruleset check is reported as PASS",
+            '        if code == 0:\n            self.add(PASS, "`main` merges only (ruleset)", first)',
+            '        if code in (0, 1):\n            self.add(PASS, "`main` merges only (ruleset)", first)',
+            "no ruleset is FAIL",
+        ),
+        Mutation(
+            "not-applicable (no gh, no GitHub origin) is reported as PASS",
+            '        elif code == 3:\n            self.add(SKIP, "`main` merges only (ruleset)", first, "gh auth login, then re-run")',
+            '        elif code == 3:\n            self.add(PASS, "`main` merges only (ruleset)", first)',
+            "SKIP (n/a), never a pass",
+        ),
         # #820. The doctor kept `out.splitlines()[-1]` of a failing gate, and most of our gates end
         # with `N finding(s).` -- so what survived was reliably the count. On a runner the doctor is
         # the ONLY thing that runs the gate (capture_output=True), so the findings were printed
