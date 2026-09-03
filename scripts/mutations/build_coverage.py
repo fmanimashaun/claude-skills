@@ -123,8 +123,8 @@ GUARD = Guard(
         # would keep passing while blind to the whole forms family.
         Mutation(
             "the guard stops reading forms.md, blinding it to the forms family",
-            'CATALOGUE_FILES = ("components.md", "forms.md")',
-            'CATALOGUE_FILES = ("components.md",)',
+            'CATALOGUE_FILES = ("components.md", "components-commerce.md", "forms.md")',
+            'CATALOGUE_FILES = ("components.md", "components-commerce.md")',
             "forms.md is a catalogue file too",
         ),
         # `verify_cell_text` likewise. The interaction half is mutated rather than the ENTRIES

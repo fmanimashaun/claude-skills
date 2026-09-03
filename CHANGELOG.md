@@ -4504,6 +4504,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 26 → 27,
   reach 12 → 13** — `claude_md_structure.py` (#875) is a new copy; `check_shared_shapes.py` refuses the
   stale number.
+- **`skills/design-system/references/components.md` splits: the commerce entries move verbatim to
+  `skills/design-system/references/components-commerce.md`** (#871). The catalogue was 1,600 lines /
+  ~33.7k tokens, the largest single file an agent may be told to read, and the ten commerce entries
+  (Product card, Filter panel, Quick view, Cart drawer and cart line, Payment / card entry, Promo / discount code, Plan comparison / feature matrix, Seat / quantity selector, Saved payment methods, Subscription state and dunning) were ~40 % of it and irrelevant to every surface that does not sell.
+  17 in-file links inside the moved block now point back at `components.md#…`; five links in
+  `page-anatomies.md` point into the new file; `SKILL.md` routes it as its own row ("selling
+  something"). `scripts/build_coverage.py` and `scripts/check_component_shapes.py` read both files as
+  one catalogue — the headings are the same rows, and a matrix reading only the first would have
+  marked every commerce component `derivable` overnight. The pointer left in `components.md` is
+  deliberately not a heading: both scripts read every `## ` there as a catalogue row.
 
 ### 1.56.1 — 2026-09-03 (release v1.110.0)
 

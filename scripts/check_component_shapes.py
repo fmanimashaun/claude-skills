@@ -37,7 +37,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CATALOGUE = ROOT / "skills" / "design-system" / "references" / "components.md"
+# Two files, one catalogue (#871): the commerce entries moved to components-commerce.md, and a shape
+# check reading only components.md would report every commerce shape as "not a components.md row".
+CATALOGUE_FILES = tuple(ROOT / "skills" / "design-system" / "references" / n
+                        for n in ("components.md", "components-commerce.md"))
+CATALOGUE = CATALOGUE_FILES[0]  # kept for messages that name the primary file
 SHAPES = ROOT / "skills" / "design-system" / "references" / "component-shapes.json"
 THEME = ROOT / "plugins" / "design-flow" / "brands" / "fidara" / "theme.css"
 
@@ -136,7 +140,7 @@ def main(argv: list[str]) -> int:
     if "--selftest" in argv:
         return selftest()
     try:
-        md = CATALOGUE.read_text(encoding="utf-8")
+        md = "\n".join(p.read_text(encoding="utf-8") for p in CATALOGUE_FILES)
         shapes = json.loads(SHAPES.read_text(encoding="utf-8"))
         roles = declared_roles(THEME.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:

@@ -79,7 +79,10 @@ OUT = REPO / "skills" / "design-system" / "references" / "coverage.md"
 # page-anatomies.md is deliberately NOT here. It catalogues page archetypes, not components,
 # and its `## Order history` belongs to the `Order history page archetype` row -- including it
 # would convict the separate `Order history` composition row, which is correct as it stands.
-CATALOGUE_FILES = ("components.md", "forms.md")
+# components-commerce.md is here because the commerce entries moved out of components.md (#871): the
+# headings are the same rows, in a second file, and a matrix reading only the first would mark every
+# commerce component `derivable` overnight -- the guard going quiet about exactly the rows that moved.
+CATALOGUE_FILES = ("components.md", "components-commerce.md", "forms.md")
 
 # ---------------------------------------------------------------------------------------
 # Flowbite's published catalogue.
