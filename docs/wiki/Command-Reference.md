@@ -22,7 +22,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 - `/rails-flow:brief` — Turn a vague ask into something buildable.
 - `/rails-flow:curate` — Convert project docs (PRDs, branding, architecture) into project-local skills and keep them synced as documentation evolves
-- `/rails-flow:issues` — Triage the repo's open issues and work them one at a time through the matching pipeline.
+- `/rails-flow:issues` — Triage the repo's open issues and work them through the matching pipeline.
 - `/rails-flow:pr-comments` — Sweep a PR's review feedback.
 - `/rails-flow:report` — Report toolchain friction (a rails-flow/qa-flow/pipeline/design-flow/rails-stack bug, wrong guidance, a generated component that won't build, or a feature idea) upstream as a structured, deduped, version-pinned issue.
 

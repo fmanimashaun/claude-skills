@@ -299,6 +299,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # under stub environments -- a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does,
     # a `mise` that owns the Ruby. The environment is the fixture.
     ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest")),
+    # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
+    # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
+    ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
     # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
     # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
     # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,
