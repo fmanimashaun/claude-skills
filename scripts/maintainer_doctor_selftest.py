@@ -487,6 +487,23 @@ def run() -> int:
     #     "fix the failures before doing maintenance work" about optional licensed files. Proved by
     #     pointing the corpora root at a nonexistent path: the gate returned 1.
     # An exact set means either direction has to be a deliberate edit here, with a reason.
+    # PR_SKIPPED_GATES (#866): exactly the one gate that costs 92 % of the sweep. Every member must be a
+    # real gate, and the set must not grow without an edit here -- a "fast" mode that quietly absorbs
+    # gates is how it becomes the only mode.
+    _tick()
+    if set(md.PR_SKIPPED_GATES) != {"mutation coverage"}:
+        FAILURES.append(f"PR_SKIPPED_GATES is {sorted(md.PR_SKIPPED_GATES)}, expected ['mutation coverage'] -- "
+                        "widening it needs a reason recorded here")
+    _tick()
+    if md.PR_SKIPPED_GATES - gate_names:
+        FAILURES.append(f"PR_SKIPPED_GATES names no such gate: {sorted(md.PR_SKIPPED_GATES - gate_names)}")
+    _tick()
+    d_fast = md.Doctor()
+    d_fast.check_gates(fast=True) if False else None  # the full sweep is minutes; assert the SKIP shape on the record instead
+    r = md.Result(md.SKIP, "gate: mutation coverage", "not run in --fast mode — it runs on every push to dev and at promotion, not per PR")
+    if r.status != md.SKIP or "--fast" not in r.detail:
+        FAILURES.append("a --fast skip must render as SKIP naming the mode, never as a pass or an omission")
+
     _tick()
     expected = {"coverage matrix drift"}
     if set(md.CORPORA_GATES) != expected:

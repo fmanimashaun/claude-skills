@@ -287,6 +287,13 @@ Two design points worth not undoing:
   runner, and failing on them would teach people to ignore a red build, which is worse than no CI.
   The gates are the opposite: every one is a claim about the repo's **content**, so it holds
   identically on a runner and on a laptop.
+- **A pull request runs `--fast`; a push to `dev` and the promotion run everything.** `--fast` skips
+  exactly `PR_SKIPPED_GATES` — `mutation coverage`, which was 438 of the sweep's 475 seconds on every
+  PR — and reports the skip as `skip` with its reason, never silently. The merge commit and the
+  release still get the full set, so nothing reaches `main` without it. The set is pinned by the
+  doctor's selftest in both directions; widening it is how a fast mode becomes the only mode (#866).
+  The guards themselves live one per file under `scripts/mutations/`, discovered by glob, so a
+  refactor edits the small file beside it rather than a 5,600-line table.
 - **It asserts `node` and `ruby` are present rather than tolerating their absence.** Without them
   `lint_markdown_code.py` returns exit 3 (INCOMPLETE) and the doctor maps 3 to SKIP — and in CI a
   skip is indistinguishable from a pass unless something asserts the interpreters exist.
