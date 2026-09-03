@@ -214,6 +214,22 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "claude-md-structure",
+      "why": "CLAUDE.md is loaded by every session and accretes incident narrative until an agent skims it; past its recorded ceiling, or with none recorded, the check says which paragraphs to relocate — verbatim, never summarised.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/claude_md_structure.py",
+        "--report",
+        "CLAUDE.md"
+      ],
+      "applies_when": [
+        "CLAUDE.md"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

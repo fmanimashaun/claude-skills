@@ -1,4 +1,5 @@
 @AGENTS.md
+<!-- claude-md: max-lines 262 -->
 
 # CLAUDE.md — maintaining the `claude-skills` marketplace
 
@@ -21,6 +22,9 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
   stack plugins on top, **exactly one home per concern**, nothing maintainer-only shipped), a
   SessionStart hook (`.claude/hooks/scripts/maintainer-status.sh`) — and `scripts/`.
 - If you are here to **build a Rails app**, you want the plugins, not this file.
+- **This file has a ceiling**, the `<!-- claude-md: max-lines N -->` marker above, enforced by
+  `claude-md-growth` — a ratchet at the measured size. A new fact goes to `docs/maintainer-history.md`,
+  one linking line here. Relocate, never summarise: `python3 plugins/rails-flow/scripts/claude_md_structure.py --propose CLAUDE.md --history docs/maintainer-history.md`.
 
 ## Ship a fix — the checklist
 

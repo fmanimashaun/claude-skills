@@ -2475,6 +2475,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A CLAUDE.md auditor and builder** (#875). `plugins/rails-flow/scripts/claude_md_structure.py --report`
+  says what a project's `CLAUDE.md` is made of — rule, history, mixed and structure paragraphs, the share
+  of words that are incident narrative, whether a "start here" checklist sits near the top — and reads a
+  ceiling recorded in the file itself (`<!-- claude-md: max-lines N -->`). `--propose` prints the diff that
+  moves every pure-history paragraph **verbatim** to `docs/brain/claude-md-history.md` — the project's
+  in-repo memory — under a heading naming its section, leaving one pointer line per section, and
+  **refuses if any paragraph would not survive byte-for-byte**; `mixed` paragraphs are listed for a human
+  to split. `--set-ceiling` records the ceiling at the measured size, a ratchet. Registered in
+  `plugins/rails-flow/checks.json` as `claude-md-structure`: FAIL past the ceiling with the relocation
+  named, **not applicable** when no ceiling is recorded (a ceiling nobody set is not a pass).
+  `setup-flow`'s audit path and `toolchain-audit` step 2 run it. Maintainer: *"just flagging a CLAUDE.md is
+  too long does not help anyone … blind summarising is dangerous"* — so the tool never summarises; the
+  ceiling is on what loads at session start, not on what exists. Twenty fixtures, five mutations.
+
 ### 1.34.0 — 2026-09-03 (release v1.111.0)
 
 - **`/rails-flow:toolchain-audit` carries the maintainer doctor's contract, and `project_gates.py`
@@ -4485,6 +4501,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 26 → 27,
+  reach 12 → 13** — `claude_md_structure.py` (#875) is a new copy; `check_shared_shapes.py` refuses the
+  stale number.
 - **`skills/design-system/references/components.md` splits: the commerce entries move verbatim to
   `skills/design-system/references/components-commerce.md`** (#871). The catalogue was 1,600 lines /
   ~33.7k tokens, the largest single file an agent may be told to read, and the ten commerce entries

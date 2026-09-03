@@ -190,6 +190,37 @@ AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/M
 
 ## 2b. Area- or mode-specific instructions belong in `.claude/rules/`
 
+### CLAUDE.md structure — audit, then relocate (never summarise)
+
+`CLAUDE.md` is loaded by every session, so every line is paid for on every turn — and it accretes: a
+fact lands beside the rule it explains, then the incident, then the issue number, until the file is
+mostly the story of how it came to say what it says. The fix is **not** compression: a summarised rule
+loses the reasoning that made an agent follow it. Run the shipped analyser:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/claude_md_structure.py" --report CLAUDE.md
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/claude_md_structure.py" --propose CLAUDE.md   # a diff; writes nothing
+```
+
+`--report` says what the file is made of (rule / history / mixed / structure paragraphs, the share of
+words that are incident narrative, whether a "start here" checklist sits near the top) and reads the
+ceiling marker. `--propose` prints the diff that moves every pure-history paragraph **verbatim** to
+`docs/brain/claude-md-history.md` — the project's in-repo memory — under a heading naming the section it
+came from, leaving one pointer line per section; it refuses if any paragraph would not survive
+byte-for-byte. `mixed` paragraphs (a rule leaning on its incident) are listed for a human to split. Show
+the diff; apply with `--write` only on approval. Then record the ceiling **at the measured size**:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/claude_md_structure.py" --set-ceiling CLAUDE.md --write
+```
+
+That writes `<!-- claude-md: max-lines N -->` into the file — a ratchet, lowered when the file shrinks,
+raised only in a change that says why. `project_gates.py`'s `claude-md-structure` check enforces it from
+then on and reports **not applicable** until it is set: a ceiling nobody recorded is not a pass. Building
+a `CLAUDE.md` from nothing is the same path on an empty file: a checklist first, rules next, history in
+the brain. The history file is not a memo: give it one line in `docs/brain/MEMORY.md` so `brain-review`'s
+index hygiene does not read it as an orphan.
+
 Keep `CLAUDE.md` short — Claude Code targets **under 200 lines**, and adherence drops as it
 grows. So when instructions apply only to *part* of the codebase or only in a *mode*, do not
 inline them here and do not invent a bespoke conditional import. Use a **path-scoped rule**:
