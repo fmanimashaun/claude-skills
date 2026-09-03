@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-03 (release v1.115.0)
 
 - **The doctor asserts `main`'s merge-only ruleset, through the shipped checker** (#895). `scripts/maintainer_doctor.py`
   gains `check_promotion_ruleset`: it runs `plugins/rails-flow/scripts/branch_rulesets.py --check --branch main` and maps
@@ -2509,7 +2509,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-03 (release v1.115.0)
 
 - **`plugins/rails-flow/scripts/branch_rulesets.py` — the release branch merges, never squashes, as a GitHub ruleset** (#895).
   `--check` asserts an active ruleset covering the release branch with `pull_request` allowing only `merge`, `deletion`
@@ -4603,7 +4603,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-03 (release v1.115.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 30 → 31, reach 16 → 17**
   — `branch_rulesets.py` (#895) is a new copy; `check_shared_shapes.py` refuses the stale number.
