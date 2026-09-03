@@ -2446,7 +2446,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.34.0 — 2026-09-03 (release v1.111.0)
 
 - **`/rails-flow:toolchain-audit` carries the maintainer doctor's contract, and `project_gates.py`
   asserts the half of it that can be asserted** (#849, part 3 of 3 — the last increment; the issue
@@ -2460,8 +2460,6 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   installed hook nudge executable) — applied only when asked, never rewriting history, and listed
   under a new **Repaired (safe changes only)** report section; everything else is a diff that waits.
   Five fixtures, two mutations.
-
-### 1.34.0 — 2026-09-03 (release v1.111.0)
 
 - **`/rails-flow:issues` computes its triage order instead of reasoning it out** (#849, part 1 of 3 —
   `Refs`, the issue ships incrementally). `plugins/rails-flow/scripts/check_issue_ready.py --queue` reads
