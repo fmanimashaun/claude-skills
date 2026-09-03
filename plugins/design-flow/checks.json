@@ -41,6 +41,21 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "port-fidelity",
+      "why": "A port that implements three of an artboard's seven sections passes the design-system audit and can say it is done; the manifest extracted from the canvas is the denominator, and the port report must account for every item by id, with implemented text found where it says.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/port_fidelity_gate.py",
+        "docs/design"
+      ],
+      "applies_when": [
+        "docs/design"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

@@ -120,6 +120,13 @@ equality rather than assuming it; where the design needs a value the tokens cann
 
 ## 8. The port is not done until
 
+- **Every item in the canvas manifest is accounted for, by id.** `canvas_manifest.py extract` reads the export
+  structurally — headings, copy, controls with their labels, repeats, conditionals, icons, and the `label:` pairs
+  and copy in its `text/x-dc` data script — and the port report gives each item a status: `implemented` (with the
+  file), `dropped-scaffolding`, `token-gap`, or `deferred` (with the reason the user approved). `check` refuses
+  while any item is unaccounted for, and for every `implemented` text it looks in the named file and the locales
+  — "implemented" is measured, not said. This is the half of fidelity a script can hold; parity of layout and
+  rhythm is still yours to confirm against the canvas. (#908: "they pick what they want, then claim they are done.")
 - Specs are green, including one proving any new behaviour.
 - `/design-flow:audit` reports no drift: no raw hex, no bespoke field or layout CSS, on-catalogue
   variants, no CDN font.

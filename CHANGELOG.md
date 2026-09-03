@@ -4644,7 +4644,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### 2026-09-03 (release v1.116.0)
+### Unreleased\n\n- **`skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
+  for by id** (#908) — the fidelity half a script can hold; layout and rhythm parity stay the porter's to confirm.
+\n### 2026-09-03 (release v1.116.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 31 → 32** — `inventory_data.py`
   (#892) is a new copy; `check_shared_shapes.py` refuses the stale number.
@@ -9661,7 +9663,18 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### 2026-09-03 (release v1.116.0)
+### Unreleased\n\n- **Port fidelity: `plugins/design-flow/scripts/canvas_manifest.py` gives "done" a denominator** (#908 — the maintainer:
+  agents "pick what they want, then claim they are done"). `extract` reads a Claude Design `.dc.html` export structurally —
+  grounded on a real 207 KB one: `<x-dc>` + `<helmet>`, 408 inline styles, no heading tags (headings are spans by font-size),
+  a template runtime of `<sc-for>` repeats, `<sc-if>` conditionals and 526 `{{ }}` bindings, and a 123 KB `text/x-dc` data
+  script holding most of the copy as `label: '…'` pairs — into one item per heading, copy run, control (with its label),
+  repeat, conditional, icon, data label and data copy, each with a stable id. `compare --root .` says which items' text
+  a project already has (on the reporting project: 19 of 624 — the Admin surface is not built). `check --report` refuses
+  while any item is unaccounted for; `implemented` must name a file that carries the text, `deferred` needs the user's
+  reason. `design-handoff.md` §8, `port.md` (step 0, first done-line) and `design-porter.md` (step 0, first done-line)
+  make the report the precondition of "done"; `checks.json` `port-fidelity` (`port_fidelity_gate.py`, n/a until a
+  manifest exists). 20 fixtures, 6 mutations.
+\n### 2026-09-03 (release v1.116.0)
 
 - **`plugins/design-flow/scripts/check_token_drift.py`: a bridge is classified by the owner of its role; the knob-expanded
   radius ramp is system-owned when the pack sets the knob** (#899, the residual of #814). `setup` emits `--color-<r>: var(--<r>)`
