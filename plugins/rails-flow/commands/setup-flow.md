@@ -291,6 +291,40 @@ default 7-day cadence, override `RAILS_FLOW_BRAIN_REVIEW_DAYS`, reminder-only/no
 `/rails-flow:brain-sync` (publish to / consume a cross-project shared brain repo). Memos and
 STATUS are the repo side of memory, not lost in chat history.
 
+## 4b. The docs/ layout — one home per kind (#886)
+
+`docs/` is where agents litter: with no map, every session invents a place, and nothing can say a
+file is misplaced. The layout is fixed and the rule is one sentence — **a file's directory answers
+the question a reader would ask to find it**; code goes in `scripts/`, never in `docs/`; a script's
+output goes under a directory marked `.generated`; binaries go under `design/assets/` or `evidence/`;
+memos go under `brain/memos/<type>/`.
+
+| directory | question | holds |
+|---|---|---|
+| `product/` | WHAT are we building? | spec, roadmap, routes, `features/F-NN-*.md`, `roles/`, `acceptance/` |
+| `design/` | WHAT does it look like? | briefs, prompts, UI decisions; `assets/` beneath it |
+| `architecture/` | HOW is it built? | **generated** by `/rails-flow:graph`; never hand-edited |
+| `runbooks/` | HOW do I operate it? | setup, deploy, on-call, integrations |
+| `evidence/` | WHAT did we measure? | spikes, screenshots, coverage, validation — dated, immutable |
+| `wiki/` | WHERE is the reference? | **generated** pages + hand-written pages left alone |
+| `brain/` | WHAT did we learn and decide? | STATUS, DECISIONS, HYPOTHESES, PROGRESS-LOG, MEMORY, `memos/<type>/` |
+
+A project may declare one more directory by adding a row to `docs/README.md`'s table; the tool honours
+a declared row and homes an undeclared directory by its name. Run, in this order:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/docs_layout.py" --report              # every file classified; the findings
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/docs_layout.py" --propose             # the moves AND the link rewrites, as a diff
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/docs_layout.py" --propose --write     # apply; every rewritten link is asserted to resolve
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/docs_layout.py" --scaffold --write    # the map, the directory READMEs, the generated markers — only what is missing
+```
+
+Show the user the `--propose` output before `--write`: a line marked `unsure -- confirm` is a file the
+name could not place, and a `REFUSED` line is a move whose reference lives in a binary the tool cannot
+rewrite. Files move byte-for-byte; only path strings are rewritten — in `CLAUDE.md`, `GUARDRAILS.md`,
+`loop.md`, `README.md` and every doc. Code found in `docs/` is reported, never moved: it leaves for
+`scripts/` by your hand. On a new project, `--scaffold --write` alone lays the map down.
+
 ## 5. Knowledge-graph integration (only if graph tools are present)
 
 Detect with `command -v code-review-graph` and `command -v graphify`. Skip absent
