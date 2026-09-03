@@ -7,6 +7,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`CLAUDE.md` is rule-first, and the reasoning moved to `docs/maintainer-history.md`** (#870). It was 754
+  lines and ~12.7k tokens loaded by every session — 59 % of its words in paragraphs carrying an incident
+  rather than a rule — while `setup-flow.md` shipped the advice "keep CLAUDE.md under 200 lines" to users.
+  Now: a **"Ship a fix" checklist** of eleven steps at the top, each pointing at its section; every
+  section rule → one-clause why → the history section by name; the full previous text moved
+  **verbatim** to `docs/maintainer-history.md`, so nothing is lost and a reader who wants the story
+  still gets it. The restructure is measured by the gates that pin this file, not by reading: the
+  seventeen `doctrine_map` anchors, the hook-script count sentence, the plugin and skill names, the
+  `@AGENTS.md` import and every path pointer all survive verbatim and pass.
+
 ### 2026-09-03 (release v1.111.1)
 
 - **The mutation table is split into `scripts/mutations/*.py`, and `mutation coverage` leaves the per-PR
