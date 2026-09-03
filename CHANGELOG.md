@@ -2509,6 +2509,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/scripts/docs_layout.py`: three gaps a real 98-file rework exposed, fixed** (#900). (1) A code file left in
+  `docs/` while its neighbours move is a `# WARNING` in the plan naming both, and a PROBLEM on `--write` — never `0 problem(s)`
+  over a generator whose relative paths now point at nothing. (2) Directory moves are computed at every depth, longest prefix
+  first, and only when every moved file lands under one parent and nothing stays behind: `docs/brain/role-specs/` →
+  `docs/product/roles/` is rewritten; `docs/brain/` with its fan-out is not. (3) A mention under a moved directory is
+  re-pointed only when the file it names actually moved (spaces and all — a live manifest row), or when it is the bare
+  directory, a glob or a dot; a row whose source never existed is `# LEFT ALONE`, named, and counted as a problem. Verified
+  on a throwaway clone of the reporting project: 86 moves, 68 rewrites, **5 problems named**, 0 dangling `role-specs/`
+  mentions outside the map, the two deleted-source manifest rows untouched. 40 fixtures, 21 mutations.
+
 ### 2026-09-03 (release v1.115.0)
 
 - **`plugins/rails-flow/scripts/branch_rulesets.py` — the release branch merges, never squashes, as a GitHub ruleset** (#895).

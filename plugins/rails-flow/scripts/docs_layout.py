@@ -257,17 +257,28 @@ def _rewrite_text(key: str, s: str, old: str, new: str) -> str:
     return _protected(key, s, lambda t: t.replace(old, new))
 
 
-def dir_moves(moves: list[dict]) -> dict[str, str]:
-    """`docs/audits/` -> `docs/evidence/audits/` when every moved file under a top-level docs directory lands
-    under one new parent -- so directory MENTIONS follow the files."""
+def dir_moves(moves: list[dict], all_paths: list[str] | None = None) -> dict[str, str]:
+    """`docs/brain/role-specs/` -> `docs/product/roles/` when every moved file under that directory lands under
+    ONE new parent and no unmoved file stays behind -- at every depth, so directory MENTIONS follow the files.
+    `docs/brain/` itself does not qualify when its files fan out to three parents (#900 gap 2). Longest
+    prefixes are returned first so a nested directory is rewritten before its parent could match."""
+    moved = {m["path"]: m["dest"] for m in moves}
     by_dir: dict[str, set[str]] = {}
-    for m in moves:
-        old_parts, new_parts = m["path"].split("/"), m["dest"].split("/")
-        if len(old_parts) > 2:                                       # docs/<dir>/...
-            old_dir = "/".join(old_parts[:2]) + "/"
-            new_dir = "/".join(new_parts[:len(new_parts) - (len(old_parts) - 2)]) + "/"
-            by_dir.setdefault(old_dir, set()).add(new_dir)
-    return {o: next(iter(n)) for o, n in by_dir.items() if len(n) == 1}
+    for old, new in moved.items():
+        old_parts, new_parts = old.split("/"), new.split("/")
+        for depth in range(2, len(old_parts)):                         # docs/<a>/, docs/<a>/<b>/, ...
+            old_dir = "/".join(old_parts[:depth]) + "/"
+            keep = len(old_parts) - depth                              # components after the directory
+            if keep > len(new_parts) - 1:
+                by_dir.setdefault(old_dir, set()).add("<fan-out>")
+                continue
+            by_dir.setdefault(old_dir, set()).add("/".join(new_parts[:len(new_parts) - keep]) + "/")
+    stayed = [p for p in (all_paths or []) if p not in moved]
+    out = {}
+    for old_dir, news in by_dir.items():
+        if len(news) == 1 and "<fan-out>" not in news and not any(p.startswith(old_dir) for p in stayed):
+            out[old_dir] = next(iter(news))
+    return dict(sorted(out.items(), key=lambda kv: -len(kv[0])))
 
 
 def plan(root: Path, rows: list[dict]) -> dict:
@@ -291,7 +302,27 @@ def plan(root: Path, rows: list[dict]) -> dict:
                 s = _protected(key, s, lambda t: pat.sub(lambda mm: mm.group(1) + m["dest"][len("docs/"):], t))
             if s != (rewrites.get(key) or f.read_text(encoding="utf-8")):
                 rewrites[key] = s
-    for old_dir, new_dir in dir_moves(applied).items():             # directory mentions follow the files
+    moved_to = {m["path"]: m["dest"] for m in applied}
+    left_alone: list[str] = []                     # `docs/<moved dir>/<something that never moved>` mentions
+    for old_dir, new_dir in dir_moves(applied, [r["path"] for r in rows]).items():
+        under = sorted((k for k in moved_to if k.startswith(old_dir)), key=len, reverse=True)
+        tail_pat = re.compile(r"[^\s`'\")\]|>]*")
+        def rewrite_dir_mentions(t: str, old_dir=old_dir, new_dir=new_dir, under=under) -> str:
+            out, i = [], 0
+            while True:
+                j = t.find(old_dir, i)
+                if j < 0:
+                    out.append(t[i:]); break
+                out.append(t[i:j])
+                hit = next((k for k in under if t.startswith(k, j)), None)
+                if hit is not None:
+                    out.append(moved_to[hit]); i = j + len(hit); continue      # a moved FILE, spaces and all
+                rest = tail_pat.match(t, j + len(old_dir)).group(0)
+                if rest == "" or rest in (".", "..") or "*" in rest or rest.endswith("/") and any(k.startswith(old_dir + rest) for k in under):
+                    out.append(new_dir + rest); i = j + len(old_dir) + len(rest); continue   # the directory, a glob, a moved sub-dir
+                left_alone.append(old_dir + rest)                            # never moved, never existed: left, named
+                out.append(old_dir + rest); i = j + len(old_dir) + len(rest)
+            return "".join(out)
         for f in files:
             key = f.relative_to(root).as_posix()
             try:
@@ -299,10 +330,19 @@ def plan(root: Path, rows: list[dict]) -> dict:
             except (OSError, UnicodeDecodeError):
                 continue
             if old_dir in s:
-                s2 = _rewrite_text(key, s, old_dir, new_dir)
+                s2 = _protected(key, s, rewrite_dir_mentions)
                 if s2 != s:
                     rewrites[key] = s2
-    return {"moves": applied, "refused": refused, "rewrites": rewrites}
+    # ---- Gap 1: code left in docs/ whose neighbours move -- its relative paths will break; say so, loudly.
+    code_left = []
+    for r in rows:
+        if r["kind"] == "code":
+            folder = r["path"].rsplit("/", 1)[0]
+            neighbours = [m["path"] for m in applied if m["path"].rsplit("/", 1)[0] == folder]
+            if neighbours:
+                code_left.append((r["path"], neighbours))
+    return {"moves": applied, "refused": refused, "rewrites": rewrites,
+            "left_alone": sorted(set(left_alone)), "code_left": code_left}
 
 
 AREAS = (("doctrine", re.compile(r"^(CLAUDE|AGENTS|GUARDRAILS|README|loop)\.md$|^\.claude/")),
@@ -329,6 +369,11 @@ def rewrite_summary(rewrites: dict[str, str]) -> str:
 
 def render_plan(root: Path, p: dict) -> str:
     out = []
+    for path, neighbours in p.get("code_left", []):
+        out.append(f"# WARNING code left in docs/: {path} -- {len(neighbours)} neighbour(s) move ({', '.join(neighbours)}); "
+                   "a path it resolves relative to its own directory will break: move the script to scripts/ or fix its paths")
+    for path in p.get("left_alone", []):
+        out.append(f"# LEFT ALONE {path}: named under a moved directory but no such file moved (deleted earlier? never existed?) -- not re-pointed; fix the row by hand")
     if p["rewrites"]:
         out.append(rewrite_summary(p["rewrites"]))
     for m in p["moves"]:
@@ -367,6 +412,10 @@ def apply_plan(root: Path, p: dict) -> list[str]:
         for ref in re.findall(r"docs/[A-Za-z0-9_./-]+\.[a-z0-9]+", (root / dest_of.get(key, key)).read_text(encoding="utf-8")):
             if not (root / ref).exists() and any(ref == m["dest"] for m in p["moves"]):
                 problems.append(f"{key} names {ref}, which does not exist")
+    for path, neighbours in p.get("code_left", []):                  # #900 gap 1: not silent, counted
+        problems.append(f"{path} stayed while {len(neighbours)} neighbour(s) moved -- a relative path inside it now points at nothing; move it to scripts/ or fix its paths")
+    for path in p.get("left_alone", []):
+        problems.append(f"{path} is named under a moved directory but no such file moved -- the mention was left as it was; fix the row by hand")
     return problems
 
 
@@ -477,6 +526,9 @@ def selftest() -> int:
             "docs/brain/feedback_old.md": "---\nname: feedback-old\ndescription: d\ntype: feedback\n---\n\nold\n",
             "docs/brain/role-specs/admin.md": "# Admin — target state\n",
             "docs/brain/role-specs/OPEN-QUESTIONS.md": "# Open\n",
+            "docs/brain/PROGRESS-LOG.md": "- specs moved (`docs/brain/role-specs/`, PR #48)\n",
+            ".claude/skills/.manifest.tsv": "brand\tdocs/brand-assets/RH Global Logo/logo.png\tabc\nbrand\tdocs/brand-assets/gone/theme.css\tdef\n",
+            "docs/brain/STATUS.md": "# Status\n\nSpecs are `docs/features/F-nn-*.md`; see `docs/features/.`\n",
             "docs/architecture/graph.md": "<!-- generated by /rails-flow:graph -->\n# Graph\n",
             "docs/design/home-page-prompt.md": "# Prompt\n",
             "CLAUDE.md": "Spec: `docs/Retask-Build-Spec.md`. Routes: `docs/ROUTES.md`. Roles: docs/brain/role-specs/admin.md. Specs live in `docs/features/`.\n",
@@ -530,6 +582,20 @@ def selftest() -> int:
               and "CLAUDE.md" in p["rewrites"] and "docs/product/Retask-Build-Spec.md" in p["rewrites"]["CLAUDE.md"], rendered[:300])
         check("a directory that moves whole has its MENTIONS rewritten (docs/features/ -> docs/product/features/)",
               "`docs/product/features/`" in p["rewrites"]["CLAUDE.md"], p["rewrites"].get("CLAUDE.md", ""))
+        dm = dir_moves(p["moves"], [r["path"] for r in rows_list])
+        check("a NESTED directory that moves whole is rewritten too (docs/brain/role-specs/ -> docs/product/roles/), while docs/brain/ with its fan-out is not",
+              "`docs/product/roles/`" in p["rewrites"].get("docs/brain/PROGRESS-LOG.md", "") and dm.get("docs/brain/role-specs/") == "docs/product/roles/" and "docs/brain/" not in dm,
+              f"{p['rewrites'].get('docs/brain/PROGRESS-LOG.md')} / {dm}")
+        manifest = p["rewrites"].get(".claude/skills/.manifest.tsv", "")
+        check("a manifest row whose source moved is re-pointed to its destination (spaces and all); a row whose source never existed is left alone and named",
+              "brand\tdocs/design/assets/brand/RH Global Logo/logo.png\tabc" in manifest and "brand\tdocs/brand-assets/gone/theme.css\tdef" in manifest
+              and "docs/brand-assets/gone/theme.css" in p["left_alone"], f"{manifest!r} / {p['left_alone']}")
+        check("a glob-shaped or dot mention of a moved directory follows the directory",
+              "`docs/product/features/F-nn-*.md`" in p["rewrites"].get("docs/brain/STATUS.md", "") and "`docs/product/features/.`" in p["rewrites"].get("docs/brain/STATUS.md", ""),
+              p["rewrites"].get("docs/brain/STATUS.md", ""))
+        check("code left in docs/ beside moving neighbours is a WARNING in the plan naming both",
+              p["code_left"] and p["code_left"][0][0] == "docs/sitemap_from_spec.py" and "docs/Retask-Build-Spec.md" in p["code_left"][0][1]
+              and "# WARNING code left in docs/: docs/sitemap_from_spec.py" in rendered, str(p["code_left"]))
         check("a docs-relative link inside docs is rewritten too (ROUTES.md -> product/ROUTES.md)",
               "docs/Retask-Build-Spec.md" in p["rewrites"] and "](product/ROUTES.md)" in p["rewrites"]["docs/Retask-Build-Spec.md"], p["rewrites"].get("docs/Retask-Build-Spec.md", "")[:200])
         check("code is never moved by the plan (it leaves docs/, which is the human's move)", not any(m["kind"] == "code" for m in p["moves"]))
@@ -539,6 +605,9 @@ def selftest() -> int:
               and "rewrites in code (1): config/routes.rb" in rewrite_summary({"config/routes.rb": ""}), rendered[:200])
         check("nothing refused in a text-only repo", p["refused"] == [])
         problems = apply_plan(root, p)
+        check("write counts the code left beside moved neighbours and the un-relocatable manifest row as PROBLEMS, never `0 problem(s)`",
+              any("sitemap_from_spec.py stayed" in x for x in problems) and any("gone/theme.css" in x for x in problems), "; ".join(problems))
+        problems = [x for x in problems if "stayed while" not in x and "left as it was" not in x]
         check("write applies every move and every rewritten link resolves", problems == [] and (root / "docs/product/Retask-Build-Spec.md").is_file() and not (root / "docs/ROUTES.md").exists() and (root / "docs/product/roles/admin.md").is_file(), "; ".join(problems))
         check("the moved spec is byte-identical apart from its own rewritten links",
               (root / "docs/product/Retask-Build-Spec.md").read_text(encoding="utf-8") == "# Spec\n\nSee [routes](ROUTES.md) and features/F-01-x.md.\n".replace("](ROUTES.md)", "](product/ROUTES.md)").replace("features/F-01-x.md", "product/features/F-01-x.md"))
