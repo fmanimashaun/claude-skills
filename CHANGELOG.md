@@ -2446,7 +2446,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.32.0 — 2026-09-03 (release v1.109.0)
 
 - **`/rails-flow:graph` draws the architecture** (#850). `docs/architecture/index.html` called itself a
   "self-contained interactive view" and drew nothing — zero SVG, zero canvas, a styled list over the
