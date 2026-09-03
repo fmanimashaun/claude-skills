@@ -2446,6 +2446,25 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`/rails-flow:issues` verifies an issue's claims before editing, refuses an issue that waits on open
+  work, and groups issues that are one change wearing several numbers** (#849, part 2 of 3 — the
+  maintainer's work loop, ported for a project's own tracker; `Refs`, the issue ships incrementally).
+  *An issue body is a hypothesis, not a specification*: step 0 extracts its claims
+  (`plugins/rails-flow/scripts/extract_claims.py`) and hands them to `claim-verifier`; a refuted claim is
+  commented and the issue relabelled `needs-info`, never implemented as written — the marketplace once
+  took an issue's four "ARIA APG" keybindings at its word. **`plugins/rails-flow/scripts/check_issue_ready.py`**
+  is the shipped equivalent of the marketplace's `issue_graph.py --ready`: it reads strict
+  `depends-on:` / `blocks:` edges (a ```deps``` fence or bare lines; prose and a Ruby `depends_on:` in a
+  code sample are not edges) from the named issues and every open issue, and exits non-zero with every
+  reason when a named issue waits on open work, is already closed, or is absent; edges inside the named
+  set are satisfied by the branch, so a grouped branch declares its whole set. "Take the head of the
+  queue" was a claim nothing checked. The grouping rule and its four conditions are carried over
+  verbatim, with traceability never pooled (one `Closes #n` per issue; one CHANGELOG bullet per issue
+  where a project keeps one). Fourteen selftest checks, six mutations; registered as the `issue
+  readiness` gate. The command declares its topology (sequential) now that it dispatches a verifier.
+
 ### 1.32.0 — 2026-09-03 (release v1.109.0)
 
 - **`/rails-flow:graph` draws the architecture** (#850). `docs/architecture/index.html` called itself a
@@ -4407,6 +4426,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 25 → 26,
+  reach 11 → 12** — `check_issue_ready.py` (#849) is a new copy; `check_shared_shapes.py` refuses the
+  stale number.
 
 ### 1.56.0 — 2026-09-02 (release v1.108.0)
 
