@@ -79,8 +79,11 @@ behavior reproduction + other paths intact. Nothing proceeds without evidence.
 and were unverified until v1.21.x; a `--check || echo` shipped there and made a release gate
 unable to block. `bash -n` on `.sh` files does not cover them.
 
-**Then run `python3 scripts/lint_self_consistency.py` and review your own diff against the
-`code-review` skill (`skills/code-review/SKILL.md`).** Both exist because a rented reviewer
+**Then run the sweep — `python3 scripts/maintainer_doctor.py --gates-only --fast` — about forty
+seconds now that `mutation coverage` runs on `dev` pushes and at promotion rather than per PR (#866).
+It covers both linters above and every other content gate; a PR opened on a red local sweep is a PR
+that asks the runner to find what a minute at the keyboard would have. Then review your own diff
+against the `code-review` skill (`skills/code-review/SKILL.md`).** Both exist because a rented reviewer
 kept catching a class our own review missed — and it had no special power: it checked the
 diff against rules already written in this repo's markdown. The recurring class is
 **claims-vs-enforcement**, a guarantee stated in prose that nothing makes true. It has

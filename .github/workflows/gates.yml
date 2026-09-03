@@ -60,8 +60,11 @@ jobs:
       #
       # The corpora-dependent gate SKIPs by design when the private repo is absent, which is exactly
       # a runner's situation. That was built for a maintainer without the kits; CI inherits it free.
+      # A pull request runs --fast, which skips exactly PR_SKIPPED_GATES (`mutation coverage`, 438 of the
+      # sweep's 475 s) and REPORTS the skip. A push to dev -- the merge commit no PR tested -- and the
+      # promotion (release.yml calls this workflow) run everything, so nothing reaches main without it (#866).
       - name: Gate sweep
-        run: python3 scripts/maintainer_doctor.py --gates-only
+        run: python3 scripts/maintainer_doctor.py --gates-only ${{ github.event_name == 'pull_request' && '--fast' || '' }}
 
       # `dist/` drift is a DIAGNOSTIC rather than a gate, so `--gates-only` does not cover it. It is
       # checked here too because release.yml checks it only at release time, on `main`, AFTER merge

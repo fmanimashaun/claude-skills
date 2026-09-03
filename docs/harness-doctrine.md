@@ -187,7 +187,7 @@ Every rung exists because it was skipped once, and the omission shipped.
 2. **It ships with a `--selftest` that proves it fires *and* stays silent.** A rule with only positive
    fixtures is untested in the direction that produces false positives, and a linter that cries wolf
    gets switched off and then catches nothing.
-3. **A declared mutation in `scripts/mutation_check.py` proves the selftest can fail.** Break the
+3. **A declared mutation in `scripts/mutations/<guard>.py` proves the selftest can fail.** Break the
    subject on purpose; watch the selftest go red. Declared per **rule**, not per guard — instance 4
    above.
 4. **It is registered in `maintainer_doctor.py`'s `GATES`**, so it runs without anyone remembering it.

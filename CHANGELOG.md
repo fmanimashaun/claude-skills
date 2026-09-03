@@ -7,6 +7,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The mutation table is split into `scripts/mutations/*.py`, and `mutation coverage` leaves the per-PR
+  path** (#866). `scripts/mutation_check.py` was 6,245 lines, of which the `GUARDS` tuple was 5,986 —
+  seventy guards quoting subject source lines verbatim, so a refactor of any subject needed a matching
+  edit here: 159 commits, the third most-edited file in the repo. Each guard is now a small module
+  exporting `GUARD`, carrying the comments that explain it; `mutation_check.py` keeps the runner and
+  **discovers** the directory by glob (a hand-typed registry goes quiet the day a file is added).
+  `Mutation`/`Guard` move to `scripts/mutation_types.py` so guard modules never import the runner.
+  `GUARDS` is still a name — `doctrine_map` and the selftest resolve against it. And the sweep: the
+  full run was 475 s, of which `mutation coverage` was **438**, on every PR, for subjects each PR's own
+  selftest gates already run. `maintainer_doctor.py --gates-only --fast` skips exactly
+  `PR_SKIPPED_GATES` and reports it as `skip` with the reason; `gates.yml` passes `--fast` on
+  `pull_request` only, so a push to `dev` and the promotion still run everything. The set is pinned by
+  the selftest in both directions. `maintainer-work.md` now prescribes the sweep locally: measured at 49 s on the
+  maintainer's machine (`/usr/bin/time`), against 475 s before. The runner is 263 lines.
+
 ### 2026-09-02 (release v1.108.0)
 
 - **`scripts/extract_release_notes.py`'s `--check --all-tags` no longer reports the tag being armed as a

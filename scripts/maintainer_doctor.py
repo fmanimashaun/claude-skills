@@ -411,6 +411,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 # Keyed by gate NAME, and the selftest asserts the name exists in GATES — otherwise a rename would
 # silently stop the exemption applying — and that the set is exactly this one.
 CORPORA_GATES = frozenset({"coverage matrix drift"})
+# Gates a PULL-REQUEST run skips -- reported as SKIP with the reason, never omitted (#866). `mutation
+# coverage` was 438 of the sweep's 475 seconds, on every PR, for a check whose subjects each PR's
+# own selftest gates already run once. It still runs on every push to `dev` (the merge commit no PR
+# tested) and inside release.yml's workflow_call at promotion, so nothing reaches `main` without it.
+# An exact set, pinned by the selftest in both directions like CORPORA_GATES: widening it is how a
+# "fast" mode becomes the only mode.
+PR_SKIPPED_GATES = frozenset({"mutation coverage"})
 
 # Seconds a subprocess gets before the doctor calls it hung. Right for a check that reads the tree
 # once, which is nearly all of them.
@@ -944,7 +951,7 @@ class Doctor:
                 if p not in snapshot:
                     p.unlink()
 
-    def check_gates(self) -> None:
+    def check_gates(self, fast: bool = False) -> None:
         corpora_absent = any(not (REPO / CORPORA_DIR / c).exists() for c in CORPORA)
         for name, cmd in GATES:
             script = REPO / cmd[1]
@@ -965,6 +972,13 @@ class Doctor:
                     f"git clone {CORPORA_REPO} {CORPORA_DIR}",
                 )
                 continue
+            if fast and name in PR_SKIPPED_GATES:
+                self.add(
+                    SKIP, f"gate: {name}",
+                    "not run in --fast mode — it runs on every push to dev and at promotion, not per PR",
+                    " ".join(cmd),
+                )
+                continue
             code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 self.add(PASS, f"gate: {name}")
@@ -982,7 +996,7 @@ class Doctor:
                 self.add(FAIL, f"gate: {name}", summary, " ".join(cmd), findings)
 
     # ---- driver ----------------------------------------------------------------------
-    def diagnose(self, gates: bool, gates_only: bool = False) -> int:
+    def diagnose(self, gates: bool, gates_only: bool = False, fast: bool = False) -> int:
         if not self.check_is_marketplace_repo():
             self.report()
             return 2
@@ -998,7 +1012,7 @@ class Doctor:
         # identically on a runner and on a laptop. That is what makes them the right half to automate,
         # and the only half.
         if gates_only:
-            self.check_gates()
+            self.check_gates(fast=fast)
             self.report()
             return 1 if any(r.status == FAIL for r in self.results) else 0
         self.check_prerequisites()
@@ -1077,6 +1091,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gates", action="store_true", help="also run the full gate sweep (slower)")
     p.add_argument("--gates-only", action="store_true",
                    help="run ONLY the gate sweep, skipping machine diagnostics (for CI)")
+    p.add_argument("--fast", action="store_true",
+                   help="with --gates-only: skip the gates in PR_SKIPPED_GATES (reported as SKIP with the reason); "
+                        "for pull requests -- dev pushes and the promotion run everything")
     p.add_argument("--selftest", action="store_true", help="prove the checks fire and stay silent")
     args = p.parse_args(argv)
 
@@ -1087,7 +1104,7 @@ def main(argv: list[str] | None = None) -> int:
         return st.run()
 
     return Doctor(fix=args.fix).diagnose(gates=args.gates or args.gates_only,
-                                         gates_only=args.gates_only)
+                                         gates_only=args.gates_only, fast=args.fast)
 
 
 if __name__ == "__main__":
