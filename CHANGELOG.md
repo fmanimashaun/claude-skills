@@ -2496,6 +2496,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`plugins/rails-flow/scripts/brain_local_sync.py`: a memo-shaped file without frontmatter is reported `unreadable`, not
+  skipped in silence** (#884, found on the second real brain). Retask-platform has four memos at its brain root; the
+  bridge counted three, because one has no frontmatter `name`. A file under `memos/` or named `feedback_*`/`decision_*`
+  that the parser cannot read is now a line in `--status`, `--brief` and `--json` with the remedy (add the frontmatter).
+  `STATUS.md` and the other root files are not memo-shaped and stay silent. Fixture + mutation (35 / 14).
 - **Memos live under `docs/brain/memos/<type>/<slug>.md`; the brain root holds only the index, STATUS, DECISIONS,
   HYPOTHESES, PROGRESS-LOG and README** (#884; maintainer: a memo at the root "is a terrible structure"). `brain.md`,
   `setup-flow` §4 and `brain-review` step 6 say so; `plugins/rails-flow/scripts/brain_local_sync.py` proposes into
