@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-03 (release v1.112.0)
 
 - **`CLAUDE.md` is rule-first, and the reasoning moved to `docs/maintainer-history.md`** (#870). It was 754
   lines and ~12.7k tokens loaded by every session — 59 % of its words in paragraphs carrying an incident
@@ -2475,7 +2475,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-03 (release v1.112.0)
 
 - **A CLAUDE.md auditor and builder** (#875). `plugins/rails-flow/scripts/claude_md_structure.py --report`
   says what a project's `CLAUDE.md` is made of — rule, history, mixed and structure paragraphs, the share
@@ -4499,7 +4499,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-03 (release v1.112.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 26 → 27,
   reach 12 → 13** — `claude_md_structure.py` (#875) is a new copy; `check_shared_shapes.py` refuses the
