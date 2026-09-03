@@ -7,6 +7,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`scripts/lint_self_consistency.py`: `hook-lib-drift`** (#906) — the two shipped copies of `hooks/scripts/lib/normalize_cmd.sh`
+  (rails-flow, qa-flow) must exist and be byte-identical; one normaliser is a claim only while they are. Three fixtures,
+  one mutation.
+
 ### 2026-09-03 (release v1.116.0)
 
 - **One generated reference surface: `docs/architecture/inventory.html` retired; its agents, gates and tier tables render
@@ -2519,6 +2525,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **`plugins/rails-flow/hooks/scripts/guard-bash.sh` matches the INVOKED command, not any substring** (#906). It blocked
+  a grep whose pattern was the rule text, an echo quoting it, a commit message quoting it and the reporter's own
+  dedup search — the toolchain audit's grep among them — while `git -C repo add -A` slipped through. Every
+  rule (db:reset, force-push, staging everything, `--no-verify`, `reset --hard`, `kamal deploy`) now matches a verb at
+  the START of an invoked segment after `hooks/scripts/lib/normalize_cmd.sh` strips quotes, comments and heredoc bodies,
+  splits on `; | && ||`, and peels env/sudo/git-global-option prefixes — the normaliser qa-flow's release gate has carried
+  since #3/#7/#48, now one file both hooks source. FAIL CLOSED: with the lib missing the hook matches the raw text as
+  before. `check_hook_gates.py` carries the issue's whole matrix (9 negatives, 8 positives, the fallback) and now drives
+  `release-gate.sh` too; guards `hook_guard_bash` (+2) and `hook_normalize_cmd` (3).
 
 ### 2026-09-03 (release v1.116.0)
 
@@ -8162,6 +8180,14 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **`plugins/qa-flow/hooks/scripts/release-gate.sh` sources `hooks/scripts/lib/normalize_cmd.sh`** (#906) — the same
+  normaliser rails-flow's guard-bash now uses, extracted from this file unchanged; behaviour identical, and driven by
+  `check_hook_gates.py` for the first time (push to main behind env, `git -C` and `;` blocked; a commit message or echo
+  naming main passes). Plugins install alone, so this is a copy of the rails-flow file, kept byte-identical by the
+  maintainer lint `hook-lib-drift`.
 
 ### 2026-09-03 (release v1.114.0)
 
