@@ -2446,7 +2446,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.34.0 — 2026-09-03 (release v1.111.0)
 
 - **`/rails-flow:issues` computes its triage order instead of reasoning it out** (#849, part 1 of 3 —
   `Refs`, the issue ships incrementally). `plugins/rails-flow/scripts/check_issue_ready.py --queue` reads
