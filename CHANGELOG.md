@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-03 (release v1.114.0)
 
 - **`docs/` reworked to the shipped layout by the shipped tool** (#886; D-005). `docs/README.md` is the map, with `doctrine/`
   declared and eight `## Root files` rules; nine moves — the maintainer's doctrine pages to `docs/doctrine/`, the generated
@@ -2500,7 +2500,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-03 (release v1.114.0)
 
 - **`plugins/rails-flow/scripts/docs_layout.py`: the map's `## Root files` table homes a root file the layout cannot name;
   a file that merely mentions a bare filename is no longer listed as a rewrite** (#886, found reworking this repo's own
@@ -4584,7 +4584,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-03 (release v1.114.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 28 → 30, reach 14 → 16**
   — `docs_layout.py` (#886) and `build_project_wiki.py` (#887) are new copies; `check_shared_shapes.py` refuses the stale number.
@@ -8111,6 +8111,11 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 2026-09-03 (release v1.114.0)
+
+- **`plugins/qa-flow/scripts/blast_radius.py`: the maintainer doctrine its docstring cites moved** (#886) —
+  `docs/harness-doctrine.md` → `docs/doctrine/harness-doctrine.md`. Docstring only; no behaviour changed.
+
 ### 1.26.1 — 2026-09-02 (release v1.108.0)
 
 - **`plugins/qa-flow/README.md` gains a Commands section** (#835) — it listed none of its seven commands;
@@ -9577,6 +9582,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-03 (release v1.114.0)
+
+- **`plugins/design-flow/scripts/asset_plan.py`, `compose_brief.py`, `prompt_library.py`, `hooks/scripts/design-tells.sh`, `README.md`:
+  the maintainer doctrine they cite moved** (#886) — `docs/harness-doctrine.md` → `docs/doctrine/harness-doctrine.md`,
+  `docs/coverage.html` → `docs/evidence/coverage.html`. Comment and docstring paths only; no behaviour changed.
 
 ### 1.38.1 — 2026-09-02 (release v1.108.0)
 
