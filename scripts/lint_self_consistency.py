@@ -29,6 +29,9 @@ WHAT IT CHECKS
                               what ships omits it
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
+  claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
+                              or its history file gone) — relocate incident paragraphs verbatim to
+                              docs/maintainer-history.md; claude_md_structure.py prints the diff
   unbounded-issue-query       a `gh issue/pr list` with no --limit: it defaults to 30, so
                               the call reports a page as the total
   component-without-call-site a documented component nothing demonstrates — a reader must
@@ -492,6 +495,51 @@ def check_controller_inventory() -> tuple[list[Finding], int]:
 # of the two audiences: CLAUDE.md is what orients a maintainer (or an agent reading it) about what
 # this repo ships, README.md is what orients a user.
 PLUGIN_DOCS = ("CLAUDE.md", "README.md")
+
+
+# The ceiling on CLAUDE.md, and where a new fact goes instead (#870). A RATCHET, not an aspiration: a
+# fixed "under 200 lines" would be red on day one and switched off in a week; this constant is set at
+# the measured size and LOWERED deliberately when the file shrinks. Raising it is a PR that says why.
+CLAUDE_MD_HISTORY = "docs/maintainer-history.md"
+_CLAUDE_MD_MARKER = re.compile(r"<!--\s*claude-md:\s*max-lines\s+(\d+)\s*-->")
+
+
+def check_claude_md_growth() -> tuple[list[Finding], int]:
+    """CLAUDE.md must not grow past its ceiling, and the file its reasoning was routed to must exist.
+
+    #870 cut CLAUDE.md from 754 lines (~12.7k tokens loaded by EVERY session, 59 % of its words in
+    paragraphs carrying an incident rather than a rule) to 255, by moving the incidents verbatim to
+    `docs/maintainer-history.md`. A note in that file saying "add new incidents here" is prose, and
+    prose is how the first 754 lines happened. So the routing is a gate: past the ceiling, the sweep
+    fails and the finding says where the fact goes -- the history file, plus ONE linking line here.
+    """
+    doc = ROOT / "CLAUDE.md"
+    if not doc.is_file():
+        return [], 0
+    findings: list[Finding] = []
+    body = read(doc)
+    count = len(body.splitlines())
+    # ONE SOURCE for the ceiling: the `<!-- claude-md: max-lines N -->` marker in the file itself, which the
+    # shipped `claude_md_structure.py` reads too. A constant here would be a second copy that drifts.
+    m = _CLAUDE_MD_MARKER.search(body)
+    if m is None:  # `is None`, not `not m`: the hook-count rule's mutation anchors on `if not m:` and must stay unique
+        findings.append(Finding(
+            "claude-md-growth", "CLAUDE.md", 0,
+            "no `<!-- claude-md: max-lines N -->` marker -- record the ceiling at the measured size: "
+            "`python3 plugins/rails-flow/scripts/claude_md_structure.py --set-ceiling CLAUDE.md --write`"))
+    elif count > int(m.group(1)):
+        findings.append(Finding(
+            "claude-md-growth", "CLAUDE.md", count,
+            f"CLAUDE.md is {count} lines; the recorded ceiling is {m.group(1)}. Do not trim -- RELOCATE: "
+            f"`python3 plugins/rails-flow/scripts/claude_md_structure.py --propose CLAUDE.md --history "
+            f"{CLAUDE_MD_HISTORY}` prints the diff that moves incident paragraphs out verbatim, leaving one "
+            "linking line per section; then lower the marker to the new size. Raising it is a PR that says why."))
+    if not (ROOT / CLAUDE_MD_HISTORY).is_file():
+        findings.append(Finding(
+            "claude-md-growth", "CLAUDE.md", 0,
+            f"`{CLAUDE_MD_HISTORY}` is missing -- CLAUDE.md's rules point at it for their reasoning, and a "
+            "pointer to a file that does not exist reads as authoritative while resolving to nothing"))
+    return findings, count
 
 
 def check_undocumented_commands() -> tuple[list[Finding], int]:
@@ -2483,6 +2531,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
     undoc_cmds, commands_examined = check_undocumented_commands()
+    growth, claude_md_lines = check_claude_md_growth()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -2522,6 +2571,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_flag_claims_examined": flag_examined,
         "declared_plugins": plugins_examined,
         "commands_checked_for_documentation": commands_examined,
+        "claude_md_lines": claude_md_lines,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -2556,7 +2606,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + bare + misdesc + unbounded + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + growth + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
@@ -3331,6 +3381,27 @@ def selftest() -> int:
         expect_finding=False,
         files={".claude-plugin/marketplace.json": _manifest(_FULL),
                "LICENSE": "Some bespoke terms\n"},
+    )
+
+    # -- claude-md-growth (#870) ------------------------------------------
+    # The ceiling is a ratchet at the measured size; the fixtures use the constant, not a literal.
+    _hist = {"docs/maintainer-history.md": "# history\n"}
+    scenario(
+        "CLAUDE.md one line past the ceiling", rule="claude-md-growth", expect_finding=True,
+        files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\n" + "rule\n" * 9, **_hist},
+    )
+    scenario(
+        "CLAUDE.md exactly at the ceiling is not a finding", rule="claude-md-growth", expect_finding=False,
+        files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\n" + "rule\n" * 8, **_hist},
+    )
+    scenario(
+        "no ceiling marker recorded is a finding -- a ceiling nobody set is not a pass",
+        rule="claude-md-growth", expect_finding=True,
+        files={"CLAUDE.md": "@AGENTS.md\nrule\n", **_hist},
+    )
+    scenario(
+        "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
+        files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},
     )
 
     # -- undocumented-command (#835) --------------------------------------

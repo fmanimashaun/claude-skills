@@ -6,6 +6,19 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        # #870. The ceiling on CLAUDE.md is a gate, not a note in the history file.
+        Mutation(
+            "the ceiling stops being enforced, so CLAUDE.md can regrow in silence",
+            "    elif count > int(m.group(1)):",
+            "    elif False:",
+            "CLAUDE.md one line past the ceiling",
+        ),
+        Mutation(
+            "a missing history file stops being a finding",
+            "    if not (ROOT / CLAUDE_MD_HISTORY).is_file():",
+            "    if False:",
+            "the history file CLAUDE.md points at is missing",
+        ),
         # #835. Four shipped commands were documented nowhere; this is the rule that refuses it.
         Mutation(
             "the command rule stops looking at the plugin README",
