@@ -27,9 +27,10 @@ Given the session's changes (`git log --oneline <base>..HEAD` + `git diff --stat
 
    ```bash
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/build_project_wiki.py     # the reference pages are a join over the graph (#887)
    ```
 
-   Commit `docs/architecture/graph.json`, `index.html` and `graph.md` **together**. Report
+   Commit `docs/architecture/graph.json`, `index.html`, `graph.md` and the regenerated `docs/wiki/` pages **together**. Report
    the delta in words — new/removed nodes, and especially any flow that changed shape
    ("*Create an invoice* gained a step") — because that is the part a reviewer cannot get
    from the diff. Cheap safety: run `--check` first; exit 0 means nothing structural moved

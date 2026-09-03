@@ -459,6 +459,30 @@ has a hosted CI, propose the drift guard in §8. Don't force it — but do say p
 beats a hand-drawn diagram: this one is regenerated at session end and at release, and CI
 fails when the code moves and the graph does not.
 
+## 6c. The project wiki (`docs/wiki/`) — generated reference, rebuilt at ship (#887)
+
+A hand-written reference is a transcription, and transcriptions rot. The reference pages are a join
+over structured sources — the architecture graph, `db/schema.rb`, `config/queue.yml`,
+`config/recurring.yml`, `Gemfile.lock`, `package.json` — so they cannot drift silently: every count on
+a page is asserted against its source's total, every page names the graph's commit, and `--check`
+fails the `project-wiki-drift` check when a source moved and the pages did not.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_project_wiki.py"            # Architecture, Routes, Data-Model, Jobs-And-Queues, Components, Dependencies, _Sidebar
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_project_wiki.py" --check    # DRIFT if the committed pages are not a clean build
+```
+
+`Home.md` is hand-written: seeded once, never overwritten — the one page that says what the system is
+for. The `doc-updater` agent rebuilds the wiki whenever it regenerates the graph, and both are committed
+with the change that moved them; nothing runs on a schedule. Not applicable is exit 3: no graph yet
+(`/rails-flow:graph` first), or `--check` before the first build.
+
+**Publishing to the GitHub wiki is opt-in and off by default.** The pages live in the repo where the
+gates can reach them. If the user wants them on the wiki tab, add `.github/workflows/wiki.yml` — on a
+push to `main` touching `docs/wiki/**`, clone `<repo>.wiki.git`, copy `docs/wiki/*` over it, commit and
+push. The wiki repository must exist first: GitHub creates it only when the first page is saved in the
+web UI, and no API call can do it — say so when offering the template.
+
 ## 7. Project skills (docs → skills)
 
 If `docs/` contains PRDs, branding, architecture, or domain documentation, tell the
