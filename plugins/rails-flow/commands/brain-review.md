@@ -33,6 +33,9 @@ names a focus area, do that section first but still surface anything urgent from
    pattern, propose a single compressed durable note (a `feedback_*`/`decision_*` memo) — but
    **preserve minority signals**: a one-off that contradicts the pattern stays, tagged as such.
 6. **Index hygiene.** MEMORY.md has one line per existing memo (no dead links, no orphaned memos).
+   `claude-md-history.md` is not a memo and gets one line. The local pointer memories written by
+   `/rails-flow:brain-sync local --pull` live outside the repo and are not this sweep's concern; a memo
+   renamed here leaves a stale pointer there — say so, and point at `brain-sync local --status`.
 
 ## Output
 

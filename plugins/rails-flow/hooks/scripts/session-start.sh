@@ -38,6 +38,14 @@ if [ -f docs/brain/STATUS.md ]; then
   fi
 fi
 
+# brain ↔ local-memory bridge (advisory, fail-open). One line from brain_local_sync --status --brief:
+# how many brain memos this machine's Claude memory has no pointer for, and how many local lessons
+# the brain lacks. Nothing auto-syncs; /rails-flow:brain-sync local does, on request.
+if [ -f docs/brain/MEMORY.md ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && command -v python3 >/dev/null 2>&1; then
+  _bridge="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brain_local_sync.py" --status --brief 2>/dev/null)"
+  case "$_bridge" in brain:*) echo "- $_bridge" ;; esac
+fi
+
 # Issue→fix discipline advisory (fail-open, informational only). If this branch carries several
 # fix-shaped commits and neither the branch name nor any commit references an issue, it's a decent
 # proxy for ad-hoc hot-fixing outside the file→/rails-flow:fix loop. Never blocks.

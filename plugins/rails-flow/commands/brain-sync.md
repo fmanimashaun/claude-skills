@@ -1,6 +1,6 @@
 ---
 description: Publish this project's brain status to a shared cross-project brain repo, and consume sibling projects' status — so agentic flows in separate repos coordinate WITHOUT cloning each other. Uses gh (single-file reads/writes), git as source of truth.
-argument-hint: "publish | pull | status   [optional shared-repo slug on first setup]"
+argument-hint: "publish | pull | status | local [--pull [--write] | --propose]   [optional shared-repo slug on first setup]"
 ---
 
 # /rails-flow:brain-sync — $ARGUMENTS
@@ -77,6 +77,38 @@ Summarize for the user: where each sibling is, any new EVENTS since last pull, a
 important — anything in a sibling's status or `CONTRACTS.md` that **affects this project**
 (a contract they changed, a dependency they shipped/broke). Flag those as action items; if one
 implies a local decision, offer to record it with `/rails-flow:brain`.
+
+## `$ARGUMENTS` = **local** — the bridge to this machine's Claude memory (#877)
+
+Two memory stores share one shape and, until this mode, no wire. `docs/brain/` is the project's
+memory: committed, reviewed, the team's truth. Claude Code's **auto-memory** —
+`~/.claude/projects/<slug>/memory/*.md`, one fact per file with `name` / `description` /
+`metadata.type: user | feedback | project | reference`, indexed by one line each in that directory's
+`MEMORY.md` — is per machine, per user, uncommitted, and it is the index a session actually loads at
+start. A lesson learned in a session lands in the second store and never reaches the team; a brain
+decision is not recalled unless an agent reads the brain wholesale. The bridge is one stdlib script:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brain_local_sync.py" --status            # counts, both directions
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brain_local_sync.py" --pull              # plan brain → local; --write applies
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brain_local_sync.py" --propose           # local → brain, as memo files; writes NOTHING
+```
+
+- **Inbound (`--pull`) writes pointers, not copies.** For every memo with no local counterpart, a
+  local memory named after the memo whose `description` is the memo's **own** line verbatim (that
+  line is what recall matches on) and whose body says `Repo memo: docs/brain/<file> — the repo copy
+  is authoritative`. One index line. Idempotent; it never overwrites a file it did not write.
+- **Outbound (`--propose`) prints the memo each local `feedback` / `project` memory would become —
+  body verbatim, `[observed]` provenance appended — and writes nothing.** The repo is reviewed truth
+  and a local memory may be personal: you pick, `/rails-flow:brain` writes.
+- **Never in either direction: `user` memories.** `reference` memories are listed, not proposed.
+- **Diverged** — the same lesson with two bodies — is reported like `brain-review`'s contradictions:
+  both paths, you adjudicate. The tool never merges prose.
+- **Not applicable is exit 3, not a pass**: no `docs/brain/`, or no auto-memory store for this path.
+
+No paraphrase, no compression, no model in the loop: every byte that crosses is a verbatim body or the
+author's own description line, so the output is a function of the inputs. The SessionStart hook shows
+`--status --brief` as one advisory line; the `brain-local-sync` check reports it in `toolchain-audit`.
 
 ## The store is git — no external synthesis layer
 
