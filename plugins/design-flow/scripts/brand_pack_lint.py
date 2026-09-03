@@ -107,6 +107,12 @@ KNOB_ENUMS = {
     "heading_ramp": {"mid-range", "hero-heavy"},
 }
 
+# The `radius` knob expands into a five-step ramp inside the managed block -- `setup` writes all five,
+# the doctrine declares only three (`--radius`, `--radius-sm`, `--radius-lg`). ONE definition of the
+# step NAMES, here beside the knob that produces them, so `check_token_drift` and `setup` cannot
+# disagree about what a knob-bearing pack owns (#899). Values are the knob's call, not compared.
+RADIUS_RAMP_STEPS = ("--radius", "--radius-sm", "--radius-md", "--radius-lg", "--radius-xl")
+
 # A pack is a THEME, not a fork: it declares colours, a logo, and the proof its chart hues
 # still work. fonts / knobs / chart_hues are optional overrides that inherit the system's
 # calibrated defaults when absent — so their absence must never be an error, or every client
