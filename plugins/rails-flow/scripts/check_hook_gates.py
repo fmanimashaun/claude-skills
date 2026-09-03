@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -211,7 +212,11 @@ def self_consistency_fixtures() -> None:
           code == 0 and "unbound" not in out, f"exit {code}: {out.strip()[:120]!r}")
 
 
-# ---- guard-bash.sh (#826) -----------------------------------------------------------------------
+# ---- guard-bash.sh (#826, #906) -----------------------------------------------------------------
+NEGATIVES_906 = ['grep -ciE "git add -A" GUARDRAILS.md', 'echo "never git add -A"', 'git commit -m "docs: state the no \'git add -A\' rule"', '# git add -A', 'gh issue list --search "git add -A" --state all', 'for k in "force-push" "git add -A" "no-verify"; do printf "  %-24s %s\\n" "$k" "$(grep -ciE "$k" GUARDRAILS.md)"; done', 'echo "--no-verify"', 'grep db:reset lib/tasks/x.rake', 'echo "git reset --hard is bad"', 'git commit -m "wip; git add -A comes later"']
+POSITIVES_906 = ['FOO=1 git add -A', 'sudo git add .', 'git status && git add -A', 'git -C repo add -A', 'git commit --no-verify -m x', 'bin/rails db:reset', 'git push --force origin main', 'git reset --hard HEAD~1']
+
+
 def guard_bash_fixtures() -> None:
     def run(cmd: str) -> int:
         with tempfile.TemporaryDirectory() as td:
@@ -226,10 +231,48 @@ def guard_bash_fixtures() -> None:
                 "git add spec/models/user_spec.rb spec/support/x.rb", "git status", "git add -v lib/a.rb"):
         check(f"guard-bash: `{cmd}` passes", run(cmd) == 0, "exit 2")
 
+    # #906: MATCH THE INVOKED COMMAND, NOT ANY SUBSTRING. Every negative here merely MENTIONS the rule;
+    # every positive stages everything behind a prefix the old adjacency match could not see.
+    for cmd in NEGATIVES_906:
+        check(f"guard-bash (#906): `{cmd[:50]}` only mentions the rule and passes", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_906:
+        check(f"guard-bash (#906): `{cmd}` is blocked", run(cmd) == 2, "exit 0")
+    # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
+    with tempfile.TemporaryDirectory() as td:
+        stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
+        payload = lambda c: json.dumps({"tool_input": {"command": c}})
+        r1 = subprocess.run(["bash", str(stage / "guard-bash.sh")], input=payload("git add -A"), capture_output=True, text=True, cwd=td)
+        r2 = subprocess.run(["bash", str(stage / "guard-bash.sh")], input=payload("git -C repo add -A"), capture_output=True, text=True, cwd=td)
+        check("guard-bash (#906): with lib/ missing the hook falls back to the raw text and still blocks `git add -A`", r1.returncode == 2)
+        check("guard-bash (#906): ...and the fallback is honestly the OLD behaviour (git -C slips through), which is why the lib ships in the plugin", r2.returncode == 0)
+
+
+# ---- release-gate.sh (qa-flow) shares the normaliser: drive it too, or the "one normaliser" claim is prose (#906) ----
+QA_HOOK = HOOKS.parents[2] / "qa-flow" / "hooks" / "scripts" / "release-gate.sh"
+
+
+def release_gate_fixtures() -> None:
+    if not QA_HOOK.is_file():
+        check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
+        return
+
+    def run(cmd: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            _git_repo(Path(td))
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            done = subprocess.run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+                                  env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode
+
+    for cmd in ("git push origin main", "FOO=1 git push origin main", "git -C repo push origin main", "git status; git push origin main"):
+        check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, "exit 0")
+    for cmd in ('git commit -m "push origin main"', 'echo "git push origin main"', "# git push origin main", "git push origin feature/x"):
+        check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, "exit 2")
+
 
 def selftest() -> int:
     for fn in (stop_gate_fixtures, guard_lane_fixtures, lint_ruby_fixtures,
-               self_consistency_fixtures, guard_bash_fixtures):
+               self_consistency_fixtures, guard_bash_fixtures, release_gate_fixtures):
         fn()
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)

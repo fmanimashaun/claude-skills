@@ -29,6 +29,8 @@ WHAT IT CHECKS
                               what ships omits it
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
+  hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh differ, or
+                              one is missing -- one normaliser is a claim only while they are identical
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
                               docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
@@ -502,6 +504,35 @@ PLUGIN_DOCS = ("CLAUDE.md", "README.md")
 # the measured size and LOWERED deliberately when the file shrinks. Raising it is a PR that says why.
 CLAUDE_MD_HISTORY = "docs/brain/history/maintainer-history.md"
 _CLAUDE_MD_MARKER = re.compile(r"<!--\s*claude-md:\s*max-lines\s+(\d+)\s*-->")
+
+
+# Rule: hook-lib-drift
+#
+# `hooks/scripts/lib/normalize_cmd.sh` is sourced by rails-flow's guard-bash.sh and qa-flow's
+# release-gate.sh. Plugins install alone, so each ships a copy; "one normaliser" is a claim only
+# while the copies are byte-identical (#906; the #699 class -- a bug fixed in one copy survived in
+# the other). A missing copy is a finding too: a hook whose lib is gone falls back to raw matching.
+HOOK_LIB_COPIES = ("plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh",
+                   "plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh")
+
+
+def check_hook_lib_drift() -> tuple[list[Finding], int]:
+    """The hook lib copies exist and are byte-identical."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in HOOK_LIB_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("hook-lib-drift", rel, 0,
+                                    "missing -- the hook beside it falls back to raw-text matching; copy it from the other plugin"))
+            continue
+        texts[rel] = p.read_bytes()
+    if len(texts) == len(HOOK_LIB_COPIES) and len(set(texts.values())) > 1:
+        a, b = HOOK_LIB_COPIES
+        findings.append(Finding("hook-lib-drift", b, 0,
+                                f"differs from {a} -- one normaliser, two copies: a fix landed in one and not the other. "
+                                "Make them identical (cp) and re-run"))
+    return findings, len(HOOK_LIB_COPIES)
 
 
 def check_claude_md_growth() -> tuple[list[Finding], int]:
@@ -2532,6 +2563,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     undocumented, plugins_examined = check_undocumented_plugins()
     undoc_cmds, commands_examined = check_undocumented_commands()
     growth, claude_md_lines = check_claude_md_growth()
+    hook_lib, hook_lib_copies = check_hook_lib_drift()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -2572,6 +2604,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "declared_plugins": plugins_examined,
         "commands_checked_for_documentation": commands_examined,
         "claude_md_lines": claude_md_lines,
+        "hook_lib_copies": hook_lib_copies,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -2606,7 +2639,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + bare + misdesc + unbounded + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
             + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
@@ -3399,6 +3432,13 @@ def selftest() -> int:
         rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\nrule\n", **_hist},
     )
+    LIB = "#!/usr/bin/env bash\nnormalize_segments() { cat; }\n"
+    scenario("identical hook lib copies are silent", rule="hook-lib-drift", expect_finding=False,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB})
+    scenario("hook lib copies that differ by one byte are a finding", rule="hook-lib-drift", expect_finding=True,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB + "\n"})
+    scenario("a missing hook lib copy is a finding", rule="hook-lib-drift", expect_finding=True,
+             files={HOOK_LIB_COPIES[0]: LIB})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},

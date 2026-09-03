@@ -696,5 +696,11 @@ GUARD = Guard(
             "if True:\n                continue",
             "undocumented-plugin",
         ),
+        Mutation(
+            "hook lib copies that differ stop being a finding",
+            "    if len(texts) == len(HOOK_LIB_COPIES) and len(set(texts.values())) > 1:",
+            "    if False:",
+            "hook lib copies that differ by one byte are a finding",
+        ),
     ),
 )
