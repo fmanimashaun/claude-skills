@@ -2485,6 +2485,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/scripts/brain_local_sync.py` — `/rails-flow:brain-sync local`, the bridge between `docs/brain/` and Claude Code's per-machine auto-memory** (#877).
+  Two stores, one shape, no wire: the repo brain is committed team truth; `~/.claude/projects/<slug>/memory/` is what a
+  session loads at start, per machine and uncommitted. `--pull` writes POINTERS (the memo's own description verbatim,
+  a body naming the repo file; idempotent; never overwrites a file it did not write). `--propose` prints the memo each
+  local `feedback`/`project` memory would become, body verbatim, and writes nothing — the repo is reviewed truth.
+  `user` memories never cross; `reference` is listed, not proposed; a diverged pair shows both sides. No paraphrase,
+  no model in the loop. `--status` is the `brain-local-sync` check (n/a is exit 3) and one advisory line in the
+  SessionStart hook (`plugins/rails-flow/hooks/scripts/session-start.sh`, fail-open). `brain-sync.md` documents it;
+  `brain-review.md` step 6 notes pointers live outside the sweep. 28 fixtures, 9 mutations — writing the guard
+  found two promises the first fixtures could not see: `propose` had no root to write under, and the index-dedupe
+  branch was unreachable until a fixture deleted the pointer file and kept its line.
+
 ### 2026-09-03 (release v1.112.0)
 
 - **A CLAUDE.md auditor and builder** (#875). `plugins/rails-flow/scripts/claude_md_structure.py --report`
@@ -4508,6 +4522,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 27 → 28,
+  reach 13 → 14** — `brain_local_sync.py` (#877) is a new copy; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.112.0)
 

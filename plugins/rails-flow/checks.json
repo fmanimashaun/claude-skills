@@ -230,6 +230,21 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "brain-local-sync",
+      "why": "docs/brain is the team's memory and Claude Code's auto-memory is what a session loads at start; a lesson in one and not the other is either unshared or unrecalled. Counts both directions; n/a without a brain or a store; nothing is written.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/brain_local_sync.py",
+        "--status"
+      ],
+      "applies_when": [
+        "docs/brain/MEMORY.md"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
