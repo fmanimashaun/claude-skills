@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-03 (release v1.113.0)
 
 - **`scripts/mutations/check_component_shapes.py`: the shapes reconciliation gets its mutation guard** (#874).
   `check_component_shapes.py` had 17 fixtures and nothing proving any could fail. Eleven mutations, each
@@ -2485,7 +2485,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-03 (release v1.113.0)
 
 - **`plugins/rails-flow/scripts/brain_local_sync.py` — `/rails-flow:brain-sync local`, the bridge between `docs/brain/` and Claude Code's per-machine auto-memory** (#877).
   Two stores, one shape, no wire: the repo brain is committed team truth; `~/.claude/projects/<slug>/memory/` is what a
@@ -4523,7 +4523,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-03 (release v1.113.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 27 → 28,
   reach 13 → 14** — `brain_local_sync.py` (#877) is a new copy; `check_shared_shapes.py` refuses the stale number.
