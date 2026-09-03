@@ -4523,6 +4523,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 27 → 28,
+  reach 13 → 14** — `brain_local_sync.py` (#877) is a new copy; `check_shared_shapes.py` refuses the stale number.
+
 ### 2026-09-03 (release v1.112.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 26 → 27,
