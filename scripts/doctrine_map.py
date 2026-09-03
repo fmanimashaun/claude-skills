@@ -27,7 +27,7 @@ for work nobody did.
 
 WHY NOT OpenKB, which prompted the issue. It compiles documents into a wiki **with an LLM**, so the
 output bytes are not a function of the inputs and no drift gate could hold them -- and
-`derived-artifacts` is the rule we enforce on `coverage.html`, `inventory.html` and the wiki. Take
+`derived-artifacts` is the rule we enforce on `coverage.html` and the wiki (which absorbed the inventory, #892). Take
 the idea, not the tool: generated deterministically, drift-checked like everything else.
 
 WHAT THE VALIDATORS ACTUALLY CATCH. Each is mechanical -- no judgement, so none of them is taste
@@ -332,8 +332,7 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="CLAUDE.md",
         anchor="**The rendered bytes must be a function of the DATA and nothing else.**",
         kind=GUARANTEE,
-        enforced_by=("gate:coverage artifact drift", "gate:inventory artifact drift",
-                     "gate:wiki reference drift", "mutation:build_coverage_artifact"),
+        enforced_by=("gate:coverage artifact drift", "gate:wiki reference drift", "mutation:build_coverage_artifact"),
         note="A file inside a commit cannot name its own commit. Both committed pages here shipped "
              "that bug once each.",
     ),
@@ -343,8 +342,7 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="CLAUDE.md",
         anchor="`--check` compares the blob at `HEAD`, never the file on disk",
         kind=GUARANTEE,
-        enforced_by=("gate:coverage artifact selftest", "gate:inventory artifact selftest",
-                     "mutation:build_coverage_artifact"),
+        enforced_by=("gate:coverage artifact selftest", "mutation:build_coverage_artifact"),
     ),
     Claim(
         claim="Derived numbers are read from the generator's structured source, never regex-parsed "

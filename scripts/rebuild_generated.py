@@ -2,7 +2,7 @@
 """Rebuild every generated artefact whose bytes are committed. #680.
 
 WHY THIS EXISTS. Three committed files carry the marketplace version — `docs/evidence/coverage.html`,
-`docs/architecture/inventory.html` and `docs/wiki/Plugin-Reference.md` — and `dist/*.skill` is a deterministic
+`docs/wiki/Plugin-Reference.md` and `docs/wiki/Agents-And-Gates.md` — and `dist/*.skill` is a deterministic
 build of the skills. Each has its own drift gate, so bumping a version invalidates all of them and
 the gates fail until each is rebuilt.
 
@@ -34,7 +34,6 @@ ROOT = Path(__file__).resolve().parents[1]
 # Order matters only for readability; none depends on another's output.
 BUILDERS = (
     ("coverage page", "build_coverage_artifact.py"),
-    ("inventory page", "build_inventory.py"),
     ("wiki reference", "build_wiki.py"),
     ("doctrine map", "doctrine_map.py"),
     ("dist/*.skill", "package_core.py"),
