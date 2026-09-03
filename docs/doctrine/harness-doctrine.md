@@ -250,7 +250,7 @@ Measured against every hook in the repo, it holds for seven and is **false for t
 
 The precise rule is the five bullets above; the `CLAUDE.md` sentence needs narrowing to advisory
 hooks. It is stated here because `CLAUDE.md` is outside this change's lane, not because the
-discrepancy is acceptable. `docs/issue-dependency-graph.md` had already noticed the same gap from the
+discrepancy is acceptable. `docs/doctrine/issue-dependency-graph.md` had already noticed the same gap from the
 other side, recording the fail-closed/fail-open rule as one tool's local contract precisely because
 nothing carried it generally.
 
@@ -518,5 +518,5 @@ doctrine is followed.
   §5's discrepancy about its *Platform* sentence.
 - `.github/pull_request_template.md` — the tier-2 contract that carries this classification into every
   PR.
-- `docs/issue-dependency-graph.md` — the worked instance of §5's rule: the graph is a gate (a cycle or
+- `docs/doctrine/issue-dependency-graph.md` — the worked instance of §5's rule: the graph is a gate (a cycle or
   a dangling edge prints no queue at all), the queue is advice.

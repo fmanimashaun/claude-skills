@@ -19,7 +19,7 @@ SessionStart hook.)
 ## Scope
 
 `$ARGUMENTS` names the component to audit; default to the one with the most open issues
-or longest since last audited (check `docs/audits/`). Pull the open-issue signal for it
+or longest since last audited (check `docs/evidence/audits/`). Pull the open-issue signal for it
 — clustered reports point at systemic gaps. **Bound the page**, or the cluster you are
 reading is whatever fitted in the default 30 (#211):
 
@@ -32,7 +32,7 @@ gh issue list --state open --label "comp:<x>" --limit 200 --json number,title,la
 - **Skills (rails-8 / hotwire)** → delegate to **doctrine-verifier** across the
   reference's key claims: spot-check against official docs for the targeted version,
   flag anything outdated, unversioned, or contradicted. Record findings in
-  `docs/audits/<date>-<component>-audit.md` (the existing audit format): coverage
+  `docs/evidence/audits/<date>-<component>-audit.md` (the existing audit format): coverage
   matrix, verdict per claim, version-boundary gaps.
 - **Plugins (rails-flow / qa-flow / pipeline)** → review agents/commands for
   consistency and hooks for portability + correctness (`bash -n`, the interpreter and

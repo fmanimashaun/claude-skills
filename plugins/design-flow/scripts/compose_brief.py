@@ -460,7 +460,7 @@ def render(brief: dict) -> str:
     """The brief as markdown — GENERATED, and its bytes a function of the data only.
 
     No timestamp, no git SHA, no absolute path: anything else makes the drift check unpassable by
-    construction, which is the lesson `docs/coverage.html` paid for.
+    construction, which is the lesson `docs/evidence/coverage.html` paid for.
     """
     out = [BANNER, f"# Composition brief — {brief['surface']}\n",
            f"**{brief['intent']['brief']}** — {brief['intent']['so']}.\n"]

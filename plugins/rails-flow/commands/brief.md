@@ -76,7 +76,7 @@ and `PRD S7.2` names no file, so it could never resolve. This syntax is ours, de
 
 **This section is advice, not enforcement.** It is behaviour during the conversation, and it leaves
 no trace in the artifact, so nothing mechanical can check it — per
-[`docs/harness-doctrine.md`](../../../docs/harness-doctrine.md) §1, that makes it tier 1 and it is
+[`docs/doctrine/harness-doctrine.md`](../../../docs/doctrine/harness-doctrine.md) §1, that makes it tier 1 and it is
 labelled as tier 1 rather than left to look like a guarantee.
 
 - **One question at a time.** Ten questions in a wall get one lazy answer; one question gets a

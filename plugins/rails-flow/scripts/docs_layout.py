@@ -106,11 +106,16 @@ def kind_of(p: Path, docs: Path) -> str:
     return "authored"
 
 
-def home_for(p: Path, docs: Path, kind: str, declared: set[str] = frozenset()) -> tuple[str | None, bool, str]:
+def home_for(p: Path, docs: Path, kind: str, declared: set[str] = frozenset(), rules: list[tuple[str, str]] = ()) -> tuple[str | None, bool, str]:
     """(new relative path under docs/ or None if it is fine where it is, sure?, reason)."""
+    import fnmatch
     rel = p.relative_to(docs)
     parts = rel.parts
     top = parts[0] if len(parts) > 1 else None
+    if top is None and rel.name not in ROOT_ALLOWED:
+        for glob, dest in rules:                                       # the map's own word on a root file wins
+            if fnmatch.fnmatch(rel.name, glob):
+                return f"{dest}{rel.name}", True, f"root file; the map's `## Root files` says {dest}"
     if top in declared:                                               # the project's map says this directory exists
         return None, True, ""
     if kind == "code":
@@ -150,6 +155,20 @@ def home_for(p: Path, docs: Path, kind: str, declared: set[str] = frozenset()) -
 MAP_ROW = re.compile(r"^\|\s*`([a-z][a-z0-9_-]*)/`\s*\|", re.M)
 
 
+ROOT_FILE_ROW = re.compile(r"^\|\s*`([^`|]+)`\s*\|\s*`([a-z][A-Za-z0-9_/-]*/)`\s*\|", re.M)
+
+
+def root_file_rules(root: Path) -> list[tuple[str, str]]:
+    """`## Root files` rows in docs/README.md: (glob, `dir/[sub/]`) -- where a root file the layout cannot
+    name belongs. The map is the source of truth; the tool reads it rather than guessing twice."""
+    readme = root / DOCS / "README.md"
+    if not readme.is_file():
+        return []
+    text = readme.read_text(encoding="utf-8", errors="replace")
+    section = text.split("## Root files", 1)
+    return ROOT_FILE_ROW.findall(section[1]) if len(section) == 2 else []
+
+
 def declared_dirs(root: Path) -> set[str]:
     """Directories the project's own map (docs/README.md) declares, beyond the layout's eight."""
     readme = root / DOCS / "README.md"
@@ -161,12 +180,13 @@ def declared_dirs(root: Path) -> set[str]:
 def classify(root: Path) -> list[dict]:
     docs = root / DOCS
     extra = declared_dirs(root)
+    rules = root_file_rules(root)
     rows = []
     for p in sorted(x for x in docs.rglob("*") if x.is_file() and ".git" not in x.parts):
         if p.name == ".generated":
             continue
         kind = kind_of(p, docs)
-        dest, sure, reason = home_for(p, docs, kind, extra)
+        dest, sure, reason = home_for(p, docs, kind, extra, rules)
         rows.append({"path": p.relative_to(root).as_posix(), "kind": kind, "dest": (DOCS / dest).as_posix() if dest else None,
                      "sure": sure, "reason": reason})
     return rows
@@ -203,14 +223,14 @@ def text_files(root: Path) -> list[Path]:
 
 def references(root: Path, old_rel: str, files: list[Path]) -> tuple[list[Path], list[Path]]:
     """Files whose text mentions the old path, by its repo-relative string or its docs-relative tail."""
-    needles = {old_rel, old_rel[len("docs/"):]}
+    tail = old_rel[len("docs/"):]
     text_hits, binary_hits = [], []
     for f in files:
         try:
             s = f.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        if any(n in s for n in needles):
+        if old_rel in s or tail in s:          # a hit is a candidate; plan() keeps only rewrites that change text
             text_hits.append(f)
     # binaries that mention the path cannot be rewritten: refuse rather than guess
     try:
@@ -222,6 +242,32 @@ def references(root: Path, old_rel: str, files: list[Path]) -> tuple[list[Path],
     except FileNotFoundError:
         pass
     return text_hits, binary_hits
+
+
+def _protected(key: str, s: str, fn) -> str:
+    """Apply `fn` to the text, except inside the map's `## Root files` table, whose globs name files by
+    their ROOT name on purpose (the first --write on this repo renamed them)."""
+    if key == "docs/README.md" and "## Root files" in s:
+        head, tail = s.split("## Root files", 1)
+        return fn(head) + "## Root files" + tail
+    return fn(s)
+
+
+def _rewrite_text(key: str, s: str, old: str, new: str) -> str:
+    return _protected(key, s, lambda t: t.replace(old, new))
+
+
+def dir_moves(moves: list[dict]) -> dict[str, str]:
+    """`docs/audits/` -> `docs/evidence/audits/` when every moved file under a top-level docs directory lands
+    under one new parent -- so directory MENTIONS follow the files."""
+    by_dir: dict[str, set[str]] = {}
+    for m in moves:
+        old_parts, new_parts = m["path"].split("/"), m["dest"].split("/")
+        if len(old_parts) > 2:                                       # docs/<dir>/...
+            old_dir = "/".join(old_parts[:2]) + "/"
+            new_dir = "/".join(new_parts[:len(new_parts) - (len(old_parts) - 2)]) + "/"
+            by_dir.setdefault(old_dir, set()).add(new_dir)
+    return {o: next(iter(n)) for o, n in by_dir.items() if len(n) == 1}
 
 
 def plan(root: Path, rows: list[dict]) -> dict:
@@ -238,12 +284,24 @@ def plan(root: Path, rows: list[dict]) -> dict:
         for f in hits:
             key = f.relative_to(root).as_posix()
             s = rewrites.get(key) or f.read_text(encoding="utf-8")
-            s = s.replace(m["path"], m["dest"])
+            s = _rewrite_text(key, s, m["path"], m["dest"])
             # a docs-relative link from inside docs/ (e.g. `](ROUTES.md)` or `](brain/x.md)`)
             if f.is_relative_to(root / DOCS) or key.startswith("docs/"):
-                s = re.sub(r"(\]\(|`|\s|^)" + re.escape(m["path"][len("docs/"):]) + r"(?=[\s)\]`.,;:]|$)",
-                           lambda mm: mm.group(1) + m["dest"][len("docs/"):], s, flags=re.M)
-            rewrites[key] = s
+                pat = re.compile(r"(\]\(|`|\s|^)" + re.escape(m["path"][len("docs/"):]) + r"(?=[\s)\]`.,;:]|$)", re.M)
+                s = _protected(key, s, lambda t: pat.sub(lambda mm: mm.group(1) + m["dest"][len("docs/"):], t))
+            if s != (rewrites.get(key) or f.read_text(encoding="utf-8")):
+                rewrites[key] = s
+    for old_dir, new_dir in dir_moves(applied).items():             # directory mentions follow the files
+        for f in files:
+            key = f.relative_to(root).as_posix()
+            try:
+                s = rewrites.get(key) or f.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if old_dir in s:
+                s2 = _rewrite_text(key, s, old_dir, new_dir)
+                if s2 != s:
+                    rewrites[key] = s2
     return {"moves": applied, "refused": refused, "rewrites": rewrites}
 
 
@@ -295,7 +353,11 @@ def apply_plan(root: Path, p: dict) -> list[str]:
             src.rename(dst)
     dest_of = {m["path"]: m["dest"] for m in p["moves"]}
     for key, new in p["rewrites"].items():
-        (root / dest_of.get(key, key)).write_text(new, encoding="utf-8")   # a moved file is rewritten AT ITS NEW PATH
+        target = root / dest_of.get(key, key)
+        if not target.exists():
+            problems.append(f"rewrite target {target.relative_to(root).as_posix()} does not exist (key {key}) -- not written")
+            continue
+        target.write_text(new, encoding="utf-8")   # a moved file is rewritten AT ITS NEW PATH
     for m in p["moves"]:
         if not (root / m["dest"]).is_file():
             problems.append(f"{m['dest']} does not exist after the move")
@@ -417,7 +479,7 @@ def selftest() -> int:
             "docs/brain/role-specs/OPEN-QUESTIONS.md": "# Open\n",
             "docs/architecture/graph.md": "<!-- generated by /rails-flow:graph -->\n# Graph\n",
             "docs/design/home-page-prompt.md": "# Prompt\n",
-            "CLAUDE.md": "Spec: `docs/Retask-Build-Spec.md`. Routes: `docs/ROUTES.md`. Roles: docs/brain/role-specs/admin.md\n",
+            "CLAUDE.md": "Spec: `docs/Retask-Build-Spec.md`. Routes: `docs/ROUTES.md`. Roles: docs/brain/role-specs/admin.md. Specs live in `docs/features/`.\n",
             "loop.md": "run `python3 docs/sitemap_from_spec.py`\n",
         }.items():
             (root / rel).parent.mkdir(parents=True, exist_ok=True); (root / rel).write_text(text, encoding="utf-8")
@@ -466,6 +528,8 @@ def selftest() -> int:
         check("the plan moves the spec and rewrites CLAUDE.md's path to it",
               "git mv docs/Retask-Build-Spec.md docs/product/Retask-Build-Spec.md" in rendered
               and "CLAUDE.md" in p["rewrites"] and "docs/product/Retask-Build-Spec.md" in p["rewrites"]["CLAUDE.md"], rendered[:300])
+        check("a directory that moves whole has its MENTIONS rewritten (docs/features/ -> docs/product/features/)",
+              "`docs/product/features/`" in p["rewrites"]["CLAUDE.md"], p["rewrites"].get("CLAUDE.md", ""))
         check("a docs-relative link inside docs is rewritten too (ROUTES.md -> product/ROUTES.md)",
               "docs/Retask-Build-Spec.md" in p["rewrites"] and "](product/ROUTES.md)" in p["rewrites"]["docs/Retask-Build-Spec.md"], p["rewrites"].get("docs/Retask-Build-Spec.md", "")[:200])
         check("code is never moved by the plan (it leaves docs/, which is the human's move)", not any(m["kind"] == "code" for m in p["moves"]))
@@ -498,6 +562,29 @@ def selftest() -> int:
         declared = {r["path"]: r for r in classify(root)}["docs/doctrine/harness.md"]["dest"]
         check("a directory declared in the map is honoured; the same directory undeclared is homed elsewhere",
               undeclared == "docs/product/doctrine/harness.md" and declared is None, f"{undeclared} / {declared}")
+        # the map's `## Root files` table homes a root file the layout cannot name -- into a declared dir or a layout subdir
+        (root / "docs/harness-doctrine.md").write_text("# hd\n", encoding="utf-8"); (root / "docs/maintainer-history.md").write_text("# mh\n", encoding="utf-8")
+        unruled = {r["path"]: r for r in classify(root)}
+        with (root / "docs/README.md").open("a", encoding="utf-8") as fh:
+            fh.write("\n## Root files\n\n| file | home |\n|---|---|\n| `*-doctrine.md` | `doctrine/` |\n| `maintainer-history.md` | `brain/history/` |\n")
+        ruled = {r["path"]: r for r in classify(root)}
+        # a code file that mentions only the docs-relative tail is NOT a rewrite; one that names the full path is
+        (root / "scripts").mkdir(exist_ok=True); (root / "scripts/a.py").write_text("x = 'harness-doctrine.md'\n", encoding="utf-8")
+        (root / "scripts/b.py").write_text("x = 'docs/harness-doctrine.md'\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        p_r = plan(root, classify(root))
+        check("outside docs/, only the full repo path is a reference: the tail alone is not rewritten",
+              "scripts/b.py" in p_r["rewrites"] and "scripts/a.py" not in p_r["rewrites"], str(sorted(p_r["rewrites"])))
+        check("a listed rewrite always changes text", all((root / k).read_text(encoding="utf-8") != v for k, v in p_r["rewrites"].items()))
+        rules_before = root_file_rules(root)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        apply_plan(root, plan(root, classify(root)))
+        check("the map's `## Root files` globs survive a --write (a rewrite must not rename them)", root_file_rules(root) == rules_before, str(root_file_rules(root)))
+        check("a `## Root files` rule in the map homes a root file where the map says, sure; without the rule it is unsure product/",
+              unruled["docs/harness-doctrine.md"]["dest"] == "docs/product/harness-doctrine.md" and not unruled["docs/harness-doctrine.md"]["sure"]
+              and ruled["docs/harness-doctrine.md"]["dest"] == "docs/doctrine/harness-doctrine.md" and ruled["docs/harness-doctrine.md"]["sure"]
+              and ruled["docs/maintainer-history.md"]["dest"] == "docs/brain/history/maintainer-history.md", f"{ruled['docs/harness-doctrine.md']} {ruled['docs/maintainer-history.md']}")
+
         # a binary that names the old path: the move is REFUSED, not guessed
         (root / "docs/ROADMAP2.md").write_text("# r2\n", encoding="utf-8")
         (root / "docs/design/assets/blob.bin").write_bytes(b"\0\0docs/ROADMAP2.md\0")

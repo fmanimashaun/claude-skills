@@ -83,7 +83,7 @@ across projects **without a designer or Figma**, by applying the **design-system
   Playwright and a booted app, so it runs on demand rather than per edit.
 
 The hook is **advisory and fails open**: with `python3` absent it goes quiet rather than blocking
-an edit, per the guarantee-vs-advice test in `docs/harness-doctrine.md`.
+an edit, per the guarantee-vs-advice test in `docs/doctrine/harness-doctrine.md`.
 
 ## The doctrine
 

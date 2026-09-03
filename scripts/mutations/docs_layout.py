@@ -54,7 +54,7 @@ GUARD = Guard(
         ),
         Mutation(
             "CLAUDE.md's path to a moved file is not rewritten, so doctrine points at a file that is gone",
-            '            s = s.replace(m["path"], m["dest"])',
+            '            s = _rewrite_text(key, s, m["path"], m["dest"])',
             '            s = s',
             "rewrites CLAUDE.md's path to it",
         ),
@@ -66,8 +66,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a file both moved and rewritten is written back at its OLD path, resurrecting it",
-            '        (root / dest_of.get(key, key)).write_text(new, encoding="utf-8")   # a moved file is rewritten AT ITS NEW PATH',
-            '        (root / key).write_text(new, encoding="utf-8")',
+            '        target = root / dest_of.get(key, key)',
+            '        target = root / key',
             "write applies every move and every rewritten link resolves",
         ),
         Mutation(
@@ -93,6 +93,30 @@ GUARD = Guard(
             '        area = next((a for a, pat in AREAS if pat.search(key)), "other")',
             '        area = "docs"',
             "names, by area, every file whose path strings change",
+        ),
+        Mutation(
+            "a file that merely mentions a bare filename is listed as a rewrite with unchanged text",
+            '            if s != (rewrites.get(key) or f.read_text(encoding="utf-8")):\n                rewrites[key] = s',
+            '            rewrites[key] = s',
+            "the tail alone is not rewritten",
+        ),
+        Mutation(
+            "the map's `## Root files` rules are ignored, so a project cannot teach the tool its own names",
+            '            if fnmatch.fnmatch(rel.name, glob):\n                return f"{dest}{rel.name}", True, f"root file; the map\'s `## Root files` says {dest}"',
+            '            if False:\n                return f"{dest}{rel.name}", True, ""',
+            "Root files` rule in the map homes a root file where the map says",
+        ),
+        Mutation(
+            "the map's own `## Root files` globs are rewritten along with everything else, breaking the map on the first --write",
+            '    if key == "docs/README.md" and "## Root files" in s:',
+            '    if False:',
+            "globs survive a --write",
+        ),
+        Mutation(
+            "a directory that moves whole leaves every `docs/<old>/` mention pointing at nothing",
+            '    for old_dir, new_dir in dir_moves(applied).items():             # directory mentions follow the files',
+            '    for old_dir, new_dir in {}.items():',
+            "has its MENTIONS rewritten",
         ),
     ),
 )

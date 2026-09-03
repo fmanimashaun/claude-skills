@@ -17,7 +17,7 @@ an edge to an issue that does not exist, a typo'd key, a declaration outside its
 filing error and each exits non-zero. And when the graph is broken the queue is **not printed at
 all**, only the errors. A ranked queue computed from a graph we already know is wrong is worse
 than no queue, because it reads exactly like a correct one. That split — fail closed for gates,
-fail open for advisories — is the general rule now recorded in `docs/harness-doctrine.md` §5
+fail open for advisories — is the general rule now recorded in `docs/doctrine/harness-doctrine.md` §5
 (which also gives the scoping this tool relies on: fail closed for what the gate guards, exit 0
 otherwise), restated here as this tool's own contract.
 
@@ -45,7 +45,7 @@ THE DECLARATION FORMAT. One fenced block in the issue body, tagged `deps`:
 
 `depends-on: #A` means A must finish first; `blocks: #B` is the same edge stated from the other
 end; `part-of: #E` is epic membership and carries no ordering. Prose still explains *why* — this
-block only makes the edge machine-readable. Full documentation: docs/issue-dependency-graph.md.
+block only makes the edge machine-readable. Full documentation: docs/doctrine/issue-dependency-graph.md.
 
 WHY THE TAG IS REQUIRED, when #133 sketched a bare fence. An untagged fence cannot be told from a
 code sample, and `depends_on: :account` is an ordinary Rails idiom that would be read as an edge.

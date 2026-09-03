@@ -67,7 +67,7 @@ Each command **declares** its topology in place, rather than leaving a reader to
 a fan-out declares how conflicting or duplicate outputs merge, a loop declares its exit
 condition, and `undeclared-topology` fails the build when one does not. The reasoning, and
 why inference was tried first and abandoned, is in
-[docs/harness-doctrine.md](docs/harness-doctrine.md) §8a.
+[docs/doctrine/harness-doctrine.md](docs/doctrine/harness-doctrine.md) §8a.
 
 | Topology | Where | Why |
 |---|---|---|

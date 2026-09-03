@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PostToolUse[Edit|Write|MultiEdit] — flag LLM design tells in the file just written (#157).
 #
-# ADVISORY, therefore FAIL OPEN. Applying the guarantee-vs-advice test in docs/harness-doctrine.md
+# ADVISORY, therefore FAIL OPEN. Applying the guarantee-vs-advice test in docs/doctrine/harness-doctrine.md
 # ("if a model ignores this, what happens?"): the answer is a view carries `text-gray-500` until
 # `/design-flow:audit` or a reviewer catches it. That is drift, not a broken guarantee, and an
 # advisory that blocks work when python3 is absent is an advisory people switch off. Every early

@@ -93,7 +93,7 @@ MARKETPLACE = REPO / ".claude-plugin" / "marketplace.json"
 # be compared. Git state is out of the payload now, so `--check` always reaches a real verdict and a
 # `3` would be a lie. `lint_markdown_code.py` keeps its own for a genuine case: a stalled interpreter
 # means blocks that were never read, which is not the same as a comparison that simply succeeded.
-DEFAULT_OUT = REPO / "docs" / "coverage.html"
+DEFAULT_OUT = REPO / "docs" / "evidence" / "coverage.html"
 
 GUIDANCE_DOCUMENTED = "documented"
 GUIDANCE_DERIVABLE = "derivable"

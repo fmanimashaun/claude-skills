@@ -31,7 +31,7 @@ WHAT IT CHECKS
                               plugin's README (as /p:c) never names — same defect, one level down
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
-                              docs/maintainer-history.md; claude_md_structure.py prints the diff
+                              docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
   unbounded-issue-query       a `gh issue/pr list` with no --limit: it defaults to 30, so
                               the call reports a page as the total
   component-without-call-site a documented component nothing demonstrates — a reader must
@@ -500,7 +500,7 @@ PLUGIN_DOCS = ("CLAUDE.md", "README.md")
 # The ceiling on CLAUDE.md, and where a new fact goes instead (#870). A RATCHET, not an aspiration: a
 # fixed "under 200 lines" would be red on day one and switched off in a week; this constant is set at
 # the measured size and LOWERED deliberately when the file shrinks. Raising it is a PR that says why.
-CLAUDE_MD_HISTORY = "docs/maintainer-history.md"
+CLAUDE_MD_HISTORY = "docs/brain/history/maintainer-history.md"
 _CLAUDE_MD_MARKER = re.compile(r"<!--\s*claude-md:\s*max-lines\s+(\d+)\s*-->")
 
 
@@ -509,7 +509,7 @@ def check_claude_md_growth() -> tuple[list[Finding], int]:
 
     #870 cut CLAUDE.md from 754 lines (~12.7k tokens loaded by EVERY session, 59 % of its words in
     paragraphs carrying an incident rather than a rule) to 255, by moving the incidents verbatim to
-    `docs/maintainer-history.md`. A note in that file saying "add new incidents here" is prose, and
+    `docs/brain/history/maintainer-history.md`. A note in that file saying "add new incidents here" is prose, and
     prose is how the first 754 lines happened. So the routing is a gate: past the ceiling, the sweep
     fails and the finding says where the fact goes -- the history file, plus ONE linking line here.
     """
@@ -1302,7 +1302,7 @@ def check_undeclared_topology() -> tuple[list[Finding], dict[str, int]]:
         loop      -> must also carry `exit:`   (the property that ends it)
         sequential/agent-to-agent -> the declaration alone
 
-    Loop BREAKERS are deliberately not required here. `docs/harness-doctrine.md` section 8 records
+    Loop BREAKERS are deliberately not required here. `docs/doctrine/harness-doctrine.md` section 8 records
     attempt caps and no-progress detection as a known gap owned by #128, and says plainly that
     writing them as doctrine before they exist would be the claims-vs-enforcement defect. An exit
     condition is a different thing: it is a property the command can state today.
@@ -1348,7 +1348,7 @@ def check_undeclared_topology() -> tuple[list[Finding], dict[str, int]]:
                 "undeclared-topology", rel(command), 1,
                 f"dispatches {len(dispatched)} agents ({evidence}) but declares no topology. Add "
                 f"`<!-- topology: sequential|parallel|loop|agent-to-agent -->`; a parallel one also "
-                f"needs `merge:`, a loop needs `exit:`. See docs/harness-doctrine.md",
+                f"needs `merge:`, a loop needs `exit:`. See docs/doctrine/harness-doctrine.md",
             ))
             continue
         kind, detail = found.group(1).lower(), found.group(2)
@@ -1861,7 +1861,7 @@ def check_changelog_bullet_section() -> tuple[list[Finding], int]:
 
     #701. v1.92.0 shipped three bullets under `## rails-stack (…skills)` whose code lives in
     `scripts/` and `plugins/rails-flow/` -- so a reader of the skills package's release notes found
-    `docs/doctrine-map.html`, maintainer tooling that ships to nobody. Before #699 this was
+    `docs/architecture/doctrine-map.html`, maintainer tooling that ships to nobody. Before #699 this was
     invisible, because the second block for a tag never published and nobody read it. Now every
     block publishes and the per-component grouping is **user-facing on the release page**, which is
     what turns a habit into something worth a gate.
@@ -3385,7 +3385,7 @@ def selftest() -> int:
 
     # -- claude-md-growth (#870) ------------------------------------------
     # The ceiling is a ratchet at the measured size; the fixtures use the constant, not a literal.
-    _hist = {"docs/maintainer-history.md": "# history\n"}
+    _hist = {"docs/brain/history/maintainer-history.md": "# history\n"}
     scenario(
         "CLAUDE.md one line past the ceiling", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\n" + "rule\n" * 9, **_hist},

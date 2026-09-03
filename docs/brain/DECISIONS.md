@@ -22,9 +22,19 @@ after a human picks. **Alternatives:** auto-write memos; a hook that writes on S
 **Enforced by:** fixture "the pointer carries the memo's own description verbatim" + mutation. Refs #877.
 **Reversal condition:** the harness stops matching recall on `description`.
 
-## D-004 — The maintainer's CLAUDE.md history stays in `docs/maintainer-history.md` (2026-09-03) `[decided]`
-**Choice:** this repo's relocated incident narrative lives at `docs/maintainer-history.md`, while the
+## D-004 — REVERSED 2026-09-03 by D-005: the history file moved to `docs/brain/history/maintainer-history.md` `[decided]`
+**Choice:** this repo's relocated incident narrative lives at `docs/brain/history/maintainer-history.md`, while the
 shipped tool's default for projects is `docs/brain/claude-md-history.md`. **Rationale:** the file
 predates the brain here and 17 `doctrine_map` anchors and lint pointers name it; moving it buys
 nothing a reader can measure. **Reversal condition:** a second history file appears, or a tool needs
 one location for both.
+
+## D-005 — The maintainer repo follows the shipped docs/ layout, with one declared directory (2026-09-03) `[decided]`
+**Choice:** `docs/` here is laid out by `docs_layout.py` like every project's: `doctrine/` (declared in the map — the
+maintainer's authored rules), `architecture/` (generated: `doctrine-map.html`, `inventory.html`), `evidence/`
+(`coverage.html`, `audits/`), `brain/history/` (the relocated CLAUDE.md narrative), `wiki/` (generated). Root-file
+homes are the map's `## Root files` table, which the tool reads. **Alternatives:** leave the maintainer repo as the
+exception; invent a maintainer-only layout. **Rationale:** the tool's first real run on Retask-platform matched the
+hand review; a repo that ships a layout and does not keep it is the claims-vs-enforcement class. Refs #886.
+**Reversal condition:** a generated page that cannot live under `architecture/` or `evidence/` without a script losing
+its drift gate.
