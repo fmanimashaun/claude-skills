@@ -492,6 +492,10 @@ def gate_output(out: str, code: int) -> tuple[str, tuple[str, ...]]:
     return lines[-1], tuple(rest)
 
 
+# Extra arguments for branch_rulesets.py -- the selftest points it at a fixture file with `--from`.
+RULESET_ARGS: tuple[str, ...] = ()
+
+
 @dataclass
 class Doctor:
     fix: bool = False
@@ -787,6 +791,24 @@ class Doctor:
             "then always merge a promotion with `gh pr merge --merge`, never --squash",
         )
 
+    def check_promotion_ruleset(self) -> None:
+        """The ruleset that makes `--merge` a mechanism (#895): the shipped `branch_rulesets.py` is the one
+        implementation -- this only maps its exit code. 0 PASS, 1 FAIL (its findings as detail), 3 SKIP:
+        not applicable (no gh, unauthenticated, no GitHub origin, API unreachable) is never a pass.
+        RULESET_ARGS is the selftest's seam (`--from FILE`), so the fixtures never touch the API."""
+        checker = Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts" / "branch_rulesets.py"
+        code, out = self.run("python3", str(checker), "--check", "--branch", "main", *RULESET_ARGS, cwd=REPO)
+        first = next((l for l in out.splitlines() if l.strip()), "").strip()
+        if code == 0:
+            self.add(PASS, "`main` merges only (ruleset)", first)
+        elif code == 3:
+            self.add(SKIP, "`main` merges only (ruleset)", first, "gh auth login, then re-run")
+        else:
+            findings = "; ".join(l.strip("- ").strip() for l in out.splitlines() if l.startswith("- ")) or first
+            self.add(FAIL, "`main` has no merge-only ruleset", findings,
+                     "python3 plugins/rails-flow/scripts/branch_rulesets.py --apply  (a squash-merged promotion "
+                     "breaks the next one; the v1.114.0 promotion was squashed from the UI)")
+
     def check_no_direct_to_main(self) -> None:
         code, out = self.git("log", "--oneline", "dev..origin/main", "--no-merges")
         if code != 0:
@@ -1021,6 +1043,7 @@ class Doctor:
         self.check_stale_main_ref()
         self.check_dev_current()
         self.check_promotion_was_a_merge()
+        self.check_promotion_ruleset()
         self.check_no_direct_to_main()
         self.check_unshipped()
         self.check_changelog_coverage()
