@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-03 (release v1.116.0)
 
 - **One generated reference surface: `docs/architecture/inventory.html` retired; its agents, gates and tier tables render
   as `docs/wiki/Agents-And-Gates.md`** (#892; D-006). `scripts/build_inventory.py`, `build_inventory_selftest.py`, the
@@ -2520,7 +2520,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-03 (release v1.116.0)
 
 - **`plugins/rails-flow/scripts/docs_layout.py`: three gaps a real 98-file rework exposed, fixed** (#900). (1) A code file left in
   `docs/` while its neighbours move is a `# WARNING` in the plan naming both, and a PROBLEM on `--write` — never `0 problem(s)`
@@ -4626,7 +4626,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-03 (release v1.116.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 31 → 32** — `inventory_data.py`
   (#892) is a new copy; `check_shared_shapes.py` refuses the stale number.
@@ -9635,7 +9635,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-03 (release v1.116.0)
 
 - **`plugins/design-flow/scripts/check_token_drift.py`: a bridge is classified by the owner of its role; the knob-expanded
   radius ramp is system-owned when the pack sets the knob** (#899, the residual of #814). `setup` emits `--color-<r>: var(--<r>)`
