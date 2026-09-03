@@ -2358,6 +2358,50 @@ GUARDS: tuple[Guard, ...] = (
             ),
         ),
     ),
+    # #849. The shipped readiness gate for a project's own tracker (the marketplace has issue_graph.py).
+    Guard(
+        name="check_issue_ready",
+        subject="plugins/rails-flow/scripts/check_issue_ready.py",
+        selftest="plugins/rails-flow/scripts/check_issue_ready.py",
+        mutations=(
+            Mutation(
+                "an issue whose dependency is still open is no longer refused",
+                "        open_waits = sorted(w for w in waits if w in open_numbers)",
+                "        open_waits = []",
+                "an issue whose depends-on is OPEN is refused",
+            ),
+            Mutation(
+                "a closed issue is started again",
+                '        if record.get("state", "").upper() != "OPEN":',
+                "        if False:",
+                "a closed issue is refused",
+            ),
+            Mutation(
+                "other fences stop being stripped, so a Ruby `depends_on:` in a code sample reads as an edge",
+                '        text = _ANY_FENCE.sub("", body)  # strip every other fence -- `depends_on: :account` lives there',
+                "        text = body",
+                "a fenced SAMPLE of the syntax is not an edge",
+            ),
+            Mutation(
+                "`blocks:` on another issue is no longer read as a dependency",
+                '        for target in parse_edges(issue.get("body", "")).get("blocks", set()):',
+                "        for target in ():",
+                "declared on ANOTHER open issue is read as a dependency",
+            ),
+            Mutation(
+                "edges inside the named set stop being satisfied by the branch, so grouping is refused",
+                "        waits -= named_set  # edges inside the named set are satisfied by the branch",
+                "        pass",
+                "edges between the named issues are satisfied by the branch",
+            ),
+            Mutation(
+                "naming no issue becomes a vacuous READY",
+                '    if not named:\n        return [], ["no issue named"]',
+                "    if False:\n        return [], []",
+                "naming no issue is a refusal",
+            ),
+        ),
+    ),
     Guard(
         name="maintainer_doctor",
         subject="scripts/maintainer_doctor.py",
