@@ -2446,6 +2446,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`/rails-flow:graph` draws the architecture** (#850). `docs/architecture/index.html` called itself a
+  "self-contained interactive view" and drew nothing — zero SVG, zero canvas, a styled list over the
+  embedded JSON; the only picture was `graph.md`'s mermaid, capped and rendered only where mermaid is
+  supported. Maintainer: *"it is not visual now."* `plugins/rails-flow/scripts/architecture_graph.py`
+  now renders the graph at generation time as an **inline SVG layered layout** — one column per layer
+  in request order (web → domain → async → ui), rows in the graph's own order, edges as paths coloured
+  by kind, a backward edge bowed out so it stays visible — with no library and no network, which the
+  page's own header already promised. Click a node to trace its edges, pick a flow to light its path;
+  the list and detail views remain beneath it. Deterministic on purpose: a layered picture diffs, a
+  force layout does not. Eleven fixtures on a synthetic graph (every node placed once, columns follow
+  `LAYER_ORDER`, an edge to a node outside the graph draws nothing rather than crashing, an id carrying
+  `<` is escaped so the SVG parses, the page embeds it); five mutations, all caught.
+
 ### 1.31.0 — 2026-09-02 (release v1.108.0)
 
 - **The SessionStart drift nudge reads the manifest curators actually write** (#838).
