@@ -2918,6 +2918,21 @@ GUARDS: tuple[Guard, ...] = (
             "plugins",
         ),
         mutations=(
+            # #849 part 3. A diagnostic never mutates the project -- asserted, not assumed.
+            Mutation(
+                "a check that writes during the audit is no longer an ERROR",
+                "        changed = tree_delta(before, tree_state(project))\n        if changed:",
+                "        changed = []\n        if changed:",
+                "a check that WRITES during the audit is ERROR",
+            ),
+            Mutation(
+                "the mutation is reported without naming the path that moved",
+                '                          f"this check MODIFIED the project during an audit — a diagnostic must never write: "\n'
+                '                          f"{\', \'.join(changed[:6])}{\' …\' if len(changed) > 6 else \'\'}",',
+                '                          f"this check MODIFIED the project during an audit — a diagnostic must never write",',
+                "naming the path it wrote",
+            ),
+
             # #828. Every non-zero exit was FAIL. A check's own n/a (exit 3) and cannot-run (exit 2)
             # verdicts were graded FAIL, counted, and routed to the project's tracker.
             Mutation(

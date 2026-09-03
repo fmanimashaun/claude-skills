@@ -28,9 +28,16 @@ look procedural.
   pass, and you say so every time. This is the rule that found the most. (`project_gates.py` splits
   did-not-run into **not-applicable** and **ERROR**, which is why its report has four columns; the
   discipline is the same.)
-- **Never repair autonomously.** Every setup command below is idempotent and several propose diffs.
-  Show the diff and wait. Do not "fix" what may be a deliberate choice.
-- Ask before installing anything, before touching CI config, and before any commit.
+- **A diagnostic never mutates the project.** Every step below *reads*. `project_gates.py` asserts
+  it: a check that writes a file while being asked a question comes back as **ERROR**, routed
+  upstream, naming the path — that is a defect in the check, not a finding about this project.
+- **Repairs are either SAFE or they wait.** The SAFE set is small and closed, the same shape as the
+  marketplace's own doctor `--fix`: fast-forwarding a local ref that is behind its remote; pulling the
+  integration branch when it is 0 ahead; making an already-installed git-hook nudge executable. Each
+  is applied only if the user asked for repairs, each never rewrites history, resets, or cleans, and
+  each is listed under **Repaired (safe changes only)** in the report. Everything else — a scaffolded
+  file, a regenerated artefact, `CLAUDE.md`, CI config, an install, any commit — is shown as a diff
+  with a one-line reason and **waits**. Do not "fix" what may be a deliberate choice.
 
 ## 1. Update, restart, and confirm what you actually got
 
@@ -139,6 +146,9 @@ pin 41 releases stale — and a stale pin produces no error, so nobody would eve
 ## 7. Report
 
 One table: **area | state | evidence (command or file) | action needed.** Then, separately:
+
+0. **Repaired (safe changes only)** — each SAFE repair applied, one line each, or "none". Never fold
+   a repair into the table; a reader must be able to see what the audit changed without diffing.
 
 1. Everything in the **did-not-run** column and why. **This section is not optional** — if it is empty,
    say "none" rather than omitting it.
