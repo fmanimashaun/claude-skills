@@ -93,5 +93,11 @@ GUARD = Guard(
             '                    "misplaced": None})',
             "reported misplaced",
         ),
+        Mutation(
+            "a memo-shaped file without frontmatter is skipped in silence, so the count is short and nobody knows",
+            "            if p.parent != d or MEMO_SHAPED.match(p.name):\n                UNREADABLE.append(p)",
+            "            if False:\n                UNREADABLE.append(p)",
+            "reported unreadable",
+        ),
     ),
 )

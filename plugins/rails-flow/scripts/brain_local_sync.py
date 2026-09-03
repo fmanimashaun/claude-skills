@@ -120,16 +120,26 @@ def memo_path(memo_type: str, slug: str) -> Path:
     return MEMOS / memo_type / f"{slug}.md"
 
 
+MEMO_SHAPED = re.compile(r"^(feedback|decision)[-_]")   # a root file named like a memo IS a memo, frontmatter or not
+UNREADABLE: list[Path] = []               # memo-shaped files the last brain_memos() could not read; reported, never silent
+
+
 def brain_memos(root: Path) -> list[dict]:
     """Memos under memos/<type>/ (canonical) plus any at the brain root (legacy). A root memo is read
-    like any other and carries `misplaced`, the path it belongs at, so --status can say so."""
+    like any other and carries `misplaced`, the path it belongs at, so --status can say so. A file
+    that is memo-shaped -- under memos/, or named feedback_*/decision_* -- but has no frontmatter `name`
+    is recorded in UNREADABLE: it is a memo the bridge cannot carry, which is a finding, not silence
+    (Retask-platform had one of four, and the first count said three)."""
     out: list[dict] = []
+    UNREADABLE.clear()
     d = root / BRAIN
     if not d.is_dir():
         return out
     for p in sorted(d.glob("memos/*/*.md")) + sorted(d.glob("*.md")):
         meta, body = parse_frontmatter(p.read_text(encoding="utf-8"))
         if not meta or "name" not in meta:
+            if p.parent != d or MEMO_SHAPED.match(p.name):
+                UNREADABLE.append(p)
             continue                      # STATUS.md, MEMORY.md, README.md, the CLAUDE.md history: not memos
         memo_type = p.parent.name if p.parent.parent == d / "memos" else str(meta.get("type", ""))
         at_root = p.parent == d
@@ -176,7 +186,7 @@ def plan(brain: list[dict], local: list[dict]) -> dict:
     excluded = {t: sum(1 for l in local if l["type"] == t) for t in sorted(NEVER_SYNCED | LISTED_NOT_PROPOSED)}
     misplaced = [m for m in brain if m.get("misplaced")]
     return {"inbound": inbound, "outbound": outbound, "diverged": diverged, "excluded": excluded,
-            "misplaced": misplaced, "brain": len(brain), "local": len(local)}
+            "misplaced": misplaced, "unreadable": list(UNREADABLE), "brain": len(brain), "local": len(local)}
 
 
 def pointer_text(memo: dict, rel: str) -> str:
@@ -237,7 +247,7 @@ def propose(root: Path, p: dict) -> list[tuple[str, str, str]]:
 
 def brief(p: dict) -> str:
     a, b = len(p["inbound"]), len(p["outbound"])
-    if not a and not b and not p["diverged"] and not p.get("misplaced"):
+    if not a and not b and not p["diverged"] and not p.get("misplaced") and not p.get("unreadable"):
         return "brain: in sync with local memory"
     parts = []
     if a:
@@ -248,6 +258,8 @@ def brief(p: dict) -> str:
         parts.append(f"{len(p['diverged'])} diverged")
     if p.get("misplaced"):
         parts.append(f"{len(p['misplaced'])} memo(s) at the brain root (belong under memos/<type>/)")
+    if p.get("unreadable"):
+        parts.append(f"{len(p['unreadable'])} memo(s) without frontmatter (unreadable)")
     return "brain: " + " · ".join(parts)
 
 
@@ -265,6 +277,9 @@ def report(root: Path, store: Path, p: dict) -> str:
     if p["misplaced"]:
         out.append(f"misplaced (memos at the brain root; they belong under memos/<type>/): {len(p['misplaced'])}")
         out += [f"  ~ {m['path'].relative_to(root).as_posix()}  →  {m['misplaced'].as_posix()}" for m in p["misplaced"]]
+    if p.get("unreadable"):
+        out.append(f"unreadable (memo-shaped, no frontmatter `name` — the bridge cannot carry them; add the frontmatter): {len(p['unreadable'])}")
+        out += [f"  x {q.relative_to(root).as_posix()}" for q in p["unreadable"]]
     return "\n".join(out)
 
 
@@ -301,7 +316,8 @@ def main(argv: list[str]) -> int:
                           "inbound": [m["name"] for m in p["inbound"]],
                           "outbound": [l["name"] for l in p["outbound"]],
                           "diverged": [m["key"] for m, _ in p["diverged"]],
-                          "misplaced": [m["path"].relative_to(root).as_posix() for m in p["misplaced"]]}, indent=2))
+                          "misplaced": [m["path"].relative_to(root).as_posix() for m in p["misplaced"]],
+                          "unreadable": [q.relative_to(root).as_posix() for q in p["unreadable"]]}, indent=2))
         return 0
     if a.pull:
         r = pull(root, store, p, a.write)
@@ -440,8 +456,17 @@ def selftest() -> int:
               and [m["misplaced"].as_posix() for m in p_root["misplaced"]] == ["docs/brain/memos/feedback/old-style.md"]
               and "at the brain root" in brief(p_root))
         (root / BRAIN / "feedback_old-style.md").unlink()
+        # A memo-shaped file with no frontmatter is a memo the bridge cannot carry: reported, not skipped.
+        (root / BRAIN / "feedback_no-frontmatter.md").write_text("# One branch per defect\n\n`[observed]` — text only.\n", encoding="utf-8")
+        p_bad = plan(brain_memos(root), local_memories(store))
+        check("a memo-shaped file without frontmatter is reported unreadable, not silently skipped",
+              [q.name for q in p_bad["unreadable"]] == ["feedback_no-frontmatter.md"] and "without frontmatter" in brief(p_bad)
+              and not any(m["name"] == "feedback_no-frontmatter" for m in brain_memos(root)))
+        (root / BRAIN / "feedback_no-frontmatter.md").unlink()
+        check("STATUS.md without frontmatter is NOT unreadable — it is not memo-shaped",
+              plan(brain_memos(root), local_memories(store))["unreadable"] == [])
         check("brief names both directions", "1 diverged" in brief(p3) and brief(p) .startswith("brain: 1 memo(s) not in local memory"))
-        check("brief says in sync when nothing moves", brief({"inbound": [], "outbound": [], "diverged": [], "misplaced": []}) == "brain: in sync with local memory")
+        check("brief says in sync when nothing moves", brief({"inbound": [], "outbound": [], "diverged": [], "misplaced": [], "unreadable": []}) == "brain: in sync with local memory")
 
         # Exit codes through main(): n/a is 3, never a pass.
         check("no brain under the root is n/a (exit 3)", main(["--status", "--root", str(Path(td) / "nowhere"), "--store", str(store)]) == 3)
