@@ -2446,7 +2446,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.33.0 — 2026-09-03 (release v1.110.0)
 
 - **`/rails-flow:issues` verifies an issue's claims before editing, refuses an issue that waits on open
   work, and groups issues that are one change wearing several numbers** (#849, part 2 of 3 — the
@@ -4427,7 +4427,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 1.56.1 — 2026-09-03 (release v1.110.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 25 → 26,
   reach 11 → 12** — `check_issue_ready.py` (#849) is a new copy; `check_shared_shapes.py` refuses the
