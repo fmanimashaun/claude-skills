@@ -715,7 +715,7 @@ dump of the catalogue.
 
 **A category tile's image is never the label.** `alt=""` on the image and the name as real text, or the
 tile announces as an unlabelled link. The reel's cards are the
-[Product card](components.md#product-card) entry — one link each, and no add-to-basket button inside
+[Product card](components-commerce.md#product-card) entry — one link each, and no add-to-basket button inside
 one, which is a content-model rule rather than a preference.
 
 ## Category
@@ -743,7 +743,7 @@ A filtered, sorted list. Answers *"which of these?"*
 **Filters must be a form that works without JavaScript.** Enhance with Turbo, but the `GET` submit is
 the baseline: filter state then lives in the URL, which makes results shareable, back-button-correct,
 and reachable by anyone whose JS failed to load. The panel itself — the per-group disclosures, the
-mobile drawer, the applied-filter chips — is [Filter panel](components.md#filter-panel), and it is the
+mobile drawer, the applied-filter chips — is [Filter panel](components-commerce.md#filter-panel), and it is the
 same mechanism the CRUD index uses.
 
 **Announce the result count.** After a filter changes, a sighted user sees the grid redraw; nobody else
@@ -843,7 +843,7 @@ one.** A slide-over cart keeps the customer in the catalog; this page is the add
 full-width view a checkout starts from, and it is where the promo code belongs. Both render the same
 lines and the same summary, so the line rules — the naming of a remove control, the live-region total,
 what happens when a quantity changes, and why removal is an undo rather than a confirmation — live in
-one place: [Cart drawer and cart line](components.md#cart-drawer-and-cart-line). Do not restate them
+one place: [Cart drawer and cart line](components-commerce.md#cart-drawer-and-cart-line). Do not restate them
 per surface, and do not build a second dialog for the drawer; it is the documented Modal at
 `placement: :right`.
 
@@ -996,7 +996,7 @@ it has no current plan to compare against — which is why this is a separate an
 variant of that one.
 
 The grid itself is the
-[Plan comparison / feature matrix](components.md#plan-comparison--feature-matrix) entry; what this
+[Plan comparison / feature matrix](components-commerce.md#plan-comparison--feature-matrix) entry; what this
 anatomy adds is **state** — which plan is current, what a change costs, and when it takes effect.
 
 ```erb
@@ -1099,7 +1099,7 @@ irreversible things.
 
 **Never a full card number, anywhere on this page.** Brand plus last four, from the provider's token
 — the full number should not be in your database to render. Full rule in
-[components.md](components.md#saved-payment-methods).
+[components.md](components-commerce.md#saved-payment-methods).
 
 **An empty invoice list is a real state.** A trial account has no invoices and that is not an error;
 `Ui::EmptyState` saying so beats an empty table with headers.
