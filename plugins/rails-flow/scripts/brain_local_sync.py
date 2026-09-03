@@ -3,7 +3,8 @@
 
 Two stores, one shape, no wire between them:
 
-  docs/brain/<type>_<slug>.md          the project's memory: committed, reviewed, the team's truth
+  docs/brain/memos/<type>/<slug>.md    the project's memory: committed, reviewed, the team's truth
+                                       (a memo at the brain ROOT is legacy: read, and reported misplaced)
   ~/.claude/projects/<slug>/memory/    Claude Code's auto-memory: per machine, per user, uncommitted;
                                        its MEMORY.md index is what a session loads at start
 
@@ -55,7 +56,30 @@ def store_dir(project_root: Path, home: Path) -> Path:
 
 def _unquote(v: str) -> str:
     v = v.strip()
-    return v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'" else v
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        inner = v[1:-1]
+        return inner.replace('\\"', '"').replace("\\\\", "\\") if v[0] == '"' else inner
+    return v
+
+
+def _yaml_scalar(v: str) -> str:
+    """Plain when YAML allows it; double-quoted (escaped) when the line would otherwise be misread —
+    a `: ` inside, a leading quote or `#`, or surrounding whitespace."""
+    if v and ": " not in v and " #" not in v and v[0] not in "\"'#&*!|>%@`[]{},-?" and v == v.strip() and not v.endswith(":"):
+        return v
+    return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+PROVENANCE_PREFIX = "_Provenance: [observed] — brought from a local Claude memory by"
+
+
+def core_body(body: str) -> str:
+    """The body without the trailer this tool appends when a proposal is accepted, so an accepted
+    memo compares equal to the memory it came from instead of reading as diverged forever."""
+    lines = body.rstrip("\n").split("\n")
+    if lines and lines[-1].startswith(PROVENANCE_PREFIX):
+        lines = lines[:-1]
+    return "\n".join(lines).strip("\n")
 
 
 def parse_frontmatter(text: str) -> tuple[dict | None, str]:
@@ -89,18 +113,30 @@ def key_of(name: str) -> str:
     return PREFIX.sub("", name.strip())
 
 
+MEMOS = BRAIN / "memos"                   # memos/<type>/<slug>.md -- the type is the directory
+
+
+def memo_path(memo_type: str, slug: str) -> Path:
+    return MEMOS / memo_type / f"{slug}.md"
+
+
 def brain_memos(root: Path) -> list[dict]:
+    """Memos under memos/<type>/ (canonical) plus any at the brain root (legacy). A root memo is read
+    like any other and carries `misplaced`, the path it belongs at, so --status can say so."""
     out: list[dict] = []
     d = root / BRAIN
     if not d.is_dir():
         return out
-    for p in sorted(d.glob("*.md")):
+    for p in sorted(d.glob("memos/*/*.md")) + sorted(d.glob("*.md")):
         meta, body = parse_frontmatter(p.read_text(encoding="utf-8"))
         if not meta or "name" not in meta:
             continue                      # STATUS.md, MEMORY.md, README.md, the CLAUDE.md history: not memos
+        memo_type = p.parent.name if p.parent.parent == d / "memos" else str(meta.get("type", ""))
+        at_root = p.parent == d
         out.append({"name": str(meta["name"]), "key": key_of(str(meta["name"])),
-                    "description": str(meta.get("description", "")), "type": str(meta.get("type", "")),
-                    "path": p, "body": body.strip("\n")})
+                    "description": str(meta.get("description", "")), "type": memo_type,
+                    "path": p, "body": body.strip("\n"),
+                    "misplaced": (memo_path(memo_type or "feedback", key_of(str(meta["name"]))) if at_root else None)})
     return out
 
 
@@ -132,22 +168,23 @@ def plan(brain: list[dict], local: list[dict]) -> dict:
     diverged = []
     for m in brain:
         l = by_local.get(m["key"])
-        if l is not None and not l["pointer"] and l["body"] != m["body"]:
+        if l is not None and not l["pointer"] and core_body(l["body"]) != core_body(m["body"]):
             diverged.append((m, l))
     outbound = [l for l in local
                 if l["key"] not in by_brain and not l["pointer"]
                 and l["type"] in TYPE_TO_MEMO and l["type"] not in NEVER_SYNCED]
     excluded = {t: sum(1 for l in local if l["type"] == t) for t in sorted(NEVER_SYNCED | LISTED_NOT_PROPOSED)}
+    misplaced = [m for m in brain if m.get("misplaced")]
     return {"inbound": inbound, "outbound": outbound, "diverged": diverged, "excluded": excluded,
-            "brain": len(brain), "local": len(local)}
+            "misplaced": misplaced, "brain": len(brain), "local": len(local)}
 
 
 def pointer_text(memo: dict, rel: str) -> str:
     """The local memory a brain memo becomes: the memo's OWN description (that line is what recall
     matches on), a body that is one pointer, and a marker so the tool recognises its own files."""
     local_type = MEMO_TO_LOCAL.get(memo["type"], "project")
-    desc = memo["description"].replace("\\", "\\\\").replace('"', '\\"')
-    return (f"---\nname: {memo['name']}\ndescription: \"{desc}\"\nmetadata:\n  type: {local_type}\n"
+    desc = _yaml_scalar(memo["description"])
+    return (f"---\nname: {memo['name']}\ndescription: {desc}\nmetadata:\n  type: {local_type}\n"
             f"  {POINTER_KEY}: true\n  source: {rel}\n---\n\n"
             f"Repo memo: `{rel}`. The repo copy is authoritative; read it before acting on this line.\n")
 
@@ -160,11 +197,11 @@ def memo_text(local: dict) -> tuple[str, str, str]:
     """The brain memo a local memory would become. Body VERBATIM; provenance appended, not merged in."""
     memo_type = TYPE_TO_MEMO[local["type"]]
     slug = local["key"]
-    rel = f"{BRAIN.as_posix()}/{memo_type}_{slug}.md"
-    text = (f"---\nname: {memo_type}-{slug}\ndescription: {local['description']}\ntype: {memo_type}\n---\n\n"
-            f"{local['body']}\n\n_Provenance: [observed] — brought from a local Claude memory by "
+    rel = memo_path(memo_type, slug).as_posix()
+    text = (f"---\nname: {memo_type}-{slug}\ndescription: {_yaml_scalar(local['description'])}\ntype: {memo_type}\n---\n\n"
+            f"{local['body']}\n\n{PROVENANCE_PREFIX} "
             f"`/rails-flow:brain-sync local`; body verbatim, {local['path'].name}._\n")
-    return rel, text, index_line(f"{memo_type}-{slug}", f"{memo_type}_{slug}.md", local["description"])
+    return rel, text, index_line(f"{memo_type}-{slug}", f"memos/{memo_type}/{slug}.md", local["description"])
 
 
 # ----------------------------------------------------------------------------- modes
@@ -200,7 +237,7 @@ def propose(root: Path, p: dict) -> list[tuple[str, str, str]]:
 
 def brief(p: dict) -> str:
     a, b = len(p["inbound"]), len(p["outbound"])
-    if not a and not b and not p["diverged"]:
+    if not a and not b and not p["diverged"] and not p.get("misplaced"):
         return "brain: in sync with local memory"
     parts = []
     if a:
@@ -209,6 +246,8 @@ def brief(p: dict) -> str:
         parts.append(f"{b} local lesson(s) not in the brain (brain-sync local --propose)")
     if p["diverged"]:
         parts.append(f"{len(p['diverged'])} diverged")
+    if p.get("misplaced"):
+        parts.append(f"{len(p['misplaced'])} memo(s) at the brain root (belong under memos/<type>/)")
     return "brain: " + " · ".join(parts)
 
 
@@ -223,6 +262,9 @@ def report(root: Path, store: Path, p: dict) -> str:
     out.append(f"diverged (same lesson, different bodies — both sides shown, you adjudicate): {len(p['diverged'])}")
     for m, l in p["diverged"]:
         out.append(f"  ! {m['key']}: repo {m['path'].relative_to(root).as_posix()} vs local {l['path']}")
+    if p["misplaced"]:
+        out.append(f"misplaced (memos at the brain root; they belong under memos/<type>/): {len(p['misplaced'])}")
+        out += [f"  ~ {m['path'].relative_to(root).as_posix()}  →  {m['misplaced'].as_posix()}" for m in p["misplaced"]]
     return "\n".join(out)
 
 
@@ -258,7 +300,8 @@ def main(argv: list[str]) -> int:
         print(json.dumps({"brain": p["brain"], "local": p["local"], "excluded": p["excluded"],
                           "inbound": [m["name"] for m in p["inbound"]],
                           "outbound": [l["name"] for l in p["outbound"]],
-                          "diverged": [m["key"] for m, _ in p["diverged"]]}, indent=2))
+                          "diverged": [m["key"] for m, _ in p["diverged"]],
+                          "misplaced": [m["path"].relative_to(root).as_posix() for m in p["misplaced"]]}, indent=2))
         return 0
     if a.pull:
         r = pull(root, store, p, a.write)
@@ -300,6 +343,13 @@ def selftest() -> int:
     meta, body = parse_frontmatter('---\nname: zsh\ndescription: "quoted: line"\nmetadata:\n  type: feedback\n  x: 1\n---\n\nbody\n')
     check("frontmatter parses a quoted description and one nested level",
           meta == {"name": "zsh", "description": "quoted: line", "metadata": {"type": "feedback", "x": "1"}} and body.strip() == "body", repr(meta))
+    check("an escaped quote in a double-quoted description is unescaped, not leaked",
+          parse_frontmatter('---\nname: q\ndescription: "it said \\"up to date\\" and lied"\n---\n\nb\n')[0]["description"] == 'it said "up to date" and lied')
+    check("a description containing ': ' is quoted in a proposed memo; a plain one is not",
+          _yaml_scalar("Rule: do x") == '"Rule: do x"' and _yaml_scalar("Do x, then y") == "Do x, then y"
+          and _yaml_scalar('say "hi"') == 'say "hi"' and _yaml_scalar('"quoted" first') == '"\\"quoted\\" first"')
+    check("the provenance trailer is not part of the body that divergence compares",
+          core_body("Wrap it.\n\n**Why:** x\n\n" + PROVENANCE_PREFIX + " brain-sync; body verbatim, f.md._\n") == "Wrap it.\n\n**Why:** x")
     check("a prefixed brain name and an unprefixed local name are the same lesson",
           key_of("feedback-zsh-word-split") == key_of("zsh-word-split") == "zsh-word-split")
 
@@ -307,9 +357,10 @@ def selftest() -> int:
         root, store = Path(td) / "proj", Path(td) / "store"
         (root / BRAIN).mkdir(parents=True); store.mkdir()
         MEMO = "---\nname: feedback-gate-the-commit\ndescription: Gate the commit on the check, not on the print\ntype: feedback\n---\n\nWrap the check in `if`.\n\n**Why:** a FAIL printed and the push ran anyway.\n"
-        (root / BRAIN / "feedback_gate-the-commit.md").write_text(MEMO, encoding="utf-8")
+        (root / MEMOS / "feedback").mkdir(parents=True)
+        (root / MEMOS / "feedback" / "gate-the-commit.md").write_text(MEMO, encoding="utf-8")
         (root / BRAIN / "STATUS.md").write_text("# Status\n_Updated:_ today\n", encoding="utf-8")
-        (root / BRAIN / "MEMORY.md").write_text("- [Gate the commit](feedback_gate-the-commit.md) — gate it\n", encoding="utf-8")
+        (root / BRAIN / "MEMORY.md").write_text("- [Gate the commit](memos/feedback/gate-the-commit.md) — gate it\n", encoding="utf-8")
         (store / "zsh-does-not-word-split.md").write_text(
             '---\nname: zsh-does-not-word-split\ndescription: "The Bash tool runs zsh; an unquoted $var is ONE word"\nmetadata:\n  type: feedback\n---\n\nUse `${=var}` or Python.\n', encoding="utf-8")
         (store / "who-i-am.md").write_text('---\nname: who-i-am\ndescription: "the maintainer prefers terse replies"\nmetadata:\n  type: user\n---\n\npersonal\n', encoding="utf-8")
@@ -327,9 +378,16 @@ def selftest() -> int:
         before = snapshot(root) | {f"store/{k}": v for k, v in snapshot(store).items()}
         items = propose(root, p)
         check("propose renders the local body VERBATIM under a brain name",
-              len(items) == 1 and items[0][0] == "docs/brain/feedback_zsh-does-not-word-split.md"
+              len(items) == 1 and items[0][0] == "docs/brain/memos/feedback/zsh-does-not-word-split.md"
               and "Use `${=var}` or Python." in items[0][1] and "name: feedback-zsh-does-not-word-split" in items[0][1], items[0][0] if items else "no items")
         check("propose writes nothing", snapshot(root) | {f"store/{k}": v for k, v in snapshot(store).items()} == before)
+        rel, text, _ = items[0]
+        (root / rel).write_text(text, encoding="utf-8")            # the human accepts it, as /rails-flow:brain would
+        p_acc = plan(brain_memos(root), local_memories(store))
+        check("an accepted proposal is neither inbound, outbound nor diverged",
+              not any(m["key"] == "zsh-does-not-word-split" for m in p_acc["inbound"]) and not p_acc["outbound"] and p_acc["diverged"] == [],
+              f"diverged={[(m['key']) for m, _ in p_acc['diverged']]} outbound={[l['name'] for l in p_acc['outbound']]}")
+        (root / rel).unlink()
 
         dry = pull(root, store, p, write=False)
         check("a dry pull plans one pointer and one index line and writes nothing",
@@ -339,9 +397,9 @@ def selftest() -> int:
         text = target.read_text(encoding="utf-8")
         check("pull writes a pointer memory named after the memo", [t.name for t in r["written"]] == [target.name] and target.is_file())
         check("the pointer carries the memo's own description verbatim",
-              'description: "Gate the commit on the check, not on the print"' in text, text)
+              "description: Gate the commit on the check, not on the print\n" in text, text)
         check("the pointer's body names the repo file and marks itself",
-              "Repo memo: `docs/brain/feedback_gate-the-commit.md`" in text and f"{POINTER_KEY}: true" in text and "type: feedback" in text)
+              "Repo memo: `docs/brain/memos/feedback/gate-the-commit.md`" in text and f"{POINTER_KEY}: true" in text and "type: feedback" in text)
         check("the pointer body is NOT the memo body — a pointer, not a copy", "a FAIL printed" not in text)
         idx = (store / "MEMORY.md").read_text(encoding="utf-8")
         check("MEMORY.md gains exactly one line for it", idx.count("(feedback-gate-the-commit.md)") == 1 and idx.startswith("- [zsh]"))
@@ -358,24 +416,32 @@ def selftest() -> int:
         check("a pointer memory is never proposed outbound", all(l["name"] != "feedback-gate-the-commit" for l in p2["outbound"]))
 
         # A harness-written file with the same lesson and a different body: never overwritten, reported.
-        (root / BRAIN / "feedback_zsh-does-not-word-split.md").write_text(
+        (root / MEMOS / "feedback" / "zsh-does-not-word-split.md").write_text(
             "---\nname: feedback-zsh-does-not-word-split\ndescription: zsh does not word-split\ntype: feedback\n---\n\nA different body, edited in the repo.\n", encoding="utf-8")
         p3 = plan(brain_memos(root), local_memories(store))
         check("the proposed memo landing in the brain matches the local memory by slug — no duplicate inbound",
               not any(m["key"] == "zsh-does-not-word-split" for m in p3["inbound"]) and not p3["outbound"])
-        check("a diverged pair reports both sides", len(p3["diverged"]) == 1 and p3["diverged"][0][0]["path"].name == "feedback_zsh-does-not-word-split.md"
+        check("a diverged pair reports both sides", len(p3["diverged"]) == 1 and p3["diverged"][0][0]["path"].name == "zsh-does-not-word-split.md"
               and p3["diverged"][0][1]["path"].name == "zsh-does-not-word-split.md")
         local_bytes = (store / "zsh-does-not-word-split.md").read_bytes()
         pull(root, store, p3, write=True)
         check("pull never overwrites a file it did not write", (store / "zsh-does-not-word-split.md").read_bytes() == local_bytes)
-        (root / BRAIN / "feedback_raw-note.md").write_text("---\nname: feedback-raw-note\ndescription: a memo\ntype: feedback\n---\n\nbody\n", encoding="utf-8")
+        (root / MEMOS / "feedback" / "raw-note.md").write_text("---\nname: feedback-raw-note\ndescription: a memo\ntype: feedback\n---\n\nbody\n", encoding="utf-8")
         (store / "feedback-raw-note.md").write_text("free text the harness wrote, no frontmatter\n", encoding="utf-8")
         raw_bytes = (store / "feedback-raw-note.md").read_bytes()
         r4 = pull(root, store, plan(brain_memos(root), local_memories(store)), write=True)
         check("a same-named file without frontmatter is kept, not overwritten, and reported",
               (store / "feedback-raw-note.md").read_bytes() == raw_bytes and [t.name for t in r4["skipped"]] == ["feedback-raw-note.md"] and r4["written"] == [])
+        # A legacy memo at the brain root: read like any other, and reported with the path it belongs at.
+        (root / BRAIN / "feedback_old-style.md").write_text("---\nname: feedback-old-style\ndescription: an old memo\ntype: feedback\n---\n\nold\n", encoding="utf-8")
+        p_root = plan(brain_memos(root), local_memories(store))
+        check("a memo at the brain root is read and reported misplaced with its memos/<type>/ path",
+              any(m["name"] == "feedback-old-style" for m in brain_memos(root))
+              and [m["misplaced"].as_posix() for m in p_root["misplaced"]] == ["docs/brain/memos/feedback/old-style.md"]
+              and "at the brain root" in brief(p_root))
+        (root / BRAIN / "feedback_old-style.md").unlink()
         check("brief names both directions", "1 diverged" in brief(p3) and brief(p) .startswith("brain: 1 memo(s) not in local memory"))
-        check("brief says in sync when nothing moves", brief({"inbound": [], "outbound": [], "diverged": []}) == "brain: in sync with local memory")
+        check("brief says in sync when nothing moves", brief({"inbound": [], "outbound": [], "diverged": [], "misplaced": []}) == "brain: in sync with local memory")
 
         # Exit codes through main(): n/a is 3, never a pass.
         check("no brain under the root is n/a (exit 3)", main(["--status", "--root", str(Path(td) / "nowhere"), "--store", str(store)]) == 3)

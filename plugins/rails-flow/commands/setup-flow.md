@@ -272,8 +272,11 @@ idempotent; never overwrite a populated file):
   **reversal condition** (what would make us revisit it).
 - **`HYPOTHESES.md`** — lifecycle `candidate → proposed → confirmed | refuted`, each with a
   dated evidence list and, on confirm, a pointer to the `DECISIONS` entry it produced.
-- **`MEMORY.md`** — one-line index of `feedback_*` / `decision_*` memos (link + 8–15 word
-  summary); the SessionStart hook injects its top into every session.
+- **`memos/<type>/<slug>.md`** — one lesson or decision each (`memos/feedback/`, `memos/decision/`);
+  the type is the directory. A memo at the brain root is misplaced — `brain-sync local --status` names
+  the path it belongs at; move it and fix its index line.
+- **`MEMORY.md`** — one-line index of the memos (link + 8–15 word summary); the SessionStart hook
+  injects its top into every session.
 
 **Provenance** — tag every non-obvious claim in STATUS / PROGRESS / hypothesis-evidence with one:
 `[observed]` (happened or measured), `[decided]` (backed by a DECISIONS entry), `[assumed]`
