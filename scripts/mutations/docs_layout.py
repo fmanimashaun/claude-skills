@@ -114,9 +114,28 @@ GUARD = Guard(
         ),
         Mutation(
             "a directory that moves whole leaves every `docs/<old>/` mention pointing at nothing",
-            '    for old_dir, new_dir in dir_moves(applied).items():             # directory mentions follow the files',
+            '    for old_dir, new_dir in dir_moves(applied, [r["path"] for r in rows]).items():',
             '    for old_dir, new_dir in {}.items():',
             "has its MENTIONS rewritten",
+        ),
+        # #900, reported from a real 98-file tree after v1.114.0: three things wrong, none counted as a problem.
+        Mutation(
+            "directory moves are computed at the top level only, so a nested moved directory's mentions dangle",
+            '        for depth in range(2, len(old_parts)):                         # docs/<a>/, docs/<a>/<b>/, ...',
+            '        for depth in range(2, min(3, len(old_parts))):',
+            "a NESTED directory that moves whole is rewritten too",
+        ),
+        Mutation(
+            "a mention of a path that never moved is re-pointed anyway, so a manifest row for a deleted source names a path that never existed",
+            '                left_alone.append(old_dir + rest)                            # never moved, never existed: left, named\n                out.append(old_dir + rest); i = j + len(old_dir) + len(rest)',
+            '                out.append(new_dir + rest); i = j + len(old_dir) + len(rest)',
+            "a row whose source never existed is left alone and named",
+        ),
+        Mutation(
+            "code left beside moved neighbours is not counted, so --write prints 0 problem(s) over a broken script",
+            '    for path, neighbours in p.get("code_left", []):                  # #900 gap 1: not silent, counted',
+            '    for path, neighbours in []:',
+            "counts the code left beside moved neighbours",
         ),
     ),
 )

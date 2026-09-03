@@ -172,7 +172,7 @@ maintainer would otherwise have to ask for.
 skills/              the seven skills — the doctrine that ships
 plugins/             rails-flow · qa-flow · pipeline · design-flow
 dist/                packaged .skill files for claude.ai
-docs/                architecture, coverage and inventory pages
+docs/                architecture, coverage and wiki pages
 scripts/             the gates that keep all of the above honest
 .claude/             maintainer tooling — not distributed
 ```

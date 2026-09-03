@@ -114,16 +114,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # claim about work nobody did — the coverage-gap class. It was registered TWICE for a while, which
     # inflates the sweep count; GATE names are asserted unique in the selftest now.
     ("coverage artifact selftest", ("python3", "scripts/build_coverage_artifact.py", "--selftest")),
-    # #509, and the same shape a second time: `docs/architecture/inventory.html` is COMMITTED, so it goes stale
-    # the moment an agent, a command, a gate or a version moves — which is most PRs. Registered as
-    # both halves for the reason stated above: the selftest proves the guards fire and stay silent
-    # on fixtures, the drift check asserts the page we actually ship is a clean build.
-    #
-    # NOT in CORPORA_GATES, and it never should be: every input is a tracked file in every clone
-    # (`plugins/**`, `.claude/**`, this file, `marketplace.json`). That is the fixed version of the
-    # mistake the block above records, not a carve-out anyone got away without.
-    ("inventory artifact drift", ("python3", "scripts/build_inventory.py", "--check")),
-    ("inventory artifact selftest", ("python3", "scripts/build_inventory.py", "--selftest")),
+    # #509 -> #892: the inventory's agents, gates and tier tables render as the wiki's Agents-And-Gates
+    # page, under `wiki reference drift`; only the readers' verifications keep a gate of their own.
+    ("inventory data selftest", ("python3", "scripts/inventory_data.py", "--selftest")),
     # The wiki's REFERENCE pages only. Its narrative pages are hand-written and this never touches
     # them -- but a renamed command or a new skill must not be able to leave the reference wrong,
     # which is exactly how the README came to name version 1.3.1 while the marketplace shipped 1.80.

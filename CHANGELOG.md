@@ -7,6 +7,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-03 (release v1.116.0)
+
+- **One generated reference surface: `docs/architecture/inventory.html` retired; its agents, gates and tier tables render
+  as `docs/wiki/Agents-And-Gates.md`** (#892; D-006). `scripts/build_inventory.py`, `build_inventory_selftest.py`, the
+  `inventory artifact drift` and `inventory artifact selftest` gates and their `doctrine_map` rows are gone; the data layer
+  is `scripts/inventory_data.py` — the same readers (gates imported from `maintainer_doctor.GATES`, tiers from
+  `check_handoff.parse_tiers`, agents reconciled against `agent_models` both ways) and the same refusals (a nameless
+  agent, a tier row naming no agent, a gate whose script is missing, a manifest that disagrees), with one
+  `inventory data selftest` gate. The page lives under the wiki's `wiki reference drift` gate and publishes with it.
+  `coverage.html` stays: the only browsable view of the design-system matrix.
+
 ### 2026-09-03 (release v1.115.0)
 
 - **The doctor asserts `main`'s merge-only ruleset, through the shipped checker** (#895). `scripts/maintainer_doctor.py`
@@ -2509,6 +2520,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-03 (release v1.116.0)
+
+- **`plugins/rails-flow/scripts/docs_layout.py`: three gaps a real 98-file rework exposed, fixed** (#900). (1) A code file left in
+  `docs/` while its neighbours move is a `# WARNING` in the plan naming both, and a PROBLEM on `--write` — never `0 problem(s)`
+  over a generator whose relative paths now point at nothing. (2) Directory moves are computed at every depth, longest prefix
+  first, and only when every moved file lands under one parent and nothing stays behind: `docs/brain/role-specs/` →
+  `docs/product/roles/` is rewritten; `docs/brain/` with its fan-out is not. (3) A mention under a moved directory is
+  re-pointed only when the file it names actually moved (spaces and all — a live manifest row), or when it is the bare
+  directory, a glob or a dot; a row whose source never existed is `# LEFT ALONE`, named, and counted as a problem. Verified
+  on a throwaway clone of the reporting project: 86 moves, 68 rewrites, **5 problems named**, 0 dangling `role-specs/`
+  mentions outside the map, the two deleted-source manifest rows untouched. 40 fixtures, 21 mutations.
+
 ### 2026-09-03 (release v1.115.0)
 
 - **`plugins/rails-flow/scripts/branch_rulesets.py` — the release branch merges, never squashes, as a GitHub ruleset** (#895).
@@ -4602,6 +4625,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-03 (release v1.116.0)
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 31 → 32** — `inventory_data.py`
+  (#892) is a new copy; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.115.0)
 
@@ -9606,6 +9634,19 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-03 (release v1.116.0)
+
+- **`plugins/design-flow/scripts/check_token_drift.py`: a bridge is classified by the owner of its role; the knob-expanded
+  radius ramp is system-owned when the pack sets the knob** (#899, the residual of #814). `setup` emits `--color-<r>: var(--<r>)`
+  for every role, and the reliance pack declares six the doctrine never bridges — those bridges classified `project` and
+  were reported `extra`, with `--radius-md`/`--radius-xl` (the five-step ramp the `radius` knob expands to) making eight
+  false findings on a conformant project, and the `token-drift` gate red. Now a `--color-<r>` bridge belongs to whoever
+  owns `--<r>` (pack, system, or nobody — still `extra`); the ramp's step NAMES have one definition,
+  `brand_pack_lint.RADIUS_RAMP_STEPS`, beside the knob enum, and are system-owned only with the knob set. Fixtures are
+  shaped like what `setup` writes (every role bridged, the ramp, against the real reliance pack); the negative cases
+  (a bridge to a role nobody declares; the ramp without the knob; a local token) still fire. On the reporting project:
+  8 findings → clean, exit 0, no change to `application.css`. 35 fixtures, 17 mutations.
 
 ### 2026-09-03 (release v1.114.0)
 

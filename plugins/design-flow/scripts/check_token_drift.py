@@ -42,6 +42,7 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -198,8 +199,23 @@ def pack_all(blocks: dict[str, dict[str, str]]) -> set[str]:
     return {n for blk in blocks.values() for n in blk}
 
 
-def classify(name: str, pack_names: set[str], doctrine_names: set[str]) -> str:
-    """Who OWNS this token: `pack`, `system`, or `project` (#814).
+BRIDGE = re.compile(r"^var\(\s*(--[a-z0-9-]+)\s*\)$")
+
+
+def pack_knobs(theme_css: Path | None) -> dict:
+    """The pack's knobs from the `brand.json` beside its `theme.css`; `{}` when absent."""
+    if theme_css is None:
+        return {}
+    bj = theme_css.parent / "brand.json"
+    try:
+        return dict(json.loads(bj.read_text(encoding="utf-8")).get("knobs") or {}) if bj.is_file() else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def classify(name: str, pack_names: set[str], doctrine_names: set[str], value: str = "",
+             knobs: dict | None = None) -> str:
+    """Who OWNS this token: `pack`, `system`, or `project` (#814, #899).
 
     #788 pointed the comparison at the right target and left the KIND wrong: the reference is a
     palette and the subject is a stylesheet. `brands/reliance/theme.css` says so in its own first
@@ -218,21 +234,39 @@ def classify(name: str, pack_names: set[str], doctrine_names: set[str]) -> str:
     the set `setup` scaffolds and no pack declares, and it self-maintains: add a scale token to the
     doctrine and it is system-owned; add it to a pack and it becomes pack-owned.
 
-    NO SEPARATE RULE FOR THE `@theme inline` BRIDGE, and it was removed rather than kept. A bridge
-    is named after the role it exposes -- `--color-primary: var(--primary)` -- and every role is in
-    the doctrine, so the clause above already classifies it. A value-based rule was therefore
-    untestable: a mutation deleting it survived every fixture. Worse, it was WRONG for the one case
-    that would have distinguished it -- a bridge to a role the doctrine does NOT declare is a
-    project extension, and calling it system would hide it.
+    A BRIDGE IS CLASSIFIED BY THE OWNER OF ITS ROLE (#899). `--color-primary: var(--primary)` is named
+    after the role it exposes, and the first version of this docstring said "every role is in the
+    doctrine, so the clause above already classifies it" -- true of the ROLE, but the clause tests the
+    BRIDGE's name. The doctrine bridges only its original 22 roles; `setup` emits a bridge for EVERY
+    role, and the pack (`reliance`) declares six the doctrine never bridges (`--overlay`,
+    `--primary-hover`, `--primary-ink`, `--signal`, `--signal-foreground`, `--success-ink`). Those six
+    bridges were `project` -> `extra`: eight false findings on a conformant project. So: a
+    `--color-<r>` whose value is `var(--<r>)` is owned by whoever owns `--<r>` -- pack, system, or
+    nobody, in which case it is still `extra`, the one case the old paragraph rightly wanted kept.
+
+    THE RADIUS RAMP (#899). The `radius` knob expands into five steps inside the managed block; the
+    doctrine declares three. With the knob set, the steps in `bpl.RADIUS_RAMP_STEPS` are system-owned
+    -- one definition, beside the knob's enum. Without the knob, `--radius-md` in the block is what it
+    looks like: a local extension.
     """
     if name in pack_names:
         return "pack"
     if name in doctrine_names:
         return "system"
+    m = BRIDGE.match(value or "")
+    if name.startswith("--color-") and m and name == "--color-" + m.group(1)[2:]:
+        role = m.group(1)
+        if role in pack_names:
+            return "pack"
+        if role in doctrine_names:
+            return "system"
+        return "project"
+    if (knobs or {}).get("radius") and name in bpl.RADIUS_RAMP_STEPS:
+        return "system"
     return "project"
 
 
-def compare(css: str, doc_text: str) -> tuple[str, list[str]]:
+def compare(css: str, doc_text: str, knobs: dict | None = None) -> tuple[str, list[str]]:
     """`(state, findings)`. State is `unmanaged`, `drift` or `clean`."""
     block = managed_block(css)
     if block is None:
@@ -268,7 +302,7 @@ def compare(css: str, doc_text: str) -> tuple[str, list[str]]:
             if tok in seen:
                 continue
             seen.add(tok)
-            if classify(tok, pack_names, set(doctrine_names)) == "project":
+            if classify(tok, pack_names, set(doctrine_names), project.get(sel, {}).get(tok, ""), knobs) == "project":
                 out.append(
                     f"extra: {tok} is inside the managed block, and neither the pack nor the design "
                     f"system declares it — a local extension belongs OUTSIDE the markers, where a "
@@ -415,41 +449,56 @@ def _selftest() -> int:
             system = sorted(n for n in set(doctrine) - set(pack_all(packed))
                             if not n.startswith("--color-"))
             scale = "".join(f"  {n}: 1rem;\n" for n in system)
-            bridges = "".join(f"  --color-{r}: var(--{r});\n"
-                              for r in ("primary", "background", "card"))
-            scaffold = (body + f"@theme inline {{\n{bridges}}}\n" + blk(":root", scale))
-            state, f = compare(wrap(scaffold), rel_src)
-            check("a scaffold-shaped managed block is CLEAN", state == "clean" and not f)
+            # EVERY role gets a bridge (that is what `setup` writes), including the six the pack declares
+            # and the doctrine never bridges (#899); and the knob-expanded five-step radius ramp.
+            roles = sorted(n[2:] for n in packed[":root"] if not n.startswith("--color-"))
+            bridges = "".join(f"  --color-{r}: var(--{r});\n" for r in roles)
+            ramp = "".join(f"  {n}: 0.5rem;\n" for n in bpl.RADIUS_RAMP_STEPS)
+            knobs = pack_knobs(rel)
+            scaffold = (body + f"@theme inline {{\n{bridges}}}\n" + blk(":root", scale + ramp))
+            state, f = compare(wrap(scaffold), rel_src, knobs)
+            check("a scaffold-shaped managed block -- every role bridged, the knob's radius ramp -- is CLEAN", state == "clean" and not f)
+            check("...and the pack really does declare roles the doctrine never bridges (or the case above proves nothing)",
+                  knobs.get("radius") is not None and any(f"--color-{r}" not in doctrine for r in roles))
+            # the one bridge that IS a local extension: to a role nobody declares
+            state, f = compare(wrap(scaffold + blk("@theme inline", "  --color-nobody: var(--nobody);\n")), rel_src, knobs)
+            check("a bridge to a role neither pack nor doctrine declares is still `extra`",
+                  len(f) == 1 and f[0].startswith("extra:") and "--color-nobody" in f[0])
+            # the ramp WITHOUT the knob is what it looks like: a local extension
+            state, f = compare(wrap(scaffold), rel_src, {})
+            check("without the radius knob, --radius-md and --radius-xl are `extra`",
+                  sorted(x.split()[1] for x in f if x.startswith("extra:")) == ["--radius-md", "--radius-xl"])
 
             # ...and it still catches every kind of REAL drift, or the line above is a gate that
             # cannot fail. One finding each, so a case cannot pass on someone else's finding.
             re_root = scaffold.replace("--primary: var(--color-rh-brand-600);", "--primary: #BADA55;", 1)
-            state, f = compare(wrap(re_root), rel_src)
+            state, f = compare(wrap(re_root), rel_src, knobs)
             check("a :root role re-tuned is still `changed`",
                   len(f) == 1 and f[0].startswith("changed:") and "`:root`" in f[0])
 
             # THEME-AWARE: the dark value is compared against the pack's DARK value. Collapsing the
             # blocks made every dark re-point a false `changed` -- in every project with a dark theme.
             re_dark = scaffold.replace("--primary: var(--color-rh-brand-100);", "--primary: #BADA55;", 1)
-            state, f = compare(wrap(re_dark), rel_src)
+            state, f = compare(wrap(re_dark), rel_src, knobs)
             check("a .dark role re-tuned is `changed` against the pack's DARK value",
                   len(f) == 1 and f[0].startswith("changed:") and "`.dark`" in f[0])
 
             # A re-tuned PRIMITIVE, which the old check could not see at all: it stored `@theme`
             # as names only, so a changed hex was invisible. Keeping values bought this.
             prim = scaffold.replace("--color-rh-brand-600: #1171B0", "--color-rh-brand-600: #BADA55", 1)
-            state, f = compare(wrap(prim), rel_src)
+            state, f = compare(wrap(prim), rel_src, knobs)
             check("a re-tuned primitive is `changed` in `@theme`",
                   len(f) == 1 and f[0].startswith("changed:") and "`@theme`" in f[0])
 
             gone = scaffold.replace("  --ring: var(--color-rh-brand-600);\n", "", 1)
-            state, f = compare(wrap(gone), rel_src)
+            state, f = compare(wrap(gone), rel_src, knobs)
             check("a deleted pack role is still `missing`",
                   len(f) == 1 and f[0].startswith("missing:") and "--ring" in f[0])
 
             # EXTRA survives, but only for a token neither the pack NOR the system declares.
-            mine = scaffold.replace(blk(":root", scale), blk(":root", "  --my-thing: 4px;\n" + scale), 1)
-            state, f = compare(wrap(mine), rel_src)
+            mine = scaffold.replace(blk(":root", scale + ramp), blk(":root", "  --my-thing: 4px;\n" + scale + ramp), 1)
+            assert mine != scaffold, "the local-token fixture must actually add a token"
+            state, f = compare(wrap(mine), rel_src, knobs)
             check("a genuinely local token is still `extra`",
                   len(f) == 1 and f[0].startswith("extra:") and "--my-thing" in f[0])
 
@@ -495,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cannot compare: {why}", file=sys.stderr)
         return 2
     state, found = compare(a.css.read_text(encoding="utf-8"),
-                           doc.read_text(encoding="utf-8"))
+                           doc.read_text(encoding="utf-8"), pack_knobs(doc))
     if state == "clean":
         print(f"clean — {a.css}'s managed block is in step with the {why!r} pack")
         return 0
