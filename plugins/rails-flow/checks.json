@@ -260,6 +260,21 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "project-wiki-drift",
+      "why": "docs/wiki's reference pages are a join over the architecture graph, db/schema.rb, the queue configs and the lockfiles; a page that no longer matches its sources is a transcription that rotted. n/a until the graph exists, and until the wiki is first built.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/build_project_wiki.py",
+        "--check"
+      ],
+      "applies_when": [
+        "docs/architecture/graph.json"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

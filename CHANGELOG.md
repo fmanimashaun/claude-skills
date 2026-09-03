@@ -2496,6 +2496,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`plugins/rails-flow/scripts/build_project_wiki.py` — a generated project wiki under `docs/wiki/`: reference pages that
+  mirror the codebase, drift-gated, rebuilt at ship** (#887). Architecture, Routes, Data-Model, Jobs-And-Queues, Components,
+  Dependencies and the sidebar, each a join over a structured source — `docs/architecture/graph.json` (nodes, edges, flows,
+  and the parser's own notes on what it could not model), `db/schema.rb`, `config/queue.yml` (verbatim), `config/recurring.yml`,
+  `Gemfile.lock`, `package.json`. Every count on a page is asserted against its source's total (a table the parser missed
+  is a PROBLEM, not a shorter page); every page names the graph's commit; bytes are a function of the inputs. `Home.md`
+  is hand-written, seeded once, never overwritten. `--check` is the `project-wiki-drift` check; `doc-updater` rebuilds the
+  wiki with the graph; `setup-flow` §6c documents it and the opt-in `wiki.yml` publish (off by default). Read-only on
+  Retask-platform: 142 nodes, 43 routes, 13 tables (13 declared), 14 foreign keys, 19 associations, 4 mailers with their
+  enqueuers, 263 gems — all six pages built, tree untouched. 23 fixtures, 11 mutations.
 - **`plugins/rails-flow/scripts/docs_layout.py` — one `docs/` layout for every project: a map agents follow, a check
   that enforces it, a `--propose` that reworks an existing tree** (#886). Eight directories, each answering one reader's
   question (product · design · architecture · runbooks · evidence · wiki · brain); the rule is one sentence in
@@ -4562,6 +4572,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 28 → 30, reach 14 → 16**
+  — `docs_layout.py` (#886) and `build_project_wiki.py` (#887) are new copies; `check_shared_shapes.py` refuses the stale number.
 
 ### 2026-09-03 (release v1.113.0)
 
