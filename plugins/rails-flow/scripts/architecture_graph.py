@@ -7,8 +7,10 @@ qa-flow (reverse-walk `edges` for blast radius).
 
 Emits into `docs/architecture/`:
   graph.json   {nodes, edges, flows} + commit, generated_at, content_digest
-  index.html   self-contained interactive view — inline CSS/JS, embedded JSON,
-               ZERO external requests (opens from disk, offline, forever)
+  index.html   THE DIAGRAM — an inline SVG, one column per layer, edges as paths,
+               click a node to trace it or a flow to light its path — plus an index
+               and detail view; inline CSS/JS, embedded JSON, ZERO external requests
+               (opens from disk, offline, forever)
   graph.md     mermaid views, so a repo browser sees a picture (.html does not
                render on GitHub)
 
@@ -47,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import re
@@ -1306,6 +1309,27 @@ header {
 }
 header h1 { font-size: 1.125rem; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 header .meta { color: var(--muted-fg); font-family: var(--mono); font-size: 0.8125rem; }
+/* the diagram (#850) */
+.diagram { border-bottom: 1px solid var(--border); padding: 0.75rem 1.5rem 1rem; }
+.diagram-bar { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: baseline; margin-bottom: 0.5rem; }
+.legend { display: inline-flex; gap: 0.75rem; font-size: 0.75rem; color: var(--muted-fg); }
+.legend .sw { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; }
+.legend .web { background: var(--web); } .legend .domain { background: var(--domain); }
+.legend .async { background: var(--async); } .legend .ui { background: var(--ui); }
+.diagram-scroll { overflow: auto; max-height: 60vh; border: 1px solid var(--border); border-radius: 10px; background: var(--raised); }
+svg.arch { display: block; }
+svg.arch .col-title { fill: var(--muted-fg); font: 0.6875rem var(--sans); text-transform: uppercase; letter-spacing: 0.06em; }
+svg.arch .node rect { fill: var(--surface); stroke: var(--border); stroke-width: 1.25; }
+svg.arch .node text { fill: var(--fg); font: 0.75rem var(--mono); pointer-events: none; }
+svg.arch .node { cursor: pointer; }
+svg.arch .node.layer-web rect { stroke: var(--web); } svg.arch .node.layer-domain rect { stroke: var(--domain); }
+svg.arch .node.layer-async rect { stroke: var(--async); } svg.arch .node.layer-ui rect { stroke: var(--ui); }
+svg.arch .node:focus-visible { outline: none; } svg.arch .node:focus-visible rect { stroke: var(--ring); stroke-width: 2.5; }
+svg.arch .node.sel rect { stroke: var(--primary); stroke-width: 2.5; fill: var(--bg); }
+svg.arch .node.dim { opacity: 0.3; }
+svg.arch .edge { fill: none; stroke: var(--muted-fg); stroke-opacity: 0.45; stroke-width: 1.25; }
+svg.arch .edge.on { stroke: var(--primary); stroke-opacity: 1; stroke-width: 2; }
+svg.arch .edge.dim { stroke-opacity: 0.08; }
 .layout { display: grid; grid-template-columns: minmax(280px, 24rem) 1fr; min-height: calc(100vh - 5rem); }
 .sidebar { border-right: 1px solid var(--border); padding: 1rem; overflow-y: auto; max-height: calc(100vh - 5rem); }
 .detail { padding: 1.5rem; overflow-y: auto; max-height: calc(100vh - 5rem); }
@@ -1388,6 +1412,14 @@ button, ul.list button.row, input[type="search"] { min-height: 44px; }
   <span class="meta">__COMMIT__ · __GENERATED__</span>
   <span class="meta">__STATS__</span>
 </header>
+
+<section class="diagram" aria-label="Architecture diagram">
+  <div class="diagram-bar">
+    <span class="meta">Columns are layers, left to right in request order. Click a node to trace its edges, or pick a flow below to light its path.</span>
+    <span class="legend"><span><i class="sw web"></i>web</span><span><i class="sw domain"></i>domain</span><span><i class="sw async"></i>async</span><span><i class="sw ui"></i>ui</span></span>
+  </div>
+  <div class="diagram-scroll">__SVG__</div>
+</section>
 
 <div class="layout">
   <nav class="sidebar" aria-label="Graph index">
@@ -1542,9 +1574,45 @@ button, ul.list button.row, input[type="search"] { min-height: 44px; }
     return wrap;
   }
 
+  // The diagram (#850): the same selection the list drives, painted onto the SVG.
+  var svg = document.querySelector("svg.arch");
+  function paintNode(id) {
+    if (!svg) return;
+    svg.querySelectorAll(".node").forEach(function (g) {
+      g.classList.toggle("sel", g.dataset.id === id); g.classList.remove("dim");
+    });
+    svg.querySelectorAll(".edge").forEach(function (p) {
+      var touches = p.dataset.from === id || p.dataset.to === id;
+      p.classList.toggle("on", touches); p.classList.toggle("dim", !touches);
+    });
+    var g = svg.querySelector('.node[data-id="' + id.replace(/"/g, '\\"') + '"]');
+    if (g && g.scrollIntoView) g.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  function paintFlow(flow) {
+    if (!svg) return;
+    var ids = {}; ids[flow.entry] = true;
+    flow.steps.forEach(function (s) { ids[s.node] = true; });
+    svg.querySelectorAll(".node").forEach(function (g) {
+      var on = !!ids[g.dataset.id]; g.classList.toggle("sel", on); g.classList.toggle("dim", !on);
+    });
+    svg.querySelectorAll(".edge").forEach(function (p) {
+      var on = !!(ids[p.dataset.from] && ids[p.dataset.to]); p.classList.toggle("on", on); p.classList.toggle("dim", !on);
+    });
+  }
+  if (svg) {
+    svg.addEventListener("click", function (ev) {
+      var g = ev.target.closest(".node"); if (g) selectNode(g.dataset.id);
+    });
+    svg.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      var g = ev.target.closest(".node"); if (g) { ev.preventDefault(); selectNode(g.dataset.id); }
+    });
+  }
+
   function selectNode(id) {
     var node = byId[id];
     if (!node) return;
+    paintNode(id);
     state.selected = id;
     state.mode = "nodes";
     syncTabs();
@@ -1610,6 +1678,7 @@ button, ul.list button.row, input[type="search"] { min-height: 44px; }
   function selectFlow(index) {
     var flow = GRAPH.flows[index];
     if (!flow) return;
+    paintFlow(flow);
     state.mode = "flows";
     state.selected = null;
     syncTabs();
@@ -1689,6 +1758,79 @@ button, ul.list button.row, input[type="search"] { min-height: 44px; }
 """
 
 
+# --------------------------------------------------------------------------
+# diagram (#850)
+# --------------------------------------------------------------------------
+# The page called itself an "interactive view" and drew nothing: zero SVG, zero canvas -- a styled
+# list over the embedded JSON. The only picture was graph.md's mermaid, capped and rendered only
+# where mermaid is supported. This draws the graph at generation time, in Python, as inline SVG:
+# no library and no network, which the page's own header already promises. A layered layout --
+# one column per layer in LAYER_ORDER, rows in the graph's own (layer, type, id) order -- is the
+# honest shape for a Rails app: requests enter at the web layer and fan into domain, async, ui.
+# It is deliberately not a force layout; a deterministic picture diffs, a physics one does not.
+COL_W, ROW_H, NODE_W, NODE_H, MARGIN, HEADER_H = 300, 40, 220, 28, 24, 36
+
+
+def layout(graph: dict) -> dict[str, tuple[int, int, int, int]]:
+    """`{node_id: (column, row, x, y)}` -- every node placed exactly once, columns by layer."""
+    next_row = {layer: 0 for layer in LAYER_ORDER}
+    positions: dict[str, tuple[int, int, int, int]] = {}
+    for node in graph["nodes"]:
+        layer = node.get("layer") if node.get("layer") in next_row else "domain"
+        col = LAYER_ORDER.index(layer)
+        row = next_row[layer]
+        next_row[layer] = row + 1
+        positions[node["id"]] = (col, row, MARGIN + col * COL_W, MARGIN + HEADER_H + row * ROW_H)
+    return positions
+
+
+def _label(text: str, limit: int = 30) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def render_svg(graph: dict, positions: dict | None = None) -> str:
+    """The diagram as one `<svg>` string. Everything user-derived is escaped: ids are file-derived."""
+    pos = layout(graph) if positions is None else positions
+    if not pos:
+        return ('<svg class="arch" viewBox="0 0 480 60" width="480" height="60" role="img" '
+                'aria-label="architecture diagram: no nodes">'
+                '<text class="col-title" x="24" y="36">no nodes — the graph is empty</text></svg>')
+    width = MARGIN * 2 + (len(LAYER_ORDER) - 1) * COL_W + NODE_W
+    height = MARGIN * 2 + HEADER_H + max(p[1] for p in pos.values()) * ROW_H + NODE_H
+    out = [f'<svg class="arch" viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" '
+           f'aria-label="architecture diagram: {len(pos)} nodes in {len(LAYER_ORDER)} layers">', '<g class="cols">']
+    for i, layer in enumerate(LAYER_ORDER):
+        out.append(f'<text class="col-title" x="{MARGIN + i * COL_W}" y="{MARGIN + 14}">{html.escape(layer)}</text>')
+    out.append('</g><g class="edges">')
+    for e in graph["edges"]:  # every edge, drawn once
+        a, b = pos.get(e["from"]), pos.get(e["to"])
+        if not a or not b:
+            continue  # an edge to a node outside the graph (an id collision, an enrichment) draws nothing
+        x1, y1 = a[2] + NODE_W, a[3] + NODE_H // 2
+        x2, y2 = b[2], b[3] + NODE_H // 2
+        if b[0] > a[0]:
+            # forward: leave the source's right edge, enter the target's left edge
+            d = f"M{x1},{y1} C{x1 + COL_W // 3},{y1} {x2 - COL_W // 3},{y2} {x2},{y2}"
+        else:
+            # same column or backward: bow out to the right of the source and come back to the
+            # target's right edge, so the path is visible instead of hidden behind the boxes
+            bow = max(x1, b[2] + NODE_W) + 40
+            d = f"M{x1},{y1} C{bow},{y1} {bow},{y2} {b[2] + NODE_W},{y2}"
+        out.append(f'<path class="edge kind-{html.escape(e["kind"])}" data-from="{html.escape(e["from"])}" '
+                   f'data-to="{html.escape(e["to"])}" d="{d}"><title>{html.escape(e["from"])} —{html.escape(e["kind"])}→ '
+                   f'{html.escape(e["to"])}</title></path>')
+    out.append('</g><g class="nodes">')
+    for node in graph["nodes"]:
+        p = pos[node["id"]]
+        nid, ntype, nlayer = html.escape(node["id"]), html.escape(node["type"]), html.escape(node["layer"])
+        out.append(f'<g class="node layer-{nlayer} type-{ntype}" data-id="{nid}" tabindex="0" role="button" '
+                   f'aria-label="{nid} ({ntype})"><title>{nid} · {ntype}</title>'
+                   f'<rect x="{p[2]}" y="{p[3]}" width="{NODE_W}" height="{NODE_H}" rx="6"/>'
+                   f'<text x="{p[2] + 10}" y="{p[3] + NODE_H // 2 + 4}">{html.escape(_label(node["id"]))}</text></g>')
+    out.append('</g></svg>')
+    return "".join(out)
+
+
 def render_html(graph: dict, title: str) -> str:
     # `</script>` and `<!--` inside the JSON would end the host element early;
     # escaping `<` at the unicode level keeps the payload valid JSON.
@@ -1699,6 +1841,7 @@ def render_html(graph: dict, title: str) -> str:
     )
     return (
         HTML_TEMPLATE
+        .replace("__SVG__", render_svg(graph))
         .replace("__GRAPH_JSON__", payload)
         .replace("__TITLE__", title)
         .replace("__COMMIT__", graph["commit"])
@@ -1873,6 +2016,56 @@ def selftest() -> int:
         core = {k: g7[k] for k in ("nodes", "edges", "flows", "notes")}
         check("the digest is computed from the four core keys only -- the cap sits outside it",
               content_digest(core) == g7["content_digest"])
+
+    # ---- THE DIAGRAM (#850) ---------------------------------------------------------------------
+    # A synthetic graph, no Rails app: five nodes across all four layers, a forward edge, a backward
+    # edge, an edge to a node the graph does not contain, and an id carrying `<` -- the escaping case.
+    import re as _re
+    import xml.etree.ElementTree as _ET
+    g = {"nodes": [
+            {"id": "InvoicesController", "type": "controller", "layer": "web", "file": "a", "loc": 1, "tags": []},
+            {"id": "Invoice", "type": "model", "layer": "domain", "file": "b", "loc": 1, "tags": []},
+            {"id": "Customer<Org>", "type": "model", "layer": "domain", "file": "c", "loc": 1, "tags": []},
+            {"id": "InvoiceMailerJob", "type": "job", "layer": "async", "file": "d", "loc": 1, "tags": []},
+            {"id": "Ui::Button", "type": "component", "layer": "ui", "file": "e", "loc": 1, "tags": []}],
+         "edges": [{"from": "InvoicesController", "to": "Invoice", "kind": "references"},
+                   {"from": "Invoice", "to": "Customer<Org>", "kind": "references"},
+                   {"from": "InvoiceMailerJob", "to": "Invoice", "kind": "persists"},
+                   {"from": "Invoice", "to": "Ghost", "kind": "references"}],
+         "flows": [], "notes": [], "stats": {"nodes": 5, "edges": 4, "flows": 0},
+         "commit": "abc1234", "generated_at": "2026-09-03T00:00:00Z"}
+    pos = layout(g)
+    check("the diagram places every node exactly once", set(pos) == {n["id"] for n in g["nodes"]}, f"{sorted(pos)}")
+    check("columns follow LAYER_ORDER: x grows with the layer index",
+          pos["InvoicesController"][2] < pos["Invoice"][2] < pos["InvoiceMailerJob"][2] < pos["Ui::Button"][2])
+    check("two nodes in one column take different rows", pos["Invoice"][3] != pos["Customer<Org>"][3])
+    try:
+        svg = render_svg(g, pos)
+    except Exception as exc:  # noqa: BLE001 -- the fixture reports, it does not crash
+        svg = ""
+        check("render_svg survives an edge to a node outside the graph", False, repr(exc))
+    try:
+        _ET.fromstring(svg)
+        parsed = True
+    except _ET.ParseError as exc:
+        parsed = False
+        detail = str(exc)
+    check("the SVG parses as XML -- an id carrying `<` is escaped", parsed, detail if not parsed else "")
+    check("one node element per node", svg.count('class="node ') == 5, f"{svg.count(chr(99) + 'lass=' + chr(34) + 'node ')}")
+    check("edges whose both endpoints are placed are drawn; the one to a missing node is not",
+          svg.count('class="edge ') == 3, f"{svg.count('class=' + chr(34) + 'edge ')}")
+    check("a backward edge (async -> domain) is drawn, not dropped", 'data-from="InvoiceMailerJob"' in svg)
+    refs = _re.findall(r'data-from="([^"]*)" data-to="([^"]*)"', svg)
+    check("every drawn edge names two placed nodes",
+          all(html.unescape(a) in pos and html.unescape(b) in pos for a, b in refs), f"{refs}")
+    check("an empty graph renders a diagram that says so, rather than crashing",
+          "no nodes" in render_svg({"nodes": [], "edges": [], "flows": [], "notes": []}))
+    try:
+        page = render_html(g, "t")
+    except Exception as exc:  # noqa: BLE001 -- report, never abort the run before the failures print
+        page = ""
+        check("render_html survives the same graph", False, repr(exc))
+    check("the page embeds the diagram", "__SVG__" not in page and 'class="arch"' in page)
 
     if failures:
         print(f"architecture_graph selftest: {len(failures)} of {checks} checks FAILED", file=sys.stderr)

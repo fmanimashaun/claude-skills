@@ -5,8 +5,9 @@ argument-hint: "[blank to regenerate | check | delta <ref>]"
 
 # /rails-flow:graph — $ARGUMENTS
 
-Extract the architecture **once** and serve all three consumers: humans (the HTML +
-mermaid views), agents (structural context without reading the whole codebase — the single
+Extract the architecture **once** and serve all three consumers: humans (`index.html` —
+the drawn diagram, one column per layer, plus an index and detail view — and the mermaid
+views), agents (structural context without reading the whole codebase — the single
 biggest token cost in any large-repo task), and qa-flow (reverse-walk `edges` for a
 computed blast radius instead of a guessed one).
 
