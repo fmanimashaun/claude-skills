@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`scripts/mutations/check_component_shapes.py`: the shapes reconciliation gets its mutation guard** (#874).
+  `check_component_shapes.py` had 17 fixtures and nothing proving any could fail. Eleven mutations, each
+  disabling one branch and naming the fixture that must catch it: a row with no shape, a shape with no row,
+  the one-cause collapses in both directions, doctrine sections, `drawable: false` without a `why`, unknown
+  shape and part kinds, an undeclared role, a drawable entry with no parts, the nested walk. Writing it found
+  a fixture that CRASHED on an empty result (`empty[0]`) instead of failing by label — the harness refuses
+  that as a coincidental catch; the fixture now fails by name. 72 guards.
+
 ### 2026-09-03 (release v1.112.0)
 
 - **`CLAUDE.md` is rule-first, and the reasoning moved to `docs/maintainer-history.md`** (#870). It was 754
