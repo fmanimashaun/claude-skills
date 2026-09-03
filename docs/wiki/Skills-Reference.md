@@ -28,7 +28,7 @@ Deep reference for the Hotwire stack from the official handbooks — Turbo (Driv
 
 The design system — how to build consistent, modern, responsive UI in Rails 8 + Hotwire + Tailwind CSS v4, brand-parameterised via brand packs.
 
-23 reference file(s): `art-direction`, `brand`, `component-implementations`, `components`, `coverage`, `crud-modal-pattern`, `data-viz`, `design-handoff`, `forms`, `foundations-tokens`, `interaction-stimulus`, `layout-primitives`, `marketing-copy`, `mobile-reference-implementation`, `mobile`, `motion`, `native-tokens`, `page-anatomies`, `reference-implementation`, `reference-research`, `reference-sources`, `responsive`, `visual-assets`
+24 reference file(s): `art-direction`, `brand`, `component-implementations`, `components-commerce`, `components`, `coverage`, `crud-modal-pattern`, `data-viz`, `design-handoff`, `forms`, `foundations-tokens`, `interaction-stimulus`, `layout-primitives`, `marketing-copy`, `mobile-reference-implementation`, `mobile`, `motion`, `native-tokens`, `page-anatomies`, `reference-implementation`, `reference-research`, `reference-sources`, `responsive`, `visual-assets`
 
 
 ## `code-review`
