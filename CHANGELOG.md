@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`docs/brain/` adopted in the maintainer repo; 17 memos brought in verbatim from this machine's Claude memory**
+  (#884). Scaffolded in the shape `setup-flow` §4 prescribes (README, STATUS, PROGRESS-LOG, DECISIONS D-001–D-004,
+  HYPOTHESES H-001, MEMORY). `brain_local_sync.py --propose` rendered the 17 `feedback` memories; each was accepted
+  as rendered — body verbatim, `[observed]` provenance — and indexed; the one `user` memory never crossed. The
+  first real run of the bridge, and it found three defects (rails-flow entry). `docs/maintainer-history.md` stays
+  where it is (D-004).
+
 ### 2026-09-03 (release v1.113.0)
 
 - **`scripts/mutations/check_component_shapes.py`: the shapes reconciliation gets its mutation guard** (#874).
@@ -2484,6 +2493,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **Memos live under `docs/brain/memos/<type>/<slug>.md`; the brain root holds only the index, STATUS, DECISIONS,
+  HYPOTHESES, PROGRESS-LOG and README** (#884; maintainer: a memo at the root "is a terrible structure"). `brain.md`,
+  `setup-flow` §4 and `brain-review` step 6 say so; `plugins/rails-flow/scripts/brain_local_sync.py` proposes into
+  `memos/<type>/`, still reads a root memo, and reports it **misplaced** with the path it belongs at (in `--status`,
+  `--brief` and `--json`) so an existing project can be reworked. Fixture + mutation.
+- **`plugins/rails-flow/scripts/brain_local_sync.py`: three defects the first real store surfaced, fixed** (#884).
+  Run against this repo's 18 auto-memories: (1) `\"` escapes inside a double-quoted `description` leaked into every
+  proposed memo and index line — `_unquote` now unescapes; (2) a description containing `: ` was written as a plain
+  scalar, which YAML reads as a mapping — `_yaml_scalar` quotes exactly when the line would be misread, in memos
+  and pointers alike; (3) every ACCEPTED proposal read as diverged forever because the provenance trailer the tool
+  appends was compared as body — `core_body` strips the tool's own trailer before comparing. Each has a fixture and
+  a mutation (32 fixtures, 12 mutations). After acceptance `--status` reports in sync, `--pull` plans nothing.
 
 ### 2026-09-03 (release v1.113.0)
 

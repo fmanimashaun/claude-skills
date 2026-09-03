@@ -9,7 +9,8 @@ Turn the lesson above into permanent project memory.
 
 1. Classify it: `feedback` (a correction — something an agent or human got wrong) or
    `decision` (a choice with alternatives and rationale).
-2. Write `docs/brain/<type>_<kebab-slug>.md`:
+2. Write `docs/brain/memos/<type>/<kebab-slug>.md` — the type is the directory; nothing but the
+   index, STATUS, DECISIONS, HYPOTHESES, PROGRESS-LOG and README lives at the brain root:
 
 ```markdown
 ---
@@ -27,7 +28,7 @@ Specific beats general; this is the part future agents believe.>
 ```
 
 3. Add one line at the TOP of `docs/brain/MEMORY.md`:
-   `- [<Title>](<file>.md) — <8-15 word summary>`
+   `- [<Title>](memos/<type>/<slug>.md) — <8-15 word summary>`
    (create the file if this is the first memo).
 4. If the lesson contradicts CLAUDE.md or GUARDRAILS.md, update those too — memory and law
    must not disagree.
