@@ -2528,6 +2528,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`plugins/rails-flow/scripts/docs_layout.py`: a markdown link is a path relative to the file that holds it** (#909, the
+  first real `--write` on a populated tree left 116 dead links behind a clean summary). `relink_markdown` resolves every
+  `](target)` against the file's OLD directory, maps it through the move table (a moved file, or a moved directory by
+  prefix), and re-bases it from the file's NEW directory — anchors and bare directory links included — for every markdown
+  file: the ones that move (both depths change) and the ones that stay but link something that moved (`brain/MEMORY.md`,
+  the index every session loads). The post-write assertion now resolves each link from the file it sits in; a dead one is
+  a PROBLEM. The old docs-stripped rewrite and its root-relative scan are gone — a fixture that had enshrined the bug
+  (`](ROUTES.md)` → `](product/ROUTES.md)`) now asserts the correct no-op. Fixtures + 2 mutations (45 / 23).
+- **`plugins/rails-flow/checks.json`: the `acceptance-criteria` check follows the layout** (#910): `{match:docs/**/acceptance/*.md}` finds criteria at
+  `docs/product/acceptance/` (the layout's home) and at the pre-layout `docs/acceptance/`; `feature.md`, `fix.md`,
+  `brief.md`, `explain.md` name the layout path. Adopting the layout with the shipped tool no longer turns the gate n/a.
 - **`plugins/rails-flow/hooks/scripts/guard-bash.sh` matches the INVOKED command, not any substring** (#906). It blocked
   a grep whose pattern was the rule text, an echo quoting it, a commit message quoting it and the reporter's own
   dedup search — the toolchain audit's grep among them — while `git -C repo add -A` slipped through. Every
@@ -4644,9 +4655,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased\n\n- **`skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
+### Unreleased
+
+- **`skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
   for by id** (#908) — the fidelity half a script can hold; layout and rhythm parity stay the porter's to confirm.
-\n### 2026-09-03 (release v1.116.0)
+
+### 2026-09-03 (release v1.116.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `check()` harness copy-count moves 31 → 32** — `inventory_data.py`
   (#892) is a new copy; `check_shared_shapes.py` refuses the stale number.
@@ -8185,6 +8199,8 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **`plugins/qa-flow/agents/case-author.md` names criteria at `docs/product/acceptance/<slug>.md`** (#910), the shipped
+  layout's home; the `acceptance:<slug>` case prefix is unchanged.
 - **`plugins/qa-flow/hooks/scripts/release-gate.sh` sources `hooks/scripts/lib/normalize_cmd.sh`** (#906) — the same
   normaliser rails-flow's guard-bash now uses, extracted from this file unchanged; behaviour identical, and driven by
   `check_hook_gates.py` for the first time (push to main behind env, `git -C` and `;` blocked; a commit message or echo
@@ -9663,7 +9679,9 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased\n\n- **Port fidelity: `plugins/design-flow/scripts/canvas_manifest.py` gives "done" a denominator** (#908 — the maintainer:
+### Unreleased
+
+- **Port fidelity: `plugins/design-flow/scripts/canvas_manifest.py` gives "done" a denominator** (#908 — the maintainer:
   agents "pick what they want, then claim they are done"). `extract` reads a Claude Design `.dc.html` export structurally —
   grounded on a real 207 KB one: `<x-dc>` + `<helmet>`, 408 inline styles, no heading tags (headings are spans by font-size),
   a template runtime of `<sc-for>` repeats, `<sc-if>` conditionals and 526 `{{ }}` bindings, and a 123 KB `text/x-dc` data
@@ -9674,7 +9692,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   reason. `design-handoff.md` §8, `port.md` (step 0, first done-line) and `design-porter.md` (step 0, first done-line)
   make the report the precondition of "done"; `checks.json` `port-fidelity` (`port_fidelity_gate.py`, n/a until a
   manifest exists). 20 fixtures, 6 mutations.
-\n### 2026-09-03 (release v1.116.0)
+
+### 2026-09-03 (release v1.116.0)
 
 - **`plugins/design-flow/scripts/check_token_drift.py`: a bridge is classified by the owner of its role; the knob-expanded
   radius ramp is system-owned when the pack sets the knob** (#899, the residual of #814). `setup` emits `--color-<r>: var(--<r>)`

@@ -132,7 +132,7 @@ The primary user journeys, in the order they matter.
 
 ## Success
 What changes for the user when this works. Direction, not acceptance criteria —
-`docs/acceptance/<slug>.md` is where those become falsifiable.
+`docs/product/acceptance/<slug>.md` is where those become falsifiable.
 
 ## Open questions
 - The question. owner: <who answers it>
@@ -186,7 +186,7 @@ conversation. The judgement stays yours.
 The brief feeds the phase plan, and its non-goals are load-bearing there: they are what a scope
 question gets measured against mid-build. Then `/rails-flow:setup-flow` to scaffold the project,
 `/rails-flow:curate` to turn the source documents into project-local skills, and
-`/rails-flow:feature` for the first slice — whose `docs/acceptance/<slug>.md` is where "what
+`/rails-flow:feature` for the first slice — whose `docs/product/acceptance/<slug>.md` is where "what
 success looks like" finally becomes falsifiable.
 
 ## Report
