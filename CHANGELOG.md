@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-04 (release v1.117.0)
 
 - **`scripts/lint_self_consistency.py`: `hook-lib-drift`** (#906) — the two shipped copies of `hooks/scripts/lib/normalize_cmd.sh`
   (rails-flow, qa-flow) must exist and be byte-identical; one normaliser is a claim only while they are. Three fixtures,
@@ -2526,7 +2526,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-04 (release v1.117.0)
 
 - **`plugins/rails-flow/scripts/docs_layout.py`: a markdown link is a path relative to the file that holds it** (#909, the
   first real `--write` on a populated tree left 116 dead links behind a clean summary). `relink_markdown` resolves every
@@ -4655,7 +4655,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-04 (release v1.117.0)
 
 - **`skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
   for by id** (#908) — the fidelity half a script can hold; layout and rhythm parity stay the porter's to confirm.
@@ -8197,7 +8197,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-04 (release v1.117.0)
 
 - **`plugins/qa-flow/agents/case-author.md` names criteria at `docs/product/acceptance/<slug>.md`** (#910), the shipped
   layout's home; the `acceptance:<slug>` case prefix is unchanged.
@@ -9679,7 +9679,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-04 (release v1.117.0)
 
 - **Port fidelity: `plugins/design-flow/scripts/canvas_manifest.py` gives "done" a denominator** (#908 — the maintainer:
   agents "pick what they want, then claim they are done"). `extract` reads a Claude Design `.dc.html` export structurally —
