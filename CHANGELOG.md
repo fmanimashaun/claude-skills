@@ -9,6 +9,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-04 (release v1.117.0)
 
+- **`scripts/mutations/hook_*.py`: every hook guard stages qa-flow's hooks and scripts too** (#906, folded into this block after
+  the first v1.117.0 promotion's full sweep failed). `check_hook_gates.py` now drives `release-gate.sh`, so a guard that stages only
+  rails-flow's hooks makes the harness fail before any mutation and reads as INERT — `hook_self_consistency` and `hook_stop_gate`
+  did, on `main`, in the one gate the PR sweep skips. The push-to-`dev` full runs had said so twice; the pull_request run beside
+  them was the fast one, and was the one read.
 - **`scripts/lint_self_consistency.py`: `hook-lib-drift`** (#906) — the two shipped copies of `hooks/scripts/lib/normalize_cmd.sh`
   (rails-flow, qa-flow) must exist and be byte-identical; one normaliser is a claim only while they are. Three fixtures,
   one mutation.

@@ -7,7 +7,7 @@ GUARD = Guard(
     name="hook_session_start",
     subject="plugins/rails-flow/hooks/scripts/session-start.sh",
     selftest="plugins/rails-flow/scripts/check_drift_signal.py",
-    needs=("plugins/rails-flow/hooks/scripts",),
+    needs=('plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts'),   # check_hook_gates drives BOTH plugins' hooks (#906)
     mutations=(
         Mutation(
             "three-column rows are read as two again, so the skill name is taken for the source",
