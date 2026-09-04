@@ -11,6 +11,16 @@ The **UI/design** side of the toolchain. It makes UI consistent, modern, and res
 across projects **without a designer or Figma**, by applying the **design-system** skill
 (the doctrine, bundled in `rails-stack`) through agentic commands.
 
+## Brand packs — one per project
+
+The plugin ships **several brand packs** under `brands/` (`fidara`, `reliance`, and `_template` to start a
+client's own). A project uses **exactly one**, chosen on purpose and recorded by `/design-flow:setup` in
+`config/initializers/brand.rb` as `config.x.brand.pack = "<slug>"` — the record every drift check compares
+against. `fidara` is the default, but only when you confirm it: `setup` with no argument asks which pack rather
+than assuming. Switching packs later is a deliberate re-scaffold (`setup <other-pack>` after you say so), never a
+second `setup` laid over the first's managed block — two packs' roles in one block are exactly the mixed state the
+`token-drift` check reports. (#919)
+
 ## Commands
 
 - `/design-flow:setup [brand]` — scaffold the design system into a Rails 8 + Hotwire + Tailwind v4

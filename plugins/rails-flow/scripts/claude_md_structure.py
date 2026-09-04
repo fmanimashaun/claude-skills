@@ -246,6 +246,15 @@ def selftest() -> int:
     over = "<!-- claude-md: max-lines 3 -->\n" + "rule\n" * 5
     check("past the ceiling is a verdict of 1", verdict(report(over)) == 1)
     check("within the ceiling is 0", verdict(report("<!-- claude-md: max-lines 30 -->\n" + "rule\n" * 5)) == 0)
+    # #917: a fresh file, --set-ceiling, then --report must be 0 -- the marker is a line too.
+    fresh = "# X\n\nrule one.\n\nrule two.\n"
+    r0 = report(fresh)
+    marker = f"<!-- claude-md: max-lines {ceiling_for(fresh, r0)} -->"
+    once = fresh.replace("\n", "\n" + marker + "\n", 1)
+    check("--set-ceiling on a file with no marker records the size WITH the marker (5 lines -> 6), and --report is 0",
+          ceiling_for(fresh, r0) == 6 and verdict(report(once)) == 0, f"{ceiling_for(fresh, r0)} / {verdict(report(once))}")
+    r1 = report(once)
+    check("--set-ceiling again is idempotent: an existing marker is replaced with the same number", ceiling_for(once, r1) == 6 and MARKER.sub(f"<!-- claude-md: max-lines {ceiling_for(once, r1)} -->", once, 1) == once)
     check("no marker is 3 -- not applicable, not a pass", verdict(report("rule\n" * 5)) == 3)
 
     if failures:
@@ -255,6 +264,11 @@ def selftest() -> int:
         return 1
     print(f"claude_md_structure selftest: {checks} checks passed")
     return 0
+
+
+def ceiling_for(text: str, r: dict) -> int:
+    """What --set-ceiling records: the current line count, plus one when the marker is about to be a new line."""
+    return r["lines"] + (0 if r["ceiling"] is not None else 1)
 
 
 def verdict(r: dict) -> int:
@@ -307,7 +321,9 @@ def main(argv: list[str] | None = None) -> int:
     text = path.read_text(encoding="utf-8")
     r = report(text, str(path))
     if a.set_ceiling:
-        marker = f"<!-- claude-md: max-lines {r['lines']} -->"
+        # The ceiling is the size the file HAS once the marker is in it (#917): a new marker is one more
+        # line, so recording the pre-insertion count left every first run one line over its own ceiling.
+        marker = f"<!-- claude-md: max-lines {ceiling_for(text, r)} -->"
         if a.write:
             new = MARKER.sub(marker, text, 1) if r["ceiling"] is not None else text.replace("\n", "\n" + marker + "\n", 1)
             path.write_text(new, encoding="utf-8")

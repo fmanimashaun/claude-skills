@@ -21,7 +21,13 @@ Rails 8 + Hotwire (importmap) + **Tailwind v4** (`tailwindcss-rails`, CSS-first 
 `tailwind.config.js`/npm). Confirm `app/assets/tailwind/application.css` exists.
 
 `$ARGUMENTS` selects the **brand pack**: `<pack>` or `<pack>:<variant>` (e.g. `fidara`,
-`fidara:fmworkflows`, `acme`). Default `fidara:fmworkflows`. Read the pack from
+`fidara:fmworkflows`, `acme`). **A project uses exactly one pack** (#919). If `$ARGUMENTS` is empty, do not
+assume: list the packs that ship (`ls "${CLAUDE_PLUGIN_ROOT}/brands"` plus any `brands/` in the project) and
+ask which one — `fidara:fmworkflows` is the default only once the user confirms it. If
+`config/initializers/brand.rb` already records `config.x.brand.pack` and it differs from the pack asked for,
+stop and say so: scaffolding a second pack over the first's managed block leaves two packs' roles in one
+block, which is what `check_token_drift` reports as drift. State the chosen pack in the first line of your
+report. Read the pack from
 `brands/<pack>/` — its `theme.css` supplies the palette and its `brand.json` supplies identity
 and variants. **A pack is a theme, not a fork**: it changes colours and the logo, and inherits
 everything else. Generating the theme layer is therefore the ONLY brand-dependent step here;

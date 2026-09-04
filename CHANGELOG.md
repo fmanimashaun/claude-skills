@@ -2531,6 +2531,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-04 (release v1.118.0)
+
+- **`plugins/rails-flow/scripts/claude_md_structure.py`: `--set-ceiling` records the size the file has once the marker is in it**
+  (#917). It recorded the count taken before inserting its own marker line, so following `setup-flow` verbatim left every
+  first run exactly one line over its own ceiling — `--report` failed, and the de-facto fix was "run it twice". A new marker
+  now records N+1; replacing an existing one is unchanged and idempotent. Two fixtures, one mutation.
+
 ### 2026-09-04 (release v1.117.0)
 
 - **`plugins/rails-flow/scripts/docs_layout.py`: a markdown link is a path relative to the file that holds it** (#909, the
@@ -4659,6 +4666,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-04 (release v1.118.0)
+
+- **`skills/design-system/references/brand.md`: several packs ship in one plugin; a project selects exactly one and records it**
+  (#919) — a per-project choice, never per component and never two at once.
 
 ### 2026-09-04 (release v1.117.0)
 
@@ -9683,6 +9695,13 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-04 (release v1.118.0)
+
+- **One brand pack per project, chosen on purpose** (#919). `plugins/design-flow/README.md` gains a *Brand packs — one per
+  project* section; `plugins/design-flow/commands/setup.md` no longer assumes `fidara:fmworkflows` when `$ARGUMENTS` is
+  empty — it lists the shipped packs and asks, confirms fidara as the default, refuses to lay a second pack over a managed
+  block that records a different `config.x.brand.pack`, and states the chosen pack first in its report.
 
 ### 2026-09-04 (release v1.117.0)
 

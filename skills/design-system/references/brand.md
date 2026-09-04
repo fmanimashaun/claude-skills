@@ -5,7 +5,10 @@
 stays central; each brand adapts **on top of** it. Build once, use everywhere.
 
 A brand is expressed as a **brand pack** — a small, self-contained unit. `fidara` is the first
-pack; a client brand is another. No pack is "the default that others deviate from".
+pack; a client brand is another. No pack is "the default that others deviate from". Several packs ship
+in one plugin, and **a project selects exactly one** — recorded in `config/initializers/brand.rb` as
+`config.x.brand.pack`, chosen when the design system is scaffolded, never per component and never two
+at once (#919).
 
 ## A pack is a theme, not a fork
 

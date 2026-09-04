@@ -6,10 +6,10 @@
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
-| `design-flow` | 1.39.0 | 5 | 12 | 5 | 18 |
+| `design-flow` | 1.39.1 | 5 | 12 | 5 | 18 |
 | `pipeline` | 1.3.2 | 2 | 8 | 2 | 1 |
 | `qa-flow` | 1.26.3 | 10 | 7 | 10 | 13 |
-| `rails-flow` | 1.38.2 | 11 | 19 | 11 | 23 |
+| `rails-flow` | 1.38.3 | 11 | 19 | 11 | 23 |
 
 ## Agents
 
