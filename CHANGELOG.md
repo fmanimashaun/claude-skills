@@ -2531,7 +2531,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-04 (release v1.118.0)
 
 - **`plugins/rails-flow/scripts/claude_md_structure.py`: `--set-ceiling` records the size the file has once the marker is in it**
   (#917). It recorded the count taken before inserting its own marker line, so following `setup-flow` verbatim left every
@@ -4667,7 +4667,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-04 (release v1.118.0)
 
 - **`skills/design-system/references/brand.md`: several packs ship in one plugin; a project selects exactly one and records it**
   (#919) — a per-project choice, never per component and never two at once.
@@ -9696,7 +9696,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-04 (release v1.118.0)
 
 - **One brand pack per project, chosen on purpose** (#919). `plugins/design-flow/README.md` gains a *Brand packs — one per
   project* section; `plugins/design-flow/commands/setup.md` no longer assumes `fidara:fmworkflows` when `$ARGUMENTS` is
