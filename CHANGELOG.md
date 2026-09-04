@@ -2531,6 +2531,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/scripts/claude_md_structure.py`: `--set-ceiling` records the size the file has once the marker is in it**
+  (#917). It recorded the count taken before inserting its own marker line, so following `setup-flow` verbatim left every
+  first run exactly one line over its own ceiling — `--report` failed, and the de-facto fix was "run it twice". A new marker
+  now records N+1; replacing an existing one is unchanged and idempotent. Two fixtures, one mutation.
+
 ### 2026-09-04 (release v1.117.0)
 
 - **`plugins/rails-flow/scripts/docs_layout.py`: a markdown link is a path relative to the file that holds it** (#909, the
