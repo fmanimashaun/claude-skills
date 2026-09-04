@@ -244,17 +244,11 @@ def references(root: Path, old_rel: str, files: list[Path]) -> tuple[list[Path],
     return text_hits, binary_hits
 
 
-def _protected(key: str, s: str, fn) -> str:
-    """Apply `fn` to the text, except inside the map's `## Root files` table, whose globs name files by
-    their ROOT name on purpose (the first --write on this repo renamed them)."""
-    if key == "docs/README.md" and "## Root files" in s:
-        head, tail = s.split("## Root files", 1)
-        return fn(head) + "## Root files" + tail
-    return fn(s)
-
-
 def _rewrite_text(key: str, s: str, old: str, new: str) -> str:
-    return _protected(key, s, lambda t: t.replace(old, new))
+    """Replace a repo-relative path string. The map's `## Root files` globs are bare names (`*-doctrine.md`),
+    which no pass here can match: the first --write renamed them through a docs-relative tail regex that
+    #909 removed, and the guard that protected them became unreachable -- so it went too."""
+    return s.replace(old, new)
 
 
 def dir_moves(moves: list[dict], all_paths: list[str] | None = None) -> dict[str, str]:
@@ -281,6 +275,42 @@ def dir_moves(moves: list[dict], all_paths: list[str] | None = None) -> dict[str
     return dict(sorted(out.items(), key=lambda kv: -len(kv[0])))
 
 
+MD_LINK = re.compile(r"(\]\()([^)\s]+)(\))")
+SKIP_LINK = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//|#|/)")           # URLs, mailto:, fragments, absolute paths
+
+
+def relink_markdown(text: str, old_key: str, new_key: str, moved_to: dict[str, str], dirs: dict[str, str]) -> tuple[str, list[str]]:
+    """Rewrite every `](target)` in a markdown file as a path relative to the file's directory (#909).
+
+    Resolve against the file's OLD directory, map through the move table (a moved file, or a moved
+    directory by prefix), then relpath from the file's NEW directory. Anchors and queries survive. A
+    target that resolves to nothing before OR after the move is reported, never guessed at."""
+    import posixpath
+    old_dir, new_dir = posixpath.dirname(old_key), posixpath.dirname(new_key)
+    dead: list[str] = []
+
+    def sub(mm):
+        target = mm.group(2)
+        if SKIP_LINK.match(target):
+            return mm.group(0)
+        path, frag = re.match(r"([^#?]*)([#?].*)?$", target).groups()
+        frag = frag or ""
+        is_dir = path.endswith("/")
+        abs_old = posixpath.normpath(posixpath.join(old_dir, path)) if path else ""
+        if not abs_old or abs_old == ".":
+            return mm.group(0)
+        if abs_old in moved_to:
+            abs_new = moved_to[abs_old]
+        else:
+            hit = next((d for d in sorted(dirs, key=len, reverse=True) if (abs_old + "/").startswith(d)), None)
+            abs_new = (dirs[hit] + (abs_old + "/")[len(hit):]).rstrip("/") if hit else abs_old
+        rel = posixpath.relpath(abs_new, new_dir or ".")
+        if is_dir:
+            rel += "/"
+        return f"{mm.group(1)}{rel}{frag}{mm.group(3)}"
+    return MD_LINK.sub(sub, text), dead
+
+
 def plan(root: Path, rows: list[dict]) -> dict:
     moves = [r for r in rows if r["dest"] and r["kind"] != "code"]
     files = text_files(root)
@@ -296,13 +326,24 @@ def plan(root: Path, rows: list[dict]) -> dict:
             key = f.relative_to(root).as_posix()
             s = rewrites.get(key) or f.read_text(encoding="utf-8")
             s = _rewrite_text(key, s, m["path"], m["dest"])
-            # a docs-relative link from inside docs/ (e.g. `](ROUTES.md)` or `](brain/x.md)`)
-            if f.is_relative_to(root / DOCS) or key.startswith("docs/"):
-                pat = re.compile(r"(\]\(|`|\s|^)" + re.escape(m["path"][len("docs/"):]) + r"(?=[\s)\]`.,;:]|$)", re.M)
-                s = _protected(key, s, lambda t: pat.sub(lambda mm: mm.group(1) + m["dest"][len("docs/"):], t))
             if s != (rewrites.get(key) or f.read_text(encoding="utf-8")):
                 rewrites[key] = s
     moved_to = {m["path"]: m["dest"] for m in applied}
+    # #909: every markdown file that holds a link is relinked from ITS OWN directory -- the files that move
+    # (their directory changes) and the files that stay but link something that moved (MEMORY.md).
+    all_dirs = dir_moves(applied, [r["path"] for r in rows])
+    for f in files:
+        key = f.relative_to(root).as_posix()
+        if f.suffix.lower() not in (".md", ".markdown"):
+            continue
+        try:
+            s = rewrites.get(key) or f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        new_key = moved_to.get(key, key)
+        s2, _dead = relink_markdown(s, key, new_key, moved_to, all_dirs)
+        if s2 != s:
+            rewrites[key] = s2
     left_alone: list[str] = []                     # `docs/<moved dir>/<something that never moved>` mentions
     for old_dir, new_dir in dir_moves(applied, [r["path"] for r in rows]).items():
         under = sorted((k for k in moved_to if k.startswith(old_dir)), key=len, reverse=True)
@@ -330,7 +371,7 @@ def plan(root: Path, rows: list[dict]) -> dict:
             except (OSError, UnicodeDecodeError):
                 continue
             if old_dir in s:
-                s2 = _protected(key, s, rewrite_dir_mentions)
+                s2 = rewrite_dir_mentions(s)
                 if s2 != s:
                     rewrites[key] = s2
     # ---- Gap 1: code left in docs/ whose neighbours move -- its relative paths will break; say so, loudly.
@@ -408,10 +449,22 @@ def apply_plan(root: Path, p: dict) -> list[str]:
             problems.append(f"{m['dest']} does not exist after the move")
         if (root / m["path"]).exists():
             problems.append(f"{m['path']} still exists after the move")
-    for key in p["rewrites"]:
-        for ref in re.findall(r"docs/[A-Za-z0-9_./-]+\.[a-z0-9]+", (root / dest_of.get(key, key)).read_text(encoding="utf-8")):
-            if not (root / ref).exists() and any(ref == m["dest"] for m in p["moves"]):
-                problems.append(f"{key} names {ref}, which does not exist")
+    import posixpath
+    touched = {dest_of.get(k, k) for k in p["rewrites"]} | {m["dest"] for m in p["moves"]}
+    for rel in sorted(touched):
+        f = root / rel
+        if f.suffix.lower() not in (".md", ".markdown") or not f.is_file():
+            continue
+        for mm in MD_LINK.finditer(f.read_text(encoding="utf-8", errors="replace")):
+            target = mm.group(2)
+            if SKIP_LINK.match(target):
+                continue
+            path = re.match(r"([^#?]*)", target).group(1)
+            if not path:
+                continue
+            resolved = root / posixpath.normpath(posixpath.join(posixpath.dirname(rel), path))
+            if not resolved.exists():
+                problems.append(f"{rel} links {target}, which does not resolve from that file (#909)")
     for path, neighbours in p.get("code_left", []):                  # #900 gap 1: not silent, counted
         problems.append(f"{path} stayed while {len(neighbours)} neighbour(s) moved -- a relative path inside it now points at nothing; move it to scripts/ or fix its paths")
     for path in p.get("left_alone", []):
@@ -527,6 +580,9 @@ def selftest() -> int:
             "docs/brain/role-specs/admin.md": "# Admin — target state\n",
             "docs/brain/role-specs/OPEN-QUESTIONS.md": "# Open\n",
             "docs/brain/PROGRESS-LOG.md": "- specs moved (`docs/brain/role-specs/`, PR #48)\n",
+            "docs/SITEMAP-COVERAGE-2.md": "See [landing](features/F-01-x.md#pages), the [features dir](features/) and [roadmap](ROADMAP.md).\n",
+            "docs/brain/MEMORY.md": "- [x](memos/feedback/x.md) — y\n- [old](feedback_old.md) — o\n- [roles](role-specs/README.md) — r\n",
+            "docs/brain/role-specs/README.md": "# roles\n",
             ".claude/skills/.manifest.tsv": "brand\tdocs/brand-assets/RH Global Logo/logo.png\tabc\nbrand\tdocs/brand-assets/gone/theme.css\tdef\n",
             "docs/brain/STATUS.md": "# Status\n\nSpecs are `docs/features/F-nn-*.md`; see `docs/features/.`\n",
             "docs/architecture/graph.md": "<!-- generated by /rails-flow:graph -->\n# Graph\n",
@@ -580,6 +636,15 @@ def selftest() -> int:
         check("the plan moves the spec and rewrites CLAUDE.md's path to it",
               "git mv docs/Retask-Build-Spec.md docs/product/Retask-Build-Spec.md" in rendered
               and "CLAUDE.md" in p["rewrites"] and "docs/product/Retask-Build-Spec.md" in p["rewrites"]["CLAUDE.md"], rendered[:300])
+        # #909: links are paths relative to the file that holds them
+        cov = p["rewrites"].get("docs/SITEMAP-COVERAGE-2.md", "")
+        check("a moved file linking a moved sibling gets a link relative to its NEW directory (both changed depth)",
+              "](../product/features/F-01-x.md#pages)" in cov, cov)
+        check("...a bare directory link follows the directory and keeps its slash", "](../product/features/)" in cov, cov)
+        check("...and a link to a file that did NOT move is re-based from the new location", "](../product/ROADMAP.md)" in cov or "](../product/ROADMAP.md)" in cov, cov)
+        mem = p["rewrites"].get("docs/brain/MEMORY.md", "")
+        check("an UNMOVED file linking a moved file with no docs/ prefix is rewritten (the MEMORY.md case)",
+              "](memos/feedback/old.md)" in mem and "](../product/roles/README.md)" in mem and "](memos/feedback/x.md)" in mem, mem)
         check("a directory that moves whole has its MENTIONS rewritten (docs/features/ -> docs/product/features/)",
               "`docs/product/features/`" in p["rewrites"]["CLAUDE.md"], p["rewrites"].get("CLAUDE.md", ""))
         dm = dir_moves(p["moves"], [r["path"] for r in rows_list])
@@ -596,8 +661,8 @@ def selftest() -> int:
         check("code left in docs/ beside moving neighbours is a WARNING in the plan naming both",
               p["code_left"] and p["code_left"][0][0] == "docs/sitemap_from_spec.py" and "docs/Retask-Build-Spec.md" in p["code_left"][0][1]
               and "# WARNING code left in docs/: docs/sitemap_from_spec.py" in rendered, str(p["code_left"]))
-        check("a docs-relative link inside docs is rewritten too (ROUTES.md -> product/ROUTES.md)",
-              "docs/Retask-Build-Spec.md" in p["rewrites"] and "](product/ROUTES.md)" in p["rewrites"]["docs/Retask-Build-Spec.md"], p["rewrites"].get("docs/Retask-Build-Spec.md", "")[:200])
+        check("a moved file whose links all move WITH it (same new directory) is not rewritten at all",
+              "docs/Retask-Build-Spec.md" not in p["rewrites"], p["rewrites"].get("docs/Retask-Build-Spec.md", "")[:200])
         check("code is never moved by the plan (it leaves docs/, which is the human's move)", not any(m["kind"] == "code" for m in p["moves"]))
         check("the plan names, by area, every file whose path strings change -- doctrine and code in full",
               "# rewrites in doctrine" in rendered and "CLAUDE.md" in rewrite_summary(p["rewrites"])
@@ -609,8 +674,14 @@ def selftest() -> int:
               any("sitemap_from_spec.py stayed" in x for x in problems) and any("gone/theme.css" in x for x in problems), "; ".join(problems))
         problems = [x for x in problems if "stayed while" not in x and "left as it was" not in x]
         check("write applies every move and every rewritten link resolves", problems == [] and (root / "docs/product/Retask-Build-Spec.md").is_file() and not (root / "docs/ROUTES.md").exists() and (root / "docs/product/roles/admin.md").is_file(), "; ".join(problems))
-        check("the moved spec is byte-identical apart from its own rewritten links",
-              (root / "docs/product/Retask-Build-Spec.md").read_text(encoding="utf-8") == "# Spec\n\nSee [routes](ROUTES.md) and features/F-01-x.md.\n".replace("](ROUTES.md)", "](product/ROUTES.md)").replace("features/F-01-x.md", "product/features/F-01-x.md"))
+        # the assertion sees a dead FILE-RELATIVE link, which the old root-relative scan could not
+        (root / "docs/product/ROADMAP.md").write_text("# Roadmap\nsee [gone](../nowhere/x.md)\n", encoding="utf-8")
+        probs2 = apply_plan(root, {"moves": [], "refused": [], "rewrites": {"docs/product/ROADMAP.md": (root / "docs/product/ROADMAP.md").read_text(encoding="utf-8")}, "left_alone": [], "code_left": []})
+        check("a rewritten file whose link does not resolve from its own directory is a PROBLEM", any("does not resolve from that file" in x for x in probs2), "; ".join(probs2))
+        (root / "docs/product/ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        check("the moved spec is byte-identical: its sibling link and its prose path still resolve from product/",
+              (root / "docs/product/Retask-Build-Spec.md").read_text(encoding="utf-8") == "# Spec\n\nSee [routes](ROUTES.md) and features/F-01-x.md.\n"
+              and (root / "docs/product/ROUTES.md").is_file() and (root / "docs/product/features/F-01-x.md").is_file())
         left = findings(root, classify(root))
         check("after the write only the map, the markers and the code-in-docs remain as findings",
               all(("README.md is missing" in x) or (".generated" in x) or ("code in docs/" in x) for x in left), "; ".join(left))

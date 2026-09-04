@@ -28,6 +28,12 @@ You also need `rails-8` (Ruby/ERB/specs/simple_form) and `hotwire` (Turbo/Stimul
 
 ## What you do, in order
 
+**0. Extract the manifest, and treat it as your checklist.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py"
+extract <canvas>.dc.html --out docs/design/<surface>/<canvas>.manifest.json`. Every item it lists — heading, copy,
+control, repeat, conditional, icon, data label — is something the canvas specifies. You will account for each one
+by id before you say done; an item you decide not to build is `deferred` with a reason the user approved, never
+silently absent (#908).
+
 **1. Identify the source format.** JSX/TSX, or a `<x-dc>` canvas export. Say which. They carry the same
 design and are read differently — §1 of the handoff.
 
@@ -74,6 +80,10 @@ the one the artboard illustrates. An artboard shows a moment; a surface has to h
 
 Run the checks rather than asserting the outcome:
 
+- Write `docs/design/<surface>/<canvas>.port-report.json` — every manifest id → `implemented` (+ `where`),
+  `dropped-scaffolding`, `token-gap`, or `deferred` (+ `reason`) — and run
+  `canvas_manifest.py check <manifest> --report <report>`. It refuses while an item is unaccounted for, and an
+  `implemented` whose text is in neither the file you named nor the locales is a gap. Do not say done over a gap.
 - Specs green, including one proving any new behaviour.
 - `/design-flow:audit` clean — no raw hex, no `cdn-font-link`, on-catalogue variants only.
 - Visual parity against the source: layout, rhythm, type scale, colour, motion, and each state.

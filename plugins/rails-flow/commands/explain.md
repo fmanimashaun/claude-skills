@@ -24,7 +24,7 @@ things it could pad itself with are already owned elsewhere and are better there
 |---|---|---|
 | What calls what, exhaustively | `docs/architecture/graph.md` + `graph.json` | Generated and digest-guarded by `/rails-flow:graph` — it **cannot** rot. Hand-copied structure can, and does. |
 | What we decided and why | `docs/brain/DECISIONS.md` (`D-nnn`) | One decision, one home. Two prose accounts of one decision will disagree, and nothing says which wins. |
-| What "done" means | `docs/acceptance/<slug>.md` | The criteria grade the work; the guide teaches the owner to check it. |
+| What "done" means | `docs/product/acceptance/<slug>.md` | The criteria grade the work; the guide teaches the owner to check it. |
 | **What it all means, in plain language** | **the guide** | Nothing else carries it. A call graph cannot say what a word means in this business. |
 
 So the guide **links** — `see D-004`, "the full graph is in `docs/architecture/graph.md`" —
@@ -84,7 +84,7 @@ under time pressure is always *Check it yourself*, which is the only part that g
 independence.
 
 **"Check it yourself" is the human-runnable form of the acceptance criteria** — the same
-observables as `docs/acceptance/<slug>.md`, expressed as something the owner can do without an
+observables as `docs/product/acceptance/<slug>.md`, expressed as something the owner can do without an
 agent. Every step names a command, a route or a path; a step that says "confirm billing works"
 is a reassurance, and the checker rejects it for the same reason `check_criteria.py` rejects
 that phrasing in a criterion.

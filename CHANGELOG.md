@@ -7,6 +7,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-04 (release v1.117.0)
+
+- **`scripts/lint_self_consistency.py`: `hook-lib-drift`** (#906) — the two shipped copies of `hooks/scripts/lib/normalize_cmd.sh`
+  (rails-flow, qa-flow) must exist and be byte-identical; one normaliser is a claim only while they are. Three fixtures,
+  one mutation.
+
 ### 2026-09-03 (release v1.116.0)
 
 - **One generated reference surface: `docs/architecture/inventory.html` retired; its agents, gates and tier tables render
@@ -2520,6 +2526,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-04 (release v1.117.0)
+
+- **`plugins/rails-flow/scripts/docs_layout.py`: a markdown link is a path relative to the file that holds it** (#909, the
+  first real `--write` on a populated tree left 116 dead links behind a clean summary). `relink_markdown` resolves every
+  `](target)` against the file's OLD directory, maps it through the move table (a moved file, or a moved directory by
+  prefix), and re-bases it from the file's NEW directory — anchors and bare directory links included — for every markdown
+  file: the ones that move (both depths change) and the ones that stay but link something that moved (`brain/MEMORY.md`,
+  the index every session loads). The post-write assertion now resolves each link from the file it sits in; a dead one is
+  a PROBLEM. The old docs-stripped rewrite and its root-relative scan are gone — a fixture that had enshrined the bug
+  (`](ROUTES.md)` → `](product/ROUTES.md)`) now asserts the correct no-op. Fixtures + 2 mutations (45 / 23).
+- **`plugins/rails-flow/checks.json`: the `acceptance-criteria` check follows the layout** (#910): `{match:docs/**/acceptance/*.md}` finds criteria at
+  `docs/product/acceptance/` (the layout's home) and at the pre-layout `docs/acceptance/`; `feature.md`, `fix.md`,
+  `brief.md`, `explain.md` name the layout path. Adopting the layout with the shipped tool no longer turns the gate n/a.
+- **`plugins/rails-flow/hooks/scripts/guard-bash.sh` matches the INVOKED command, not any substring** (#906). It blocked
+  a grep whose pattern was the rule text, an echo quoting it, a commit message quoting it and the reporter's own
+  dedup search — the toolchain audit's grep among them — while `git -C repo add -A` slipped through. Every
+  rule (db:reset, force-push, staging everything, `--no-verify`, `reset --hard`, `kamal deploy`) now matches a verb at
+  the START of an invoked segment after `hooks/scripts/lib/normalize_cmd.sh` strips quotes, comments and heredoc bodies,
+  splits on `; | && ||`, and peels env/sudo/git-global-option prefixes — the normaliser qa-flow's release gate has carried
+  since #3/#7/#48, now one file both hooks source. FAIL CLOSED: with the lib missing the hook matches the raw text as
+  before. `check_hook_gates.py` carries the issue's whole matrix (9 negatives, 8 positives, the fallback) and now drives
+  `release-gate.sh` too; guards `hook_guard_bash` (+2) and `hook_normalize_cmd` (3).
+
 ### 2026-09-03 (release v1.116.0)
 
 - **`plugins/rails-flow/scripts/docs_layout.py`: three gaps a real 98-file rework exposed, fixed** (#900). (1) A code file left in
@@ -4625,6 +4654,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-04 (release v1.117.0)
+
+- **`skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
+  for by id** (#908) — the fidelity half a script can hold; layout and rhythm parity stay the porter's to confirm.
 
 ### 2026-09-03 (release v1.116.0)
 
@@ -8163,6 +8197,16 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 2026-09-04 (release v1.117.0)
+
+- **`plugins/qa-flow/agents/case-author.md` names criteria at `docs/product/acceptance/<slug>.md`** (#910), the shipped
+  layout's home; the `acceptance:<slug>` case prefix is unchanged.
+- **`plugins/qa-flow/hooks/scripts/release-gate.sh` sources `hooks/scripts/lib/normalize_cmd.sh`** (#906) — the same
+  normaliser rails-flow's guard-bash now uses, extracted from this file unchanged; behaviour identical, and driven by
+  `check_hook_gates.py` for the first time (push to main behind env, `git -C` and `;` blocked; a commit message or echo
+  naming main passes). Plugins install alone, so this is a copy of the rails-flow file, kept byte-identical by the
+  maintainer lint `hook-lib-drift`.
+
 ### 2026-09-03 (release v1.114.0)
 
 - **`plugins/qa-flow/scripts/blast_radius.py`: the maintainer doctrine its docstring cites moved** (#886) —
@@ -9634,6 +9678,20 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-04 (release v1.117.0)
+
+- **Port fidelity: `plugins/design-flow/scripts/canvas_manifest.py` gives "done" a denominator** (#908 — the maintainer:
+  agents "pick what they want, then claim they are done"). `extract` reads a Claude Design `.dc.html` export structurally —
+  grounded on a real 207 KB one: `<x-dc>` + `<helmet>`, 408 inline styles, no heading tags (headings are spans by font-size),
+  a template runtime of `<sc-for>` repeats, `<sc-if>` conditionals and 526 `{{ }}` bindings, and a 123 KB `text/x-dc` data
+  script holding most of the copy as `label: '…'` pairs — into one item per heading, copy run, control (with its label),
+  repeat, conditional, icon, data label and data copy, each with a stable id. `compare --root .` says which items' text
+  a project already has (on the reporting project: 19 of 624 — the Admin surface is not built). `check --report` refuses
+  while any item is unaccounted for; `implemented` must name a file that carries the text, `deferred` needs the user's
+  reason. `design-handoff.md` §8, `port.md` (step 0, first done-line) and `design-porter.md` (step 0, first done-line)
+  make the report the precondition of "done"; `checks.json` `port-fidelity` (`port_fidelity_gate.py`, n/a until a
+  manifest exists). 20 fixtures, 6 mutations.
 
 ### 2026-09-03 (release v1.116.0)
 

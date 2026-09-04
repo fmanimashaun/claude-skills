@@ -30,6 +30,15 @@ You also need `rails-8` and `hotwire`. Same rule.
 
 ## Run it
 
+**Step 0 — the checklist is extracted, not written.** Before any code:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py" extract "<canvas>.dc.html" --out "docs/design/<surface>/<canvas>.manifest.json"
+```
+
+Every heading, copy run, control, repeat, conditional, icon and data label the canvas specifies becomes one item
+with a stable id. That manifest is the porter's checklist and the denominator of "done" (#908).
+
 Dispatch the **`design-porter`** agent. It works the order in `design-handoff.md`:
 
 1. **Identify the source format** — JSX/TSX or `<x-dc>` canvas. They carry the same design and are
@@ -51,6 +60,17 @@ Dispatch the **`design-porter`** agent. It works the order in `design-handoff.md
 
 ## Before it is done
 
+- **The port report accounts for every manifest item** — `docs/design/<surface>/<canvas>.port-report.json`, one
+  entry per id: `implemented` + `where`, `dropped-scaffolding`, `token-gap`, or `deferred` + the reason the user
+  approved — and this is clean:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py" check "docs/design/<surface>/<canvas>.manifest.json" --report "docs/design/<surface>/<canvas>.port-report.json"
+  ```
+
+  It refuses while any item is unaccounted for, and an `implemented` whose text is in neither the named file nor
+  `config/locales` is a gap. To see how far an existing implementation already is, `compare <manifest> --root .`
+  prints found and missing by kind with no report at all.
 - Specs green, including one proving any new behaviour.
 - `/design-flow:audit` clean — no raw hex, no `cdn-font-link`, on-catalogue variants only.
 - Visual parity against the source, in every state.

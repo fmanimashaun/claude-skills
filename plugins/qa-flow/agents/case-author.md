@@ -44,7 +44,7 @@ Test ID,Title,Area,Type,Priority,Status,Source,Notes
 - **Priority** — `P1` · `P2` · `P3` (risk-based; auth/tenancy/money/migrations skew P1).
 - **Status** — `active` · `deprecated` (deprecate, don't delete — preserve history/IDs).
 - **Source** — `acceptance:<slug>` · `prd` · `feature:<slug>` · `defect:#<n>` · `exploratory`.
-  Prefer `acceptance:<slug>` when the case came from `docs/acceptance/<slug>.md`: it is the
+  Prefer `acceptance:<slug>` when the case came from `docs/product/acceptance/<slug>.md`: it is the
   only source written before the code.
 - **Notes** — data prerequisites, tenant scope, links.
 
@@ -52,7 +52,7 @@ Optionally also refresh a human-readable `qa/test-cases.md` (grouped by Area) fr
 
 ## Sources (consult in order)
 
-1. **`docs/acceptance/*.md`** — rails-flow's per-branch acceptance criteria, and the **first**
+1. **`docs/product/acceptance/*.md`** — rails-flow's per-branch acceptance criteria, and the **first**
    source to consult, because it is the only one written *before* the code and therefore the
    only one that states what was required rather than what shipped. Each `AC-n` becomes a case
    whose title is the criterion's `when`/`then` made readable, `Source: acceptance:<slug>`, and
