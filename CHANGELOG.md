@@ -4667,6 +4667,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`skills/design-system/references/brand.md`: several packs ship in one plugin; a project selects exactly one and records it**
+  (#919) — a per-project choice, never per component and never two at once.
+
 ### 2026-09-04 (release v1.117.0)
 
 - **`skills/design-system/references/design-handoff.md` §8: the port is not done until every manifest item is accounted
@@ -9690,6 +9695,13 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **One brand pack per project, chosen on purpose** (#919). `plugins/design-flow/README.md` gains a *Brand packs — one per
+  project* section; `plugins/design-flow/commands/setup.md` no longer assumes `fidara:fmworkflows` when `$ARGUMENTS` is
+  empty — it lists the shipped packs and asks, confirms fidara as the default, refuses to lay a second pack over a managed
+  block that records a different `config.x.brand.pack`, and states the chosen pack first in its report.
 
 ### 2026-09-04 (release v1.117.0)
 
