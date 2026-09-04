@@ -8,7 +8,7 @@ GUARD = Guard(
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
-    needs=('plugins/rails-flow/hooks/scripts',),
+    needs=('plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts'),   # check_hook_gates drives BOTH plugins' hooks (#906)
     mutations=(
         Mutation(
             'the `..` refusal is removed, so a lane escape passes the prefix match again',
