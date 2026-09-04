@@ -76,7 +76,7 @@ before choosing how to respond.
 3. **Bugs are reproduced before they are fixed**: write the failing spec that demonstrates
    the bug FIRST, then make it pass. The spec is the proof and the regression guard.
    **State the criterion before the spec.** For a fix, the criterion IS the bug report made
-   falsifiable — record it in `docs/acceptance/<phase-or-slug>.md` before touching code:
+   falsifiable — record it in `docs/product/acceptance/<phase-or-slug>.md` before touching code:
 
    ```md
    ## Wrong-tenant invoice leak
@@ -87,7 +87,7 @@ before choosing how to respond.
    A bug fixed against a criterion written afterwards proves only that the code changed. Note
    a fix's criteria are usually error-path by nature, which the required error path suits.
    Validate with
-   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md" --specs spec`;
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/product/acceptance/<slug>.md" --specs spec`;
    the spec cites the id (`it "AC-1 denies cross-tenant reads"`). The Stop gate enforces both
    on `fix/*` branches.
 4. **A phase backlog gets a work order.** For a single reproduced bug the criteria are usually

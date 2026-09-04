@@ -59,10 +59,10 @@ GUARD = Guard(
             "rewrites CLAUDE.md's path to it",
         ),
         Mutation(
-            "a docs-relative link inside docs/ is left pointing at the old location",
-            '            if f.is_relative_to(root / DOCS) or key.startswith("docs/"):',
-            '            if False:',
-            "a docs-relative link inside docs is rewritten too",
+            "a markdown link is rewritten as the docs/-stripped root path instead of relative to its file (#909 shape 1)",
+            '        rel = posixpath.relpath(abs_new, new_dir or ".")',
+            '        rel = abs_new[len("docs/"):] if abs_new.startswith("docs/") else abs_new',
+            "gets a link relative to its NEW directory",
         ),
         Mutation(
             "a file both moved and rewritten is written back at its OLD path, resurrecting it",
@@ -107,12 +107,6 @@ GUARD = Guard(
             "Root files` rule in the map homes a root file where the map says",
         ),
         Mutation(
-            "the map's own `## Root files` globs are rewritten along with everything else, breaking the map on the first --write",
-            '    if key == "docs/README.md" and "## Root files" in s:',
-            '    if False:',
-            "globs survive a --write",
-        ),
-        Mutation(
             "a directory that moves whole leaves every `docs/<old>/` mention pointing at nothing",
             '    for old_dir, new_dir in dir_moves(applied, [r["path"] for r in rows]).items():',
             '    for old_dir, new_dir in {}.items():',
@@ -136,6 +130,18 @@ GUARD = Guard(
             '    for path, neighbours in p.get("code_left", []):                  # #900 gap 1: not silent, counted',
             '    for path, neighbours in []:',
             "counts the code left beside moved neighbours",
+        ),
+        Mutation(
+            "an unmoved file linking a moved file is never relinked (#909 shape 2, the MEMORY.md case)",
+            '        new_key = moved_to.get(key, key)\n        s2, _dead = relink_markdown(s, key, new_key, moved_to, all_dirs)',
+            '        new_key = moved_to.get(key, key)\n        s2, _dead = (s, []) if key not in moved_to else relink_markdown(s, key, new_key, moved_to, all_dirs)',
+            "an UNMOVED file linking a moved file with no docs/ prefix is rewritten",
+        ),
+        Mutation(
+            "the post-write assertion goes back to scanning root-relative docs/ strings, blind to a dead file-relative link",
+            '            if not resolved.exists():\n                problems.append(f"{rel} links {target}, which does not resolve from that file (#909)")',
+            '            if False:\n                problems.append("")',
+            "does not resolve from its own directory is a PROBLEM",
         ),
     ),
 )

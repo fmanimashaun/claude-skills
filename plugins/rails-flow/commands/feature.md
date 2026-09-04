@@ -60,9 +60,9 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/acceptance/<branch-slug>.md` — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are\nbuilding; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
-→ `docs/acceptance/team-foo.md`). One `##` section per unit:
+→ `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
 ```md
 ## Invoice totals
@@ -92,8 +92,8 @@ security finding this flow has produced downstream was an error or edge path.
 Validate before implementing, and again once specs exist:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md"
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/acceptance/<slug>.md" --specs spec
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/product/acceptance/<slug>.md"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" "docs/product/acceptance/<slug>.md" --specs spec
 ```
 
 Exit `0` clean · `1` findings · `2` unusable (no file, or no criteria in it). On findings,
@@ -115,7 +115,7 @@ how to verify, and what to record on completion.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/handoff/<slug>.md" \
-  --criteria "docs/acceptance/<slug>.md"
+  --criteria "docs/product/acceptance/<slug>.md"
 ```
 
 Why it comes after the criteria and before the code: the work order **cites** the criteria rather
