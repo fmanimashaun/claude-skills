@@ -37,5 +37,11 @@ GUARD = Guard(
             "            i = para[\"start\"]\n            keep.append(src[i - 1]); i += 1\n            continue",
             "propose removes the history paragraph",
         ),
+        Mutation(
+            "the ceiling is recorded from the pre-insertion count again, so the first --set-ceiling leaves the file one line over (#917)",
+            '    return r["lines"] + (0 if r["ceiling"] is not None else 1)',
+            '    return r["lines"]',
+            "records the size WITH the marker",
+        ),
     ),
 )
