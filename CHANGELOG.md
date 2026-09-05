@@ -2531,6 +2531,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-05 (release v1.120.0)
+
+- **`plugins/rails-flow/scripts/claude_md_structure.py`: the third lever** (#927). `--report` lists rule paragraphs that apply
+  to ONE area of the codebase (a path under `app/`, `config/`, `db/`…, or an area noun — mailer, ViewComponent, Stimulus,
+  Turbo, migration, job) as candidates for a path-scoped `.claude/rules/<area>.md`, with the `paths:` glob each would
+  carry and the lines it would free; the FAIL text names all three levers in order — relocate history, scope area rules,
+  raise with a reason. Nothing is scaffolded: a downstream run sitting 24 lines above the 200-line target named exactly
+  this as the next move and rightly did not take it yet. Fixtures + 1 mutation.
+
 ### 2026-09-04 (release v1.119.0)
 
 - **`plugins/rails-flow/scripts/toolchain_version.py`: a plugin whose published version did not resolve is exit 2, never
@@ -9703,6 +9712,15 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-05 (release v1.120.0)
+
+- **`check` no longer greps a bound control's label as literal text** (#930). `plugins/design-flow/scripts/canvas_manifest.py`'s
+  `check` treated `input[date]: {{ fromValue }}` like any label and refused every `implemented` entry for it, because no
+  view carries the text `{{ fromvalue }}` — its literal lives in the script's data-labels, which are items of their own.
+  `compare` already skipped bound needles; `check` now does the same, so the report's `where` names the file that renders
+  the binding. Found by the first whole-canvas port (Retask's `Admin.dc.html`, 877 items): twelve "gaps" no file could
+  satisfy. Selftest case and mutation added (`scripts/mutations/canvas_manifest.py`, now 7).
 
 ### 2026-09-04 (release v1.118.0)
 
