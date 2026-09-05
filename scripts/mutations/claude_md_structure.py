@@ -43,5 +43,11 @@ GUARD = Guard(
             '    return r["lines"]',
             "records the size WITH the marker",
         ),
+        Mutation(
+            "area-scoped rule paragraphs are no longer detected, so the third lever is never suggested (#927)",
+            '    return min(hits)[1] if hits else None',
+            '    return None',
+            "is scoped to app/mailers",
+        ),
     ),
 )

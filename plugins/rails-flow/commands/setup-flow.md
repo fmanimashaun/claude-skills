@@ -239,6 +239,10 @@ Rules live in `.claude/rules/*.md` (committed, team-shared) and a rule with `pat
 that area. A rule with no `paths:` loads every session, same as `CLAUDE.md`; use that only for
 genuinely global content.
 
+`claude_md_structure.py --report` lists the rule paragraphs that apply to one area as candidates for such a
+rule, with the `paths:` glob each would carry (#927) — the third lever when the ceiling bites, after relocating
+history and before raising the ceiling.
+
 Do **not** scaffold rules by default — most projects need none, and empty machinery is worse
 than none. Surface the mechanism, and propose a rule only where the project actually shows the
 need: a mode switch (an OSS/hosted split, as in fizzy's conditional `saas/AGENTS.md`), a
