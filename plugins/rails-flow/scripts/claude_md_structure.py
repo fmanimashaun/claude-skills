@@ -125,10 +125,14 @@ def area_of(body: str) -> str | None:
     """The code area a rule paragraph is ABOUT -- the first one it names -- or None when it names no area.
 
     First, not only: "a mailer never carries Turbo or Stimulus" is a rule about mailers that names two other
-    areas as what a mailer must not carry. The subject comes first in a rule sentence; the exceptions follow."""
-    hits: list[tuple[int, str]] = [(m.start(), "/".join(m.group(1).split("/")[:2])) for m in AREA_PATHS.finditer(body)]
+    areas as what a mailer must not carry. And in the FIRST LINE only: the subject of a rule is stated where the
+    rule starts; a path cited three lines down is an example, not the scope. Measured on a real CLAUDE.md, the
+    anywhere-in-the-paragraph version flagged a product summary that listed the stack and a twenty-line override
+    block that cited one initializer -- neither is a rule about that area."""
+    head = body.split("\n", 1)[0]
+    hits: list[tuple[int, str]] = [(m.start(), "/".join(m.group(1).split("/")[:2])) for m in AREA_PATHS.finditer(head)]
     for pat, area in AREA_NOUNS:
-        m = pat.search(body)
+        m = pat.search(head)
         if m:
             hits.append((m.start(), area))
     return min(hits)[1] if hits else None
@@ -287,6 +291,9 @@ def selftest() -> int:
           areas.get("Mail") == "app/mailers" and areas.get("Components") == "app/components", str(rs["scoped"]))
     check("a global rule (git) is not scoped", "Git" not in areas, str(areas))
     check("a rule naming several areas is about the FIRST one it names", area_of("Mailers and app/jobs both need this.") == "app/mailers" and area_of("Run the specs before pushing.") is None)
+    check("an area cited only in a LATER line is an example, not the scope (a summary listing the stack is not a component rule)",
+          area_of("**Product**: a work platform for freelancers.\nBuilt on Rails 8, Hotwire and ViewComponents.") is None
+          and area_of("Type is split by surface: Montserrat is display only.\nSee app/assets/tailwind/application.css.") is None)
     import io, contextlib
     buf = io.StringIO()
     with contextlib.redirect_stderr(buf):
