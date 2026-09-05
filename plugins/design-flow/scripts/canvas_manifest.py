@@ -275,6 +275,8 @@ def check(manifest: dict, report: dict, root: Path) -> list[str]:
                 problems.append(f"{item['id']}: implemented with no `where` -- name the file")
             elif item["kind"] in TEXT_KINDS:
                 n = _needle(item)
+                if "{{" in n:
+                    continue                          # bound to data: the literal lives in the script's data-labels, not the view (#930)
                 p = root / where
                 body = " ".join(p.read_text(encoding="utf-8", errors="replace").split()).lower() if p.is_file() else ""
                 locales = " ".join(" ".join(q.read_text(encoding="utf-8", errors="replace").split()).lower() for q in (root / "config" / "locales").glob("*.yml")) if (root / "config" / "locales").is_dir() else ""
@@ -410,6 +412,10 @@ def selftest() -> int:
         check_("an unaccounted item is a gap named by id and text", any("is not accounted for" in p for p in check(m, partial, root)))
         liar = json.loads(json.dumps(full)); liar["items"][next(i["id"] for i in m["items"] if i["text"] == "button[button]: Screen defect")] = {"status": "implemented", "where": "app/views/admin/index.html.erb"}
         check_("`implemented` whose text is in neither the named file nor the locales is a gap", any("in neither that file nor config/locales" in p for p in check(m, liar, root)))
+        bound_ctl = next((i["id"] for i in m["items"] if i["kind"] == "control" and "{{" in i["text"]), None)
+        check_("the fixture has a bound control to test with", bound_ctl is not None, str(kinds.get("control")))
+        bound = json.loads(json.dumps(full)); bound["items"][bound_ctl or next(iter(full["items"]))] = {"status": "implemented", "where": "app/views/admin/index.html.erb"}
+        check_("a control whose label is a binding is implemented where its view is, not where its literal is (#930)", not any((bound_ctl or "") in p for p in check(m, bound, root)), "; ".join(check(m, bound, root))[:300])
         deferred_id = next((k for k, v in full["items"].items() if v["status"] == "deferred"), None)
         check_("the fixture has a deferred item to test with", deferred_id is not None)
         nodefer = json.loads(json.dumps(full)); nodefer["items"][deferred_id or next(iter(full["items"]))] = {"status": "deferred"}
