@@ -168,14 +168,25 @@ class Canvas(HTMLParser):
             self._add("copy", literal, **({"states": states} if states else {}))
 
 
-def script_items(html: str, artboard: str) -> list[dict]:
+IMPORT_RE = re.compile(r"""import\(\s*['"](\.{1,2}/[^'"]+\.js)['"]\s*\)""")
+
+
+def script_items(html: str, artboard: str, seen: set[str] | None = None) -> list[dict]:
     """The data half: `label: '...'` pairs and Title-case literals from the x-dc script, never code."""
     m = SCRIPT_RE.search(html)
     if not m:
         return []
-    js = m.group(1)
+    return js_items(m.group(1), artboard, set() if seen is None else seen)
+
+
+def imported_modules(html: str) -> list[str]:
+    """The `import('./x.js')` calls in the inline script -- a canvas that keeps its screens in a module (#935)."""
+    m = SCRIPT_RE.search(html)
+    return sorted(set(IMPORT_RE.findall(m.group(1)))) if m else []
+
+
+def js_items(js: str, artboard: str, seen: set[str]) -> list[dict]:
     out: list[dict] = []
-    seen: set[str] = set()
 
     def add(kind: str, text: str) -> None:
         text = " ".join(text.split())
@@ -194,12 +205,31 @@ def extract(path: Path) -> dict:
     html = path.read_text(encoding="utf-8", errors="replace")
     c = Canvas(); c.feed(html)
     artboards = c.artboards or ["canvas"]
-    items = c.items + script_items(html, artboards[0] if len(artboards) == 1 else "script")
+    board = artboards[0] if len(artboards) == 1 else "script"
+    seen: set[str] = set()
+    items = c.items + script_items(html, board, seen)
+    # A canvas may keep its screens in a module beside it (`import('./admin-core.js')`). Its copy is part of
+    # the design and belongs on the checklist; a module that cannot be read is RECORDED, never skipped --
+    # a checklist that omits what it never read is what #908 exists to prevent (#935).
+    modules, missing = [], []
+    for rel in imported_modules(html):
+        mod = (path.parent / rel).resolve()
+        if mod.is_file():
+            items += js_items(mod.read_text(encoding="utf-8", errors="replace"), board, seen)
+            modules.append(rel)
+        else:
+            missing.append(rel)
+            print(f"warning: {path.name} imports {rel}, which is not beside it -- its copy is NOT in this manifest", file=sys.stderr)
     kinds: dict[str, int] = {}
     for i in items:
         kinds[i["kind"]] = kinds.get(i["kind"], 0) + 1
-    return {"source": path.name, "artboards": artboards, "items": items, "totals": kinds,
-            "generator": "design-flow/canvas_manifest.py"}
+    out = {"source": path.name, "artboards": artboards, "items": items, "totals": kinds,
+           "generator": "design-flow/canvas_manifest.py"}
+    if modules:
+        out["modules"] = modules
+    if missing:
+        out["modules_missing"] = missing
+    return out
 
 
 # ----------------------------------------------------------------------------- compare / check
@@ -395,6 +425,14 @@ def selftest() -> int:
         check_("the x-dc script's label pairs are items; a template literal is not", {"Defects", "Payout runs"} <= set(kinds.get("data-label", [])) and not any("template" in t for t in kinds.get("data-label", []) + kinds.get("data-copy", [])), str(kinds.get("data-label")))
         check_("a 3+-word literal in the script is data-copy", "Fault attributed to" in kinds.get("data-copy", []) or "No defects match this filter yet." in kinds.get("data-copy", []), str(kinds.get("data-copy")))
         check_("ids are stable across runs", [i["id"] for i in extract(canvas)["items"]] == [i["id"] for i in m["items"]])
+        # #935: a canvas that keeps its screens in a module beside it
+        split = root / "Split.dc.html"; split.write_text(FIXTURE.replace('<script type="text/x-dc" data-dc-script>', '<script type="text/x-dc" data-dc-script>\nimport(\'./core.js\').then(m => {});'), encoding="utf-8")
+        (root / "core.js").write_text("const ROWS = [{ label: 'Payout runs held', note: 'Held until the dispute closes.' }];\n", encoding="utf-8")
+        sm = extract(split)
+        check_("an imported module's label pairs and copy are on the checklist (#935)", "Payout runs held" in [i["text"] for i in sm["items"]] and sm.get("modules") == ["./core.js"], str(sm.get("modules")))
+        (root / "core.js").unlink()
+        sm2 = extract(split)
+        check_("a module that cannot be read is recorded, never skipped (#935)", sm2.get("modules_missing") == ["./core.js"] and "Payout runs held" not in [i["text"] for i in sm2["items"]], str(sm2.get("modules_missing")))
         # compare: a project that implemented half
         (root / "app" / "views" / "admin").mkdir(parents=True)
         (root / "app" / "views" / "admin" / "index.html.erb").write_text("<h1>Defects awaiting screening</h1><p>You are not country-scoped. Narrowing here is a filter you chose.</p><%= button_to 'Export CSV' %>\n", encoding="utf-8")

@@ -481,6 +481,25 @@ for. The `doc-updater` agent rebuilds the wiki whenever it regenerates the graph
 with the change that moved them; nothing runs on a schedule. Not applicable is exit 3: no graph yet
 (`/rails-flow:graph` first), or `--check` before the first build.
 
+## 6d. In-app Help & SOP (`docs/product/help/`) — the user's manual, generated from the repo (#934)
+
+The interface carries the name, the unit, the state and the action; the explanation lives in Help. Help is
+authored as markdown beside the spec (procedures, rules, glossary, one guide per screen — each citing its
+section), joined with `docs/product/help/registry.json` (the app's own dump of its settings, permissions and
+screens, written by a rake task), and built into `docs/product/help/_build/help.json`, which the app renders
+read-only with the release it describes. `reference/help.md` has the layout, the registry shape and the
+rake skeleton.
+
+```bash
+bin/rails help:registry                                          # the app writes docs/product/help/registry.json from its own registries (reference/help.md)
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_help.py"            # build docs/product/help/_build/help.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_help.py" --check    # DRIFT if the committed build is not clean
+```
+
+A screen with no guide, a procedure with no `spec:`, a setting or permission with no description, or a
+build that no longer matches its sources is a PROBLEM — the `help-drift` check. Not applicable is exit 3:
+no registry yet, or `--check` before the first build.
+
 **Publishing to the GitHub wiki is opt-in and off by default.** The pages live in the repo where the
 gates can reach them. If the user wants them on the wiki tab, add `.github/workflows/wiki.yml` — on a
 push to `main` touching `docs/wiki/**`, clone `<repo>.wiki.git`, copy `docs/wiki/*` over it, commit and

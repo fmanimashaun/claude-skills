@@ -291,6 +291,21 @@
         "python3",
         "gh"
       ]
+    },
+    {
+      "id": "help-drift",
+      "why": "The in-app Help & SOP is a join over docs/product/help/ (procedures, rules, glossary and screen guides, each citing its spec section) and docs/product/help/registry.json (the app's own dump of its settings, permissions and screens). A setting, permission or screen with no Help entry, a procedure with no citation, or a build that no longer matches its sources fails; explanation belongs in Help, not the interface, and Help must describe the deployed app. n/a until the registry exists, and until Help is first built (#934).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/build_help.py",
+        "--check"
+      ],
+      "applies_when": [
+        "docs/product/help/registry.json"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
