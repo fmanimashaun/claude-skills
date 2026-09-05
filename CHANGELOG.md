@@ -9713,6 +9713,15 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`extract` follows a canvas's imported module** (#935). Claude Design's `Admin v3.dc.html` keeps its screens, data and
+  modal copy in `admin-core.js`, loaded with `import('./admin-core.js')` from the inline data script; the manifest for it
+  held 53 data-copy items where the design has 830. `plugins/design-flow/scripts/canvas_manifest.py` now reads each
+  `import('./x.js')` beside the canvas and adds its `label:` pairs and copy on the same artboard (`modules` in the
+  manifest); a module it cannot read is recorded as `modules_missing` and warned about, never skipped. Two selftest
+  cases and a mutation (`scripts/mutations/canvas_manifest.py`, now 8).
+
 ### 2026-09-05 (release v1.120.0)
 
 - **`check` no longer greps a bound control's label as literal text** (#930). `plugins/design-flow/scripts/canvas_manifest.py`'s
