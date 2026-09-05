@@ -2531,7 +2531,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-04 (release v1.119.0)
 
 - **`plugins/rails-flow/scripts/toolchain_version.py`: a plugin whose published version did not resolve is exit 2, never
   "up to date"** (#923). One failed `gh` fetch of a plugin's `plugin.json` left that plugin out of the published side; only an
