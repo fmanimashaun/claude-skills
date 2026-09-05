@@ -2531,6 +2531,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **In-app Help & SOP, generated from the repository** (#934 — the owner: "we will prefer to generate all
+  documentation and procedure, well researched, via the repo"). `plugins/rails-flow/scripts/build_help.py` joins
+  `docs/product/help/` (procedures, rules, glossary and one guide per screen, each citing its spec section) with
+  `docs/product/help/registry.json` (the app's own dump of its settings, permissions and screens) into
+  `docs/product/help/_build/help.json` — every page rendered to the writing subset of HTML, the three references, a search
+  index, the commit and version — a function of the inputs and nothing else. A screen with no guide, a guide for an
+  unknown screen, a procedure or rule with no `spec:`, a setting or permission with no description, or a dropped page
+  is a PROBLEM; `--check` reports DRIFT against the committed build. New check `help-drift` in
+  `plugins/rails-flow/checks.json` (n/a until the registry exists); `plugins/rails-flow/reference/help.md` carries
+  the layout, the registry shape and the rake skeleton; `commands/setup-flow.md` §6d points at it. Selftest 16
+  checks, guard `scripts/mutations/build_help.py` (9 mutations).
+
 ### 2026-09-05 (release v1.120.0)
 
 - **`plugins/rails-flow/scripts/claude_md_structure.py`: the third lever** (#927). `--report` lists rule paragraphs that apply
