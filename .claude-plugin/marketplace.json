@@ -5,14 +5,14 @@
     "email": "fmanimashaun@users.noreply.github.com"
   },
   "metadata": {
-    "description": "Rails 8 & Hotwire development skills \u2014 vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.119.0"
+    "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
+    "version": "1.120.0"
   },
   "plugins": [
     {
       "name": "rails-stack",
       "version": "1.56.8",
-      "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment, plus the design system (tokens, layout primitives, component catalog), review doctrine for the defect class authors are blind to \u2014 code that does not do what its own docs, config and project rules claim \u2014 and an advisory quality pass (reuse, simplification, efficiency, altitude) that runs second and never blocks a merge. Bundles the rails-8, hotwire, design-system, code-review, quality-pass, derived-artifacts and parallel-session-lane skills.",
+      "description": "Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo/Stimulus/Hotwire Native, OpenAPI docs via rswag, ruby_llm AI features, Kamal 2 deployment, plus the design system (tokens, layout primitives, component catalog), review doctrine for the defect class authors are blind to — code that does not do what its own docs, config and project rules claim — and an advisory quality pass (reuse, simplification, efficiency, altitude) that runs second and never blocks a merge. Bundles the rails-8, hotwire, design-system, code-review, quality-pass, derived-artifacts and parallel-session-lane skills.",
       "source": "./",
       "strict": false,
       "skills": [
@@ -42,7 +42,7 @@
     },
     {
       "name": "rails-flow",
-      "description": "Agentic development flow for Rails 8 projects \u2014 /feature, /fix, /review, /setup-flow and /brain commands, eleven specialist subagents (rails-developer, migration-writer, code-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer, claim-verifier, skill-curator, claude-skills-reporter), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
+      "description": "Agentic development flow for Rails 8 projects — /feature, /fix, /review, /setup-flow and /brain commands, eleven specialist subagents (rails-developer, migration-writer, code-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer, claim-verifier, skill-curator, claude-skills-reporter), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
       "source": "./plugins/rails-flow",
       "strict": false,
       "author": {
@@ -59,11 +59,12 @@
         "code-review",
         "git"
       ],
-      "category": "development"
+      "category": "development",
+      "version": "1.38.5"
     },
     {
       "name": "qa-flow",
-      "description": "Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/qa.config.yml (Playwright, Cypress+Cucumber, Selenium+pytest-bdd, Appium; free by default) \u2014 qa-flow is never forced onto one. Free, repo-local case authoring/management (/qa-flow:cases \u2192 qa/test-cases.csv; Testmo opt-in) and agentic functional testing via Playwright MCP (/qa-flow:functional): auto-maps flows, self-adapting locators, evidence-based Markdown/CSV reports. Plus risk-based planning, defect filing, PR-native results, and a hook-enforced dev->main certification gate.",
+      "description": "Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/qa.config.yml (Playwright, Cypress+Cucumber, Selenium+pytest-bdd, Appium; free by default) — qa-flow is never forced onto one. Free, repo-local case authoring/management (/qa-flow:cases → qa/test-cases.csv; Testmo opt-in) and agentic functional testing via Playwright MCP (/qa-flow:functional): auto-maps flows, self-adapting locators, evidence-based Markdown/CSV reports. Plus risk-based planning, defect filing, PR-native results, and a hook-enforced dev->main certification gate.",
       "source": "./plugins/qa-flow",
       "strict": false,
       "author": {
@@ -84,7 +85,7 @@
     },
     {
       "name": "pipeline",
-      "description": "Lifecycle orchestrator over rails-flow and qa-flow \u2014 build -> verify -> certify -> containerized release, honoring every gate. Release artifact is a versioned ghcr.io Docker image (local pull-and-run today, Kamal cloud when ready). /pipeline:deploy-cloud reads a prepared .env and generates the full Kamal 2 config + wires secrets safely (committed deploy.yml references names; gitignored .kamal/secrets holds values), then deploys with approval.",
+      "description": "Lifecycle orchestrator over rails-flow and qa-flow — build -> verify -> certify -> containerized release, honoring every gate. Release artifact is a versioned ghcr.io Docker image (local pull-and-run today, Kamal cloud when ready). /pipeline:deploy-cloud reads a prepared .env and generates the full Kamal 2 config + wires secrets safely (committed deploy.yml references names; gitignored .kamal/secrets holds values), then deploys with approval.",
       "source": "./plugins/pipeline",
       "strict": false,
       "author": {
@@ -105,7 +106,7 @@
     },
     {
       "name": "design-flow",
-      "description": "Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 \u2014 applies the design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive @utility recipes + base ViewComponents; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:canvas composes a Claude Design prompt carrying the project's own tokens and catalog, /design-flow:port brings the returned canvas back as ERB/ViewComponents/Turbo/Stimulus; /design-flow:audit flags drift. Agents: ui-composer, design-auditor, design-critic, design-porter, brand-guardian. Pairs with the design-system skill (bundled in rails-stack).",
+      "description": "Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 — applies the design system so UI is consistent, modern, and responsive without a designer or Figma. /design-flow:setup scaffolds the @theme token architecture (brand primitives -> semantic roles -> Utopia fluid scale) + layout-primitive @utility recipes + base ViewComponents; /design-flow:component authors UI by composing layout primitives + role tokens with a fixed variant/size/state vocabulary, a11y, and prescribed responsive behavior; /design-flow:canvas composes a Claude Design prompt carrying the project's own tokens and catalog, /design-flow:port brings the returned canvas back as ERB/ViewComponents/Turbo/Stimulus; /design-flow:audit flags drift. Agents: ui-composer, design-auditor, design-critic, design-porter, brand-guardian. Pairs with the design-system skill (bundled in rails-stack).",
       "source": "./plugins/design-flow",
       "strict": false,
       "author": {
@@ -122,7 +123,8 @@
         "illustration",
         "brand"
       ],
-      "category": "design"
+      "category": "design",
+      "version": "1.39.2"
     }
   ]
 }
