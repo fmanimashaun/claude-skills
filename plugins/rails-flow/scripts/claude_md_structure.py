@@ -121,14 +121,21 @@ AREA_NOUNS = (
 )
 
 
+SUBJECT_WINDOW = 60   # characters of the first line in which a rule states what it is about
+
+
 def area_of(body: str) -> str | None:
     """The code area a rule paragraph is ABOUT -- the first one it names -- or None when it names no area.
 
     First, not only: "a mailer never carries Turbo or Stimulus" is a rule about mailers that names two other
-    areas as what a mailer must not carry. The subject comes first in a rule sentence; the exceptions follow."""
-    hits: list[tuple[int, str]] = [(m.start(), "/".join(m.group(1).split("/")[:2])) for m in AREA_PATHS.finditer(body)]
+    areas as what a mailer must not carry. And in the FIRST LINE only: the subject of a rule is stated where the
+    rule starts; a path cited three lines down is an example, not the scope. Measured on a real CLAUDE.md, the
+    anywhere-in-the-paragraph version flagged a product summary that listed the stack and a twenty-line override
+    block that cited one initializer -- neither is a rule about that area."""
+    head = body.split("\n", 1)[0][:SUBJECT_WINDOW]
+    hits: list[tuple[int, str]] = [(m.start(), "/".join(m.group(1).split("/")[:2])) for m in AREA_PATHS.finditer(head)]
     for pat, area in AREA_NOUNS:
-        m = pat.search(body)
+        m = pat.search(head)
         if m:
             hits.append((m.start(), area))
     return min(hits)[1] if hits else None
@@ -287,11 +294,28 @@ def selftest() -> int:
           areas.get("Mail") == "app/mailers" and areas.get("Components") == "app/components", str(rs["scoped"]))
     check("a global rule (git) is not scoped", "Git" not in areas, str(areas))
     check("a rule naming several areas is about the FIRST one it names", area_of("Mailers and app/jobs both need this.") == "app/mailers" and area_of("Run the specs before pushing.") is None)
+    check("a stack named late in a long first line is not the subject (Retask's product summary named ViewComponents at char 90)",
+          area_of("**Product**: Reliance Health internal freelance work platform — work is raised, claimed, produced; built on Rails 8, Hotwire and ViewComponents.") is None
+          and area_of("**ViewComponent shape** (`app/components/ui/button_component.rb`): frozen BASE + variants.") == "app/components")
+    check("an area cited only in a LATER line is an example, not the scope (a summary listing the stack is not a component rule)",
+          area_of("**Product**: a work platform for freelancers.\nBuilt on Rails 8, Hotwire and ViewComponents.") is None
+          and area_of("Type is split by surface: Montserrat is display only.\nSee app/assets/tailwind/application.css.") is None)
     import io, contextlib
     buf = io.StringIO()
     with contextlib.redirect_stderr(buf):
         print_report(report("<!-- claude-md: max-lines 3 -->\n" + "rule\n" * 5), "h.md")
     check("the FAIL text names all three levers, .claude/rules/ among them", ".claude/rules/" in buf.getvalue() and "raise the ceiling" in buf.getvalue(), buf.getvalue()[:200])
+    # #927 follow-up: the candidates line is printed only when there ARE candidates -- the first fixture never reached it,
+    # and a `{N}` left over from an edit script crashed the report on the first real project with a mailer rule.
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            print_report(report(scoped_doc), "h.md")
+        printed_ok = True
+    except Exception as exc:  # noqa: BLE001
+        printed_ok = False; out.write(f"CRASH {exc}")
+    check("--report prints the scoped candidates without crashing, naming the area and the rules file",
+          printed_ok and "apply to ONE area" in out.getvalue() and "scoped to app/mailers/**" in out.getvalue() and "{N}" not in out.getvalue(), out.getvalue()[-300:])
     # #917: a fresh file, --set-ceiling, then --report must be 0 -- the marker is a line too.
     fresh = "# X\n\nrule one.\n\nrule two.\n"
     r0 = report(fresh)
@@ -340,7 +364,7 @@ def print_report(r: dict, history_rel: str) -> None:
     if r.get("scoped"):
         freed = sum(x["line_count"] for x in r["scoped"])
         print(f"  {len(r['scoped'])} rule paragraph(s) apply to ONE area ({freed} lines) — candidates for a path-scoped "
-              f"`.claude/rules/<area>.md` with `paths:`, loaded only when a matching file is read (#{N}). Not scaffolded: "
+              f"`.claude/rules/<area>.md` with `paths:`, loaded only when a matching file is read (#927). Not scaffolded: "
               "the file may be healthy as it is; this is the lever when it needs room.")
         for x in r["scoped"][:8]:
             print(f"    - {x['section']}  lines {x['lines']}  → .claude/rules/ scoped to {x['area']}/**  {x['first_line']}")
