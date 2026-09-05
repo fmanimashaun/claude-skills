@@ -2531,7 +2531,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-05 (release v1.121.0)
 
 - **In-app Help & SOP, generated from the repository** (#934 — the owner: "we will prefer to generate all
   documentation and procedure, well researched, via the repo"). `plugins/rails-flow/scripts/build_help.py` joins
@@ -9727,7 +9727,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-05 (release v1.121.0)
 
 - **`extract` follows a canvas's imported module** (#935). Claude Design's `Admin v3.dc.html` keeps its screens, data and
   modal copy in `admin-core.js`, loaded with `import('./admin-core.js')` from the inline data script; the manifest for it
