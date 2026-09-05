@@ -363,6 +363,15 @@ def main(argv=None) -> int:
 
     findings = compare(installed, published)
     render(installed, published, findings)
+    # #923. A plugin that is installed but whose published version did not resolve (one gh fetch
+    # failed) is UNUSABLE, not current: compare() never saw it, render() shows an em-dash for it, and
+    # the verdict beneath would have read "up to date". Exit 2 is never folded into 0 -- per plugin.
+    unresolved = sorted(n for n in installed.plugins if n not in published.plugins)
+    if unresolved:
+        for n in unresolved:
+            print(f"unusable: {n}: published version unresolved — cannot tell whether it is current "
+                  f"(gh fetch of its plugin.json failed?); re-run, or pass --published-from a clone", file=sys.stderr)
+        return EXIT_UNUSABLE
 
     if args.arm:
         if not findings:

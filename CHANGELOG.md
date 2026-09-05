@@ -2531,6 +2531,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/scripts/toolchain_version.py`: a plugin whose published version did not resolve is exit 2, never
+  "up to date"** (#923). One failed `gh` fetch of a plugin's `plugin.json` left that plugin out of the published side; only an
+  EMPTY published side was unusable, `compare()` never saw the plugin, and the table showed an em-dash beside a clean
+  verdict — the maintainer saw exactly that once, unreproduced, and the code confirms it. Now every installed plugin absent
+  from the published side is named as `unusable:` and the exit is 2. Fixture + mutation.
+
 ### 2026-09-04 (release v1.118.0)
 
 - **`plugins/rails-flow/scripts/claude_md_structure.py`: `--set-ceiling` records the size the file has once the marker is in it**
