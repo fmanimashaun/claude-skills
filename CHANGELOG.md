@@ -2531,7 +2531,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-05 (release v1.120.0)
 
 - **`plugins/rails-flow/scripts/claude_md_structure.py`: the third lever** (#927). `--report` lists rule paragraphs that apply
   to ONE area of the codebase (a path under `app/`, `config/`, `db/`…, or an area noun — mailer, ViewComponent, Stimulus,
@@ -9713,7 +9713,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-05 (release v1.120.0)
 
 - **`check` no longer greps a bound control's label as literal text** (#930). `plugins/design-flow/scripts/canvas_manifest.py`'s
   `check` treated `input[date]: {{ fromValue }}` like any label and refused every `implemented` entry for it, because no
