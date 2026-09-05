@@ -2531,6 +2531,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`plugins/rails-flow/scripts/claude_md_structure.py`: the third lever** (#927). `--report` lists rule paragraphs that apply
+  to ONE area of the codebase (a path under `app/`, `config/`, `db/`…, or an area noun — mailer, ViewComponent, Stimulus,
+  Turbo, migration, job) as candidates for a path-scoped `.claude/rules/<area>.md`, with the `paths:` glob each would
+  carry and the lines it would free; the FAIL text names all three levers in order — relocate history, scope area rules,
+  raise with a reason. Nothing is scaffolded: a downstream run sitting 24 lines above the 200-line target named exactly
+  this as the next move and rightly did not take it yet. Fixtures + 1 mutation.
+
 ### 2026-09-04 (release v1.119.0)
 
 - **`plugins/rails-flow/scripts/toolchain_version.py`: a plugin whose published version did not resolve is exit 2, never

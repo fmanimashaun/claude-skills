@@ -106,6 +106,34 @@ def paragraphs(text: str) -> list[dict]:
     return out
 
 
+# A rule that applies to ONE area of the codebase is a candidate for a path-scoped `.claude/rules/<area>.md`,
+# which loads only when a matching file is read -- the third lever when the ceiling bites (the first two are
+# relocating history and raising the ceiling with a reason). Detected by a path or an area noun; the area
+# named is the `paths:` glob the rule would carry.
+AREA_PATHS = re.compile(r"\b((?:app|config|db|spec|test|lib)/[a-z_]+(?:/[a-z_]+)*)\b")
+AREA_NOUNS = (
+    (re.compile(r"\bmailers?\b|\bdeliver_later\b|\bmail clients?\b", re.I), "app/mailers"),
+    (re.compile(r"\bview ?components?\b", re.I), "app/components"),
+    (re.compile(r"\bstimulus\b", re.I), "app/javascript/controllers"),
+    (re.compile(r"\bturbo[ -]?(?:frames?|streams?)\b", re.I), "app/views"),
+    (re.compile(r"\bmigrations?\b|\bschema\.rb\b", re.I), "db"),
+    (re.compile(r"\b(?:active|solid)[ _]?jobs?\b|\bbackground jobs?\b", re.I), "app/jobs"),
+)
+
+
+def area_of(body: str) -> str | None:
+    """The code area a rule paragraph is ABOUT -- the first one it names -- or None when it names no area.
+
+    First, not only: "a mailer never carries Turbo or Stimulus" is a rule about mailers that names two other
+    areas as what a mailer must not carry. The subject comes first in a rule sentence; the exceptions follow."""
+    hits: list[tuple[int, str]] = [(m.start(), "/".join(m.group(1).split("/")[:2])) for m in AREA_PATHS.finditer(body)]
+    for pat, area in AREA_NOUNS:
+        m = pat.search(body)
+        if m:
+            hits.append((m.start(), area))
+    return min(hits)[1] if hits else None
+
+
 def classify(body: str) -> str:
     """rule | history | mixed | structure -- see HISTORY_* and RULE_SIGNAL."""
     if body.lstrip().startswith(("|", "```", "<!--", "@")):
@@ -148,6 +176,9 @@ def report(text: str, path: str = "CLAUDE.md") -> dict:
         "sections": sections,
         "movable": [{"section": p["section"], "lines": f"{p['start']}-{p['end']}", "kind": p["kind"],
                      "first_line": p["text"].split("\n")[0][:100]} for p in paras if p["kind"] in ("history", "mixed")],
+        "scoped": [{"section": p["section"], "lines": f"{p['start']}-{p['end']}", "area": area_of(p["text"]),
+                    "line_count": p["end"] - p["start"] + 1, "first_line": p["text"].split("\n")[0][:100]}
+                   for p in paras if p["kind"] == "rule" and area_of(p["text"])],
     }
 
 
@@ -246,6 +277,21 @@ def selftest() -> int:
     over = "<!-- claude-md: max-lines 3 -->\n" + "rule\n" * 5
     check("past the ceiling is a verdict of 1", verdict(report(over)) == 1)
     check("within the ceiling is 0", verdict(report("<!-- claude-md: max-lines 30 -->\n" + "rule\n" * 5)) == 0)
+    # the third lever: a rule about ONE area is a candidate for .claude/rules/<area>.md; a global rule is not
+    scoped_doc = ("# T\n\n## Mail\n\nA mailer never carries Turbo or Stimulus: mail clients run no JavaScript, so always render plain.\n\n"
+                  "## Git\n\nNever stage with `git add -A`; always name the files.\n\n"
+                  "## Components\n\nEvery ViewComponent must have a preview under app/components/previews.\n")
+    rs = report(scoped_doc)
+    areas = {x["section"]: x["area"] for x in rs["scoped"]}
+    check("a rule about mailers is scoped to app/mailers; a rule about ViewComponents to app/components",
+          areas.get("Mail") == "app/mailers" and areas.get("Components") == "app/components", str(rs["scoped"]))
+    check("a global rule (git) is not scoped", "Git" not in areas, str(areas))
+    check("a rule naming several areas is about the FIRST one it names", area_of("Mailers and app/jobs both need this.") == "app/mailers" and area_of("Run the specs before pushing.") is None)
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        print_report(report("<!-- claude-md: max-lines 3 -->\n" + "rule\n" * 5), "h.md")
+    check("the FAIL text names all three levers, .claude/rules/ among them", ".claude/rules/" in buf.getvalue() and "raise the ceiling" in buf.getvalue(), buf.getvalue()[:200])
     # #917: a fresh file, --set-ceiling, then --report must be 0 -- the marker is a line too.
     fresh = "# X\n\nrule one.\n\nrule two.\n"
     r0 = report(fresh)
@@ -291,11 +337,18 @@ def print_report(r: dict, history_rel: str) -> None:
             print(f"    - {m['section']}  lines {m['lines']}  [{m['kind']}]  {m['first_line']}")
         if len(r["movable"]) > 12:
             print(f"    … {len(r['movable']) - 12} more")
+    if r.get("scoped"):
+        freed = sum(x["line_count"] for x in r["scoped"])
+        print(f"  {len(r['scoped'])} rule paragraph(s) apply to ONE area ({freed} lines) — candidates for a path-scoped "
+              f"`.claude/rules/<area>.md` with `paths:`, loaded only when a matching file is read (#{N}). Not scaffolded: "
+              "the file may be healthy as it is; this is the lever when it needs room.")
+        for x in r["scoped"][:8]:
+            print(f"    - {x['section']}  lines {x['lines']}  → .claude/rules/ scoped to {x['area']}/**  {x['first_line']}")
     v = verdict(r)
     if v == 1:
-        print(f"  FAIL: {r['lines']} lines is past the recorded ceiling of {r['ceiling']}. Move history out (above), "
-              "then lower the ceiling to the new size; or raise it in a change that says why. Nothing is deleted "
-              "either way.", file=sys.stderr)
+        print(f"  FAIL: {r['lines']} lines is past the recorded ceiling of {r['ceiling']}. Three levers, in order: move "
+              "history out (above) and lower the ceiling to the new size; move area-scoped rules to `.claude/rules/<area>.md` "
+              "(above); or raise the ceiling in a change that says why. Nothing is deleted by any of them.", file=sys.stderr)
     elif v == 3:
         print("  not applicable — no `<!-- claude-md: max-lines N -->` marker. Record one at the measured size with "
               "`--set-ceiling --write`; a ceiling nobody set is not a pass.")
