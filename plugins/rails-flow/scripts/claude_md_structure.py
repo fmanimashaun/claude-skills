@@ -292,6 +292,17 @@ def selftest() -> int:
     with contextlib.redirect_stderr(buf):
         print_report(report("<!-- claude-md: max-lines 3 -->\n" + "rule\n" * 5), "h.md")
     check("the FAIL text names all three levers, .claude/rules/ among them", ".claude/rules/" in buf.getvalue() and "raise the ceiling" in buf.getvalue(), buf.getvalue()[:200])
+    # #927 follow-up: the candidates line is printed only when there ARE candidates -- the first fixture never reached it,
+    # and a `{N}` left over from an edit script crashed the report on the first real project with a mailer rule.
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            print_report(report(scoped_doc), "h.md")
+        printed_ok = True
+    except Exception as exc:  # noqa: BLE001
+        printed_ok = False; out.write(f"CRASH {exc}")
+    check("--report prints the scoped candidates without crashing, naming the area and the rules file",
+          printed_ok and "apply to ONE area" in out.getvalue() and "scoped to app/mailers/**" in out.getvalue() and "{N}" not in out.getvalue(), out.getvalue()[-300:])
     # #917: a fresh file, --set-ceiling, then --report must be 0 -- the marker is a line too.
     fresh = "# X\n\nrule one.\n\nrule two.\n"
     r0 = report(fresh)
@@ -340,7 +351,7 @@ def print_report(r: dict, history_rel: str) -> None:
     if r.get("scoped"):
         freed = sum(x["line_count"] for x in r["scoped"])
         print(f"  {len(r['scoped'])} rule paragraph(s) apply to ONE area ({freed} lines) — candidates for a path-scoped "
-              f"`.claude/rules/<area>.md` with `paths:`, loaded only when a matching file is read (#{N}). Not scaffolded: "
+              f"`.claude/rules/<area>.md` with `paths:`, loaded only when a matching file is read (#927). Not scaffolded: "
               "the file may be healthy as it is; this is the lever when it needs room.")
         for x in r["scoped"][:8]:
             print(f"    - {x['section']}  lines {x['lines']}  → .claude/rules/ scoped to {x['area']}/**  {x['first_line']}")
