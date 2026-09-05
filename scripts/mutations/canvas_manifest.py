@@ -44,6 +44,12 @@ GUARD = Guard(
             "a control whose label is a binding is implemented where its view is",
         ),
         Mutation(
+            "a canvas's imported module is never followed, so its copy is off the checklist (#935)",
+            "    for rel in imported_modules(html):",
+            "    for rel in []:",
+            "an imported module's label pairs and copy are on the checklist",
+        ),
+        Mutation(
             "a deferral needs no reason",
             '        if st == "deferred" and not e.get("reason"):',
             '        if False:',
