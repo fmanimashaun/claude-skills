@@ -121,6 +121,9 @@ AREA_NOUNS = (
 )
 
 
+SUBJECT_WINDOW = 60   # characters of the first line in which a rule states what it is about
+
+
 def area_of(body: str) -> str | None:
     """The code area a rule paragraph is ABOUT -- the first one it names -- or None when it names no area.
 
@@ -129,7 +132,7 @@ def area_of(body: str) -> str | None:
     rule starts; a path cited three lines down is an example, not the scope. Measured on a real CLAUDE.md, the
     anywhere-in-the-paragraph version flagged a product summary that listed the stack and a twenty-line override
     block that cited one initializer -- neither is a rule about that area."""
-    head = body.split("\n", 1)[0]
+    head = body.split("\n", 1)[0][:SUBJECT_WINDOW]
     hits: list[tuple[int, str]] = [(m.start(), "/".join(m.group(1).split("/")[:2])) for m in AREA_PATHS.finditer(head)]
     for pat, area in AREA_NOUNS:
         m = pat.search(head)
@@ -291,6 +294,9 @@ def selftest() -> int:
           areas.get("Mail") == "app/mailers" and areas.get("Components") == "app/components", str(rs["scoped"]))
     check("a global rule (git) is not scoped", "Git" not in areas, str(areas))
     check("a rule naming several areas is about the FIRST one it names", area_of("Mailers and app/jobs both need this.") == "app/mailers" and area_of("Run the specs before pushing.") is None)
+    check("a stack named late in a long first line is not the subject (Retask's product summary named ViewComponents at char 90)",
+          area_of("**Product**: Reliance Health internal freelance work platform — work is raised, claimed, produced; built on Rails 8, Hotwire and ViewComponents.") is None
+          and area_of("**ViewComponent shape** (`app/components/ui/button_component.rb`): frozen BASE + variants.") == "app/components")
     check("an area cited only in a LATER line is an example, not the scope (a summary listing the stack is not a component rule)",
           area_of("**Product**: a work platform for freelancers.\nBuilt on Rails 8, Hotwire and ViewComponents.") is None
           and area_of("Type is split by surface: Montserrat is display only.\nSee app/assets/tailwind/application.css.") is None)

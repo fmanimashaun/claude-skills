@@ -51,7 +51,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the scope is read from the whole paragraph again, so a summary that lists the stack is flagged as a component rule",
-            '    head = body.split("\\n", 1)[0]',
+            '    head = body.split("\\n", 1)[0][:SUBJECT_WINDOW]',
             '    head = body',
             "cited only in a LATER line is an example",
         ),
