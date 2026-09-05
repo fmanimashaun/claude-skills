@@ -167,6 +167,13 @@ def run() -> int:
             "qa-flow@claude-skills": [rec("1.24.1", "2026-08-07T00:00:00Z")]})
         rc = tv.main(["--home", str(full), "--published-from", str(pub), "--project", str(proj)])
         check("unusable-not-ok: a healthy machine is 0, not 2", rc, tv.EXIT_OK)
+        # #923: ONE plugin's published version unresolved (its plugin.json fetch failed) must be 2, not
+        # "up to date". Same healthy home; a published checkout that names qa-flow but cannot resolve it.
+        pub2 = checkout(tmp / "pub2", "pub2", marketplace="1.73.0", bundle={"rails-stack": "1.42.1"},
+                        code={"rails-flow": "1.19.0", "qa-flow": "1.24.1"})
+        (pub2 / "plugins" / "qa-flow" / ".claude-plugin" / "plugin.json").unlink()
+        rc = tv.main(["--home", str(full), "--published-from", str(pub2), "--project", str(proj)])
+        check("unresolved-published: one plugin unresolved on the published side -> 2, never 0", rc, tv.EXIT_UNUSABLE)
         # And real drift is 1 — distinct from both.
         stale = fake_home(tmp / "f", marketplace_version="1.72.0", plugins={
             "rails-stack@claude-skills": [rec("1.42.0", "2026-08-07T00:00:00Z")],

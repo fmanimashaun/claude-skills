@@ -15,5 +15,11 @@ GUARD = Guard(
             "    return records[0]",
             "shadowed-record: newest wins",
         ),
+        Mutation(
+            "a plugin whose published version did not resolve is folded into 'up to date' again (#923)",
+            '    if unresolved:\n        for n in unresolved:',
+            '    if False:\n        for n in unresolved:',
+            "unresolved-published",
+        ),
     ),
 )
