@@ -9713,6 +9713,15 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`check` no longer greps a bound control's label as literal text** (#930). `plugins/design-flow/scripts/canvas_manifest.py`'s
+  `check` treated `input[date]: {{ fromValue }}` like any label and refused every `implemented` entry for it, because no
+  view carries the text `{{ fromvalue }}` — its literal lives in the script's data-labels, which are items of their own.
+  `compare` already skipped bound needles; `check` now does the same, so the report's `where` names the file that renders
+  the binding. Found by the first whole-canvas port (Retask's `Admin.dc.html`, 877 items): twelve "gaps" no file could
+  satisfy. Selftest case and mutation added (`scripts/mutations/canvas_manifest.py`, now 7).
+
 ### 2026-09-04 (release v1.118.0)
 
 - **One brand pack per project, chosen on purpose** (#919). `plugins/design-flow/README.md` gains a *Brand packs — one per

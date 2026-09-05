@@ -38,6 +38,12 @@ GUARD = Guard(
             "is in neither the named file nor the locales is a gap",
         ),
         Mutation(
+            "a bound control's label is grepped as literal text again, so no faithful port can pass it (#930)",
+            '                if "{{" in n:\n                    continue',
+            '                if False:\n                    continue',
+            "a control whose label is a binding is implemented where its view is",
+        ),
+        Mutation(
             "a deferral needs no reason",
             '        if st == "deferred" and not e.get("reason"):',
             '        if False:',
