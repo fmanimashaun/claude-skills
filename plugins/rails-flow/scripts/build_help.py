@@ -144,6 +144,11 @@ def plain(text: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", text).split())
 
 
+def split_list(value: str) -> list[str]:
+    """`roles: Admin, Front desk` -> ["Admin", "Front desk"]; a blank value is an empty list."""
+    return [v.strip() for v in str(value or "").split(",") if v.strip()]
+
+
 # ----------------------------------------------------------------------------- the model
 
 def build_model(root: Path) -> dict:
@@ -196,6 +201,10 @@ def build_model(root: Path) -> dict:
             "spec": meta.get("spec", ""), "area": meta.get("area", ""), "screen": meta.get("screen", ""),
             "versus": meta.get("versus", ""), "source": pg["file"], "html": body_html,
             "steps": body_html.count("<li>"),
+            # The rest of the frontmatter, as written, and the roles list split -- a page names the roles
+            # whose Help it belongs to (`roles: Admin, Freelancer`); empty means every role.
+            "meta": meta,
+            "roles": split_list(meta.get("roles", "")),
         })
     index = [{"kind": r["kind"], "slug": r["slug"], "title": r["title"], "text": plain(r["html"])[:600]} for r in rendered]
     index += [{"kind": "settings", "slug": s.get("key", ""), "title": s.get("label") or s.get("key", ""), "text": plain(f"{s.get('what', '')} {s.get('affects', '')} {s.get('unit', '')}")} for s in settings]
@@ -287,7 +296,7 @@ REG = {"commit": "abc1234", "version": "v0.4.0",
                      "what": "Unclaimed this long and the task is flagged as aging.", "affects": "The dashboard's aging figure and the Throughput report."}],
        "permissions": [{"key": "screen_defect", "name": "Screen and attribute a defect", "allows": "Decide fault on a filed defect.", "roles": ["Admin"]}],
        "screens": [{"key": "defects", "area": "Accountability", "label": "Defect queue", "purpose": "Filed defects awaiting screening.", "permission": "screen_defect"}]}
-PROC = "---\ntitle: Screen a filed defect\narea: Accountability\nspec: §7.2\n---\n\nDecide fault before anyone is notified.\n\n1. Open the defect and read the **evidence**.\n2. Compare the form against the scan.\n\n> Only the third outcome notifies anyone.\n"
+PROC = "---\ntitle: Screen a filed defect\narea: Accountability\nspec: §7.2\nroles: Admin, IT\nsummary: Decide fault. Three outcomes.\n---\n\nDecide fault before anyone is notified.\n\n1. Open the defect and read the **evidence**.\n2. Compare the form against the scan.\n\n> Only the third outcome notifies anyone.\n"
 RULE = "---\ntitle: Screening is atomic\nspec: §7.2\n---\n\nTwo holders cannot screen the same defect into two outcomes.\n"
 TERM = "---\nterm: Defect\nversus: Flag\n---\n\nAn error found after the work was accepted.\n"
 GUIDE = "---\nscreen: defects\n---\n\n## What this screen holds\n\nFiled defects awaiting screening, oldest first.\n\n- Screen opens the decision.\n- Open the request shows the pages.\n"
@@ -322,6 +331,9 @@ def selftest() -> int:
         check_("the build carries every page, reference and the registry's commit", built["totals"]["pages"] == 4 and built["commit"] == "abc1234" and len(built["settings"]) == 1, str(built["totals"]))
         proc = next(p for p in built["pages"] if p["kind"] == "procedures")
         check_("markdown renders headings, ordered steps, bold and the callout", "<ol><li>Open the defect and read the <strong>evidence</strong>.</li>" in proc["html"] and "<blockquote>" in proc["html"] and proc["steps"] == 2, proc["html"])
+        check_("a page carries its roles as a list and the rest of its frontmatter as meta", proc["roles"] == ["Admin", "IT"] and proc["meta"].get("summary") == "Decide fault. Three outcomes.", str(proc.get("roles")) + " " + str(proc.get("meta")))
+        rule = next(p for p in built["pages"] if p["kind"] == "rules")
+        check_("a page with no roles line belongs to every role: an empty list", rule["roles"] == [], str(rule.get("roles")))
         guide = next(p for p in built["pages"] if p["kind"] == "screens")
         check_("a screen guide takes its title from the registry and its body heading starts at h2", guide["title"] == "Defect queue" and "<h3>What this screen holds</h3>" in guide["html"], guide["html"][:120])
         check_("the search index covers pages, settings and permissions", any(i["kind"] == "settings" for i in built["index"]) and any(i["kind"] == "permissions" for i in built["index"]))
