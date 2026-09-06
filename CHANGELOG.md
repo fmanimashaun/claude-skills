@@ -2531,6 +2531,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-06 (release v1.122.0)
+
+- `plugins/rails-flow/scripts/docs_layout.py` reads a `.js`/`.mjs` under `docs/` as the design, not as code that
+  wandered in, when a `.dc.html` beside it imports it (`import('./admin-core.js')`) — design-flow's manifest
+  extractor follows that very import since 1.39.3, so the two plugins no longer disagree about where the file may
+  live. An unimported script in `docs/` is still code. The selftest and the repository's mutation guard for
+  `docs_layout` pin both. (Our own design; decided on #942. Refs #942)
+- `scripts/build_help.py` carries a page's frontmatter into the build: `roles:` becomes a `roles` list on every
+  page (empty means every role) and the rest — `summary:`, `rules:`, `screens:`, `permission:`, `purpose:` — travels
+  as `meta`, so an app renders a role-scoped Help, the related links and a guide's meta box from `help.json`
+  alone and never re-reads the sources. Selftest and `scripts/mutations/build_help.py` pin both. `reference/help.md`
+  documents the keys. (Our own design; decided on #940. Refs #940)
+
 ### 2026-09-05 (release v1.121.0)
 
 - **In-app Help & SOP, generated from the repository** (#934 — the owner: "we will prefer to generate all
