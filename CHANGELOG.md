@@ -2531,6 +2531,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- `scripts/build_help.py` carries a page's frontmatter into the build: `roles:` becomes a `roles` list on every
+  page (empty means every role) and the rest — `summary:`, `rules:`, `screens:`, `permission:`, `purpose:` — travels
+  as `meta`, so an app renders a role-scoped Help, the related links and a guide's meta box from `help.json`
+  alone and never re-reads the sources. Selftest and `scripts/mutations/build_help.py` pin both. `reference/help.md`
+  documents the keys. (Our own design; decided on #940. Refs #940)
+
 ### 2026-09-05 (release v1.121.0)
 
 - **In-app Help & SOP, generated from the repository** (#934 — the owner: "we will prefer to generate all

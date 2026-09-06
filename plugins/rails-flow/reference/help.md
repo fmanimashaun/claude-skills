@@ -21,6 +21,12 @@ docs/product/help/
 `spec:` is required on procedures and rules: a procedure with no section behind it is opinion, not doctrine.
 Every screen in the registry needs a guide, every guide needs a screen — the Help link on a screen opens its guide.
 
+Help is **scoped to the signed-in role**: `roles: Admin, Freelancer` on any page names whose Help it belongs to,
+and no `roles:` line means every role. The build splits it into a `roles` list and carries the rest of the
+frontmatter as `meta` — a procedure's `summary:`, the `rules:` it rests on and the `screens:` it applies to, a
+guide's `permission:` and `purpose:` — so the app renders the index, the related links and the guide's meta box
+from the one file and never re-reads the sources.
+
 ## The registry is the app's, not a document
 
 `docs/product/help/registry.json` is produced by the application from its own code, so a setting, permission or screen
