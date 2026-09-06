@@ -12,8 +12,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "code in docs/ is classified as authored prose, so a generator script looks like a document",
-            '    if p.suffix.lower() in CODE_EXT:\n        return "code"',
-            '    if False:\n        return "code"',
+            '    if p.suffix.lower() in CODE_EXT:',
+            '    if False:',
             "a .py in docs is code",
         ),
         Mutation(
