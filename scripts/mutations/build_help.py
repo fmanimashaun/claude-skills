@@ -57,6 +57,12 @@ GUARD = Guard(
             "--check before the first build is n/a",
         ),
         Mutation(
+            "a page's roles are dropped from the build, so the app cannot scope Help to the signed-in role",
+            '            "roles": split_list(meta.get("roles", "")),',
+            '            "roles": [],',
+            "a page carries its roles as a list",
+        ),
+        Mutation(
             "ordered steps are dropped from the rendered procedure",
             '        ol = re.match(r"^\\s*\\d+[.)]\\s+(.*)$", line)',
             "        ol = None",
