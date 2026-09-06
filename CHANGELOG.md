@@ -2531,6 +2531,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- `reference/help.md` gains **The shell and the presentation**: a design canvas can only show the Help shell
+  with sample content, so the section says who owns what (the design the shell and its copy, the build every
+  page), that the binding → field → view mapping is written once in the project's `docs/product/help/README.md`,
+  the rules that hold whatever the content is (role scope as not-found, the writing subset, provenance lines,
+  numbers from the registry, nothing editable), and a per-role review. (Our own design; decided on #946.
+  Refs #946)
+
 ### 2026-09-06 (release v1.122.0)
 
 - `plugins/rails-flow/scripts/docs_layout.py` reads a `.js`/`.mjs` under `docs/` as the design, not as code that

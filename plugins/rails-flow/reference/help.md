@@ -92,6 +92,42 @@ subset, nothing that runs), the three references, a search index, the commit and
 read-only in every shell's Help & SOP, links each screen to its guide by key, and shows the version on every page.
 Nothing in Help is edited in the interface; a change is a commit with a reason, reviewed, and lands with the deploy.
 
+## The shell and the presentation
+
+A design canvas can show the Help **shell** — the index, the home cards, a list, a page, the reference tables,
+the issues tables, the drawer beside a screen — only with sample content, because the pages are generated per
+release and were never designed. The app is where the two meet, and that composition is a decision to write down
+once, not something each build rediscovers. (Owner's ask, Retask, 6 Sep 2026: "agent needs to know how to piece
+it together and manage the final presentation as we build.")
+
+**Who owns what.** The design owns the shell and its own copy — section labels, home-card notes, list notes,
+empty states, the modal's fixed header and footer with a scrolling body. The build owns every page: title,
+badge kind, citation, body HTML, roles, related links, the references and their values. A view never carries a
+page's copy; a page never carries layout.
+
+**Write the mapping once.** In the project's `docs/product/help/README.md`, a table from each binding the canvas
+draws (`sections`, `homeCards`, `listItems`, `body`, `refRows`, `issueTables`, the drawer's `dBody`…) to the
+field of `help.json` it reads (`pages[kind].title`, `meta.summary`, `spec`, `html`, `roles`, `settings`,
+`permissions`, `index`) and the view that draws it. When the canvas changes, the table says what to touch; when
+the build gains a field, it says where it shows.
+
+**The rules that hold whatever the content is.**
+
+- Scope is the role's: a page shows if its `roles` is empty or names the role, and is **not found** otherwise —
+  never hidden but reachable. References follow the same rule per project (Retask: settings for Admin;
+  permissions whole for Admin and IT, only the held ones for everyone else).
+- Body HTML is the writing subset (`p strong em code h2 h3 ol ul li blockquote a`) sanitised to exactly that,
+  with the design's `#section/slug` anchors rewritten to routes; one prose class styles it, a body carries none.
+- Every page states its provenance: the spec citation where the source has one, the release line in the index,
+  the release in the drawer, the "published with each release" footer on content pages only.
+- Numbers in Help come from the registry at render time, never from prose: a setting's current value is the
+  app's, not a string in a page.
+- Nothing in Help is editable in the interface. The one interactive thing is an issue, and it is a record.
+
+**Review the composed result per role.** Sign in as each role and open Help: the home, every list, page,
+reference and search is the build in the shell. Keep the scoping and rendering guarantees in request specs, and
+the build under `help-drift`. A screen's guide is reviewed from the question mark beside that screen's heading.
+
 ## What this is not
 
 Not the developer wiki. `docs/wiki/` mirrors the codebase for developers and agents; Help is the user's manual.
