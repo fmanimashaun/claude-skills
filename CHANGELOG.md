@@ -2531,6 +2531,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- `scripts/docs_layout.py` reads a `.js`/`.mjs` under `docs/` as the design, not as code that wandered in, when a
+  `.dc.html` beside it imports it (`import('./admin-core.js')`) — design-flow's `canvas_manifest.py extract`
+  follows that very import (#935), so the two plugins no longer disagree about where the file may live. An
+  unimported script in `docs/` is still code. Selftest and `scripts/mutations/docs_layout.py` pin both. (Our own
+  design; decided on #942. Refs #942)
+
 ### 2026-09-05 (release v1.121.0)
 
 - **In-app Help & SOP, generated from the repository** (#934 — the owner: "we will prefer to generate all
