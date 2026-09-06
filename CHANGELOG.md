@@ -2531,7 +2531,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-06 (release v1.122.0)
 
 - `plugins/rails-flow/scripts/docs_layout.py` reads a `.js`/`.mjs` under `docs/` as the design, not as code that
   wandered in, when a `.dc.html` beside it imports it (`import('./admin-core.js')`) — design-flow's manifest
