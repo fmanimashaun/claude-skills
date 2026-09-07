@@ -379,7 +379,12 @@ end
 ```
 ```erb
 <%# modal_component.html.erb — rendered into <turbo-frame id="modal">; modal controller = trap+dismiss %>
-<div data-controller="modal" data-action="keydown.esc->modal#close" class="fixed inset-0 z-50">
+<%# NO Escape key filter on this element. Escape belongs to the dismissable layer the controller
+    opens: it reads `e.key` itself AND respects the layer stack, so a nested overlay closes one
+    level. A `keydown.esc` filter does neither — Stimulus consults the filter only inside
+    `event instanceof KeyboardEvent`, so a bare `new Event("keydown")` skips it and empties this
+    frame. See stimulus.md, "A key filter is not a type check". %>
+<div data-controller="modal" class="fixed inset-0 z-50">
   <div class="fixed inset-0 bg-overlay/50 backdrop-blur-sm" data-action="click->modal#backdrop"></div>
   <div class="<%= panel %> p-4 sm:p-0" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
        data-modal-target="panel">

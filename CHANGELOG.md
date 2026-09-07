@@ -7,6 +7,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-07 (release v1.123.0)
+
+- **`scripts/lint_self_consistency.py`: new `unguarded-key-filter` rule, with `scripts/mutations/lint_self_consistency.py`
+  guarding both directions** (#949). A Stimulus action descriptor that guards a state-destroying handler
+  (`close`, `dismiss`, `clear`, `cancel`, `remove`, `reset`, `discard`, `destroy`, `delete`, `hide`) behind a keyboard filter
+  is now a finding anywhere under `skills/**` or `plugins/**`. Keyed on the destructive **verb**, not the filter: a
+  `keydown.down->search#next` is the roving-tabindex idiom we ship everywhere, and flagging it is how a rule gets
+  switched off. Two mutations — remove the verbs (the modal root we shipped must be caught) and widen to every filter
+  (a navigation descriptor must stay silent). Registered in `scripts/doctrine_map.py` as a `guarantee` citing
+  `rule:unguarded-key-filter`; `docs/architecture/doctrine-map.html` rebuilt, 38 claims.
+
 ### 2026-09-04 (release v1.117.0)
 
 - **`scripts/mutations/hook_*.py`: every hook guard stages qa-flow's hooks and scripts too** (#906, folded into this block after
@@ -2531,6 +2542,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-07 (release v1.123.0)
+
+- `reference/help.md` gains **The shell and the presentation**: a design canvas can only show the Help shell
+  with sample content, so the section says who owns what (the design the shell and its copy, the build every
+  page), that the binding → field → view mapping is written once in the project's `docs/product/help/README.md`,
+  the rules that hold whatever the content is (role scope as not-found, the writing subset, provenance lines,
+  numbers from the registry, nothing editable), and a per-role review. (Our own design; decided on #946.
+  Refs #946)
+
 ### 2026-09-06 (release v1.122.0)
 
 - `plugins/rails-flow/scripts/docs_layout.py` reads a `.js`/`.mjs` under `docs/` as the design, not as code that
@@ -4710,6 +4730,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-07 (release v1.123.0)
+
+- **A Stimulus key filter is not a type check — `skills/hotwire/references/stimulus.md`,
+  `skills/design-system/references/component-implementations.md`, `skills/rails-8/references/views-hotwire.md`**
+  (#949). We shipped `<div data-controller="modal" data-action="keydown.esc->modal#close">` as the modal root.
+  `Binding#willBeInvokedByEvent` consults the filter only inside `event instanceof KeyboardEvent`
+  (`src/core/binding.ts`, Stimulus **3.2.0+** — filters did not exist before 3.2.0; `shouldIgnoreKeyboardEvent`
+  in `src/core/action.ts` would have rejected a keyless event but is never reached), so a bare
+  `new Event("keydown", { bubbles: true })` — what a password manager dispatches at a field it decorates —
+  skips the filter and closes the dialog. Verified against `hotwired/stimulus` v3.2.2; the official reference
+  (reference/actions, "KeyboardEvent Filter") says only *"this will only work if the event being fired is a
+  keyboard event"* and does not state the corollary. The modal root now carries **no** Escape descriptor —
+  the dismissable layer already owns Escape, reads `e.key`, and respects the layer stack — and the actions
+  section states the rule: where the handler destroys state, bind the bare event and narrow it in the method.
+  Found downstream (`fmanimashaun/Retask-platform` #108) after three other mechanisms were fixed and none was
+  the cause.
 
 ### 2026-09-04 (release v1.118.0)
 

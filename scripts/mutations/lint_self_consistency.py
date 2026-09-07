@@ -33,6 +33,23 @@ GUARD = Guard(
             "a shipped command the root README never names",
         ),
 
+        # #949. A key filter is not a type check: Stimulus consults it only inside
+        # `event instanceof KeyboardEvent`, so a bare `Event("keydown")` from a browser extension
+        # skips it and runs the handler. Two clauses -- the rule must FIRE on a destructive handler
+        # and stay SILENT on a navigation one, because a rule that flags every roving-tabindex
+        # descriptor we ship is a rule that gets switched off.
+        Mutation(
+            "the destructive-handler verbs go, so the modal root we shipped passes again",
+            "->[A-Za-z0-9_-]+#(close|dismiss|clear|cancel|remove|reset|discard|destroy|delete|hide)\\b\")",
+            "->[A-Za-z0-9_-]+#(closeXXNEVERXX)\\b\")",
+            "the modal root we shipped",
+        ),
+        Mutation(
+            "the rule widens to every key filter, so navigation descriptors are flagged too",
+            "        for match in _KEY_FILTER_DESTRUCTIVE.finditer(body):",
+            "        for match in _KEY_FILTER_ANY.finditer(body):",
+            "a filter over a navigation handler is silent",
+        ),
         # #777. The rule that stops #617's class recurring a fourth time. Four clauses: it must
         # FIRE on a cross-plugin hop count, stay silent on the resolver, stay silent on prose,
         # and stay silent on the resolver's own file.

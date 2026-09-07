@@ -288,6 +288,21 @@ CLAIMS: tuple[Claim, ...] = (
                      "mutation:lint_self_consistency"),
     ),
     Claim(
+        claim="A Stimulus keyboard filter is not a type check: the filter is consulted only inside "
+              "`event instanceof KeyboardEvent`, so a bare `Event(\"keydown\")` skips it and runs "
+              "the handler. No shipped descriptor may guard a state-destroying handler with one.",
+        stated_in="skills/hotwire/references/stimulus.md",
+        anchor="A key filter is not a type check",
+        kind=GUARANTEE,
+        enforced_by=("rule:unguarded-key-filter", "script:scripts/lint_self_consistency.py",
+                     "gate:self-consistency", "mutation:lint_self_consistency"),
+        refs=(949,),
+        note="We shipped the defect for months as the modal root in component-implementations.md; a "
+             "downstream app copied it and a password manager's inline fill tooltip emptied the "
+             "dialog. The rule keys on the destructive VERB, not the filter — flagging every "
+             "roving-tabindex descriptor is how it would get switched off.",
+    ),
+    Claim(
         claim="A verification command whose verdict is swallowed by `|| echo` or `|| true` cannot "
               "block anything.",
         stated_in="CLAUDE.md",

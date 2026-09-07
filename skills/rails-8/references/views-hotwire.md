@@ -292,8 +292,11 @@ Conventions: filename `*_controller.js` → identifier (`clipboard`,
 controllers via `outlets` or dispatched events
 (`this.dispatch("copied", { detail: {...} })`). Keep controllers generic and
 reusable (`toggle`, `autosubmit`, `dropdown`) rather than page-specific.
-`data-action="input->search#submit keydown.esc->modal#close"` for explicit
-events/filters.
+`data-action="input->search#submit keydown.down->search#next"` for explicit
+events/filters — but never a key filter on a handler that dismisses or clears.
+Stimulus skips the filter for any event that is not a `KeyboardEvent`, so a
+synthetic bare `keydown` fires it; narrow the event inside the method instead
+(hotwire skill, *A key filter is not a type check*).
 
 ## 10. Choosing the right Hotwire tool
 
