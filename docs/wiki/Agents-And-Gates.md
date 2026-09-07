@@ -2,13 +2,13 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**28 shipped agents · 46 shipped commands · 99 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**28 shipped agents · 46 shipped commands · 100 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.39.3 | 5 | 12 | 5 | 18 |
 | `pipeline` | 1.3.2 | 2 | 8 | 2 | 1 |
-| `qa-flow` | 1.26.3 | 10 | 7 | 10 | 13 |
+| `qa-flow` | 1.26.3 | 10 | 7 | 10 | 14 |
 | `rails-flow` | 1.40.1 | 11 | 19 | 11 | 23 |
 
 ## Agents
@@ -106,6 +106,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow evidence | `qa-flow` | `python3 plugins/qa-flow/scripts/validate_evidence.py --selftest` | selftest |
 | qa-flow evidence manifest | `qa-flow` | `python3 plugins/qa-flow/scripts/evidence_manifest.py --selftest` | selftest |
 | qa-flow interaction sweep | `qa-flow` | `python3 plugins/qa-flow/scripts/interaction_report.py --selftest` | selftest |
+| qa-flow layout fit | `qa-flow` | `python3 plugins/qa-flow/scripts/layout_fit.py --selftest` | selftest |
 | qa-flow link audit | `qa-flow` | `python3 plugins/qa-flow/scripts/link_audit.py --selftest` | selftest |
 | qa-flow route coverage | `qa-flow` | `python3 plugins/qa-flow/scripts/route_coverage.py --selftest` | selftest |
 | qa-flow route crawl | `qa-flow` | `python3 plugins/qa-flow/scripts/crawl_report.py --selftest` | selftest |

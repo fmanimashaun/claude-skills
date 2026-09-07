@@ -7,6 +7,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`scripts/maintainer_doctor.py` gates the new layer's selftest, and `scripts/mutations/layout_fit.py`
+  proves it can fail** (#953). 15 mutations, in both dangerous directions: a rule that stops firing (so
+  a page hiding 82% of a table reads clean) and an exemption that stops exempting (so every `.sr-only`
+  span in the app becomes a finding, which is how a layer gets switched off in a week). The runner
+  refused the guard's first draft as **INERT** — the staged tempdir had neither `qa_config.py` nor the
+  collector, so the unmutated selftest already failed and every mutation would have read as caught;
+  both are now declared in `needs`. It also refused two mutations that were caught by a fixture other
+  than the one named. `docs/wiki/Agents-And-Gates.md` rebuilt.
+
 ### 2026-09-07 (release v1.123.0)
 
 - **`scripts/lint_self_consistency.py`: new `unguarded-key-filter` rule, with `scripts/mutations/lint_self_consistency.py`
@@ -4731,6 +4742,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **`skills/quality-pass/references/worked-example.md`: the `Unusable` copy-count moves 6 → 7 (reach 5 → 6)
+  and the `check()` harness 32 → 33** — `layout_fit.py` (#953) is a new copy of both.
+  `check_shared_shapes.py` refuses the stale numbers, which is what it is for: the decision *not* to
+  extract those shapes rests on them.
+
 ### 2026-09-07 (release v1.123.0)
 
 - **A Stimulus key filter is not a type check — `skills/hotwire/references/stimulus.md`,
@@ -8294,6 +8312,37 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **A new layer measures what a page hides INSIDE the viewport — `plugins/qa-flow/scripts/layout_fit.py`,
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/commands/crawl.md`,
+  `plugins/qa-flow/checks.json`** (#953). Every responsive assertion this flow could reach was a
+  boundary condition — the document must not scroll sideways, no element may cross the viewport edge —
+  and both **pass** on a page-level grid that keeps a 232px rail at 406px, because main content is
+  crushed to 118px *inside* the viewport. Downstream that shipped 71–83% of every data table hidden and
+  five of ten sub-tabs undiscoverable while the suite reported 26 pass / 0 fail and route coverage 49/49
+  (`fmanimashaun/Retask-platform` #112, #113, #114). The measurement is per element and yields a number:
+  `(scrollWidth - clientWidth) / scrollWidth`. Three rules partitioned by computed `overflow-x` so
+  exactly one can fire per element — `spilled-content` (visible), `clipped-unreachable` (hidden/clip),
+  `scroll-without-affordance` (auto/scroll, and only where nothing on screen says it scrolls: a
+  reserved gutter, `scrollbar-gutter: stable`, or a `data-qa-scroll-affordance` the app declares,
+  because macOS overlay scrollbars reserve no space and a strip holding 1650px in 938px looks
+  finished). Visually-hidden text is exempt, keyed on the box rather than a class name — that
+  exemption was **found by running the layer**, whose first pass against a real app returned four
+  findings at 98–100% hidden, every one an `.sr-only` span. 68 selftest assertions and 15 mutations.
+  Maintainer decision recorded on #953.
+- **The collector's viewport was a hardcoded const, so nothing qa-flow shipped had ever measured a
+  phone — `plugins/qa-flow/scripts/crawl_collector.js`** (#953). `base`, `theme`, `baselines` and
+  `masks` were all arguments; the viewport was not, while the baseline directory already keyed on it.
+  Now `--viewport WxH`, default `1280x900` so no existing run is silently re-measured.
+- **Authenticated routes were unreachable, and a signed-in crawl could sign itself out —
+  `plugins/qa-flow/scripts/crawl_collector.js`** (#953). `browser.newPage()` carried no cookies, so
+  every route behind a sign-in was measured as its sign-in page; `--storage-state FILE` fixes that.
+  And with a session, the interaction sweep force-clicks "Sign out", after which later routes render
+  the landing page while being filed under the route requested — measured on a real app, five admin
+  routes degraded that way, intermittently. The collector now records `landedOn` and the judge reports
+  a route whose landed path differs from the one requested as **unverified**, naming both.
 
 ### 2026-09-04 (release v1.117.0)
 
