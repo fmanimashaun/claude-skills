@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-07 (release v1.123.0)
 
 - **`scripts/lint_self_consistency.py`: new `unguarded-key-filter` rule, with `scripts/mutations/lint_self_consistency.py`
   guarding both directions** (#949). A Stimulus action descriptor that guards a state-destroying handler
@@ -2542,7 +2542,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-07 (release v1.123.0)
 
 - `reference/help.md` gains **The shell and the presentation**: a design canvas can only show the Help shell
   with sample content, so the section says who owns what (the design the shell and its copy, the build every
@@ -4731,7 +4731,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-07 (release v1.123.0)
 
 - **A Stimulus key filter is not a type check — `skills/hotwire/references/stimulus.md`,
   `skills/design-system/references/component-implementations.md`, `skills/rails-8/references/views-hotwire.md`**
