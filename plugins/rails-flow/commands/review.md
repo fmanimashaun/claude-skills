@@ -51,14 +51,14 @@ cross-examination. Default remains one-shot subagents.
 
 ## Synthesis
 
-**Each pass appends its findings as JSONL to `docs/reviews/<YYYY-MM-DD>/findings.jsonl`**, one
+**Each pass appends its findings as JSONL to `docs/evidence/reviews/<YYYY-MM-DD>/findings.jsonl`**, one
 record per finding, before writing any prose. The record shape and every rule below are enforced by
 `findings.py` — run it rather than doing this by judgement:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/reviews/<date>/findings.jsonl
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" dedupe   docs/reviews/<date>/findings.jsonl
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" order    docs/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/evidence/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" dedupe   docs/evidence/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" order    docs/evidence/reviews/<date>/findings.jsonl
 ```
 
 ```json
@@ -90,13 +90,13 @@ Then synthesis, which is now checked rather than promised:
    rather than raised — a mutual `caused_by` is usually a modelling error worth a human look.
 4. **The markdown report is generated from the data**, never authored:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" report docs/reviews/<date>/findings.jsonl > docs/reviews/<date>-codebase-review.md
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" report docs/evidence/reviews/<date>/findings.jsonl > docs/evidence/reviews/<date>-codebase-review.md
    ```
 
 Each pass reports **every** finding (any severity) with `file:line` + repro + fix option(s) and
 does **not** self-decide disposition. Order into **phases** (Phase 1 = all P1s, then coherent
 P2/P3 groupings of ~5-10 items each), and write the report to
-`docs/reviews/<YYYY-MM-DD>-codebase-review.md` with each phase marked `Status: Not started`. Every
+`docs/evidence/reviews/<YYYY-MM-DD>-codebase-review.md` with each phase marked `Status: Not started`. Every
 finding — including low-severity/residual ones — appears in the report, issue-ready; the
 disposition (fix now / defer / accept) is the developer flow's and the human's call, never a pass's.
 

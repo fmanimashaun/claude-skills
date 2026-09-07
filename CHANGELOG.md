@@ -7,6 +7,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-07 (release v1.125.0)
+
+- **`scripts/lint_self_consistency.py`: new `unplaceable-findings-path` rule** (#948). Every
+  `findings.jsonl` path a shipped command or agent instructs must sit under a directory in
+  `docs_layout.py`'s vocabulary — **read from that module, never copied**, since a second list of
+  layout directories is this defect one level up. A vocabulary that cannot be loaded is reported, not
+  passed. Deliberately narrow: the general "every `docs/<top>/` path must be placeable" version fires
+  on dozens of correct lines, because this repo's own `docs/` tree has `doctrine/` and shipped prose
+  cites our paths as well as instructing the project's — the mention-versus-prescription judgement
+  #491 records as the route to a rule nobody trusts. A `findings.jsonl` path has no such ambiguity.
+  Six selftest scenarios, three mutations in `scripts/mutations/lint_self_consistency.py`.
+
 ### 2026-09-07 (release v1.124.0)
 
 - **`scripts/maintainer_doctor.py` gates the new layer's selftest, and `scripts/mutations/layout_fit.py`
@@ -2552,6 +2564,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 2026-09-07 (release v1.125.0)
+
+- **Six more sites of #948, in the plugin that owns the gate — `plugins/rails-flow/commands/review.md`,
+  `fix.md`, `issues.md`** (#948). Grepping the reported pattern found rails-flow instructing
+  `docs/reviews/<date>/findings.jsonl`, and `reviews/` is not in its own `docs_layout.py` vocabulary
+  either: the plugin that ships the docs-layout gate was telling projects to write where that gate
+  refuses. Now `docs/evidence/reviews/`. The two `docs/reviews/` **exclusions** in
+  `plugins/rails-flow/commands/curate.md` and `brief.md` moved with it — they would otherwise be
+  excluding a directory that no longer exists — and kept their original scope
+  (`docs/evidence/reviews/`, not all of `docs/evidence/`), because a rename should rename rather
+  than widen.
 
 ### 2026-09-07 (release v1.123.0)
 
@@ -8312,6 +8336,35 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### 2026-09-07 (release v1.125.0)
+
+- **`plugins/qa-flow/agents/qa-reporter.md`: the findings record goes under `docs/evidence/qa/`,
+  which the docs-layout gate accepts** (#948). It instructed `docs/qa/<date>/findings.jsonl` twice —
+  once for the JSONL append, once for the `findings.py validate` example — and `qa/` is not in
+  `docs_layout.py`'s vocabulary, so rails-flow's gate rewrote it and a project that followed the
+  agent to the letter could not pass its own sweep. `evidence/` is where it belongs by the
+  vocabulary's own definition — *"WHAT did we measure? … validation results. Dated, immutable"* —
+  which is also the answer the downstream project had already reached by hand. (This bullet was
+  missed on the first pass: a `python3 - <<PY` script asserted its way out before its single write,
+  so only the rails-flow and hygiene halves of #948 were recorded. Nothing gates "every plugin this
+  change touched has a bullet", which is why it went unnoticed until the next edit to this section.)
+- **A signed-in sweep no longer signs itself out — `plugins/qa-flow/scripts/crawl_collector.js`,
+  `plugins/qa-flow/scripts/interaction_report.py`, `plugins/qa-flow/commands/crawl.md`** (#955). The
+  interaction sweep force-clicks every control it finds, and once `--storage-state` let it reach
+  authenticated routes, one of those controls was "Sign out". Measured at 1214px across five admin
+  routes: **1 of 5 landed correctly**, the other four rendered the landing page while being recorded
+  under the route that had been asked for. `controls.session_ending` in `qa.config.yml` declares what
+  must not be pressed — declared rather than guessed, for the same reason `forms.destructive` is,
+  since only the project knows that "Offboard" ends a session in one app and is a read-only report
+  in another. Resolved by `interaction_report.py --skips` and passed to the collector with
+  `--skip-controls`, the same Python-decides/browser-applies split as the visual masks. With it:
+  **5 of 5 correct, 15 controls skipped by policy.** A skip is its own state, kept apart from
+  `not exercised`, and counted at zero as loudly as at fifteen. The policy is **verified in both
+  directions** — a control the config named and the run clicked is the defect; a control the run
+  skipped that no config named is worse, because a sweep reporting no dead controls *because it
+  declined to press them* is a pass that measured nothing. 132 selftest checks (was 119), 24
+  mutations (was 20). Maintainer decision on #955.
 
 ### 2026-09-07 (release v1.124.0)
 

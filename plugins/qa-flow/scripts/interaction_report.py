@@ -119,6 +119,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import qa_config  # noqa: E402 -- sibling module, one reader for qa.config.yml (#792)
+
 SCHEMA = "qa-flow/interaction-sweep/1"
 
 # Any one of these means the control did something. Kept broad on purpose: see the docstring.
@@ -137,6 +140,11 @@ SCHEMA_EXAMPLE = {
     "controls": [{
         "ref": "main > button.filter", "tag": "button", "role": "", "name": "Filter",
         "disabled": False, "href": None, "exercised": True, "reason": None,
+        # TRUE when the sweep declined to click this on POLICY rather than failing to. A signed-in
+        # crawl force-clicks every control it finds, and one of them is "Sign out": measured on a
+        # real app, five admin routes silently degraded to the landing page after the first route's
+        # sweep, every later measurement filed under the route that had been asked for (#955).
+        "skippedByPolicy": False,
         "constraintBlocked": False,
         "effects": {k: False for k in EFFECT_KEYS},
         # null unless activating this control opened a layer. RAW attributes, never a
@@ -156,6 +164,13 @@ SCHEMA_EXAMPLE = {
         "consoleAfter": [{"level": "error", "text": "..."}],
     }],
 }
+# The policy the run was given, echoed back so the judge can verify it rather than trust it. Same
+# argument as the visual masks: the browser applies it, Python decides it, and if the two disagree the
+# run measured a different set of controls than the config describes and is refused rather than
+# judged. A skip nobody declared is worse than a missing one -- it is a control silently never
+# exercised, which is the shape of "the sweep passed because it did nothing".
+POLICY_KEY = "sessionEnding"
+
 # Sub-fields of `dismiss`, cross-checked against the collector separately: the top-level check only
 # proves the key exists, and an empty `dismiss` object would satisfy it while the rule went quiet.
 DISMISS_KEYS = ("dialogOpened", "haspopup", "triggerRole", "popupRole",
@@ -205,6 +220,9 @@ class Judged:
     findings: list[Finding] = field(default_factory=list)
     exercised: int = 0
     not_exercised: list[str] = field(default_factory=list)
+    # Controls the sweep was TOLD not to press, kept apart from the ones it could not press. See
+    # the judge for why one list for both would bury real gaps under deliberate skips.
+    policy_skipped: list[str] = field(default_factory=list)
     excluded: int = 0
     # Layers opened but not judged, each for a DIFFERENT reason, kept apart on purpose. One is
     # "APG asks nothing here"; the other is "the probe did not run". Folding them together would
@@ -220,6 +238,25 @@ class Judged:
     containment_judged: int = 0
 
 
+def session_ending(path: Path | None) -> list[str]:
+    """`controls.session_ending` from qa.config.yml — the controls a signed-in sweep must not click.
+
+    DECLARED, NEVER GUESSED, for the same reason `forms.destructive` is: only the project knows its
+    own vocabulary. This flow cannot know that "Offboard" ends a session in one app and is a
+    read-only report in another, and a built-in guess would either miss the control that matters or
+    refuse to exercise one that is fine.
+
+    Matched as case-insensitive SUBSTRINGS against a control's accessible name and its href, which
+    is the same matching `forms.destructive` documents. An empty list is a legitimate answer -- an
+    unauthenticated crawl has no session to lose -- and is why this returns [] rather than a default.
+    """
+    if path is None:
+        return []
+    section = qa_config.load_section(path, "controls")
+    raw = section.get("session_ending")
+    return [str(x).strip().lower() for x in raw if str(x).strip()] if isinstance(raw, list) else []
+
+
 def load(path: Path) -> list[dict]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -233,6 +270,32 @@ def load(path: Path) -> list[dict]:
             f"{path}: no controls. An empty sweep reporting zero dead controls is indistinguishable "
             "from a page whose every control works, which is the outcome this must never produce.")
     return controls
+
+
+def recorded_policy(path: Path) -> list[str]:
+    """The policy the run says it applied. Absent means an older collector: [] rather than a guess."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    raw = data.get(POLICY_KEY)
+    return [str(x).strip().lower() for x in raw if str(x).strip()] if isinstance(raw, list) else []
+
+
+def refuse_policy_drift(where: str, want: list[str], got: list[str]) -> None:
+    """The skip policy is VERIFIED, not trusted — both directions, same as the visual masks.
+
+    A control the config said to skip and the run clicked anyway is the defect this exists to stop.
+    A control the run skipped that no config named is worse: it was silently never exercised, and a
+    sweep that reports no dead controls because it declined to press them is the shape of a pass
+    that measured nothing.
+    """
+    if sorted(set(want)) == sorted(set(got)):
+        return
+    raise Unusable(
+        f"{where}: the config declares session-ending controls {sorted(set(want)) or '[]'} but the "
+        f"run recorded {sorted(set(got)) or '[]'}. A different set of controls was exercised than "
+        "the config describes, so the sweep is refused rather than judged — pass the resolved "
+        "policy to the collector with `interaction_report.py --skips --config qa/qa.config.yml > "
+        "qa/manual-tests/skips.json` and `crawl_collector.js --skip-controls "
+        "qa/manual-tests/skips.json`.")
 
 
 def excluded_reason(control: dict) -> str | None:
@@ -372,6 +435,12 @@ def judge(controls: list[dict]) -> Judged:
     result = Judged()
     for control in controls:
         ref = str(control.get("ref", "<unknown>"))
+        if control.get("skippedByPolicy"):
+            # NOT `not_exercised`. That list is "we tried and could not", which a reader treats as
+            # a gap to close; this is "we were told not to", which is a decision already made. One
+            # list for both would bury the real gaps under the deliberate skips.
+            result.policy_skipped.append(f"{ref}: {control.get('reason') or 'declared session-ending'}")
+            continue
         if not control.get("exercised", False):
             result.not_exercised.append(f"{ref}: {control.get('reason') or 'not activated'}")
             continue
@@ -455,6 +524,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--node-bin", default="node", metavar="BIN",
                     help="node executable for --check-collector (the selftest points this at a "
                          "nonexistent binary to prove the skip path is a skip)")
+    ap.add_argument("--skips", action="store_true",
+                    help="print the resolved session-ending control policy for the collector")
+    ap.add_argument("--config", type=Path, default=None,
+                    help="qa.config.yml, for the `controls:` section")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -464,16 +537,36 @@ def main(argv: list[str] | None = None) -> int:
     if args.schema:
         print(json.dumps(SCHEMA_EXAMPLE, indent=2))
         return 0
+    if args.skips:
+        # Printed, never written — the same rule the visual masks follow: the judging module holds
+        # no write call, and adding one to save a shell redirect puts a file-writing path inside the
+        # module whose promise is that it only reads.
+        try:
+            print(json.dumps({POLICY_KEY: session_ending(args.config)}, indent=2))
+        except SystemExit:
+            raise
+        except Exception as exc:                       # a malformed config, reported not guessed
+            print(f"UNUSABLE: {exc}", file=sys.stderr)
+            return 2
+        return 0
     if not args.sweep:
-        ap.error("a sweep file is required (or --schema / --check-collector / --selftest)")
+        ap.error("a sweep file is required (or --schema / --skips / --check-collector / --selftest)")
     try:
-        result = judge(load(args.sweep))
+        controls = load(args.sweep)
+        # VERIFIED, not trusted. Only when a config was given: without one there is nothing to
+        # compare against, and inventing an empty expectation would refuse every authenticated run
+        # that legitimately declared a policy.
+        if args.config is not None:
+            refuse_policy_drift(str(args.sweep), session_ending(args.config),
+                                recorded_policy(args.sweep))
+        result = judge(controls)
     except Unusable as exc:
         print(f"UNUSABLE: {exc}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps({"exercised": result.exercised, "excluded": result.excluded,
                           "notExercised": result.not_exercised,
+                          "policySkipped": result.policy_skipped,
                           "dismissJudged": result.dismiss_judged,
                           "dismissOutOfScope": result.dismiss_out_of_scope,
                           "dismissUnjudged": result.dismiss_unjudged,
@@ -490,6 +583,8 @@ def main(argv: list[str] | None = None) -> int:
                       f"{', '.join(refs[:MAX_EXAMPLES])}\n      {detail}")
         for s in result.not_exercised:
             print(f"  [not exercised] {s}")
+        for s in result.policy_skipped:
+            print(f"  [skipped by policy] {s}")
         for s in result.dismiss_out_of_scope:
             print(f"  [dismissal out of scope] {s}")
         for s in result.dismiss_unjudged:
@@ -499,7 +594,10 @@ def main(argv: list[str] | None = None) -> int:
         for s in result.containment_unjudged:
             print(f"  [containment not judged] {s}")
         print(f"\n{result.exercised} control(s) exercised, {len(result.findings)} finding(s), "
-              f"{result.excluded} excluded by rule, {len(result.not_exercised)} not exercised.")
+              f"{result.excluded} excluded by rule, {len(result.not_exercised)} not exercised, "
+              # Printed at zero too: an exclusion with a count is auditable, one without is
+              # invisible, and "the sweep skipped nothing" must be readable as a statement.
+              f"{len(result.policy_skipped)} skipped by policy.")
         print(f"{result.dismiss_judged} overlay dismissal(s) judged, "
               f"{len(result.dismiss_out_of_scope)} out of scope, "
               f"{len(result.dismiss_unjudged)} not judged.")
@@ -539,6 +637,67 @@ def selftest() -> int:
 
     def rules(*controls) -> list[str]:
         return [f.rule for f in judge(list(controls)).findings]
+
+    # ---- the sweep must not sign itself out (#955) -----------------------------------------
+    # A signed-in crawl force-clicks every control, and one of them is "Sign out". Measured on a
+    # real app: five admin routes degraded to the landing page after the first route's sweep.
+    skipped = ctl(exercised=False, skippedByPolicy=True, reason="declared session-ending")
+    j = judge([ skipped ])
+    check("a policy skip is its own state, not a dead control", j.findings == [], f"{j.findings}")
+    check("...and not filed as 'could not activate'",
+          j.policy_skipped and not j.not_exercised, f"{j}")
+    # THE OTHER DIRECTION: a control we merely failed to press is still a gap to close.
+    j2 = judge([ ctl(exercised=False, reason="element no longer in the DOM") ])
+    check("a control we could not press is still not exercised",
+          j2.not_exercised and not j2.policy_skipped, f"{j2}")
+
+    import tempfile
+
+    def cfg(body: str) -> Path:
+        d = Path(tempfile.mkdtemp(prefix="qa-controls-"))
+        (d / "qa.config.yml").write_text(body, encoding="utf-8")
+        return d / "qa.config.yml"
+
+    check("the policy is read from the config",
+          session_ending(cfg("controls:\n  session_ending: [sign out, log out]\n")) ==
+          ["sign out", "log out"],
+          f"{session_ending(cfg('controls:'))}")
+    # An empty or absent declaration is a LEGITIMATE answer: an unauthenticated crawl has no
+    # session to lose, so this must not invent a default that refuses to press a real control.
+    check("no controls block means no policy", session_ending(cfg("forms:\n  destructive: [x]\n")) == [],
+          "a missing block invented a policy")
+    check("no config at all means no policy", session_ending(None) == [], "None invented a policy")
+
+    # THE POLICY IS VERIFIED, BOTH DIRECTIONS, same as the visual masks.
+    def drifts(want, got) -> bool:
+        try:
+            refuse_policy_drift("run.json", want, got)
+            return False
+        except Unusable:
+            return True
+
+    check("a config skip the run ignored is refused", drifts(["sign out"], []))
+    # The worse direction: a skip nobody declared is a control silently never pressed, which is how
+    # a sweep reports no dead controls because it declined to press them.
+    check("a run skip no config asked for is refused", drifts([], ["sign out"]))
+    check("agreement is judged", not drifts(["sign out"], ["sign out"]))
+    check("agreement ignores order", not drifts(["sign out", "log out"], ["log out", "sign out"]))
+    # CASE IS NORMALISED BY THE READERS, not by the comparison — so that is where it is asserted.
+    # The first draft of this fixture hid the question behind an `or` of two calls, which passes
+    # whichever way the code behaves and therefore asserts nothing.
+    check("the config reader lowercases",
+          session_ending(cfg("controls:\n  session_ending: [Sign Out]\n")) == ["sign out"],
+          "a mixed-case declaration survived unnormalised")
+    def recorded(body: str) -> list[str]:
+        d = Path(tempfile.mkdtemp(prefix="qa-run-"))
+        run = d / "interactions.json"
+        run.write_text(body, encoding="utf-8")
+        return recorded_policy(run)
+    check("the run reader lowercases",
+          recorded(json.dumps({POLICY_KEY: ["Sign Out"]})) == ["sign out"],
+          "a mixed-case recorded policy survived unnormalised")
+    check("an older run with no policy reads as none",
+          recorded(json.dumps({"controls": []})) == [], "a missing policy was invented")
 
     check("an inert button fires dead-control", rules(ctl()) == ["dead-control"], f"{rules(ctl())}")
 

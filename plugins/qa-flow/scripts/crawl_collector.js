@@ -85,7 +85,7 @@ if (!chromium) {
 // run read as evidence for something it never measured. Same shape as #112's `ignored: []` and the
 // `links.check_external` toggle that nothing honoured.
 const VALUED_FLAGS = ['base', 'out', 'routes', 'max-controls', 'baselines', 'masks', 'theme',
-                      'viewport', 'storage-state'];
+                      'viewport', 'storage-state', 'skip-controls'];
 const BOOLEAN_FLAGS = ['visual', 'links', 'seeded', 'layout'];
 const USAGE = [
   'crawl_collector.js — measure routes and controls for the qa-flow judges.',
@@ -99,6 +99,7 @@ const USAGE = [
   '  --theme NAME          colour scheme to emulate',
   '  --viewport WxH        viewport to measure at (default 1280x900)',
   '  --storage-state FILE  Playwright storage state, for routes behind authentication',
+  '  --skip-controls FILE  controls the sweep must not press, from interaction_report.py --skips',
   '  --visual              capture screenshots against the baselines',
   '  --layout              record what each page hides INSIDE the viewport',
   '  --links               inventory hrefs, fragments and 4xx/5xx sub-resources',
@@ -194,6 +195,36 @@ if (STORAGE && !existsSync(STORAGE)) {
 // over what it is handed and records what it painted. Same split as everywhere else: deciding is
 // Python's, and a rule here would be a rule with no fixture. The judge REFUSES a run whose recorded
 // masks disagree with the config, so a stale or absent map is reported, never quietly judged.
+// CONTROLS THE SWEEP MUST NOT PRESS. The sweep force-clicks every control it finds, and on a
+// signed-in crawl one of them is "Sign out": measured on a real app, five admin routes silently
+// degraded to the landing page after the FIRST route's sweep, and every later measurement was filed
+// under the route that had been asked for (#955).
+//
+// DECLARED, NOT GUESSED, and resolved in Python — the same split as the visual masks. This flow
+// cannot know that "Offboard" ends a session in one app and is a read-only report in another, and
+// what is skipped is echoed into the output so the judge verifies the policy rather than trusting
+// it. Matched case-insensitively against the accessible name and the href.
+const SKIP_CONTROLS = (() => {
+  const path = arg('skip-controls', null);
+  if (!path) return [];
+  try {
+    const doc = JSON.parse(readFileSync(path, 'utf8'));
+    const list = doc && doc.sessionEnding;
+    return Array.isArray(list) ? list.map((x) => String(x).trim().toLowerCase()).filter(Boolean) : [];
+  } catch (error) {
+    console.error(`Cannot read --skip-controls ${path}: ${error.message}\n` +
+      '  Generate it with:  python3 interaction_report.py --skips --config qa/qa.config.yml \\\n' +
+      '                       > qa/manual-tests/skips.json');
+    process.exit(2);
+  }
+})();
+
+const endsSession = (control) => {
+  if (!SKIP_CONTROLS.length) return null;
+  const haystack = `${control.name || ''} ${control.href || ''}`.toLowerCase();
+  return SKIP_CONTROLS.find((needle) => haystack.includes(needle)) || null;
+};
+
 const MASKS = (() => {
   const path = arg('masks', null);
   if (!path) return {};
@@ -760,6 +791,25 @@ for (const route of routes) {
     page.on('console', onMsg);
     page.on('request', onReq);
 
+    // BEFORE the snapshot and the click. Recorded as a decision, not as a failure: the judge keeps
+    // policy skips in their own list, because "we were told not to" and "we tried and could not"
+    // are different facts and one list for both buries the real gaps.
+    const declined = endsSession(control);
+    if (declined) {
+      controls.push({
+        ...control,
+        exercised: false,
+        skippedByPolicy: true,
+        reason: `declared session-ending (matched ${JSON.stringify(declined)})`,
+        constraintBlocked: false,
+        effects: {},
+        dismiss: null,
+        containment: null,
+        consoleAfter: [],
+      });
+      continue;
+    }
+
     let exercised = true;
     let reason = null;
     let handle = null;
@@ -851,6 +901,7 @@ for (const route of routes) {
       href: control.href,
       disabled: control.disabled,
       exercised,
+      skippedByPolicy: false,
       reason,
       constraintBlocked: formInvalidBefore === true,
       effects: after ? {
@@ -909,7 +960,10 @@ await browser.close();
 writeFileSync(`${outDir}/crawl.json`,
   JSON.stringify({ schema: 'qa-flow/route-crawl/1', pages }, null, 2));
 writeFileSync(`${outDir}/interactions.json`,
-  JSON.stringify({ schema: 'qa-flow/interaction-sweep/1', controls }, null, 2));
+  // The policy is echoed back so the judge can verify it against the config rather than trust the
+  // run. A skip nobody declared is a control silently never exercised.
+  JSON.stringify({ schema: 'qa-flow/interaction-sweep/1', sessionEnding: SKIP_CONTROLS, controls },
+                 null, 2));
 
 if (VISUAL) {
   writeFileSync(`${outDir}/visual.json`,
