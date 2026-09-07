@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Rails 8 & Hotwire development skills — vanilla-first stack, pure RSpec, Turbo/Stimulus/Hotwire Native, OpenAPI via rswag, ruby_llm, Kamal 2",
-    "version": "1.124.0"
+    "version": "1.125.0"
   },
   "plugins": [
     {
@@ -60,7 +60,7 @@
         "git"
       ],
       "category": "development",
-      "version": "1.40.1"
+      "version": "1.40.2"
     },
     {
       "name": "qa-flow",

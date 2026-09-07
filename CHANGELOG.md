@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-07 (release v1.125.0)
 
 - **`scripts/lint_self_consistency.py`: new `unplaceable-findings-path` rule** (#948). Every
   `findings.jsonl` path a shipped command or agent instructs must sit under a directory in
@@ -2565,7 +2565,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-07 (release v1.125.0)
 
 - **Six more sites of #948, in the plugin that owns the gate — `plugins/rails-flow/commands/review.md`,
   `fix.md`, `issues.md`** (#948). Grepping the reported pattern found rails-flow instructing
@@ -8337,7 +8337,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-07 (release v1.125.0)
 
 - **`plugins/qa-flow/agents/qa-reporter.md`: the findings record goes under `docs/evidence/qa/`,
   which the docs-layout gate accepts** (#948). It instructed `docs/qa/<date>/findings.jsonl` twice —
