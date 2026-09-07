@@ -2352,6 +2352,67 @@ def check_password_floor() -> tuple[list[Finding], int]:
     return findings, len(enforced) + 1
 
 
+# A Stimulus action descriptor whose keyboard filter guards a handler that DESTROYS state.
+# `keydown.esc->modal#close`, `keyup.esc->drawer#dismiss`, `keydown.ctrl+k->form#reset`.
+#
+# The filter is not a type check. `Binding#willBeInvokedByEvent` consults it only inside
+# `event instanceof KeyboardEvent` (Stimulus `src/core/binding.ts`, 3.2.0+), so an event dispatched
+# under a keyboard event name that is NOT a KeyboardEvent -- a bare `new Event("keydown")`, which
+# browser extensions dispatch at fields they decorate -- skips the filter and runs the handler.
+#
+# KEYED ON THE HANDLER, NOT THE FILTER. `keydown.down->search#next` moves focus; a spurious fire is
+# recoverable and flagging it would fire on every legitimate roving-tabindex descriptor we ship.
+# The join between a filter and a destructive verb is what has no benign reading.
+_KEY_FILTER_DESTRUCTIVE = re.compile(
+    r"\b(?:keydown|keyup|keypress)\.[A-Za-z0-9_+]+(?:@(?:window|document))?"
+    r"->[A-Za-z0-9_-]+#(close|dismiss|clear|cancel|remove|reset|discard|destroy|delete|hide)\b")
+# Every key-filtered descriptor, destructive or not -- the denominator, so `--audit-coverage` shows
+# the rule read the filters it chose not to flag rather than reading nothing at all.
+_KEY_FILTER_ANY = re.compile(
+    r"\b(?:keydown|keyup|keypress)\.[A-Za-z0-9_+]+(?:@(?:window|document))?->[A-Za-z0-9_-]+#[A-Za-z0-9_]+")
+
+
+def check_unguarded_key_filter() -> tuple[list[Finding], int]:
+    """Shipped doctrine must not bind a destructive handler behind a Stimulus key filter.
+
+    #949. We shipped `<div data-controller="modal" data-action="keydown.esc->modal#close">` as the
+    modal root in `component-implementations.md`, and a downstream app copied it verbatim
+    (`fmanimashaun/Retask-platform` #108). A password manager attaching its inline fill tooltip to a
+    password field dispatches a bare `Event("keydown")` at that field; it is not a `KeyboardEvent`,
+    so Stimulus never consults the `.esc` filter, and the dialog emptied itself. Only on the one lane
+    with a password field, only in a browser with the extension, with no error anywhere. Three other
+    plausible mechanisms were found and fixed before an instrument in the failing browser settled it.
+
+    NO PROSE CARVE-OUT, DELIBERATELY. The obvious escape hatch -- "ignore a descriptor the
+    surrounding sentence argues against" -- is the mention-versus-prescription judgement call that
+    #491 records as the route to a rule nobody trusts. So the line is the literal descriptor, and the
+    doctrine that must NAME this anti-pattern names its two halves separately (a `keydown.esc` filter
+    wired to a `modal#close` handler). A reader copies a descriptor, not a sentence.
+
+    SCOPED TO WHAT WE SHIP. `skills/**` and `plugins/**` only: CHANGELOG.md and this repo's own
+    maintainer notes quote the defect to explain it, and are not doctrine anyone pastes.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".md"):
+        where = rel(path)
+        if not (where.startswith("skills/") or where.startswith("plugins/")):
+            continue
+        body = read(path)
+        examined += len(_KEY_FILTER_ANY.findall(body))
+        for match in _KEY_FILTER_DESTRUCTIVE.finditer(body):
+            findings.append(Finding(
+                "unguarded-key-filter", where, body[:match.start()].count("\n") + 1,
+                f"`{match.group(0)}` guards a state-destroying handler with a Stimulus key filter. "
+                "The filter is consulted only inside `event instanceof KeyboardEvent`, so a bare "
+                "`new Event(\"keydown\")` -- which browser extensions dispatch at fields they "
+                "decorate -- skips it and runs the handler. Bind the bare event and narrow it in "
+                "the method (`event instanceof KeyboardEvent`, then `event.key`), or let the "
+                "dismissable layer own Escape. See skills/hotwire/references/stimulus.md, "
+                "'A key filter is not a type check'."))
+    return findings, examined
+
+
 def check_orphaned_controller() -> tuple[list[Finding], int]:
     """A scaffold prescribes a Stimulus controller whose paired component it never scaffolds.
 
@@ -2584,6 +2645,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     labels, labels_examined = check_unprovisioned_label()
     comp_labels, comp_labels_examined = check_undeclared_component_label()
     orphans, orphans_examined = check_orphaned_controller()
+    keyfilter, keyfilter_examined = check_unguarded_key_filter()
     pw_floor, pw_floor_examined = check_password_floor()
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
     dup_unrel, dup_unrel_examined = check_duplicate_unreleased()
@@ -2624,6 +2686,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "issue_labels_resolved_or_templated": labels_examined,
         "component_labels_reconciled": comp_labels_examined,
         "scaffolded_controllers_paired": orphans_examined,
+        "key_filtered_action_descriptors": keyfilter_examined,
         "password_floor_claims_reconciled": pw_floor_examined,
         "commands_reading_a_foreign_skill": skill_dep_examined,
         "changelog_sections_with_unreleased": dup_unrel_examined,
@@ -2641,7 +2704,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
+            + ci_gates + controllers + labels + comp_labels + orphans + keyfilter + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
             + xplugin,
             coverage)
@@ -3112,6 +3175,43 @@ def selftest() -> int:
              files={"plugins/design-flow/commands/setup.md": "the `toast` controllers\n"})
     scenario("no setup file is silent", rule=OC, expect_finding=False,
              files={"skills/design-system/references/component-implementations.md": IMPL})
+
+    # -- unguarded-key-filter (#949) --------------------------------------
+    UKF = "unguarded-key-filter"
+    DOC = "skills/design-system/references/component-implementations.md"
+
+    # THE DEFECT, exactly as it shipped for months.
+    scenario("the modal root we shipped", rule=UKF, expect_finding=True,
+             files={DOC: '<div data-controller="modal" '
+                         'data-action="keydown.esc->modal#close" class="fixed inset-0">\n'})
+    # Every keyboard event name carries the same hole, and a global suffix does not change it.
+    scenario("keyup carries the same hole", rule=UKF, expect_finding=True,
+             files={DOC: '<div data-action="keyup.esc->drawer#dismiss">\n'})
+    scenario("a @window descriptor is not exempt", rule=UKF, expect_finding=True,
+             files={DOC: '<div data-action="keydown.esc@window->modal#close">\n'})
+    # Modifier filters read the same `keyFilterDissatisfied` path and are skipped identically.
+    scenario("a modifier filter is not exempt", rule=UKF, expect_finding=True,
+             files={DOC: '<form data-action="keydown.ctrl+k->form#reset">\n'})
+    # THE FIX is silent -- and the fixture still CONTAINS a key-filtered descriptor, or it proves
+    # nothing about the rule and everything about the fixture.
+    scenario("the bare event with an in-method guard is silent", rule=UKF, expect_finding=False,
+             files={DOC: '<div data-controller="modal" '
+                         'data-action="keydown->modal#dismissOnEscape">\n'
+                         '<input data-action="keydown.down->search#next">\n'})
+    # NEAR MISS: a filter over a NON-destructive handler is the roving-tabindex idiom we ship
+    # everywhere. Flagging it is how this rule gets switched off.
+    scenario("a filter over a navigation handler is silent", rule=UKF, expect_finding=False,
+             files={DOC: '<div data-action="keydown.page_down->feed#next '
+                         'keydown.page_up->feed#previous">\n'})
+    # NEAR MISS: doctrine has to be able to NAME the anti-pattern. It names the halves separately,
+    # so prose about `keydown.esc` and about `modal#close` in one sentence stays silent.
+    scenario("prose naming the two halves separately is silent", rule=UKF, expect_finding=False,
+             files={"skills/hotwire/references/stimulus.md":
+                    "never wire a `keydown.esc` filter to a `modal#close` handler\n"})
+    # SCOPE: the CHANGELOG quotes the defect verbatim to explain it, and is not doctrine anyone
+    # pastes. If this fires there, the rule punishes the record of its own bug.
+    scenario("the changelog may quote the defect", rule=UKF, expect_finding=False,
+             files={"CHANGELOG.md": 'we shipped `data-action="keydown.esc->modal#close"`\n'})
 
     # -- undeclared-component-label (#489) --------------------------------
     UCL = "undeclared-component-label"

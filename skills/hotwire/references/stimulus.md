@@ -92,7 +92,7 @@ replacement).
 `data-action="event->controller#method"` wires DOM events to methods:
 
 ```html
-<input data-action="input->search#filter keydown.esc->search#clear">
+<input data-action="input->search#filter keydown.down->search#next">
 <div data-action="click@window->modal#closeIfOutside">
 <form data-action="submit->form#validate:prevent">
 ```
@@ -124,6 +124,34 @@ replacement).
   silent while Shift is also held — spell out `keydown.ctrl+shift+k` if you
   want that too. Mouse events take the same modifiers as a prefix:
   `ctrl+click->x#y`.
+- **A key filter is not a type check.** `Binding#willBeInvokedByEvent` consults
+  the filter only inside `event instanceof KeyboardEvent`
+  (`src/core/binding.ts`, Stimulus 3.2.0+ — filters did not exist before
+  3.2.0), so an event dispatched under a keyboard event name that is **not** a
+  `KeyboardEvent` skips the filter entirely and **the action runs**.
+  `shouldIgnoreKeyboardEvent` would have rejected it — its modifier comparison
+  reads `undefined !== false` and bails before touching `event.key` — but it is
+  never reached. Browser extensions do dispatch bare
+  `new Event("keydown", { bubbles: true })` at fields they decorate (a password
+  manager attaching its inline fill tooltip is the observed case), so a
+  `keydown.esc` filter wired to a `modal#close` handler empties a dialog that
+  wraps a password field all by itself — no error anywhere, and only in the
+  browser that has the extension.
+  The docs say only *"this will only work if the event being fired is a keyboard
+  event"* (reference/actions, "KeyboardEvent Filter") and stop there. **Where the
+  handler destroys state — dismissing a layer, clearing a field, discarding a
+  draft — bind the bare event and narrow it in the method:**
+
+  ```js
+  dismissOnEscape(event) {
+    if (!(event instanceof KeyboardEvent)) return
+    if (event.key !== "Escape") return
+    this.close()
+  }
+  ```
+
+  Test it by dispatching `new Event("keydown", { bubbles: true })` and asserting
+  the layer survives — no extension needed to hold the line.
 - **Options** (suffix with `:`): `:prevent` (preventDefault), `:stop`
   (stopPropagation), `:once`, `:capture`, `:passive`, `:self` (only when
   `event.target` is the element itself). Custom options can be registered on
