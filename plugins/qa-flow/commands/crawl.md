@@ -82,6 +82,84 @@ page and no runtime flag to check a non-modal one against. The run prints how ma
 actually walked, because no findings over no walked layers is a statement about the sweep and not
 about the app.
 
+## 3a. What the page hides INSIDE the viewport (opt in with `--layout`)
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/crawl_collector.js" --layout \
+  --base "http://localhost:${PORT:-3000}" --routes / /dashboard \
+  --viewport 390x844 --storage-state qa/manual-tests/admin-state.json \
+  --out qa/manual-tests
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/layout_fit.py" qa/manual-tests/layout.json \
+  --config qa/qa.config.yml
+```
+
+Writes `qa/manual-tests/layout.json`. Exits 1 on findings, so it gates.
+
+**This is the pass a responsive check cannot make.** The usual assertions are boundary conditions —
+the document must not scroll sideways, no element may cross the viewport edge — and both **pass** on
+a page-level grid that keeps a 232px rail at a 406px viewport, because main content is crushed to
+118px *inside* the viewport rather than pushed past its edge. Measured downstream: 71–83% of every
+data table hidden, five of ten sub-tabs undiscoverable, and a suite reporting 26 pass / 0 fail with
+route coverage 49/49 the whole time. The comparison that catches it is per element, and it yields a
+number rather than a boolean:
+
+```
+(el.scrollWidth - el.clientWidth) / el.scrollWidth
+```
+
+Three rules, partitioned by computed `overflow-x` so exactly one can fire per element:
+
+| `overflow-x` | rule | what it means |
+|---|---|---|
+| `visible` | `spilled-content` | renders on top of whatever is beside it |
+| `hidden` / `clip` | `clipped-unreachable` | cut off with no scroll, drag or keyboard |
+| `auto` / `scroll` | `scroll-without-affordance` | reachable in principle, invisible in practice |
+
+**The affordance rule is the one that pays for itself.** `overflow-x: auto` is where the previous
+generation of this check gave up — "a scroll container is allowed to hold something wider than
+itself" — and on macOS overlay scrollbars reserve **no** space, so `offsetHeight - clientHeight` is
+0 while the element scrolls and nothing on screen at rest says there is more. A scroll container is
+silent only on evidence: a reserved gutter of 3px or more, `scrollbar-gutter: stable`, or a
+`data-qa-scroll-affordance` attribute naming what the app drew. Put that attribute on the element
+carrying your edge fade or chevrons — a gradient in a `::after` is unreadable from script, so the app
+declares it rather than this rule guessing.
+
+**Visually-hidden text is exempt**, keyed on the box rather than a class name: a client box of 4px or
+less in either direction, or a `clip-path`/`clip` that hides the element entirely. The first run of
+this layer against a real app reported four findings at 98–100% hidden and every one was an
+`.sr-only` span — a rule that reports the accessibility pattern as an accessibility defect gets
+switched off in a week and takes every real finding with it.
+
+**Set `--viewport`, or you are measuring a desktop.** It defaults to `1280x900`, which is where this
+whole defect class hides. Run the layer at the small end your brief actually names.
+
+**Use `--storage-state` for anything behind a sign-in**, and read the warning below.
+
+### Two ways this layer silently measures the wrong page
+
+- **The interaction sweep can sign you out.** On a signed-in crawl it force-clicks every control it
+  finds, and one of them is "Sign out" — after which every later route renders the landing page while
+  being filed under the route that was asked for. Measured on a real app: five admin routes degraded
+  that way after the first route's sweep, intermittently, depending on whether the sweep reached the
+  control. The collector therefore records `landedOn`, and the judge reports a route whose landed
+  path differs from the one requested as **unverified**, naming both. `--max-controls 0` collects
+  layout evidence with no sweep at all when you want the two passes separated.
+- **A probe that threw is `elements: null`, never `[]`.** Those are different answers — "not
+  measured" and "measured, nothing hidden" — and the judge counts the first as unverified. An
+  unverified route exits 1 like a finding, because a route nobody measured is not a route that
+  passed.
+
+### Tuning it in `qa.config.yml`
+
+```yaml
+layout:
+  min_hidden: 0.05        # fraction of a box's own content, below which it is rounding
+  exclude: []             # substrings matched against the element ref
+```
+
+Both are declarations with a reason, not a volume knob: `exclude` is for a third-party iframe you do
+not control, and raising `min_hidden` says out loud how much of a box you are willing to lose.
+
 ## 4. Broken links and missing assets (opt in with `--links`)
 
 ```bash

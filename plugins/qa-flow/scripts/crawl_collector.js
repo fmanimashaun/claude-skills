@@ -84,8 +84,9 @@ if (!chromium) {
 // crawl with visual capture off, and nothing in the output said a flag had been ignored — so the
 // run read as evidence for something it never measured. Same shape as #112's `ignored: []` and the
 // `links.check_external` toggle that nothing honoured.
-const VALUED_FLAGS = ['base', 'out', 'routes', 'max-controls', 'baselines', 'masks', 'theme'];
-const BOOLEAN_FLAGS = ['visual', 'links', 'seeded'];
+const VALUED_FLAGS = ['base', 'out', 'routes', 'max-controls', 'baselines', 'masks', 'theme',
+                      'viewport', 'storage-state'];
+const BOOLEAN_FLAGS = ['visual', 'links', 'seeded', 'layout'];
 const USAGE = [
   'crawl_collector.js — measure routes and controls for the qa-flow judges.',
   '',
@@ -96,7 +97,10 @@ const USAGE = [
   '  --baselines DIR       visual baseline directory (default qa/baselines)',
   '  --masks FILE          JSON of selectors to mask, from visual_baseline.py --masks',
   '  --theme NAME          colour scheme to emulate',
+  '  --viewport WxH        viewport to measure at (default 1280x900)',
+  '  --storage-state FILE  Playwright storage state, for routes behind authentication',
   '  --visual              capture screenshots against the baselines',
+  '  --layout              record what each page hides INSIDE the viewport',
   '  --links               inventory hrefs, fragments and 4xx/5xx sub-resources',
   '  --seeded              declare the app was seeded',
   '  --help                print this and exit 0',
@@ -148,13 +152,42 @@ const VISUAL = process.argv.includes('--visual');
 // classifies another origin as external and counts it, so nothing here decides anything.
 const LINKS = process.argv.includes('--links');
 const BASELINES = arg('baselines', 'qa/baselines');
-const VIEWPORT = { width: 1280, height: 900 };
+// A HARDCODED VIEWPORT WAS WHY NOTHING THIS FLOW SHIPS HAD EVER MEASURED A PHONE (#953).
+// `base`, `theme`, `baselines` and `masks` are all arguments; this was a const, so the one browser
+// sweep qa-flow owns could only see a desktop. The baseline directory already keys on it
+// (`${width}x${height}-${theme}`), so more than one viewport was anticipated and never wired.
+const VIEWPORT_GIVEN = process.argv.includes('--viewport');
+const VIEWPORT = (() => {
+  const raw = String(arg('viewport', '1280x900'));
+  const m = /^(\d{2,5})x(\d{2,5})$/.exec(raw);
+  if (!m) {
+    console.error(`--viewport must be WIDTHxHEIGHT, e.g. 390x844 — got ${raw}`);
+    process.exit(2);
+  }
+  return { width: Number(m[1]), height: Number(m[2]) };
+})();
+// WHAT IS HIDDEN INSIDE the viewport, which is a different question from what crosses its edge.
+// A page-level grid that keeps a 232px rail at 406px does not overflow the document — main content
+// is crushed to 118px instead, and every boundary assertion passes. Facts only here; `layout_fit.py`
+// decides, the same split as masks (#953).
+const LAYOUT = process.argv.includes('--layout');
 // A baseline shot at deviceScaleFactor 2 shares not one pixel with the same page shot at 1, so the
 // ratio would read ~100% on a machine that merely has a different display. Playwright defaults this
 // to 1, but a default is not a pin: a device descriptor sets it to 2 or 3, and inheriting a value
 // that decides whether every comparison is meaningful is not something to leave implicit.
 const SCALE = 1;
 const THEME = arg('theme', 'light');
+// AUTHENTICATED ROUTES WERE UNREACHABLE, and that is not a small gap: the defects that motivated
+// the layout layer were all on signed-in screens (#953). `browser.newPage()` carries no cookies, so
+// every route behind authentication redirected to a sign-in page and was measured THERE — the same
+// "green suite measuring the wrong page" failure this collector's own comments warn about. A
+// Playwright storage-state file is the standard shape and the app's own suite already mints one.
+const STORAGE = arg('storage-state', null);
+if (STORAGE && !existsSync(STORAGE)) {
+  console.error(`--storage-state ${STORAGE} does not exist. Create it by signing in once:\n` +
+    "  const ctx = await browser.newContext(); … ; await ctx.storageState({ path: 'qa/manual-tests/state.json' })");
+  process.exit(2);
+}
 
 // WHICH SELECTORS ARE DYNAMIC IS A POLICY DECISION, AND IT IS NOT MADE HERE (#112). visual_baseline.py
 // resolves the config's global + per-route ignore lists and prints the map; this file only paints
@@ -193,6 +226,7 @@ const determinism = {
 };
 
 const pages = [];
+const layout = [];
 const controls = [];
 const linkPages = [];
 
@@ -398,9 +432,16 @@ async function measureContainment(page) {
   };
 }
 
+// ONE context for every route, so a session established once is not re-established per page.
+const crawlContext = await browser.newContext({
+  // Pinned whenever a measurement depends on it, and left to Playwright's default otherwise so an
+  // existing crawl or interaction sweep is not silently re-measured at a new size.
+  ...((VISUAL || LAYOUT || VIEWPORT_GIVEN) ? { viewport: VIEWPORT, deviceScaleFactor: SCALE } : {}),
+  ...(STORAGE ? { storageState: STORAGE } : {}),
+});
+
 for (const route of routes) {
-  const page = await browser.newPage(
-    VISUAL ? { viewport: VIEWPORT, deviceScaleFactor: SCALE } : {});
+  const page = await crawlContext.newPage();
   if (VISUAL) {
     // Freeze motion and the clock BEFORE the first paint, or the first frame is already wrong.
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -608,6 +649,75 @@ for (const route of routes) {
     });
   }
 
+  // ---- layout fit on this route (#953) -------------------------------------------------------
+  // Runs BEFORE the interaction sweep, which force-clicks controls and navigates away: a
+  // measurement taken after that is a measurement of whatever the last click left behind.
+  if (LAYOUT) {
+    const fit = await page.evaluate(() => {
+      const refOf = (el) => {
+        const parts = [];
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const tag = n.tagName.toLowerCase();
+          const cls = (n.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+          parts.unshift(cls.length ? `${tag}.${cls.join('.')}` : tag);
+        }
+        return parts.join(' > ');
+      };
+      const rows = [];
+      for (const el of document.querySelectorAll('body *')) {
+        const clientWidth = el.clientWidth;
+        // A zero-width box hides nothing; `scrollWidth - clientWidth` on it is noise.
+        if (clientWidth === 0) continue;
+        const scrollWidth = el.scrollWidth;
+        const hidden = scrollWidth - clientWidth;
+        // 1px is subpixel rounding, not a defect. Anything a person could notice is above it.
+        if (hidden <= 1) continue;
+        const cs = getComputedStyle(el);
+        rows.push({
+          ref: refOf(el),
+          tag: el.tagName.toLowerCase(),
+          role: el.getAttribute('role') || null,
+          clientWidth,
+          // RECORDED FOR THE VISUALLY-HIDDEN EXEMPTION. Screen-reader-only text is deliberately a
+          // 1x1 clipped box holding a whole sentence, so it hides ~100% of its own content by
+          // design. Its signature is the box, not a class name: `sr-only`, `visually-hidden` and
+          // every hand-rolled variant collapse to a few pixels in both directions.
+          clientHeight: el.clientHeight,
+          // The other half of that signature, and the explicit one: Tailwind v4's sr-only is
+          // `clip-path: inset(50%)`, older ones `clip: rect(0,0,0,0)`.
+          clipPath: cs.clipPath,
+          scrollWidth,
+          hiddenRatio: hidden / scrollWidth,
+          overflowX: cs.overflowX,
+          scrollbarGutter: cs.scrollbarGutter,
+          // RESERVED SCROLLBAR SPACE, and the whole reason a scrolling strip can look finished:
+          // with macOS overlay scrollbars this is 0 even though the element scrolls, so nothing on
+          // screen at rest says there is more. A classic scrollbar reserves ~15px and shows itself.
+          gutterPx: el.offsetHeight - el.clientHeight,
+          // Whether the app has DECLARED an affordance on this element. A gradient painted in a
+          // pseudo-element is not readable from here, so the app says so and the judge checks the
+          // config — the same "deciding is Python's" split as the visual masks.
+          declaredAffordance: el.getAttribute('data-qa-scroll-affordance'),
+        });
+      }
+      // Worst first, capped: a judge needs the offenders, not an inventory of every div.
+      return rows.sort((a, b) => b.hiddenRatio - a.hiddenRatio).slice(0, 25);
+    }).catch(() => null);
+    layout.push({
+      route,
+      viewport: `${VIEWPORT.width}x${VIEWPORT.height}`,
+      // ASSERT YOU ARRIVED. The interaction sweep force-clicks controls, and on a signed-in crawl
+      // one of them is "Sign out" — after which every later route is measured as the sign-in page
+      // while reporting under the route that was asked for. Recording where we LANDED lets the
+      // judge call that unverified instead of clean. Measured on a real app: five admin routes
+      // silently degraded to the landing page after the first route's sweep.
+      landedOn: new URL(page.url()).pathname,
+      // Null rather than [] when the probe threw: an empty list means "measured, nothing hidden",
+      // and laundering a failed probe into that is how a layer reports clean on what it never read.
+      elements: fit,
+    });
+  }
+
   // ---- interaction sweep on this route ------------------------------------------------------
   const found = await page.evaluate((cap) => {
     const sel = 'button, a, [role="button"], [role="tab"], [role="menuitem"], summary, [onclick]';
@@ -793,6 +903,7 @@ if (LINKS) {
   await probe.close();
 }
 
+await crawlContext.close();
 await browser.close();
 
 writeFileSync(`${outDir}/crawl.json`,
@@ -803,6 +914,14 @@ writeFileSync(`${outDir}/interactions.json`,
 if (VISUAL) {
   writeFileSync(`${outDir}/visual.json`,
     JSON.stringify({ schema: 'qa-flow/visual-run/1', determinism, shots }, null, 2));
+}
+
+if (LAYOUT) {
+  writeFileSync(`${outDir}/layout.json`, JSON.stringify({
+    schema: 'qa-flow/layout-fit/1',
+    viewport: `${VIEWPORT.width}x${VIEWPORT.height}`,
+    routes: layout,
+  }, null, 2));
 }
 
 if (LINKS) {
