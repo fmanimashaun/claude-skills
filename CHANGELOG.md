@@ -8337,6 +8337,35 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **`plugins/qa-flow/agents/qa-reporter.md`: the findings record goes under `docs/evidence/qa/`,
+  which the docs-layout gate accepts** (#948). It instructed `docs/qa/<date>/findings.jsonl` twice —
+  once for the JSONL append, once for the `findings.py validate` example — and `qa/` is not in
+  `docs_layout.py`'s vocabulary, so rails-flow's gate rewrote it and a project that followed the
+  agent to the letter could not pass its own sweep. `evidence/` is where it belongs by the
+  vocabulary's own definition — *"WHAT did we measure? … validation results. Dated, immutable"* —
+  which is also the answer the downstream project had already reached by hand. (This bullet was
+  missed on the first pass: a `python3 - <<PY` script asserted its way out before its single write,
+  so only the rails-flow and hygiene halves of #948 were recorded. Nothing gates "every plugin this
+  change touched has a bullet", which is why it went unnoticed until the next edit to this section.)
+- **A signed-in sweep no longer signs itself out — `plugins/qa-flow/scripts/crawl_collector.js`,
+  `plugins/qa-flow/scripts/interaction_report.py`, `plugins/qa-flow/commands/crawl.md`** (#955). The
+  interaction sweep force-clicks every control it finds, and once `--storage-state` let it reach
+  authenticated routes, one of those controls was "Sign out". Measured at 1214px across five admin
+  routes: **1 of 5 landed correctly**, the other four rendered the landing page while being recorded
+  under the route that had been asked for. `controls.session_ending` in `qa.config.yml` declares what
+  must not be pressed — declared rather than guessed, for the same reason `forms.destructive` is,
+  since only the project knows that "Offboard" ends a session in one app and is a read-only report
+  in another. Resolved by `interaction_report.py --skips` and passed to the collector with
+  `--skip-controls`, the same Python-decides/browser-applies split as the visual masks. With it:
+  **5 of 5 correct, 15 controls skipped by policy.** A skip is its own state, kept apart from
+  `not exercised`, and counted at zero as loudly as at fifteen. The policy is **verified in both
+  directions** — a control the config named and the run clicked is the defect; a control the run
+  skipped that no config named is worse, because a sweep reporting no dead controls *because it
+  declined to press them* is a pass that measured nothing. 132 selftest checks (was 119), 24
+  mutations (was 20). Maintainer decision on #955.
+
 ### 2026-09-07 (release v1.124.0)
 
 - **`plugins/qa-flow/scripts/route_coverage.py`: the Rails parser dropped every route with a

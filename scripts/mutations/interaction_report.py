@@ -12,7 +12,11 @@ GUARD = Guard(
     # cross-checks it -- including the `dismiss.*` field checks and the syntax gate's own
     # negative test -- silently does not run. `visual_baseline` below needs it for the same
     # reason.
-    needs=("plugins/qa-flow/scripts/crawl_collector.js",),
+    # `qa_config.py` joined the list when the sweep gained a declared skip policy (#955): the
+    # module imports it at load time, so without it the unmutated selftest cannot even start
+    # and every mutation reads as caught — which the runner refuses outright.
+    needs=("plugins/qa-flow/scripts/crawl_collector.js",
+           "plugins/qa-flow/scripts/qa_config.py"),
     mutations=(
         # #829. The skip returned 0, which the doctor renders as PASS.
         Mutation(
@@ -152,6 +156,39 @@ GUARD = Guard(
             "    pass",
             "counts toward the denominator",
         ),
+        # ---- the sweep must not sign itself out (#955) ---------------------------------
+        # Measured: without the policy, 4 of 5 authenticated routes degraded to the landing page
+        # after the first route's sweep clicked "Sign out". Three clauses — the skip must be its
+        # own state, the policy must be verified in BOTH directions, and neither direction may go
+        # quiet, because a skip nobody declared is a control silently never pressed.
+        Mutation(
+            "a policy skip is filed as 'could not activate', burying real gaps under decisions",
+            '        if control.get("skippedByPolicy"):',
+            "        if False:",
+            # NOT the "not a dead control" fixture: with the branch disabled the control still has
+            # `exercised: False`, so it lands in `not_exercised` and produces no finding either
+            # way. The fixture that fails is the one asserting WHICH list it lands in.
+            "...and not filed as 'could not activate'",
+        ),
+        Mutation(
+            "the policy stops being verified, so a run may exercise a different set than declared",
+            "    if sorted(set(want)) == sorted(set(got)):\n        return",
+            "    if True:\n        return",
+            "a config skip the run ignored is refused",
+        ),
+        Mutation(
+            "the config reader stops lowercasing, so a mixed-case declaration never matches",
+            '    return [str(x).strip().lower() for x in raw if str(x).strip()] if isinstance(raw, list) else []\n\n\ndef load',
+            '    return [str(x).strip() for x in raw if str(x).strip()] if isinstance(raw, list) else []\n\n\ndef load',
+            "the config reader lowercases",
+        ),
+        Mutation(
+            "an absent declaration invents a policy, refusing to press controls nobody named",
+            "    if path is None:\n        return []",
+            '    if path is None:\n        return ["sign out"]',
+            "no config at all means no policy",
+        ),
+
         # The syntax gate's own negative test. `node --check <path>` exits 0 on a broken ESM
         # file, so this gate is one careless edit away from being unable to fail at all.
         Mutation(
