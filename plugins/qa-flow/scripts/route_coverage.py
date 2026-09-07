@@ -26,6 +26,25 @@ its path; a heuristic would be wrong on exactly the routes that matter. It comes
 exclusions: they are declared, and the excluded set is always PRINTED, because a suppression
 that leaves no trace is how a coverage number quietly becomes a lie.
 
+COVERAGE HAS A SECOND AXIS, AND IT IS NOT A PERCENTAGE OF THE FIRST (#953). "Covered" means a
+validated pass asserted something about the route. It says nothing about the WIDTH that pass ran at,
+and downstream that gap was total: a suite reported 49/49 routes covered while 71-83% of every data
+table was hidden at a phone width, because the one browser sweep the flow owned was pinned to
+1280x900 and the responsive spec's page list was five hand-maintained entries against 86 routes.
+
+So a route is also either MEASURED AT A SMALL VIEWPORT or not, and the maintainer's decision is that
+every page built must be in that list: "each page built should be included into the QA test list so
+it get tested". The list is therefore not hand-maintained anywhere -- it is the route table, and a
+route absent from the small-viewport evidence is reported as a gap exactly the way an unasserted
+route already is.
+
+NOT FOLDED INTO `covered`, for the same reason a crawl visit is not. They answer different
+questions, and one number that averaged them would hide both: a route asserted at 1280px and never
+seen at 390px is fully covered on axis one and absent from axis two, which is the exact state that
+shipped the defect. Evidence is `layout.json` (`layout_fit.py`'s input), and only rows the probe
+actually measured on the route requested count -- a route whose probe threw, or that redirected to a
+sign-in page, was not measured small however many times it appears.
+
 Stdlib only, no network.
 """
 
@@ -77,6 +96,17 @@ ROUTE_LESS: dict[str, str] = {
     "findings": "Example Routes lists up to 3 examples of a deduped finding, not a visit log",
 }
 
+# Evidence for the second axis. `layout_fit.py` grades this file; here it is read only for WHICH
+# routes were measured and at what width.
+SMALL_VIEWPORT_ARTIFACT = "layout.json"
+SMALL_VIEWPORT_SCHEMA = "qa-flow/layout-fit/1"
+
+# The width at or below which a measurement counts as "small", unless the project declares its own
+# in `coverage.small_viewport_max`. 480 sits above every phone in the responsive corpus (320-430)
+# and below every tablet, so it is a boundary rather than a target: this tool never asks whether the
+# page LOOKED right, only whether anything ever measured it at a width where it could not.
+DEFAULT_SMALL_VIEWPORT_MAX = 480
+
 GET_LIKE = {"GET", "HEAD"}
 
 
@@ -111,11 +141,26 @@ def _area(controller: str, pattern: str) -> str:
 # Enumeration
 # ---------------------------------------------------------------------------------------
 # `bin/rails routes` output:  prefix VERB uri_pattern controller#action
+# THE CONTROLLER IS NOT ALWAYS THE LAST TOKEN, and requiring it to be dropped 45% of a real route
+# table in silence (#953). Rails prints a route's `defaults:` after the controller —
+#
+#   requests GET /requests(.:format) placeholders#show {screen: "All requests", feature: "F-06"}
+#
+# — and `(?P<controller>\S+)\s*$` cannot match a row with anything after it. Measured on the app
+# that prompted this: 143 verb-bearing rows, 79 matched, **64 silently dropped**, and the dropped set
+# was the entire admin surface, because that shell routes every screen through one action with the
+# screen name in `defaults`. Route coverage then reported "49/49 (100%)" over a denominator that did
+# not contain a single page the defects were found on. A parser that drops a row it does not
+# recognise, without saying so, turns every number downstream of it into a claim about a different
+# application.
 _RAILS_ROW = re.compile(
     r"^\s*(?P<prefix>[a-z0-9_]*)\s+"
     r"(?P<verb>GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)(?:\|[A-Z|]+)?\s+"
     r"(?P<pattern>/\S*)\s+"
-    r"(?P<controller>\S+)\s*$"
+    r"(?P<controller>\S+)"
+    # The `defaults:` hash, when there is one. Captured as "ignore the rest of the line" rather than
+    # parsed: nothing here needs its contents, and a partial parse of it would be a second claim.
+    r"(?:\s+\{.*\})?\s*$"
 )
 
 
@@ -130,6 +175,22 @@ def from_rails(text: str) -> list[Route]:
         controller = m.group("controller")
         routes.append(Route(m.group("verb"), pattern, controller, _area(controller, pattern)))
     return routes
+
+
+# A line that names an HTTP verb is a route row, whatever else is on it. Used only to find rows the
+# parser did NOT understand, so a future Rails format change is loud instead of a 45% silent drop.
+_VERB_BEARING = re.compile(r"\s(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)[|\s]")
+
+
+def unparsed_rails_rows(text: str) -> list[str]:
+    """Verb-bearing rows `_RAILS_ROW` could not parse. Empty is the only acceptable answer.
+
+    The old parser dropped 64 of 143 rows on a real app and said nothing, so route coverage reported
+    100% over a denominator missing every page the defects were on. Silence on an unrecognised row
+    is the defect; the regex was only how it got in.
+    """
+    return [line.rstrip() for line in text.splitlines()
+            if _VERB_BEARING.search(line) and not _RAILS_ROW.match(line)]
 
 
 def from_sitemap(text: str) -> list[Route]:
@@ -250,6 +311,55 @@ def visit_only_paths(evidence_dirs: list[Path]) -> dict[str, set[str]]:
     return seen
 
 
+def small_viewport_paths(evidence_dirs: list[Path], max_width: int) -> dict[str, set[str]]:
+    """Routes a layout run MEASURED at or below `max_width`. Never merged with `visited_paths`.
+
+    Three ways a row is present and still does not count, and each is the difference between a
+    measured route and an unmeasured one reported as measured:
+
+      * `elements: null` -- the probe threw. Not measured.
+      * `landedOn` different from `route` -- the browser was somewhere else, so the measurement
+        belongs to that somewhere else. On a signed-in crawl this is usually the interaction sweep
+        having clicked sign-out.
+      * a viewport wider than `max_width` -- a desktop measurement, which is the state this axis
+        exists to distinguish from no measurement at all.
+    """
+    seen: dict[str, set[str]] = {}
+    for directory in evidence_dirs:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.rglob(SMALL_VIEWPORT_ARTIFACT)):
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue  # unreadable, or not a layout run -- never guessed at
+            if not isinstance(doc, dict) or doc.get("schema") != SMALL_VIEWPORT_SCHEMA:
+                continue
+            for entry in doc.get("routes") or []:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("elements") is None:
+                    continue
+                raw = str(entry.get("route") or "")
+                candidate = normalise(re.sub(r"^[a-z]+://[^/]+", "", raw.strip()))
+                if not candidate.startswith("/"):
+                    continue
+                landed = entry.get("landedOn")
+                if isinstance(landed, str) and landed.strip() and normalise(landed) != candidate:
+                    continue
+                width = _viewport_width(entry.get("viewport") or doc.get("viewport"))
+                if width is None or width > max_width:
+                    continue
+                seen.setdefault(candidate, set()).add(f"{SMALL_VIEWPORT_ARTIFACT}@{width}px")
+    return seen
+
+
+def _viewport_width(raw: object) -> int | None:
+    """`"390x844"` -> 390. None when it is absent or unparseable, which is not a measurement."""
+    match = re.fullmatch(r"\s*(\d{2,5})\s*x\s*(\d{2,5})\s*", str(raw or ""))
+    return int(match.group(1)) if match else None
+
+
 @dataclass
 class Coverage:
     route: Route
@@ -311,8 +421,11 @@ def load_config(path: Path) -> dict[str, object]:
 
 def cmd_enumerate(args: argparse.Namespace) -> int:
     routes: list[Route] = []
+    unparsed: list[str] = []
     if args.rails:
-        routes += from_rails(Path(args.rails).read_text(encoding="utf-8"))
+        text = Path(args.rails).read_text(encoding="utf-8")
+        routes += from_rails(text)
+        unparsed = unparsed_rails_rows(text)
     if args.sitemap:
         routes += from_sitemap(Path(args.sitemap).read_text(encoding="utf-8"))
     if args.fs:
@@ -329,6 +442,20 @@ def cmd_enumerate(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     print(f"enumerated {len(unique)} route(s) -> {out}")
+    if unparsed:
+        # EXIT 2, and loudly. Every number downstream of this file is a claim about the routes in
+        # it, so a partial enumeration is worse than none: it produces a confident percentage over
+        # an application that does not exist. Printing a few rows rather than a count, because the
+        # shape of the row is what tells you which format changed (#820's rule: findings, not a
+        # tally).
+        print(f"\nREFUSING a partial enumeration: {len(unparsed)} verb-bearing row(s) in "
+              f"{args.rails} did not parse. Coverage over this file would be a percentage of a "
+              "different application.", file=sys.stderr)
+        for line in unparsed[:5]:
+            print(f"  ? {line[:160]}", file=sys.stderr)
+        if len(unparsed) > 5:
+            print(f"  … and {len(unparsed) - 5} more", file=sys.stderr)
+        return 2
     return 0
 
 
@@ -338,6 +465,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     config = load_config(Path(args.config))
     exclusions = [str(x) for x in config.get("exclude", [])]
     auth_prefixes = [str(x) for x in config.get("authenticated_prefixes", [])]
+    small_max = _small_max(config)
+    responsive_exclusions = [str(x) for x in config.get("responsive_exclude", [])]
 
     kept, dropped = excluded(routes, exclusions)
     evidence = [Path(d) for d in args.evidence]
@@ -357,6 +486,22 @@ def cmd_report(args: argparse.Namespace) -> int:
                   if c.covered and not c.route.destructive}
     crawled = [c for c in gaps if c.route.key in visit_only]
 
+    # ---- AXIS TWO. Orthogonal to `covered`, never averaged with it. -----------------------
+    # A route asserted at 1280px and never seen at 390px is fully covered on axis one and absent
+    # here, which is precisely the state that shipped 71-83% of a table hidden (#953).
+    # NON-GET ROUTES ARE NOT IN THE DENOMINATOR, for the same reason they are not in `visit_only`:
+    # a layout probe navigates with `page.goto`, which is a GET, so a `DELETE /users/:id` cannot be
+    # measured at any width. Counting it as unmeasured would make the axis permanently unreachable
+    # and put the loudest gap on the routes a browser is not the instrument for. Caught by this
+    # tool's own fixture, which measured two pages and still reported `DELETE /users/:id` missing.
+    responsive_kept, responsive_dropped = excluded(
+        [r for r in kept if not r.destructive], responsive_exclusions)
+    small_seen = small_viewport_paths(evidence, small_max)
+    measured_small = [c for c in attribute(responsive_kept, small_seen) if c.covered]
+    unmeasured = sorted((c for c in attribute(responsive_kept, small_seen) if not c.covered),
+                        key=lambda c: priority(c, auth_prefixes))
+    small_pct = (len(measured_small) * 100 // len(responsive_kept)) if responsive_kept else 0
+
     pct = (len(covered) * 100 // len(kept)) if kept else 0
     print(f"route coverage: {len(covered)}/{len(kept)} ({pct}%) — {len(gaps)} untested")
     # Printed unconditionally, including the 0 case: a number that appears only when non-zero
@@ -364,9 +509,23 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"  of those, {len(crawled)} visited by a crawl but never asserted, "
           f"{len(gaps) - len(crawled)} never reached at all")
 
+    # Printed unconditionally, including 0/0: "nothing was measured small" and "there is no
+    # small-viewport evidence at all" must not look like the same clean line, and neither may look
+    # like a pass. A route absent here is a gap, reported the way an unasserted route is.
+    print(f"responsive coverage: {len(measured_small)}/{len(responsive_kept)} ({small_pct}%) "
+          f"measured at ≤{small_max}px — {len(unmeasured)} never measured small "
+          f"(GET-like routes only)")
+    if not small_seen:
+        print(f"  no {SMALL_VIEWPORT_ARTIFACT} evidence found — run "
+              f"`crawl_collector.js --layout --viewport 390x844`. Nothing was measured small, "
+              "which is not the same as nothing being wrong.")
+
     # Suppression stays visible, always -- including when nothing was excluded.
     print(f"excluded by config: {len(dropped)}")
     for route in dropped:
+        print(f"  - {route.key}")
+    print(f"excluded from the responsive axis by config: {len(responsive_dropped)}")
+    for route in responsive_dropped:
         print(f"  - {route.key}")
 
     if gaps:
@@ -386,6 +545,20 @@ def cmd_report(args: argparse.Namespace) -> int:
             suffix = f"  ({', '.join(flags)})" if flags else ""
             print(f"    {cov.route.key}{suffix}")
 
+    if unmeasured:
+        print(f"\nnever measured below {small_max}px, highest risk first:")
+        area = None
+        for cov in unmeasured:
+            if cov.route.area != area:
+                area = cov.route.area
+                print(f"  [{area}]")
+            # A route nothing asserted AND nothing measured small is the worst of both, and
+            # saying so is what stops the two lists reading as one long backlog.
+            flags = ["also untested"] if not cov.covered and cov.route.key in {
+                g.route.key for g in gaps} else []
+            suffix = f"  ({', '.join(flags)})" if flags else ""
+            print(f"    {cov.route.key}{suffix}")
+
     if args.trend:
         trend = Path(args.trend)
         trend.parent.mkdir(parents=True, exist_ok=True)
@@ -394,6 +567,8 @@ def cmd_report(args: argparse.Namespace) -> int:
                 "routes": len(kept), "covered": len(covered),
                 "untested": len(gaps), "crawled_unasserted": len(crawled),
                 "excluded": len(dropped), "percent": pct,
+                "measured_small": len(measured_small), "unmeasured_small": len(unmeasured),
+                "small_percent": small_pct, "small_viewport_max": small_max,
             }) + "\n")
 
     if args.json:
@@ -401,14 +576,38 @@ def cmd_report(args: argparse.Namespace) -> int:
             "total": len(kept), "covered": len(covered), "untested": len(gaps),
             "excluded": [r.key for r in dropped], "percent": pct,
             "crawled_unasserted": sorted(visit_only),
+            "small_viewport_max": small_max,
+            "measured_small": len(measured_small),
+            "unmeasured_small": [c.route.key for c in unmeasured],
+            "small_percent": small_pct,
+            "responsive_excluded": [r.key for r in responsive_dropped],
             "gaps": [{"route": c.route.key, "area": c.route.area,
                       "crawled": c.route.key in visit_only} for c in gaps],
             "attribution": {c.route.key: c.by for c in covered},
         }, indent=2))
 
-    # Reporting a gap is not a failure: the gap IS the deliverable. `--fail-on-untested` is for
-    # a team that has reached full coverage and wants to keep it.
-    return 1 if (args.fail_on_untested and gaps) else 0
+    # Reporting a gap is not a failure: the gap IS the deliverable. `--fail-on-untested` and
+    # `--fail-on-unmeasured` are for a team that has reached full coverage on an axis and wants to
+    # keep it. Two flags rather than one, because the axes are reached at different times and a
+    # single flag would make the easier one hostage to the harder.
+    failed = (args.fail_on_untested and gaps) or (args.fail_on_unmeasured and unmeasured)
+    return 1 if failed else 0
+
+
+def _small_max(config: dict[str, object]) -> int:
+    """`coverage.small_viewport_max`, or the built-in boundary. Refuses a value that is not a width."""
+    raw = config.get("small_viewport_max")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return DEFAULT_SMALL_VIEWPORT_MAX
+    try:
+        width = int(str(raw).strip())
+    except ValueError:
+        raise SystemExit(f"coverage.small_viewport_max is {raw!r}, which is not a pixel width")
+    if width < 200:
+        raise SystemExit(f"coverage.small_viewport_max is {width}, narrower than any real device — "
+                         "a boundary below every viewport makes the axis unreachable rather than "
+                         "strict")
+    return width
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -430,6 +629,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--trend", default="qa/reports/route-coverage-trend.jsonl")
     r.add_argument("--json", action="store_true")
     r.add_argument("--fail-on-untested", action="store_true")
+    r.add_argument("--fail-on-unmeasured", action="store_true",
+                   help="fail when a route was never measured at a small viewport")
     r.set_defaults(func=cmd_report)
 
     args = parser.parse_args(argv)
