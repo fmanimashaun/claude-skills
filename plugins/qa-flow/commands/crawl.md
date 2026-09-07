@@ -160,6 +160,59 @@ layout:
 Both are declarations with a reason, not a volume knob: `exclude` is for a third-party iframe you do
 not control, and raising `min_hidden` says out loud how much of a box you are willing to lose.
 
+### A signed-in sweep will sign itself out unless you tell it not to
+
+The interaction sweep in §3 **force-clicks every control it finds**, and on a signed-in crawl one of
+them is "Sign out". Measured on a real app at 1214px, five admin routes with `--storage-state` and no
+policy:
+
+```
+landed correctly: 1 of 5
+  DEGRADED /requests -> /      DEGRADED /clients -> /
+  DEGRADED /locations -> /     DEGRADED /configuration/rates -> /
+```
+
+Every later route rendered the landing page while being recorded under the route that had been asked
+for. Declare the controls it must not press, and pass the resolved policy in:
+
+```yaml
+# qa.config.yml
+controls:
+  session_ending: [sign out, log out, /logout]
+```
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/interaction_report.py" --skips --config qa/qa.config.yml \
+  > qa/manual-tests/skips.json
+
+node "${CLAUDE_PLUGIN_ROOT}/scripts/crawl_collector.js" --skip-controls qa/manual-tests/skips.json \
+  --storage-state qa/manual-tests/state.json \
+  --base "http://localhost:${PORT:-3000}" --routes /dashboard /requests --out qa/manual-tests
+```
+
+With it, the same run: **5 of 5 landed correctly, 15 controls skipped by policy**, every one of them
+"Sign out".
+
+**Declared, never guessed**, for the same reason `forms.destructive` is: only the project knows that
+"Offboard" ends a session in one app and is a read-only report in another. Matched
+case-insensitively as substrings against a control's accessible name and its href.
+
+**A skip is its own state, not a failure to activate.** The judge keeps `skipped by policy` apart
+from `not exercised` and prints the count at zero as loudly as at fifteen — an exclusion with a count
+is auditable, one without is invisible. Folding them together would bury the real gaps under the
+deliberate decisions.
+
+**And the policy is verified, not trusted.** Pass `--config` to the judge and it refuses a run whose
+recorded policy differs from the config, in both directions — same as the visual masks. A control the
+config said to skip and the run clicked is the defect this exists to stop; a control the run skipped
+that no config named is worse, because it was silently never exercised, and a sweep reporting no dead
+controls *because it declined to press them* is a pass that measured nothing.
+
+**The other half of this is in §3a.** `layout_fit.py` reports a route whose `landedOn` differs from
+the route requested as **unverified**, so even without a policy the degradation is loud rather than
+silent. The two were built together and the guard caught the run above without being told what to
+look for.
+
 ## 4. Broken links and missing assets (opt in with `--links`)
 
 ```bash
