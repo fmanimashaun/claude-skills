@@ -56,13 +56,39 @@ RAILS = """                                   Prefix Verb   URI Pattern         
                                           DELETE /users/:id(.:format)            users#destroy
                             admin_reports GET    /admin/reports(.:format)        admin/reports#index
                                rails_health GET  /up(.:format)                   rails/health#show
+                                 requests GET    /requests(.:format)             placeholders#show {screen: "All requests", feature: "F-06"}
 """
 
 
 def run() -> int:
     # ---- enumeration: Rails ------------------------------------------------------------
     routes = rc.from_rails(RAILS)
-    check("rails: route count", len(routes), 8)
+    check("rails: route count", len(routes), 9)
+    # THE 45% SILENT DROP (#953). Rails prints a route's `defaults:` AFTER the controller, and the
+    # parser required the controller to be the last token — so on a real app 64 of 143 verb-bearing
+    # rows vanished and route coverage reported "49/49 (100%)" over a denominator that contained
+    # none of the pages the defects were found on.
+    check("rails: a row with a defaults hash is parsed",
+          "/requests" in {r.pattern for r in routes}, True)
+    check("rails: the defaults hash does not leak into the controller",
+          next((r.controller for r in routes if r.pattern == "/requests"), "(route missing)"),
+          "placeholders#show")
+    # AND THE SILENCE IS THE DEFECT, not the regex. A verb-bearing row nobody can parse must be
+    # reported, or the next format change is another 45% drop with a confident percentage on top.
+    check("rails: nothing in the fixture is left unparsed", rc.unparsed_rails_rows(RAILS), [])
+    _tick()
+    # A trailing column the parser does not know — the shape a future Rails format change takes,
+    # and the shape that dropped 64 rows last time. NOT a bad controller token: `\S+` would happily
+    # accept that and call the row parsed, which is the near miss this fixture had on its first
+    # draft.
+    broken = RAILS + ("                                 weird GET    /weird(.:format)"
+                      "   placeholders#show trailing column\n")
+    if len(rc.unparsed_rails_rows(broken)) != 1:
+        FAILURES.append(f"an unparseable verb row must be reported: "
+                        f"{rc.unparsed_rails_rows(broken)}")
+    _tick()
+    if rc.unparsed_rails_rows(broken) and "weird" not in rc.unparsed_rails_rows(broken)[0]:
+        FAILURES.append("the unparsed row must be quoted, so the format change is visible")
     check("rails: no (.:format) survives anywhere",
           [r.pattern for r in routes if "format" in r.pattern], [])
     check("rails: patterns", "/users/:id/edit" in {r.pattern for r in routes}, True)
@@ -287,7 +313,7 @@ def run() -> int:
     import argparse as _a
 
     args = _a.Namespace(routes=str(routes_json), evidence=[str(ev)], config=str(cfg),
-                        trend=str(trend), json=False, fail_on_untested=False)
+                        trend=str(trend), json=False, fail_on_untested=False, fail_on_unmeasured=False)
     import contextlib, io
 
     _tick()
@@ -312,7 +338,13 @@ def run() -> int:
     if len(lines) != 2:
         FAILURES.append(f"trend: expected 2 appended runs, got {len(lines)}")
     elif lines[0] != {"routes": 2, "covered": 1, "untested": 1, "crawled_unasserted": 0,
-                      "excluded": 0, "percent": 50}:
+                      "excluded": 0, "percent": 50,
+                      # AXIS TWO in the same line, because a trend file that records one axis is a
+                      # trend nobody can read the other from later (#953).
+                      # 1, not 2: `DELETE /users/:id` is not in the responsive denominator —
+                      # a layout probe navigates with a GET.
+                      "measured_small": 0, "unmeasured_small": 1, "small_percent": 0,
+                      "small_viewport_max": 480}:
         FAILURES.append(f"trend: wrong arithmetic recorded: {lines[0]}")
 
     # ---- #108 residual: crawl visits are a THIRD state, never folded into `covered` ---------
@@ -344,7 +376,7 @@ def run() -> int:
     ]}) + "\n", encoding="utf-8")
     _tick()
     args2 = _a.Namespace(routes=str(routes2), evidence=[str(ev), str(crawl_dir)],
-                         config=str(cfg), trend=None, json=True, fail_on_untested=False)
+                         config=str(cfg), trend=None, json=True, fail_on_untested=False, fail_on_unmeasured=False)
     with contextlib.redirect_stdout(io.StringIO()) as cap2:
         rc.cmd_report(args2)
     body = cap2.getvalue()
@@ -372,7 +404,7 @@ def run() -> int:
     # when non-zero cannot be told from a number nobody computed.
     _tick()
     args3 = _a.Namespace(routes=str(routes_json), evidence=[str(ev)], config=str(cfg),
-                         trend=None, json=False, fail_on_untested=False)
+                         trend=None, json=False, fail_on_untested=False, fail_on_unmeasured=False)
     with contextlib.redirect_stdout(io.StringIO()) as cap3:
         rc.cmd_report(args3)
     if "0 visited by a crawl but never asserted" not in cap3.getvalue():
@@ -382,6 +414,199 @@ def run() -> int:
     (crawl_dir / "links.json").write_text("not json at all", encoding="utf-8")
     if set(rc.visit_only_paths([crawl_dir])) != {"/users", "/users/7", "/reports"}:
         FAILURES.append("an unreadable artifact must be skipped, not crash the run")
+
+    # ---- AXIS TWO: measured at a small viewport (#953) --------------------------------------
+    # A route asserted at 1280px and never seen at 390px is fully covered on axis one and absent
+    # from this one. That is not a hypothetical: it is the state that shipped 71-83% of a table
+    # hidden while the suite reported 49/49 routes covered.
+    small_dir = work / "layout"
+    small_dir.mkdir()
+
+    def _layout(*entries, viewport="390x844") -> None:
+        (small_dir / "layout.json").write_text(json.dumps({
+            "schema": "qa-flow/layout-fit/1", "viewport": viewport,
+            "routes": list(entries)}) + "\n", encoding="utf-8")
+
+    def _entry(route, *, viewport="390x844", elements=(), landed=None) -> dict:
+        out = {"route": route, "viewport": viewport, "elements": list(elements)}
+        if landed is not None:
+            out["landedOn"] = landed
+        return out
+
+    _tick()
+    _layout(_entry("/users"), _entry("/reports"))
+    got = rc.small_viewport_paths([small_dir], 480)
+    if set(got) != {"/users", "/reports"}:
+        FAILURES.append(f"small_viewport_paths: expected both routes, got {sorted(got)}")
+    _tick()
+    if got and next(iter(got.values())) != {"layout.json@390px"}:
+        FAILURES.append(f"small_viewport_paths must attribute the width, got {got}")
+
+    # A DESKTOP MEASUREMENT IS NOT A SMALL ONE. This is the whole axis: the flow's only browser
+    # sweep was pinned to 1280x900, so every route was "measured" and none was measured small.
+    _tick()
+    _layout(_entry("/users", viewport="1280x900"))
+    if rc.small_viewport_paths([small_dir], 480) != {}:
+        FAILURES.append("a 1280px measurement must not count as small")
+    _tick()
+    _layout(_entry("/users", viewport="480x900"))
+    if set(rc.small_viewport_paths([small_dir], 480)) != {"/users"}:
+        FAILURES.append("the boundary width itself must count as small")
+    _tick()
+    _layout(_entry("/users", viewport="481x900"))
+    if rc.small_viewport_paths([small_dir], 480) != {}:
+        FAILURES.append("one pixel past the boundary must not count")
+
+    # A PROBE THAT THREW MEASURED NOTHING, and a route recorded with `elements: null` claiming
+    # coverage would be the SKIP-is-not-a-PASS defect on axis two.
+    _tick()
+    _layout({"route": "/users", "viewport": "390x844", "elements": None})
+    if rc.small_viewport_paths([small_dir], 480) != {}:
+        FAILURES.append("a null probe must not count as measured")
+    # An empty element list IS a measurement -- "nothing hidden" is an answer.
+    _tick()
+    _layout(_entry("/users"))
+    if set(rc.small_viewport_paths([small_dir], 480)) != {"/users"}:
+        FAILURES.append("an empty element list is still a measurement")
+
+    # A ROUTE MEASURED SOMEWHERE ELSE WAS NOT MEASURED. Downstream, the interaction sweep clicked
+    # sign-out and five admin routes were recorded under the routes asked for while showing the
+    # landing page.
+    _tick()
+    _layout(_entry("/users", landed="/"))
+    if rc.small_viewport_paths([small_dir], 480) != {}:
+        FAILURES.append("a route that landed elsewhere must not count as measured")
+    _tick()
+    _layout(_entry("/users", landed="/users"))
+    if set(rc.small_viewport_paths([small_dir], 480)) != {"/users"}:
+        FAILURES.append("landing where you asked must still count")
+
+    # A viewport that cannot be parsed is not a measurement, and neither is a missing one.
+    for label, entry in (("absent", {"route": "/users", "elements": []}),
+                         ("nonsense", _entry("/users", viewport="wide"))):
+        _tick()
+        (small_dir / "layout.json").write_text(json.dumps({
+            "schema": "qa-flow/layout-fit/1", "routes": [entry]}) + "\n", encoding="utf-8")
+        if rc.small_viewport_paths([small_dir], 480) != {}:
+            FAILURES.append(f"a {label} viewport must not count as a small measurement")
+
+    # THE WRONG SCHEMA IS NOT LAYOUT EVIDENCE. Reading any `layout.json` would let an unrelated
+    # file grant coverage on the axis this tool exists to keep honest.
+    _tick()
+    (small_dir / "layout.json").write_text(json.dumps({
+        "schema": "something/else/1", "viewport": "390x844",
+        "routes": [_entry("/users")]}) + "\n", encoding="utf-8")
+    if rc.small_viewport_paths([small_dir], 480) != {}:
+        FAILURES.append("a foreign schema must not grant responsive coverage")
+    _tick()
+    (small_dir / "layout.json").write_text("not json at all", encoding="utf-8")
+    if rc.small_viewport_paths([small_dir], 480) != {}:
+        FAILURES.append("an unreadable layout artifact must be skipped, not crash the run")
+
+    # THE AXES MUST NOT BE AVERAGED. `covered` may not move when small evidence arrives, and the
+    # responsive line must print even with no evidence at all.
+    #
+    # ITS OWN ROUTES FILE, and the reason is a mutation that SURVIVED the first draft: with the
+    # two-route fixture, the only route measured small was already covered on axis one, so merging
+    # the axes changed no number and the fixture proved nothing. `/reports` is measured small and
+    # asserted by nothing, which is exactly the state that has to stay visible on both axes.
+    routes3 = work / "routes3.json"
+    routes3.write_text(json.dumps({"routes": [
+        {"verb": "GET", "pattern": "/", "controller": "home#index", "area": "home"},
+        {"verb": "GET", "pattern": "/reports", "controller": "reports#index", "area": "reports"},
+        {"verb": "GET", "pattern": "/deep/page", "controller": "deep#show", "area": "deep"},
+        # A non-GET route belongs in THIS file, or the assertion below that it stays out of the
+        # responsive denominator is vacuous — which is how it went quiet once already.
+        {"verb": "DELETE", "pattern": "/users/:id", "controller": "users#destroy", "area": "users"},
+    ]}) + "\n", encoding="utf-8")
+    _tick()
+    _layout(_entry("/"), _entry("/reports"))
+    args4 = _a.Namespace(routes=str(routes3), evidence=[str(ev), str(small_dir)],
+                         config=str(cfg), trend=None, json=True,
+                         fail_on_untested=False, fail_on_unmeasured=False)
+    with contextlib.redirect_stdout(io.StringIO()) as cap4:
+        rc.cmd_report(args4)
+    axis = json.loads(cap4.getvalue()[cap4.getvalue().index("{"):])
+    # 1 of 3 asserted. `/reports` is measured small and asserted by nothing: if the axes merged it
+    # would be credited as covered and this number would move to 66%.
+    if axis["percent"] != 25 or axis["covered"] != 1:
+        FAILURES.append(f"axis one moved when small evidence arrived: {axis['percent']}% "
+                        f"covered={axis['covered']}")
+    _tick()
+    # 2 measured small of 3 GET routes; `/deep/page` is the one nothing measured.
+    if axis["measured_small"] != 2 or axis["unmeasured_small"] != ["GET /deep/page"]:
+        FAILURES.append(f"axis two wrong: {axis['measured_small']} / {axis['unmeasured_small']}")
+    # A NON-GET ROUTE IS NOT IN THE DENOMINATOR. A layout probe navigates with `page.goto`, so
+    # `DELETE /users/:id` cannot be measured at any width — this fixture reported it missing until
+    # the denominator was corrected, which would have made the axis permanently unreachable.
+    _tick()
+    if "DELETE /users/:id" in axis["unmeasured_small"]:
+        FAILURES.append("a non-GET route must not be counted as unmeasured on the responsive axis")
+
+    _tick()
+    if "responsive coverage:" not in cap3.getvalue():
+        FAILURES.append("the responsive line must print even with no layout evidence")
+    _tick()
+    if "no layout.json evidence found" not in cap3.getvalue():
+        FAILURES.append("no small evidence at all must say so, not read as 0%")
+
+    # `--fail-on-unmeasured` gates axis two ALONE, so reaching one axis is not held hostage to the
+    # other. Same routes, no small evidence: untested must not fail it, unmeasured must.
+    _tick()
+    args5 = _a.Namespace(routes=str(routes_json), evidence=[str(ev)], config=str(cfg),
+                         trend=None, json=False, fail_on_untested=False, fail_on_unmeasured=True)
+    with contextlib.redirect_stdout(io.StringIO()):
+        if rc.cmd_report(args5) != 1:
+            FAILURES.append("--fail-on-unmeasured must fail when a route was never measured small")
+    _tick()
+    _layout(_entry("/"), _entry("/reports"), _entry("/deep/page"))
+    args6 = _a.Namespace(routes=str(routes3), evidence=[str(ev), str(small_dir)],
+                         config=str(cfg), trend=None, json=False,
+                         fail_on_untested=False, fail_on_unmeasured=True)
+    with contextlib.redirect_stdout(io.StringIO()):
+        if rc.cmd_report(args6) != 0:
+            FAILURES.append("--fail-on-unmeasured must pass once every route is measured small")
+
+    # The boundary is declared, and a nonsense one is refused rather than silently defaulted.
+    _tick()
+    if rc._small_max({}) != rc.DEFAULT_SMALL_VIEWPORT_MAX:
+        FAILURES.append("an absent small_viewport_max must fall back to the default")
+    _tick()
+    if rc._small_max({"small_viewport_max": "414"}) != 414:
+        FAILURES.append("a declared small_viewport_max must be honoured")
+    for bad in ("wide", "12"):
+        _tick()
+        try:
+            rc._small_max({"small_viewport_max": bad})
+            FAILURES.append(f"small_viewport_max={bad!r} must be refused")
+        except SystemExit:
+            pass
+
+    # ---- enumerate REFUSES a partial parse (#953) -------------------------------------------
+    # Writing a route file that is missing rows and exiting 0 is how a confident percentage gets
+    # computed over an application that does not exist.
+    enum_dir = work / "enum"
+    enum_dir.mkdir()
+    rails_ok = enum_dir / "routes-ok.txt"
+    rails_ok.write_text(RAILS, encoding="utf-8")
+    rails_bad = enum_dir / "routes-bad.txt"
+    rails_bad.write_text(RAILS + ("                                 weird GET    /weird(.:format)"
+                                  "   placeholders#show trailing column\n"), encoding="utf-8")
+    _tick()
+    good = _a.Namespace(rails=str(rails_ok), sitemap=None, fs=None,
+                        out=str(enum_dir / "ok.json"), func=None)
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        if rc.cmd_enumerate(good) != 0:
+            FAILURES.append("a fully parsed route table must enumerate cleanly")
+    _tick()
+    bad = _a.Namespace(rails=str(rails_bad), sitemap=None, fs=None,
+                       out=str(enum_dir / "bad.json"), func=None)
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+        if rc.cmd_enumerate(bad) != 2:
+            FAILURES.append("enumerate refuses a partial parse — an unparsed row must exit 2")
+    _tick()
+    if "did not parse" not in err.getvalue():
+        FAILURES.append("the refusal must say what it could not parse, not just fail")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

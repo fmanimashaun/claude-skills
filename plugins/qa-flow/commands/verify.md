@@ -58,6 +58,54 @@ rank first**, because an untested route that changes state is the worst kind to 
 A gap is **not** a failure of the run: it is the deliverable, and `report` exits 0 with one. Use
 `--fail-on-untested` only once a team has reached full coverage and wants to hold it.
 
+**`enumerate` exits 2 rather than write a partial route file.** Rails prints a route's `defaults:`
+after the controller, and the parser used to require the controller to be the last token — so on a
+real app 64 of 143 verb-bearing rows were dropped in silence and coverage reported *"49/49 (100%)"*
+over a denominator that contained none of the pages its defects were on. Any verb-bearing row the
+parser cannot read is now printed and the run refuses: a percentage over an incomplete route table
+is a confident claim about a different application.
+
+### Coverage has a second axis: measured at a small viewport
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/route_coverage.py" report \
+  --evidence qa/manual-tests --evidence qa/reports --json
+```
+
+```
+route coverage:      65/113 (57%) — 48 untested
+responsive coverage: 4/94 (4%) measured at ≤480px — 90 never measured small (GET-like routes only)
+```
+
+Those are two answers to two questions and they are never averaged. "Covered" means a validated pass
+asserted something about the route; it says nothing about the **width** that pass ran at. Downstream
+the difference was total: a suite reported every route covered while 71–83% of every data table was
+hidden at a phone width.
+
+The evidence is `layout.json`, from `crawl_collector.js --layout --viewport 390x844` (see
+`/qa-flow:crawl` §3a). Three ways a route appears in it and still does not count, because each is
+the difference between measuring a route and reporting an unmeasured one as measured:
+
+- the probe threw (`elements: null`) — not measured;
+- it landed somewhere else (`landedOn` ≠ the route) — the measurement belongs to that somewhere else;
+- the viewport was wider than the boundary — a desktop measurement, which is the state this axis
+  exists to distinguish from no measurement at all.
+
+**Non-GET routes are not in the denominator.** A layout probe navigates with `page.goto`, which is a
+GET, so a `DELETE /users/:id` cannot be measured at any width and counting it would make the axis
+permanently unreachable.
+
+Declare the boundary and any exclusions in `qa.config.yml`:
+
+```yaml
+coverage:
+  small_viewport_max: 480     # the width at or below which a measurement counts as small
+  responsive_exclude: []      # routes excluded from THIS axis only, printed like every suppression
+```
+
+`--fail-on-unmeasured` gates this axis alone, separately from `--fail-on-untested`, because the two
+are reached at different times and one flag would make the easier one hostage to the harder.
+
 **Then DERIVE the radius rather than reasoning it out (#134).** The route table is the
 denominator; `blast_radius.py` is the selection. It reverse-walks the architecture graph
 (`/rails-flow:graph`, #141) from the changed files to their **dependents**, maps those onto the

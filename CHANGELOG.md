@@ -8315,6 +8315,31 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **`plugins/qa-flow/scripts/route_coverage.py`: the Rails parser dropped every route with a
+  `defaults:` hash, in silence — 64 of 143 rows on a real app** (#953). Rails prints a route's
+  defaults after the controller, and `(?P<controller>\S+)\s*$` cannot match a row with anything
+  after it. The dropped set was an entire admin surface, because that shell routes every screen
+  through one action with the screen name in `defaults`. Route coverage then reported
+  **"49/49 (100%)"** over a denominator containing none of the pages its layout defects were found
+  on; corrected, the same app reads **65/113 (57%), 48 untested**. `unparsed_rails_rows()` now
+  reports any verb-bearing row the parser cannot read and `enumerate` **exits 2 rather than write a
+  partial route file** — a percentage over an incomplete route table is a confident claim about a
+  different application. The silence was the defect; the regex was only how it got in.
+- **Coverage has a second axis: measured at a small viewport —
+  `plugins/qa-flow/scripts/route_coverage.py`, `plugins/qa-flow/commands/verify.md`** (#953).
+  "Covered" means a validated pass asserted something about a route and says nothing about the
+  **width** it ran at, and downstream that difference was total. `responsive coverage: N/M (P%)
+  measured at ≤480px` is reported beside the existing number and **never averaged with it** — the
+  same doctrine as the crawled-unasserted third state. Evidence is `layout.json`; a route whose probe
+  threw, that landed somewhere else, or that was only ever seen at a desktop width does not count.
+  Non-GET routes are out of the denominator for the same reason they are out of `visit_only` — a
+  probe navigates with a GET. `coverage.small_viewport_max` and `coverage.responsive_exclude` are
+  declared, and `--fail-on-unmeasured` gates this axis alone. Per the maintainer's decision on #953:
+  *"each page built should be included into the QA test list so it get tested"* — the list is the
+  route table, so nothing is hand-maintained and a route absent from the small-viewport evidence is
+  reported as a gap exactly the way an unasserted route already is. 102 selftest checks (was 70),
+  18 mutations (was 7).
+
 - **A new layer measures what a page hides INSIDE the viewport — `plugins/qa-flow/scripts/layout_fit.py`,
   `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/commands/crawl.md`,
   `plugins/qa-flow/checks.json`** (#953). Every responsive assertion this flow could reach was a
