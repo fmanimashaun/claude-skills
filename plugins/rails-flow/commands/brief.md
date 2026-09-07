@@ -148,7 +148,7 @@ not reconstructed later. The brief cites the id; the rationale lives once.
 ## Run
 
 **1. Detect the mode.** `$ARGUMENTS` naming a path is Mode A. Otherwise look for `docs/**.md`
-(excluding `docs/brain/` and `docs/reviews/`); then for `app/`, `config/routes.rb`, `db/schema.rb`.
+(excluding `docs/brain/` and `docs/evidence/reviews/`); then for `app/`, `config/routes.rb`, `db/schema.rb`.
 Say which mode you chose and why, before doing anything else.
 
 **2. Ingest.** Mode A: read the documents and extract what they answer. Mode B: read routes,

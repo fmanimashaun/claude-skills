@@ -33,6 +33,30 @@ GUARD = Guard(
             "a shipped command the root README never names",
         ),
 
+        # #948. Two plugins in one marketplace, one instructing a path the other's gate refuses.
+        # Three clauses: the placement check must FIRE, the vocabulary must come from the module
+        # rather than a copy, and a missing vocabulary must be reported rather than passed.
+        Mutation(
+            "the placement check goes, so an unplaceable findings path ships again",
+            "            if top in dirs:\n                continue",
+            "            if True:\n                continue",
+            "an unplaceable findings path is reported",
+        ),
+        Mutation(
+            # A second list of layout directories IS the drift this rule prevents, one level up.
+            "the vocabulary is hardcoded instead of read from docs_layout.py",
+            '        layout = getattr(module, "LAYOUT", None)\n'
+            "        return set(layout) if isinstance(layout, dict) else None",
+            '        return {"product", "evidence", "brain", "qa", "reviews"}',
+            "an unplaceable findings path is reported",
+        ),
+        Mutation(
+            "a missing vocabulary reads as a pass, so the rule goes quiet when it cannot check",
+            "            if dirs is None:",
+            "            if False:",
+            "a missing docs_layout.py is reported, not passed",
+        ),
+
         # #949. A key filter is not a type check: Stimulus consults it only inside
         # `event instanceof KeyboardEvent`, so a bare `Event("keydown")` from a browser extension
         # skips it and runs the handler. Two clauses -- the rule must FIRE on a destructive handler
