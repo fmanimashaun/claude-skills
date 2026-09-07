@@ -101,6 +101,21 @@
       ]
     },
     {
+      "id": "layout-fit",
+      "why": "A page that hides 82% of a table INSIDE the viewport passes every boundary assertion: the document never scrolls sideways and nothing crosses the edge.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/layout_fit.py",
+        "{match:qa/manual-tests/layout.json}"
+      ],
+      "applies_when": [
+        "qa/manual-tests"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "interaction-sweep",
       "why": "A control can be named, focusable and correctly marked up, and still do nothing when clicked.",
       "command": [
