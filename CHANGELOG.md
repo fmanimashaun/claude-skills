@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-07 (release v1.124.0)
 
 - **`scripts/maintainer_doctor.py` gates the new layer's selftest, and `scripts/mutations/layout_fit.py`
   proves it can fail** (#953). 15 mutations, in both dangerous directions: a rule that stops firing (so
@@ -4742,7 +4742,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-07 (release v1.124.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `Unusable` copy-count moves 6 → 7 (reach 5 → 6)
   and the `check()` harness 32 → 33** — `layout_fit.py` (#953) is a new copy of both.
@@ -8313,7 +8313,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-07 (release v1.124.0)
 
 - **`plugins/qa-flow/scripts/route_coverage.py`: the Rails parser dropped every route with a
   `defaults:` hash, in silence — 64 of 143 rows on a real app** (#953). Rails prints a route's
