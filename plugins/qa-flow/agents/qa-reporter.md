@@ -26,7 +26,7 @@ All modes: the verdict, coverage, and defect list must be legible without openin
 ## Emit the typed findings record, not just prose
 
 **A QA defect and a review defect are the same kind of thing**, so they use one record shape (#138).
-Append one JSONL record per defect to `docs/qa/<date>/findings.jsonl` before writing any prose:
+Append one JSONL record per defect to `docs/evidence/qa/<date>/findings.jsonl` before writing any prose:
 
 ```json
 {"id":"qa-001","pass":"e2e-tester","severity":"P1","category":"a11y",
@@ -47,7 +47,7 @@ the build if this section and that script ever disagree. Where rails-flow is ins
 qa-flow, the same tooling applies to these records unchanged:
 
 ```bash
-python3 ../rails-flow/scripts/findings.py validate docs/qa/<date>/findings.jsonl
+python3 ../rails-flow/scripts/findings.py validate docs/evidence/qa/<date>/findings.jsonl
 ```
 
 The `signature` rule below is what makes the record worth writing — it is the dedupe key, and the

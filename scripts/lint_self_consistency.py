@@ -2413,6 +2413,94 @@ def check_unguarded_key_filter() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# Every `findings.jsonl` path a shipped command or agent instructs. The join is narrow on purpose --
+# see the docstring below for why the general "any docs/ path" version is not safe to build.
+_FINDINGS_PATH = re.compile(r"(docs/[A-Za-z0-9._<>/-]*findings\.jsonl)")
+
+
+def _layout_dirs() -> set[str] | None:
+    """`docs_layout.py`'s own directory vocabulary, read from the module rather than copied.
+
+    Returns None when it cannot be loaded, which is reported as a finding rather than treated as
+    "every path is fine": a rule that silently passes when its authority is missing is the same
+    class of defect it exists to catch.
+    """
+    import importlib.util
+
+    target = ROOT / "plugins" / "rails-flow" / "scripts" / "docs_layout.py"
+    if not target.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("_docs_layout_probe", target)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)          # type: ignore[union-attr]
+        layout = getattr(module, "LAYOUT", None)
+        return set(layout) if isinstance(layout, dict) else None
+    except Exception:
+        return None
+
+
+def check_unplaceable_findings_path() -> tuple[list[Finding], int]:
+    """A `findings.jsonl` path we instruct must be one `docs_layout.py` accepts.
+
+    #948, reported downstream. `qa-reporter.md` said to append records to
+    `docs/qa/<date>/findings.jsonl` and to hand that path to `findings.py validate`. rails-flow's
+    docs-layout gate then failed the build: `qa/` is not in its directory vocabulary, so the path is
+    unplaceable BY CONSTRUCTION and a project that follows the agent to the letter cannot pass the
+    sweep. Two plugins in one marketplace, one instructing what the other refuses.
+
+    GREPPING FOR THE CLASS FOUND IT WAS WORSE THAN REPORTED. rails-flow's own `review.md`, `fix.md`
+    and `issues.md` instruct `docs/reviews/<date>/findings.jsonl` in six more places, and `reviews/`
+    is not in the vocabulary either -- so rails-flow was failing its own gate. Measured with the
+    classifier: `docs/qa/...` and `docs/reviews/...` are both rewritten to `docs/product/...`, while
+    `docs/evidence/qa/...` and `docs/evidence/reviews/...` are accepted in place. A QA run and a
+    review run are both evidence by the vocabulary's own definition -- "WHAT did we measure?
+    ... validation results. Dated, immutable."
+
+    THE VOCABULARY IS READ FROM `docs_layout.py`, never copied here. A second list of layout
+    directories is the drift this rule exists to prevent, one level up.
+
+    DELIBERATELY NOT THE GENERAL RULE. The obvious version -- every `docs/<top>/` path in shipped
+    markdown must be placeable -- fires on dozens of correct lines, because our own repository has a
+    `docs/` tree with `doctrine/`, `evidence/`, `architecture/` and `wiki/`, and shipped prose
+    legitimately cites OUR paths as well as instructing the project's. Telling those apart is the
+    mention-versus-prescription judgement call #491 records as the route to a rule nobody trusts. A
+    `findings.jsonl` path has no such ambiguity: it exists only to be written by the project and
+    handed to `findings.py`, so every occurrence is an instruction.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    dirs = _layout_dirs()
+    for path in walk(".md"):
+        where = rel(path)
+        if not (where.startswith("plugins/") or where.startswith("skills/")):
+            continue
+        body = read(path)
+        for match in _FINDINGS_PATH.finditer(body):
+            candidate = match.group(1)
+            parts = candidate.split("/")
+            if len(parts) < 3:
+                continue                          # `docs/findings.jsonl` has no directory to place
+            examined += 1
+            if dirs is None:
+                findings.append(Finding(
+                    "unplaceable-findings-path", where, body[:match.start()].count("\n") + 1,
+                    "cannot read `docs_layout.py`'s LAYOUT vocabulary, so this path is unverified. "
+                    "Reported rather than passed: the rule's authority being absent is not evidence "
+                    "that the path is placeable."))
+                continue
+            top = parts[1]
+            if top in dirs:
+                continue
+            findings.append(Finding(
+                "unplaceable-findings-path", where, body[:match.start()].count("\n") + 1,
+                f"instructs `{candidate}`, but `{top}/` is not in `docs_layout.py`'s vocabulary "
+                f"({', '.join(sorted(dirs))}), so the docs-layout gate rewrites it and a project "
+                f"following this file cannot pass the sweep. A run's records are evidence: "
+                f"`docs/evidence/{top}/...`."))
+    return findings, examined
+
+
 def check_orphaned_controller() -> tuple[list[Finding], int]:
     """A scaffold prescribes a Stimulus controller whose paired component it never scaffolds.
 
@@ -2645,6 +2733,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     labels, labels_examined = check_unprovisioned_label()
     comp_labels, comp_labels_examined = check_undeclared_component_label()
     orphans, orphans_examined = check_orphaned_controller()
+    findings_paths, findings_paths_examined = check_unplaceable_findings_path()
     keyfilter, keyfilter_examined = check_unguarded_key_filter()
     pw_floor, pw_floor_examined = check_password_floor()
     skill_dep, skill_dep_examined = check_undeclared_skill_dependency()
@@ -2686,6 +2775,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "issue_labels_resolved_or_templated": labels_examined,
         "component_labels_reconciled": comp_labels_examined,
         "scaffolded_controllers_paired": orphans_examined,
+        "instructed_findings_paths": findings_paths_examined,
         "key_filtered_action_descriptors": keyfilter_examined,
         "password_floor_claims_reconciled": pw_floor_examined,
         "commands_reading_a_foreign_skill": skill_dep_examined,
@@ -2704,7 +2794,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + keyfilter + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
+            + ci_gates + controllers + labels + comp_labels + orphans + keyfilter
+            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
             + xplugin,
             coverage)
@@ -3175,6 +3266,45 @@ def selftest() -> int:
              files={"plugins/design-flow/commands/setup.md": "the `toast` controllers\n"})
     scenario("no setup file is silent", rule=OC, expect_finding=False,
              files={"skills/design-system/references/component-implementations.md": IMPL})
+
+    # -- unplaceable-findings-path (#948) ---------------------------------
+    UFP = "unplaceable-findings-path"
+    LAYOUT_STUB = ("LAYOUT = {'product': ('a', 'b'), 'evidence': ('a', 'b'), 'brain': ('a', 'b')}\n")
+    DL = "plugins/rails-flow/scripts/docs_layout.py"
+
+    def _with_layout(**files) -> dict:
+        # The vocabulary is READ FROM THE MODULE, so every scenario ships one. A fixture without it
+        # would exercise the unverified branch and prove nothing about the placement rule.
+        return {DL: LAYOUT_STUB, **files}
+
+    # THE DEFECT, as reported: qa-flow instructing a path rails-flow's own gate rewrites.
+    scenario("an unplaceable findings path is reported", rule=UFP, expect_finding=True,
+             files=_with_layout(**{"plugins/qa-flow/agents/qa-reporter.md":
+                                   "Append to `docs/qa/<date>/findings.jsonl` before any prose.\n"}))
+    # AND THE SAME CLASS IN THE PLUGIN THAT OWNS THE GATE — six sites, none of them reported.
+    scenario("...including rails-flow's own docs/reviews/", rule=UFP, expect_finding=True,
+             files=_with_layout(**{"plugins/rails-flow/commands/review.md":
+                                   "findings.py validate docs/reviews/<date>/findings.jsonl\n"}))
+    # THE FIX is silent, and the fixture still CONTAINS a findings path or it proves nothing.
+    scenario("a path under a layout directory is silent", rule=UFP, expect_finding=False,
+             files=_with_layout(**{"plugins/qa-flow/agents/qa-reporter.md":
+                                   "Append to `docs/evidence/qa/<date>/findings.jsonl`.\n"
+                                   "findings.py validate docs/evidence/reviews/<date>/findings.jsonl\n"}))
+    # NEAR MISS: a path with no directory has nothing to place, and flagging it would demand a
+    # `docs/<dir>/` that the instruction never claimed.
+    scenario("a bare docs/findings.jsonl is not a placement claim", rule=UFP, expect_finding=False,
+             files=_with_layout(**{"plugins/rails-flow/commands/review.md":
+                                   "findings.py order findings.jsonl, or docs/findings.jsonl\n"}))
+    # NEAR MISS: only what we SHIP instructs a project. The CHANGELOG quotes the defect to explain
+    # it, and this repo's own notes cite our paths.
+    scenario("the changelog may quote the bad path", rule=UFP, expect_finding=False,
+             files=_with_layout(**{"CHANGELOG.md":
+                                   "we shipped `docs/qa/<date>/findings.jsonl`\n"}))
+    # THE AUTHORITY BEING ABSENT IS NOT A PASS. Without the vocabulary the path is unverified, and
+    # a rule that goes quiet when it cannot check is the defect it exists to catch.
+    scenario("a missing docs_layout.py is reported, not passed", rule=UFP, expect_finding=True,
+             files={"plugins/qa-flow/agents/qa-reporter.md":
+                    "Append to `docs/evidence/qa/<date>/findings.jsonl`.\n"})
 
     # -- unguarded-key-filter (#949) --------------------------------------
     UKF = "unguarded-key-filter"

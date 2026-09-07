@@ -7,6 +7,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`scripts/lint_self_consistency.py`: new `unplaceable-findings-path` rule** (#948). Every
+  `findings.jsonl` path a shipped command or agent instructs must sit under a directory in
+  `docs_layout.py`'s vocabulary — **read from that module, never copied**, since a second list of
+  layout directories is this defect one level up. A vocabulary that cannot be loaded is reported, not
+  passed. Deliberately narrow: the general "every `docs/<top>/` path must be placeable" version fires
+  on dozens of correct lines, because this repo's own `docs/` tree has `doctrine/` and shipped prose
+  cites our paths as well as instructing the project's — the mention-versus-prescription judgement
+  #491 records as the route to a rule nobody trusts. A `findings.jsonl` path has no such ambiguity.
+  Six selftest scenarios, three mutations in `scripts/mutations/lint_self_consistency.py`.
+
 ### 2026-09-07 (release v1.124.0)
 
 - **`scripts/maintainer_doctor.py` gates the new layer's selftest, and `scripts/mutations/layout_fit.py`
@@ -2552,6 +2564,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **Six more sites of #948, in the plugin that owns the gate — `plugins/rails-flow/commands/review.md`,
+  `fix.md`, `issues.md`** (#948). Grepping the reported pattern found rails-flow instructing
+  `docs/reviews/<date>/findings.jsonl`, and `reviews/` is not in its own `docs_layout.py` vocabulary
+  either: the plugin that ships the docs-layout gate was telling projects to write where that gate
+  refuses. Now `docs/evidence/reviews/`. The two `docs/reviews/` **exclusions** in
+  `plugins/rails-flow/commands/curate.md` and `brief.md` moved with it — they would otherwise be
+  excluding a directory that no longer exists — and kept their original scope
+  (`docs/evidence/reviews/`, not all of `docs/evidence/`), because a rename should rename rather
+  than widen.
 
 ### 2026-09-07 (release v1.123.0)
 

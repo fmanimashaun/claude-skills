@@ -10,7 +10,7 @@ Fix work follows the same discipline as features, with two entry modes.
 ## Setup
 
 Read `CLAUDE.md`, `GUARDRAILS.md`, and — if `$ARGUMENTS` references a review report —
-that report (e.g. `docs/reviews/*.md`). Identify the next phase marked "Not started",
+that report (e.g. `docs/evidence/reviews/*.md`). Identify the next phase marked "Not started",
 or treat the described bug as a single-phase fix. Base branch: `dev` if present.
 
 **When a `findings.jsonl` sits beside the report, read that instead — it is the source and the
@@ -18,7 +18,7 @@ markdown is a rendering of it** (#138). Take the fix order from the data rather 
 prose:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" order docs/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" order docs/evidence/reviews/<date>/findings.jsonl
 ```
 
 **The order is topological, and an edge outranks severity** — a P1 symptom appears *after* its P3

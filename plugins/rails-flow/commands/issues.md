@@ -32,11 +32,11 @@ they enter the queue below instead of becoming ad-hoc hot-fixes. Then triage nor
 
 ## Phase 0 — File from `findings.jsonl`, one issue per *defect*
 
-If a review produced `docs/reviews/<date>/findings.jsonl`, file from **that**, not from the markdown
+If a review produced `docs/evidence/reviews/<date>/findings.jsonl`, file from **that**, not from the markdown
 (#138). The distinction is the whole point:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" dedupe docs/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" dedupe docs/evidence/reviews/<date>/findings.jsonl
 ```
 
 **File one issue per distinct `signature`, not per record.** A defect seen by three passes, or
