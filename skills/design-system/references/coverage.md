@@ -30,8 +30,8 @@ builder refuses to emit a row that lacks it.
 |---|---|
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
-| fidara rows | 118 |
-| — `documented` | 79 |
+| fidara rows | 119 |
+| — `documented` | 80 |
 | — `derivable` from documented parts | 39 |
 | — `needs doctrine` (tracked writing gap) | 0 |
 
@@ -102,6 +102,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Cart page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Category page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
 | Checkout page archetype | page archetype | ✓ | — | a whole commerce page; compose the blocks inside it | — |
+| Data table anatomy | page archetype | — | — | the index of a resource — composes Table, Pagination, Empty state, Skeleton and the filter toolbar into one screen | the filtered-empty state is a DIFFERENT state from no-records, and it is the one always missing (#964); a capped list states its total (#963) |
 | Detail anatomy | page archetype | ✓ | — | a single record with attributes and actions | — |
 | Error page archetype (404/500) | page archetype | ✓ | — | a whole marketing or auth page; compose sections inside it | an intentional error-page DESIGN — it returns 200 and is a legitimate page under test (qa-flow #106) |
 | Home / dashboard anatomy | page archetype | ✓ | — | the landing screen after sign-in | — |

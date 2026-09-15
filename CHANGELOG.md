@@ -4766,6 +4766,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **A capped list must never be silently capped — `skills/design-system/references/components.md`**
+  (#963). The Pagination entry ruled "Showing X–Y of Z" and `coverage.md` ruled *"any index over ~25
+  rows"*, and neither caught the pattern that actually ships: a bare `.limit(20)` in the controller
+  with no total and no way to reach row 21. That is not an un-paginated list, it is a list that
+  **looks complete and is not**. Measured downstream (`fmanimashaun/Retask-platform`): one unbounded
+  index and eight silently truncated ones — `.limit(10)`, `(20)`, `(24)`, `(100)`, `(200)` — every
+  one rendering as though it were the whole set. The existing wording could not catch it because the
+  cap IS the developer's answer to "this could get long"; they believe they have paginated. Our
+  design decision, no upstream to cite, recorded on the issue.
+
+- **How the parts of a data table compose — `skills/design-system/references/page-anatomies.md`,
+  `scripts/build_coverage.py`** (#964). Table (CRUD), Pagination, Empty state, Skeleton, Search
+  input and the filter combobox were each specified alone, and nothing said how they fit together,
+  so each app assembled a different answer — or, downstream, hand-rolled a `<div role="table">` with
+  a CSS grid that `components.md` already forbids in terms that could not be plainer. The new
+  anatomy carries the decisions no single part can: **five required states** (the filtered-empty one
+  is a *different* state from no-records, and it is the one always missing), the count stated
+  whether or not anything is truncated, and **sort, filter and page as one URL state** — changing a
+  filter resets the page to 1, sorting does not drop the filter. The `Data table anatomy` coverage
+  row claims no corpus path, because every part it composes already claims one and the build
+  refuses a path claimed twice.
+
 ### 2026-09-07 (release v1.124.0)
 
 - **`skills/quality-pass/references/worked-example.md`: the `Unusable` copy-count moves 6 → 7 (reach 5 → 6)
