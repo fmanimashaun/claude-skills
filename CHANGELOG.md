@@ -7,6 +7,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-15 (release v1.126.0)
+
+- **The marketplace version tracks a rails-stack skill release** (#963, #964, #971). No repository
+  change of its own: `metadata.version` moves with `rails-stack` 1.56.10 → 1.57.0, which carries
+  three additions to the design-system skill — the data-table composition, the rule against a
+  silently capped list, and tab capacity as a measurement rather than a maximum. All three were
+  found by reviewing a downstream app's interfaces rather than by reading our own docs.
+
 ### 2026-09-07 (release v1.125.0)
 
 - **`scripts/lint_self_consistency.py`: new `unplaceable-findings-path` rule** (#948). Every
@@ -4766,7 +4774,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-15 (release v1.57.0)
 
 - **Tabs are fully specified except for how many — `skills/design-system/references/components.md`**
   (#971). The entry ruled the ARIA wiring thoroughly and said nothing about capacity, so an app
