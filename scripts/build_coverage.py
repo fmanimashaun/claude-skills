@@ -171,6 +171,10 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Multi-column shell": "## 3. Multi-column shell",
     "Home / dashboard anatomy": "## Home / dashboard",
     "Detail anatomy": "## Detail\n",
+    # #964 -- the composition, not the Table component: how Table, Pagination, Empty state,
+    # Skeleton and the filter toolbar fit together, and the five states all of them are required
+    # to cover.
+    "Data table anatomy": "## Data table",
     "Settings anatomy": "## Settings\n",
     "Landing page archetype": "## Landing\n",
     "Pricing page archetype": "## Pricing\n",
@@ -302,6 +306,13 @@ ENTRIES: tuple[Entry, ...] = (
       ["application-ui/page-examples/home-screens"]),
     E("Detail anatomy", ARCHETYPE, "documented", "—",
       ["application-ui/page-examples/detail-screens"]),
+    # CLAIMS NO CORPUS PATH, deliberately. Every part it composes already claims one -- Table
+    # (CRUD) owns `application-ui/lists/tables` -- and the build refuses a path claimed twice,
+    # which is the right answer: this row is the COMPOSITION, and its evidence is the anatomy
+    # entry, not a second reading of the same gallery page.
+    E("Data table anatomy", ARCHETYPE, "documented", "sort / filter / paginate as one url state",
+      note="the filtered-empty state is a DIFFERENT state from no-records, and it is the one "
+           "always missing (#964); a capped list states its total (#963)"),
     E("Settings anatomy", ARCHETYPE, "documented", "—",
       ["application-ui/page-examples/settings-screens"]),
 
@@ -701,6 +712,8 @@ USE: dict[str, str] = {
     "Multi-column shell": "screens needing a contextual aside beside the main region",
     "Home / dashboard anatomy": "the landing screen after sign-in",
     "Detail anatomy": "a single record with attributes and actions",
+    "Data table anatomy": "the index of a resource — composes Table, Pagination, Empty state, "
+                          "Skeleton and the filter toolbar into one screen",
     "Settings anatomy": "grouped preference forms",
 }
 

@@ -7,6 +7,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-15 (release v1.126.0)
+
+- **The marketplace version tracks a rails-stack skill release** (#963, #964, #971). No repository
+  change of its own: `metadata.version` moves with `rails-stack` 1.56.10 → 1.57.0, which carries
+  three additions to the design-system skill — the data-table composition, the rule against a
+  silently capped list, and tab capacity as a measurement rather than a maximum. All three were
+  found by reviewing a downstream app's interfaces rather than by reading our own docs.
+
 ### 2026-09-07 (release v1.125.0)
 
 - **`scripts/lint_self_consistency.py`: new `unplaceable-findings-path` rule** (#948). Every
@@ -4765,6 +4773,55 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-15 (release v1.57.0)
+
+- **Tabs are fully specified except for how many — `skills/design-system/references/components.md`**
+  (#971). The entry ruled the ARIA wiring thoroughly and said nothing about capacity, so an app
+  grows a tab bar until somebody notices: one downstream area reached **ten**, which at 1214px was
+  1650px of strip with five of ten off-screen and no cue, two of them linked from the dashboard.
+  APG has no rule either — the pattern is about semantics, not capacity. **The rule is a
+  measurement, not a maximum**: the strip fits one row at the narrowest supported width. Measured
+  at three widths, seven tabs in each area, Reports fits at 1280px where People does not *because
+  its labels are shorter* — so a number would forbid a legible eight and permit an illegible five.
+  Two corollaries: wrapping to a second row is the right fallback and the wrong remedy, and when it
+  does not fit you regroup by the question the area answers rather than shortening labels until
+  they squeeze in.
+
+  **Verified 15 Sep 2026** (`doctrine-verifier`, live pages): the widely repeated *"Apple HIG caps
+  tabs at five or six"* is **REFUTED** — the HIG says *"Use the appropriate number of tabs required
+  to help people navigate your app"* and its only "five" is scoped to iPadOS **customizable** tab
+  bars (*"aim for a default list of five or fewer"*). **W3C APG is silent** on capacity, overflow and
+  wrapping (CONFIRMED — the pattern covers semantics and keyboard interaction only). The no-wrap
+  rule is **vendor agreement among those who rule on it, not a standard**: Fluent 2 states it
+  outright (*"Tabs in a horizontal tablist won't scroll or wrap to the next line"*, overflow menu),
+  Material 3 is single-row by definition and answers overflow with **scrollable tabs** (*"When a set
+  of tabs cannot fit on screen, use scrollable tabs"*; its fixed variant adds *"Avoid using more
+  than four tabs at once"*), PatternFly offers either — three different mechanisms, attributed
+  separately rather than blended. Apple and APG say nothing about wrapping, so their silence is
+  reported as silence.
+
+- **A capped list must never be silently capped — `skills/design-system/references/components.md`**
+  (#963). The Pagination entry ruled "Showing X–Y of Z" and `coverage.md` ruled *"any index over ~25
+  rows"*, and neither caught the pattern that actually ships: a bare `.limit(20)` in the controller
+  with no total and no way to reach row 21. That is not an un-paginated list, it is a list that
+  **looks complete and is not**. Measured downstream (`fmanimashaun/Retask-platform`): one unbounded
+  index and eight silently truncated ones — `.limit(10)`, `(20)`, `(24)`, `(100)`, `(200)` — every
+  one rendering as though it were the whole set. The existing wording could not catch it because the
+  cap IS the developer's answer to "this could get long"; they believe they have paginated. Our
+  design decision, no upstream to cite, recorded on the issue.
+
+- **How the parts of a data table compose — `skills/design-system/references/page-anatomies.md`,
+  `scripts/build_coverage.py`** (#964). Table (CRUD), Pagination, Empty state, Skeleton, Search
+  input and the filter combobox were each specified alone, and nothing said how they fit together,
+  so each app assembled a different answer — or, downstream, hand-rolled a `<div role="table">` with
+  a CSS grid that `components.md` already forbids in terms that could not be plainer. The new
+  anatomy carries the decisions no single part can: **five required states** (the filtered-empty one
+  is a *different* state from no-records, and it is the one always missing), the count stated
+  whether or not anything is truncated, and **sort, filter and page as one URL state** — changing a
+  filter resets the page to 1, sorting does not drop the filter. The `Data table anatomy` coverage
+  row claims no corpus path, because every part it composes already claims one and the build
+  refuses a path claimed twice.
 
 ### 2026-09-07 (release v1.124.0)
 
