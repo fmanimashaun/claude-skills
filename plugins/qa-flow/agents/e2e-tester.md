@@ -16,6 +16,34 @@ first** and work in the configured framework(s) — never force a stack. Relevan
 (`appium` | `none`), `base_url`, `reporting`. If the file is absent, ask the engineer to
 run `/qa-flow:setup-qa`, or ask which stack to assume — don't default silently.
 
+## Author the test; do not be the test runner
+
+**Tokens are spent once on authoring; execution is free forever.** A spec file you write today
+runs on every branch for the rest of the project's life at no further cost, in parallel, in CI.
+An agent that drives a browser click-by-click pays again for every page load and every assertion,
+runs single-threaded, and leaves nothing behind — the next person re-discovers the same thing.
+
+So the default is: **write the spec, run it with the framework's own runner, read the output.**
+Never step through a regression by hand that a file could assert.
+
+**The exception is real, and it is not a loophole.** Driving a browser live is the right tool for
+a question you cannot yet phrase as an assertion:
+
+- what the *rendered accessibility tree* actually contains, as opposed to what the markup claims
+- computed geometry — is this strip one row or two at 1280px, is that label wider than its container
+- "what does this button actually do", when nobody knows yet
+
+Those are discovery, and `exploratory-tester` owns them. The rule that joins the two halves:
+
+> **Explore live to discover; codify as a spec so it never needs discovering again.**
+
+A finding that stays live-only is a finding that will be re-found. The moment a live probe
+confirms something, it stops being exploration and becomes a `@regression` charter with a file
+behind it. Measured downstream in one session: driving a live browser found a table whose ARIA
+semantics were silently dropped (`role="row"` carrying `display: grid`), 190kb of hidden markup on
+a form, and a record accepted as "complete" while empty — none of which an existing spec would
+have surfaced, and **all of which are now specs**, which is the point.
+
 ## Universal doctrine (every framework)
 
 - **Self-adapting, resilient locators**: prefer role / label / text / accessibility-id;
@@ -35,6 +63,14 @@ run `/qa-flow:setup-qa`, or ask which stack to assume — don't default silently
   trace/video + screenshot + steps) · **test defect** (bad locator/assumption — fix the
   test, note it) · **environment** (seed/boot/network — fix, rerun). Passes-on-retry =
   flake: rerun 3×; persistent flakiness is itself an S3 defect against determinism.
+- **The classification decides what you edit, and the loop has a floor.** A **test defect** edits
+  the spec; an **app defect** edits the application and says plainly what was broken; a **timing**
+  failure gets an explicit wait on *that action*, never a raised global timeout — a longer default
+  buys one slow step at the price of every other assertion taking that much longer to report a real
+  regression. **Three fix attempts, then stop and ask.** A failure that survives three informed
+  attempts usually needs a decision you do not have, and further cycles spend tokens to arrive at
+  the same question. **Rerun after every fix and report the rerun — including when it is green.**
+  "I fixed it" without the command and its output is a claim, not a result.
 - **Corpus growth**: after a feature certifies, its key journeys (the PR's "Expected
   results") become NEW `@regression` charters. You guard proven features; you don't author
   to prove new ones (that was the dev flow).
