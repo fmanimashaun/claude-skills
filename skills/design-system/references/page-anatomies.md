@@ -225,6 +225,83 @@ One record. The screen answers "what is this, and what can I do to it?"
 - **Edits are modal** (`crud-modal-pattern.md`) targeting `<turbo-frame id="modal">`.
   A detail screen that navigates away to edit loses the user's place.
 
+## Data table — the index of a resource
+
+Many records, and the screen answers *"which of these do I want, and am I seeing all of them?"*
+Every part of this is specified elsewhere; what lives here is **how they compose**, because that
+is where the decisions no single part can carry are made.
+
+```erb
+<section class="stack" aria-labelledby="people-heading">
+  <header class="cluster justify-between items-start">
+    <h2 id="people-heading" class="text-step-2">People</h2>
+    <div class="cluster"><%# primary action %></div>
+  </header>
+
+  <%# TOOLBAR. Search, filters, per-page. It owns the query, never the rows. %>
+  <div class="cluster justify-between" role="search">
+    <%# Search input (type=search, leading Lucide icon) + filter combobox(es) %>
+  </div>
+
+  <%# The count is ALWAYS here, truncated or not. %>
+  <p class="text-step--2 text-muted-foreground" aria-live="polite">Showing 1–20 of 63</p>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-step--1 text-left"><%# Table (CRUD) %></table>
+  </div>
+
+  <nav aria-label="Pagination"><%# Pagination %></nav>
+</section>
+```
+
+- **Composes** — [Table (CRUD)](components.md#table-crud), [Pagination](components.md#pagination),
+  [Empty state](components.md#empty-state), [Skeleton](components.md#skeleton--loading-placeholder),
+  Search input, and the filter combobox (`coverage.md` — filtering is `aria-autocomplete` on an
+  editable combobox; the typeahead half belongs to the select-only one and applying it here
+  swallows the space bar).
+
+### Five states, and all five are required
+
+A screen that ships only the first is the normal defect, and the fourth is the one always missing.
+
+| state | what it is | what it must do |
+|---|---|---|
+| **Loaded** | rows | state the count, even when nothing is truncated |
+| **Empty — no records** | the resource has none yet | [Empty state](components.md#empty-state) that says what would appear here and how to create the first |
+| **Empty — filtered out** | records exist; this query matches none | a **different** message naming the filter, and a way to clear it. Never the "create your first" copy — there is nothing to create |
+| **Loading** | a Turbo frame whose size is known | [Skeleton](components.md#skeleton--loading-placeholder) shaped like the rows, not a spinner |
+| **Error** | the query or frame failed | say so in place, and offer the retry; do not render an empty table, which reads as "no records" |
+
+**The two empty states are not one state with two messages.** "No people yet — add the first" shown
+to someone who filtered to `role: auditor` is a lie about the data, and it hides the only useful
+control: the one that clears the filter. The filtered branch gets `aria-live="polite"`, per
+[Empty state](components.md#empty-state) — *"or the user filters into silence"*.
+
+### The count is part of the table, not part of pagination
+
+**"Showing X–Y of Z" appears whether or not the list is long enough to page**, so it is one control
+that grows rather than a control that appears. A reader cannot tell a complete list of 8 from a
+capped list of 8 unless the page says which it is — see #963: a cap without a count is the same
+class of defect as a rescue that swallows the exception.
+
+### Sort, filter and page are ONE url state
+
+- Every one of them is a **query parameter**, so a view is addressable, shareable, and survives the
+  back button.
+- **Changing a filter or the per-page resets the page to 1.** Page 4 of a filter that now matches
+  two rows is an empty screen that looks broken.
+- **Sorting does not drop the filter**, and filtering does not drop the sort. Each control edits its
+  own parameter and leaves the others alone.
+- The toolbar's controls **must not renumber the page under the reader** — no auto-submit that
+  reorders rows while a pointer is travelling toward one.
+
+### Responsive is a choice that gets recorded
+
+[Table (CRUD)](components.md#table-crud) says to pick horizontal scroll or a card-stack fallback
+*"per table and state it"*. This is where it is stated. Whichever is chosen, **the columns are
+defined once** and both renderings read that definition — two hand-written copies drift, and the
+drift shows up as a column present in one and missing in the other.
+
 ## Settings
 
 Many small forms, grouped. The risk here is a wall of inputs.

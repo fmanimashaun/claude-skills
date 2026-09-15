@@ -1090,6 +1090,15 @@ from `bg-green-500`/`bg-red-500` is both a raw-colour drift finding and unreadab
   [component-implementations.md](component-implementations.md).
 
 ## Pagination
+- **A CAPPED LIST MUST NEVER BE SILENTLY CAPPED.** `.limit(20)` in the controller with no total and
+  no way to reach row 21 is not an un-paginated list — it is a list that **looks complete and is
+  not**, and the reader gets no signal at all: no "Showing 1–20 of 63", no next link. They conclude
+  there are twenty. Measured downstream: one unbounded index and eight silently truncated ones
+  (`.limit(10)`, `(20)`, `(24)`, `(100)`, `(200)`) in a single app, every one rendering as if it
+  were the whole set. The cap is the developer's answer to "this list could get long", which is why
+  "paginate by default" below does not catch it — they believe they already have. A list may be
+  capped; if the query can drop rows, the page **states the total and offers the rest**. Same class
+  as a rescue that swallows the exception.
 - Keep the Pagy-based `shared/_pagination`: per-page `<select>`, "Showing X–Y of Z", windowed links + prev/next
   Lucide chevrons, active = `bg-primary/10 text-primary`. Optional `turbo_frame` target. Responsive `flex-col
   md:flex-row`.
