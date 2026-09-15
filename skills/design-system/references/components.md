@@ -557,6 +557,47 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **Responsive:** `hidden lg:block` plus the drawer below `lg`. Never toggle `aria-modal` by media query.
 
 ## Tabs
+- **HOW MANY IS NOT A NUMBER — the strip fits ONE ROW at the narrowest width the app supports.**
+  **APG is silent on capacity** (verified 15 Sep 2026: the pattern's four sections cover terminology,
+  examples, keyboard interaction and the ARIA wiring, and none addresses count, overflow or
+  wrapping), so this is ours. A count alone would be wrong in both directions — measured downstream
+  at three widths with seven tabs per area, Reports fits one row at 1280px where People does not,
+  with the same seven, because its labels are shorter:
+
+  | width | People (7) | Reports (7) | Config (8) |
+  |---|---|---|---|
+  | 1024px | 2 rows | 2 rows | 2 rows |
+  | 1280px | 2 rows | **1 row** | 2 rows |
+  | 1440px | 1 row | 1 row | 1 row |
+
+  Count × label length is the thing, and only the browser knows it. Before the rule, one area
+  reached ten tabs: 1650px of strip at 1214px, five of the ten off-screen with no cue, two of them
+  linked from the dashboard.
+- **DO NOT WRAP TO A SECOND ROW.** Of the systems that rule on this at all, all of them keep the
+  strip to one row and answer overflow with a mechanism instead — and they prescribe **different**
+  mechanisms, so pick one deliberately rather than blending them:
+  - **Microsoft Fluent 2** is explicit: *"Tabs in a horizontal tablist won't scroll or wrap to the
+    next line… If you need to show more tabs, include an overflow menu button."* It also names the
+    cost of its own answer — *"Tablists are less effective in smaller layouts that push several tabs
+    into an overflow menu, making them harder to find."*
+  - **Material 3** uses a **scrollable** variant: *"When a set of tabs cannot fit on screen, use
+    scrollable tabs."* For its FIXED variant it does give a figure — *"Avoid using more than four
+    tabs at once. At five or more tabs, the container becomes cramped."*
+  - **PatternFly** offers either: a scrolling default, or an overflow menu as the last tab.
+
+  **APG and Apple HIG say nothing about wrapping**, so this is vendor agreement among those who
+  address it, not a standard — and the widely repeated *"Apple caps tabs at five or six"* is **not**
+  in the HIG. Its actual text is *"Use the appropriate number of tabs required to help people
+  navigate your app"*; the only "five" is scoped to iPadOS **customizable** tab bars — *"aim for a
+  default list of five or fewer"* — for continuity between size classes. Do not cite it as a cap.
+  (All quotes verified against the live pages 15 Sep 2026.)
+- **REGROUP BEFORE YOU REACH FOR AN OVERFLOW.** Every overflow mechanism above hides destinations,
+  and Fluent says plainly that hiding them makes them harder to find. When the strip does not fit,
+  the first question is whether the area is answering more than one question — not how to store the
+  excess. Regroup by the question, never by shortening labels until they squeeze in. The downstream
+  ten held recruitment, contracts, a roster AND three consequences (performance flags, suspensions,
+  offboarding); the consequences belonged with the defect loop they lead into, and moving them left
+  two areas that each answer one question.
 - **A real APG pattern — cite it, and note that three of its keyboard rows are marked `(Optional)`.**
   `role="tablist"` container, `role="tab"` children, `role="tabpanel"` panels.
 - **Four wiring rules, all stated unconditionally by the pattern.** Each tab has `aria-controls`

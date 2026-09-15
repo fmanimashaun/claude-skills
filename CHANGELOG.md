@@ -4768,6 +4768,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Tabs are fully specified except for how many — `skills/design-system/references/components.md`**
+  (#971). The entry ruled the ARIA wiring thoroughly and said nothing about capacity, so an app
+  grows a tab bar until somebody notices: one downstream area reached **ten**, which at 1214px was
+  1650px of strip with five of ten off-screen and no cue, two of them linked from the dashboard.
+  APG has no rule either — the pattern is about semantics, not capacity. **The rule is a
+  measurement, not a maximum**: the strip fits one row at the narrowest supported width. Measured
+  at three widths, seven tabs in each area, Reports fits at 1280px where People does not *because
+  its labels are shorter* — so a number would forbid a legible eight and permit an illegible five.
+  Two corollaries: wrapping to a second row is the right fallback and the wrong remedy, and when it
+  does not fit you regroup by the question the area answers rather than shortening labels until
+  they squeeze in.
+
+  **Verified 15 Sep 2026** (`doctrine-verifier`, live pages): the widely repeated *"Apple HIG caps
+  tabs at five or six"* is **REFUTED** — the HIG says *"Use the appropriate number of tabs required
+  to help people navigate your app"* and its only "five" is scoped to iPadOS **customizable** tab
+  bars (*"aim for a default list of five or fewer"*). **W3C APG is silent** on capacity, overflow and
+  wrapping (CONFIRMED — the pattern covers semantics and keyboard interaction only). The no-wrap
+  rule is **vendor agreement among those who rule on it, not a standard**: Fluent 2 states it
+  outright (*"Tabs in a horizontal tablist won't scroll or wrap to the next line"*, overflow menu),
+  Material 3 is single-row by definition and answers overflow with **scrollable tabs** (*"When a set
+  of tabs cannot fit on screen, use scrollable tabs"*; its fixed variant adds *"Avoid using more
+  than four tabs at once"*), PatternFly offers either — three different mechanisms, attributed
+  separately rather than blended. Apple and APG say nothing about wrapping, so their silence is
+  reported as silence.
+
 - **A capped list must never be silently capped — `skills/design-system/references/components.md`**
   (#963). The Pagination entry ruled "Showing X–Y of Z" and `coverage.md` ruled *"any index over ~25
   rows"*, and neither caught the pattern that actually ships: a bare `.limit(20)` in the controller
