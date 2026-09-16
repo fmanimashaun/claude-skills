@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-16 (release v1.127.0)
+
+- **The marketplace version tracks a rails-stack skill release** (#972). No repository change of
+  its own: `metadata.version` moves with `rails-stack` 1.57.0 → 1.58.0, which carries the adaptive
+  layout doctrine — the size bands, the pane model, which navigation belongs at which width, what
+  happens above 1536px, and the three canonical layouts. Found by measuring a downstream app's
+  shell rather than by reading our own docs: it switched at `md` and put a 236px sidebar in a 768px
+  viewport, against no rule at all.
+
 ### 2026-09-15 (release v1.126.0)
 
 - **The marketplace version tracks a rails-stack skill release** (#963, #964, #971). No repository
@@ -4774,7 +4783,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-16 (release v1.58.0)
 
 - **Adaptive is now a stated position, with the bands, the panes and the navigation —
   `skills/design-system/references/responsive.md`, `page-anatomies.md`, `components.md`,
