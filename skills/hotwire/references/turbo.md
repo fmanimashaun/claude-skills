@@ -9,6 +9,7 @@
 6. Delivering streams: form responses and broadcasts
 7. Custom stream actions
 8. Events reference
+   8b. A failed request — what the person sees
 9. turbo-rails helper cheat sheet
 
 ---
@@ -143,8 +144,8 @@ matching `id`.
 Key mechanics:
 
 - **Matching ids on both ends** — the navigated-to page must contain
-  `<turbo-frame id="message_1">`; otherwise the frame errors ("content
-  missing"). In Rails, `turbo_frame_tag @message` generates `dom_id` on both
+  `<turbo-frame id="message_1">`; otherwise the frame errors ("Content
+  missing" — Turbo's developer text; §8b says what the person sees instead). In Rails, `turbo_frame_tag @message` generates `dom_id` on both
   pages automatically.
 - **Lazy loading** — `<turbo-frame id="notes" src="/notes" loading="lazy">`
   fetches when scrolled into view (`loading="eager"` = on page load). Put a
@@ -358,6 +359,87 @@ All bubble to `document`; the most-used, in lifecycle order:
 
 Idiom: prefer Stimulus `connect()` on the elements themselves over global
 `turbo:load` listeners — it survives frames, streams, and morphs for free.
+
+## 8b. A failed request — what the person sees (#967)
+
+§8 lists the events. This is the interface, and it needs stating because **Turbo's default is
+silence**. When a fetch never comes back, `FormSubmission#requestFinished` runs in a `finally`: the
+button's text is restored and the busy state cleared, so the person sees a button that did nothing.
+When a frame's response arrives with no matching frame, `FrameView#missing` overwrites the frame with
+`<strong class="turbo-frame-error">Content missing</strong>` — developer text, in English, with no way
+back (both v8.0.x source). Every screen behind sign-in is somebody's work in progress, and they cannot
+tell a slow save from a lost one.
+
+### Which event is which failure — and the failure that is neither
+
+| what happened | event | scope |
+|---|---|---|
+| the request never arrived — network, timeout, offline | `turbo:fetch-request-error` (cancelable; `detail: { request, error }`). Fires only when the fetch itself rejects — **never for a response the server answered**, whatever its status | forms and frames |
+| the frame's response arrived without a matching `<turbo-frame id>` | `turbo:frame-missing` (cancelable; `detail: { response, visit }`). Cancel it to keep the default text out; `event.detail.visit(location)` navigates instead | frames |
+| a submission ended, however it ended | `turbo:submit-end` — `detail.success`, plus **either** `detail.fetchResponse` (a response came back, even a 4xx/5xx) **or** `detail.error` (it did not); never both | forms |
+| **the server answered 4xx / 5xx** | **not this doctrine.** Those have pages (design-system → Error 404 / 500), and a 422 re-renders the form with its errors. Dressing them as a failed request puts two explanations on one failure | — |
+
+### The interface, decided once
+
+- **A failed save is a state the person must act on, so it lives where their work is** — an
+  `Ui::Alert` (`destructive`, `role="alert"`) **above the form**, never a toast in the corner. The
+  design-system Toast entry draws the line: a toast is for something that *happened*; this is something
+  they must *do*. Copy: *"We couldn't save your changes. Your edits are still here — check your
+  connection and save again."* with a **Save again** button.
+- **The claim the copy makes must be true.** *"Your edits are still here"* is sayable only because
+  Turbo did not touch the fields — the request failed before any response, so nothing re-rendered. The
+  handler must not reset, disable or re-render the form; the copy constrains the implementation, not
+  the other way round.
+- **Retry re-sends the same request.** `form.requestSubmit()` on the failed form — that fires the
+  `submit` event Turbo intercepts; `form.submit()` bypasses Turbo — never merely dismisses the alert.
+  Measured downstream: the first test of this asserted only that the banner disappeared, and the retry
+  handler removes the banner itself, so deleting the resubmission left the test green. **The test
+  asserts that a second request was made.**
+- **A frame keeps its box and says it is empty.** On `turbo:frame-missing`, cancel the default and
+  render the design-system **Error empty state** inside the frame: the cause in plain words, **Try
+  again** calling the frame's own `reload()`, and an error identifier when the response carried one.
+  Not contents that no longer describe anything, and not Turbo's developer text.
+- **Failure markup is not a second definition of the component.** Clone the alert and the empty state
+  from server-rendered `<template>` elements in the layout, so the failed-state HTML is the same
+  `Ui::AlertComponent` / `Ui::EmptyStateComponent` output as everywhere else and a component change
+  reaches it. Failure HTML hand-written in JavaScript is the copy that drifts.
+- **Offline is the same failure with a better explanation.** `navigator.onLine === false` at the time
+  of the error lets the copy say *"You're offline"*; on the `online` event, offer the retry again. A
+  service worker must **not** replay non-GET requests — replaying a claim or a sign-in invents an
+  outcome — so the failure lands in the page, which is exactly where this catches it.
+
+### Registration timing is part of the contract — measured, not reasoned
+
+An eager frame (`src` without `loading="lazy"`) **starts its fetch as soon as the element connects**
+(`FrameController#connect` → `#loadSourceURL`), during HTML parsing and before Stimulus has started
+and connected any controller. A `turbo:frame-missing` listener registered in a controller's
+`connect()` therefore arrives **after** the event it wanted: Turbo has already written its text into
+the frame. Downstream (Retask #258) the frame case **failed on every run as a Stimulus controller and
+passed as a module**. So: **register the failure listeners beside the import that starts Turbo** — a
+plain module imported in `application.js` next to `@hotwired/turbo-rails`, listening on `document`.
+Lazy frames only defer the race to the first scroll; the rule is the same.
+
+```js
+// app/javascript/request_failures.js — imported in application.js BESIDE turbo-rails.
+// A module, not a Stimulus controller: eager frames fetch on connect, before Stimulus starts.
+document.addEventListener("turbo:fetch-request-error", (event) => {
+  const target = event.target                       // the <form>, or the <turbo-frame>, that made the request
+  if (target instanceof HTMLFormElement) {
+    showSaveFailed(target, () => target.requestSubmit())   // retry RE-SENDS; the test asserts the second request
+  } else if (target?.tagName === "TURBO-FRAME") {
+    showFrameFailed(target, () => target.reload())
+  }
+})
+
+document.addEventListener("turbo:frame-missing", (event) => {
+  event.preventDefault()                            // keep "Content missing" out of the page
+  const frame = event.target
+  showFrameFailed(frame, () => frame.reload())      // Try again reloads the frame's own src
+})
+```
+
+`showSaveFailed` and `showFrameFailed` clone the layout's `<template>`s; the alert goes before the
+form, the empty state replaces the frame's children. Neither touches the form's fields.
 
 ## 9. turbo-rails helper cheat sheet
 

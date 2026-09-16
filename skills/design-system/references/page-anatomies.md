@@ -377,7 +377,7 @@ A screen that ships only the first is the normal defect, and the fourth is the o
 | **Empty — no records** | the resource has none yet | [Empty state](components.md#empty-state) that says what would appear here and how to create the first |
 | **Empty — filtered out** | records exist; this query matches none | a **different** message naming the filter, and a way to clear it. Never the "create your first" copy — there is nothing to create |
 | **Loading** | a Turbo frame whose size is known | [Skeleton](components.md#skeleton--loading-placeholder) shaped like the rows, not a spinner |
-| **Error** | the query or frame failed | say so in place, and offer the retry; do not render an empty table, which reads as "no records" |
+| **Error** | the query or frame failed | say so in place — the Error [Empty state](components.md#empty-state) — and offer a retry that re-sends the same request; do not render an empty table, which reads as "no records". A request that never came back is the hotwire skill's `turbo.md` §8b |
 
 **The two empty states are not one state with two messages.** "No people yet — add the first" shown
 to someone who filtered to `role: auditor` is a lie about the data, and it hides the only useful
