@@ -8656,8 +8656,15 @@ The version is assigned at the promotion, never here.
   template without the catalogue line that expected it. `journey` joins the finding-source vocabulary,
   and `qa-reporter` reads both tables whole. Stand-ins are stack-neutral rules with the Rails recipe as
   a labelled example, and the two traps measured on the real run (mail from a runner dies with the
-  process; a QA server does not reload) are written where the recipe is. Maintainer decision: the
-  comment on #993, 16 Sep 2026.
+  process; a QA server does not reload) are written where the recipe is. **Accepted against the app
+  it was written from** (`docs/evidence/qa/2026-09-16-journey-walker-acceptance/`): told which
+  journeys to walk and nothing about what to find, it rediscovered all three defects the shipped
+  layers had missed — the dead-end applicant dashboard, Admin's unreachable offboard/suspend with
+  demo data off, and the thread announcing a merely-issued contract as signed — plus eight more,
+  including that **the QA configuration's own declared stand-in was stale**: the call now requires a
+  keyword it does not pass, and the walker recorded the step Blocked rather than inventing one,
+  which is the stand-in rule holding under pressure rather than being asserted. Maintainer decision:
+  the comment on #993, 16 Sep 2026.
 
 ### 2026-09-16 (release v1.128.0)
 
