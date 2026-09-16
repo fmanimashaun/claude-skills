@@ -347,6 +347,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow config reader",
      ("python3", "plugins/qa-flow/scripts/qa_config.py", "--selftest")),
     ("qa-flow blast radius", ("python3", "plugins/qa-flow/scripts/blast_radius.py", "--selftest")),
+    # #993: the walk refuses to start without personas, sign-in recipes and journey documents.
+    ("qa-flow walkthrough plan", ("python3", "plugins/qa-flow/scripts/walkthrough_plan.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),

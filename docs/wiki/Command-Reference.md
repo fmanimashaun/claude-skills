@@ -115,6 +115,11 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 - `/qa-flow:certify` — Comprehensive release certification before dev->main.
 
 
+**Ungrouped** — shipped but not yet placed in a group above
+
+- `/qa-flow:walkthrough` — Walk every persona's whole journey in a live browser — every page, every action, every hand-off to the next persona, at three widths — judged against the spec's intent, not a case title.
+
+
 
 ## `pipeline`
 
@@ -145,4 +150,4 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 ---
 
-**46 commands** across 4 plugins.
+**47 commands** across 4 plugins.

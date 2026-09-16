@@ -76,7 +76,7 @@ decides whether you file **18 issues or 773**.
   same severity, and the report must be ordered that way — the highest-impact defect must not
   sit below a single-page cosmetic one.
 - **Apply this to every finding source** — a11y, api, emulation, forms, functional, interaction,
-  keyboard, links, perf, runtime, security, visual. It is not an a11y-only rule; that is only
+  journey, keyboard, links, perf, runtime, security, visual. It is not an a11y-only rule; that is only
   where it was measured. This list is the `Source` vocabulary the checker enforces, and its
   selftest holds the two in step — when they drifted, `keyboard` and `forms` were accepted by the
   checker while this sentence still denied they existed.
@@ -109,6 +109,16 @@ guarantee itself rather than a proxy for it:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validate_evidence.py" \
   "qa/reports/<date>-<slug>-findings.csv"
 ```
+
+**Two row kinds arrive only from `journey-walker` (#993), and both are validated before you read
+them**: `handoffs.csv` (one row per hand-off checkpoint — who acted, who should see the consequence,
+whether it `Landed` or went `Missing` on the recipient's page) and `notifications.csv` (one row per
+template the catalogue names at a step — `Sent`, `Missing`, or `Unexpected`). A `Missing` row of either
+kind is a distinct defect with `Source` = `journey`; its signature is `(journey, step, template-or-surface)`,
+not the route, because the same missing hand-off shows on every page the recipient could have seen it.
+The report gets a section for each kind: the hand-off table and the notification table are read whole,
+not only as findings, because a walk that shows twelve landed hand-offs is evidence too. Run
+`validate_evidence.py` on both files first; a row it refuses is not counted.
 
 **Defects** → one issue per **distinct** defect, never per instance:
 `gh issue create --title "[S2][e2e] <summary>" --label "qa,from-qa,severity:s2"` with

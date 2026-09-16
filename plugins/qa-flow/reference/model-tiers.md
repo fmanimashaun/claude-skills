@@ -39,6 +39,7 @@ than merely stated.
 | `functional-tester` | judgement | `inherit` | — |
 | `exploratory-tester` | judgement | `inherit` | — |
 | `e2e-tester` | judgement | `inherit` | — |
+| `journey-walker` | judgement | `inherit` | — |
 | `api-contract-tester` | judgement | `inherit` | — |
 | `security-scanner` | judgement | `inherit` | — |
 | `a11y-auditor` | mechanical | `haiku` | `@axe-core/playwright` returns the violation list; `validate_evidence.py` rejects an a11y row without a rule id and a screenshot |

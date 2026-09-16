@@ -19,6 +19,7 @@ One line each, from the command's own description; the command file is the autho
 - `/qa-flow:setup-qa` — Set up the independent QA workspace — detects the codebase's testing signals and PROPOSES a stack (qa/qa.config.yml) you confirm/override, then scaffolds only the chosen tools, seed personas, and case catalogue.
 - `/qa-flow:smoke` — Reuse a running server or launch the app (stack-aware), then confirm it actually BOOTS and its key routes respond, before any deeper QA.
 - `/qa-flow:verify` — Independent QA verification after a feature merges to dev — smoke gate, sanity, and targeted regression to prove the change broke nothing previously certified.
+- `/qa-flow:walkthrough` — Walk every persona's whole journey in a live browser — every page, every action, every hand-off to the next persona, at three widths — judged against the spec's intent, not a case title.
 
 ## Platform note
 
