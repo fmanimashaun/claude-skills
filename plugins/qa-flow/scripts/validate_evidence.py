@@ -1565,7 +1565,7 @@ FINDING_SEVERITIES = {"s1", "s2", "s3"}
 # Every finding source must be able to land here -- #118 is explicit that dedupe applies to
 # all of them, not just the a11y pass where the 773 was found.
 FINDING_SOURCES = {"a11y", "links", "runtime", "visual", "interaction", "functional", "api",
-                   "perf", "security", "keyboard", "forms", "emulation"}
+                   "perf", "security", "keyboard", "forms", "emulation", "journey"}
 _SEVERITY_RANK = {"s1": 0, "s2": 1, "s3": 2}
 
 
@@ -1708,8 +1708,116 @@ FINDINGS = Profile(
 )
 
 
+# ---------------------------------------------------------------------------------------
+# Profiles: journey-walker's hand-off and notification rows (#993)
+#
+# The defects a journey walk exists for live BETWEEN personas and in mail that was never sent, and
+# neither has a row in any profile above: every one of those is about one page, one persona. A
+# hand-off row records that persona A did something and persona B did (or did not) see the
+# consequence where the spec says it lands; a notification row records that the catalogue names a
+# template at a step and the dev inbox did (or did not) show it. Both are findings when the answer
+# is "did not", and both were being recorded as prose until this profile refused prose.
+# ---------------------------------------------------------------------------------------
+HANDOFF_SEVERITIES = {"s1", "s2", "s3"}
+
+
+def _handoff_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    findings: list[str] = []
+    if _norm(row["Recipient"]).lower() == _norm(row["Actor"]).lower():
+        findings.append(
+            f"{where}: Recipient equals Actor ({row['Actor']!r}) -- a hand-off to yourself is a page "
+            "check, not a hand-off; the row belongs in pages.csv"
+        )
+    if status == "missing":
+        if not row["Screenshot"]:
+            findings.append(f"{where}: Missing without a Screenshot -- the recipient's page that lacks "
+                            "the consequence is the evidence, and this row has none")
+        if _norm(row["Severity"]).lower() not in HANDOFF_SEVERITIES:
+            findings.append(f"{where}: Missing without a Severity in {sorted(HANDOFF_SEVERITIES)} -- a "
+                            "hand-off that failed is a defect and is graded like one")
+    elif status == "landed" and _norm(row["Severity"]) and _norm(row["Severity"]).lower() != "none":
+        findings.append(f"{where}: Landed but graded {row['Severity']!r} -- a consequence that showed "
+                        "where the spec says is not a defect; grade the row that failed")
+    if not _norm(row["Expected Surface"]):
+        findings.append(f"{where}: no Expected Surface -- the spec names where the consequence lands, "
+                        "and without it 'Landed' cannot be checked against anything")
+    return findings
+
+
+HANDOFFS = Profile(
+    name="handoffs",
+    written_by="journey-walker (the consequence of one persona's act, seen as the next persona)",
+    columns=(
+        "Journey",
+        "Step",
+        "Actor",
+        "Action",
+        "Recipient",
+        "Expected Surface",
+        "Status",
+        "HTTP",
+        "Requested URL",
+        "Final URL",
+        "Assertion",
+        "Screenshot",
+        "Severity",
+        "Notes",
+    ),
+    result_statuses=frozenset({"landed", "missing"}),
+    ident_columns=("Journey", "Step"),
+    extra=_handoff_extra,
+)
+
+
+def _notification_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    findings: list[str] = []
+    if not _norm(row["Template"]):
+        findings.append(f"{where}: no Template -- the row is about a catalogue entry, and names none")
+    if status == "sent":
+        if not _norm(row["Observed"]):
+            findings.append(f"{where}: Sent with nothing Observed -- record the subject or the inbox "
+                            "line you read, or the row asserts a mail nobody saw")
+        if not _norm(row["Inbox Evidence"]):
+            findings.append(f"{where}: Sent without Inbox Evidence -- the inbox capture is what makes "
+                            "this row checkable by a human")
+    elif status == "missing":
+        if not _norm(row["Expected By"]):
+            findings.append(f"{where}: Missing without Expected By -- name the catalogue or spec line "
+                            "that says this template goes at this step, or it is a guess")
+        if _norm(row["Severity"]).lower() not in HANDOFF_SEVERITIES:
+            findings.append(f"{where}: Missing without a Severity in {sorted(HANDOFF_SEVERITIES)}")
+    elif status == "unexpected" and not _norm(row["Notes"]):
+        findings.append(f"{where}: Unexpected with empty Notes -- say what was sent and why the "
+                        "catalogue names nothing here")
+    return findings
+
+
+NOTIFICATIONS = Profile(
+    name="notifications",
+    written_by="journey-walker (the dev inbox read after every step, against the catalogue)",
+    columns=(
+        "Journey",
+        "Step",
+        "Template",
+        "Recipient",
+        "Status",
+        "Expected By",
+        "Observed",
+        "Inbox Evidence",
+        "Severity",
+        "Notes",
+    ),
+    result_statuses=frozenset({"sent", "missing", "unexpected"}),
+    ident_columns=("Journey", "Step", "Template"),
+    extra=_notification_extra,
+    # One row is about a template at a step, read in the inbox -- not a page visit. The shared
+    # HTTP/URL rules would force the writer to pick the inbox URL and call it the row's location.
+    page_identity=False,
+)
+
+
 PROFILES: tuple[Profile, ...] = (
-    FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, EMULATION, PERF, FINDINGS,
+    FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, EMULATION, PERF, FINDINGS, HANDOFFS, NOTIFICATIONS,
 )
 
 # Kept as a module-level alias: the functional contract is the one mirrored in

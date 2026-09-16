@@ -2,13 +2,13 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**28 shipped agents · 46 shipped commands · 102 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 47 shipped commands · 103 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.39.3 | 5 | 12 | 5 | 18 |
 | `pipeline` | 1.3.2 | 2 | 8 | 2 | 1 |
-| `qa-flow` | 1.29.0 | 10 | 7 | 10 | 14 |
+| `qa-flow` | 1.30.0 | 11 | 8 | 11 | 15 |
 | `rails-flow` | 1.40.2 | 11 | 19 | 11 | 23 |
 
 ## Agents
@@ -39,12 +39,13 @@
 | `a11y-auditor` | mechanical · haiku | Read, Grep, Glob, Write, Bash | `/qa-flow:certify`, `/qa-flow:crawl`, `/qa-flow:verify` | `@axe-core/playwright` returns the violation list; `validate_evidence.py` rejects an a11y row without a rule id and a screenshot |
 | `api-contract-tester` | judgement · inherit | Read, Grep, Glob, Bash | `/qa-flow:certify`, `/qa-flow:verify` | — |
 | `case-author` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/qa-flow:cases`, `/qa-flow:setup-qa` | — |
-| `e2e-tester` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/qa-flow:certify`, `/qa-flow:verify` | — |
+| `e2e-tester` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/qa-flow:certify`, `/qa-flow:verify`, `/qa-flow:walkthrough` | — |
 | `exploratory-tester` | judgement · inherit | Read, Grep, Glob, Write, Bash | `/qa-flow:certify`, `/qa-flow:verify` | — |
-| `functional-tester` | judgement · inherit | — | `/qa-flow:functional`, `/qa-flow:setup-qa` | — |
+| `functional-tester` | judgement · inherit | — | `/qa-flow:functional`, `/qa-flow:setup-qa`, `/qa-flow:walkthrough` | — |
+| `journey-walker` | judgement · inherit | Read, Grep, Glob, Write, Bash | `/qa-flow:walkthrough` | — |
 | `perf-tester` | mechanical · haiku | Read, Grep, Glob, Write, Bash | `/qa-flow:certify`, `/qa-flow:verify` | k6 threshold exit status, and `validate_evidence.py`'s per-route performance profile rejects a fabricated or incomplete row |
 | `qa-lead` | judgement · inherit | Read, Grep, Glob, Write, Bash | `/qa-flow:cases`, `/qa-flow:certify`, `/qa-flow:setup-qa`, `/qa-flow:verify` | — |
-| `qa-reporter` | mechanical · haiku | Read, Grep, Glob, Write, Bash | `/qa-flow:certify`, `/qa-flow:setup-qa`, `/qa-flow:verify` | `evidence_manifest.py` — a report that does not reconcile against the manifest is rejected |
+| `qa-reporter` | mechanical · haiku | Read, Grep, Glob, Write, Bash | `/qa-flow:certify`, `/qa-flow:setup-qa`, `/qa-flow:verify`, `/qa-flow:walkthrough` | `evidence_manifest.py` — a report that does not reconcile against the manifest is rejected |
 | `security-scanner` | judgement · inherit | Read, Grep, Glob, Bash | `/qa-flow:certify` | — |
 
 ### `rails-flow`
@@ -112,6 +113,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow route crawl | `qa-flow` | `python3 plugins/qa-flow/scripts/crawl_report.py --selftest` | selftest |
 | qa-flow theme parity | `qa-flow` | `python3 plugins/qa-flow/scripts/theme_parity.py --selftest` | selftest |
 | qa-flow visual baselines | `qa-flow` | `python3 plugins/qa-flow/scripts/visual_baseline.py --selftest` | selftest |
+| qa-flow walkthrough plan | `qa-flow` | `python3 plugins/qa-flow/scripts/walkthrough_plan.py --selftest` | selftest |
 | acceptance criteria | `rails-flow` | `python3 plugins/rails-flow/scripts/check_criteria.py --selftest` | selftest |
 | curated drift signal | `rails-flow` | `python3 plugins/rails-flow/scripts/check_drift_signal.py --selftest` | selftest |
 | design-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/design-flow/agents --tiers plugins/design-flow/reference/model-tiers.md` | live check |
@@ -212,6 +214,7 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `functional-tester` | judgement | — |
 | `exploratory-tester` | judgement | — |
 | `e2e-tester` | judgement | — |
+| `journey-walker` | judgement | — |
 | `api-contract-tester` | judgement | — |
 | `security-scanner` | judgement | — |
 | `a11y-auditor` | mechanical | `@axe-core/playwright` returns the violation list; `validate_evidence.py` rejects an a11y row without a rule id and a screenshot |

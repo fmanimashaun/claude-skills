@@ -118,7 +118,7 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <details>
 <summary><b>qa-flow</b> — independent verification</summary>
 
-`setup-qa` `cases` `verify` `certify` `functional` `smoke` `crawl`
+`setup-qa` `cases` `verify` `certify` `functional` `smoke` `crawl` `walkthrough`
 
 </details>
 

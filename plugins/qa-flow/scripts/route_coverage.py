@@ -94,6 +94,12 @@ VISIT_ONLY_ARTIFACTS: dict[str, str] = {
 # for routes nobody visited and inflate the number this tool exists to make honest.
 ROUTE_LESS: dict[str, str] = {
     "findings": "Example Routes lists up to 3 examples of a deduped finding, not a visit log",
+    # #993. A journey walk records every page it visits in pages.csv (the functional profile), which
+    # credits coverage once. Its hand-off rows revisit the recipient's page to record a CONSEQUENCE,
+    # so crediting them would count one visit twice; its notification rows are read in the dev
+    # inbox, which is not a route under test.
+    "handoffs": "the recipient's page is already credited by the same walk's pages.csv; this row records the consequence",
+    "notifications": "read in the dev inbox against the catalogue, not on a route under test",
 }
 
 # Evidence for the second axis. `layout_fit.py` grades this file; here it is read only for WHICH
