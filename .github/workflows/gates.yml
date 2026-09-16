@@ -66,6 +66,15 @@ jobs:
       - name: Gate sweep
         run: python3 scripts/maintainer_doctor.py --gates-only ${{ github.event_name == 'pull_request' && '--fast' || '' }}
 
+      # The PROMOTION pre-flight (#990): a pull request whose base is `main` is the one merge that
+      # publishes, so it is the one place `### Unreleased` must not survive. The v1.127.0 promotion
+      # carried a qa-flow Unreleased block onto main -- shipped, unversioned, notes never published --
+      # against a rule CLAUDE.md stated and nothing enforced. `--promotion` is NOT in the doctor's
+      # sweep on purpose: on dev, Unreleased is the normal state between promotions.
+      - name: Promotion carries no Unreleased heading
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        run: python3 scripts/extract_release_notes.py --check --all-tags --promotion
+
       # `dist/` drift is a DIAGNOSTIC rather than a gate, so `--gates-only` does not cover it. It is
       # checked here too because release.yml checks it only at release time, on `main`, AFTER merge
       # -- which means a PR that changed a skill without repackaging would go green here and break
