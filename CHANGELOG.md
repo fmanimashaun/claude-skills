@@ -8616,6 +8616,15 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### 2026-09-16 (release v1.128.0)
 
+- **A version-only bump, deliberately — `plugins/qa-flow/.claude-plugin/plugin.json` 1.28.0 → 1.29.0.**
+  The change below (#979) reached `main` in the v1.127.0 promotion **under a `### Unreleased`
+  heading that the arm never converted**: users installing from `main` have had the new agent
+  behaviour since 16 Sep under version 1.28.0, its notes were never published, and the version
+  never moved. This bump changes no qa-flow content against `main`; it gives the shipped change a
+  version and publishes its notes. The pre-flight rule it violated — a promotion must carry no
+  `Unreleased` heading — is stated in CLAUDE.md and `release-manager`, and nothing enforced it;
+  #990 tracks that beside the extractor gap.
+
 - **Author the test; do not be the test runner — `plugins/qa-flow/agents/e2e-tester.md`,
   `plugins/qa-flow/agents/exploratory-tester.md`** (#979). A `playwright-tester` skill was proposed;
   it is not added, because `e2e-tester` already owns browser testing and is the broader of the two
