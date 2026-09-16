@@ -47,7 +47,20 @@ bookkeeping. A multi-component release has to say which component version a note
 old output — headings stripped, bullets concatenated — could not. Single-block releases gain one
 heading line, which is strictly more informative and needs no special case.
 
-Exit codes:  0 = ok · 1 = --check found a problem · 2 = not this repo
+TWO MORE WHOLE-FILE RULES (#990), each from a release that published less than it shipped:
+
+  * **heading-order.** v1.126.0 and v1.127.0 headed the rails-stack block with the SKILL's own
+    version -- `(release v1.57.0)`, `(release v1.58.0)` -- tags that happen to exist from old
+    marketplace history, so `--all-tags` passed and both releases published only the Repository
+    bullet. Within one `## ` section a `(release vX)` heading may never be NEWER than the heading
+    above it: measured over all 242 headings, that rule fires on exactly those two and nothing else.
+  * **no-unreleased, under `--promotion`.** v1.127.0 carried a qa-flow `### Unreleased` block onto
+    `main`: shipped, unversioned, notes never published. CLAUDE.md and `release-manager` both said a
+    promotion must carry none, and nothing enforced it. `--promotion` refuses any `### Unreleased`;
+    it runs on the promotion PR (gates.yml, base `main`), in release.yml before publishing, and in
+    release_local.sh -- never on `dev`, where Unreleased is the normal state between promotions.
+
+Exit codes:  0 = ok · 1 = --check found a problem · 2 = not this repo · 3 = ran, could not check everything
 
 Stdlib only.
 """
@@ -194,6 +207,51 @@ def _check_all_tags(text: str, tags: set[str], check_tags: bool = True, arming: 
     return findings
 
 
+SECTION = re.compile(r"^## ")
+UNRELEASED = re.compile(r"^### Unreleased\b")
+
+
+def _version_key(tag: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in tag.lstrip("v").split("."))
+
+
+def _check_order(text: str) -> list[str]:
+    """Within one `## ` section, a `(release vX)` heading may never be newer than the heading above it.
+
+    The CHANGELOG is newest-first per section, so a heading whose version is GREATER than the one
+    above it can only mean the heading above named something other than the tag that shipped it --
+    in both real cases, the component's own version. `--all-tags` cannot see that when the stale
+    tag happens to exist; this can, and it is a join over the file rather than a list of exceptions.
+    """
+    findings: list[str] = []
+    prev: tuple[tuple[int, ...], str, int] | None = None
+    for lineno, line in enumerate(text.split("\n"), 1):
+        if SECTION.match(line):
+            prev = None
+            continue
+        m = VERSION_HEADING.match(line)
+        if not m or not PUBLISHING_SHAPE.search(line):
+            continue
+        tag = m.group(1)
+        key = _version_key(tag)
+        if prev is not None and key > prev[0]:
+            findings.append(
+                f"{CHANGELOG}:{lineno}: `(release {tag})` sits below `(release {prev[1]})` (line {prev[2]}) in "
+                f"the same section and is NEWER — the heading above names a component's own version, not "
+                f"the tag that shipped it, so its notes publish nowhere (the v1.126.0 / v1.127.0 defect)")
+        prev = (key, tag, lineno)
+    return findings
+
+
+def _check_no_unreleased(text: str) -> list[str]:
+    """A promotion must carry no `### Unreleased` heading (CLAUDE.md, Versioning)."""
+    return [
+        f"{CHANGELOG}:{lineno}: `### Unreleased` at promotion time — this block would reach `main` "
+        f"unversioned with its notes unpublished (the qa-flow #979 block did, in v1.127.0). Arm it first."
+        for lineno, line in enumerate(text.split("\n"), 1) if UNRELEASED.match(line)
+    ]
+
+
 # ---------------------------------------------------------------------------------------------
 # Selftest
 # ---------------------------------------------------------------------------------------------
@@ -281,6 +339,33 @@ def _selftest() -> int:
     check("all-tags: a heading naming no version at all is not a finding",
           _check_all_tags("### 2026-08-20\n\n- x\n", set()) == [])
 
+    # HEADING ORDER (#990). The rails-stack block headed `(release v1.58.0)` above `(release v1.124.0)`.
+    check("order: a clean newest-first file has no findings", _check_order(two) == [])
+    inverted = two.replace("(release v1.91.2)", "(release v1.124.0)", 1)   # older heading, newer version
+    found = _check_order(inverted)
+    check("order: a heading NEWER than the one above it in its section is a finding",
+          len(found) == 1 and "v1.124.0" in found[0] and "v1.92.0" in found[0] and "NEWER" in found[0])
+    check("order: the finding carries the line number", bool(found) and ":9:" in found[0])
+    # The next section's top is NEWER than this section's bottom in every real CHANGELOG, so the
+    # comparison must reset at `## ` — without the reset, v1.92.0 below v1.9.0 would be a finding.
+    check("order: sections are independent — the next section's top may be newer than this one's bottom",
+          _check_order("## a\n\n### x (release v1.10.0)\n\n- x\n\n### y (release v1.9.0)\n\n- y\n\n"
+                       "## b\n\n### z (release v1.92.0)\n\n- z\n") == [])
+    check("order: headings without the publishing shape are not compared",
+          _check_order(two.replace("(release v1.91.2)", "(v1.124.0)")) == [])
+    # Lexically "100" < "99", so a string compare would call v1.99.0 the newer and fire on a
+    # correct file; numerically 100 > 99 and the file is clean.
+    check("order: numeric, not lexical — v1.99.0 below v1.100.0 is the correct order",
+          _check_order("## s\n\n### a (release v1.100.0)\n\n- x\n\n### b (release v1.99.0)\n\n- y\n") == [])
+
+    # NO UNRELEASED AT PROMOTION (#990). The qa-flow block that rode v1.127.0 onto main.
+    check("promotion: a file without Unreleased is clean", _check_no_unreleased(two) == [])
+    ghosted = two.replace("### 1.49.0 — 2026-08-20 (release v1.92.0)", "### Unreleased")
+    found = _check_no_unreleased(ghosted)
+    check("promotion: an Unreleased heading is a finding", len(found) == 1 and "unversioned" in found[0])
+    check("promotion: prose mentioning Unreleased is not a heading",
+          _check_no_unreleased("## s\n\n- notes go under `### Unreleased` until the arm\n") == [])
+
     # The preserved anchor: prose mentioning the tag must NOT start a grab.
     prose = """# CHANGELOG
 
@@ -354,6 +439,7 @@ def _selftest() -> int:
     tag = current_tag()
     real = _check(text, tag)
     check(f"the committed CHANGELOG publishes completely for {tag}", real == [])
+    check("the committed CHANGELOG's headings are in order in every section", _check_order(text) == [])
     _, rn = render(text, tag)
     check("the real release has at least one block", rn >= 1)
 
@@ -378,6 +464,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--all-tags", action="store_true",
                     help="with --check: every `(release vX)` heading must name an existing git tag, and every"
                          " heading naming a version must use the shape that publishes")
+    ap.add_argument("--promotion", action="store_true",
+                    help="with --check: refuse any `### Unreleased` heading — for the promotion PR and the"
+                         " release, never for dev, where Unreleased is the normal state (#990)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
 
@@ -400,6 +489,9 @@ def main(argv: list[str] | None = None) -> int:
             # If that half is clean, exit 3: ran, could not check everything -- a SKIP, not a pass.
             tags_unseen = not tags
             findings += _check_all_tags(text, tags, check_tags=not tags_unseen, arming=tag)
+            findings += _check_order(text)
+        if a.promotion:
+            findings += _check_no_unreleased(text)
         if findings:
             print(f"{len(findings)} finding(s) for {tag}:", file=sys.stderr)
             for f in findings:
