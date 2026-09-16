@@ -154,7 +154,8 @@ same failure conditions.
   minor for capabilities. **Every bump gets a CHANGELOG entry**.
 - **One `### … (release vX.Y.Z)` block per COMPONENT that this promotion bumps**, every heading naming
   the tag that ships. `extract_release_notes.py --check --all-tags` refuses a heading for a tag that
-  will never exist and a heading without the publishing shape (#699, #834). Do not put the extractor
+  will never exist, a heading without the publishing shape, and a heading newer than the one above it
+  in its section (#699, #834, #990); `--promotion` refuses any `Unreleased` (the promotion PR, `release.yml`). Do not put the extractor
   back into the shells (`duplicated-release-extractor`).
 - **Promote per coherent slice**, not per issue and not when the queue is empty. Maintainer-only
   changes ship as a metadata patch with one Repository block.

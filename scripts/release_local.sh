@@ -181,8 +181,9 @@ trap 'rm -f "$NOTES"' EXIT
 # FAIL, not warn (#832). This printed "Publishing anyway" -- so the `release notes complete` gate
 # that BLOCKS a hosted release could not block here, in the one path that exists for when the
 # hosted runner is unavailable. A fallback that relaxes a gate is not a mirror of the workflow.
-"$PY" scripts/extract_release_notes.py --check \
-  || fail "the notes for $TAG are incomplete or would not publish — see the findings above. Fix the CHANGELOG heading(s), then re-run."
+# Same flags as release.yml (#990): whole-file heading order and tag existence, and no Unreleased.
+"$PY" scripts/extract_release_notes.py --check --all-tags --promotion --tag "$TAG" \
+  || fail "the notes for $TAG are incomplete, out of order, or an Unreleased heading remains — see the findings above. Fix the CHANGELOG heading(s), then re-run."
 printf '\nInstall: /plugin marketplace add %s\n' "$REPO" >> "$NOTES"
 
 say "--- notes ---"

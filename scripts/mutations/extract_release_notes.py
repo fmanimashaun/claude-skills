@@ -69,5 +69,38 @@ GUARD = Guard(
             "    if False:",
             "no block is a CHECK finding",
         ),
+
+        # #990. Two releases published only the Repository bullet because a component heading named
+        # a stale-but-existing tag, and one promotion carried an Unreleased block onto main.
+        Mutation(
+            "the heading-order rule is switched off, so a component-version heading passes again",
+            "        if prev is not None and key > prev[0]:",
+            "        if False:",
+            "order: a heading NEWER than the one above it in its section is a finding",
+        ),
+        Mutation(
+            "the order comparison inverts and refuses every correct newest-first section",
+            "        if prev is not None and key > prev[0]:",
+            "        if prev is not None and key < prev[0]:",
+            "order: a clean newest-first file has no findings",
+        ),
+        Mutation(
+            "sections stop resetting the comparison, so the top of the next section is compared to the bottom of the last",
+            "        if SECTION.match(line):\n            prev = None\n            continue",
+            "        if SECTION.match(line):\n            continue",
+            "order: sections are independent",
+        ),
+        Mutation(
+            "the version key becomes lexical, so v1.9.0 reads newer than v1.92.0",
+            '    return tuple(int(x) for x in tag.lstrip("v").split("."))',
+            '    return tuple(x for x in tag.lstrip("v").split("."))',
+            "order: numeric, not lexical",
+        ),
+        Mutation(
+            "the Unreleased rule matches nothing, so a ghost block rides the promotion",
+            '        for lineno, line in enumerate(text.split("\\n"), 1) if UNRELEASED.match(line)',
+            '        for lineno, line in enumerate(text.split("\\n"), 1) if False',
+            "promotion: an Unreleased heading is a finding",
+        ),
     ),
 )

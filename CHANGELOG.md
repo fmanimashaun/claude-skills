@@ -7,6 +7,24 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The release-notes gate can now see the two ways a release publishes less than it shipped —
+  `scripts/extract_release_notes.py`, `scripts/mutations/extract_release_notes.py`,
+  `.github/workflows/gates.yml`, `.github/workflows/release.yml`, `scripts/release_local.sh`** (#990).
+  **Heading order:** within one `## ` section a `(release vX)` heading may never be newer than the
+  heading above it. v1.126.0 and v1.127.0 headed the rails-stack block with the *skill's* version
+  (`v1.57.0`, `v1.58.0`) — tags that exist from old marketplace history — so `--all-tags` passed
+  and both releases published only the Repository bullet. Measured over all 242 release headings,
+  the rule fires on exactly those two and nothing else; **those two headings are corrected here to
+  the tags that shipped them**, and the published notes for both releases were repaired from the
+  corrected file. **No `Unreleased` at promotion:** `--promotion` refuses any `### Unreleased`
+  heading; it runs on a pull request whose base is `main`, in `release.yml` before publishing (fail
+  closed), and in `release_local.sh` — never on `dev`, where `Unreleased` is the normal state. The
+  v1.127.0 promotion carried a qa-flow `Unreleased` block onto `main`, shipped unversioned with its
+  notes unpublished, against a rule CLAUDE.md and `release-manager` both stated and nothing
+  enforced. Each rule has selftest fixtures in both directions and a mutation guard.
+
 ### 2026-09-16 (release v1.128.0)
 
 - **The marketplace version tracks two component releases.** `metadata.version` moves with
@@ -4953,7 +4971,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   is fixed — period first, filters, export alone on the right, separating configuration from
   extraction. Our design decision, recorded on the issue.
 
-### 2026-09-16 (release v1.58.0)
+### 2026-09-16 (release v1.127.0)
 
 - **Adaptive is now a stated position, with the bands, the panes and the navigation —
   `skills/design-system/references/responsive.md`, `page-anatomies.md`, `components.md`,
@@ -4994,7 +5012,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   row click is a frame update and nothing moves focus, which leaves a keyboard reader in the list
   while the record beside them silently changes.
 
-### 2026-09-15 (release v1.57.0)
+### 2026-09-15 (release v1.126.0)
 
 - **Tabs are fully specified except for how many — `skills/design-system/references/components.md`**
   (#971). The entry ruled the ARIA wiring thoroughly and said nothing about capacity, so an app
