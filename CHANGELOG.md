@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-16 (release v1.127.0)
+
+- **The marketplace version tracks a rails-stack skill release** (#972). No repository change of
+  its own: `metadata.version` moves with `rails-stack` 1.57.0 → 1.58.0, which carries the adaptive
+  layout doctrine — the size bands, the pane model, which navigation belongs at which width, what
+  happens above 1536px, and the three canonical layouts. Found by measuring a downstream app's
+  shell rather than by reading our own docs: it switched at `md` and put a 236px sidebar in a 768px
+  viewport, against no rule at all.
+
 ### 2026-09-15 (release v1.126.0)
 
 - **The marketplace version tracks a rails-stack skill release** (#963, #964, #971). No repository
@@ -4774,6 +4783,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 2026-09-16 (release v1.58.0)
+
+- **Adaptive is now a stated position, with the bands, the panes and the navigation —
+  `skills/design-system/references/responsive.md`, `page-anatomies.md`, `components.md`,
+  `interaction-stimulus.md`** (#972). `responsive.md` was a good fluid-first doctrine that stopped
+  at `2xl` and never said what a screen becomes when scaling is no longer enough. Nothing named a
+  pane count, nothing said which navigation belongs at which width, and nothing covered a 2560px
+  monitor — so a consuming app switched its whole shell at `md` and showed a **236px sidebar in a
+  768px viewport**, 31% of the screen, against no rule at all.
+
+  **The sidebar has THREE states across the bands, not two**: drawer below `sm`, icon rail
+  (`4rem`) from `sm`, expanded rail (`lg:w-72`) from `lg`. The middle one is what shells skip.
+
+  **Verified before it was written** (doctrine-verifier, against m3.material.io and
+  developer.android.com, September 2026): the breakpoint dp values (Compact 0–599, Medium 600–839,
+  Expanded 840–1199, Large 1200–1599, Extra-large 1600+), the margins (16dp compact, 24dp
+  everywhere above), *"Each pane in a two-pane layout should take up 50% of the window width"*,
+  the supporting pane's fixed 360dp at Expanded and 412dp at Large, list-detail's back-button and
+  selected-state rules, *"Design for breakpoints instead of specific devices"*, and the feed's
+  `GridCells.Adaptive(minSize = 180.dp)`. **Two claims were corrected by that verification rather
+  than shipped**: the bar-vs-rail split is the **Android Compose default**, not M3 design guidance
+  — the drawer in that page is a manual override in a "Customize navigation types" sample — and
+  "two panes at Expanded and above" is the **list-detail** layout's own table, while M3 keeps one
+  pane valid through Large and allows three at Extra-large. M3 also **renamed window size classes
+  to breakpoints** in May 2026 while the Compose API kept `WindowSizeClass`, so both names are
+  current in different places and the doctrine says which is which.
+
+  **The rule at compact is ours, and it replaces an absolute with a test.** `coverage.md` said a
+  bottom navigation is *"never as a web nav"*; the measured defect is narrower — a bar holds four
+  or five items, so an app rendering `items.first(4)` of an eight-item rail left Sign out, Help and
+  Account unreachable on a phone and grew a second menu in the header to carry them. The rule is
+  now **reachability**: at compact the whole rail must be reachable from one control, which a
+  drawer satisfies by construction and a bar satisfies only if it holds every destination.
+
+  `page-anatomies.md` gains the three canonical layouts — **list-detail**, **supporting pane** and
+  **feed** — expressed in our own primitives, with `Layout::Sidebar` and `grid-auto` doing
+  intrinsically what M3 describes with breakpoints. List-detail needs the one behaviour no mixin
+  covers, so `list-detail` is now a named controller in `interaction-stimulus.md`: at two panes a
+  row click is a frame update and nothing moves focus, which leaves a keyboard reader in the list
+  while the record beside them silently changes.
+
 ### 2026-09-15 (release v1.57.0)
 
 - **Tabs are fully specified except for how many — `skills/design-system/references/components.md`**
@@ -8393,6 +8443,30 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **Author the test; do not be the test runner — `plugins/qa-flow/agents/e2e-tester.md`,
+  `plugins/qa-flow/agents/exploratory-tester.md`** (#979). A `playwright-tester` skill was proposed;
+  it is not added, because `e2e-tester` already owns browser testing and is the broader of the two
+  (stack-agnostic across Playwright / Cypress+Cucumber / Selenium+pytest-bdd / Appium, where the
+  candidate was Playwright-only) — a second home for one concern is what `plugin-boundaries` exists
+  to prevent. What the candidate had and this plugin did not is now folded in.
+  **The rationale was never stated**: tokens are spent once on authoring and execution is free
+  forever, so an agent could drift into driving a browser click-by-click without noticing it had
+  departed from anything — easy to do now that a Chrome DevTools MCP makes live driving
+  frictionless. **And the honest rule is not "always author specs"**: a live pass on a downstream
+  app found a table whose ARIA semantics were dropped because `role="row"` carried `display: grid`,
+  190kb of hidden markup on a form, and a record accepted as "complete" while empty — none
+  reachable from an assertion nobody had thought to write. So the boundary is stated instead:
+  **explore live to discover, codify as a spec so it never needs discovering again**, and a
+  confirmed exploratory finding now leaves with a charter rather than a recommendation. The fix
+  loop also gains a floor — the classification decides what you edit, a timing failure gets an
+  explicit wait on *that action* rather than a raised global timeout, **three attempts then stop and
+  ask**, and the rerun is reported even when it is green. `exploratory-tester` gains the two
+  self-checks that pass measured this session: reading a transient message after it has gone, and
+  guessing a URL then reporting its 404.
+
 
 ### 2026-09-07 (release v1.125.0)
 

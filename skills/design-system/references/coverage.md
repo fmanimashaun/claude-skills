@@ -139,7 +139,7 @@ meant, and was already false when it was written.
 | Component | Kind | In TW | In FB | Build from | Where / when to use it |
 |---|---|---|---|---|---|
 | Action panel | component | ✓ | — | Card + Heading (card scale) + Button group | an authenticated app screen, inside one of the three shells |
-| Bottom navigation | component | — | ✓ | the native tab bar on Hotwire Native; the shipped sidebar/stacked shells on web | native mobile shells (Hotwire Native); never as a web nav |
+| Bottom navigation | component | — | ✓ | the native tab bar on Hotwire Native; the shipped sidebar/stacked shells on web | native mobile shells (Hotwire Native). On the WEB the rule is reachability, not the control: at compact the whole rail must be reachable from one control, so a drawer qualifies and a bar only does if it holds every top-level destination -- responsive.md §4 |
 | Category filters | component | ✓ | — | the documented `Ui::Disclosure`, one per filter group, inside a `stack` — `<details>`/`<summary>` only where the group never animates | a commerce surface (catalog, product, cart, checkout) |
 | Chat bubble | component | — | ✓ | Media object rows in a `divide-y` container — the same shape, without inventing message semantics | a messaging, comment or activity thread — not general app screens |
 | Device mockup | component | — | ✓ | a `frame` at the screenshot's own ratio | marketing surfaces only, to frame a product screenshot |
