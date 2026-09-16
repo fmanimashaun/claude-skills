@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-16 (release v1.128.1)
 
 - **The release-notes gate can now see the two ways a release publishes less than it shipped —
   `scripts/extract_release_notes.py`, `scripts/mutations/extract_release_notes.py`,
