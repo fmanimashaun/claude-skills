@@ -40,6 +40,8 @@ FORMS_HEADER = ve.FORMS.header
 EMULATION_HEADER = ve.EMULATION.header
 PERF_HEADER = ve.PERF.header
 FINDINGS_HEADER = ve.FINDINGS.header
+HANDOFFS_HEADER = ve.HANDOFFS.header
+NOTIFICATIONS_HEADER = ve.NOTIFICATIONS.header
 PROFILE_NAMES = {p.name for p in ve.PROFILES}
 
 
@@ -1670,6 +1672,56 @@ def run() -> int:
 
     # ---- the Source vocabulary and the doctrine that names it must agree -------------
     # A pre-existing drift found while adding `emulation`: `keyboard` and `forms` were accepted by
+    # ---- journey-walker: hand-off rows (#993) ------------------------------------------
+    # Column order: Journey,Step,Actor,Action,Recipient,Expected Surface,Status,HTTP,Requested URL,
+    #   Final URL,Assertion,Screenshot,Severity,Notes
+    hf = {"header": HANDOFFS_HEADER}
+    _hnav = "200,https://a/queue,https://a/queue,heading 'Provisioning queue'"
+    H_LANDED = f"onboarding,W2.3,admin,approve contract,it,IT provisioning queue,Landed,{_hnav},,,"
+    H_MISSING = f"onboarding,W2.4,it,activate identity,freelancer,dashboard welcome card,Missing,{_hnav},shots/1440-fl-dashboard-no-welcome.png,S2,spec §14.6 says the welcome card appears"
+    expect_clean("handoffs: a landed hand-off", f"{H_LANDED}\n", **hf)
+    expect_clean("handoffs: a missing hand-off with screenshot and severity", f"{H_MISSING}\n", **hf)
+    expect_findings("handoffs: Missing without a screenshot",
+                    H_MISSING.replace("shots/1440-fl-dashboard-no-welcome.png", ""),
+                    contains="without a Screenshot", **hf)
+    expect_findings("handoffs: Missing without a severity",
+                    H_MISSING.replace(",S2,", ",,"), contains="without a Severity", **hf)
+    expect_findings("handoffs: Landed but graded as a defect",
+                    H_LANDED.replace(",,,", ",,S2,"), contains="Landed but graded", **hf)
+    expect_findings("handoffs: a hand-off to yourself",
+                    H_LANDED.replace("admin,approve contract,it,", "admin,approve contract,admin,"),
+                    contains="Recipient equals Actor", **hf)
+    expect_findings("handoffs: no expected surface",
+                    H_LANDED.replace("IT provisioning queue", ""), contains="no Expected Surface", **hf)
+    expect_findings("handoffs: a result status without the page it was seen on",
+                    H_LANDED.replace(_hnav, ",,,"), contains="HTTP", **hf)
+    expect_clean("handoffs: Blocked names what it saw",
+                 "onboarding,W2.5,it,revoke,admin,audit log,Blocked,none,https://a/audit,https://a/audit,,,,fixture re-minted mid-run\n", **hf)
+
+    # ---- journey-walker: notification rows (#993) --------------------------------------
+    # Column order: Journey,Step,Template,Recipient,Status,Expected By,Observed,Inbox Evidence,
+    #   Severity,Notes
+    nf = {"header": NOTIFICATIONS_HEADER}
+    N_SENT = "onboarding,W2.3,contract-issued,applicant,Sent,catalogue §15.9 row 4,'Your contract is ready' 09:41,shots/inbox-contract-issued.png,,"
+    N_MISSING = "onboarding,W2.3,test-passed,applicant,Missing,catalogue §15.9 row 3,,shots/inbox-after-pass.png,S2,only the sign-in code was ever sent"
+    expect_clean("notifications: a sent template with what was observed", f"{N_SENT}\n", **nf)
+    expect_clean("notifications: a missing template with the catalogue line", f"{N_MISSING}\n", **nf)
+    expect_findings("notifications: Sent with nothing observed",
+                    N_SENT.replace("'Your contract is ready' 09:41", ""), contains="nothing Observed", **nf)
+    expect_findings("notifications: Sent without inbox evidence",
+                    N_SENT.replace("shots/inbox-contract-issued.png", ""), contains="without Inbox Evidence", **nf)
+    expect_findings("notifications: Missing without the line that expected it",
+                    N_MISSING.replace("catalogue §15.9 row 3", ""), contains="without Expected By", **nf)
+    expect_findings("notifications: Missing without a severity",
+                    N_MISSING.replace(",S2,", ",,"), contains="without a Severity", **nf)
+    expect_findings("notifications: Unexpected with no explanation",
+                    "onboarding,W2.3,welcome-back,applicant,Unexpected,,'Welcome back' 09:42,shots/inbox-x.png,,\n",
+                    contains="empty Notes", **nf)
+    expect_findings("notifications: no template named",
+                    N_SENT.replace("contract-issued", ""), contains="no Template", **nf)
+    expect_findings("notifications: a status outside the vocabulary",
+                    N_SENT.replace(",Sent,", ",Delivered,"), contains="Delivered", **nf)
+
     # the checker for a whole release while qa-reporter.md's own list of sources denied they
     # existed. Prose is what the agent reads, so a source missing from it is a pass whose findings
     # never reach the rollup -- claims-vs-enforcement, in the direction that silently drops data.
@@ -1711,7 +1763,8 @@ def run() -> int:
     for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN),
                       (ve.RUNTIME, RUNTIME_CLEAN), (ve.KEYBOARD, KEYBOARD_CLEAN),
                       (ve.FORMS, FORMS_CLEAN), (ve.EMULATION, EMULATION_CLEAN),
-                      (ve.PERF, PERF_CLEAN), (ve.FINDINGS, NAVBAR)):
+                      (ve.PERF, PERF_CLEAN), (ve.FINDINGS, NAVBAR),
+                      (ve.HANDOFFS, H_LANDED), (ve.NOTIFICATIONS, N_SENT)):
         got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
         detected.append(got.name)
         if got is not prof:

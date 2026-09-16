@@ -8,6 +8,32 @@ GUARD = Guard(
     # `plugins/qa-flow`: its selftest reads profile/agent files across the plugin.
     needs=("plugins/qa-flow",),
     mutations=(
+        # #993: the two journey-walker profiles. Each rule below is the difference between a row that
+        # records a defect and a row that merely says so.
+        Mutation(
+            "a missing hand-off no longer needs the recipient's screenshot",
+            '        if not row["Screenshot"]:\n            findings.append(f"{where}: Missing without a Screenshot',
+            '        if False:\n            findings.append(f"{where}: Missing without a Screenshot',
+            "handoffs: Missing without a screenshot",
+        ),
+        Mutation(
+            "a hand-off to yourself is accepted as a hand-off",
+            '    if _norm(row["Recipient"]).lower() == _norm(row["Actor"]).lower():',
+            "    if False:",
+            "handoffs: a hand-off to yourself",
+        ),
+        Mutation(
+            "a sent notification no longer needs what was observed",
+            '        if not _norm(row["Observed"]):',
+            "        if False:",
+            "notifications: Sent with nothing observed",
+        ),
+        Mutation(
+            "a missing notification no longer needs the line that expected it",
+            '        if not _norm(row["Expected By"]):',
+            "        if False:",
+            "notifications: Missing without the line that expected it",
+        ),
         Mutation(
             # #578: a conformant app was flagged S1 on EVERY page because the pass looked up
             # `outline` while the ring lived in `box-shadow`. Requiring the method does not

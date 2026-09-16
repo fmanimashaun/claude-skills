@@ -88,6 +88,14 @@ security:         zap                # zap | none
 a11y:             axe                # axe | none
 reporting:        markdown-csv       # markdown-csv | allure | both
 case_management:  in-repo            # in-repo (free CSV) | testmo (paid, opt-in)
+walkthrough:                         # /qa-flow:walkthrough refuses to run without this block (#993)
+  personas:                          # persona: [how that persona REALLY signs in]
+    guest:      [password+code]      #   fixture-session | password | password+code | password+totp | magic-link
+    admin:      [fixture-session]
+  journeys:                          # the spec documents each page is judged against
+    - docs/product/roles/admin.md
+  viewports:  [1440, 820, 390]       # one per band: expanded, medium, compact (responsive.md §4)
+  stand_ins: []                      # model calls the fixtures already make, run via the project runner
 ```
 
 Everything defaults **free**. A team overrides any line — e.g. `web_e2e: cypress-cucumber`,

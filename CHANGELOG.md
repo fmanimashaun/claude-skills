@@ -8632,6 +8632,40 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+The version is assigned at the promotion, never here.
+
+- **A live-browser journey walker — `plugins/qa-flow/agents/journey-walker.md`,
+  `plugins/qa-flow/commands/walkthrough.md`, `plugins/qa-flow/scripts/walkthrough_plan.py`,
+  `plugins/qa-flow/scripts/validate_evidence.py`, `plugins/qa-flow/reference/stand-ins.md`** (#993).
+  Thirty defects were filed against a downstream app in one morning while its 230-test suite and this
+  plugin's own layers were green, and they shared a shape no layer could see: they lived in the
+  **hand-offs between personas**, they were **intent failures on pages that render 200**, they were
+  **notifications the catalogue names and nothing sent**, and they were **layouts that break at a
+  width no route sweep rendered**. `journey-walker` walks every persona's whole journey in a live
+  browser — signing in the way that persona really signs in, every page at three widths, performing
+  the persona's actions and then **switching persona to see the consequence where the spec says it
+  lands**, reading the dev inbox after every step — and judges each page against the spec's intent.
+  It sits beside `functional-tester` and `e2e-tester` and replaces neither. **Refuses to walk blind**:
+  `walkthrough_plan.py` turns a new `walkthrough:` block in `qa/qa.config.yml` (personas with one of
+  five sign-in recipes, journey documents, viewports covering the three bands, declared stand-ins)
+  into the plan, or exits 2 naming what is missing — selftest and a six-mutation guard. **Two evidence
+  profiles** (`handoffs`, `notifications`) make the new rows refusable: a `Missing` hand-off without
+  the recipient's screenshot, a `Sent` mail with nothing observed, a hand-off to yourself, a missing
+  template without the catalogue line that expected it. `journey` joins the finding-source vocabulary,
+  and `qa-reporter` reads both tables whole. Stand-ins are stack-neutral rules with the Rails recipe as
+  a labelled example, and the two traps measured on the real run (mail from a runner dies with the
+  process; a QA server does not reload) are written where the recipe is. **Accepted against the app
+  it was written from** (`docs/evidence/qa/2026-09-16-journey-walker-acceptance/`): told which
+  journeys to walk and nothing about what to find, it rediscovered all three defects the shipped
+  layers had missed — the dead-end applicant dashboard, Admin's unreachable offboard/suspend with
+  demo data off, and the thread announcing a merely-issued contract as signed — plus eight more,
+  including that **the QA configuration's own declared stand-in was stale**: the call now requires a
+  keyword it does not pass, and the walker recorded the step Blocked rather than inventing one,
+  which is the stand-in rule holding under pressure rather than being asserted. Maintainer decision:
+  the comment on #993, 16 Sep 2026.
+
 ### 2026-09-16 (release v1.128.0)
 
 - **A version-only bump, deliberately — `plugins/qa-flow/.claude-plugin/plugin.json` 1.28.0 → 1.29.0.**
