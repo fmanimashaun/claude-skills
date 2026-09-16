@@ -4807,6 +4807,118 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+The version is assigned at the promotion, never here.
+
+- **The enterprise design manual is routed, not adopted wholesale — `docs/evidence/audits/2026-09-16-enterprise-manual-routing.md`,
+  `skills/design-system/references/components.md`, `responsive.md`, `interaction-stimulus.md`,
+  `forms.md`** (#978). A B2B Enterprise UI/UX Design System Manual supplied by the maintainer on
+  15 Sep 2026 is now a registered source: the record says, section by section, what was adopted,
+  adapted, kept-ours and rejected, and why — so nothing from it lands twice or silently. The manual
+  itself is not committed (it is the maintainer's); the record routes the quotations the issues
+  carried, and links the document if it is ever added. **Genuinely new doctrine from it**: the
+  three-state empty-state typology (first use · cleared, with no illustration · error, with an error
+  identifier); the power-user keyboard layer (`⌘K`, `?`, `j`/`k`, `Enter`, `x`, the `<kbd>` pattern)
+  **with the WCAG 2.1.4 Character Key Shortcuts obligation the manual omits** — single-character
+  keys active only while the list has focus, `?` behind a turn-off setting; type-to-confirm
+  destructive confirmation, scoped to irreversible-and-bulk or a shared resource; leaving a dirty form,
+  with the correction that `beforeunload`'s dialog is the platform's (*"not customizable"*, HTML
+  Standard, and needs sticky activation) so the *Discard / Keep editing* interstitial exists for Turbo
+  visits only, and that an autosaving form has no dirty state to guard; the permissions matrix as a
+  `<table>` of native checkboxes whose `indeterminate` maps to `aria-checked="mixed"` **normatively**
+  (HTML-AAM); the detail drawer's 480–720px bounds; and a six-state completeness rule at the top of
+  the catalogue. Table detail the manual supplied for #964 — alignment by data type, ellipsis with the
+  full value reachable, sticky on both axes, a per-person density toggle (56 / 32), the 48px selection
+  column — lands in Table (CRUD). **Reconciled with #972**: a single-pane screen caps at
+  `--width-shell` (kept at 80rem, measured; the manual's 1440 is not adopted) and centres; a screen
+  with a second question earns its width with a second pane — not rivals. **Found and fixed on the
+  way**: the Modal entry named the `fm-navy` primitive for its backdrop against the file's own
+  non-negotiable; it is `bg-overlay/50`, which the shipped implementation already used. Verified
+  before writing (doctrine-verifier, 16 Sep 2026): WAI-ARIA 1.2 `aria-checked`, HTML-AAM's checkbox
+  mapping, WCAG 2.1.4, ARIA 1.2's toolbar-label MUST, `<kbd>`, the HTML Standard's prompt-to-unload
+  algorithm, Turbo's `turbo:before-visit` history exception. Our design decisions, recorded on the issue.
+
+- **Structure snaps to the 8px grid; rhythm stays fluid — `skills/design-system/references/foundations-tokens.md`,
+  `scripts/check_structural_grid.py`, `scripts/mutations/check_structural_grid.py`,
+  `scripts/doctrine_map.py`** (#976). The manual anchors every spatial figure to a strict 8px grid
+  and asks in its checklist whether *all* padding, margins and heights are divisible by 8; the shipped
+  scale is fluid `clamp()` values, which are on no grid by design — `--space-s` is about 21.2px at
+  1440. Decision: **split by axis.** Structure — the shell header, the rails, a sticky toolbar, table
+  row heights, the selection column, drawer bounds — is fixed and divisible by 8, in one marked
+  `@theme` block of nine tokens (`--shell-*`, `--row-*`, `--col-select`, `--drawer-*`); rhythm and
+  type stay fluid; control heights stay as measured against the corpora. **The checklist is enforced,
+  not asserted**: the new gate refuses a value in that block that is not a multiple of 8px, a fluid
+  value there, or a structural token a reference names that the block does not declare (the #750
+  class) — with a `--selftest`, a six-mutation guard, and a `guarantee` row in the doctrine map
+  (`SHIPPED_FLOOR` 2 → 4). Downstream evidence the check is real: a consuming app's rail was 236px.
+  Figures kept where ours already sat on the grid (rail 288, the shipped `lg:w-72`, over the manual's
+  256); the manual's `micro…xl` vocabulary is not adopted. Same answer the maintainer recorded
+  downstream (Retask `docs/brain/OPEN-QUESTIONS.md` Q3). Our design decision, recorded on the issue.
+
+- **An error toast does not auto-dismiss — `skills/design-system/references/components.md`,
+  `component-implementations.md`** (#977). Severity now decides the lifetime as well as the role:
+  `status` toasts auto-dismiss after 5 s, an `alert` toast persists until closed and always carries
+  the close button, `:loading` is unchanged. **Measured, not preferred**: driving a consuming app
+  (Retask #268), a refused submission and a spent magic link both arrived as toasts, both were gone
+  before the reviewer looked, and both were recorded as *"no message at all"*. The shipped
+  `ToastComponent#timeout_ms` and `dismissable?` change accordingly, and the prose that argued *"an
+  error is a result and results auto-dismiss"* is replaced with the reason it was wrong. **The
+  citation is corrected too**: the entry's *"noticed without disrupting… automatically disappear"*
+  quote is Mobbin's glossary, unattributed until now, and doctrine-verifier found it says nothing
+  about errors — so the error rule is stated as ours, not hung on that source. **Not adopted**: the
+  manual's bottom-right corner; top-right stays, and the entry says why. A found defect on the same
+  entry is fixed: it said each toast is the `box` primitive two sentences after forbidding `box`,
+  against the shipped markup. Our design decision, recorded on the issue.
+
+- **File upload: the flow after the files are chosen — `skills/design-system/references/forms.md`**
+  (#966). The control was specified and everything after the picker closed was not, so a consuming
+  app derived it all — seven rejection reasons, ceilings checked before extraction, a chunked retry
+  that resumes. Now doctrine: per-file outcome with a reason, keeping the accepted files; **partial
+  success is an outcome, not an error** (*"8 of 10 accepted"*), the same shape as bulk selection's
+  and a background operation's; three refusal timings that produce three kinds of copy — before
+  transfer (count, declared size, extension), **before extraction** (a 2 MB archive can declare a
+  40 GB expansion), and post-flight; what progress means and whether retry resumes or restarts; and
+  the outcome living beside the field, persisted — not a toast (#977). Our design decision, recorded on the issue.
+
+- **Work that outlives the request has an interface — `skills/design-system/references/components.md`
+  → Background operation, `scripts/build_coverage.py`** (#968). Every Rails 8 app ships Solid Queue and
+  nothing said how an export, import or batch send appears to the person who started it. The entry:
+  **the operation is a record, not a job**; **five states** — accepted, running, done, failed, and
+  failed-and-retrying, which is Active Job's `retry_on` at work and is routinely collapsed into
+  "failed"; a Turbo Stream from the job, polling as the fallback; progress bar only for a known total;
+  where the result lands when the person has left (the record's index, a notification, email — a
+  toast cannot be the answer); starting it twice refused server-side; failure as a state a surface
+  shows, never only a log; partial success as an outcome. **Verified** (doctrine-verifier, Rails 8.1
+  API and the solid_queue README): `retry_on` / `discard_on`; Solid Queue has *no retry mechanism of
+  its own* and keeps `solid_queue_failed_executions`; `limits_concurrency` with `on_conflict:`; and
+  **`perform_later` returns `false` on a failed enqueue rather than raising** — the doctrine says to
+  check it. The interface is our design decision, recorded on the issue.
+
+- **Bulk selection is specified — `skills/design-system/references/page-anatomies.md` → Selection and
+  bulk actions, `components.md` → Table (CRUD)** (#969). The most destructive control on an index had
+  zero hits for "bulk action" and "selected rows". Decided: the bulk toolbar **takes the filter
+  toolbar's slot** on the first selection (same `--shell-toolbar` height, so nothing under the pointer
+  moves) as a named `role="toolbar"` — ARIA 1.2's *"MUST supply a label… when the application contains
+  more than one toolbar"*; **"select all" is this page, and says so**, with *"select all 340 matching"*
+  as a distinct second act (a query, not a list of ids); page-scoped selection is **dropped and
+  announced** on a page, sort or filter change; **the count is the confirmation** (*"Delete 12
+  people?"*), typed confirmation for irreversible bulk actions; `indeterminate` on the header checkbox
+  (→ `aria-checked="mixed"`, normative per HTML-AAM), row checkboxes named by their row; and partial
+  failure in one shape with upload and background operations. Our design decision, recorded on the issue.
+
+- **The period selector is URL state, not a date picker — `skills/design-system/references/components.md`
+  → Period selector, `page-anatomies.md` → The toolbar's order, `scripts/build_coverage.py`** (#970).
+  Zero hits for "period selector" while every reporting screen has one. Decided: presets are the
+  primary control and the custom range the escape hatch; `period=` / `from=&to=` in the URL, resetting
+  the page to 1 and leaving sort and filters alone; **the label shows inclusive dates over a
+  half-open query, and the two must agree**; whose day boundary, stated once (the organisation's by
+  default); the empty period is the *Cleared* empty state offering to widen the range; comparison is
+  part of the same control; **a KPI distinguishes zero from unknown** — *0* is a result, *—* with a
+  reason is not (Retask D-061 read "0 / Nothing yet" over computed figures); and the toolbar's order
+  is fixed — period first, filters, export alone on the right, separating configuration from
+  extraction. Our design decision, recorded on the issue.
+
 ### 2026-09-16 (release v1.58.0)
 
 - **Adaptive is now a stated position, with the bands, the panes and the navigation —

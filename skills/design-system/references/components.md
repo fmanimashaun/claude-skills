@@ -7,6 +7,11 @@ with a fixed **variant × size × state** vocabulary. Reuse the SAME axes everyw
 responsive rules listed. Class strings below use role tokens only — copy the recipe, don't
 substitute raw colors.
 
+**Every entry covers six states, or says which do not apply** (#978): default, hover, focused,
+**loading**, disabled, and **error or empty**. An entry that specifies four is where drift enters — the
+loading and empty states are the ones always missing, and a state an entry does not mention is one
+you must decide and record, not invent silently. When you build from an entry, the six are the checklist.
+
 ## The focus ring: `outline-hidden`, never `outline-none` (Tailwind v4)
 
 **Every focus recipe in this kit is `focus-visible:outline-hidden focus-visible:ring-2 …`, and the
@@ -182,7 +187,8 @@ DEFAULTS = { variant: :primary, size: :md }
 - `Ui::Modal` rendered into the layout's `<turbo-frame id="modal">` (open via `data: { turbo_frame: "modal" }`).
   **Imposter** positioning + `bg-popover text-popover-foreground rounded-lg shadow-lg` (card-class
   surface → the `rounded-lg` token = 12px, not an arbitrary value); backdrop
-  `bg-fm-navy/50 backdrop-blur-sm`. **Sizes:** `sm max-w-md · md max-w-lg · lg max-w-2xl · xl max-w-4xl · full`.
+  `bg-overlay/50 backdrop-blur-sm` (a role — the shipped implementation already used it while this line
+  named the `fm-navy` primitive, against the non-negotiable at the top of this file). **Sizes:** `sm max-w-md · md max-w-lg · lg max-w-2xl · xl max-w-4xl · full`.
   Body `max-h-[70vh] overflow-y-auto`. **Slots: `title` and `actions` (a `cluster`) — there is NO
   `body` slot;** the body is the block content, same as Alert. This line advertised one for three
   releases, and `m.with_body` raises `NoMethodError` — the #168/#182 class, in prose the call-site
@@ -192,6 +198,15 @@ DEFAULTS = { variant: :primary, size: :md }
   trap, one `Esc`. A *persistent* sidebar is not a dialog and must not come through here.
 - **Behavior:** the `modal` Stimulus controller = focus-trap + focus-restore + Esc + backdrop-close +
   body-scroll-lock; `role="dialog" aria-modal="true" aria-labelledby`. Delete-confirmation = Modal(`sm`) recipe.
+- **Destructive confirmation has two strengths, and the count is the confirmation** (#969, #978).
+  *Click to confirm* — the `sm` recipe: the number and the noun in the title (**"Delete 12 people?"**,
+  never "Delete?"), what cannot be undone in one sentence, `destructive` primary, initial focus on
+  **Cancel**. *Type to confirm* — the person types a stated phrase (the record's name, or the count)
+  before the destructive button enables — for an action that is **irreversible and either bulk or
+  names something others depend on** (a workspace, a role in use, a repository). The phrase is shown
+  beside the field, the field is labelled, and the button is `aria-disabled` rather than `disabled`
+  so it stays focusable and its tooltip can say what is missing. Never on a routine delete: friction
+  that fires every time trains people to type without reading, which is the opposite of the point.
 - **Responsive:** wrapper `p-4 sm:p-0`; `full` → `max-w-full mx-4`.
 
 ## Drawer / off-canvas
@@ -207,6 +222,14 @@ DEFAULTS = { variant: :primary, size: :md }
   up. Toggling `aria-modal` and a focus trap by media query means the role changes under the user.
 - Panel `bg-popover text-popover-foreground shadow-lg` at `max-w-sm`, full-height, `inset-y-0`;
   backdrop as Modal's. Slots as Modal: `title`, `body`, `actions`.
+- **The detail drawer** — a record opened beside its list without leaving it — is the overlay drawer
+  with stated bounds (#978); the navigation drawer at compact keeps the `max-w-sm` panel above, this
+  one is wider because it holds a record: `w-[clamp(var(--drawer-min),33vw,var(--drawer-max))]`, so a third of the
+  viewport between **480 and 720px**, both structural tokens ([foundations-tokens.md](foundations-tokens.md) §3b).
+  Fixed header (title, close) and footer (`actions`), the body alone scrolls (`overflow-y-auto`);
+  backdrop as Modal's. Below `md` it is the full-width sheet, since a third of 640px is not a drawer.
+  At two panes ([page-anatomies.md → List-detail](page-anatomies.md#list-detail--the-shape-most-authenticated-apps-are))
+  the detail is a pane, not this drawer — the drawer is the one-pane answer.
 
 ## Carousel
 - **An APG pattern** — cite it, and note that most of its machinery is *conditional*. Best default:
@@ -674,6 +697,52 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **Responsive:** wrap in `overflow-x-auto` (horizontal scroll). For dense data on small screens prefer a
   **card-stack** fallback (`hidden md:table` + a `md:hidden` [Stacked list](#stacked-list)) — pick per table
   and state it; don't leave scroll as the only mobile story.
+- **Alignment follows the data type, and the header follows its column** (#978): numerals right-aligned
+  with `tabular-nums` so magnitudes line up; text left; a single-badge status column centred. A
+  right-aligned header over a left-aligned column is the tell that alignment was per cell, not per type.
+- **Truncate identifiers, wrap prose.** A reference, an email, a path gets `truncate` with the full value
+  reachable — a Tooltip, or `title` at minimum — and never wraps; a description cell wraps. Never
+  truncate the column that names the row.
+- **Sticky on both axes when the table scrolls** (#978): the header row `sticky top-0` — or
+  `top-(--shell-toolbar)` when a sticky toolbar sits above it — and the selection and identifier
+  columns `sticky left-0`, each with an opaque `bg-background`, inside the `overflow-x-auto` wrapper
+  (a sticky element sticks within its nearest scrolling ancestor, so both axes share one container).
+  The cell at the intersection carries the higher `z-index`; nothing else about the markup changes.
+- **Density is a per-person setting, not a per-table one** (#978): `--row-comfortable` (56px, default)
+  or `--row-compact` (32px), applied as `data-density` on the table and persisted on the user, never in
+  `localStorage` alone. Both heights are structural tokens ([foundations-tokens.md](foundations-tokens.md) §3b).
+- **The selection column** (#969) is `--col-select` (48px) and first. Its header checkbox is
+  select-all-on-this-page; when only some rows are selected it is `indeterminate`, which a native
+  checkbox exposes as `aria-checked="mixed"` — normatively, per
+  [HTML-AAM](https://www.w3.org/TR/html-aam-1.0/) (`input type=checkbox`). Each row's checkbox is
+  named by the row's identifier (`aria-labelledby`), never "Select". What selection *does* — the bulk
+  toolbar, select-all-matching, what survives a page change — is the anatomy's, not this entry's:
+  [page-anatomies.md → Selection and bulk actions](page-anatomies.md#selection-and-bulk-actions-969).
+
+## Permissions matrix
+- **What it is** (#978): roles as columns, features as rows grouped by module; the cell is a checkbox. It
+  is a real `<table>` with the [Table (CRUD)](#table-crud) contract — `<caption>`, `<th scope="col">`
+  for each role, `<th scope="row">` for each feature — so a screen reader hears *"Editor, Delete
+  invoices, checked"* rather than a bare checkbox in a grid of them.
+- **Module rows collapse** with the Disclosure contract (`<button aria-expanded aria-controls>` inside
+  the module's `<th>`), and the module's own checkbox is the **parent** of its features' checkboxes.
+- **Four checkbox states, and the third is the one people skip:** checked · unchecked ·
+  **indeterminate** — the module has some but not all of its features granted — · **disabled**,
+  inherited from a higher role or not grantable by the current person, with the reason in a Tooltip
+  rather than left to be guessed. A native checkbox with `indeterminate = true` is exposed as
+  `aria-checked="mixed"` — normatively, per [HTML-AAM](https://www.w3.org/TR/html-aam-1.0/)
+  (`input type=checkbox`) — so no ARIA is added. But `indeterminate` is a **JS property**, not an
+  attribute and not a value: the controller sets it from the children, it is
+  [independent of `checked`](https://html.spec.whatwg.org/multipage/input.html#common-input-element-apis),
+  and it is not submitted. The submitted state is the features'; the module checkbox is a control, not data.
+- **The cell's accessible name is the pair** — feature × role — via `aria-labelledby` pointing at both
+  headers. A column of checkboxes each named "Delete invoices" is the failure mode: forty identical names.
+- **One form, one submit.** A matrix that saves per click produces forty toasts, forty audit entries and
+  no undo. Unsaved changes are guarded ([forms.md → Unsaved changes](forms.md#unsaved-changes--leaving-a-dirty-form-978)).
+- **Density** is `--row-compact` by default — a matrix is dense by nature — with the sticky header row
+  and sticky first column exactly as Table (CRUD).
+- **Tenancy note.** The manual routed in #978 is single-tenant. A multi-tenant app scopes the matrix to a
+  workspace and says which in the `<caption>`; nothing else changes.
 
 ## Stacked list
 - **The dominant list idiom, and it introduces no new component:** `<ul role="list">` of `<li>` rows, each a
@@ -956,17 +1025,41 @@ catalogue row.
 ## Toast / Notification
 
 **A toast is transient by definition** — *"meant to be noticed without disrupting a user's attention,
-and it should automatically disappear afterwards"*. Every toast auto-dismisses, with exactly one exception: a
-`:loading` toast persists while its operation runs, then is **replaced** by the outcome. If a message must stay, it is an `Ui::Alert` in the page; if it must be answered first, a
-`Ui::Modal`. Choosing correctly is the whole of this component's design.
+and it should automatically disappear afterwards"* ([Mobbin, Toast](https://mobbin.com/glossary/toast)).
+**Severity decides the lifetime as well as the role (#977).** A `status` toast — info, success —
+auto-dismisses after 5 s. **An error does not auto-dismiss**: it persists until the person closes it,
+so it always carries the close button. A `:loading` toast persists while its operation runs, then is
+**replaced** by the outcome. If a message must stay for any other reason, it is an `Ui::Alert` in the
+page; if it must be answered first, a `Ui::Modal`. Choosing correctly is the whole of this component's
+design.
+
+**The error rule is ours, and it was measured, not preferred.** The cited source says nothing about
+errors persisting — it says toasts disappear — so this is not attributed to it. The exception exists
+because of what a disappearing error does. Driving a consuming app in a browser (Retask #268), a
+refused submission — *"choose one of the three findings"* — and a spent magic link — *"That link has
+expired or has already been used"* — both arrived as toasts, both were gone before the reviewer looked,
+and **both were recorded as "no message at all"**. A person who glances away loses them identically.
+A success that vanishes cost nothing; an error that vanishes takes its explanation with it. The test:
+*would the person need this in ten seconds' time?* Then it does not leave on its own.
+
+**A refusal that explains the screen the person is now looking at is not a toast at all.** If the
+form is still on screen, the message is the field's error ([forms.md](forms.md)) or an `Ui::Alert`
+above the form. The toast is for the redirect case — the page that failed is gone and the person has
+landed somewhere else — and then it persists.
 
 **Anatomy: container · optional icon · text · optional action · optional close.** The close button
-earns its place only beside an action — a toast that leaves on its own needs no button, and no button
-means no touch target forcing the height. Do **not** use the `box` primitive: it is the content-panel
-recipe, and it renders a one-word message as an ~80px card.
+earns its place beside an action **and on every error**; a `status` toast that leaves on its own needs
+no button, and no button means no touch target forcing the height. Do **not** use the `box` primitive:
+it is the content-panel recipe, and it renders a one-word message as an ~80px card — the shipped
+markup in [component-implementations.md](component-implementations.md#toast--appcomponentsuitoast_componentrb)
+is `bg-card … rounded-lg border border-l-4`, and this entry used to say `box` against it.
 
-- Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`. Each toast = `box` +
-  `border-l-4` intent + `shadow-md`, auto-dismiss + close (the `toast`/`dismiss` mixin).
+- Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`, gap `--space-2xs`
+  (rhythm, so fluid — [foundations-tokens.md](foundations-tokens.md) §3b). **Top-right is the rule.**
+  The manual routed in #978 places toasts bottom-right and it is not adopted: the corner is cosmetic,
+  ours is shipped in every consuming app with the mobile anchoring below `sm` already specified, and
+  two positions in circulation is the defect. Each toast = the card surface + `border-l-4` intent +
+  `shadow-md`; a `status` toast auto-dismisses, an `alert` toast closes, via the `toast`/`dismiss` mixin.
 - **`role="status"`, and nothing beside it.** The role already implies `aria-live="polite"` *and*
   `aria-atomic="true"`; writing `aria-live` next to it is redundant, and writing bare `aria-live`
   *instead* of it silently drops the atomic half — an announcement then carries only the changed
@@ -1109,6 +1202,57 @@ from `bg-green-500`/`bg-red-500` is both a raw-colour drift finding and unreadab
   the announcement in a sibling `role="status"` — never `aria-label` on the spinning icon.
 - Same `aria-busy` + reduced-motion notes as Skeleton.
 
+## Background operation — work that outlives the request
+Every Rails 8 app ships Solid Queue, so every app has an export, an import, a render or a batch send
+that finishes after the response — and nothing above said how that appears to the person who started
+it (#968). [Progress bar](#progress-bar), [Spinner](#spinner--busy-indicator), [Skeleton](#skeleton--loading-placeholder)
+and [Toast](#toast--notification) are the parts; this is how they compose, and the decisions no part
+can carry.
+
+- **The operation is a record, not a job.** A row with a state, a started-at, an outcome and an owner —
+  `Export`, `Import`, `CardRun` — created in the request; the job works on it. A job id alone is a
+  handle nobody can list; a record is a thing the person can return to, and the only way failure gets a
+  surface (below). Solid Queue keeps a failed execution for inspection (`solid_queue_failed_executions`,
+  [README → Failed jobs](https://github.com/rails/solid_queue)), but that is the operator's surface,
+  not the person's.
+- **Five states, not two**: **accepted** (queued, not started — the page must say so, because "nothing
+  is happening" and "it is in the queue" look identical), **running**, **done**, **failed**, and
+  **failed, retrying**. The last is Active Job's `retry_on` at work — `wait:`, `attempts:`, and a block
+  when attempts are exhausted ([Rails API, ActiveJob::Exceptions](https://api.rubyonrails.org/v8.1.3.1/classes/ActiveJob/Exceptions/ClassMethods.html)) —
+  and collapsing it into "failed" makes a self-healing job look broken. Solid Queue itself has no retry
+  mechanism: *"it relies on Active Job for this"* (README). The exhausted block is where **failed** is written.
+- **What the page does while it waits.** The record renders in a Turbo frame or stream target keyed by
+  `dom_id(operation)`; the job broadcasts a `replace` on each state change (hotwire `production.md`
+  §1 — broadcast from the job, render from the record). A polling frame is the fallback where
+  broadcasting is unavailable, never the default. While waiting the surface shows the **accepted** or
+  **running** copy — not a blank, and not a Skeleton, which promises content of a known shape.
+- **Progress vs indeterminate.** A known total (rows imported of rows counted) is a Progress bar with
+  `aria-valuenow`; an unknown duration is `role="status"` text — *"Exporting… started 40 s ago"* —
+  never a bar creeping to 90% and waiting. Same reasoning as Skeleton vs Spinner: promise only what you know.
+- **Where the result arrives when the person has left** — the normal case for anything slow enough
+  to need this. A toast cannot be the answer: they are not on the page. The record's index is
+  (Exports, Imports — a [Data table anatomy](page-anatomies.md#data-table--the-index-of-a-resource)),
+  plus a notification ([Activity feed](#activity-feed--timeline), an inbox badge) on completion, and
+  email when the result is a file. The manual routed in #978 has a progress banner that *"survives
+  navigation"*: that is a **shell-level slot fed by a per-user stream**, showing the person's running
+  operations wherever they are. *Processing… → Ready, with the link* is the toast transition **only
+  while they are still on the page**: the `:loading` toast is replaced by its outcome, exactly as Toast specifies.
+- **Starting it twice.** The trigger is disabled while a matching operation is accepted or running,
+  and says why (*"An export started 20 s ago — open it"*). Server-side the same rule holds: refuse the
+  duplicate and answer with the existing record. Solid Queue's `limits_concurrency` with
+  `on_conflict: :discard` ([README → Concurrency controls](https://github.com/rails/solid_queue)) is
+  the belt; the record's uniqueness is the braces. And **`perform_later` returns `false` when the
+  enqueue fails** ([Rails API](https://api.rubyonrails.org/v8.1.3.1/classes/ActiveJob/Enqueuing/ClassMethods.html)) —
+  check it, and show **failed**, not **accepted**, for a job that never joined the queue.
+- **Failure gets a surface without a request to attach it to.** This is where it goes silent: the job
+  raises, the retries exhaust, and no page ever says so. **Failed** is a state the record's index
+  shows, the notification names, and — for anything the person is waiting on — an `alert` toast if
+  they are on the page. A rescue that logs and returns is a swallowed exception with a longer route.
+- **Partial success is an outcome, not an error**: *"1,180 of 1,200 rows imported; 20 refused"*, with
+  the refused rows listed and downloadable. Same shape as [File upload](forms.md#after-the-files-are-chosen--the-flow-966)'s
+  per-file rejection and [bulk selection](page-anatomies.md#selection-and-bulk-actions-969)'s partial
+  failure — one shape, three places.
+
 ## Tooltip / Popover
 - `role="tooltip"` + `aria-describedby`; shows on **focus and hover** (keyboard parity), Esc dismiss.
   Built on **anchored-position** + **dismissable-layer** mixins. Popover adds focus move-in + `aria-expanded`.
@@ -1158,6 +1302,43 @@ from `bg-green-500`/`bg-red-500` is both a raw-colour drift finding and unreadab
   Prev/next chevrons are icon-only, so each needs an `sr-only` label, and a disabled edge is
   `aria-disabled` rather than removed, so the control does not move between pages.
 
+## Period selector
+- **Not a date picker** (#970). Every reporting screen has one, and it owns part of the URL exactly as the
+  data table's sort and filter do ([page-anatomies.md → one url state](page-anatomies.md#sort-filter-and-page-are-one-url-state)).
+  [Calendar / Date picker](forms.md#calendar--date-picker--time-picker-95) is the control *inside the
+  escape hatch*, never the primary path.
+- **Presets are the primary control; the custom range is the escape hatch.** A single-select
+  [Button group](#button-group) (`role=radiogroup`) or a Select: *This month · Last month · This
+  quarter · Year to date · Custom* — and only on *Custom*, two native date inputs. Shipping two date
+  inputs as the only path makes the common case the slowest one.
+- **It is URL state**: `period=this_month` for a preset, `from=…&to=…` for a custom range. Shareable,
+  survives the back button, and **changing it resets pagination to page 1** and leaves sort and the
+  other filters alone.
+- **Say which boundary is inclusive, in the interface.** "1–31 Mar 2026" and "1 Mar – 1 Apr" are
+  different answers, and the reader cannot tell which they are looking at. The label shows
+  **inclusive calendar dates**; the query is half-open — `from` at 00:00 to the day *after* `to` at
+  00:00 — and the two must agree. A label saying 31 March over a query that stops at 00:00 on the 31st
+  is the off-by-a-day this control exists to prevent.
+- **Whose day boundary, stated once.** The viewer's zone, the record's, or the organisation's decides
+  what "today" contains. Unstated, each report picks differently and two reports disagree about the
+  same day. Default to the organisation's zone; the control's hint names it when the viewer's differs.
+- **The empty period is the Cleared state**, not first-use ([Empty state](#empty-state)): *"No invoices
+  between 1 and 31 March"*, with **widen the range** as the offered control — the only useful one at
+  that moment.
+- **Comparison, if offered, is part of this control** — *vs previous period*, *vs same period last
+  year* — because it changes every number on the screen. A detached checkbox elsewhere is how a KPI
+  reads "+12%" over a baseline nobody can see. It is URL state too (`compare=previous`).
+- **A KPI over a period distinguishes zero from unknown.** *0* means the query ran and found nothing;
+  a query that failed or has not run yet reads *—* with a reason, never *0* and never *Nothing yet* —
+  a consuming app's dashboard read "0 / Nothing yet" over figures it had just computed (Retask D-061),
+  and a blanked zero is indistinguishable from a real count.
+- **In the toolbar it comes first**, far left; categorical filters follow; export sits right-aligned,
+  separating configuration from extraction — the order fixed in
+  [page-anatomies.md → The toolbar's order](page-anatomies.md#the-toolbars-order-970).
+- **a11y:** the preset group is a named `radiogroup`; the custom range is a `<fieldset>` with a `<legend>`
+  and two native date inputs; changing the period announces the new range and count through the
+  table's existing `aria-live` count line — no second live region.
+
 ## Empty state
 - `cover > center > stack`: icon chip `size-16 rounded-full bg-muted`, title, `max-w-md` `text-muted-foreground`
   description, optional primary action (opens in the `modal` frame). One `Ui::EmptyState` component.
@@ -1165,6 +1346,17 @@ from `bg-green-500`/`bg-red-500` is both a raw-colour drift finding and unreadab
   title is a real heading at the level the surrounding page implies, not a styled `<p>`; an empty
   state replaces content, so the outline must not lose a level. If it appears after a filter or
   search, announce it — the region gets `aria-live="polite"`, or the user filters into silence.
+- **Three empty states, not one** (#978). They answer different questions and look different on purpose:
+
+  | state | when | anatomy |
+  |---|---|---|
+  | **First use** | the resource has no records yet | centred `cover > center > stack`, `max-w-md`; the icon chip, or an illustration no taller than `max-h-40` under [visual-assets.md](visual-assets.md)'s tier rule; a title that says what will appear here; the **primary action** that creates the first |
+  | **Cleared / no results** | records exist and this query matches none | **compact, no illustration** — the manual routed in #978 says *"to reduce cognitive insult"*, and it is right: a person who filtered to nothing does not need a picture. The copy **names the filter that excluded everything** and offers a `ghost` **Clear all filters**; if the filter is a period, offer to widen it ([Period selector](#period-selector)) |
+  | **Error** | the query or frame failed | high-contrast icon, the cause in plain English, **Try again** — which re-sends the same request, not merely dismisses — and a short **error identifier** the person can quote to support, one that also appears in the server log for that failure. The interface for a request that never came back is the hotwire skill's, in `turbo.md` → *A failed request — what the person sees* |
+
+  Rendering the first-use copy to someone who filtered is a lie about the data and hides the only useful
+  control ([page-anatomies.md → Five states](page-anatomies.md#five-states-and-all-five-are-required)).
+  One `Ui::EmptyState` component with a `variant:` for the three, not three components.
 
 ## Forms
 See [forms.md](forms.md).

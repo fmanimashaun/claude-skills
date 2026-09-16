@@ -193,6 +193,61 @@ Rules: size type/space in **`rem`/`em`** (never `px`) so zoom/root-size propagat
 for the measure; never raw `vw` for type — always `clamp()`. Prefer **logical properties**
 (`padding-inline`, `margin-block`, `inset`) for RTL/vertical-writing safety.
 
+## 3b. Structure snaps to the 8px grid; rhythm stays fluid (#976)
+
+An enterprise design manual supplied by the maintainer (15 Sep 2026; routed in
+`docs/evidence/audits/2026-09-16-enterprise-manual-routing.md`) anchors *every* spatial decision to a
+strict 8px grid — *"Designers must never use arbitrary pixel values"*, with a checklist asking whether
+*"all padding, margins, heights, and spatial gaps"* are divisible by 8. The fluid scale above cannot
+pass that checklist at any viewport: a `clamp()` with a `vw` term is on no grid, by design.
+`--space-s` is about 21.2px at 1440 and 19.4px at 1000. Neither approach is wrong; they answer
+different questions, and the decision is **split by axis**:
+
+| axis | governed by | why |
+|---|---|---|
+| **Structure** — the shell header, the rails, a sticky toolbar, table row heights, the selection column, drawer bounds, sticky offsets | **fixed, divisible by 8px** — the block below | a stray half-pixel here is a visible misalignment against a neighbour: a sticky header over rows, a rail edge against content, a `top:` offset against the bar it hides under |
+| **Rhythm** — the space between content, section padding, stack and cluster gaps, and all of type | **fluid** — `--space-*` and `--text-step-*` above, unchanged | proportional to the viewport is the point; nothing lines up against it |
+| **Controls** — `h-8 / h-9 / h-10` | **neither** — the *Control density* table below, measured against two corpora | a 36px default control is a component, not chrome; *"do not improve these"* |
+
+The test when a new figure arrives: **does anything have to line up against it?** If yes it is
+structure and goes in the block. If it only has to *feel* right, it is rhythm and takes a scale
+token.
+
+<!-- structural-grid:begin -->
+```css
+@theme {
+  /* STRUCTURE. Every value is a whole multiple of 8px, and `scripts/check_structural_grid.py`
+     refuses one that is not (with a --selftest and a mutation guard). Add a token here when a
+     figure has to line up against something; reach for --space-* when it only has to feel right.
+     Use them as h-(--shell-header), w-(--shell-rail), top-(--shell-toolbar) — Tailwind v4's
+     var() shorthand, the same form motion.md and visual-assets.md use. */
+  --shell-header: 4rem;            /* 64px  — the top bar of every shell */
+  --shell-rail: 18rem;             /* 288px — the expanded rail; the shipped lg:w-72, kept over the manual's 256 */
+  --shell-rail-collapsed: 4rem;    /* 64px  — the icon rail at Medium (responsive.md) */
+  --shell-toolbar: 3.5rem;         /* 56px  — a sticky filter toolbar, and the bulk-action bar that takes its place */
+  --row-comfortable: 3.5rem;       /* 56px  — table row, default density */
+  --row-compact: 2rem;             /* 32px  — table row, compact density */
+  --col-select: 3rem;              /* 48px  — the selection-checkbox column */
+  --drawer-min: 30rem;             /* 480px — the detail drawer, narrowest */
+  --drawer-max: 45rem;             /* 720px — the detail drawer, widest */
+}
+```
+<!-- structural-grid:end -->
+
+- **The manual's §8 checklist applies to the structural half, and it is enforced, not asserted.**
+  Downstream evidence that the check is real: a consuming app's navigation rail was **236px**, which
+  satisfies the fluid doctrine and fails this block — the fix is 232 or 240, and the check says so.
+- **Kept where ours already sat on the grid.** The expanded rail stays 288 (the shipped `lg:w-72`)
+  rather than the manual's 256; header 64 and icon rail 64 agree with the manual; row heights
+  (56 / 32), the 48px selection column and the 480 / 720 drawer bounds are adopted from it.
+- **The vocabulary is not adopted.** The manual's `micro 4 · xs 8 · sm 16 · md 24 · lg 32 · xl 64`
+  and ours share the name `xl` and disagree about it (ours is fluid, 48–60px). A manual figure quoted
+  anywhere in this skill is converted **once**, into a token above or into the nearest `--space-*`
+  step, and the px figure is left in a comment beside it.
+- **`--width-shell` (80rem) is unchanged.** The manual caps a single-pane screen at 1440px and
+  centres beyond it; our cap is 1280, measured against both corpora, and the *centring* rule is
+  already `responsive.md`'s. Both are stated there.
+
 ## Applying the scale (calibrated against two reference corpora)
 
 Having a fluid scale is not enough — *which* step goes where is the part that drifts. These

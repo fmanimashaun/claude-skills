@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>38 claims</b><b>30 enforced guarantees</b><b>7 advisory</b><b>1 tracked gaps</b></div>
+<div class="tally"><b>39 claims</b><b>31 enforced guarantees</b><b>7 advisory</b><b>1 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="gap">
 <h2>A change to a skill states its type -- framework claim or architecture decision -- in the PR, before editing. Silence is not a claim of exemption.</h2>
@@ -243,6 +243,15 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>script:scripts/build_coverage_artifact.py</code></li>
 <li><code>gate:coverage artifact selftest</code></li>
 </ul>
+</div>
+<div class="row" data-k="guarantee">
+<h2>Structure snaps to the 8px grid: every token in the structural block of the tokens file is a whole multiple of 8px, and every structural token a reference names is declared there.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/design-system/references/foundations-tokens.md</code> &middot; #976</span></div>
+<ul class="enf">
+<li><code>script:scripts/check_structural_grid.py</code></li>
+<li><code>mutation:check_structural_grid</code></li>
+</ul>
+<p class="note">The manual&#x27;s checklist asked whether EVERY figure is divisible by 8; the fluid scale cannot pass that at any viewport. Split by axis: structure fixed and checked, rhythm fluid and exempt. A 236px downstream rail is the input the check exists for.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A Stimulus keyboard filter is not a type check: the filter is consulted only inside `event instanceof KeyboardEvent`, so a bare `Event(&quot;keydown&quot;)` skips it and runs the handler. No shipped descriptor may guard a state-destroying handler with one.</h2>

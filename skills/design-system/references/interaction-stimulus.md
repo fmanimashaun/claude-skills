@@ -76,6 +76,9 @@ mandated (#142).
 | Toast | `role=status` **or** `alert` — severity decides (below); no APG pattern, nearest is *Alert* | focusable dismiss | dismiss |
 | Progress bar | `role=progressbar` — an ARIA role, not an APG pattern; see the contract below | none (not focusable) | — |
 | Spinner / Skeleton | no role, no pattern — composed from `aria-busy` + a `status` region | none | — |
+| Bulk-action toolbar | `role=toolbar` **with a name** — ARIA 1.2: *"Authors MUST supply a label on each toolbar when the application contains more than one toolbar"*, and an index screen has two | Tab in · ←→ between actions · Esc clears the selection | list-nav (horizontal) |
+| Permissions matrix | a `<table>` of native checkboxes; a module's `indeterminate` is exposed as `aria-checked=mixed` (HTML-AAM, normative) | native — Space toggles; **no arrow keys added**, it is a table, not a grid | disclosure (module rows) |
+| Period selector | preset `radiogroup` + a `<fieldset>` of native date inputs | native radio arrows · the platform's own date picker | none |
 
 Non-negotiables: visible `focus-visible` ring meeting contrast; keyboard reaches everything
 the mouse can; restore focus to the trigger on close; announce async changes via a live region.
@@ -372,6 +375,39 @@ APG's keyboard practice, but the Tabs pattern and both of its reference examples
 first, and note that a `<button>` tab needs no explicit `tabindex="0"`: *"Since an HTML button element
 is used for the tab, it is not necessary to set tabindex="0" on the selected (active) tab element."*
 Writing it anyway is harmless; citing `aria-activedescendant` as this pattern's recommendation is not.
+
+### The power-user keyboard layer (#978)
+
+A layer above the per-component contracts: shortcuts that reach across a screen. The manual routed in
+#978 names the set; WCAG names the obligation it omits.
+
+| key | does | scope |
+|---|---|---|
+| `⌘K` / `Ctrl+K` | opens the [Command palette](components.md#command-palette) | global — it carries a modifier, so 2.1.4 does not apply |
+| `?` | opens the shortcuts dialog: a Modal listing every binding on this screen as `<kbd>` | global, single character — see below |
+| `j` / `k` | move the row cursor down / up in a list or table — aliases of `↓` / `↑` in the `list-navigation` mixin | **only while the list has focus** |
+| `Enter` | opens the focused row — the detail drawer, or the record | list has focus |
+| `x` | toggles the focused row's selection ([bulk selection](page-anatomies.md#selection-and-bulk-actions-969)) | list has focus |
+| `Esc` | closes the topmost layer; with none open, clears the selection | already the dismissable layer's |
+
+- **WCAG 2.1.4 Character Key Shortcuts (Level A) governs every single-character binding here.** *"If a
+  keyboard shortcut is implemented in content using only letter (including upper- and lower-case
+  letters), punctuation, number, or symbol characters, then at least one of the following is true:
+  Turn off … Remap … Active only on focus"* ([WCAG 2.1](https://www.w3.org/TR/WCAG21/#character-key-shortcuts)).
+  `j`, `k`, `x` satisfy it by the third clause: the list's own controller handles them and they fire only
+  while the list has focus, never on `document`. `?` is global by design, so it needs the first clause —
+  **a setting that turns the layer off**, persisted on the person. The manual states none of this. Ship
+  the layer without it and a speech-input user who says "kick" into a page selects a row.
+- **Never fire while focus is in an editable field.** The list-navigation mixin already ignores keys
+  from `input`, `textarea`, `select` and `[contenteditable]`; the `?` listener must too.
+- **Discoverability is the `?` dialog and `<kbd>` hints, not a tour.** `<kbd>` is the element for user
+  input — *"represents user input (typically keyboard input)"* — and a `<kbd>` nested in a `<kbd>` is
+  one key within a chord ([HTML Standard](https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-kbd-element)).
+  Render it `font-mono text-step--2 rounded-sm border border-border px-1`: monospace, the `sm` radius,
+  a 1px border, `--space-3xs` padding — and **right-aligned in menus**, after the label, in
+  `text-muted-foreground`. The hint is for the sighted; the dialog is the record.
+- **Say which keys are ours and which are the platform's.** `⌘K` is convention with no standard behind
+  it; `j`/`k` are Gmail's and vim's. The dialog says so rather than presenting them as inevitable.
 
 ## Controller conventions (mirror the markup ergonomics)
 

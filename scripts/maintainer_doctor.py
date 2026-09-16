@@ -228,6 +228,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("section landmarks", ("python3", "scripts/check_section_landmarks.py")),
     ("section landmarks selftest",
      ("python3", "scripts/check_section_landmarks.py", "--selftest")),
+    # #976. The 8px-grid decision was split by axis: structure fixed and divisible by 8, rhythm
+    # fluid. The structural half is a marked block in `foundations-tokens.md`, and this is what
+    # makes "divisible by 8" a guarantee rather than a checklist item — a 236px rail was the
+    # downstream defect. NOT a design gate: nothing here judges whether 288 is a good width.
+    ("structural grid", ("python3", "scripts/check_structural_grid.py")),
+    ("structural grid selftest", ("python3", "scripts/check_structural_grid.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
