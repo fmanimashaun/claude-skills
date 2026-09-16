@@ -864,11 +864,15 @@ module Ui
       @action = action
     end
 
-    # Every toast auto-dismisses EXCEPT `:loading`, which represents an operation still running and
-    # must persist until it resolves — then be REPLACED by its outcome, never left behind. Both
-    # reference implementations model this the same way. A loading toast is the one legitimate
-    # persistent case, and it is not an error: an error is a result and results auto-dismiss.
-    def timeout_ms = @intent == :loading ? nil : TIMEOUT_MS
+    # Severity decides the lifetime (#977). `status` toasts — info, success, warning — auto-dismiss.
+    # `:loading` persists until its operation resolves, then is REPLACED by the outcome, never left
+    # behind. `:error` persists until CLOSED: a disappearing error was measured downstream as "no
+    # message at all", twice, by a reviewer who looked a moment late — and a person who glances away
+    # loses it the same way. This method used to return TIMEOUT_MS for errors, on the argument that
+    # "an error is a result and results auto-dismiss"; the measurement overturned the argument.
+    PERSISTENT = %i[loading error].freeze
+
+    def timeout_ms = PERSISTENT.include?(@intent) ? nil : TIMEOUT_MS
 
     def loading? = @intent == :loading
 
@@ -876,9 +880,10 @@ module Ui
     # an action the user may want to reach before the timer runs out. A toast that just says
     # "Saved" and leaves on its own needs no button, and with no button there is no touch target
     # forcing the height.
-    # A loading toast gets no close button either: dismissing it would hide an operation that is
-    # still running, leaving the user with no way to learn how it ended.
-    def dismissable? = @action.present? && !loading?
+    # An error ALWAYS has the close button — it does not leave on its own, so the button is its only
+    # exit. A loading toast has none: dismissing it would hide an operation that is still running,
+    # leaving the user with no way to learn how it ended.
+    def dismissable? = (@action.present? || @intent == :error) && !loading?
 
     private
 
@@ -1001,32 +1006,37 @@ INTENT_FOR_FLASH = { notice: :success, success: :success,
                      alert: :error, error: :error, warning: :warning }.freeze
 ```
 
-**Every toast auto-dismisses except `:loading` — and the error part is a correction.** This file previously said
-errors persist, reasoned from `:error` rendering `role="alert"`. That conflated two different things:
-`role="alert"` governs how the message is **announced**, not how long the box stays. A toast is
-*"meant to be noticed without disrupting a user's attention, and it should automatically disappear
-afterwards"* — a persistent one is a different component wearing a toast's styling.
+**Severity decides the lifetime, and the error half of that rule was measured (#977).** This file has
+said two opposite things about errors over its life. First, that they persist, reasoned from `:error`
+rendering `role="alert"` — which conflated how a message is **announced** with how long the box stays.
+Then, that they auto-dismiss like every result, on the strength of *"meant to be noticed without
+disrupting a user's attention, and it should automatically disappear afterwards"*
+([Mobbin, Toast](https://mobbin.com/glossary/toast)). The second was right about the citation and
+wrong about the design: that source says nothing about errors, and driving a consuming app in a
+browser (Retask #268) found a refused submission and a spent magic link both delivered as toasts,
+both gone before the reviewer looked, both recorded as *"no message at all"*. **An error now
+persists until closed.** That rule is ours — measured, not cited — and the entry in
+[components.md](components.md#toast--notification) carries the evidence.
 
-**If a message must remain visible, it is not a toast.** Use `Ui::Alert` in the page. The reference
-guidance is explicit — persistent messages are a **Banner**, high-priority ones a **Dialog** — and we
-already ship the component for it, so the escalation costs nothing but choosing correctly:
+**If a message must remain visible for any other reason, it is not a toast.** Use `Ui::Alert` in the
+page. The reference guidance is explicit — persistent messages are a **Banner**, high-priority ones a
+**Dialog** — and we already ship the component for it, so the escalation costs nothing but choosing
+correctly:
 
 | the message… | component |
 |---|---|
-| confirms something, may offer one optional action | **Toast** |
-| reports an operation still running | **Toast**, `:loading` — the one persistent case |
-| must stay until read, or until the condition clears | **`Ui::Alert`** in the page |
+| confirms something, may offer one optional action | **Toast**, `status` — auto-dismisses |
+| reports a failure after a redirect, where the page that failed is gone | **Toast**, `alert` — persists until closed |
+| reports an operation still running | **Toast**, `:loading` — persists until replaced by its outcome |
+| explains a refusal while the form is still on screen | the field error, or **`Ui::Alert`** above the form |
 | must be answered before anything else | **`Ui::Modal`** |
 
-This also removes the argument for a persistent error toast with a close button as its only exit — an
-error the user must act on was never a toast, and an error worth only a glance leaves on its own.
-
-**`:loading` is the exception, and it proves the rule.** It persists because the operation has not
-finished, and it must then be **replaced** by its outcome rather than left behind — both reference
-implementations model it exactly this way. It gets no close button either: dismissing it would hide a
-running operation and leave the user with no way to learn how it ended. An error is a *result*, and
-results auto-dismiss; a loading toast is not a result yet.
-
+**`:loading` persists for a different reason than `:error`, and the difference matters.** Loading
+persists because the operation has not finished, and it must then be **replaced** by its outcome
+rather than left behind; it gets no close button, because dismissing it would hide a running
+operation. An error persists because the person needs to *read* it, and the close button is its only
+exit. Both reference implementations model the loading case exactly this way; the error case they
+leave to the app, and this is our answer.
 
 **A toast is never the only record of a failure.** It is transient by construction, so a validation
 error still belongs on the field (`forms.md`), and a failure the user must act on belongs in the page.

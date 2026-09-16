@@ -201,6 +201,39 @@ Per-file announcements on a ten-file drop are worse than none.
 For the bar itself, use the documented **Progress bar** — `role="progressbar"`, indeterminate means
 **omitting** `aria-valuenow`. Do not invent a second progress mechanism here.
 
+### After the files are chosen — the flow (#966)
+
+The control above is the first second of the feature. Everything after the picker closes was
+undocumented, and a consuming app derived all of it with nothing to check against — seven rejection
+reasons, ceilings checked before extraction, a chunked retry that resumes. Written from what it learned.
+
+- **Per-file outcome, with a reason.** Ten chosen, three refused: the screen names the three, says why
+  each, and **keeps the seven**. *"Upload failed"* over a batch that mostly succeeded is the common
+  wrong answer. The outcome is a list beside the field — one `<li>` per file, status as a **word** plus
+  an icon (1.4.1), the reason in plain English — and it **persists**: it is not a toast (#977).
+- **Partial success is an outcome, not an error.** *"8 of 10 accepted"* is a third state beside success
+  and failure, with a path back for the two: retry, replace or remove. The same shape as
+  [bulk selection](page-anatomies.md#selection-and-bulk-actions-969)'s partial failure and a
+  [Background operation](components.md#background-operation--work-that-outlives-the-request)'s — one shape, three places.
+- **Refuse before transfer what can be known before transfer**: file count, declared size, extension
+  and an `accept` mismatch are checked on selection, before a byte moves, and each refusal names its
+  ceiling. **Refuse before extraction what a container can lie about**: a 2 MB archive can declare a
+  40 GB expansion, and checking after extraction means finding out by running out of disk — so
+  declared expansion, entry count and path traversal are checked on the manifest before any entry is
+  written. **Post-flight** — content sniffing, a scan, a corrupt image — is the server's, after
+  transfer, and reads as a different message: *"we could not read this file"*, not *"too large"*.
+  Three timings, three kinds of copy, and the person can tell which happened.
+- **Progress means something specific.** Aggregate for the batch — *"Uploading 3 of 10, 42 MB of
+  118"* — in the one `role="status"` above; per file, visually, in the list. A **stalled** transfer
+  (no bytes for a stated number of seconds) is a state with its own copy, distinct from *slow*. Say
+  whether **retry resumes or restarts**: a chunked upload resumes from the offset the server reports;
+  a single-request upload restarts, and its copy must not promise otherwise.
+- **The outcome lives beside the field.** The list is the record; the summary line (*"8 of 10
+  accepted"*) is what the live region announces, once. The form's [Error summary](#error-summary)
+  links to each refused file exactly as it links to each invalid field.
+- **The native path stays whole.** Nothing here replaces the `<input type="file">` submission: with
+  JS off, the same server rules produce the same per-file list on the re-rendered form (422).
+
 ## Copy to clipboard (#95)
 
 **No APG pattern either.** A button, a Clipboard API call, and an announcement — the announcement being
@@ -365,6 +398,33 @@ doctrine says so; do not cite a spec for them.
   custom widget, this applies to you.
 - **2.5.8 is not 2.5.5.** *Target Size (Enhanced)* is a different criterion — AAA, 44×44, from WCAG
   2.1. Cite 2.5.8.
+
+## Unsaved changes — leaving a dirty form (#978)
+
+- **The guard has one job: stop a navigation that would discard typed work.** It fires for a Turbo
+  visit — `turbo:before-visit` is cancelable and fires *"before visiting a location, except when
+  navigating by history"* ([Turbo reference](https://turbo.hotwired.dev/reference/events)) — and for
+  refresh, tab close and the browser's own back button through `beforeunload`. Two mechanisms because
+  they are two different navigations; a guard that handles one works half the time.
+- **`beforeunload` shows the browser's dialog, not yours.** The HTML Standard: *"The message shown to
+  the user is not customizable, but instead determined by the user agent"*, and the prompt appears only
+  when the document has **sticky activation** — a real prior interaction
+  ([HTML, prompt to unload](https://html.spec.whatwg.org/multipage/browsing-the-web.html#prompt-to-unload-a-document)).
+  So a *Discard changes / Return to editing* interstitial is **possible for the Turbo case only**; for refresh and close, the platform's generic dialog is the
+  whole interface. Do not promise custom copy where the platform forbids it.
+- **The Turbo interstitial is a Modal** (`sm`): title *"Discard your changes?"*, one sentence naming what
+  is unsaved, **Keep editing** as the primary with initial focus, **Discard** as `destructive`. The
+  controller cancels the visit and re-issues it after *Discard*; neither button touches the form.
+- **Dirty means the values differ from what the server rendered**, not "the person typed". A field
+  changed and changed back is clean. A form re-rendered with a 422 is dirty from the start — the
+  server's values are the *submitted* ones. Snapshot at `connect()` and after every Turbo render of the form.
+- **Autosave draws the boundary.** A form that autosaves has **no dirty state to guard**; the guard and
+  autosave on one form is a contradiction, and the guard must not fire. State per form which it is.
+  Autosave has its own surface — *"Saved 3 s ago"* as a `status`, and *"Could not save — your edits are
+  still here"* as an `Ui::Alert` when it fails.
+- **Not for search and filter forms.** Their state is the URL
+  ([page-anatomies.md](page-anatomies.md#sort-filter-and-page-are-one-url-state)); leaving loses nothing,
+  and a guard there is friction with no work behind it.
 
 ## Error summary
 

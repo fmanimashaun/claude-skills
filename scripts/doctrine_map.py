@@ -135,7 +135,7 @@ SHIPPED_SOURCES: tuple[str, ...] = tuple(sorted(
 # question this tracks is "how much of the shipped doctrine has anyone looked at". Raise it in the
 # same commit that maps a new FILE. It is a floor, never a target: mapping all 49 is not the goal,
 # and a row count is evidence someone looked, never proof a file is covered.
-SHIPPED_FLOOR = 2
+SHIPPED_FLOOR = 4
 
 DOCTRINE_SOURCES = (
     "CLAUDE.md",
@@ -223,6 +223,19 @@ CLAIMS: tuple[Claim, ...] = (
              "on both affected scaffolds.",
     ),
 
+    Claim(
+        claim="Structure snaps to the 8px grid: every token in the structural block of the tokens "
+              "file is a whole multiple of 8px, and every structural token a reference names is "
+              "declared there.",
+        stated_in="skills/design-system/references/foundations-tokens.md",
+        anchor="Structure snaps to the 8px grid; rhythm stays fluid",
+        kind=GUARANTEE,
+        enforced_by=("script:scripts/check_structural_grid.py", "mutation:check_structural_grid"),
+        refs=(976,),
+        note="#976 proposed that EVERY figure be divisible by 8; the fluid scale "
+             "cannot pass that at any viewport. Split by axis: structure fixed and checked, rhythm "
+             "fluid and exempt. A 236px downstream rail is the input the check exists for.",
+    ),
     # ---- the release flow -------------------------------------------------------------------
     Claim(
         claim="A promotion merges with `--merge`; a squash drops dev's ancestry and the NEXT "

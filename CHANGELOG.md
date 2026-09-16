@@ -7,6 +7,40 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-16 (release v1.128.0)
+
+- **The marketplace version tracks two component releases.** `metadata.version` moves with
+  `rails-stack` 1.58.0 → 1.59.0 (the eight design-system and hotwire issues below: the 8px
+  structural grid and its gate, persistent error toasts, the upload flow, background operations,
+  bulk selection, the period selector, the failed-request interface, and the provenance
+  correction) and `qa-flow` 1.28.0 → 1.29.0 (author the test, do not be the test runner).
+  **Every component block in this release names the shipping tag**, `v1.128.0`: the previous two
+  arms headed the rails-stack block with the skill's own version (`v1.57.0`, `v1.58.0`), tags that
+  exist only from old marketplace history, so `extract_release_notes.py --all-tags` passed by
+  coincidence and the published notes for v1.126.0 and v1.127.0 carry only the Repository bullet.
+
+- **Code scanning, and a security policy to receive what it cannot find — `.github/workflows/codeql.yml`,
+  `SECURITY.md`.** CodeQL from GitHub's "CodeQL Advanced" starter, with the two edits that decide
+  whether it is worth having. **Branches:** the template watches `main` alone, which here means
+  scanning nothing until a promotion — pull requests are opened against `dev`, and `main` only ever
+  receives a merge already reviewed. It watches both. **Languages:** measured against the tree
+  rather than taken from the template — `actions` (4 workflows and the 12 hook scripts they invoke;
+  `release.yml` publishes, so this is the highest-value surface), `python` (188 files) and
+  `javascript-typescript` (2 files, both shipped to other people's machines). **`ruby` is
+  deliberately absent**: this repo holds no `.rb` file at all, and the Ruby it ships lives inside
+  markdown fences that CodeQL does not read — `scripts/lint_markdown_code.py` is the only thing
+  that checks it, so a `ruby` row would produce a green scan over zero files and read as coverage.
+  The template's manual-build step is removed rather than carried: every build mode here is `none`,
+  and that step would `exit 1` if it ever ran.
+
+  `SECURITY.md` says what the surface actually is for a marketplace — scripts that run on a
+  maintainer's machine, workflows that publish, hooks that run inside a user's session, and
+  **shipped doctrine that instructs an agent to run something**, which is executable by a model and
+  therefore a security surface rather than an editorial one. Private vulnerability reporting, the
+  latest release supported and no backports, and the explicit out-of-scope list: the licensed
+  corpora, third-party plugins, and any finding whose premise is already having write access to
+  `main`.
+
 ### 2026-09-16 (release v1.127.0)
 
 - **The marketplace version tracks a rails-stack skill release** (#972). No repository change of
@@ -4783,6 +4817,142 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 2026-09-16 (release v1.128.0)
+
+- **A failed request has an interface, not just events — `skills/hotwire/references/turbo.md` §8b,
+  `skills/hotwire/SKILL.md`, `skills/design-system/references/page-anatomies.md`** (#967). §8 listed
+  `turbo:fetch-request-error` and `turbo:frame-missing` with *"handle gracefully"* as the whole
+  guidance, and Turbo's default is silence: the button's text is restored in a `finally`, so a lost
+  save looks like a button that did nothing, and a missing frame is overwritten with `Content
+  missing` — developer text with no way back. Decided: a failed save is an `Ui::Alert` **above the
+  form** (a state to act on, not a toast about something that happened) whose copy — *"your edits are
+  still here"* — is only sayable because the handler never touches the fields; **retry re-sends the
+  same request** via `requestSubmit()`, and the test asserts a second request rather than a vanished
+  banner (the first downstream test passed with the resubmission deleted); a frame keeps its box and
+  shows the Error empty state with its own `reload()`; failure markup is cloned from server-rendered
+  `<template>`s so it is not a second definition of the component; **a 4xx/5xx the server answered is
+  not this** — it has pages. **Registration timing is part of the contract, measured not reasoned**
+  (Retask #258): an eager frame fetches on connect, before Stimulus starts, so the listener lives in a
+  module beside the Turbo import — as a controller it failed every run. **Verified** (doctrine-verifier
+  against turbo.hotwired.dev and the v8.0.13 source, stable through v8.0.23): `fetch-request-error`
+  fires only when the fetch rejects, never for an answered status; `frame-missing` is cancelable with
+  `detail: { response, visit }` and its default is exactly that `<strong class="turbo-frame-error">`;
+  `submit-end` carries either `fetchResponse` or `error`, never both; `FetchResponse` exposes
+  `succeeded / statusCode / clientError / serverError`; eager frames load on connect and `lazy` on
+  visibility; `requestFinished` runs in a `finally`. The interface is our design decision, recorded on the issue.
+
+- **The fifteen doctrine proposals in #978 are decided, and the document they were attributed to does
+  not exist — `docs/evidence/audits/2026-09-16-no-enterprise-manual.md`,
+  `skills/design-system/references/components.md`, `responsive.md`, `interaction-stimulus.md`,
+  `forms.md`** (#978). The issue, filed 15 Sep 2026 from a downstream session, attributed its
+  proposals to a "B2B Enterprise UI/UX Design System Manual supplied by the maintainer"; the
+  maintainer confirmed on 16 Sep that **no such manual exists**. The first version of this work
+  routed it as a source; this is the correction, and the record under `docs/evidence/audits/` says
+  what happened. **Every proposal was then decided on its own merits as ours**, and the doctrine
+  names #978 as a proposal, never a document: the three-state empty-state typology (first use ·
+  cleared, with no illustration · error, with an error identifier); the power-user keyboard layer
+  (`⌘K`, `?`, `j`/`k`, `Enter`, `x`, the `<kbd>` pattern) **with the WCAG 2.1.4 Character Key
+  Shortcuts obligation the proposal omitted** — single-character keys active only while the list has
+  focus, `?` behind a turn-off setting; type-to-confirm destructive confirmation, scoped to
+  irreversible-and-bulk or a shared resource; leaving a dirty form, with `beforeunload`'s dialog
+  stated as the platform's (*"not customizable"*, HTML Standard, and needs sticky activation) so the
+  *Discard / Keep editing* interstitial exists for Turbo visits only, and an autosaving form has no
+  dirty state to guard; the permissions matrix as a `<table>` of native checkboxes whose
+  `indeterminate` maps to `aria-checked="mixed"` **normatively** (HTML-AAM); the detail drawer's
+  480–720px bounds; a six-state completeness rule at the top of the catalogue; and table detail —
+  alignment by data type, ellipsis with the full value reachable, sticky on both axes, a per-person
+  density toggle (56 / 32), the 48px selection column — in Table (CRUD). **Not adopted**: a 1440px
+  cap (ours is 1280, measured), a 256px rail (ours is 288), a second spacing vocabulary, a 12-column
+  grid. **Reconciled with #972**: a single-pane screen caps at `--width-shell` and centres; a screen
+  with a second question earns its width with a second pane. **Found and fixed on the way**: the
+  Modal entry named the `fm-navy` primitive for its backdrop; it is `bg-overlay/50`, which the shipped
+  implementation already used. Verified before writing (doctrine-verifier, 16 Sep 2026): WAI-ARIA 1.2
+  `aria-checked`, HTML-AAM's checkbox mapping, WCAG 2.1.4, ARIA 1.2's toolbar-label MUST, `<kbd>`,
+  the HTML Standard's prompt-to-unload algorithm, Turbo's `turbo:before-visit` history exception.
+  Our design decisions, recorded on the issue.
+
+- **Structure snaps to the 8px grid; rhythm stays fluid — `skills/design-system/references/foundations-tokens.md`,
+  `scripts/check_structural_grid.py`, `scripts/mutations/check_structural_grid.py`,
+  `scripts/doctrine_map.py`** (#976). The issue proposed anchoring every spatial figure to a strict
+  8px grid with a checklist asking whether *all* padding, margins and heights are divisible by 8 (it
+  attributed the proposal to the manual above, which does not exist; the proposal stands on its
+  merits); the shipped scale is fluid `clamp()` values, which are on no grid by design — `--space-s`
+  is about 21.2px at 1440. Decision: **split by axis.** Structure — the shell header, the rails, a
+  sticky toolbar, table row heights, the selection column, drawer bounds — is fixed and divisible by
+  8, in one marked `@theme` block of nine tokens (`--shell-*`, `--row-*`, `--col-select`,
+  `--drawer-*`); rhythm and type stay fluid; control heights stay as measured against the corpora.
+  **The checklist is enforced, not asserted**: the new gate refuses a value in that block that is not
+  a multiple of 8px, a fluid value there, or a structural token a reference names that the block does
+  not declare (the #750 class) — with a `--selftest`, a six-mutation guard, and a `guarantee` row in
+  the doctrine map (`SHIPPED_FLOOR` 2 → 4). Downstream evidence the check is real: a consuming app's
+  rail was 236px. The rail (288, the shipped `lg:w-72`), header and icon rail (64) were already ours;
+  row heights 56 / 32, the 48px selection column and the 480 / 720 drawer bounds are chosen in the
+  block with no external source, and the block says so. Same answer recorded downstream (Retask
+  `docs/brain/OPEN-QUESTIONS.md` Q3). Our design decision, recorded on the issue.
+
+- **An error toast does not auto-dismiss — `skills/design-system/references/components.md`,
+  `component-implementations.md`** (#977). Severity now decides the lifetime as well as the role:
+  `status` toasts auto-dismiss after 5 s, an `alert` toast persists until closed and always carries
+  the close button, `:loading` is unchanged. **Measured, not preferred**: driving a consuming app
+  (Retask #268), a refused submission and a spent magic link both arrived as toasts, both were gone
+  before the reviewer looked, and both were recorded as *"no message at all"*. The shipped
+  `ToastComponent#timeout_ms` and `dismissable?` change accordingly, and the prose that argued *"an
+  error is a result and results auto-dismiss"* is replaced with the reason it was wrong. **The
+  citation is corrected too**: the entry's *"noticed without disrupting… automatically disappear"*
+  quote is Mobbin's glossary, unattributed until now, and doctrine-verifier found it says nothing
+  about errors — so the error rule is stated as ours, not hung on that source. **Not adopted**: the
+  bottom-right corner the issue raised; top-right stays, and the entry says why. A found defect on the same
+  entry is fixed: it said each toast is the `box` primitive two sentences after forbidding `box`,
+  against the shipped markup. Our design decision, recorded on the issue.
+
+- **File upload: the flow after the files are chosen — `skills/design-system/references/forms.md`**
+  (#966). The control was specified and everything after the picker closed was not, so a consuming
+  app derived it all — seven rejection reasons, ceilings checked before extraction, a chunked retry
+  that resumes. Now doctrine: per-file outcome with a reason, keeping the accepted files; **partial
+  success is an outcome, not an error** (*"8 of 10 accepted"*), the same shape as bulk selection's
+  and a background operation's; three refusal timings that produce three kinds of copy — before
+  transfer (count, declared size, extension), **before extraction** (a 2 MB archive can declare a
+  40 GB expansion), and post-flight; what progress means and whether retry resumes or restarts; and
+  the outcome living beside the field, persisted — not a toast (#977). Our design decision, recorded on the issue.
+
+- **Work that outlives the request has an interface — `skills/design-system/references/components.md`
+  → Background operation, `scripts/build_coverage.py`** (#968). Every Rails 8 app ships Solid Queue and
+  nothing said how an export, import or batch send appears to the person who started it. The entry:
+  **the operation is a record, not a job**; **five states** — accepted, running, done, failed, and
+  failed-and-retrying, which is Active Job's `retry_on` at work and is routinely collapsed into
+  "failed"; a Turbo Stream from the job, polling as the fallback; progress bar only for a known total;
+  where the result lands when the person has left (the record's index, a notification, email — a
+  toast cannot be the answer); starting it twice refused server-side; failure as a state a surface
+  shows, never only a log; partial success as an outcome. **Verified** (doctrine-verifier, Rails 8.1
+  API and the solid_queue README): `retry_on` / `discard_on`; Solid Queue has *no retry mechanism of
+  its own* and keeps `solid_queue_failed_executions`; `limits_concurrency` with `on_conflict:`; and
+  **`perform_later` returns `false` on a failed enqueue rather than raising** — the doctrine says to
+  check it. The interface is our design decision, recorded on the issue.
+
+- **Bulk selection is specified — `skills/design-system/references/page-anatomies.md` → Selection and
+  bulk actions, `components.md` → Table (CRUD)** (#969). The most destructive control on an index had
+  zero hits for "bulk action" and "selected rows". Decided: the bulk toolbar **takes the filter
+  toolbar's slot** on the first selection (same `--shell-toolbar` height, so nothing under the pointer
+  moves) as a named `role="toolbar"` — ARIA 1.2's *"MUST supply a label… when the application contains
+  more than one toolbar"*; **"select all" is this page, and says so**, with *"select all 340 matching"*
+  as a distinct second act (a query, not a list of ids); page-scoped selection is **dropped and
+  announced** on a page, sort or filter change; **the count is the confirmation** (*"Delete 12
+  people?"*), typed confirmation for irreversible bulk actions; `indeterminate` on the header checkbox
+  (→ `aria-checked="mixed"`, normative per HTML-AAM), row checkboxes named by their row; and partial
+  failure in one shape with upload and background operations. Our design decision, recorded on the issue.
+
+- **The period selector is URL state, not a date picker — `skills/design-system/references/components.md`
+  → Period selector, `page-anatomies.md` → The toolbar's order, `scripts/build_coverage.py`** (#970).
+  Zero hits for "period selector" while every reporting screen has one. Decided: presets are the
+  primary control and the custom range the escape hatch; `period=` / `from=&to=` in the URL, resetting
+  the page to 1 and leaving sort and filters alone; **the label shows inclusive dates over a
+  half-open query, and the two must agree**; whose day boundary, stated once (the organisation's by
+  default); the empty period is the *Cleared* empty state offering to widen the range; comparison is
+  part of the same control; **a KPI distinguishes zero from unknown** — *0* is a result, *—* with a
+  reason is not (Retask D-061 read "0 / Nothing yet" over computed figures); and the toolbar's order
+  is fixed — period first, filters, export alone on the right, separating configuration from
+  extraction. Our design decision, recorded on the issue.
+
 ### 2026-09-16 (release v1.58.0)
 
 - **Adaptive is now a stated position, with the bands, the panes and the navigation —
@@ -8444,7 +8614,16 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-16 (release v1.128.0)
+
+- **A version-only bump, deliberately — `plugins/qa-flow/.claude-plugin/plugin.json` 1.28.0 → 1.29.0.**
+  The change below (#979) reached `main` in the v1.127.0 promotion **under a `### Unreleased`
+  heading that the arm never converted**: users installing from `main` have had the new agent
+  behaviour since 16 Sep under version 1.28.0, its notes were never published, and the version
+  never moved. This bump changes no qa-flow content against `main`; it gives the shipped change a
+  version and publishes its notes. The pre-flight rule it violated — a promotion must carry no
+  `Unreleased` heading — is stated in CLAUDE.md and `release-manager`, and nothing enforced it;
+  #990 tracks that beside the extractor gap.
 
 - **Author the test; do not be the test runner — `plugins/qa-flow/agents/e2e-tester.md`,
   `plugins/qa-flow/agents/exploratory-tester.md`** (#979). A `playwright-tester` skill was proposed;

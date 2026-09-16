@@ -193,6 +193,13 @@ Answers "what needs my attention?" — not "here is everything."
 - **Empty state is not optional.** A dashboard on day one has no data, and that is the
   first screen a new user sees.
 
+- **A KPI distinguishes zero from unknown** (#970). *0* means the query ran and found nothing;
+  a query that failed or has not run reads *—* with a reason, never *0* and never *Nothing yet*.
+  A consuming app's dashboard read "0 / Nothing yet" over figures it had just computed (Retask
+  D-061): a blanked zero is indistinguishable from a real count, and the fault is invisible for as
+  long as nobody doubts the number. Period-scoped KPIs take their range from the
+  [Period selector](components.md#period-selector), shown once at the top, never per tile.
+
 ## Detail
 
 One record. The screen answers "what is this, and what can I do to it?"
@@ -370,7 +377,7 @@ A screen that ships only the first is the normal defect, and the fourth is the o
 | **Empty — no records** | the resource has none yet | [Empty state](components.md#empty-state) that says what would appear here and how to create the first |
 | **Empty — filtered out** | records exist; this query matches none | a **different** message naming the filter, and a way to clear it. Never the "create your first" copy — there is nothing to create |
 | **Loading** | a Turbo frame whose size is known | [Skeleton](components.md#skeleton--loading-placeholder) shaped like the rows, not a spinner |
-| **Error** | the query or frame failed | say so in place, and offer the retry; do not render an empty table, which reads as "no records" |
+| **Error** | the query or frame failed | say so in place — the Error [Empty state](components.md#empty-state) — and offer a retry that re-sends the same request; do not render an empty table, which reads as "no records". A request that never came back is the hotwire skill's `turbo.md` §8b |
 
 **The two empty states are not one state with two messages.** "No people yet — add the first" shown
 to someone who filtered to `role: auditor` is a lie about the data, and it hides the only useful
@@ -401,6 +408,58 @@ class of defect as a rescue that swallows the exception.
 *"per table and state it"*. This is where it is stated. Whichever is chosen, **the columns are
 defined once** and both renderings read that definition — two hand-written copies drift, and the
 drift shows up as a column present in one and missing in the other.
+
+### The toolbar's order (#970)
+
+Configuration on the left, extraction on the right, and the left-hand order is fixed: the
+[Period selector](components.md#period-selector) first when the screen is period-scoped, then the
+search input, then categorical filters, then per-page. **Export sits alone on the right** — it reads
+the configured query, so it must not sit among the controls that configure it. The toolbar is
+`--shell-toolbar` (56px) tall and `sticky top-0` when the table is long enough to scroll under it; the
+table header then sticks at `top-(--shell-toolbar)` and the selection and identifier columns at
+`left-0` ([Table (CRUD)](components.md#table-crud), [foundations-tokens.md](foundations-tokens.md) §3b).
+
+### Selection and bulk actions (#969)
+
+Selection is the most destructive control on an index — it is how someone deletes forty records at
+once — so every one of these is decided here, not per app.
+
+- **The bulk toolbar takes the filter toolbar's place, not a new row.** On the first selection the
+  toolbar's slot crossfades (`--duration-fast`; opacity only — nothing travels) into a `role="toolbar"`
+  named *Bulk actions*. ARIA 1.2 — *"Authors MUST supply a label on each toolbar when the application
+  contains more than one toolbar"* — and this screen has two. Same `--shell-toolbar` height, so
+  **nothing under the pointer moves**: a bar that materialises above the rows shifts the row the
+  pointer is still travelling toward. Count on the left, actions on the right, a persistent **Clear
+  selection** control at the end.
+- **"Select all" means this page, and says so.** The header checkbox selects the rows on screen; the
+  toolbar then offers the distinct second act — *"Select all 340 matching"* — as a separate control.
+  Gmail's split exists because the ambiguity is dangerous. The two modes are named in the count:
+  *"20 selected on this page"* vs *"All 340 matching selected"*.
+- **Page-scoped selection does not survive a page change, a sort or a filter — and dropping it is
+  said** (*"Selection cleared"*, through the status below). Silently carrying it is how someone
+  deletes rows they never saw; silently dropping it loses ten minutes of work; so it is dropped and
+  announced. The all-matching mode is a **query**, not a list of ids: it survives paging by
+  construction and is re-evaluated at action time.
+- **The count is the confirmation.** The confirm modal's title is *"Delete 12 people?"*, never
+  *"Delete?"*; an irreversible bulk action uses the type-to-confirm strength
+  ([Modal](components.md#modal--dialog)). An all-matching action confirms with the number it will
+  actually affect, counted at confirm time, not the number shown when the page loaded.
+- **a11y.** The count lives in a `role="status"` so it is announced, not merely rendered — and the
+  toolbar's appearance rides the same announcement (*"12 selected — bulk actions available"*). The
+  header checkbox is `indeterminate` when the page is partly selected (→ `aria-checked="mixed"`,
+  normatively per HTML-AAM); row checkboxes are named by the row's identifier. `Esc` clears the
+  selection once no layer is open.
+- **Partial failure has one shape**: *"12 selected, 9 deleted, 3 refused"*, the three named with a
+  reason each and **kept selected** so the person can retry or deselect. It is the same shape as
+  [File upload](forms.md#after-the-files-are-chosen--the-flow-966)'s per-file rejection and a
+  [Background operation](components.md#background-operation--work-that-outlives-the-request)'s partial
+  success. Never *"Delete failed"* over a batch that mostly succeeded, and never a toast — which,
+  per #977, would vanish with the list of what was refused.
+- **Keyboard.** `x` toggles the focused row and `Shift`+click extends a range, under the
+  [keyboard layer](interaction-stimulus.md#the-power-user-keyboard-layer-978)'s WCAG 2.1.4 obligation:
+  active only while the table has focus.
+- **Batches that take time are a Background operation.** Over about a second the action returns
+  *accepted* and the progress banner takes over; the toolbar does not sit with a spinner in it.
 
 ## Settings
 

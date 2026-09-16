@@ -2,13 +2,13 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**28 shipped agents · 46 shipped commands · 100 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**28 shipped agents · 46 shipped commands · 102 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.39.3 | 5 | 12 | 5 | 18 |
 | `pipeline` | 1.3.2 | 2 | 8 | 2 | 1 |
-| `qa-flow` | 1.28.0 | 10 | 7 | 10 | 14 |
+| `qa-flow` | 1.29.0 | 10 | 7 | 10 | 14 |
 | `rails-flow` | 1.40.2 | 11 | 19 | 11 | 23 |
 
 ## Agents
@@ -175,6 +175,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | shared shapes selftest | `repo` | `python3 scripts/check_shared_shapes.py --selftest` | selftest |
 | skill routing | `repo` | `python3 scripts/check_skill_routing.py` | live check |
 | skill routing selftest | `repo` | `python3 scripts/check_skill_routing.py --selftest` | selftest |
+| structural grid | `repo` | `python3 scripts/check_structural_grid.py` | live check |
+| structural grid selftest | `repo` | `python3 scripts/check_structural_grid.py --selftest` | selftest |
 | token contrast | `repo` | `python3 scripts/check_token_contrast.py` | live check |
 | token contrast selftest | `repo` | `python3 scripts/check_token_contrast.py --selftest` | selftest |
 | wiki reference drift | `repo` | `python3 scripts/build_wiki.py --check` | live check |
