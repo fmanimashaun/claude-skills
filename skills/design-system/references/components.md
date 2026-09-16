@@ -525,8 +525,11 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   shell. Below `md` the links collapse behind the disclosure; Logo and hamburger stay.
 
 ## Navigation — sidebar / vertical
-- **Rail:** `Layout::Sidebar` at `lg:w-72`, collapsible to `4rem`, `hidden lg:block`; below `lg` it
-  becomes the off-canvas **drawer** — and that is *two contracts, not one component that morphs*.
+- **Rail:** `Layout::Sidebar` at `lg:w-72`, collapsible to `4rem`. **THREE STATES ACROSS THE
+  BANDS, not two** (`responsive.md` §4): expanded from `lg`, the icon rail between `sm` and `lg`,
+  and below `sm` the off-canvas **drawer**. The icon rail is the state shells skip, and skipping it
+  is how a 288px sidebar ends up taking a third of an 800px window. The drawer is *a second
+  contract, not the same component morphing*.
   Read [Drawer / off-canvas](#drawer--off-canvas) first: the overlay drawer is a modal dialog and
   traps focus, the persistent rail is a `<nav>` and must not.
 - **Landmark and label** per [the rules above](#the-nav-landmark--the-naming-rules-every-navigation-region-here-follows):
@@ -554,7 +557,13 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **Sizes / states:** items `text-step--1 rounded-md px-3 min-h-touch` (2.5.8 again — a rail link is
   not inline text); rest `text-muted-foreground`, hover `hover:bg-accent`, active `bg-accent
   text-primary`, focus ring. Account menu pinned bottom with `mt-auto`.
-- **Responsive:** `hidden lg:block` plus the drawer below `lg`. Never toggle `aria-modal` by media query.
+- **Responsive:** expanded `hidden lg:flex`, icon rail `hidden sm:flex lg:hidden`, drawer below
+  `sm`. Never toggle `aria-modal` by media query — the drawer is its own element, rendered and
+  hidden, so the modal one is only ever the modal one.
+- **At compact the whole rail must be reachable from ONE control.** A drawer does that by
+  construction; a bottom bar only if it holds every top-level destination. A destination reachable
+  only from a second, compensating menu is the defect — see `responsive.md` §4 for the measurement
+  that produced this rule.
 
 ## Tabs
 - **HOW MANY IS NOT A NUMBER — the strip fits ONE ROW at the narrowest width the app supports.**

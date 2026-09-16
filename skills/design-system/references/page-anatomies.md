@@ -225,6 +225,106 @@ One record. The screen answers "what is this, and what can I do to it?"
 - **Edits are modal** (`crud-modal-pattern.md`) targeting `<turbo-frame id="modal">`.
   A detail screen that navigates away to edit loses the user's place.
 
+## List-detail — the shape most authenticated apps are
+
+A list, and one record from it. **Below Expanded it is two screens; at Expanded and wider it is one
+screen with two panes**, and that is a structural swap rather than a wider layout — see
+`responsive.md` §4.
+
+```erb
+<%# ONE ROUTE, not two. The detail is a Turbo frame the list targets, so a pane at 1280px and a
+    page at 390px are the same request answered into different places. %>
+<div class="list-detail" data-controller="list-detail">
+  <section class="stack" aria-labelledby="invoices-heading">
+    <h2 id="invoices-heading" class="text-step-1">Invoices</h2>
+    <ul role="list" class="stack">
+      <% @invoices.each do |invoice| %>
+        <li>
+          <%= link_to invoice_path(invoice), data: { turbo_frame: "detail" },
+                      aria: { current: (invoice == @selected ? "true" : nil) } do %>…<% end %>
+        </li>
+      <% end %>
+    </ul>
+  </section>
+
+  <%= turbo_frame_tag "detail", class: "stack" do %>
+    <%# the Detail anatomy above, unchanged — it does not know it is in a pane %>
+  <% end %>
+</div>
+```
+
+```css
+/* TWO PANES ARE A GRID WITH A THRESHOLD, not a media query per screen. `@container` where the
+   shell can put this inside a narrower column; the page's own width otherwise. */
+.list-detail { display: grid; gap: var(--space-m); }
+@media (min-width: 52.5rem) { /* 840dp, M3's Expanded floor */
+  .list-detail { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+```
+
+- **Composes** — the Detail anatomy (whole, in the second pane), Table or a `<ul role="list">` for
+  the first, Pagination under the list, Empty state per pane.
+- **Panes per band** — Compact 1, Medium 1 recommended or 2, Expanded and above 2. M3 states this
+  one as a table, and it is the only canonical layout that does
+  ([list-detail](https://m3.material.io/foundations/layout/canonical-examples/list-detail)).
+  Medium splits deliberately: single-pane *"for information-dense content or deep focus"*, two-pane
+  *"to browse collections and switch between items quickly"*.
+- **The two behaviours that get missed, both quoted from M3:** *"Back button: Appears in detail view
+  only for **single-pane** layouts"* and *"Selected state: Appears only in list view for
+  **two-pane** layouts"*. A back button in a pane goes nowhere, and a selected row in a layout where
+  the detail is a separate screen marks a row the reader cannot see.
+- **Widths** — *"Each pane in a two-pane layout should take up 50% of the window width. Avoid
+  setting custom widths"* ([M3, Medium](https://m3.material.io/foundations/layout/breakpoints/medium)).
+- **Focus moves with the swap.** At one pane, following a row is a navigation and focus lands on the
+  detail's `h1`. At two panes it is a frame update, so move focus into the frame yourself or a
+  keyboard reader is left in the list with no idea the right-hand side changed.
+
+## Supporting pane — content that only means something beside the primary
+
+Use it *"when the secondary content is only meaningful in relation to the primary content"*; if the
+two are a parent and its children, **that is list-detail, not this**
+([M3, supporting pane](https://m3.material.io/foundations/layout/canonical-examples/supporting-pane)).
+
+| placement | pane width | band |
+|---|---|---|
+| below the primary | flexible | Compact, Medium |
+| leading or trailing | **fixed 360dp** (`22.5rem`) | Expanded |
+| leading or trailing | **fixed 412dp** (`25.75rem`) | Large, Extra-large |
+
+```erb
+<%= render(Layout::Sidebar.new(side: :right, side_width: "22.5rem", content_min: "60%")) do %>
+  <div class="stack"><%# the primary %></div>
+  <aside class="stack" aria-label="Activity"><%# the supporting pane %></aside>
+<% end %>
+```
+
+- `Layout::Sidebar` already expresses it: a fixed side, a flexible main, and a stack below the
+  threshold with **no media query**. That is the intrinsic mechanism doing what M3 describes with
+  breakpoints, and it is why the widths above are the only figures worth quoting.
+- **The Compose scaffold's defaults are not the design guidance, and the two disagree.** Android's
+  implementation notes say *"For medium width, split the display space equally… For expanded width,
+  give 70% of the space to the main content, 30% to the supporting content"*
+  ([Android, canonical layouts](https://developer.android.com/develop/ui/compose/layouts/adaptive/canonical-layouts)).
+  Cite whichever you are following; never blend a percentage from the code with a dp from the design.
+- **Below the threshold the pane goes UNDER the primary, not into a drawer** — it is context, and
+  context behind a control is context nobody reads.
+
+## Feed — many items of the same kind, no hierarchy
+
+*"The grid can adapt from a single, scrolling column to a multi-column scrolling feed"*
+([Android, canonical layouts](https://developer.android.com/develop/ui/compose/layouts/adaptive/canonical-layouts)).
+Ours needs no breakpoint at all:
+
+```erb
+<div class="grid-auto" style="--min: 11.25rem"><%# 180dp, Compose's GridCells.Adaptive(minSize) %></div>
+```
+
+- `grid-auto` is `repeat(auto-fit, minmax(min(--min, 100%), 1fr))`: one column when there is room
+  for one, more when there is room for more, and the `min()` is what stops a 180px minimum from
+  overflowing a 320px phone.
+- **A feed is not a table.** If the items share columns a reader compares across, it is the data
+  table anatomy and the columns are the point.
+
 ## Data table — the index of a resource
 
 Many records, and the screen answers *"which of these do I want, and am I seeing all of them?"*
