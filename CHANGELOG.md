@@ -4811,6 +4811,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 The version is assigned at the promotion, never here.
 
+- **A failed request has an interface, not just events — `skills/hotwire/references/turbo.md` §8b,
+  `skills/hotwire/SKILL.md`, `skills/design-system/references/page-anatomies.md`** (#967). §8 listed
+  `turbo:fetch-request-error` and `turbo:frame-missing` with *"handle gracefully"* as the whole
+  guidance, and Turbo's default is silence: the button's text is restored in a `finally`, so a lost
+  save looks like a button that did nothing, and a missing frame is overwritten with `Content
+  missing` — developer text with no way back. Decided: a failed save is an `Ui::Alert` **above the
+  form** (a state to act on, not a toast about something that happened) whose copy — *"your edits are
+  still here"* — is only sayable because the handler never touches the fields; **retry re-sends the
+  same request** via `requestSubmit()`, and the test asserts a second request rather than a vanished
+  banner (the first downstream test passed with the resubmission deleted); a frame keeps its box and
+  shows the Error empty state with its own `reload()`; failure markup is cloned from server-rendered
+  `<template>`s so it is not a second definition of the component; **a 4xx/5xx the server answered is
+  not this** — it has pages. **Registration timing is part of the contract, measured not reasoned**
+  (Retask #258): an eager frame fetches on connect, before Stimulus starts, so the listener lives in a
+  module beside the Turbo import — as a controller it failed every run. **Verified** (doctrine-verifier
+  against turbo.hotwired.dev and the v8.0.13 source, stable through v8.0.23): `fetch-request-error`
+  fires only when the fetch rejects, never for an answered status; `frame-missing` is cancelable with
+  `detail: { response, visit }` and its default is exactly that `<strong class="turbo-frame-error">`;
+  `submit-end` carries either `fetchResponse` or `error`, never both; `FetchResponse` exposes
+  `succeeded / statusCode / clientError / serverError`; eager frames load on connect and `lazy` on
+  visibility; `requestFinished` runs in a `finally`. The interface is our design decision, recorded on the issue.
+
 - **The enterprise design manual is routed, not adopted wholesale — `docs/evidence/audits/2026-09-16-enterprise-manual-routing.md`,
   `skills/design-system/references/components.md`, `responsive.md`, `interaction-stimulus.md`,
   `forms.md`** (#978). A B2B Enterprise UI/UX Design System Manual supplied by the maintainer on
