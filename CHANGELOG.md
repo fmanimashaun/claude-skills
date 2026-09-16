@@ -7,6 +7,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-16 (release v1.129.0)
+
+- **The marketplace version tracks a qa-flow release.** `metadata.version` moves with `qa-flow`
+  1.29.0 → 1.30.0, which carries the live-browser journey walker (#993) and its acceptance run
+  against the app it was written from. No repository change of its own.
+
 ### 2026-09-16 (release v1.128.1)
 
 - **The release-notes gate can now see the two ways a release publishes less than it shipped —
@@ -8632,9 +8638,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
-
-The version is assigned at the promotion, never here.
+### 2026-09-16 (release v1.129.0)
 
 - **A live-browser journey walker — `plugins/qa-flow/agents/journey-walker.md`,
   `plugins/qa-flow/commands/walkthrough.md`, `plugins/qa-flow/scripts/walkthrough_plan.py`,
