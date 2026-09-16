@@ -4774,6 +4774,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Adaptive is now a stated position, with the bands, the panes and the navigation —
+  `skills/design-system/references/responsive.md`, `page-anatomies.md`, `components.md`,
+  `interaction-stimulus.md`** (#972). `responsive.md` was a good fluid-first doctrine that stopped
+  at `2xl` and never said what a screen becomes when scaling is no longer enough. Nothing named a
+  pane count, nothing said which navigation belongs at which width, and nothing covered a 2560px
+  monitor — so a consuming app switched its whole shell at `md` and showed a **236px sidebar in a
+  768px viewport**, 31% of the screen, against no rule at all.
+
+  **The sidebar has THREE states across the bands, not two**: drawer below `sm`, icon rail
+  (`4rem`) from `sm`, expanded rail (`lg:w-72`) from `lg`. The middle one is what shells skip.
+
+  **Verified before it was written** (doctrine-verifier, against m3.material.io and
+  developer.android.com, September 2026): the breakpoint dp values (Compact 0–599, Medium 600–839,
+  Expanded 840–1199, Large 1200–1599, Extra-large 1600+), the margins (16dp compact, 24dp
+  everywhere above), *"Each pane in a two-pane layout should take up 50% of the window width"*,
+  the supporting pane's fixed 360dp at Expanded and 412dp at Large, list-detail's back-button and
+  selected-state rules, *"Design for breakpoints instead of specific devices"*, and the feed's
+  `GridCells.Adaptive(minSize = 180.dp)`. **Two claims were corrected by that verification rather
+  than shipped**: the bar-vs-rail split is the **Android Compose default**, not M3 design guidance
+  — the drawer in that page is a manual override in a "Customize navigation types" sample — and
+  "two panes at Expanded and above" is the **list-detail** layout's own table, while M3 keeps one
+  pane valid through Large and allows three at Extra-large. M3 also **renamed window size classes
+  to breakpoints** in May 2026 while the Compose API kept `WindowSizeClass`, so both names are
+  current in different places and the doctrine says which is which.
+
+  **The rule at compact is ours, and it replaces an absolute with a test.** `coverage.md` said a
+  bottom navigation is *"never as a web nav"*; the measured defect is narrower — a bar holds four
+  or five items, so an app rendering `items.first(4)` of an eight-item rail left Sign out, Help and
+  Account unreachable on a phone and grew a second menu in the header to carry them. The rule is
+  now **reachability**: at compact the whole rail must be reachable from one control, which a
+  drawer satisfies by construction and a bar satisfies only if it holds every destination.
+
+  `page-anatomies.md` gains the three canonical layouts — **list-detail**, **supporting pane** and
+  **feed** — expressed in our own primitives, with `Layout::Sidebar` and `grid-auto` doing
+  intrinsically what M3 describes with breakpoints. List-detail needs the one behaviour no mixin
+  covers, so `list-detail` is now a named controller in `interaction-stimulus.md`: at two panes a
+  row click is a frame update and nothing moves focus, which leaves a keyboard reader in the list
+  while the record beside them silently changes.
+
 ### 2026-09-15 (release v1.57.0)
 
 - **Tabs are fully specified except for how many — `skills/design-system/references/components.md`**

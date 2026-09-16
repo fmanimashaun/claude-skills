@@ -407,6 +407,7 @@ nobody has specified yet:
 | `feed` | Activity feed, `role="feed"` shape only | — |
 | `carousel` | Carousel, and the Lightbox inside `modal` | list-navigation |
 | `payment-element` | Payment / card entry (the PSP's own element) | — |
+| `list-detail` | the List-detail anatomy's pane swap (page-anatomies.md) | — (no mixin fits; see below) |
 | `native-bridge`, `bridge--button` | Hotwire Native surfaces (mobile.md) | — |
 
 - **`sidebar` is collapse only — the overlay drawer is `modal`.** This entry used to read "`sidebar`
@@ -415,6 +416,14 @@ nobody has specified yet:
   One controller doing both is how a persistent sidebar acquires `aria-modal` and a focus trap it should
   never have. `sidebar` collapses and expands; `modal` (focus-trap + dismissable) drives the overlay,
   positioned to an edge.
+- **`list-detail` exists for ONE thing: focus after the swap.** At one pane, following a row is a
+  navigation and the browser moves focus for you. At two panes it is a Turbo frame update, so
+  nothing moves: a keyboard or screen-reader user presses Enter on a row and is left in the list
+  while the right-hand side silently becomes a different record. On `turbo:frame-load`, when the
+  two-pane layout is in effect, it moves focus to the detail's heading; below that threshold it does
+  nothing, because the navigation already did. It composes none of the four mixins — it is neither a
+  layer, nor a list, nor a position, nor a trap — and saying so is the point: a component that needs
+  a fifth is a component whose behaviour has to be written down, which is this bullet.
 - **`carousel`** — prev/next plus, *only if it auto-rotates*, play/pause and stop-on-hover/focus. The
   lightbox composes it inside `modal` rather than adding a controller of its own.
 - **This bullet used to say `carousel` was "the only new controller the #95 rows need", and the docs

@@ -692,7 +692,16 @@ USE: dict[str, str] = {
     # tell an agent the wrong surface. Named explicitly instead.
     "Device mockup": "marketing surfaces only, to frame a product screenshot",
     "Chat bubble": "a messaging, comment or activity thread — not general app screens",
-    "Bottom navigation": "native mobile shells (Hotwire Native); never as a web nav",
+    # ON THE WEB THE RULE IS REACHABILITY, NOT THE CONTROL (#972). "Never as a web nav" was an
+    # absolute where the real defect is narrower and measurable: a bottom bar holds four or five
+    # items, so in a consuming app one rendering `items.first(4)` of an eight-item rail left Sign
+    # out, Help and Account unreachable on a phone — and a second menu appeared in the header to
+    # carry them. A drawer satisfies the rule by construction; a bar does only if it holds every
+    # top-level destination.
+    "Bottom navigation": ("native mobile shells (Hotwire Native). On the WEB the rule is "
+                          "reachability, not the control: at compact the whole rail must be "
+                          "reachable from one control, so a drawer qualifies and a bar only does "
+                          "if it holds every top-level destination -- responsive.md §4"),
     "QR code": "wherever a code must be scanned — checkout, tickets, device pairing",
     "Video player": "marketing and docs surfaces; inside a `frame` so layout never shifts",
     "Carousel / Slider": "prefer not to — if a client insists, a marketing surface only",
