@@ -224,6 +224,11 @@ DOCUMENTED_EVIDENCE: dict[str, str] = {
     "Toast / Notification": "## Toast / Notification",
     "Tooltip / Popover": "## Tooltip / Popover",
     "Table (CRUD)": "## Table (CRUD)",
+    # #978 -- roles x features, four checkbox states; #970 -- URL state, not a date picker;
+    # #968 -- the five states of work that outlives the request.
+    "Permissions matrix": "## Permissions matrix",
+    "Period selector": "## Period selector",
+    "Background operation": "## Background operation",
     # #95's Lists group shipped these three as their own sections rather than as compositions
     # named only in the `Build from` column. Trailing newline for the same reason as Disclosure
     # below: "## Stacked list" alone would also match a longer heading.
@@ -339,12 +344,22 @@ ENTRIES: tuple[Entry, ...] = (
       ["application-ui/overlays/notifications"], ["Toast"]),
     E("Tooltip / Popover", COMPONENT, "documented", "hover/focus popover", [], ["Tooltips", "Popover"]),
     E("Table (CRUD)", COMPONENT, "documented", "—", ["application-ui/lists/tables"], ["Tables"]),
+    # CLAIMS NO CORPUS PATH: neither kit ships a permissions matrix; it is a Table (CRUD) of
+    # checkboxes with a Disclosure per module, and the evidence is the entry (#978).
+    E("Permissions matrix", COMPONENT, "documented", "disclosure (modules) + tri-state checkboxes",
+      note="four checkbox states — indeterminate is exposed as aria-checked=mixed, normatively "
+           "(HTML-AAM); one form, one submit; the cell is named by feature x role (#978)"),
     E("Description list", COMPONENT, "documented", "—",
       ["application-ui/data-display/description-lists"], [],
       "blank values render an em dash + sr-only 'not set', never an empty <dd>"),
     E("Media object", COMPONENT, "documented", "—", ["application-ui/layout/media-objects"], [],
       "never stacks — the side-by-side relationship IS the pattern"),
     E("Pagination", COMPONENT, "documented", "—", ["application-ui/navigation/pagination"], ["Pagination"]),
+    # CLAIMS NO CORPUS PATH: the date-picker directories belong to Calendar, which is the control
+    # INSIDE this one's escape hatch. The period selector is URL state with presets first (#970).
+    E("Period selector", COMPONENT, "documented", "radiogroup presets + native date inputs",
+      note="presets first, custom range as the escape hatch; URL state that resets the page to 1; "
+           "the label shows inclusive dates over a half-open query, and the zone is stated once (#970)"),
     E("Empty state", COMPONENT, "documented", "—", ["application-ui/feedback/empty-states"], []),
     E("Breadcrumbs", COMPONENT, "documented", "—",
       ["application-ui/navigation/breadcrumbs"], ["Breadcrumb"],
@@ -437,6 +452,11 @@ ENTRIES: tuple[Entry, ...] = (
     E("Skeleton / loading placeholder", COMPONENT, "documented", "—", [], ["Skeleton"],
       "Turbo frame loading states need this; without it agents invent spinners"),
     E("Spinner / busy indicator", COMPONENT, "documented", "—", [], ["Spinner"]),
+    # CLAIMS NO CORPUS PATH: a composition of Progress bar, Spinner, Skeleton, Toast and the Activity
+    # feed — how work that outlives the request appears to the person who started it (#968).
+    E("Background operation", COMPONENT, "documented", "Turbo Stream from the job; `:loading` toast replaced by its outcome",
+      note="FIVE states — accepted, running, done, failed, failed-and-retrying; the operation is a "
+           "record, failure gets a surface without a request, and starting it twice is refused (#968)"),
     E("Stepper / wizard", COMPONENT, "documented", "—", [], ["Stepper"],
       "a display, not a widget: no tablist, no progressbar, no arrow keys. Move focus on advance and "
       "then do NOT add a live region — 4.1.3 excludes what a change of context already announced. "
@@ -658,11 +678,17 @@ USE: dict[str, str] = {
         "scale prop picks the level, so never style a heading down",
     "Alert / Banner": "in-page state (Alert) vs page-wide announcement (Banner)",
     "Modal / Dialog": "a focused create/edit/confirm step; never for content a page can hold",
-    "Toast / Notification": "transient confirmation of a completed action; never for errors "
-        "requiring a decision",
+    "Toast / Notification": "a confirmation that auto-dismisses; an error persists until closed (#977); "
+        "never the only record of a failure",
     "Tooltip / Popover": "a supplementary label (Tooltip) or a small rich panel (Popover); never "
         "the only place information appears",
-    "Table (CRUD)": "the index of a resource — sortable headers, row actions, select-all",
+    "Table (CRUD)": "the index of a resource — sortable headers, row actions, select-all (this page, "
+        "and said so)",
+    "Permissions matrix": "roles as columns, features as rows grouped by module — a table of checkboxes, "
+        "not a grid of them",
+    "Period selector": "every period-scoped report and dashboard; the first control in the toolbar",
+    "Background operation": "an export, import, render or batch send that finishes after the response — "
+        "every Solid Queue app has one",
     "Stacked list": "any index of records that is not tabular, and the Table's mobile fallback",
     "Grid list": "an index whose items carry media or several attributes worth scanning at once",
     "Activity feed / Timeline": "a record's history, or a stream that loads more as you scroll",

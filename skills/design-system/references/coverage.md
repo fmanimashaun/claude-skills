@@ -30,8 +30,8 @@ builder refuses to emit a row that lacks it.
 |---|---|
 | Tailwind UI leaf components enumerated | 93 |
 | Flowbite catalogue entries enumerated | 63 |
-| fidara rows | 119 |
-| — `documented` | 80 |
+| fidara rows | 122 |
+| — `documented` | 83 |
 | — `derivable` from documented parts | 39 |
 | — `needs doctrine` (tracked writing gap) | 0 |
 
@@ -47,6 +47,7 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Activity feed / Timeline | component | ✓ | ✓ | a record's history, or a stream that loads more as you scroll | TWO shapes: a static history is an ordinary <ol>, and only scroll-loading content earns APG's feed pattern — which is a structure, not a widget |
 | Alert / Banner | component | ✓ | ✓ | in-page state (Alert) vs page-wide announcement (Banner) | — |
 | Avatar | component | ✓ | ✓ | wherever a person is named; pair with the name, never alone as identification | — |
+| Background operation | component | — | — | an export, import, render or batch send that finishes after the response — every Solid Queue app has one | FIVE states — accepted, running, done, failed, failed-and-retrying; the operation is a record, failure gets a surface without a request, and starting it twice is refused (#968) |
 | Badge / Tag / Chip | component | ✓ | ✓ | status and category labels inside table rows, list items and headings | — |
 | Breadcrumbs | component | ✓ | ✓ | detail screens more than one level deep, inside the page heading block | separators are aria-hidden markup, never ::after; truncates first → … → last two |
 | Button | component | ✓ | ✓ | any action; `primary` once per view, `destructive` only behind a confirm | — |
@@ -74,6 +75,8 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Navigation — sidebar / vertical | component | ✓ | ✓ | the app's primary rail in the sidebar/multi-column shells | — |
 | Number input | component | — | ✓ | an authenticated app screen, inside one of the three shells | — |
 | Pagination | component | ✓ | ✓ | any index over ~25 rows; pair with the Table | — |
+| Period selector | component | — | — | every period-scoped report and dashboard; the first control in the toolbar | presets first, custom range as the escape hatch; URL state that resets the page to 1; the label shows inclusive dates over a half-open query, and the zone is stated once (#970) |
+| Permissions matrix | component | — | — | roles as columns, features as rows grouped by module — a table of checkboxes, not a grid of them | four checkbox states — indeterminate is exposed as aria-checked=mixed, normatively (HTML-AAM); one form, one submit; the cell is named by feature x role (#978) |
 | Plan comparison / feature matrix | component | — | — | an authenticated app screen, inside one of the three shells | — |
 | Progress bar | component | ✓ | ✓ | an authenticated app screen, inside one of the three shells | the Flowbite audit surfaced LABELLED progress bars specifically |
 | Radio group | component | ✓ | ✓ | one choice from 2–5 visible options, in a fieldset | — |
@@ -84,11 +87,11 @@ Tailwind UI wins on visual polish, Flowbite on interaction breadth.
 | Spinner / busy indicator | component | — | ✓ | a region whose content is loading and has no known size | — |
 | Stacked list | component | ✓ | ✓ | any index of records that is not tabular, and the Table's mobile fallback | role=list is not optional decoration: Preflight unstyles every list and WebKit then drops the role. One stretched link per row, or none |
 | Stepper / wizard | component | — | ✓ | a multi-step flow: checkout, onboarding, long forms | a display, not a widget: no tablist, no progressbar, no arrow keys. Move focus on advance and then do NOT add a live region — 4.1.3 excludes what a change of context already announced. Also feeds #91's checkout flow, which is inside 3.3.4 (AA) |
-| Table (CRUD) | component | ✓ | ✓ | the index of a resource — sortable headers, row actions, select-all | — |
+| Table (CRUD) | component | ✓ | ✓ | the index of a resource — sortable headers, row actions, select-all (this page, and said so) | — |
 | Tabs | component | ✓ | ✓ | switching views of the SAME resource; never as page navigation | — |
 | Text input | component | ✓ | ✓ | single-line entry; the shipped wrapper supplies label, hint and error | floating label AND prefix/suffix addons are variants, not components — the input-groups corpus directory is claimed here on purpose (#95) |
 | Textarea | component | ✓ | ✓ | multi-line entry; set rows, never a fixed pixel height | — |
-| Toast / Notification | component | ✓ | ✓ | transient confirmation of a completed action; never for errors requiring a decision | — |
+| Toast / Notification | component | ✓ | ✓ | a confirmation that auto-dismisses; an error persists until closed (#977); never the only record of a failure | — |
 | Toggle / Switch | component | ✓ | ✓ | a setting that applies immediately; if it needs Save, use a Checkbox | — |
 | Tooltip / Popover | component | — | ✓ | a supplementary label (Tooltip) or a small rich panel (Popover); never the only place information appears | — |
 | Video player | component | — | ✓ | marketing and docs surfaces; inside a `frame` so layout never shifts | no APG pattern, so the keyboard model is the UA's and not ours; `kind=captions` is not `kind=subtitles`; and an autoplaying video is governed by WCAG 2.2.2 (A), not by reduced-motion |

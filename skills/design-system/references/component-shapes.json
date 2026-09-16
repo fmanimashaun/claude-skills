@@ -158,6 +158,13 @@
     "parts": [{"kind": "box", "height": 32, "fill": "muted"},
               {"kind": "line"}, {"kind": "line"}, {"kind": "line"}]
   },
+  "Permissions matrix": {
+    "shape": "surface", "width": 520,
+    "parts": [{"kind": "box", "height": 32, "fill": "muted"},
+              {"kind": "text", "label": "Invoices · Viewer  Editor  Admin", "size": 13,
+               "color": "muted-foreground"},
+              {"kind": "line"}, {"kind": "line"}, {"kind": "line"}]
+  },
   "Stacked list": {
     "shape": "surface", "variants": "enum", "width": 400,
     "parts": [{"kind": "text", "label": "Row title", "size": 15, "weight": "500"},
@@ -302,6 +309,13 @@
     "parts": [{"kind": "icon-slot", "size": 24, "fill": "primary"},
               {"kind": "text", "label": "Loading…", "size": 13, "color": "muted-foreground"}]
   },
+  "Background operation — work that outlives the request": {
+    "shape": "panel", "width": 360,
+    "parts": [{"kind": "text", "label": "Exporting invoices…", "size": 14, "weight": "500"},
+              {"kind": "box", "height": 8, "fill": "primary"},
+              {"kind": "text", "label": "Running · 1,180 of 1,200 rows · started 40 s ago", "size": 13,
+               "color": "muted-foreground"}]
+  },
   "Tooltip / Popover": {
     "shape": "panel", "width": 200,
     "parts": [{"kind": "text", "label": "What this control does", "size": 13}]
@@ -321,6 +335,15 @@
                "color": "secondary-foreground"},
               {"kind": "pill", "label": "Next", "fill": "secondary",
                "color": "secondary-foreground"}]
+  },
+  "Period selector": {
+    "shape": "bar", "width": 420,
+    "parts": [{"kind": "pill", "label": "This month", "fill": "primary", "color": "primary-foreground"},
+              {"kind": "pill", "label": "Last month", "fill": "secondary",
+               "color": "secondary-foreground"},
+              {"kind": "pill", "label": "This quarter", "fill": "secondary",
+               "color": "secondary-foreground"},
+              {"kind": "pill", "label": "Custom", "fill": "secondary", "color": "secondary-foreground"}]
   },
   "Empty state": {
     "shape": "surface", "width": 360,
