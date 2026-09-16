@@ -741,8 +741,8 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   no undo. Unsaved changes are guarded ([forms.md → Unsaved changes](forms.md#unsaved-changes--leaving-a-dirty-form-978)).
 - **Density** is `--row-compact` by default — a matrix is dense by nature — with the sticky header row
   and sticky first column exactly as Table (CRUD).
-- **Tenancy note.** The manual routed in #978 is single-tenant. A multi-tenant app scopes the matrix to a
-  workspace and says which in the `<caption>`; nothing else changes.
+- **Tenancy note.** A multi-tenant app scopes the matrix to a workspace and says which in the
+  `<caption>`; nothing else changes.
 
 ## Stacked list
 - **The dominant list idiom, and it introduces no new component:** `<ul role="list">` of `<li>` rows, each a
@@ -1056,9 +1056,9 @@ is `bg-card … rounded-lg border border-l-4`, and this entry used to say `box` 
 
 - Container `fixed top-4 right-4 z-[100] stack max-w-sm pointer-events-none`, gap `--space-2xs`
   (rhythm, so fluid — [foundations-tokens.md](foundations-tokens.md) §3b). **Top-right is the rule.**
-  The manual routed in #978 places toasts bottom-right and it is not adopted: the corner is cosmetic,
-  ours is shipped in every consuming app with the mobile anchoring below `sm` already specified, and
-  two positions in circulation is the defect. Each toast = the card surface + `border-l-4` intent +
+  #977 raised bottom-right as an alternative and it is not adopted: the corner is cosmetic, ours is
+  shipped in every consuming app with the mobile anchoring below `sm` already specified, and two
+  positions in circulation is the defect. Each toast = the card surface + `border-l-4` intent +
   `shadow-md`; a `status` toast auto-dismisses, an `alert` toast closes, via the `toast`/`dismiss` mixin.
 - **`role="status"`, and nothing beside it.** The role already implies `aria-live="polite"` *and*
   `aria-atomic="true"`; writing `aria-live` next to it is redundant, and writing bare `aria-live`
@@ -1233,9 +1233,8 @@ can carry.
   to need this. A toast cannot be the answer: they are not on the page. The record's index is
   (Exports, Imports — a [Data table anatomy](page-anatomies.md#data-table--the-index-of-a-resource)),
   plus a notification ([Activity feed](#activity-feed--timeline), an inbox badge) on completion, and
-  email when the result is a file. The manual routed in #978 has a progress banner that *"survives
-  navigation"*: that is a **shell-level slot fed by a per-user stream**, showing the person's running
-  operations wherever they are. *Processing… → Ready, with the link* is the toast transition **only
+  email when the result is a file. A progress banner that survives navigation is a **shell-level slot
+  fed by a per-user stream**, showing the person's running operations wherever they are. *Processing… → Ready, with the link* is the toast transition **only
   while they are still on the page**: the `:loading` toast is replaced by its outcome, exactly as Toast specifies.
 - **Starting it twice.** The trigger is disabled while a matching operation is accepted or running,
   and says why (*"An export started 20 s ago — open it"*). Server-side the same rule holds: refuse the
@@ -1351,7 +1350,7 @@ can carry.
   | state | when | anatomy |
   |---|---|---|
   | **First use** | the resource has no records yet | centred `cover > center > stack`, `max-w-md`; the icon chip, or an illustration no taller than `max-h-40` under [visual-assets.md](visual-assets.md)'s tier rule; a title that says what will appear here; the **primary action** that creates the first |
-  | **Cleared / no results** | records exist and this query matches none | **compact, no illustration** — the manual routed in #978 says *"to reduce cognitive insult"*, and it is right: a person who filtered to nothing does not need a picture. The copy **names the filter that excluded everything** and offers a `ghost` **Clear all filters**; if the filter is a period, offer to widen it ([Period selector](#period-selector)) |
+  | **Cleared / no results** | records exist and this query matches none | **compact, no illustration** — a person who filtered to nothing does not need a picture, and a large centred graphic reads as a rebuke. The copy **names the filter that excluded everything** and offers a `ghost` **Clear all filters**; if the filter is a period, offer to widen it ([Period selector](#period-selector)) |
   | **Error** | the query or frame failed | high-contrast icon, the cause in plain English, **Try again** — which re-sends the same request, not merely dismisses — and a short **error identifier** the person can quote to support, one that also appears in the server log for that failure. The interface for a request that never came back is the hotwire skill's, in `turbo.md` → *A failed request — what the person sees* |
 
   Rendering the first-use copy to someone who filtered is a lie about the data and hides the only useful

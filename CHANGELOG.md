@@ -4833,50 +4833,54 @@ The version is assigned at the promotion, never here.
   `succeeded / statusCode / clientError / serverError`; eager frames load on connect and `lazy` on
   visibility; `requestFinished` runs in a `finally`. The interface is our design decision, recorded on the issue.
 
-- **The enterprise design manual is routed, not adopted wholesale — `docs/evidence/audits/2026-09-16-enterprise-manual-routing.md`,
+- **The fifteen doctrine proposals in #978 are decided, and the document they were attributed to does
+  not exist — `docs/evidence/audits/2026-09-16-no-enterprise-manual.md`,
   `skills/design-system/references/components.md`, `responsive.md`, `interaction-stimulus.md`,
-  `forms.md`** (#978). A B2B Enterprise UI/UX Design System Manual supplied by the maintainer on
-  15 Sep 2026 is now a registered source: the record says, section by section, what was adopted,
-  adapted, kept-ours and rejected, and why — so nothing from it lands twice or silently. The manual
-  itself is not committed (it is the maintainer's); the record routes the quotations the issues
-  carried, and links the document if it is ever added. **Genuinely new doctrine from it**: the
-  three-state empty-state typology (first use · cleared, with no illustration · error, with an error
-  identifier); the power-user keyboard layer (`⌘K`, `?`, `j`/`k`, `Enter`, `x`, the `<kbd>` pattern)
-  **with the WCAG 2.1.4 Character Key Shortcuts obligation the manual omits** — single-character
-  keys active only while the list has focus, `?` behind a turn-off setting; type-to-confirm
-  destructive confirmation, scoped to irreversible-and-bulk or a shared resource; leaving a dirty form,
-  with the correction that `beforeunload`'s dialog is the platform's (*"not customizable"*, HTML
-  Standard, and needs sticky activation) so the *Discard / Keep editing* interstitial exists for Turbo
-  visits only, and that an autosaving form has no dirty state to guard; the permissions matrix as a
-  `<table>` of native checkboxes whose `indeterminate` maps to `aria-checked="mixed"` **normatively**
-  (HTML-AAM); the detail drawer's 480–720px bounds; and a six-state completeness rule at the top of
-  the catalogue. Table detail the manual supplied for #964 — alignment by data type, ellipsis with the
-  full value reachable, sticky on both axes, a per-person density toggle (56 / 32), the 48px selection
-  column — lands in Table (CRUD). **Reconciled with #972**: a single-pane screen caps at
-  `--width-shell` (kept at 80rem, measured; the manual's 1440 is not adopted) and centres; a screen
-  with a second question earns its width with a second pane — not rivals. **Found and fixed on the
-  way**: the Modal entry named the `fm-navy` primitive for its backdrop against the file's own
-  non-negotiable; it is `bg-overlay/50`, which the shipped implementation already used. Verified
-  before writing (doctrine-verifier, 16 Sep 2026): WAI-ARIA 1.2 `aria-checked`, HTML-AAM's checkbox
-  mapping, WCAG 2.1.4, ARIA 1.2's toolbar-label MUST, `<kbd>`, the HTML Standard's prompt-to-unload
-  algorithm, Turbo's `turbo:before-visit` history exception. Our design decisions, recorded on the issue.
+  `forms.md`** (#978). The issue, filed 15 Sep 2026 from a downstream session, attributed its
+  proposals to a "B2B Enterprise UI/UX Design System Manual supplied by the maintainer"; the
+  maintainer confirmed on 16 Sep that **no such manual exists**. The first version of this work
+  routed it as a source; this is the correction, and the record under `docs/evidence/audits/` says
+  what happened. **Every proposal was then decided on its own merits as ours**, and the doctrine
+  names #978 as a proposal, never a document: the three-state empty-state typology (first use ·
+  cleared, with no illustration · error, with an error identifier); the power-user keyboard layer
+  (`⌘K`, `?`, `j`/`k`, `Enter`, `x`, the `<kbd>` pattern) **with the WCAG 2.1.4 Character Key
+  Shortcuts obligation the proposal omitted** — single-character keys active only while the list has
+  focus, `?` behind a turn-off setting; type-to-confirm destructive confirmation, scoped to
+  irreversible-and-bulk or a shared resource; leaving a dirty form, with `beforeunload`'s dialog
+  stated as the platform's (*"not customizable"*, HTML Standard, and needs sticky activation) so the
+  *Discard / Keep editing* interstitial exists for Turbo visits only, and an autosaving form has no
+  dirty state to guard; the permissions matrix as a `<table>` of native checkboxes whose
+  `indeterminate` maps to `aria-checked="mixed"` **normatively** (HTML-AAM); the detail drawer's
+  480–720px bounds; a six-state completeness rule at the top of the catalogue; and table detail —
+  alignment by data type, ellipsis with the full value reachable, sticky on both axes, a per-person
+  density toggle (56 / 32), the 48px selection column — in Table (CRUD). **Not adopted**: a 1440px
+  cap (ours is 1280, measured), a 256px rail (ours is 288), a second spacing vocabulary, a 12-column
+  grid. **Reconciled with #972**: a single-pane screen caps at `--width-shell` and centres; a screen
+  with a second question earns its width with a second pane. **Found and fixed on the way**: the
+  Modal entry named the `fm-navy` primitive for its backdrop; it is `bg-overlay/50`, which the shipped
+  implementation already used. Verified before writing (doctrine-verifier, 16 Sep 2026): WAI-ARIA 1.2
+  `aria-checked`, HTML-AAM's checkbox mapping, WCAG 2.1.4, ARIA 1.2's toolbar-label MUST, `<kbd>`,
+  the HTML Standard's prompt-to-unload algorithm, Turbo's `turbo:before-visit` history exception.
+  Our design decisions, recorded on the issue.
 
 - **Structure snaps to the 8px grid; rhythm stays fluid — `skills/design-system/references/foundations-tokens.md`,
   `scripts/check_structural_grid.py`, `scripts/mutations/check_structural_grid.py`,
-  `scripts/doctrine_map.py`** (#976). The manual anchors every spatial figure to a strict 8px grid
-  and asks in its checklist whether *all* padding, margins and heights are divisible by 8; the shipped
-  scale is fluid `clamp()` values, which are on no grid by design — `--space-s` is about 21.2px at
-  1440. Decision: **split by axis.** Structure — the shell header, the rails, a sticky toolbar, table
-  row heights, the selection column, drawer bounds — is fixed and divisible by 8, in one marked
-  `@theme` block of nine tokens (`--shell-*`, `--row-*`, `--col-select`, `--drawer-*`); rhythm and
-  type stay fluid; control heights stay as measured against the corpora. **The checklist is enforced,
-  not asserted**: the new gate refuses a value in that block that is not a multiple of 8px, a fluid
-  value there, or a structural token a reference names that the block does not declare (the #750
-  class) — with a `--selftest`, a six-mutation guard, and a `guarantee` row in the doctrine map
-  (`SHIPPED_FLOOR` 2 → 4). Downstream evidence the check is real: a consuming app's rail was 236px.
-  Figures kept where ours already sat on the grid (rail 288, the shipped `lg:w-72`, over the manual's
-  256); the manual's `micro…xl` vocabulary is not adopted. Same answer the maintainer recorded
-  downstream (Retask `docs/brain/OPEN-QUESTIONS.md` Q3). Our design decision, recorded on the issue.
+  `scripts/doctrine_map.py`** (#976). The issue proposed anchoring every spatial figure to a strict
+  8px grid with a checklist asking whether *all* padding, margins and heights are divisible by 8 (it
+  attributed the proposal to the manual above, which does not exist; the proposal stands on its
+  merits); the shipped scale is fluid `clamp()` values, which are on no grid by design — `--space-s`
+  is about 21.2px at 1440. Decision: **split by axis.** Structure — the shell header, the rails, a
+  sticky toolbar, table row heights, the selection column, drawer bounds — is fixed and divisible by
+  8, in one marked `@theme` block of nine tokens (`--shell-*`, `--row-*`, `--col-select`,
+  `--drawer-*`); rhythm and type stay fluid; control heights stay as measured against the corpora.
+  **The checklist is enforced, not asserted**: the new gate refuses a value in that block that is not
+  a multiple of 8px, a fluid value there, or a structural token a reference names that the block does
+  not declare (the #750 class) — with a `--selftest`, a six-mutation guard, and a `guarantee` row in
+  the doctrine map (`SHIPPED_FLOOR` 2 → 4). Downstream evidence the check is real: a consuming app's
+  rail was 236px. The rail (288, the shipped `lg:w-72`), header and icon rail (64) were already ours;
+  row heights 56 / 32, the 48px selection column and the 480 / 720 drawer bounds are chosen in the
+  block with no external source, and the block says so. Same answer recorded downstream (Retask
+  `docs/brain/OPEN-QUESTIONS.md` Q3). Our design decision, recorded on the issue.
 
 - **An error toast does not auto-dismiss — `skills/design-system/references/components.md`,
   `component-implementations.md`** (#977). Severity now decides the lifetime as well as the role:
@@ -4889,7 +4893,7 @@ The version is assigned at the promotion, never here.
   citation is corrected too**: the entry's *"noticed without disrupting… automatically disappear"*
   quote is Mobbin's glossary, unattributed until now, and doctrine-verifier found it says nothing
   about errors — so the error rule is stated as ours, not hung on that source. **Not adopted**: the
-  manual's bottom-right corner; top-right stays, and the entry says why. A found defect on the same
+  bottom-right corner the issue raised; top-right stays, and the entry says why. A found defect on the same
   entry is fixed: it said each toast is the `box` primitive two sentences after forbidding `box`,
   against the shipped markup. Our design decision, recorded on the issue.
 

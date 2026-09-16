@@ -378,8 +378,8 @@ Writing it anyway is harmless; citing `aria-activedescendant` as this pattern's 
 
 ### The power-user keyboard layer (#978)
 
-A layer above the per-component contracts: shortcuts that reach across a screen. The manual routed in
-#978 names the set; WCAG names the obligation it omits.
+A layer above the per-component contracts: shortcuts that reach across a screen. #978 proposed the
+set; WCAG names the obligation the proposal omitted.
 
 | key | does | scope |
 |---|---|---|
@@ -396,7 +396,7 @@ A layer above the per-component contracts: shortcuts that reach across a screen.
   Turn off … Remap … Active only on focus"* ([WCAG 2.1](https://www.w3.org/TR/WCAG21/#character-key-shortcuts)).
   `j`, `k`, `x` satisfy it by the third clause: the list's own controller handles them and they fire only
   while the list has focus, never on `document`. `?` is global by design, so it needs the first clause —
-  **a setting that turns the layer off**, persisted on the person. The manual states none of this. Ship
+  **a setting that turns the layer off**, persisted on the person. The proposal stated none of this. Ship
   the layer without it and a speech-input user who says "kick" into a page selects a row.
 - **Never fire while focus is in an editable field.** The list-navigation mixin already ignores keys
   from `input`, `textarea`, `select` and `[contenteditable]`; the `?` listener must too.

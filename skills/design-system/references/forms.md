@@ -410,8 +410,7 @@ doctrine says so; do not cite a spec for them.
   the user is not customizable, but instead determined by the user agent"*, and the prompt appears only
   when the document has **sticky activation** — a real prior interaction
   ([HTML, prompt to unload](https://html.spec.whatwg.org/multipage/browsing-the-web.html#prompt-to-unload-a-document)).
-  So the interstitial the manual routed in #978 describes — *Discard changes / Return to editing* — is
-  **possible for the Turbo case only**; for refresh and close, the platform's generic dialog is the
+  So a *Discard changes / Return to editing* interstitial is **possible for the Turbo case only**; for refresh and close, the platform's generic dialog is the
   whole interface. Do not promise custom copy where the platform forbids it.
 - **The Turbo interstitial is a Modal** (`sm`): title *"Discard your changes?"*, one sentence naming what
   is unsaved, **Keep editing** as the primary with initial focus, **Discard** as `destructive`. The
