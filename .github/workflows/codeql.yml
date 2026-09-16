@@ -1,0 +1,75 @@
+name: CodeQL
+
+# CODE SCANNING, ADAPTED FROM GITHUB'S TEMPLATE — and the two edits that matter are the branches
+# and the languages, both of which the template gets wrong for this repo.
+#
+# Started as `fmanimashaun-patch-1`, GitHub's "CodeQL Advanced" starter. What is left of it is the
+# structure; the rest is stated below with its reason, because a workflow nobody understands is one
+# nobody fixes when it goes red.
+
+on:
+  # BOTH BRANCHES, and `dev` FIRST. The template watches `main` alone, which in this repo means
+  # scanning nothing until a promotion: PRs are opened against `dev` and `main` only ever receives
+  # a merge that has already been reviewed. A scanner that first speaks at the moment of release is
+  # a scanner that will be overridden.
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  # WEEKLY, BECAUSE THE QUERIES MOVE EVEN WHEN THE CODE DOES NOT. A new query can find something in
+  # a file nobody has touched for a year, and this repo's scripts change slowly.
+  schedule:
+    - cron: '37 15 * * 6'
+  workflow_dispatch: {}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # write the results into the Security tab
+      packages: read           # fetch CodeQL query packs
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # MEASURED AGAINST THE TREE, not guessed from the template's list.
+        #
+        #   actions               — 4 workflows and 12 hook scripts they invoke. This is the one
+        #                           that matters most here: a marketplace's own CI is what a
+        #                           compromised action would reach, and `release.yml` publishes.
+        #   python                — 188 files. Every gate, every linter, the packager.
+        #   javascript-typescript — 2 files, both SHIPPED to other people's machines
+        #                           (`conformance_collector.js`, `crawl_collector.js`).
+        #
+        # RUBY IS DELIBERATELY ABSENT, and the reason is worth writing down: this repo contains no
+        # `.rb` file at all. The Ruby it ships lives inside markdown fences, which CodeQL does not
+        # read — `scripts/lint_markdown_code.py` is what checks that code, and it is the only thing
+        # that can. Adding `ruby` here would produce a green scan over zero files, which reads as
+        # coverage and is not.
+        language: [actions, python, javascript-typescript]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # `none`, for all three: nothing here is compiled. The template's "manual build steps"
+          # block exists for compiled languages and would `exit 1` if it ever ran, so it is gone
+          # rather than carried as decoration.
+          build-mode: none
+          # `security-extended` over the default suite. The default is tuned for a low false
+          # positive rate on application code; this repo is scripts and CI, where the interesting
+          # findings — a workflow that trusts an untrusted input, a subprocess built from a string
+          # — are exactly the ones the extended pack adds.
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

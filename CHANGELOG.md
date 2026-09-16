@@ -7,6 +7,30 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Code scanning, and a security policy to receive what it cannot find — `.github/workflows/codeql.yml`,
+  `SECURITY.md`.** CodeQL from GitHub's "CodeQL Advanced" starter, with the two edits that decide
+  whether it is worth having. **Branches:** the template watches `main` alone, which here means
+  scanning nothing until a promotion — pull requests are opened against `dev`, and `main` only ever
+  receives a merge already reviewed. It watches both. **Languages:** measured against the tree
+  rather than taken from the template — `actions` (4 workflows and the 12 hook scripts they invoke;
+  `release.yml` publishes, so this is the highest-value surface), `python` (188 files) and
+  `javascript-typescript` (2 files, both shipped to other people's machines). **`ruby` is
+  deliberately absent**: this repo holds no `.rb` file at all, and the Ruby it ships lives inside
+  markdown fences that CodeQL does not read — `scripts/lint_markdown_code.py` is the only thing
+  that checks it, so a `ruby` row would produce a green scan over zero files and read as coverage.
+  The template's manual-build step is removed rather than carried: every build mode here is `none`,
+  and that step would `exit 1` if it ever ran.
+
+  `SECURITY.md` says what the surface actually is for a marketplace — scripts that run on a
+  maintainer's machine, workflows that publish, hooks that run inside a user's session, and
+  **shipped doctrine that instructs an agent to run something**, which is executable by a model and
+  therefore a security surface rather than an editorial one. Private vulnerability reporting, the
+  latest release supported and no backports, and the explicit out-of-scope list: the licensed
+  corpora, third-party plugins, and any finding whose premise is already having write access to
+  `main`.
+
 ### 2026-09-16 (release v1.127.0)
 
 - **The marketplace version tracks a rails-stack skill release** (#972). No repository change of
