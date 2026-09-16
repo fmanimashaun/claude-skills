@@ -7,7 +7,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-16 (release v1.128.0)
+
+- **The marketplace version tracks two component releases.** `metadata.version` moves with
+  `rails-stack` 1.58.0 → 1.59.0 (the eight design-system and hotwire issues below: the 8px
+  structural grid and its gate, persistent error toasts, the upload flow, background operations,
+  bulk selection, the period selector, the failed-request interface, and the provenance
+  correction) and `qa-flow` 1.28.0 → 1.29.0 (author the test, do not be the test runner).
+  **Every component block in this release names the shipping tag**, `v1.128.0`: the previous two
+  arms headed the rails-stack block with the skill's own version (`v1.57.0`, `v1.58.0`), tags that
+  exist only from old marketplace history, so `extract_release_notes.py --all-tags` passed by
+  coincidence and the published notes for v1.126.0 and v1.127.0 carry only the Repository bullet.
 
 - **Code scanning, and a security policy to receive what it cannot find — `.github/workflows/codeql.yml`,
   `SECURITY.md`.** CodeQL from GitHub's "CodeQL Advanced" starter, with the two edits that decide
@@ -4807,9 +4817,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
-
-The version is assigned at the promotion, never here.
+### 2026-09-16 (release v1.128.0)
 
 - **A failed request has an interface, not just events — `skills/hotwire/references/turbo.md` §8b,
   `skills/hotwire/SKILL.md`, `skills/design-system/references/page-anatomies.md`** (#967). §8 listed
@@ -8606,7 +8614,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-16 (release v1.128.0)
 
 - **Author the test; do not be the test runner — `plugins/qa-flow/agents/e2e-tester.md`,
   `plugins/qa-flow/agents/exploratory-tester.md`** (#979). A `playwright-tester` skill was proposed;
