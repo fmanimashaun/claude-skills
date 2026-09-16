@@ -4,8 +4,9 @@
 Run:  python3 scripts/check_structural_grid.py            # read the shipped block, fail on a finding
       python3 scripts/check_structural_grid.py --selftest  # prove every rule fires AND stays silent
 
-WHY. An enterprise design manual supplied by the maintainer anchors every spatial figure to a strict
-8px grid; the shipped scale is fluid `clamp()` values that are on no grid by design. #976 settled it
+WHY. #976 proposed anchoring every spatial figure to a strict 8px grid (it attributed the proposal
+to a design manual that the maintainer confirmed does not exist; the proposal stands on its merits);
+the shipped scale is fluid `clamp()` values that are on no grid by design. #976 settled it
 by SPLITTING BY AXIS: structure (shell header, rails, sticky toolbar, table row heights, the
 selection column, drawer bounds) is fixed and divisible by 8; rhythm (`--space-*`, type) stays
 fluid. `foundations-tokens.md` -> *3b. Structure snaps to the 8px grid* states that, and a rule

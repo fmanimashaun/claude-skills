@@ -232,7 +232,7 @@ CLAIMS: tuple[Claim, ...] = (
         kind=GUARANTEE,
         enforced_by=("script:scripts/check_structural_grid.py", "mutation:check_structural_grid"),
         refs=(976,),
-        note="The manual's checklist asked whether EVERY figure is divisible by 8; the fluid scale "
+        note="#976 proposed that EVERY figure be divisible by 8; the fluid scale "
              "cannot pass that at any viewport. Split by axis: structure fixed and checked, rhythm "
              "fluid and exempt. A 236px downstream rail is the input the check exists for.",
     ),

@@ -124,9 +124,8 @@ ultra-wide monitors"*) as distinct. The decision, so that silence stops being th
   size, and no breakpoint fixes it.
 - **The shell fills the window; the CONTENT centres in it.** `center` with the fluid gutters is
   already this — an ultra-wide monitor gets more margin, not longer lines.
-- **A single-pane screen caps its content at `--width-shell` (80rem) and centres.** The manual routed
-  in #978 states the same rule with 1440px; ours is 1280, measured against both corpora, and the figure
-  is not adopted. **The two answers above 1536px are not rivals**: a screen with one question caps and
+- **A single-pane screen caps its content at `--width-shell` (80rem) and centres.** #978 proposed
+  1440px; ours is 1280, measured against both corpora, and the figure is not adopted. **The two answers above 1536px are not rivals**: a screen with one question caps and
   centres; a screen with a second question ([List-detail](page-anatomies.md#list-detail--the-shape-most-authenticated-apps-are),
   [Supporting pane](page-anatomies.md#supporting-pane--content-that-only-means-something-beside-the-primary))
   earns its width with a second pane. Which one a screen is, is a page-anatomy decision, not a breakpoint.
