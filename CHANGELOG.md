@@ -4841,6 +4841,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 2026-09-17 (release v1.130.0)
+
+- **The port checklist documents the status a faithful port needed —
+  `skills/design-system/references/design-handoff.md`** (#1000). The handoff reference listed four
+  port-report statuses and said `check` verifies every `implemented` text against the file it names.
+  It had no way to describe copy a port changed ON PURPOSE, which is a thing faithful ports do: a
+  recorded decision restructures a screen, or the app grows something the canvas never drew. The
+  reference now names `reworded` — with the file, the replacement text and the decision that changed
+  it — and says plainly why it exists: a port may legitimately change the words, and when the only
+  green statuses were ones the check could not verify, the honest answer was the one that went red.
+  Paired with the enforcement in `design-flow`'s `canvas_manifest.py`, in this same release.
+
 ### 2026-09-16 (release v1.128.0)
 
 - **A failed request has an interface, not just events — `skills/hotwire/references/turbo.md` §8b,
@@ -10270,7 +10282,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-17 (release v1.130.0)
 
 - **`reworded` — the status a faithful port needed and the check did not have** (#1000).
   `plugins/design-flow/scripts/canvas_manifest.py`'s `check` accounted for every canvas item under
