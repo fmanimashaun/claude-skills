@@ -97,6 +97,43 @@ CI failure set that a later merge had already fixed; a third reported five uncom
 had been committed an hour earlier. Both were acted on before being corrected. A measurement carries
 its command; a recollection does not.
 
+## 2a. Each session merges its own work; the coordinator and QA measure what landed
+
+**The author lands their own PR.** They know when it is done, and a queue in front of one session is
+the slowest part of a parallel run — measured on one repository in a day: **eighteen merges through a
+single session**, with two authors idle at one point holding green, finished work.
+
+**Both alternatives were tried on the same day and this is the one that survived.** Routing every
+merge through one session produced the stall above. Leaving it unstated produced the opposite failure:
+a session merged a peer's green PR before its author's message arrived. **Neither is fixed by a rule
+about who is senior. It is fixed by saying that the author merges, and that somebody measures after.**
+
+**What the author inherits with the merge, and it is the whole of it:**
+
+1. **Rebase onto the current integration branch and CONFIRM it** — `git merge-base --is-ancestor
+   origin/<base> HEAD` — rather than assuming the base has not moved. *The last session to measure is
+   not the last session to change the base.*
+2. **Re-run the suite on the rebased head**, not on the head measured earlier. A green number from a
+   base that no longer exists is not evidence about the base that does.
+3. **Run the gates the change can touch, not just the ones that are quick.** One merge went in on
+   seven lint gates and not the architecture graph, and drifted the branch; the same omission
+   repeated two merges later.
+4. **Announce what you merged** (§2.4), especially when it moves a file a peer announced.
+
+**And the standing prohibition is unchanged: do not merge a PR you did not open.** §4's last bullet
+is the rule — ask its author session first. "Merge on green" has no clause for somebody else's work.
+
+**Measurement is a SEPARATE job from permission, and this is the part teams get wrong.** The
+coordinator and QA do not stand in front of the merge; they measure the integration branch *after*
+it, and every finding says **new at this merge** or **pre-existing**. Without that attribution it is
+noise — three sessions in one day lost time attributing inherited failures to their own diffs. With
+it, it is the only signal that tells an author whether they broke something.
+
+**A branch's own green run is not a measurement of the branch it lands on.** Integration is where the
+interesting failures live: on that same day the integration branch went red five times, and **not one
+was found by the merge that caused it** — every one surfaced later, from a session running something
+for an unrelated reason.
+
 ## 3. Claims live in git — query them rather than asking a peer
 
 Shared namespaces — decision-record numbers, migration timestamps, anything numbered that several

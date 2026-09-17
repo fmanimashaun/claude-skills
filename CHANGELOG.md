@@ -2724,6 +2724,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-17 (release v1.131.1)
+
+- **A route named `/auth/failure` hijacked the headline of every report it appeared in —
+  `plugins/rails-flow/scripts/project_gates.py`, `scripts/mutations/project_gates.py`** (#1028).
+  `summarise()` picked the first line matching `\b(error|warning|fail(ed|ure)?)\b`, dropped
+  everything before it as the tool clearing its throat, and reported everything after it as the
+  findings. A **route path** matched, so in a downstream project the headline became `GET
+  /auth/failure`, the real summary was discarded, and the printed findings were the wrong axis of the
+  report. A maintainer then chased **41 responsive** routes while the gate was failing on **29
+  untested** ones, and named a covered route as the first untested one.
+
+  **A content heuristic latches onto content**, and the more honestly a project names things the
+  likelier it is to be bitten — the same docstring that warns about `herb analyze`'s version banner
+  is what this defeats in the other direction. The pick is now a ladder: our own structural
+  `N finding(s):` first, because data cannot forge it; then severity or location, with severity words
+  inside **route-shaped tokens** (those beginning with `/`) excluded; then the first line. Scoped to
+  leading slashes deliberately — `errors/foo.rb:3` is a real finding and must keep matching, and
+  excluding every token containing a slash would silently drop it.
+
+  Two fixtures and two mutation arms, and one of the fixtures had to be rewritten: indexing
+  `findings[0]` **raised** on the empty tuple rather than failing, which aborts the selftest before
+  a later labelled assertion reports — and a different mutation's guard expects that one. A crash is
+  not a verdict, and it steals the verdict from elsewhere.
+
+- **`/coordinate` measures what landed instead of standing in front of it — `plugins/rails-flow/commands/coordinate.md`** (#1010). The author lands their own PR and inherits the rebase-and-re-verify with it; this command reports on the integration branch AFTER a merge, and every finding says new-at-this-merge or pre-existing. Three sessions in one day lost time blaming inherited failures on their own diffs.
+
 ### 2026-09-17 (release v1.131.0)
 
 - **Cross-session coordination is computed from the repository instead of remembered —
@@ -4996,6 +5022,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-17 (release v1.131.1)
+
+- **§2a: each session merges its own work — `skills/parallel-session-lane/SKILL.md`** (#1004). Both alternatives failed in one day on one repository: routing every merge through a single session stalled eighteen merges behind one queue with two authors idle holding green work, and leaving it unstated let a session merge a peer's PR before its author's message arrived. The author merges and carries the rebase-and-re-verify; measurement moves after the merge.
 
 ### 2026-09-17 (release v1.131.0)
 
@@ -8885,6 +8915,34 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### 2026-09-17 (release v1.131.1)
+
+- **The plugin armed `--fail-on-untested` for every adopter, so a project with a coverage backlog
+  got a permanently red gate it could not opt out of — `plugins/qa-flow/checks.json`,
+  `plugins/qa-flow/scripts/route_coverage.py`, `plugins/qa-flow/scripts/qa_config.py`,
+  `plugins/qa-flow/commands/setup-qa.md`** (#1029). `route_coverage.py`'s own comment says the flag
+  *"is for a team that has reached full coverage on an axis and wants to keep it"*, and the flag sat
+  in the plugin's `checks.json` rather than the project's config, so the project could not decline
+  it. One downstream project had written the opposite decision into its own CI — *"arming it would
+  paint the promotion red on a backlog rather than on a regression, and a gate that is red for a
+  known reason is a gate people learn to merge past"* — and the plugin overrode it. **Worse, the red
+  step aborted the job before that project's own ratchet ever ran**, so the plugin's opinion was
+  masking the project's gate rather than merely disagreeing with it.
+
+  `coverage.fail_on: none | untested | unmeasured | both`, **defaulting to `none`**, now lives in
+  `qa/qa.config.yml` where the project can set it; an explicit CLI flag still wins, so nobody who
+  was passing one on purpose is broken. An unknown value is **refused**, not treated as `none`: a
+  typo would otherwise disarm the gate, and a disarmed gate reads exactly like a passing one.
+
+  **And the config reader had never read a scalar at all.** `KEY` matched `key:` or `key: [list]`
+  and nothing else, so every `key: value` line in a config block was dropped silently — including
+  **`coverage.small_viewport_max`**, which `setup-qa` scaffolds and `_small_max` reads. A project
+  writing `small_viewport_max: 414` got the built-in 480 and no complaint. It survived because every
+  fixture handed `_small_max` a dict directly and so never touched the parser: proving the helper is
+  not proving the caller. The reader now carries scalars, a scalar may not begin with `#` or `[` —
+  both learned from mutants that stole a verdict from an existing fixture — and the missing
+  end-to-end case drives `load_config` into `_small_max`.
 
 ### 2026-09-16 (release v1.129.0)
 

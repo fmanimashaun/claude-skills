@@ -49,7 +49,13 @@ SECTION = re.compile(r"^(?P<name>[\w-]+):")
 # there is no trailing comment left to defeat it. What changed is `(?P<inline>\[.*\])`, which was
 # `(\[\s*\])` and therefore accepted only an EMPTY inline list. Keeping the anchor is deliberate:
 # it still rejects a line with trailing junk that is not a comment.
-KEY = re.compile(r"^(?P<indent>\s+)(?P<name>[\w-]+):\s*(?P<inline>\[.*\])?\s*$")
+# A SCALAR IS A VALUE, NOT A DROPPED LINE (#1029). The pattern accepted a key with an inline list
+# or nothing at all, so every `key: value` in a config block was skipped silently -- including
+# `coverage.small_viewport_max`, which `route_coverage._small_max` reads, `setup-qa` scaffolds, and
+# whose fixtures pass a dict straight to the helper and so never touched this parser. A project
+# writing `small_viewport_max: 414` got the default 480 and no complaint.
+KEY = re.compile(
+    r"^(?P<indent>\s+)(?P<name>[\w-]+):\s*(?:(?P<inline>\[.*\])|(?P<scalar>[^#\s\[].*?))?\s*$")
 ITEM = re.compile(r"^(?P<indent>\s+)-\s*(?P<value>.*)$")
 
 
@@ -137,16 +143,27 @@ def load_section(path: Path, section: str) -> dict[str, object]:
         if m:
             indent = len(m.group("indent"))
             name, inline = m.group("name"), m.group("inline")
+            scalar = m.group("scalar")
             if key_indent is None or indent <= key_indent:
                 key_indent, key, sub = indent, name, None
-                block[name] = _inline_list(inline) if inline else []
+                if inline:
+                    block[name] = _inline_list(inline)
+                elif scalar:
+                    block[name] = _scalar(scalar)
+                else:
+                    block[name] = []
             else:                          # nested one level under `key`
                 nested = block.get(key)
                 if not isinstance(nested, dict):
                     nested = {}
                     block[key] = nested
                 sub = name
-                nested[name] = _inline_list(inline) if inline else []
+                if inline:
+                    nested[name] = _inline_list(inline)
+                elif scalar:
+                    nested[name] = _scalar(scalar)
+                else:
+                    nested[name] = []
             continue
         item = ITEM.match(line)
         if item and key is not None:
@@ -236,6 +253,19 @@ def selftest() -> int:
     dup = parse("coverage:\n  exclude:\n    - /first\ncoverage:\n  exclude:\n    - /second\n")
     check("a duplicate section does not merge into the first",
           dup.get("exclude") == ["/first"], f"{dup}")
+    # A SCALAR IS A VALUE (#1029). Before this the pattern matched only `key:` or `key: [list]`, so
+    # every `key: value` line vanished — `coverage.small_viewport_max` among them, documented in
+    # `setup-qa` and read by `route_coverage._small_max`, whose own fixtures hand it a dict and
+    # therefore never touched this parser.
+    _sc = parse("coverage:\n  small_viewport_max: 414   # a real phone\n  fail_on: untested\n"
+                "  exclude: [/up]\n")
+    check("a scalar key is carried", _sc.get("small_viewport_max") == "414", f"{_sc}")
+    check("...with its trailing comment stripped", _sc.get("fail_on") == "untested", f"{_sc}")
+    check("...and lists still parse beside it", _sc.get("exclude") == ["/up"], f"{_sc}")
+    _nested = parse("blast_radius:\n  high_risk:\n    mode: strict\n    auth: [a.rb]\n",
+                    "blast_radius")
+    check("a nested scalar is carried too",
+          _nested.get("high_risk") == {"mode": "strict", "auth": ["a.rb"]}, f"{_nested}")
     check("an absent file is empty", load_section(Path("/nonexistent/qa.config.yml"), "coverage") == {})
 
     # QUOTES are stripped from scalars, both list forms.
