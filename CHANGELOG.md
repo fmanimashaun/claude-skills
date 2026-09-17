@@ -51,6 +51,29 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   arms keep a positive control first, because a gate whose clean case does not pass makes every
   failing arm pass for free.
 
+  **And the decision #1008 asked for, recorded rather than left open.** Its suggested fix said to
+  fold the shared helper out *or* note deliberately that three call sites is below the extraction
+  floor. Measured: `doctrine_map.py` 6 lines, `build_maintainer_skills.py` 6 lines (timeout, two
+  exception classes, an injectable repository), `build_wiki.py` 4 lines inline that never return a
+  blob at all. A module removes about **three** net lines, against
+  `skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced to 72 net
+  and were still judged not worth extracting — and the helper would have to live in maintainer-only
+  `scripts/`, which shipped plugin code cannot import, so the split would be per-audience rather
+  than per-concern. What travels between the three is the RULE, not the code, so
+  `docs/architecture/doctrine-map.html` gains `mutation:build_maintainer_skills` on the
+  *compares the blob at HEAD* guarantee, which had been stated there and enforced only for the
+  coverage artifact.
+
+  **The misleading remedy was not one line, it was six —** `scripts/doctrine_map.py` (three),
+  `scripts/build_wiki.py`, `scripts/build_coverage_artifact.py`, `scripts/build_coverage.py`. Every
+  one told the reader to `git add`, and `git show HEAD:` reads the commit, so every one sent them
+  round a loop that could not end. Found by grepping for the pattern after fixing the first, which
+  is what `skills/code-review/SKILL.md` says to do and is the only reason five of the six were seen.
+  Demonstrated twice while this branch was being written: `wiki reference drift` and then
+  `doctrine map drift` both went red on pages that were rebuilt and not yet committed.
+  `scripts/rebuild_generated.py` carries the seventh and is deliberately untouched — another session
+  announced that file before this branch existed.
+
 ### 2026-09-16 (release v1.129.0)
 
 - **The marketplace version tracks a qa-flow release.** `metadata.version` moves with `qa-flow`
