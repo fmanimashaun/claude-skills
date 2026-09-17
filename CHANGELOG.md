@@ -2724,7 +2724,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-17 (release v1.131.1)
 
 - **A route named `/auth/failure` hijacked the headline of every report it appeared in —
   `plugins/rails-flow/scripts/project_gates.py`, `scripts/mutations/project_gates.py`** (#1028).
@@ -5023,7 +5023,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-17 (release v1.131.1)
 
 - **§2a: each session merges its own work — `skills/parallel-session-lane/SKILL.md`** (#1004). Both alternatives failed in one day on one repository: routing every merge through a single session stalled eighteen merges behind one queue with two authors idle holding green work, and leaving it unstated let a session merge a peer's PR before its author's message arrived. The author merges and carries the rebase-and-re-verify; measurement moves after the merge.
 
@@ -8916,7 +8916,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-17 (release v1.131.1)
 
 - **The plugin armed `--fail-on-untested` for every adopter, so a project with a coverage backlog
   got a permanently red gate it could not opt out of — `plugins/qa-flow/checks.json`,
