@@ -75,8 +75,7 @@
         "--evidence",
         "qa/manual-tests",
         "--evidence",
-        "qa/reports",
-        "--fail-on-untested"
+        "qa/reports"
       ],
       "applies_when": [
         "qa/reports/routes.json"

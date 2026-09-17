@@ -328,11 +328,59 @@ def run() -> int:
         _tick()
         if expected not in shown:
             FAILURES.append(f"report: output omits {expected!r}\n{shown}")
+    # THE PROJECT DECIDES WHICH AXES FAIL (#1029). `checks.json` armed `--fail-on-untested` for
+    # every adopter, so a project with a backlog got a permanently red gate it could not opt out of
+    # — one downstream project had written the opposite decision into its own CI and the plugin
+    # overrode it, then aborted the job before that project's own ratchet could run.
+    _tick()
+    if rc.fail_axes(args, {}) != (False, False):
+        FAILURES.append("fail_axes: the DEFAULT must be none — a partial-coverage project is normal")
+    _tick()
+    if rc.fail_axes(args, {"fail_on": "untested"}) != (True, False):
+        FAILURES.append("fail_axes: coverage.fail_on: untested must arm exactly that axis")
+    _tick()
+    if rc.fail_axes(args, {"fail_on": "both"}) != (True, True):
+        FAILURES.append("fail_axes: coverage.fail_on: both must arm both axes")
+    # A TYPO MUST BE REFUSED, not read as `none`: silently disarming a gate is indistinguishable
+    # from the gate passing, which is the failure this whole file exists to make impossible.
+    _tick()
+    try:
+        rc.fail_axes(args, {"fail_on": "untetsed"})
+        FAILURES.append("fail_axes: a misspelt fail_on was accepted and silently disarmed the gate")
+    except SystemExit:
+        pass
+    # AND THE WHOLE COMMAND HONOURS IT, not just the helper: proving the helper is not proving the
+    # caller, and this repo has paid for that distinction more than once.
+    _saved_trend, args.trend = args.trend, None
+    _tick()
+    with contextlib.redirect_stdout(io.StringIO()):
+        if rc.cmd_report(args) != 0:
+            FAILURES.append("report: with fail_on unset, a gap must still exit 0")
+    _base_cfg = cfg.read_text(encoding="utf-8")
+    cfg.write_text(_base_cfg.replace("coverage:\n", "coverage:\n  fail_on: untested\n", 1),
+                   encoding="utf-8")
+    _tick()
+    if rc.load_config(cfg).get("fail_on") != "untested":
+        FAILURES.append("report: the fixture did not land inside the coverage block, so the "
+                        "assertion below would pass for the wrong reason")
+    _tick()
+    with contextlib.redirect_stdout(io.StringIO()):
+        if rc.cmd_report(args) != 1:
+            FAILURES.append("report: coverage.fail_on: untested in the project config must exit 1")
+    cfg.write_text(_base_cfg, encoding="utf-8")
+    args.trend = _saved_trend
+
     args.fail_on_untested = True
     _tick()
     with contextlib.redirect_stdout(io.StringIO()):
         if rc.cmd_report(args) != 1:
             FAILURES.append("report: --fail-on-untested must exit 1 while a gap remains")
+    # An explicit CLI flag still WINS over the config, so a project that reached full coverage can
+    # arm one axis in its own CI without editing config — and nobody passing the flag on purpose
+    # was broken by #1029.
+    _tick()
+    if rc.fail_axes(args, {"fail_on": "none"}) != (True, False):
+        FAILURES.append("fail_axes: an explicit --fail-on-untested must beat coverage.fail_on: none")
     _tick()
     lines = [json.loads(x) for x in trend.read_text(encoding="utf-8").splitlines()]
     if len(lines) != 2:
@@ -574,6 +622,15 @@ def run() -> int:
     _tick()
     if rc._small_max({"small_viewport_max": "414"}) != 414:
         FAILURES.append("a declared small_viewport_max must be honoured")
+    # AND THROUGH THE PARSER, not only through a hand-built dict (#1029). Every fixture here fed
+    # `_small_max` a dict directly, so the reader that drops or carries the key was never exercised
+    # — and it dropped every scalar, silently, for as long as the key has existed. Proving the
+    # helper is not proving the caller.
+    _e2e = _tmp() / "viewport.yml"
+    _e2e.write_text("coverage:\n  small_viewport_max: 414   # a real phone\n", encoding="utf-8")
+    _tick()
+    if rc._small_max(rc.load_config(_e2e)) != 414:
+        FAILURES.append("a small_viewport_max written in qa.config.yml never reaches _small_max")
     for bad in ("wide", "12"):
         _tick()
         try:

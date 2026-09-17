@@ -106,9 +106,24 @@ GUARD = Guard(
             "a non-GET route must not be counted as unmeasured",
         ),
         Mutation(
+            # #1029. The plugin hardcoded `--fail-on-untested` for every adopter, so a project with
+            # a backlog got a permanently red gate it could not opt out of — and the red step then
+            # aborted the job before the project's own ratchet ran.
+            "the project's `coverage.fail_on` is ignored and the axes are armed from the CLI alone",
+            "    untested, unmeasured_axis = fail_axes(args, config)",
+            "    untested, unmeasured_axis = args.fail_on_untested, args.fail_on_unmeasured",
+            "coverage.fail_on: untested in the project config must exit 1",
+        ),
+        Mutation(
+            "an unknown `fail_on` value is accepted, silently disarming the gate",
+            '        raise SystemExit(f"coverage.fail_on is {raw!r}, not one of "',
+            '        return FAIL_ON["none"]  # noqa  (mutant: silently disarm)\n        raise SystemExit(f"coverage.fail_on is {raw!r}, not one of "',
+            "silently disarmed the gate",
+        ),
+        Mutation(
             "`--fail-on-unmeasured` stops gating, so the axis can never hold a line",
-            "    failed = (args.fail_on_untested and gaps) or (args.fail_on_unmeasured and unmeasured)",
-            "    failed = args.fail_on_untested and gaps",
+            "    failed = (untested and gaps) or (unmeasured_axis and unmeasured)",
+            "    failed = untested and gaps",
             "--fail-on-unmeasured must fail when a route was never measured small",
         ),
         # ---- the denominator itself (#953) -------------------------------------------------

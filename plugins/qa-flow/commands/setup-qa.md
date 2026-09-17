@@ -73,6 +73,10 @@ forms:                               # form-submission safety (#461)
 coverage:                            # route coverage denominator (#119)
   exclude: []                        # substrings: health endpoints, dev-only, ActiveStorage
   authenticated_prefixes: []         # e.g. /admin — declared, never guessed from the path
+  fail_on: none                      # none | untested | unmeasured | both (#1029). DEFAULT none:
+                                     # the gap is the deliverable, and a gate red for a known
+                                     # backlog is one people learn to merge past. Arm an axis only
+                                     # once you have reached full coverage on it.
 blast_radius:                        # derived regression scope (#134)
   exclude: []                        # substrings: paths a change to cannot affect the app
   high_risk:                         # ADDS to the built-in axes; it can never switch one off
