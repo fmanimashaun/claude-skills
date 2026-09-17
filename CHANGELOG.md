@@ -2724,6 +2724,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A route named `/auth/failure` hijacked the headline of every report it appeared in —
+  `plugins/rails-flow/scripts/project_gates.py`, `scripts/mutations/project_gates.py`** (#1028).
+  `summarise()` picked the first line matching `\b(error|warning|fail(ed|ure)?)\b`, dropped
+  everything before it as the tool clearing its throat, and reported everything after it as the
+  findings. A **route path** matched, so in a downstream project the headline became `GET
+  /auth/failure`, the real summary was discarded, and the printed findings were the wrong axis of the
+  report. A maintainer then chased **41 responsive** routes while the gate was failing on **29
+  untested** ones, and named a covered route as the first untested one.
+
+  **A content heuristic latches onto content**, and the more honestly a project names things the
+  likelier it is to be bitten — the same docstring that warns about `herb analyze`'s version banner
+  is what this defeats in the other direction. The pick is now a ladder: our own structural
+  `N finding(s):` first, because data cannot forge it; then severity or location, with severity words
+  inside **route-shaped tokens** (those beginning with `/`) excluded; then the first line. Scoped to
+  leading slashes deliberately — `errors/foo.rb:3` is a real finding and must keep matching, and
+  excluding every token containing a slash would silently drop it.
+
+  Two fixtures and two mutation arms, and one of the fixtures had to be rewritten: indexing
+  `findings[0]` **raised** on the empty tuple rather than failing, which aborts the selftest before
+  a later labelled assertion reports — and a different mutation's guard expects that one. A crash is
+  not a verdict, and it steals the verdict from elsewhere.
+
 ### 2026-09-17 (release v1.131.0)
 
 - **Cross-session coordination is computed from the repository instead of remembered —

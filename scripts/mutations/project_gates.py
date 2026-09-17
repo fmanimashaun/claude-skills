@@ -12,6 +12,21 @@ GUARD = Guard(
         "plugins",
     ),
     mutations=(
+        Mutation(
+            # #1028. The heuristic latched onto data: a route named /auth/failure became the
+            # headline of a route-coverage report and the real summary was dropped as preamble.
+            "a severity word inside a route counts again, so a route name hijacks the headline",
+            "    return bool(_FINDING.search(_ROUTEISH.sub(\" \", line)))",
+            "    return bool(_FINDING.search(line))",
+            "does not hijack the headline",
+        ),
+        Mutation(
+            "the structural anchor is skipped, so a lexical match earlier in the output wins",
+            "    idx = next((i for i, ln in enumerate(lines) if _SUMMARY.search(ln)), None)",
+            "    idx = None",
+            "summary line wins over an earlier lexical match",
+        ),
+
         # #849 part 3. A diagnostic never mutates the project -- asserted, not assumed.
         Mutation(
             "a check that writes during the audit is no longer an ERROR",
@@ -104,8 +119,11 @@ GUARD = Guard(
             # A banner denylist was the first attempt and `No .herb.yml found` beat it, so the
             # ranking is the part that has to hold.
             "the first line wins again, so a tool's banner masks its finding",
-            "    idx = next((i for i, ln in enumerate(lines) if ln.strip() and _FINDING.search(ln)), None)",
-            "    idx = None",
+            # The rung moved when #1028 turned this into a ladder; the mutation follows the code
+            # it mutates, and the stale-anchor assertion is what refused the old one.
+            "        idx = next((i for i, ln in enumerate(lines)\n"
+            "                    if ln.strip() and looks_like_a_finding(ln)), None)",
+            "        idx = None",
             "a banner and a config notice lose to a line naming a severity",
         ),
         Mutation(
