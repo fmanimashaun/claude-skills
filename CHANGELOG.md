@@ -5010,6 +5010,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   decrypted credentials. "The browser tests pass" was available as evidence that authentication
   worked, and meant nothing.
 
+  **§4 also covers the single-session case, which reads identically and nobody announces** (#1022).
+  A 475-second gate sweep started in the primary checkout, while that same session checked out
+  another branch, rebased a release commit onto a moved `dev`, created a third branch and edited four
+  files, reported **one failure** where a run minutes earlier reported none — a number describing no
+  commit, because none was on disk for its duration. A long-running read is a second party in your
+  own tree: run it against a commit in a detached worktree, link the gitignored inputs in or the
+  sweep is blinder rather than greener, throw away any result measured over a tree you edited, and
+  **do not raise a timeout budget to make a loaded machine green** — that number is a property of the
+  machine the gate is judged on.
+
   **And the maintainers were the only people not receiving it.** `.claude/settings.json` here enables
   `remember` and nothing else, so a session maintaining this marketplace never loaded the skill it
   ships. `.claude/skills/**` is now GENERATED from `skills/**` — one source, a banner, and a

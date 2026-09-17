@@ -196,6 +196,32 @@ So:
   merge checklist says "merge on green" and none of them has a clause for a PR another session
   opened. Ask its author session first; the merge is the one step that cannot be taken back quietly.
 
+### A long-running read is a second party in your own tree
+
+Everything above is about two sessions. **The single-session case reads identically and nobody
+announces it:** a gate sweep, a full suite or a corpus build takes minutes, and for those minutes it
+is a reader with a stake in the tree staying still.
+
+Measured: a 475-second gate sweep started in the primary checkout, while the same session then
+checked out another branch, rebased a release commit onto a moved `dev`, created a third branch and
+edited four files. It reported **one failure** where a run minutes earlier had reported none. That
+number describes **no commit** — none was on disk for the duration — and both outcomes were bad:
+green and meaningless, or red and an hour spent chasing a file that had already changed.
+
+- **Run it against a commit, not against a directory.** `git worktree add --detach "$SCRATCH/sweep"
+  <the commit you mean>` — then the number belongs to something, and nothing you do meanwhile can
+  touch it.
+- **If you did edit the tree under a run, throw the result away.** It is not a slow answer; it is no
+  answer. Re-run it somewhere stable rather than interpreting it.
+- **A detached worktree is missing every gitignored input**, so link them in before you trust it —
+  see [§5](#5-a-fresh-worktree-is-missing-every-gitignored-file-and-the-suite-blames-something-else).
+  A sweep that skips the one gate needing licensed corpora is not a greener sweep, it is a blinder
+  one, and CI cannot run that gate at all.
+- **A timeout is not a failure of the thing measured.** Under N sessions a suite that fits its budget
+  on a quiet runner will not fit on the laptop running them, and the gate reports FAIL either way.
+  Re-run the checker alone before believing it, and **do not raise the budget to make a loaded
+  machine green** — the number is a property of the machine the gate is judged on.
+
 ## 5. A fresh worktree is missing every gitignored file, and the suite blames something else
 
 A worktree is a clean checkout: **nothing gitignored comes with it.** Neither failure below names its
