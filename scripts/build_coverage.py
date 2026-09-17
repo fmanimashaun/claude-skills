@@ -1414,7 +1414,7 @@ def main(argv: list[str] | None = None) -> int:
     # file without it leaves the page stale and fails `coverage artifact drift` for whoever runs the
     # gates next. Four PRs did exactly that in one afternoon. CLAUDE.md documents the pair, but a
     # note at the point of use is worth more than a paragraph nobody is reading right now.
-    print("  NEXT: python3 scripts/build_coverage_artifact.py && git add docs/  "
+    print("  NEXT: python3 scripts/build_coverage_artifact.py && git add docs/ && commit  "
           "— the committed page is built from this data and goes stale with it")
     return 0
 

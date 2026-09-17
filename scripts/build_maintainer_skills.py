@@ -79,6 +79,27 @@ def committed_blob(relative: str, cwd: Path = ROOT) -> str | None:
     None (no repository, no blob) counts as drift, not as a pass — an unreadable HEAD is the
     condition this check exists to notice, so treating it as clean would reintroduce the fail-open
     one level down.
+
+    DELIBERATELY NOT EXTRACTED — #1008 asked for this to be decided rather than left open. Measured
+    across the three sites that read HEAD:
+
+      `scripts/doctrine_map.py:912`        6 lines, no timeout, catches OSError
+      `scripts/build_maintainer_skills.py` 6 lines, timeout=30, catches OSError and
+                                           SubprocessError, and takes the repository so the
+                                           selftest can hand it a throwaway one
+      `scripts/build_wiki.py:337`          4 lines, inline, and it never returns a blob at all —
+                                           it compares in place inside its loop
+
+    Two near-identical six-line functions and one of a different shape. A shared module keeps one
+    copy and adds an import to each of three files, so the net removal is about **three lines** —
+    against `skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced
+    to 72 net and were still judged not worth extracting. The helper would also have to live under
+    `scripts/`, which is maintainer-only, so shipped plugin code could never import it and the
+    split would be per-audience rather than per-concern.
+
+    What actually travels between the three is not the code but the RULE — compare the commit,
+    never the working copy — and a rule belongs in `docs/architecture/doctrine-map.html`, which
+    already carries it.
     """
     try:
         result = subprocess.run(["git", "show", f"HEAD:{relative}"], cwd=cwd,
