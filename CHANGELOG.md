@@ -4841,6 +4841,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### 2026-09-17 (release v1.130.0)
+
+- **The port checklist documents the status a faithful port needed —
+  `skills/design-system/references/design-handoff.md`** (#1000). The handoff reference listed four
+  port-report statuses and said `check` verifies every `implemented` text against the file it names.
+  It had no way to describe copy a port changed ON PURPOSE, which is a thing faithful ports do: a
+  recorded decision restructures a screen, or the app grows something the canvas never drew. The
+  reference now names `reworded` — with the file, the replacement text and the decision that changed
+  it — and says plainly why it exists: a port may legitimately change the words, and when the only
+  green statuses were ones the check could not verify, the honest answer was the one that went red.
+  Paired with the enforcement in `design-flow`'s `canvas_manifest.py`, in this same release.
+
 ### 2026-09-16 (release v1.128.0)
 
 - **A failed request has an interface, not just events — `skills/hotwire/references/turbo.md` §8b,
@@ -10269,6 +10281,37 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-17 (release v1.130.0)
+
+- **`reworded` — the status a faithful port needed and the check did not have** (#1000).
+  `plugins/design-flow/scripts/canvas_manifest.py`'s `check` accounted for every canvas item under
+  four statuses, and verified that anything called `implemented` really had the canvas's words in
+  the file it named. That verification is the point of the gate. But a port legitimately *changes*
+  wording — a recorded decision restructures a screen, or the app grows something the canvas never
+  drew — and there was no honest way to say so. Downstream, Retask's `port-fidelity` was red on
+  four items that were all genuinely ported: one where the app's copy is **more accurate than the
+  canvas**, because it names a password screen and a session list the design predates; one the
+  project's own decision record moved to a different area; and two `minmax(...)` grid-templates the
+  extractor classified as copy, which the port replaced with a responsive mechanism.
+  The three ways through were `implemented` (red, and true), `deferred` (green, false, and the
+  check only demands a `reason` string) or `dropped-scaffolding` (green, false, and the check
+  asserted **nothing at all** about it). A gate whose honest answer is unavailable teaches people to
+  pick a dishonest one, and the next real gap arrives wearing the same label.
+  `reworded` is **harder to pass than `implemented`, not softer**: it requires `where`, a `now`
+  quoting the text that stands in the canvas's place, and a `reason` — and `now` is searched for in
+  that file and the locales exactly as an `implemented` original is. So it cannot wave anything
+  through: no `now` is a gap, no `reason` is a gap, a `now` too short to search for is a gap, and a
+  `now` that is not actually in the file is a gap. Both statuses share one `_text_present` helper,
+  so neither can drift into being checked more loosely than the other.
+  Also: `dropped-scaffolding` now requires a `note`, the way `deferred` requires a `reason` — it was
+  the one status `check` looked at and said nothing about, which made it the cheapest place to hide
+  an item nobody had read. Eight new selftest cases (33 total) drive every rule from both sides, and
+  three new mutations in `scripts/mutations/canvas_manifest.py` (11 total) prove each one can fail.
+  Documented in `plugins/design-flow/agents/design-porter.md`,
+  `plugins/design-flow/commands/port.md` and `skills/design-system/references/design-handoff.md`,
+  each saying the same thing: `reworded` is for copy a decision changed, never for copy nobody got
+  round to.
 
 ### 2026-09-05 (release v1.121.0)
 
