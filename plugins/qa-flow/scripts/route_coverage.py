@@ -596,8 +596,43 @@ def cmd_report(args: argparse.Namespace) -> int:
     # `--fail-on-unmeasured` are for a team that has reached full coverage on an axis and wants to
     # keep it. Two flags rather than one, because the axes are reached at different times and a
     # single flag would make the easier one hostage to the harder.
-    failed = (args.fail_on_untested and gaps) or (args.fail_on_unmeasured and unmeasured)
+    #
+    # AND THE CHOICE IS THE PROJECT'S (#1029). `checks.json` hardcoded `--fail-on-untested`, so
+    # every project adopting qa-flow before reaching total coverage got a permanently red gate it
+    # could not opt out of -- the flag lived in the plugin, not in `qa/qa.config.yml`. One
+    # downstream project had written the opposite decision into its own CI ("that flag is for a
+    # project at full coverage; this one is at 197/224, so arming it would paint the promotion red
+    # on a backlog rather than on a regression") and the plugin overrode it. Worse, the red step
+    # aborted the job before the ratchet that project actually intended, so the plugin's opinion
+    # MASKED the project's own gate.
+    untested, unmeasured_axis = fail_axes(args, config)
+    failed = (untested and gaps) or (unmeasured_axis and unmeasured)
     return 1 if failed else 0
+
+
+# `coverage.fail_on` in the project's own config. `none` is the DEFAULT because a partial-coverage
+# project is the normal case and the gap is the deliverable — a gate red for a known reason is a
+# gate people learn to merge past, which costs more than the gap it names.
+FAIL_ON = {"none": (False, False), "untested": (True, False),
+           "unmeasured": (False, True), "both": (True, True)}
+
+
+def fail_axes(args: argparse.Namespace, config: dict[str, object]) -> tuple[bool, bool]:
+    """Which axes turn a gap into an exit 1: the project's `coverage.fail_on`, or the CLI flags.
+
+    An explicit flag WINS, so a project that has reached full coverage can still arm one axis in its
+    own CI without editing config, and so this change breaks nobody who was passing the flag on
+    purpose. An unknown value is refused rather than silently treated as `none`: a typo in
+    `fail_on: untetsed` would otherwise disarm the gate and read exactly like a passing one.
+    """
+    if args.fail_on_untested or args.fail_on_unmeasured:
+        return bool(args.fail_on_untested), bool(args.fail_on_unmeasured)
+    raw = str(config.get("fail_on", "none")).strip().lower() or "none"
+    if raw not in FAIL_ON:
+        raise SystemExit(f"coverage.fail_on is {raw!r}, not one of "
+                         f"{', '.join(sorted(FAIL_ON))} — a value this reader does not know would "
+                         "silently disarm the gate, which reads exactly like passing")
+    return FAIL_ON[raw]
 
 
 def _small_max(config: dict[str, object]) -> int:

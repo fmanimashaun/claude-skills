@@ -10,6 +10,16 @@ GUARD = Guard(
     selftest="plugins/qa-flow/scripts/qa_config.py",
     mutations=(
         Mutation(
+            # #1029. `key: value` matched nothing, so every scalar in a config block was dropped —
+            # `coverage.small_viewport_max` included, whose fixtures fed the helper a dict and so
+            # never touched this parser. A project writing 414 got 480 and no complaint.
+            "a scalar value is dropped again, so `small_viewport_max: 414` never reaches the reader",
+            "                elif scalar:\n                    block[name] = _scalar(scalar)",
+            "                elif False:\n                    block[name] = _scalar(scalar)",
+            "a scalar key is carried",
+        ),
+
+        Mutation(
             # THE REPORTED DEFECT. A trailing comment on every key is what setup-qa scaffolds,
             # so both loaders returned {} on the block the scaffolder writes.
             "trailing comments stop being stripped, so every scaffolded key is dropped again",
@@ -21,8 +31,8 @@ GUARD = Guard(
             # THE SECOND DEFECT, which the report did not separate: only an EMPTY inline list
             # was accepted, so `exclude: ["/up"]` was lost with no comment in sight.
             "only an EMPTY inline list is accepted, so a populated one is dropped",
-            "(?P<inline>\\[.*\\])?",
-            "(?P<inline>\\[\\s*\\])?",
+            "(?:(?P<inline>\\[.*\\])|(?P<scalar>[^#\\s\\[].*?))?",
+            "(?:(?P<inline>\\[\\s*\\])|(?P<scalar>[^#\\s\\[].*?))?",
             "a POPULATED inline list is read",
         ),
         Mutation(
