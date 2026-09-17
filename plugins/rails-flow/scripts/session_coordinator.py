@@ -76,8 +76,13 @@ def _key(argv: list[str]) -> tuple[str, ...]:
     return tuple(argv[:depth])
 
 
-def run(argv: list[str], cwd: Path) -> str:
+def run(argv: list[str], cwd: Path, execute=subprocess.run) -> str:
     """A read-only subprocess, or an exception. The output is discarded on failure, never guessed.
+
+    `execute` is injected for one reason: the selftest attempts every write verb with a spy that
+    raises if it is ever called, so "the boundary refused it" is proved by NOTHING RUNNING rather
+    than by an exception that might have come from the command failing. A test that proves a merge
+    was refused by running the merge is not a test.
 
     A failing read is NOT an empty read: `gh` unauthenticated returns nothing in exactly the shape
     of "no open pull requests", and a coordinator that reports the second when the first is true is
@@ -88,7 +93,7 @@ def run(argv: list[str], cwd: Path) -> str:
             f"refused: {' '.join(argv[:3])} is not on the read-only allowlist. This module reports; "
             "acting on another session's work is the caller's to do, with a message."
         )
-    result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=60)
+    result = execute(argv, cwd=cwd, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         raise RuntimeError(f"{' '.join(argv)} failed: {result.stderr.strip()[:200]}")
     return result.stdout
@@ -129,20 +134,52 @@ def age_minutes(created_iso: str, now: datetime) -> int:
 # Hand-declared rather than derived from the generators, deliberately: deriving it would make this
 # a check on the INDEX of the generated set rather than on the set, which is the defect class that
 # produced #1006 and #1008 in one afternoon.
+#
+# THE COST OF THAT CHOICE IS REAL AND IS PAID HERE. The first version of this list was two entries
+# short, and a peer deriving the set from the generators caught it within the hour. So: re-derive
+# against `scripts/rebuild_generated.py` whenever a generator is added, and treat a path that is
+# generated but absent from this list as the failure mode -- it sends someone to hand-resolve a
+# file whose conflict is not a judgement at all.
 GENERATED: tuple[tuple[str, str], ...] = (
     ("docs/wiki/*.md", "python3 scripts/build_wiki.py"),
     ("docs/architecture/doctrine-map.html", "python3 scripts/doctrine_map.py"),
     ("docs/evidence/coverage.html", "python3 scripts/build_coverage_artifact.py"),
     ("dist/*.skill", "python3 scripts/package_core.py"),
     (".claude/skills/*/SKILL.md", "python3 scripts/build_maintainer_skills.py"),
+    # Both of these were missing from the first hand-written list, and a peer deriving the set from
+    # the generators found them. The first is the expensive one to get wrong: it lives under
+    # `plugins/`, so a rule of thumb like "everything under plugins/ is authored" sends someone to
+    # hand-resolve a file they should regenerate.
+    ("plugins/rails-flow/mandated_gems.json", "python3 scripts/derive_mandated_gems.py"),
+    ("skills/design-system/references/coverage.md", "python3 scripts/build_coverage.py"),
     ("db/schema.rb", "bin/rails db:migrate"),
     ("docs/architecture/*.svg", "the architecture graph builder"),
 )
 
 
-def regenerator(path: str) -> str | None:
+def load_generated(declared: Path | None) -> tuple[tuple[str, str], ...]:
+    """`GENERATED`, plus whatever the project declares in a JSON file of {glob: command}.
+
+    THE DEFAULTS ARE THIS MARKETPLACE'S, AND THIS SCRIPT SHIPS. A downstream Rails app has
+    `db/schema.rb` and none of `docs/wiki/`, `dist/*.skill` or `.claude/skills/` — so a built-in
+    list is a starting point and never the answer. A project declares its own, and the two are
+    merged with the project's entries LAST so they win.
+
+    Suggested by a peer that this read the maintainer repo's `scripts/rebuild_generated.py`, whose
+    `BUILDERS` now carries each generator's output paths. It cannot: that script is maintainer-only
+    and this one is shipped inside `rails-flow`, so importing it would break for every downstream
+    installation — the same per-audience boundary that kept the HEAD-read helper unextracted. A
+    maintainer who wants that list here can generate the JSON from `BUILDERS` and pass it.
+    """
+    if declared is None:
+        return GENERATED
+    extra = json.loads(declared.read_text(encoding="utf-8"))
+    return GENERATED + tuple((str(k), str(v)) for k, v in extra.items())
+
+
+def regenerator(path: str, generated: tuple[tuple[str, str], ...] = GENERATED) -> str | None:
     """The command that rebuilds `path`, or None when the file is authored."""
-    for pattern, command in GENERATED:
+    for pattern, command in generated:
         if fnmatch(path, pattern):
             return command
     return None
@@ -243,11 +280,12 @@ def path_collisions(sessions: list[Session]) -> list[Finding]:
     return findings
 
 
-def conflict_triage(pr: dict, overlapping: list[str]) -> list[Finding]:
+def conflict_triage(pr: dict, overlapping: list[str],
+                    generated: tuple[tuple[str, str], ...] = GENERATED) -> list[Finding]:
     """For a conflicted PR, name the files and say for each: regenerate, or the author's call."""
     findings = []
     for path in overlapping:
-        command = regenerator(path)
+        command = regenerator(path, generated)
         if command:
             findings.append(Finding(
                 kind="conflict-generated",
@@ -337,6 +375,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sessions", help="JSON file: [{name, state, repo, paths, branch}] from ListAgents")
     ap.add_argument("--repo-root", default=".")
+    ap.add_argument("--generated", help="JSON {glob: rebuild command} this project generates, "
+                                        "merged over the built-in defaults")
     ap.add_argument("--json", action="store_true", help="machine-readable findings")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
@@ -374,15 +414,18 @@ def selftest() -> int:
         if not condition:
             failures.append(label)
 
-    # 1. The write boundary, proved by attempting every verb rather than by reading the allowlist.
+    # 1. The write boundary, proved by attempting every verb with a spy that must never be called.
+    def never(*_args, **_kwargs):
+        raise AssertionError("EXECUTED a write command instead of refusing it")
+
     for verb in WRITE_VERBS:
         try:
-            run(list(verb) + ["1"], Path("."))
+            run(list(verb) + ["1"], Path("."), execute=never)
             failures.append(f"{' '.join(verb)} was NOT refused — this module can act on the world")
         except WriteAttempted:
             pass
-        except Exception as exc:                                    # noqa: BLE001
-            failures.append(f"{' '.join(verb)} failed for the wrong reason: {exc!r}")
+        except AssertionError as exc:
+            failures.append(f"{' '.join(verb)}: {exc}")
 
     # 2. Time: the real numbers from the day. 15:20:39Z against 15:33:20Z is 12 minutes, not 72.
     check("age_minutes did not compute 12 minutes for the 15:20:39Z PR",
@@ -392,6 +435,9 @@ def selftest() -> int:
         failures.append("age_minutes accepted a NAIVE clock — the 60-minute error is back")
     except ValueError:
         pass
+    except TypeError:
+        failures.append("age_minutes accepted a NAIVE clock and died subtracting it — the refusal "
+                        "is gone, and a crash is not a diagnosis")
 
     green = {"number": 1009, "createdAt": "2026-09-17T15:20:39Z", "mergeStateStatus": "CLEAN",
              "session": "s-a"}

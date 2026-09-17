@@ -103,7 +103,7 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 
 `feature` `fix` `review` `issues` `brief` `curate` `explain` `graph` `handoff` `pr-comments`
 `report` `setup-flow` `toolchain-audit` · **memory:** `brain` `brain-review` `brain-sync` ·
-**autonomous:** `drive` `escalate` `toolchain-check`
+**autonomous:** `drive` `escalate` `toolchain-check` · **parallel sessions:** `coordinate`
 
 </details>
 

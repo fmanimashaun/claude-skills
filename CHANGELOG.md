@@ -2684,6 +2684,40 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Cross-session coordination is computed from the repository instead of remembered —
+  `plugins/rails-flow/scripts/session_coordinator.py`, `plugins/rails-flow/commands/coordinate.md`,
+  `scripts/mutations/session_coordinator.py`, `README.md`** (#1010). `parallel-session-lane` is good
+  doctrine and nothing ran it, so coordination fell to whichever session took it on, by hand and
+  reactively. All six failures that produced in one day were **polling gaps**: the information
+  existed, in git or in the session list, and nobody looked — two PRs finished with their authors
+  idle and found only when the owner asked; `dev` carried at a SHA it had left hours earlier;
+  decision numbers recited from memory when a git query knew better.
+
+  **The authority is enforced, not promised.** #1010 asks that it cannot merge or write, so every
+  subprocess goes through one allowlist of read-only `git`/`gh` invocations and sixteen write verbs —
+  `gh pr merge`, `git push`, fourteen more — raise `WriteAttempted`. The selftest proves it by
+  ATTEMPTING each one with an executor spy that fails if it is ever called, so "refused" means
+  nothing ran, rather than an exception that might have come from the command itself failing. A test
+  that proves a merge was refused by running the merge is not a test.
+
+  **The characteristic failure is a false escalation, so the negative case is a fixture.** A wrong
+  age is indistinguishable from a real stall except in the number, and the number is what nobody
+  re-derives; one local-clock-against-UTC error produced two false escalations inside five minutes,
+  reporting a 13-minute-old PR as 70. So `age_minutes` **refuses a naive clock** rather than assuming
+  one, and the selftest asserts the 12-minute PR yields no finding at all while the 153-minute one
+  does. Three of the seven mutation arms make the detector *more* talkative, which is how this class
+  survives review: over-firing looks like sensitivity.
+
+  **Conflicts are triaged, never resolved.** A conflict in a generated file is not a judgement —
+  regenerate it; hand-resolving one nearly deleted a subsystem from an architecture graph. A conflict
+  in authored code belongs to its author. The module owns saying which is which and nothing more. The
+  hand-declared generated list was two paths short on its first draft — `mandated_gems.json`, which
+  sits under `plugins/` where a rule of thumb would call it authored, and the design-system
+  `coverage.md` — so the list now carries the instruction to re-derive it whenever a generator is
+  added.
+
 ### 2026-09-07 (release v1.125.0)
 
 - **Six more sites of #948, in the plugin that owns the gate — `plugins/rails-flow/commands/review.md`,
