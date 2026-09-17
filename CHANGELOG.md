@@ -4841,6 +4841,48 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **The parallel-session protocol now says what four sessions actually do, and the maintainers can
+  finally read it — `skills/parallel-session-lane/SKILL.md`, `.claude/skills/parallel-session-lane/`,
+  `scripts/build_maintainer_skills.py`** (#1004). Four agent sessions worked this repo and a
+  downstream one simultaneously on 17 Sep 2026. The skill that exists for exactly that described
+  something none of them were doing, and none of them could read it anyway.
+
+  **The central claim was wrong and they disproved it.** It said *"swarm-forge needs message passing
+  because its roles cannot see each other's state; ours can — git is the handoff medium"*. Git is
+  right for a handoff of work and wrong for two other things: a fact about shared ground (`dev` is
+  red) and the intent to take a claim. The four sessions needed a channel and invented one within
+  the hour. The skill now splits the three.
+
+  **Worktree-per-unit-of-work is promoted above lanes**, because it is what they reached unprompted
+  — measured, 19 worktrees, one branch each — and it needs no assigner, no `RAILS_FLOW_LANE` and
+  nobody remembering to run a script first. The lane machinery stays; it is no longer the entry
+  point. Its SessionStart nudge had been printing unheeded for two weeks.
+
+  **Claims are a QUERY, not a registry, and measuring killed the first proposal.** The stated premise
+  was that `git ls-remote` cannot see an unpushed worktree; across those 19 worktrees **18 of 19
+  branches were already pushed**, so "push on create" would have changed nothing. What was missing
+  is that a decision number lives *inside* a file: one `git grep` over `refs/remotes/origin` returns
+  **D-079, all merged**, while the ledger three sessions were coordinating by said *"highest merged
+  is D-073, two branches hold D-075/D-076 unmerged"* — four numbers stale inside a day. A registry
+  file would have drifted identically; git did not.
+
+  **Two gitignored-file traps**, both diagnosed as application defects first: unbuilt
+  `app/assets/builds/` makes system specs fail as geometry, and a missing `config/master.key` failed
+  **948 of 2,422 examples** as signed-out screens — while `spec/system` stayed **fully green**
+  throughout, because system specs sign in by magic link and request specs use a helper needing the
+  decrypted credentials. "The browser tests pass" was available as evidence that authentication
+  worked, and meant nothing.
+
+  **And the maintainers were the only people not receiving it.** `.claude/settings.json` here enables
+  `remember` and nothing else, so a session maintaining this marketplace never loaded the skill it
+  ships. `.claude/skills/**` is now GENERATED from `skills/**` — one source, a banner, and a
+  `maintainer skill drift` gate, because a mirror without a drift check is the two-homes defect
+  `plugin-boundaries` refuses. Enabling `rails-stack` here was rejected: it would pull six unrelated
+  skills into a repository that is not a Rails app. A symlink was rejected for Windows, which
+  `CLAUDE.md` supports.
+
 ### 2026-09-17 (release v1.130.0)
 
 - **The port checklist documents the status a faithful port needed —

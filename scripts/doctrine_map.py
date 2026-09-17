@@ -415,10 +415,22 @@ CLAIMS: tuple[Claim, ...] = (
              "matches and it still exits 2.",
     ),
     Claim(
+        claim="The maintainer copy of a shipped skill cannot drift from the skill it is derived from.",
+        stated_in="skills/parallel-session-lane/SKILL.md",
+        anchor="## 1. One worktree per unit of work — before lanes, and without asking anyone",
+        kind=GUARANTEE,
+        enforced_by=("gate:maintainer skill drift",),
+        refs=(1004,),
+        note="`.claude/skills/**` is generated from `skills/**` because this repo's own sessions load "
+             "`remember` and nothing else, so the parallel-session doctrine reached every consumer "
+             "except its maintainers. A mirror without a drift check is two homes for one rule, which "
+             "is what `plugin-boundaries` refuses; the gate is what makes it one.",
+    ),
+    Claim(
         claim="Working in the wrong worktree during a parallel session is refused, not merely advised "
               "against.",
         stated_in="skills/parallel-session-lane/SKILL.md",
-        anchor="## 1. Confirm your worktree before any edit",
+        anchor="## 4. Confirm your worktree before any edit",
         kind=GUARANTEE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-lane.sh",),
         refs=(660,),

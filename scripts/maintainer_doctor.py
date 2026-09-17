@@ -122,6 +122,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # which is exactly how the README came to name version 1.3.1 while the marketplace shipped 1.80.
     ("wiki reference drift", ("python3", "scripts/build_wiki.py", "--check")),
     ("wiki reference selftest", ("python3", "scripts/build_wiki.py", "--selftest")),
+    # #1004: `.claude/skills/**` is DERIVED from `skills/**`, because this repository's own sessions
+    # load `remember` and nothing else — so the parallel-session doctrine reached every consumer
+    # except the maintainers who then collided over it four times in a day. One source, one derived
+    # copy, and a gate so the copy cannot quietly stop matching: two homes for one rule is the
+    # defect `plugin-boundaries` exists to refuse, and a mirror without a drift check IS two homes.
+    ("maintainer skill drift", ("python3", "scripts/build_maintainer_skills.py", "--check")),
+    ("maintainer skill selftest", ("python3", "scripts/build_maintainer_skills.py", "--selftest")),
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
     # #129 widened its INPUT from the doctrine file to every shipped brand pack, because the #304
     # fix had been applied to the doctrine file and to neither pack — so the gate read clean over
