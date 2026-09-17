@@ -50,8 +50,8 @@ GUARD = Guard(
             # everyone. Mutating the JOIN is the only way to see that.
             "the PR-to-session join goes back to a key `gh` never emits, so the idle guard is dead "
             "again and every green PR chases a working session",
-            "        session = by_branch.get(pr.get(\"headRefName\"))",
-            "        session = by_branch.get(pr.get(\"session\"))",
+            "        session = by_branch.get(branch_key(pr.get(\"headRefName\")))",
+            "        session = by_branch.get(branch_key(pr.get(\"session\")))",
             "BUSY author's old green PR",
         ),
         Mutation(
@@ -60,6 +60,28 @@ GUARD = Guard(
             "        if failure.returncode != 1:     # 1 is \"no match\"; 128 is \"your pattern is malformed\"",
             "        if False:",
             "FATAL git failure was reported",
+        ),
+        Mutation(
+            "branch spellings stop being normalised, so `origin/fix/b` reads as unannounced and a "
+            "BUSY session is chased",
+            "        if name.startswith(prefix):",
+            "        if False:",
+            "was treated as not having announced it",
+        ),
+        Mutation(
+            "two sessions claiming one branch stops being reported — the day's actual incident, "
+            "which no path list predicted because neither had announced a path yet",
+            "        if len(claiming) < 2:",
+            "        if True:",
+            "claiming one branch produced no collision",
+        ),
+        Mutation(
+            # Last-wins made the verdict depend on ListAgents ordering. The fixture reverses the
+            # list and compares, so only a deterministic answer passes.
+            "an ambiguously-claimed branch resolves to whichever session came last in the list",
+            "    by_branch = {b: s[0] for b, s in claimants.items() if len(s) == 1}",
+            "    by_branch = {b: s[-1] for b, s in claimants.items()}",
+            "named one of the claimants anyway",
         ),
         Mutation(
             "the collector stops asking for the fields the fixtures are built from",

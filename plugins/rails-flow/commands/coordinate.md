@@ -38,6 +38,7 @@ collision this whole skill exists to prevent, reproduced in the coordination lay
 |---|---|
 | `parked` | a PR is green, older than the stall floor, and the session that announced its **branch** is idle — or nobody announced it, which is reported as an age reading, not a stall verdict |
 | `collision` | two sessions announced the same file path |
+| `collision-branch` | two sessions announced the same **branch** — one branch means one HEAD and one index |
 | `conflict-generated` | a file changed on both sides that a generator owns — **regenerate**, do not resolve |
 | `conflict-authored` | a file changed on both sides that a human owns — **its author's judgement** |
 | `assign` | an issue whose paths a session has already announced, with the reason stated |
