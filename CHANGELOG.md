@@ -9,6 +9,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-17 (release v1.131.0)
 
+- **We shipped a backstop to every client project and never applied it here — `.gitignore`,
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1017).
+  `qa-flow` has told every project it scaffolds to gitignore `/.playwright-mcp/` since #78 — when an
+  auto-commit of exactly those files polluted a dev branch — and tells its functional-tester to
+  *never write or stage* it. This repository, which **ships** that rule, had no such line, and an
+  instance sat untracked in the primary checkout for six hours while three sessions each concluded
+  it belonged to somebody else.
+
+  **The line is one commit; the class is the point.** `unapplied-client-gitignore` now fires when a
+  path our own shipped instructions say an agent must **never commit, stage or write** is not
+  gitignored here. Deliberately narrow: it does not demand every path a client is told to ignore —
+  `coverage/` and `qa/reports/` are a client's layout, and requiring them would put fiction in our
+  `.gitignore`. It fires only on artefacts an agent leaves behind in **whatever tree it runs in**,
+  which is exactly why the client rule applies to us. Five scenarios, and the near-miss one had to be
+  rewritten with a single-segment path: `qa/reports/` cannot match the pattern under either the rule
+  or its mutation, so it discriminated nothing and the widened-regex mutation survived it.
+
 - **`rebuild_generated.py` rebuilt four of six generated surfaces and reported success —
   `scripts/rebuild_generated.py`, `scripts/mutations/rebuild_generated.py`, `scripts/maintainer_doctor.py`.**
   The script exists so that nobody rebuilds the committed generated artifacts from memory; its own
