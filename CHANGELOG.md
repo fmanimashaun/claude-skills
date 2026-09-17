@@ -2746,6 +2746,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   whose `BUILDERS` now carries output paths — that script is maintainer-only and this one is
   shipped, so importing it would break every downstream installation.
 
+  **Two of the five failures were not covered when this first landed, and the acceptance criterion
+  says all five.** Caught by checking #1010's criteria rather than the merge list, which is the same
+  trap that left #1008 part-built. Added: **`--ledger`**, which asks `git grep` across every remote
+  ref what the highest claimed number is — run against Retask it answers **D-079**, the number the
+  hand-kept ledger got wrong by four — and reports ABSENT rather than returning quietly, because an
+  empty search and a wrong path look identical. And **migration ordering**: a migration numbered at
+  or below `db/schema.rb`'s version is recorded as applied and never runs, which shipped two
+  branches without their columns. Announcing timestamps prevented the collision and did nothing
+  about the ordering. The boundary has its own fixture — **equal** to the schema version is already
+  applied, so `<=` and `<` are different answers and a mutation arm covers exactly that.
+
 ### 2026-09-07 (release v1.125.0)
 
 - **Six more sites of #948, in the plugin that owns the gate — `plugins/rails-flow/commands/review.md`,

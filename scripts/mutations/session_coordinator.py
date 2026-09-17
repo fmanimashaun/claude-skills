@@ -59,6 +59,41 @@ GUARD = Guard(
             "generated conflict was not named as regenerable",
         ),
         Mutation(
+            # Silence reads as confirmation. An empty search and a wrong path are the same string.
+            "an empty ledger search is reported as a clean result instead of as absent",
+            '        return Finding("claims-absent", f"{ledger} matched nothing on any remote ref",',
+            '        return Finding("claims", f"{ledger} matched nothing on any remote ref",',
+            "empty search was reported as a clean result",
+        ),
+        Mutation(
+            "a repository with no remote refs is reported as checked",
+            '        return Finding("claims-absent", f"no remote refs to search for {ledger}",',
+            '        return Finding("claims", f"no remote refs to search for {ledger}",',
+            "no remote refs was reported as a clean result",
+        ),
+        Mutation(
+            "claims come back lowest-first, so the query agrees with the stale ledger it replaces",
+            "    return max(claimed) if claimed else None",
+            "    return min(claimed) if claimed else None",
+            "did not return the highest number",
+        ),
+        Mutation(
+            "migration ordering stops being checked, and a migration below the schema version is "
+            "marked applied and never runs",
+            "        if stamp <= schema_version:",
+            "        if False:",
+            "numbered BELOW schema.rb produced no finding",
+        ),
+        Mutation(
+            # The boundary, not the rule: equal IS already applied, so `<` is a real off-by-one
+            # that no fixture below the version can see.
+            "the ordering check becomes strictly-below, so a migration numbered exactly at the "
+            "schema version passes",
+            "        if stamp <= schema_version:",
+            "        if stamp < schema_version:",
+            "EXACTLY at the schema version",
+        ),
+        Mutation(
             "assignment crosses a repository boundary the session was never authorised into",
             "        if session.repo is not None and session.repo != repo:",
             "        if False:",
