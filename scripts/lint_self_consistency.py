@@ -4470,8 +4470,12 @@ def main(argv: list[str]) -> int:
     findings, coverage = run()
 
     if args.json:
+        safe_coverage = {
+            key: ("[REDACTED]" if "password" in key else value)
+            for key, value in coverage.items()
+        }
         print(json.dumps(
-            {"findings": [asdict(f) for f in findings], "coverage": coverage},
+            {"findings": [asdict(f) for f in findings], "coverage": safe_coverage},
             indent=2,
         ))
         return 1 if findings else 0
