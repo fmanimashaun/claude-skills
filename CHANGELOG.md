@@ -4895,6 +4895,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   so nothing proved it could fail; three declared mutations (the stray scan disabled, the drift
   comparison disabled, the banner moved above the frontmatter) now do, and all three are caught.
 
+  **Then the skill's own §4 collided with its authors, twice in four minutes —
+  `skills/parallel-session-lane/SKILL.md`.** Written and merged, it said nothing about the case that
+  immediately followed: one session read a peer's pushed branch and open PR as its own to finish and
+  **merged #1005**; the other read ` M scripts/build_maintainer_skills.py` in the shared checkout and
+  **announced a peer's in-progress diff as its own work**. Both were reasonable readings, because
+  `git status` prints a modification with **no author** — and §2's "announce your paths first" cannot
+  reach it, since the announcement and the dirty file are in different media. Settled from the
+  timeline rather than from either session's confidence: `git reflog --date=iso` dated the checkout
+  at 15:59:58 and `stat` dated all three writes after it, in a session that had run no write at all.
+  §4 now carries the rule — commit early even a WIP so `git log` answers *"whose is this"*, read the
+  **branch** line before the paths (both sessions had a branch they never created printed above the
+  files they did read), treat a startup status snapshot as a measurement with a timestamp rather than
+  a standing fact, and **a green, mergeable PR means the code is ready, not that the work is yours to
+  close out** — the half no merge checklist covers, because none of them has a clause for a PR another
+  session opened.
+
 ### 2026-09-17 (release v1.130.0)
 
 - **The port checklist documents the status a faithful port needed —

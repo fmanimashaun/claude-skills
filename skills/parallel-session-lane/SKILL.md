@@ -151,6 +151,7 @@ the same move as adding a carve-out to silence a gate.
 
   ```bash
   git rev-parse --show-toplevel   # where am I?
+  git branch --show-current       # whose branch am I standing on?
   git worktree list               # which one is the primary?
   ```
 
@@ -159,6 +160,41 @@ the same move as adding a carve-out to silence a gate.
   merged against the wrong branch and one session's uncommitted work rode onto another session's
   release branch.
 - If the prompt does not clearly say which worktree is yours, **ask instead of guessing.**
+
+### An uncommitted edit has no author, so commit early — even a WIP
+
+`git status` prints ` M path` and `?? path` with **no indication of who wrote them**. In a shared
+checkout the only reading available to whoever looks is *"mine"*, and that reading is wrong exactly
+when it is most expensive. This is not hypothetical and it is not rare: **two sessions made the same
+wrong call within four minutes of each other**, in opposite directions, over the same file.
+
+- One session arrived on a branch a peer had pushed, read its open PR as its own to finish, and
+  **merged it** before the author's message arrived.
+- The other read ` M scripts/build_maintainer_skills.py` in that checkout and **announced it as its
+  own work** to the session that was mid-write on it.
+
+Neither session did anything careless. §2 does not prevent it either, because **the announcement and
+the dirty file are in different media** — you cannot see a claim about paths when you are looking at
+a working tree.
+
+So:
+
+- **Commit early, even a WIP**, in any tree another session can see. A commit has an author, a
+  timestamp and a message; `git log` and `git blame` answer *"whose is this"* and ` M` never will.
+  Push it, and [§3](#3-claims-live-in-git-query-them-rather-than-asking-a-peer) can see it too.
+- **Read the branch line before the paths.** A startup status snapshot puts the branch above the
+  file list, and a branch *you did not create* is proof a peer is in the tree. Both sessions above
+  had that line in front of them, and both read the paths first.
+- **A status snapshot is a measurement with a timestamp, not a standing fact.** Handed to you at
+  startup, it describes the tree as it was; four minutes later it is a claim about the past. Re-run
+  `git status` rather than trusting the copy you were given.
+- **Settle ownership from the timeline, not from confidence** — yours or a peer's. `git reflog
+  --date=iso` dates every checkout and commit, and `stat` dates the file. A write that lands after a
+  checkout you did not make, in a session that has written nothing, is not yours. Two commands beat
+  an argument, and they work from either side.
+- **A green, mergeable PR says the code is ready — not that the work is yours to close out.** Every
+  merge checklist says "merge on green" and none of them has a clause for a PR another session
+  opened. Ask its author session first; the merge is the one step that cannot be taken back quietly.
 
 ## 5. A fresh worktree is missing every gitignored file, and the suite blames something else
 
