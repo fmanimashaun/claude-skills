@@ -56,9 +56,34 @@ def render(source: Path) -> str:
     text = (ROOT / source).read_text(encoding="utf-8")
     if not text.startswith("---\n"):
         raise SystemExit(f"{source} does not open with a frontmatter block")
+    if "\n---\n" not in text[4:]:
+        raise SystemExit(f"{source} opens a frontmatter block and never closes it")
 
     end = text.index("\n---\n", 4) + len("\n---\n")
     return text[:end] + "\n" + BANNER.format(source=source.as_posix()) + text[end:]
+
+
+def unregistered_mirrors() -> list[str]:
+    """Copies of a SHIPPED skill sitting in `.claude/skills/` that no registry entry governs.
+
+    `--check` proves every mirror it KNOWS ABOUT is a clean build. It cannot prove there are no
+    other copies, and `cp skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest
+    route by far, because it needs nobody to read this file — passed a full green sweep. That is
+    exactly the two-homes defect the module docstring says this design prevents.
+
+    The rule is not "nothing unregistered": `.claude/skills/plugin-boundaries/` is maintainer-only,
+    has no counterpart under `skills/`, and is correct. A derived directory is illegal only when a
+    SHIPPED skill of the same name exists and the registry does not govern it.
+    """
+    registered = {derived.as_posix() for derived in MIRRORED.values()}
+    strays = []
+    for derived in sorted((ROOT / ".claude" / "skills").glob("*/SKILL.md")):
+        relative = derived.relative_to(ROOT).as_posix()
+        if relative in registered:
+            continue
+        if (ROOT / "skills" / derived.parent.name / "SKILL.md").exists():
+            strays.append(relative)
+    return strays
 
 
 def build(check: bool) -> int:
@@ -80,21 +105,30 @@ def build(check: bool) -> int:
         else:
             print(f"ok    {derived.as_posix()} matches {source.as_posix()}")
 
+    strays = unregistered_mirrors()
+
     if drifted:
         for d in drifted:
             print(f"DRIFT: {d} is not a clean build of its source")
         print("  -> python3 scripts/build_maintainer_skills.py && git add .claude/skills/")
+    for s in strays:
+        print(f"UNREGISTERED: {s} copies a shipped skill that no MIRRORED entry governs")
+    if strays:
+        print("  -> add it to MIRRORED and rebuild, or delete the copy")
+    if drifted or strays:
         return 1
     if check:
-        print(f"maintainer skills: {len(MIRRORED)} derived file(s), no drift")
+        print(f"maintainer skills: {len(MIRRORED)} derived file(s), no drift, no unregistered copies")
     return 0
 
 
 def selftest() -> int:
-    """Both directions: the banner lands after the frontmatter, and drift is detected.
+    """Three directions: the banner lands after the frontmatter, drift fails, a stray copy fails.
 
-    A generator whose --check cannot fail is the whole class of defect this repo lints for, so the
-    drift arm is proved by mutating a copy rather than by trusting the comparison.
+    A generator whose --check cannot fail is the whole class of defect this repo lints for, so each
+    arm is proved by mutating the tree rather than by trusting the comparison. The stray arm exists
+    because the drift arm passed a hand-copied shipped skill: proving the registry is clean is not
+    proving there is only one home.
     """
     failures = []
     source = next(iter(MIRRORED))
@@ -121,10 +155,35 @@ def selftest() -> int:
     else:
         failures.append("no derived file to mutate — run the generator first")
 
+    # The stray arm: a copy of a shipped skill that no MIRRORED entry governs.
+    shipped = sorted(
+        s.parent.name
+        for s in (ROOT / "skills").glob("*/SKILL.md")
+        if not (ROOT / ".claude" / "skills" / s.parent.name).exists()
+    )
+    if shipped:
+        stray = ROOT / ".claude" / "skills" / shipped[0] / "SKILL.md"
+        try:
+            stray.parent.mkdir(parents=True)
+            stray.write_text(
+                (ROOT / "skills" / shipped[0] / "SKILL.md").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            if build(check=True) == 0:
+                failures.append(f"--check passed against an unregistered copy of skills/{shipped[0]}")
+        finally:
+            stray.unlink(missing_ok=True)
+            stray.parent.rmdir()
+    else:
+        failures.append("every shipped skill already has a derived directory — the stray arm cannot run")
+
     for f in failures:
         print(f"SELFTEST FAILED: {f}")
     if not failures:
-        print("selftest: ok — the banner sits after the frontmatter, and an edited copy fails --check")
+        print(
+            "selftest: ok — the banner sits after the frontmatter, an edited copy fails --check, "
+            "and an unregistered copy of a shipped skill fails too"
+        )
     return 1 if failures else 0
 
 

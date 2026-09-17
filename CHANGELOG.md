@@ -4883,6 +4883,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   skills into a repository that is not a Rails app. A symlink was rejected for Windows, which
   `CLAUDE.md` supports.
 
+  **The drift gate proved the registry clean and not the directory — `scripts/build_maintainer_skills.py`,
+  `scripts/mutations/build_maintainer_skills.py`.** Reviewed by mutating the tree rather than reading the
+  code: an edited mirror, an edited source, and a deleted mirror all went red correctly, and
+  `cp skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest route to a second home,
+  because it needs nobody to read the generator — passed with `1 derived file(s), no drift`. The scan is
+  now of the DIRECTORY: a `.claude/skills/<name>/SKILL.md` whose `<name>` also exists under `skills/`
+  must be a registered mirror. `.claude/skills/plugin-boundaries/` stays legal because it is
+  maintainer-only and has no shipped counterpart — the rule is "no unregistered COPY", not "nothing
+  unregistered". The generator also shipped a `--selftest` with no entry under `scripts/mutations/`,
+  so nothing proved it could fail; three declared mutations (the stray scan disabled, the drift
+  comparison disabled, the banner moved above the frontmatter) now do, and all three are caught.
+
 ### 2026-09-17 (release v1.130.0)
 
 - **The port checklist documents the status a faithful port needed —
