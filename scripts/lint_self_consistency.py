@@ -2801,6 +2801,18 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             coverage)
 
 
+_SENSITIVE_LOG_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key)\b\s*([:=])\s*([^\s,;]+)"),
+)
+
+
+def _redact_sensitive_text(text: str) -> str:
+    redacted = text
+    for pattern in _SENSITIVE_LOG_PATTERNS:
+        redacted = pattern.sub(lambda m: f"{m.group(1)}{m.group(2)}[REDACTED]", redacted)
+    return redacted
+
+
 def selftest() -> int:
     """Exercise both rules against synthetic trees, in both directions.
 
@@ -2832,7 +2844,8 @@ def selftest() -> int:
         if bool(got) != expect_finding:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
-            failures.append(f"{rule} / {label}: expected {want}, got {detail}")
+            safe_detail = _redact_sensitive_text(detail)
+            failures.append(f"{rule} / {label}: expected {want}, got {safe_detail}")
 
     # -- clone-shaped-doctrine-path (#777) --------------------------------
     CSD = "clone-shaped-doctrine-path"
@@ -4441,7 +4454,7 @@ def selftest() -> int:
     if failures:
         print(f"\n{len(failures)} FAILED:")
         for failure in failures:
-            print(f"  - {failure}")
+            print(f"  - {_redact_sensitive_text(failure)}")
         return 1
     print("every rule fires on a violation and stays silent on conforming input")
     return 0
