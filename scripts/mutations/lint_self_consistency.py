@@ -6,6 +6,23 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        Mutation(
+            # #1017. The rule exists because a backstop reached every client except its author;
+            # a mutation that drops the comparison makes it agree with any .gitignore at all.
+            "a never-stage path we ship is no longer required in our own .gitignore",
+            "            if pattern in ignored or pattern in seen:",
+            "            if True:",
+            "a never-stage path this repo does not ignore",
+        ),
+        Mutation(
+            # The scope is what keeps it usable: `qa/reports/` is a client's layout, not ours.
+            # Widening to every gitignore instruction would demand fiction in our own file.
+            "the rule stops requiring the never-stage phrasing and fires on any client path",
+            '    r"never (?:write or stage|stage|commit)[^.\\n]*?`(/?[A-Za-z0-9_.\\-]+/)`", re.IGNORECASE)',
+            '    r"`(/?[A-Za-z0-9_.\\-]+/)`", re.IGNORECASE)',
+            "client-layout path without the never-stage rule",
+        ),
+
         # #870. The ceiling on CLAUDE.md is a gate, not a note in the history file.
         Mutation(
             "the ceiling stops being enforced, so CLAUDE.md can regrow in silence",

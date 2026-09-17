@@ -1062,7 +1062,8 @@ def main(argv: list[str] | None = None) -> int:
         # Compared as TEXT, not bytes, so a checkout that normalised line endings is not reported as
         # drift — the generator emits "\n" and git may hand back "\r\n" on Windows.
         rel_out = args.out.relative_to(REPO) if args.out.is_relative_to(REPO) else args.out
-        remedy = "  -> python3 scripts/build_coverage_artifact.py && git add docs/"
+        remedy = ("  -> python3 scripts/build_coverage_artifact.py && git add docs/ && commit "
+                  "— this gate reads the blob at HEAD, so staging alone leaves it red")
         # Compare the COMMITTED BLOB, not the file on disk. An earlier version checked `is_file()`
         # and read the working copy, so a freshly built but untracked — or built but uncommitted —
         # page passed the very gate whose message says "is not committed". That is the exact defect

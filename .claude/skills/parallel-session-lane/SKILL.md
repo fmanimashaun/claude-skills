@@ -3,6 +3,11 @@ name: parallel-session-lane
 description: Operating protocol for working as one of several agent sessions against the same repository at once — take your own worktree and test database, announce the FILE PATHS you are about to touch, query git for claimed decision numbers and migration timestamps rather than asking a peer, and copy the gitignored files a fresh worktree lacks before trusting any test result. Use when a prompt says you are one of N parallel sessions, when another session is live in the same repository, when you are handed a list of issues others are splitting, or when you are about to write into a shared checkout.
 ---
 
+<!-- GENERATED from skills/parallel-session-lane/SKILL.md by scripts/build_maintainer_skills.py — do not edit.
+     The shipped skill is the source of truth; this copy exists because this repository's
+     own sessions do not load `rails-stack`, so the doctrine would otherwise reach every
+     consumer except its maintainers. Edit the source and re-run the script. -->
+
 # Parallel session lane
 
 Several agent sessions may run against one repository at the same time. Every step below

@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 47 shipped commands · 103 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 106 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.40.0 | 5 | 12 | 5 | 18 |
 | `pipeline` | 1.3.2 | 2 | 8 | 2 | 1 |
 | `qa-flow` | 1.30.0 | 11 | 8 | 11 | 15 |
-| `rails-flow` | 1.40.2 | 11 | 19 | 11 | 23 |
+| `rails-flow` | 1.41.0 | 11 | 20 | 11 | 23 |
 
 ## Agents
 
@@ -152,9 +152,12 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | doctrine map drift | `repo` | `python3 scripts/doctrine_map.py --check` | live check |
 | doctrine map selftest | `repo` | `python3 scripts/doctrine_map.py --selftest` | selftest |
 | evals gates | `repo` | `python3 evals/selftest.py` | live check |
+| generated artifacts registered | `repo` | `python3 scripts/rebuild_generated.py --selftest` | selftest |
 | inventory data selftest | `repo` | `python3 scripts/inventory_data.py --selftest` | selftest |
 | issue graph selftest | `repo` | `python3 scripts/issue_graph.py --selftest` | selftest |
 | maintainer doctor | `repo` | `python3 scripts/maintainer_doctor.py --selftest` | selftest |
+| maintainer skill drift | `repo` | `python3 scripts/build_maintainer_skills.py --check` | live check |
+| maintainer skill selftest | `repo` | `python3 scripts/build_maintainer_skills.py --selftest` | selftest |
 | mandated gems derived | `repo` | `python3 scripts/derive_mandated_gems.py --check` | live check |
 | mandated gems derived selftest | `repo` | `python3 scripts/derive_mandated_gems.py --selftest` | selftest |
 | markdown code coverage | `repo` | `python3 scripts/lint_markdown_code.py --audit-coverage` | live check |

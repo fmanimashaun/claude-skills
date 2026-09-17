@@ -370,7 +370,12 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="CLAUDE.md",
         anchor="`--check` compares the blob at `HEAD`, never the file on disk",
         kind=GUARANTEE,
-        enforced_by=("gate:coverage artifact selftest", "mutation:build_coverage_artifact"),
+        # `mutation:build_maintainer_skills` joined in #1008: the mirror gate was the one
+        # derived-artifact check reading the working tree, and its two new arms -- the working-tree
+        # read restored, and `git show HEAD:` turned into the INDEX -- are what now hold this
+        # guarantee for that generator rather than leaving it stated and unenforced there.
+        enforced_by=("gate:coverage artifact selftest", "mutation:build_coverage_artifact",
+                     "mutation:build_maintainer_skills"),
     ),
     Claim(
         claim="Derived numbers are read from the generator's structured source, never regex-parsed "
@@ -415,10 +420,22 @@ CLAIMS: tuple[Claim, ...] = (
              "matches and it still exits 2.",
     ),
     Claim(
+        claim="The maintainer copy of a shipped skill cannot drift from the skill it is derived from.",
+        stated_in="skills/parallel-session-lane/SKILL.md",
+        anchor="## 1. One worktree per unit of work — before lanes, and without asking anyone",
+        kind=GUARANTEE,
+        enforced_by=("gate:maintainer skill drift",),
+        refs=(1004,),
+        note="`.claude/skills/**` is generated from `skills/**` because this repo's own sessions load "
+             "`remember` and nothing else, so the parallel-session doctrine reached every consumer "
+             "except its maintainers. A mirror without a drift check is two homes for one rule, which "
+             "is what `plugin-boundaries` refuses; the gate is what makes it one.",
+    ),
+    Claim(
         claim="Working in the wrong worktree during a parallel session is refused, not merely advised "
               "against.",
         stated_in="skills/parallel-session-lane/SKILL.md",
-        anchor="## 1. Confirm your worktree before any edit",
+        anchor="## 4. Confirm your worktree before any edit",
         kind=GUARANTEE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-lane.sh",),
         refs=(660,),
@@ -1079,12 +1096,13 @@ def main(argv: list[str] | None = None) -> int:
     if a.check:
         blob = committed_blob(PAGE)
         if blob is None:
-            findings.append(f"{PAGE} is not committed — build it and `git add docs/`")
+            findings.append(f"{PAGE} is not committed — build it, `git add docs/` and COMMIT")
         elif blob != built:
-            findings.append(f"{PAGE} does not match a clean build — rebuild it and `git add docs/`")
+            findings.append(f"{PAGE} does not match a clean build — rebuild it, `git add docs/` and "
+                            f"COMMIT; this check reads the blob at HEAD, so staging alone leaves it red")
     elif not a.json and not a.audit_coverage:
         (REPO / PAGE).write_text(built, encoding="utf-8")
-        print(f"wrote {PAGE} — {len(CLAIMS)} claims. `git add docs/`; the drift gate compares the "
+        print(f"wrote {PAGE} — {len(CLAIMS)} claims. `git add docs/` AND COMMIT; the drift gate compares the "
               f"blob at HEAD, so it stays red until you commit.")
 
     if findings:

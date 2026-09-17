@@ -7,6 +7,90 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-17 (release v1.131.0)
+
+- **We shipped a backstop to every client project and never applied it here — `.gitignore`,
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1017).
+  `qa-flow` has told every project it scaffolds to gitignore `/.playwright-mcp/` since #78 — when an
+  auto-commit of exactly those files polluted a dev branch — and tells its functional-tester to
+  *never write or stage* it. This repository, which **ships** that rule, had no such line, and an
+  instance sat untracked in the primary checkout for six hours while three sessions each concluded
+  it belonged to somebody else.
+
+  **The line is one commit; the class is the point.** `unapplied-client-gitignore` now fires when a
+  path our own shipped instructions say an agent must **never commit, stage or write** is not
+  gitignored here. Deliberately narrow: it does not demand every path a client is told to ignore —
+  `coverage/` and `qa/reports/` are a client's layout, and requiring them would put fiction in our
+  `.gitignore`. It fires only on artefacts an agent leaves behind in **whatever tree it runs in**,
+  which is exactly why the client rule applies to us. Five scenarios, and the near-miss one had to be
+  rewritten with a single-segment path: `qa/reports/` cannot match the pattern under either the rule
+  or its mutation, so it discriminated nothing and the widened-regex mutation survived it.
+
+- **`rebuild_generated.py` rebuilt four of six generated surfaces and reported success —
+  `scripts/rebuild_generated.py`, `scripts/mutations/rebuild_generated.py`, `scripts/maintainer_doctor.py`.**
+  The script exists so that nobody rebuilds the committed generated artifacts from memory; its own
+  docstring records the v1.88.0 arm forgetting the wiki and the gate catching it. Its LIST then fell
+  behind twice, the same shape one level up: `build_maintainer_skills.py` (added by #1004 and never
+  registered) and `derive_mandated_gems.py`, which writes the tracked
+  `plugins/rails-flow/mandated_gems.json`. Both were gated by the doctor and absent here, so a
+  maintainer running the one command still had two stale surfaces and no way to know. Its closing
+  line also printed a hardcoded `git add docs/ dist/`, which covered neither.
+  **Nothing could notice, because the script had no `--selftest` and no gate of its own** — the
+  claims-vs-enforcement shape this repo files bugs about, in the tool built to prevent it.
+  Each builder now declares its output paths, so the `git add` line is derived rather than
+  remembered, and `--selftest` reads the `--check` gates out of `maintainer_doctor.py` — the actual
+  registry, not a second hand-written list — and refuses any `scripts/*.py` gate that is in neither
+  `BUILDERS` nor `NOT_REBUILT`. The two exclusions carry their reason: `build_coverage.py` needs the
+  licensed corpora and its gate skips without them, and `extract_release_notes.py` writes no file.
+  Three declared mutations prove it fails: dropping a gated generator, blinding the gate-table read,
+  and letting a declared output path go stale.
+
+- **The mirror gate read the working tree while every sibling gate read `HEAD`, and so failed open —
+  `scripts/build_maintainer_skills.py`, `scripts/mutations/build_maintainer_skills.py`** (#1008).
+  Rebuild `.claude/skills/`, forget `git add`, commit the source alone: the local sweep read the
+  rebuilt file off disk, printed `no drift` and exited 0, while CI — which checks the commit out, so
+  the working tree *is* `HEAD` — met a stale committed mirror against a new committed source and went
+  red. The local run structurally could not reproduce the failure it was there to predict, and it
+  failed **open**, the opposite direction from `build_wiki.py` and `doctrine_map.py`, which have read
+  `git show HEAD:` since #833. `CLAUDE.md` already stated the rule — *"a page built and never `git
+  add`ed fails honestly"* — so this was the one derived-artifact check diverging from our own design,
+  not a new opinion. The remedy line now says **commit**, not `git add`: `git show HEAD:` reads the
+  commit and not the index, so a staged-but-uncommitted mirror stays red, and the old wording sent
+  the reader round a loop that could not end.
+
+  **Two mutation arms, because the three that existed could not tell the fix from the bug** — all of
+  them mutate committed content, which reads identically under either tree. The fourth restores the
+  working-tree read and asserts a rebuilt-but-unstaged mirror goes red; the fifth turns
+  `git show HEAD:` into `git show :` (the INDEX), which would make `git add` alone clear the gate —
+  the same fail-open one step along, and invisible to every arm that stubs the read. So the selftest
+  gained an arm that does **not** stub git: it builds a throwaway repository in a tempdir, commits a
+  file, then changes **and stages** it, and asserts the read still returns the commit. The stubbed
+  arms keep a positive control first, because a gate whose clean case does not pass makes every
+  failing arm pass for free.
+
+  **And the decision #1008 asked for, recorded rather than left open.** Its suggested fix said to
+  fold the shared helper out *or* note deliberately that three call sites is below the extraction
+  floor. Measured: `doctrine_map.py` 6 lines, `build_maintainer_skills.py` 6 lines (timeout, two
+  exception classes, an injectable repository), `build_wiki.py` 4 lines inline that never return a
+  blob at all. A module removes about **three** net lines, against
+  `skills/quality-pass/references/worked-example.md`, where 345 duplicated lines reduced to 72 net
+  and were still judged not worth extracting — and the helper would have to live in maintainer-only
+  `scripts/`, which shipped plugin code cannot import, so the split would be per-audience rather
+  than per-concern. What travels between the three is the RULE, not the code, so
+  `docs/architecture/doctrine-map.html` gains `mutation:build_maintainer_skills` on the
+  *compares the blob at HEAD* guarantee, which had been stated there and enforced only for the
+  coverage artifact.
+
+  **The misleading remedy was not one line, it was six —** `scripts/doctrine_map.py` (three),
+  `scripts/build_wiki.py`, `scripts/build_coverage_artifact.py`, `scripts/build_coverage.py`. Every
+  one told the reader to `git add`, and `git show HEAD:` reads the commit, so every one sent them
+  round a loop that could not end. Found by grepping for the pattern after fixing the first, which
+  is what `skills/code-review/SKILL.md` says to do and is the only reason five of the six were seen.
+  Demonstrated twice while this branch was being written: `wiki reference drift` and then
+  `doctrine map drift` both went red on pages that were rebuilt and not yet committed.
+  `scripts/rebuild_generated.py` carries the seventh and is deliberately untouched — another session
+  announced that file before this branch existed.
+
 ### 2026-09-16 (release v1.129.0)
 
 - **The marketplace version tracks a qa-flow release.** `metadata.version` moves with `qa-flow`
@@ -2640,6 +2724,78 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 2026-09-17 (release v1.131.0)
+
+- **Cross-session coordination is computed from the repository instead of remembered —
+  `plugins/rails-flow/scripts/session_coordinator.py`, `plugins/rails-flow/commands/coordinate.md`,
+  `scripts/mutations/session_coordinator.py`, `README.md`** (#1010). `parallel-session-lane` is good
+  doctrine and nothing ran it, so coordination fell to whichever session took it on, by hand and
+  reactively. All six failures that produced in one day were **polling gaps**: the information
+  existed, in git or in the session list, and nobody looked — two PRs finished with their authors
+  idle and found only when the owner asked; `dev` carried at a SHA it had left hours earlier;
+  decision numbers recited from memory when a git query knew better.
+
+  **The authority is enforced, not promised.** #1010 asks that it cannot merge or write, so every
+  subprocess goes through one allowlist of read-only `git`/`gh` invocations and sixteen write verbs —
+  `gh pr merge`, `git push`, fourteen more — raise `WriteAttempted`. The selftest proves it by
+  ATTEMPTING each one with an executor spy that fails if it is ever called, so "refused" means
+  nothing ran, rather than an exception that might have come from the command itself failing. A test
+  that proves a merge was refused by running the merge is not a test.
+
+  **The characteristic failure is a false escalation, so the negative case is a fixture.** A wrong
+  age is indistinguishable from a real stall except in the number, and the number is what nobody
+  re-derives; one local-clock-against-UTC error produced two false escalations inside five minutes,
+  reporting a 13-minute-old PR as 70. So `age_minutes` **refuses a naive clock** rather than assuming
+  one, and the selftest asserts the 12-minute PR yields no finding at all while the 153-minute one
+  does. **The age half of that was true and the idle half was dead until #1018**, found by an
+  independent QA session driving the real collector rather than the fixture: `parked_work` joined a
+  PR to a session on a `session` key `gh` has never emitted, so `by_author.get("")` was always None,
+  the "do not chase a busy session" guard could not be reached, and every green PR past the floor
+  escalated at nobody — the false escalation arriving through the other door while the clock fix
+  held. The join is now `headRefName` against the branch a session announced, an unclaimed branch is
+  reported as **an age reading and not a stall verdict**, the collector's field list is a constant
+  the fixtures are asserted against, and a mutation arm mutates the JOIN rather than the guard,
+  because mutating the guard passed throughout. Two residuals from the same QA pass went in with
+  it: branch spellings are normalised on both sides, because a session announcing `origin/fix/b`
+  against a PR reporting `fix/b` read as unannounced and escalated at a session that was **busy and
+  working** — the characteristic failure through a narrower door; and two sessions claiming ONE
+  branch is now a finding of its own (`collision-branch`) rather than a silent last-wins lookup whose
+  verdict depended on list order. That last one is the cheapest possible detector for the day's
+  actual incident, which `path_collisions` cannot see: twice in an afternoon a session arrived on a
+  branch a peer had pushed and read its work as its own, and neither had announced a path yet. And
+  the failed-query finding is now readable (#1023): `ReadFailed` truncated stderr at 200 characters
+  and left the command untouched, so a `claims-unknown` over 40 remote refs ran to **976 characters**
+  and buried the two parts that matter — the exit code, and that nothing was checked. A report nobody
+  reads to the end is a report that did not fire. In the same pass: a **fatal** `git grep` (exit 128,
+  which a user-supplied `--claim-pattern` can cause) was reported as `claims-absent`, telling a
+  session no numbers were claimed when the query had not run — now `claims-unknown`, with exit 1
+  alone treated as no match. Three of the seven mutation arms make the detector *more* talkative, which is how this class
+  survives review: over-firing looks like sensitivity.
+
+  **Conflicts are triaged, never resolved.** A conflict in a generated file is not a judgement —
+  regenerate it; hand-resolving one nearly deleted a subsystem from an architecture graph. A conflict
+  in authored code belongs to its author. The module owns saying which is which and nothing more. The
+  hand-declared generated list was two paths short on its first draft — `mandated_gems.json`, which
+  sits under `plugins/` where a rule of thumb would call it authored, and the design-system
+  `coverage.md` — so the list now carries the instruction to re-derive it whenever a generator is
+  added. **The built-in list is a starting point and never the answer**, because this
+  script SHIPS: a downstream Rails app has `db/schema.rb` and none of `docs/wiki/`, `dist/*.skill`
+  or `.claude/skills/`. `--generated` takes a project's own `{glob: rebuild command}` JSON, merged
+  last so it wins. It deliberately does **not** read the maintainer repo's `rebuild_generated.py`,
+  whose `BUILDERS` now carries output paths — that script is maintainer-only and this one is
+  shipped, so importing it would break every downstream installation.
+
+  **Two of the five failures were not covered when this first landed, and the acceptance criterion
+  says all five.** Caught by checking #1010's criteria rather than the merge list, which is the same
+  trap that left #1008 part-built. Added: **`--ledger`**, which asks `git grep` across every remote
+  ref what the highest claimed number is — run against Retask it answers **D-079**, the number the
+  hand-kept ledger got wrong by four — and reports ABSENT rather than returning quietly, because an
+  empty search and a wrong path look identical. And **migration ordering**: a migration numbered at
+  or below `db/schema.rb`'s version is recorded as applied and never runs, which shipped two
+  branches without their columns. Announcing timestamps prevented the collision and did nothing
+  about the ordering. The boundary has its own fixture — **equal** to the schema version is already
+  applied, so `<=` and `<` are different answers and a mutation arm covers exactly that.
+
 ### 2026-09-07 (release v1.125.0)
 
 - **Six more sites of #948, in the plugin that owns the gate — `plugins/rails-flow/commands/review.md`,
@@ -4840,6 +4996,86 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### 2026-09-17 (release v1.131.0)
+
+- **The parallel-session protocol now says what four sessions actually do, and the maintainers can
+  finally read it — `skills/parallel-session-lane/SKILL.md`, `.claude/skills/parallel-session-lane/`,
+  `scripts/build_maintainer_skills.py`** (#1004). Four agent sessions worked this repo and a
+  downstream one simultaneously on 17 Sep 2026. The skill that exists for exactly that described
+  something none of them were doing, and none of them could read it anyway.
+
+  **The central claim was wrong and they disproved it.** It said *"swarm-forge needs message passing
+  because its roles cannot see each other's state; ours can — git is the handoff medium"*. Git is
+  right for a handoff of work and wrong for two other things: a fact about shared ground (`dev` is
+  red) and the intent to take a claim. The four sessions needed a channel and invented one within
+  the hour. The skill now splits the three.
+
+  **Worktree-per-unit-of-work is promoted above lanes**, because it is what they reached unprompted
+  — measured, 19 worktrees, one branch each — and it needs no assigner, no `RAILS_FLOW_LANE` and
+  nobody remembering to run a script first. The lane machinery stays; it is no longer the entry
+  point. Its SessionStart nudge had been printing unheeded for two weeks.
+
+  **Claims are a QUERY, not a registry, and measuring killed the first proposal.** The stated premise
+  was that `git ls-remote` cannot see an unpushed worktree; across those 19 worktrees **18 of 19
+  branches were already pushed**, so "push on create" would have changed nothing. What was missing
+  is that a decision number lives *inside* a file: one `git grep` over `refs/remotes/origin` returns
+  **D-079, all merged**, while the ledger three sessions were coordinating by said *"highest merged
+  is D-073, two branches hold D-075/D-076 unmerged"* — four numbers stale inside a day. A registry
+  file would have drifted identically; git did not.
+
+  **Two gitignored-file traps**, both diagnosed as application defects first: unbuilt
+  `app/assets/builds/` makes system specs fail as geometry, and a missing `config/master.key` failed
+  **948 of 2,422 examples** as signed-out screens — while `spec/system` stayed **fully green**
+  throughout, because system specs sign in by magic link and request specs use a helper needing the
+  decrypted credentials. "The browser tests pass" was available as evidence that authentication
+  worked, and meant nothing.
+
+  **§4 also covers the single-session case, which reads identically and nobody announces** (#1022).
+  A 475-second gate sweep started in the primary checkout, while that same session checked out
+  another branch, rebased a release commit onto a moved `dev`, created a third branch and edited four
+  files, reported **one failure** where a run minutes earlier reported none — a number describing no
+  commit, because none was on disk for its duration. A long-running read is a second party in your
+  own tree: run it against a commit in a detached worktree, link the gitignored inputs in or the
+  sweep is blinder rather than greener, throw away any result measured over a tree you edited, and
+  **do not raise a timeout budget to make a loaded machine green** — that number is a property of the
+  machine the gate is judged on.
+
+  **And the maintainers were the only people not receiving it.** `.claude/settings.json` here enables
+  `remember` and nothing else, so a session maintaining this marketplace never loaded the skill it
+  ships. `.claude/skills/**` is now GENERATED from `skills/**` — one source, a banner, and a
+  `maintainer skill drift` gate, because a mirror without a drift check is the two-homes defect
+  `plugin-boundaries` refuses. Enabling `rails-stack` here was rejected: it would pull six unrelated
+  skills into a repository that is not a Rails app. A symlink was rejected for Windows, which
+  `CLAUDE.md` supports.
+
+  **The drift gate proved the registry clean and not the directory — `scripts/build_maintainer_skills.py`,
+  `scripts/mutations/build_maintainer_skills.py`.** Reviewed by mutating the tree rather than reading the
+  code: an edited mirror, an edited source, and a deleted mirror all went red correctly, and
+  `cp skills/code-review/SKILL.md .claude/skills/code-review/` — the likeliest route to a second home,
+  because it needs nobody to read the generator — passed with `1 derived file(s), no drift`. The scan is
+  now of the DIRECTORY: a `.claude/skills/<name>/SKILL.md` whose `<name>` also exists under `skills/`
+  must be a registered mirror. `.claude/skills/plugin-boundaries/` stays legal because it is
+  maintainer-only and has no shipped counterpart — the rule is "no unregistered COPY", not "nothing
+  unregistered". The generator also shipped a `--selftest` with no entry under `scripts/mutations/`,
+  so nothing proved it could fail; three declared mutations (the stray scan disabled, the drift
+  comparison disabled, the banner moved above the frontmatter) now do, and all three are caught.
+
+  **Then the skill's own §4 collided with its authors, twice in four minutes —
+  `skills/parallel-session-lane/SKILL.md`.** Written and merged, it said nothing about the case that
+  immediately followed: one session read a peer's pushed branch and open PR as its own to finish and
+  **merged #1005**; the other read ` M scripts/build_maintainer_skills.py` in the shared checkout and
+  **announced a peer's in-progress diff as its own work**. Both were reasonable readings, because
+  `git status` prints a modification with **no author** — and §2's "announce your paths first" cannot
+  reach it, since the announcement and the dirty file are in different media. Settled from the
+  timeline rather than from either session's confidence: `git reflog --date=iso` dated the checkout
+  at 15:59:58 and `stat` dated all three writes after it, in a session that had run no write at all.
+  §4 now carries the rule — commit early even a WIP so `git log` answers *"whose is this"*, read the
+  **branch** line before the paths (both sessions had a branch they never created printed above the
+  files they did read), treat a startup status snapshot as a measurement with a timestamp rather than
+  a standing fact, and **a green, mergeable PR means the code is ready, not that the work is yours to
+  close out** — the half no merge checklist covers, because none of them has a clause for a PR another
+  session opened.
 
 ### 2026-09-17 (release v1.130.0)
 

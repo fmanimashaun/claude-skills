@@ -2702,6 +2702,66 @@ def check_ci_gate_without_test_step() -> tuple[list[Finding], int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: unapplied-client-gitignore
+# ---------------------------------------------------------------------------
+# We ship backstops to client projects and then do not apply them here. `qa-flow` has told every
+# project it scaffolds to gitignore `/.playwright-mcp/` since #78 -- when an auto-commit of exactly
+# those files polluted a dev branch -- and tells its functional-tester to "never write or stage" it.
+# This repository, which SHIPS that rule, had no such line, and an instance sat untracked in the
+# primary checkout for six hours while three sessions each decided it was somebody else's (#1017).
+#
+# Deliberately narrow. It does NOT demand every path a client is told to ignore: `qa/reports/*` is
+# about a directory layout clients have and we do not, and requiring it here would put fiction in
+# our `.gitignore`. It fires only on paths our own doctrine says an agent must **never commit /
+# stage / write**, because those are artefacts an agent leaves in WHATEVER repository it is working
+# in -- including this one. That is the property that makes the client rule apply to us.
+#
+# Parsed out of `.gitignore` as text rather than asked of `git check-ignore`, so the selftest can
+# hand the rule a tree instead of needing a repository.
+_NEVER_STAGE = re.compile(
+    r"never (?:write or stage|stage|commit)[^.\n]*?`(/?[A-Za-z0-9_.\-]+/)`", re.IGNORECASE)
+
+
+def _gitignore_patterns(text: str) -> set[str]:
+    """The meaningful lines of a .gitignore, normalised so `/x/` and `x/` compare equal."""
+    out = set()
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        out.add(line.lstrip("/"))
+    return out
+
+
+def check_unapplied_client_gitignore() -> tuple[list[Finding], int]:
+    """A path we tell client agents never to stage must be gitignored HERE too (#1017)."""
+    findings: list[Finding] = []
+    gitignore = ROOT / ".gitignore"
+    ignored = _gitignore_patterns(read(gitignore)) if gitignore.exists() else set()
+    examined = 0
+    seen: set[str] = set()
+    for path in walk(".md"):
+        relpath = rel(path).replace("\\", "/")
+        if not relpath.startswith("plugins/"):
+            continue          # shipped instructions only
+        body = read(path)
+        for match in _NEVER_STAGE.finditer(body):
+            pattern = match.group(1).lstrip("/")
+            examined += 1
+            if pattern in ignored or pattern in seen:
+                continue
+            seen.add(pattern)
+            findings.append(Finding(
+                "unapplied-client-gitignore", relpath, body[:match.start()].count("\n") + 1,
+                f"tells a client agent never to stage `{pattern}`, and this repository does not "
+                f"gitignore it. An agent runs here too, so the artefact lands in OUR tree with "
+                f"nothing to stop it -- and a backstop that reaches every client except its author "
+                f"is the shape of #1017. Add `/{pattern}` to `.gitignore`",
+            ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -2729,6 +2789,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     toggles, toggles_examined = check_unhonoured_config_toggle()
     unwired, unwired_examined = check_unwired_claim_verifier()
     ci_gates, ci_gates_examined = check_ci_gate_without_test_step()
+    cl_ignore, cl_ignore_examined = check_unapplied_client_gitignore()
     controllers, controllers_examined = check_controller_inventory()
     labels, labels_examined = check_unprovisioned_label()
     comp_labels, comp_labels_examined = check_undeclared_component_label()
@@ -2771,6 +2832,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         "flows_checked_for_claim_verifier": unwired_examined,
         "shipped_ci_run_examples": ci_gates_examined,
+        "client_gitignore_rules_applied_here": cl_ignore_examined,
         "stimulus_controllers_prescribed": controllers_examined,
         "issue_labels_resolved_or_templated": labels_examined,
         "component_labels_reconciled": comp_labels_examined,
@@ -2794,7 +2856,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
-            + ci_gates + controllers + labels + comp_labels + orphans + keyfilter
+            + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
             + xplugin,
@@ -3971,6 +4033,37 @@ def selftest() -> int:
                     "Under `--skip-test`, the `CI.run` block Rails generates has no test step.\n"})
     scenario("the CHANGELOG may quote a superseded example", rule=CIG, expect_finding=False,
              files={"CHANGELOG.md": "```ruby\nCI.run do\n" + CI_STEPS + "end\n```\n"})
+
+    # ---- unapplied-client-gitignore (#1017) ------------------------------------------
+    # We shipped `/.playwright-mcp/` to every client and never applied it here; an instance sat
+    # untracked in the primary checkout while three sessions each decided it was somebody else's.
+    UCG = "unapplied-client-gitignore"
+    NEVER = "- **Never write or stage `.playwright-mcp/`** -- it is session state.\n"
+    scenario("a never-stage path this repo does not ignore", rule=UCG, expect_finding=True,
+             files={"plugins/qa-flow/agents/functional-tester.md": NEVER,
+                    ".gitignore": "node_modules/\n"})
+    scenario("the same path, ignored here", rule=UCG, expect_finding=False,
+             files={"plugins/qa-flow/agents/functional-tester.md": NEVER,
+                    ".gitignore": "node_modules/\n/.playwright-mcp/\n"})
+    # The slash is a spelling, not a difference: `.gitignore` anchoring is normalised on both sides.
+    scenario("ignored without the leading slash", rule=UCG, expect_finding=False,
+             files={"plugins/qa-flow/agents/functional-tester.md": NEVER,
+                    ".gitignore": ".playwright-mcp/\n"})
+    # NEAR MISS, and the one that keeps the rule usable: a path a client is told to ignore for
+    # reasons of THEIR layout is not ours to adopt. `qa/reports/` does not exist here, and
+    # demanding it would put fiction in our .gitignore. Only "never stage" carries over, because
+    # that is about what an agent leaves behind in whatever tree it runs in.
+    scenario("a client-layout path without the never-stage rule stays silent",
+             rule=UCG, expect_finding=False,
+             files={"plugins/qa-flow/commands/setup-qa.md":
+                    # ONE segment, deliberately: a multi-segment path cannot match the pattern
+                    # either way, so it discriminates nothing and a widened regex survives it.
+                    # `coverage/` is a directory a client project has and this repository does not.
+                    "Ensure `coverage/` and `node_modules` are gitignored in the project.\n",
+                    ".gitignore": "node_modules/\n"})
+    # NEAR MISS: doctrine EXPLAINING the rule is not an instruction to a client agent.
+    scenario("the CHANGELOG describing the rule stays silent", rule=UCG, expect_finding=False,
+             files={"CHANGELOG.md": NEVER, ".gitignore": "node_modules/\n"})
 
     # ---- v4-outline-none (#305) ----------------------------------------------------
     # A rename that kept the old spelling alive with the opposite meaning: v3's `outline-none` was

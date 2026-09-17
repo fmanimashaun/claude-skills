@@ -55,3 +55,10 @@ __pycache__/
 # node_modules trees, which the old root-level `flowbite*/` happened to cover — this makes it
 # explicit. They now sit under `/design-corpora`, so this stands alone for any other tree.)
 node_modules/
+
+# Ephemeral Playwright-MCP session state — console logs and page-snapshot `.yml`s a browser-driving
+# agent leaves behind. `qa-flow` has told every client project to ignore this since #78, when an
+# auto-commit of exactly these files polluted a dev branch, and told its functional-tester never to
+# stage them — and this repository, which ships that rule, never applied it to itself (#1017). The
+# backstop went to clients and never came home.
+/.playwright-mcp/

@@ -350,7 +350,8 @@ def main(argv: list[str]) -> int:
         bad = check_descriptions()
         for b in bad:
             print(f"CONTENT: {b}")
-        print("  -> python3 scripts/build_wiki.py && git add docs/wiki/" if drift or bad
+        print("  -> python3 scripts/build_wiki.py && git add docs/wiki/ && commit — this gate "
+              "reads HEAD, so a rebuilt or merely staged page stays red" if drift or bad
               else "wiki reference pages are current.")
         return 1 if (drift or bad) else 0
     print(f"wrote {len(BUILDERS)} page(s) to docs/wiki/")
