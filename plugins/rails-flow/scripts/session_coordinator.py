@@ -1,0 +1,504 @@
+#!/usr/bin/env python3
+"""Cross-session coordination, computed from the repository instead of remembered (#1010).
+
+`parallel-session-lane` is good doctrine and nothing runs it. Coordination fell to whichever
+session took it on, by hand and reactively, and the failures were all POLLING GAPS: the
+information existed, in git or in the session list, and nobody looked. Six of them in one day —
+two PRs finished with their authors idle; two escalations at sessions whose work was proceeding
+normally; `dev` carried at a SHA it had left hours earlier; decision numbers recited from memory
+when a git query knew better.
+
+WHAT THIS IS. A read-only reporter that crosses the session list against the forge and prints
+findings, each carrying the command that produced it. It is the measuring half of a coordinator;
+the deciding half is a session reading this output and sending messages.
+
+WHY A SCRIPT AND NOT AN AGENT PROMPT. #1010's acceptance says the coordinator "cannot merge a PR
+or write to a repository -- ENFORCED, not documented". An instruction in a command file is
+documented. So every subprocess this module runs goes through `run()`, which refuses any
+invocation not on `READ_ONLY`, and `--selftest` proves the refusal fires on `gh pr merge`,
+`git push` and `git commit`. Authority over other sessions is messages, and messages are the
+caller's to send.
+
+WHY IT DOES NOT POLL BY ITSELF. The skill says "no tmux and no daemon", which is about not
+REQUIRING infrastructure. This requires none: it is one command with no state and no server. A
+session that chooses to re-run it on a timer is the operator's decision, and a supported one --
+but nothing here depends on that choice, so a machine with no scheduler loses nothing.
+
+THE CHARACTERISTIC FAILURE IS A FALSE ESCALATION, not a missed defect: chasing a session whose
+work is proceeding normally. A wrong age is indistinguishable from a real stall except in the
+number, and the number is the one thing a human reading a board will not re-derive. The day this
+was written produced two false escalations inside five minutes from one unit error -- a local WAT
+clock compared against UTC timestamps from the forge, so "70 minutes" was 13 and "90" was 33.
+Hence `age_minutes` REFUSES a naive clock rather than assuming one, and the selftest asserts the
+13-minute PR produces no stall finding at all.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatch
+from pathlib import Path
+
+# -------------------------------------------------------------------------------------------
+# The read-only boundary. This is the enforcement the issue asks for.
+# -------------------------------------------------------------------------------------------
+
+# (binary, subcommand, sub-subcommand or None). Exact tuples, hand-declared: a prefix rule like
+# "any `gh pr`" would admit `gh pr merge`, which is precisely the authority this must not have.
+READ_ONLY: frozenset[tuple[str, ...]] = frozenset({
+    ("git", "log"), ("git", "diff"), ("git", "show"), ("git", "rev-parse"), ("git", "merge-base"),
+    ("git", "for-each-ref"), ("git", "grep"), ("git", "status"), ("git", "ls-files"),
+    ("gh", "pr", "list"), ("gh", "pr", "view"), ("gh", "pr", "checks"), ("gh", "pr", "diff"),
+    ("gh", "issue", "list"), ("gh", "issue", "view"), ("gh", "run", "list"),
+})
+
+# Everything a caller might reach for that would make this an actor rather than a reporter. Named
+# explicitly so the selftest can prove the refusal, rather than trusting the allowlist's shape.
+WRITE_VERBS: tuple[tuple[str, ...], ...] = (
+    ("gh", "pr", "merge"), ("gh", "pr", "create"), ("gh", "pr", "close"), ("gh", "pr", "comment"),
+    ("gh", "issue", "close"), ("gh", "issue", "comment"), ("gh", "release", "create"),
+    ("git", "push"), ("git", "commit"), ("git", "add"), ("git", "checkout"), ("git", "merge"),
+    ("git", "rebase"), ("git", "worktree"), ("git", "reset"), ("git", "restore"),
+)
+
+
+class WriteAttempted(RuntimeError):
+    """Raised when something asks this module to act on the world instead of read it."""
+
+
+def _key(argv: list[str]) -> tuple[str, ...]:
+    """The allowlist key: two tokens for `git`, three for `gh` (its verbs are one level deeper)."""
+    depth = 3 if argv and argv[0] == "gh" else 2
+    return tuple(argv[:depth])
+
+
+def run(argv: list[str], cwd: Path, execute=subprocess.run) -> str:
+    """A read-only subprocess, or an exception. The output is discarded on failure, never guessed.
+
+    `execute` is injected for one reason: the selftest attempts every write verb with a spy that
+    raises if it is ever called, so "the boundary refused it" is proved by NOTHING RUNNING rather
+    than by an exception that might have come from the command failing. A test that proves a merge
+    was refused by running the merge is not a test.
+
+    A failing read is NOT an empty read: `gh` unauthenticated returns nothing in exactly the shape
+    of "no open pull requests", and a coordinator that reports the second when the first is true is
+    worse than one that reports nothing.
+    """
+    if _key(argv) not in READ_ONLY:
+        raise WriteAttempted(
+            f"refused: {' '.join(argv[:3])} is not on the read-only allowlist. This module reports; "
+            "acting on another session's work is the caller's to do, with a message."
+        )
+    result = execute(argv, cwd=cwd, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError(f"{' '.join(argv)} failed: {result.stderr.strip()[:200]}")
+    return result.stdout
+
+
+# -------------------------------------------------------------------------------------------
+# Time. Computed, never eyeballed.
+# -------------------------------------------------------------------------------------------
+
+def age_minutes(created_iso: str, now: datetime) -> int:
+    """Whole minutes between an ISO-8601 UTC timestamp and `now`, which MUST be timezone-aware.
+
+    The refusal is the point. `datetime.now()` is naive local; the forge returns UTC; subtracting
+    one from the other is silent and off by the offset -- sixty minutes here, which turned a
+    13-minute-old PR into "70 minutes" and produced two escalations that had to be walked back.
+    A naive clock is therefore an error, not an assumption.
+    """
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError(
+            "age_minutes needs a timezone-aware clock: a naive one is how a 13-minute PR was "
+            "reported as 70. Pass datetime.now(timezone.utc)."
+        )
+    created = datetime.fromisoformat(created_iso.replace("Z", "+00:00"))
+    if created.tzinfo is None:
+        raise ValueError(f"{created_iso!r} carries no timezone; the forge always sends one")
+    return int((now - created).total_seconds() // 60)
+
+
+# -------------------------------------------------------------------------------------------
+# What counts as generated. Hand-declared, like doctrine_map's CLAIMS.
+# -------------------------------------------------------------------------------------------
+
+# A conflict in a generated file is not a judgement -- regenerate it and the question disappears.
+# Resolving one by hand nearly deleted a subsystem from an architecture graph. A conflict in an
+# authored file IS a judgement and belongs to its author; this module's job is saying which is
+# which, and never choosing for them.
+#
+# Hand-declared rather than derived from the generators, deliberately: deriving it would make this
+# a check on the INDEX of the generated set rather than on the set, which is the defect class that
+# produced #1006 and #1008 in one afternoon.
+#
+# THE COST OF THAT CHOICE IS REAL AND IS PAID HERE. The first version of this list was two entries
+# short, and a peer deriving the set from the generators caught it within the hour. So: re-derive
+# against `scripts/rebuild_generated.py` whenever a generator is added, and treat a path that is
+# generated but absent from this list as the failure mode -- it sends someone to hand-resolve a
+# file whose conflict is not a judgement at all.
+GENERATED: tuple[tuple[str, str], ...] = (
+    ("docs/wiki/*.md", "python3 scripts/build_wiki.py"),
+    ("docs/architecture/doctrine-map.html", "python3 scripts/doctrine_map.py"),
+    ("docs/evidence/coverage.html", "python3 scripts/build_coverage_artifact.py"),
+    ("dist/*.skill", "python3 scripts/package_core.py"),
+    (".claude/skills/*/SKILL.md", "python3 scripts/build_maintainer_skills.py"),
+    # Both of these were missing from the first hand-written list, and a peer deriving the set from
+    # the generators found them. The first is the expensive one to get wrong: it lives under
+    # `plugins/`, so a rule of thumb like "everything under plugins/ is authored" sends someone to
+    # hand-resolve a file they should regenerate.
+    ("plugins/rails-flow/mandated_gems.json", "python3 scripts/derive_mandated_gems.py"),
+    ("skills/design-system/references/coverage.md", "python3 scripts/build_coverage.py"),
+    ("db/schema.rb", "bin/rails db:migrate"),
+    ("docs/architecture/*.svg", "the architecture graph builder"),
+)
+
+
+def load_generated(declared: Path | None) -> tuple[tuple[str, str], ...]:
+    """`GENERATED`, plus whatever the project declares in a JSON file of {glob: command}.
+
+    THE DEFAULTS ARE THIS MARKETPLACE'S, AND THIS SCRIPT SHIPS. A downstream Rails app has
+    `db/schema.rb` and none of `docs/wiki/`, `dist/*.skill` or `.claude/skills/` — so a built-in
+    list is a starting point and never the answer. A project declares its own, and the two are
+    merged with the project's entries LAST so they win.
+
+    Suggested by a peer that this read the maintainer repo's `scripts/rebuild_generated.py`, whose
+    `BUILDERS` now carries each generator's output paths. It cannot: that script is maintainer-only
+    and this one is shipped inside `rails-flow`, so importing it would break for every downstream
+    installation — the same per-audience boundary that kept the HEAD-read helper unextracted. A
+    maintainer who wants that list here can generate the JSON from `BUILDERS` and pass it.
+    """
+    if declared is None:
+        return GENERATED
+    extra = json.loads(declared.read_text(encoding="utf-8"))
+    return GENERATED + tuple((str(k), str(v)) for k, v in extra.items())
+
+
+def regenerator(path: str, generated: tuple[tuple[str, str], ...] = GENERATED) -> str | None:
+    """The command that rebuilds `path`, or None when the file is authored."""
+    for pattern, command in generated:
+        if fnmatch(path, pattern):
+            return command
+    return None
+
+
+# -------------------------------------------------------------------------------------------
+# Findings
+# -------------------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Finding:
+    """One thing worth a message, and the command that proves it.
+
+    `command` is not decoration. Every correction that stuck between sessions on the day this was
+    written carried the command that produced it, and every one that did not was re-litigated.
+    """
+
+    kind: str
+    subject: str
+    detail: str
+    command: str
+    to: str | None = None          # the session this should be said to, when there is one
+
+    def render(self) -> str:
+        who = f" -> {self.to}" if self.to else ""
+        return f"[{self.kind}]{who} {self.subject}\n    {self.detail}\n    $ {self.command}"
+
+
+@dataclass
+class Session:
+    """A peer, as `ListAgents` describes it plus what it announced under §2."""
+
+    name: str
+    state: str = "unknown"           # idle | busy | unknown
+    repo: str | None = None          # the repository it is authorised in
+    paths: list[str] = field(default_factory=list)   # announced under §2, moment 1
+    branch: str | None = None
+
+    @property
+    def idle(self) -> bool:
+        return self.state.lower() == "idle"
+
+
+# A PR younger than this is proceeding normally, not stalled. The number is a floor on how long CI
+# takes to answer: the two false escalations were at 13 and 33 minutes, both of which were CI and
+# review latency rather than a stall.
+STALL_MINUTES = 45
+
+
+def parked_work(prs: list[dict], sessions: list[Session], now: datetime) -> list[Finding]:
+    """The crossing nobody had: a session is idle AND its PR is green and mergeable.
+
+    Neither half is new -- `ListAgents` has had busy/idle all along and the forge has always known
+    what is open. Both of the day's stalls were exactly this shape and both were found only when a
+    human asked whether anyone was waiting.
+    """
+    by_author = {s.name.lower(): s for s in sessions}
+    findings = []
+    for pr in prs:
+        age = age_minutes(pr["createdAt"], now)
+        session = by_author.get(str(pr.get("session", "")).lower())
+        green = pr.get("mergeStateStatus") == "CLEAN"
+        if not green:
+            continue
+        if age < STALL_MINUTES:
+            # The negative case, stated deliberately: a green PR that is young is NOT a finding.
+            # Escalating here is the module's characteristic failure, and it happened twice.
+            continue
+        if session is not None and not session.idle:
+            continue
+        who = session.name if session else "its author"
+        findings.append(Finding(
+            kind="parked",
+            subject=f"PR #{pr['number']} is green and {age} minutes old; {who} is "
+                    f"{session.state if session else 'unknown'}",
+            detail="the author lands their own work — say it is ready, do not merge it for them",
+            command="gh pr list --state open --limit 100 --json number,createdAt,mergeStateStatus",
+            to=session.name if session else None,
+        ))
+    return findings
+
+
+def path_collisions(sessions: list[Session]) -> list[Finding]:
+    """Two sessions announcing the same file. Issue numbers never predicted these; paths do."""
+    findings = []
+    for i, a in enumerate(sessions):
+        for b in sessions[i + 1:]:
+            shared = sorted(set(a.paths) & set(b.paths))
+            if not shared:
+                continue
+            findings.append(Finding(
+                kind="collision",
+                subject=f"{a.name} and {b.name} both announced {len(shared)} path(s)",
+                detail="; ".join(shared[:5]) + " — agree who holds each before either pushes",
+                command="(announced under §2 moment 1; compared here, not remembered)",
+                to=a.name,
+            ))
+    return findings
+
+
+def conflict_triage(pr: dict, overlapping: list[str],
+                    generated: tuple[tuple[str, str], ...] = GENERATED) -> list[Finding]:
+    """For a conflicted PR, name the files and say for each: regenerate, or the author's call."""
+    findings = []
+    for path in overlapping:
+        command = regenerator(path, generated)
+        if command:
+            findings.append(Finding(
+                kind="conflict-generated",
+                subject=f"PR #{pr['number']}: {path}",
+                detail=f"generated — do not resolve by hand; take either side and re-run: {command}",
+                command=f"git diff --name-only $(git merge-base origin/dev HEAD) origin/dev",
+            ))
+        else:
+            findings.append(Finding(
+                kind="conflict-authored",
+                subject=f"PR #{pr['number']}: {path}",
+                detail="authored — the author's judgement, not the coordinator's; ask, do not resolve",
+                command=f"git diff --name-only $(git merge-base origin/dev HEAD) origin/dev",
+            ))
+    return findings
+
+
+def assignment(issue: dict, sessions: list[Session], repo: str) -> Finding | None:
+    """Match an issue to the session that already has the context, and SAY WHY.
+
+    Two rules, both paid for. **Context over queue order**: the good pairings were made on what a
+    session already knew -- the files it had touched, the defect it had just learned. **Never
+    across a boundary**: the one bad hand-off was an issue in a repository the receiving session
+    was not in; it refused, correctly, because a peer's relay is not authorisation. Sequencing is
+    this module's call; access is never anyone's but the owner's.
+    """
+    best: Session | None = None
+    best_shared: list[str] = []
+    for session in sessions:
+        if session.repo is not None and session.repo != repo:
+            continue                      # a boundary, not a preference
+        shared = sorted(set(session.paths) & set(issue.get("paths", [])))
+        if len(shared) > len(best_shared):
+            best, best_shared = session, shared
+    if best is None:
+        return None
+    return Finding(
+        kind="assign",
+        subject=f"#{issue['number']} suits {best.name}",
+        detail=f"they have already announced {', '.join(best_shared)} — the pairing is stated so "
+               "it can be argued with, not so it can be obeyed",
+        command=f"gh issue view {issue['number']} --json number,title",
+        to=best.name,
+    )
+
+
+# -------------------------------------------------------------------------------------------
+# The board
+# -------------------------------------------------------------------------------------------
+
+def board(repo_root: Path, base: str = "origin/main", head: str = "origin/dev") -> list[str]:
+    """Facts about the repository, each printed with the command that produced it."""
+    lines = []
+    ahead = run(["git", "log", "--oneline", f"{base}..{head}"], repo_root).strip()
+    count = len(ahead.splitlines()) if ahead else 0
+    lines.append(f"{head} is {count} commit(s) ahead of {base}"
+                 f"\n    $ git log --oneline {base}..{head}")
+    sha = run(["git", "rev-parse", "--short", head], repo_root).strip()
+    lines.append(f"{head} is at {sha}\n    $ git rev-parse --short {head}")
+    return lines
+
+
+def collect_prs(repo_root: Path, limit: int = 100) -> list[dict]:
+    """Open PRs. BOUNDED: `gh pr list` defaults to 30 and reports one page as the whole truth."""
+    raw = run(["gh", "pr", "list", "--state", "open", "--limit", str(limit), "--json",
+               "number,title,createdAt,mergeStateStatus,headRefName,author"], repo_root)
+    return json.loads(raw or "[]")
+
+
+def report(sessions: list[Session], prs: list[dict], now: datetime,
+           board_lines: list[str]) -> tuple[list[str], list[Finding]]:
+    """The whole output. SILENT on one session, and silent when there is nothing to say.
+
+    Silence is a feature with a cost attached: the lane hook under-detects deliberately because an
+    advisory that nags is an advisory that gets switched off, and a coordinator that posts a board
+    every tick trains its readers to skip it.
+    """
+    if len(sessions) < 2:
+        return [], []
+    findings = parked_work(prs, sessions, now) + path_collisions(sessions)
+    if not findings:
+        return [], []
+    return board_lines, findings
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--sessions", help="JSON file: [{name, state, repo, paths, branch}] from ListAgents")
+    ap.add_argument("--repo-root", default=".")
+    ap.add_argument("--generated", help="JSON {glob: rebuild command} this project generates, "
+                                        "merged over the built-in defaults")
+    ap.add_argument("--json", action="store_true", help="machine-readable findings")
+    ap.add_argument("--selftest", action="store_true")
+    args = ap.parse_args()
+
+    if args.selftest:
+        return selftest()
+
+    root = Path(args.repo_root).resolve()
+    sessions = [Session(**s) for s in json.loads(Path(args.sessions).read_text(encoding="utf-8"))] \
+        if args.sessions else []
+    now = datetime.now(timezone.utc)
+    lines, findings = report(sessions, collect_prs(root), now, board(root))
+
+    if args.json:
+        print(json.dumps([f.__dict__ for f in findings], indent=2))
+        return 0
+    for line in lines:
+        print(line)
+    for finding in findings:
+        print(finding.render())
+    return 0
+
+
+# -------------------------------------------------------------------------------------------
+# Selftest — every detector must fire on the day it was written for, and STAY SILENT otherwise.
+# -------------------------------------------------------------------------------------------
+
+NOW = datetime(2026, 9, 17, 15, 33, 20, tzinfo=timezone.utc)
+
+
+def selftest() -> int:
+    failures: list[str] = []
+
+    def check(label: str, condition: bool) -> None:
+        if not condition:
+            failures.append(label)
+
+    # 1. The write boundary, proved by attempting every verb with a spy that must never be called.
+    def never(*_args, **_kwargs):
+        raise AssertionError("EXECUTED a write command instead of refusing it")
+
+    for verb in WRITE_VERBS:
+        try:
+            run(list(verb) + ["1"], Path("."), execute=never)
+            failures.append(f"{' '.join(verb)} was NOT refused — this module can act on the world")
+        except WriteAttempted:
+            pass
+        except AssertionError as exc:
+            failures.append(f"{' '.join(verb)}: {exc}")
+
+    # 2. Time: the real numbers from the day. 15:20:39Z against 15:33:20Z is 12 minutes, not 72.
+    check("age_minutes did not compute 12 minutes for the 15:20:39Z PR",
+          age_minutes("2026-09-17T15:20:39Z", NOW) == 12)
+    try:
+        age_minutes("2026-09-17T15:20:39Z", datetime(2026, 9, 17, 16, 33, 20))
+        failures.append("age_minutes accepted a NAIVE clock — the 60-minute error is back")
+    except ValueError:
+        pass
+    except TypeError:
+        failures.append("age_minutes accepted a NAIVE clock and died subtracting it — the refusal "
+                        "is gone, and a crash is not a diagnosis")
+
+    green = {"number": 1009, "createdAt": "2026-09-17T15:20:39Z", "mergeStateStatus": "CLEAN",
+             "session": "s-a"}
+    idle = [Session("s-a", "idle"), Session("s-b", "busy")]
+
+    # 3. THE NEGATIVE CASE FIRST. A green PR 12 minutes old is proceeding normally. Escalating here
+    #    is this module's characteristic failure and it happened twice in five minutes.
+    check("a 12-minute green PR was reported as parked — that is the false escalation",
+          parked_work([green], idle, NOW) == [])
+
+    # 4. The positive: the same PR, older than the stall floor, with its author idle.
+    old = dict(green, createdAt="2026-09-17T13:00:00Z")
+    parked = parked_work([old], idle, NOW)
+    check("an idle session with a green 153-minute-old PR produced no finding", len(parked) == 1)
+    check("the parked finding does not carry its command", bool(parked and parked[0].command))
+    check("the parked finding tells the coordinator to merge it",
+          bool(parked) and "do not merge it for them" in parked[0].detail)
+
+    # 5. A busy author is not parked, however old the PR.
+    check("a BUSY author's old green PR was reported as parked",
+          parked_work([dict(old, session="s-b")], idle, NOW) == [])
+
+    # 6. Collisions come from paths, not issue numbers.
+    a = Session("s-a", "idle", paths=["app/models/card.rb", "app/views/cards/index.html.erb"])
+    b = Session("s-b", "busy", paths=["app/models/card.rb"])
+    c = Session("s-c", "busy", paths=["lib/totp.rb"])
+    check("two sessions announcing app/models/card.rb produced no collision",
+          len(path_collisions([a, b])) == 1)
+    check("sessions with disjoint paths produced a collision", path_collisions([a, c]) == [])
+
+    # 7. Conflict triage: generated vs authored, and it must not choose for the author.
+    triage = conflict_triage({"number": 7}, ["docs/wiki/Skills-Reference.md", "app/models/card.rb"])
+    check("a generated conflict was not named as regenerable",
+          any(f.kind == "conflict-generated" and "build_wiki" in f.detail for f in triage))
+    check("an authored conflict was not left to its author",
+          any(f.kind == "conflict-authored" and "author's judgement" in f.detail for f in triage))
+    check("triage resolved an authored file itself",
+          all("take either side" not in f.detail for f in triage if f.kind == "conflict-authored"))
+
+    # 8. Assignment: on context, with the reason stated, and never across a boundary.
+    issue = {"number": 401, "paths": ["app/models/card.rb"]}
+    pick = assignment(issue, [a, c], repo="retask")
+    check("assignment did not pick the session that had touched the file", pick is not None)
+    check("assignment did not state why", bool(pick and "app/models/card.rb" in pick.detail))
+    elsewhere = Session("s-d", "idle", repo="other-repo", paths=["app/models/card.rb"])
+    check("assignment crossed a repository boundary the session was not authorised into",
+          assignment(issue, [elsewhere], repo="retask") is None)
+
+    # 9. Silence: one session, and nothing to report.
+    check("a single session produced output", report([a], [old], NOW, ["board"]) == ([], []))
+    check("two sessions with nothing wrong produced output",
+          report([Session("s-a", "busy"), Session("s-b", "busy")], [], NOW, ["board"]) == ([], []))
+
+    for f in failures:
+        print(f"SELFTEST FAILED: {f}")
+    if not failures:
+        print(f"selftest: ok — {len(WRITE_VERBS)} write verbs refused; the 12-minute PR is silent, "
+              "the 153-minute one is not; collisions from paths; generated and authored conflicts "
+              "separated; assignment stays inside its boundary")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
