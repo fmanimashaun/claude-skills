@@ -45,6 +45,29 @@ GUARD = Guard(
             "BUSY author's old green PR",
         ),
         Mutation(
+            # #1018. The guard above was unreachable for as long as the join used a key `gh` has
+            # never returned, so the arm above passed while the production path escalated at
+            # everyone. Mutating the JOIN is the only way to see that.
+            "the PR-to-session join goes back to a key `gh` never emits, so the idle guard is dead "
+            "again and every green PR chases a working session",
+            "        session = by_branch.get(pr.get(\"headRefName\"))",
+            "        session = by_branch.get(pr.get(\"session\"))",
+            "BUSY author's old green PR",
+        ),
+        Mutation(
+            "a fatal git failure is folded back into 'matched nothing', so a malformed pattern "
+            "reads as 'no numbers are claimed'",
+            "        if failure.returncode != 1:     # 1 is \"no match\"; 128 is \"your pattern is malformed\"",
+            "        if False:",
+            "FATAL git failure was reported",
+        ),
+        Mutation(
+            "the collector stops asking for the fields the fixtures are built from",
+            '                  ",".join(COLLECTED_FIELDS)], repo_root)',
+            '                  "number,createdAt"], repo_root)',
+            "does not ask for the fields",
+        ),
+        Mutation(
             # Silence is a feature with a cost: a board every tick trains its readers to skip it.
             "it reports on single-session work, which is how an advisory gets switched off",
             "    if len(sessions) < 2:",

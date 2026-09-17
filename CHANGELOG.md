@@ -2730,7 +2730,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   re-derives; one local-clock-against-UTC error produced two false escalations inside five minutes,
   reporting a 13-minute-old PR as 70. So `age_minutes` **refuses a naive clock** rather than assuming
   one, and the selftest asserts the 12-minute PR yields no finding at all while the 153-minute one
-  does. Three of the seven mutation arms make the detector *more* talkative, which is how this class
+  does. **The age half of that was true and the idle half was dead until #1018**, found by an
+  independent QA session driving the real collector rather than the fixture: `parked_work` joined a
+  PR to a session on a `session` key `gh` has never emitted, so `by_author.get("")` was always None,
+  the "do not chase a busy session" guard could not be reached, and every green PR past the floor
+  escalated at nobody — the false escalation arriving through the other door while the clock fix
+  held. The join is now `headRefName` against the branch a session announced, an unclaimed branch is
+  reported as **an age reading and not a stall verdict**, the collector's field list is a constant
+  the fixtures are asserted against, and a mutation arm mutates the JOIN rather than the guard,
+  because mutating the guard passed throughout. In the same pass: a **fatal** `git grep` (exit 128,
+  which a user-supplied `--claim-pattern` can cause) was reported as `claims-absent`, telling a
+  session no numbers were claimed when the query had not run — now `claims-unknown`, with exit 1
+  alone treated as no match. Three of the seven mutation arms make the detector *more* talkative, which is how this class
   survives review: over-firing looks like sensitivity.
 
   **Conflicts are triaged, never resolved.** A conflict in a generated file is not a judgement —

@@ -36,13 +36,14 @@ collision this whole skill exists to prevent, reproduced in the coordination lay
 
 | finding | what it means |
 |---|---|
-| `parked` | a PR is green, mergeable and older than the stall floor, and its author is idle |
+| `parked` | a PR is green, older than the stall floor, and the session that announced its **branch** is idle — or nobody announced it, which is reported as an age reading, not a stall verdict |
 | `collision` | two sessions announced the same file path |
 | `conflict-generated` | a file changed on both sides that a generator owns — **regenerate**, do not resolve |
 | `conflict-authored` | a file changed on both sides that a human owns — **its author's judgement** |
 | `assign` | an issue whose paths a session has already announced, with the reason stated |
 | `claims` | the highest claimed number across **every remote ref**, not from a ledger anyone maintains |
 | `claims-absent` | the ledger matched nothing — stated, because an empty search and a wrong path look identical |
+| `claims-unknown` | the query itself failed (a malformed `--claim-pattern` exits 128) — **nothing was checked**, which is not the same as finding nothing |
 | `migration-order` | a migration numbered at or below `schema.rb`'s version: recorded as applied, never run |
 
 Every line carries the command that produced it. That is not decoration: on the day this was
