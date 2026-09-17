@@ -71,6 +71,21 @@ class WriteAttempted(RuntimeError):
     """Raised when something asks this module to act on the world instead of read it."""
 
 
+class ReadFailed(RuntimeError):
+    """A read-only command that did not succeed, CARRYING ITS RETURN CODE.
+
+    The code is the whole point (#1018). `git grep` exits 1 on "no match" and 128 on "your pattern
+    has unbalanced brackets"; catching the exception type alone folds a fatal error into the
+    no-match bucket and reports "matched nothing on any remote ref" about a search that never ran.
+    A session then concludes no numbers are claimed and takes one that is — with a false "I asked
+    git" behind it, which is worse than not asking.
+    """
+
+    def __init__(self, argv: list[str], returncode: int, stderr: str):
+        super().__init__(f"{' '.join(argv)} failed (exit {returncode}): {stderr.strip()[:200]}")
+        self.returncode = returncode
+
+
 def _key(argv: list[str]) -> tuple[str, ...]:
     """The allowlist key: two tokens for `git`, three for `gh` (its verbs are one level deeper)."""
     depth = 3 if argv and argv[0] == "gh" else 2
@@ -96,7 +111,7 @@ def run(argv: list[str], cwd: Path, execute=subprocess.run) -> str:
         )
     result = execute(argv, cwd=cwd, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
-        raise RuntimeError(f"{' '.join(argv)} failed: {result.stderr.strip()[:200]}")
+        raise ReadFailed(argv, result.returncode, result.stderr)
     return result.stdout
 
 
@@ -224,6 +239,15 @@ class Session:
         return self.state.lower() == "idle"
 
 
+# Exactly what `gh pr list` is asked for, as a constant rather than a string literal inside the
+# call. A fixture that invents a field the collector never emits tests a PR that cannot exist, and
+# that is how the idle-guard below sat dead through a green selftest (#1018): every fixture set a
+# `session` key by hand, and `gh` has never produced one.
+COLLECTED_FIELDS: tuple[str, ...] = (
+    "number", "title", "createdAt", "mergeStateStatus", "headRefName", "author",
+)
+
+
 # A PR younger than this is proceeding normally, not stalled. The number is a floor on how long CI
 # takes to answer: the two false escalations were at 13 and 33 minutes, both of which were CI and
 # review latency rather than a stall.
@@ -237,11 +261,17 @@ def parked_work(prs: list[dict], sessions: list[Session], now: datetime) -> list
     what is open. Both of the day's stalls were exactly this shape and both were found only when a
     human asked whether anyone was waiting.
     """
-    by_author = {s.name.lower(): s for s in sessions}
+    # THE JOIN IS THE BRANCH (#1018). The previous key was `pr["session"]`, which `gh` has never
+    # returned, so `by_author.get("")` was always None and the "do not chase a busy session" guard
+    # below could not be reached in production -- every green PR past the floor escalated, addressed
+    # to nobody, which is the false escalation this detector exists to avoid. `author.login` is no
+    # help: every PR in both repositories is the same human. The branch is what a session announces
+    # under §2 and what `headRefName` reports.
+    by_branch = {s.branch: s for s in sessions if s.branch}
     findings = []
     for pr in prs:
         age = age_minutes(pr["createdAt"], now)
-        session = by_author.get(str(pr.get("session", "")).lower())
+        session = by_branch.get(pr.get("headRefName"))
         green = pr.get("mergeStateStatus") == "CLEAN"
         if not green:
             continue
@@ -251,13 +281,22 @@ def parked_work(prs: list[dict], sessions: list[Session], now: datetime) -> list
             continue
         if session is not None and not session.idle:
             continue
-        who = session.name if session else "its author"
+        if session is not None:
+            subject = (f"PR #{pr['number']} is green and {age} minutes old; {session.name} is "
+                       f"{session.state}")
+            detail = "the author lands their own work — say it is ready, do not merge it for them"
+        else:
+            # Said plainly rather than dressed as a verdict: NO session announced this branch, so
+            # nothing here knows whether anyone is on it.
+            subject = (f"PR #{pr['number']} is green and {age} minutes old, on branch "
+                       f"{pr.get('headRefName', '?')} that no session announced")
+            detail = ("nobody has claimed this branch, so this is an age reading and not a stall "
+                      "verdict — find out who owns it before chasing anyone")
         findings.append(Finding(
             kind="parked",
-            subject=f"PR #{pr['number']} is green and {age} minutes old; {who} is "
-                    f"{session.state if session else 'unknown'}",
-            detail="the author lands their own work — say it is ready, do not merge it for them",
-            command="gh pr list --state open --limit 100 --json number,createdAt,mergeStateStatus",
+            subject=subject,
+            detail=detail,
+            command="gh pr list --state open --limit 100 --json " + ",".join(COLLECTED_FIELDS),
             to=session.name if session else None,
         ))
     return findings
@@ -332,8 +371,13 @@ def claim_ledger(repo_root: Path, ledger: str, pattern: str, runner=run) -> Find
                        "nothing was checked — this is a skip, not a clean result", command)
     try:
         found = runner(["git", "grep", "-ho", pattern] + refs + ["--", ledger], repo_root)
-    except RuntimeError:
-        found = ""                      # git grep exits 1 on no match, which is not an error here
+    except ReadFailed as failure:
+        if failure.returncode != 1:     # 1 is "no match"; 128 is "your pattern is malformed"
+            return Finding("claims-unknown", f"the query for {ledger} did not run",
+                           f"{failure} — nothing was checked, and this is NOT the same as finding "
+                           "no claims; `--claim-pattern` reaches `git grep` unescaped",
+                           command)
+        found = ""
     highest = highest_claim(sorted(set(found.split())))
     if highest is None:
         return Finding("claims-absent", f"{ledger} matched nothing on any remote ref",
@@ -415,10 +459,10 @@ def board(repo_root: Path, base: str = "origin/main", head: str = "origin/dev") 
     return lines
 
 
-def collect_prs(repo_root: Path, limit: int = 100) -> list[dict]:
+def collect_prs(repo_root: Path, limit: int = 100, runner=run) -> list[dict]:
     """Open PRs. BOUNDED: `gh pr list` defaults to 30 and reports one page as the whole truth."""
-    raw = run(["gh", "pr", "list", "--state", "open", "--limit", str(limit), "--json",
-               "number,title,createdAt,mergeStateStatus,headRefName,author"], repo_root)
+    raw = runner(["gh", "pr", "list", "--state", "open", "--limit", str(limit), "--json",
+                  ",".join(COLLECTED_FIELDS)], repo_root)
     return json.loads(raw or "[]")
 
 
@@ -533,9 +577,14 @@ def selftest() -> int:
         failures.append("age_minutes accepted a NAIVE clock and died subtracting it — the refusal "
                         "is gone, and a crash is not a diagnosis")
 
-    green = {"number": 1009, "createdAt": "2026-09-17T15:20:39Z", "mergeStateStatus": "CLEAN",
-             "session": "s-a"}
-    idle = [Session("s-a", "idle"), Session("s-b", "busy")]
+    # THE FIXTURE IS BUILT FROM THE COLLECTOR'S OWN FIELD LIST, and checked against it below. The
+    # previous one invented a `session` key, so both the firing and the silent case were tested
+    # against a PR shape `gh` cannot produce, and the guard between them was dead (#1018).
+    green = {"number": 1009, "title": "x", "createdAt": "2026-09-17T15:20:39Z",
+             "mergeStateStatus": "CLEAN", "headRefName": "fix/a", "author": {"login": "someone"}}
+    check("the PR fixture uses a field the collector never requests",
+          set(green) <= set(COLLECTED_FIELDS))
+    idle = [Session("s-a", "idle", branch="fix/a"), Session("s-b", "busy", branch="fix/b")]
 
     # 3. THE NEGATIVE CASE FIRST. A green PR 12 minutes old is proceeding normally. Escalating here
     #    is this module's characteristic failure and it happened twice in five minutes.
@@ -550,9 +599,14 @@ def selftest() -> int:
     check("the parked finding tells the coordinator to merge it",
           bool(parked) and "do not merge it for them" in parked[0].detail)
 
-    # 5. A busy author is not parked, however old the PR.
+    # 5. A busy author is not parked, however old the PR — THE ARM THAT COULD NOT FAIL BEFORE.
     check("a BUSY author's old green PR was reported as parked",
-          parked_work([dict(old, session="s-b")], idle, NOW) == [])
+          parked_work([dict(old, headRefName="fix/b")], idle, NOW) == [])
+    # And an unclaimed branch is reported as an age reading, never as a verdict about a person.
+    orphan = parked_work([dict(old, headRefName="fix/nobody")], idle, NOW)
+    check("an unclaimed branch produced no reading at all", len(orphan) == 1)
+    check("an unclaimed branch was dressed up as a stall verdict",
+          bool(orphan) and "not a stall verdict" in orphan[0].detail and orphan[0].to is None)
 
     # 6. Collisions come from paths, not issue numbers.
     a = Session("s-a", "idle", paths=["app/models/card.rb", "app/views/cards/index.html.erb"])
@@ -618,6 +672,33 @@ def selftest() -> int:
     check("a repository with no remote refs was reported as a clean result",
           claim_ledger(Path("."), "x.md", "D-0[0-9][0-9]",
                        runner=fake("", refs="")).kind == "claims-absent")
+
+    def exploding(code: int):
+        def runner(argv, _cwd):
+            if argv[1] == "for-each-ref":
+                return "refs/remotes/origin/dev\n"
+            raise ReadFailed(argv, code, "fatal: brackets ([ ]) not balanced")
+        return runner
+
+    check("a FATAL git failure was reported as 'matched nothing' — a result never obtained",
+          claim_ledger(Path("."), "d.md", "[", runner=exploding(128)).kind == "claims-unknown")
+    check("exit 1 (genuinely no match) was reported as a failed query",
+          claim_ledger(Path("."), "d.md", "D-0[0-9][0-9]",
+                       runner=exploding(1)).kind == "claims-absent")
+
+    # 8e. The collector asks for exactly COLLECTED_FIELDS. Without this the constant is
+    #     decorative and a fixture can drift from the query all over again.
+    asked: list[str] = []
+
+    def spy(argv, _cwd):
+        asked.extend(argv)
+        return "[]"
+
+    collect_prs(Path("."), runner=spy)
+    check("collect_prs does not ask for the fields the fixtures are checked against",
+          ",".join(COLLECTED_FIELDS) in asked)
+    check("collect_prs left its page size unbounded",
+          "--limit" in asked)
 
     # 9. Silence: one session, and nothing to report.
     check("a single session produced output", report([a], [old], NOW, ["board"]) == ([], []))
