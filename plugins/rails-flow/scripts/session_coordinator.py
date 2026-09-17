@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -303,6 +304,72 @@ def conflict_triage(pr: dict, overlapping: list[str],
     return findings
 
 
+def highest_claim(claimed: list[str]) -> str | None:
+    """The highest claim number seen anywhere, or None. Pure, so the fixture is the real thing.
+
+    The failure this answers: three sessions coordinated by a hand-kept ledger that said "highest
+    merged is D-073; two branches hold D-075/D-076 unmerged". The query across every remote ref
+    answered **D-079, all of them already merged** -- four numbers stale inside a day. A registry
+    file would have drifted identically, because it needs somebody to update it; the refs did not,
+    because every branch that takes a number writes it into the file the query reads.
+    """
+    return max(claimed) if claimed else None
+
+
+def claim_ledger(repo_root: Path, ledger: str, pattern: str, runner=run) -> Finding:
+    """Ask git, across every remote ref, what the highest claimed number actually is.
+
+    Reports ABSENT rather than silently returning nothing when no ref holds the ledger: a search
+    that finds nothing and a search that ran against the wrong path produce the same empty string,
+    and silence reads as confirmation.
+    """
+    refs = runner(["git", "for-each-ref", "--format=%(refname)", "refs/remotes/origin"],
+                  repo_root).split()
+    command = f"git grep -ho '{pattern}' $(git for-each-ref --format='%(refname)' " \
+              f"refs/remotes/origin) -- {ledger} | sort -u | tail -1"
+    if not refs:
+        return Finding("claims-absent", f"no remote refs to search for {ledger}",
+                       "nothing was checked — this is a skip, not a clean result", command)
+    try:
+        found = runner(["git", "grep", "-ho", pattern] + refs + ["--", ledger], repo_root)
+    except RuntimeError:
+        found = ""                      # git grep exits 1 on no match, which is not an error here
+    highest = highest_claim(sorted(set(found.split())))
+    if highest is None:
+        return Finding("claims-absent", f"{ledger} matched nothing on any remote ref",
+                       "nothing was checked — either no claims exist yet, or the path is wrong, "
+                       "and those two look identical", command)
+    return Finding("claims", f"the highest claimed number across every remote ref is {highest}",
+                   "ask git, not a peer and not a ledger — a hand-kept one was four numbers stale "
+                   "inside a day", command)
+
+
+def migration_ordering(added: list[str], schema_version: str) -> list[Finding]:
+    """A migration numbered at or below `schema.rb`'s version is marked applied and never runs.
+
+    Announcing timestamps prevented the collision the protocol was worried about and did nothing
+    about ORDERING, which is a different failure: two branches shipped without their columns. Pure,
+    so the fixture is the real comparison rather than a mock of it.
+    """
+    findings = []
+    for path in added:
+        name = path.rsplit("/", 1)[-1]
+        stamp = name.split("_", 1)[0]
+        if not stamp.isdigit() or "db/migrate/" not in path:
+            continue
+        if stamp <= schema_version:
+            findings.append(Finding(
+                kind="migration-order",
+                subject=f"{path} is numbered at or below schema.rb ({schema_version})",
+                detail="Rails records it as already applied and never runs it — the columns never "
+                       "arrive, and the suite fails somewhere else entirely. Renumber it above the "
+                       "schema version before merging.",
+                command="git diff --name-only origin/dev...HEAD -- db/migrate/ && "
+                        "git show origin/dev:db/schema.rb | head -20",
+            ))
+    return findings
+
+
 def assignment(issue: dict, sessions: list[Session], repo: str) -> Finding | None:
     """Match an issue to the session that already has the context, and SAY WHY.
 
@@ -355,8 +422,28 @@ def collect_prs(repo_root: Path, limit: int = 100) -> list[dict]:
     return json.loads(raw or "[]")
 
 
+def migration_findings(repo_root: Path, base: str = "origin/dev") -> list[Finding]:
+    """Migrations this branch adds, checked against the schema version on `base`.
+
+    Returns nothing when the project has no `db/schema.rb` — it is a Rails-shaped check and this
+    script also runs in repositories that are not Rails apps.
+    """
+    try:
+        schema = run(["git", "show", f"{base}:db/schema.rb"], repo_root)
+    except RuntimeError:
+        return []
+    match = re.search(r"define\(version:\s*[\"']?([0-9_]+)", schema)
+    if not match:
+        return []
+    version = match.group(1).replace("_", "")
+    added = run(["git", "diff", "--name-only", f"{base}...HEAD", "--", "db/migrate/"],
+                repo_root).split()
+    return migration_ordering(added, version)
+
+
 def report(sessions: list[Session], prs: list[dict], now: datetime,
-           board_lines: list[str]) -> tuple[list[str], list[Finding]]:
+           board_lines: list[str], extra: list[Finding] | None = None
+           ) -> tuple[list[str], list[Finding]]:
     """The whole output. SILENT on one session, and silent when there is nothing to say.
 
     Silence is a feature with a cost attached: the lane hook under-detects deliberately because an
@@ -365,7 +452,7 @@ def report(sessions: list[Session], prs: list[dict], now: datetime,
     """
     if len(sessions) < 2:
         return [], []
-    findings = parked_work(prs, sessions, now) + path_collisions(sessions)
+    findings = parked_work(prs, sessions, now) + path_collisions(sessions) + list(extra or [])
     if not findings:
         return [], []
     return board_lines, findings
@@ -377,6 +464,10 @@ def main() -> int:
     ap.add_argument("--repo-root", default=".")
     ap.add_argument("--generated", help="JSON {glob: rebuild command} this project generates, "
                                         "merged over the built-in defaults")
+    ap.add_argument("--ledger", help="a claims ledger to query across every remote ref, "
+                                     "e.g. docs/brain/DECISIONS.md")
+    ap.add_argument("--claim-pattern", default="D-0[0-9][0-9]",
+                    help="the claim token to search for in --ledger")
     ap.add_argument("--json", action="store_true", help="machine-readable findings")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
@@ -388,7 +479,10 @@ def main() -> int:
     sessions = [Session(**s) for s in json.loads(Path(args.sessions).read_text(encoding="utf-8"))] \
         if args.sessions else []
     now = datetime.now(timezone.utc)
-    lines, findings = report(sessions, collect_prs(root), now, board(root))
+    extra = migration_findings(root)
+    if args.ledger:
+        extra.append(claim_ledger(root, args.ledger, args.claim_pattern))
+    lines, findings = report(sessions, collect_prs(root), now, board(root), extra)
 
     if args.json:
         print(json.dumps([f.__dict__ for f in findings], indent=2))
@@ -486,6 +580,45 @@ def selftest() -> int:
     check("assignment crossed a repository boundary the session was not authorised into",
           assignment(issue, [elsewhere], repo="retask") is None)
 
+    # 8b. Claims are a query. The numbers are the ones the ledger got wrong.
+    check("highest_claim did not return the highest number across the refs",
+          highest_claim(["D-073", "D-079", "D-075", "D-076"]) == "D-079")
+    check("highest_claim invented a claim from an empty search", highest_claim([]) is None)
+
+    # 8c. Migration ordering: at or below the schema version is the silent one.
+    ordering = migration_ordering(
+        ["db/migrate/20260901120000_add_reference_to_cards.rb",
+         "db/migrate/20260930090000_add_batch_cap.rb"], schema_version="20260915000000")
+    check("a migration numbered BELOW schema.rb produced no finding", len(ordering) == 1)
+    check("the wrong migration was flagged",
+          bool(ordering) and "20260901120000" in ordering[0].subject)
+    check("a migration numbered ABOVE schema.rb was flagged anyway",
+          all("20260930090000" not in f.subject for f in ordering))
+    check("a non-migration path was treated as a migration",
+          migration_ordering(["app/models/card.rb"], "20260915000000") == [])
+    # The boundary itself: EQUAL to the schema version is already recorded as applied, so `<=` and
+    # `<` are different answers and only this fixture can tell them apart.
+    check("a migration numbered EXACTLY at the schema version was not flagged",
+          len(migration_ordering(["db/migrate/20260915000000_exactly_at_the_version.rb"],
+                                 "20260915000000")) == 1)
+
+    # 8d. The ledger query's three outcomes, against a runner that needs no repository.
+    def fake(matches: str, refs: str = "refs/remotes/origin/dev\n"):
+        def runner(argv, _cwd):
+            return refs if argv[1] == "for-each-ref" else matches
+        return runner
+
+    found = claim_ledger(Path("."), "docs/brain/DECISIONS.md", "D-0[0-9][0-9]",
+                         runner=fake("D-073\nD-079\nD-075\n"))
+    check("the ledger query did not report the highest claim from the refs",
+          found.kind == "claims" and "D-079" in found.subject)
+    check("the ledger query dropped the command that produced it", bool(found.command))
+    check("an empty search was reported as a clean result rather than as absent",
+          claim_ledger(Path("."), "x.md", "D-0[0-9][0-9]", runner=fake("")).kind == "claims-absent")
+    check("a repository with no remote refs was reported as a clean result",
+          claim_ledger(Path("."), "x.md", "D-0[0-9][0-9]",
+                       runner=fake("", refs="")).kind == "claims-absent")
+
     # 9. Silence: one session, and nothing to report.
     check("a single session produced output", report([a], [old], NOW, ["board"]) == ([], []))
     check("two sessions with nothing wrong produced output",
@@ -496,7 +629,8 @@ def selftest() -> int:
     if not failures:
         print(f"selftest: ok — {len(WRITE_VERBS)} write verbs refused; the 12-minute PR is silent, "
               "the 153-minute one is not; collisions from paths; generated and authored conflicts "
-              "separated; assignment stays inside its boundary")
+              "separated; assignment stays inside its boundary; the highest claim comes from the "
+              "refs; a migration at or below the schema version is caught and one above it is not")
     return 1 if failures else 0
 
 

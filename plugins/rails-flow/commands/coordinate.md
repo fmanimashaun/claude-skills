@@ -25,6 +25,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/session_coordinator.py" --sessions sessio
 ]
 ```
 
+Add `--ledger docs/brain/DECISIONS.md` to query claimed numbers across every remote ref rather
+than asking a peer — a hand-kept ledger said *"highest merged is D-073"* while the refs said
+**D-079, all merged**, four numbers stale inside a day.
+
 Write it under **your own** scratchpad path. One shared file that several sessions append to is the
 collision this whole skill exists to prevent, reproduced in the coordination layer.
 
@@ -37,6 +41,9 @@ collision this whole skill exists to prevent, reproduced in the coordination lay
 | `conflict-generated` | a file changed on both sides that a generator owns — **regenerate**, do not resolve |
 | `conflict-authored` | a file changed on both sides that a human owns — **its author's judgement** |
 | `assign` | an issue whose paths a session has already announced, with the reason stated |
+| `claims` | the highest claimed number across **every remote ref**, not from a ledger anyone maintains |
+| `claims-absent` | the ledger matched nothing — stated, because an empty search and a wrong path look identical |
+| `migration-order` | a migration numbered at or below `schema.rb`'s version: recorded as applied, never run |
 
 Every line carries the command that produced it. That is not decoration: on the day this was
 written, every correction between sessions that stuck came with its command, and every one that did
