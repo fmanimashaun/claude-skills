@@ -62,6 +62,14 @@ GUARD = Guard(
             "FATAL git failure was reported",
         ),
         Mutation(
+            # #1023. The finding stays correct and becomes unreadable, which is the same as not
+            # firing: the exit code and "nothing was checked" are at the end of 976 characters.
+            "the failed-query detail prints every remote ref again, burying the exit code",
+            "    if len(argv) <= keep:",
+            "    if True:",
+            "was printed in full",
+        ),
+        Mutation(
             "branch spellings stop being normalised, so `origin/fix/b` reads as unannounced and a "
             "BUSY session is chased",
             "        if name.startswith(prefix):",

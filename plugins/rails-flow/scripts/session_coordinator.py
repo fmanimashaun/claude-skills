@@ -67,6 +67,19 @@ WRITE_VERBS: tuple[tuple[str, ...], ...] = (
 )
 
 
+def summarise(argv: list[str], keep: int = 6) -> str:
+    """The command, short enough to read (#1023).
+
+    `stderr` was truncated at 200 characters and the command line was not — and the ledger query's
+    argv is `git grep -ho <pattern>` followed by EVERY remote ref, so a `claims-unknown` finding ran
+    to hundreds of characters and buried the two parts that matter: the exit code, and the fact that
+    nothing was checked. A report nobody reads to the end is a report that did not fire.
+    """
+    if len(argv) <= keep:
+        return " ".join(argv)
+    return f"{' '.join(argv[:keep])} … +{len(argv) - keep} more argument(s)"
+
+
 class WriteAttempted(RuntimeError):
     """Raised when something asks this module to act on the world instead of read it."""
 
@@ -82,7 +95,7 @@ class ReadFailed(RuntimeError):
     """
 
     def __init__(self, argv: list[str], returncode: int, stderr: str):
-        super().__init__(f"{' '.join(argv)} failed (exit {returncode}): {stderr.strip()[:200]}")
+        super().__init__(f"{summarise(argv)} failed (exit {returncode}): {stderr.strip()[:200]}")
         self.returncode = returncode
 
 
@@ -752,6 +765,17 @@ def selftest() -> int:
     check("a repository with no remote refs was reported as a clean result",
           claim_ledger(Path("."), "x.md", "D-0[0-9][0-9]",
                        runner=fake("", refs="")).kind == "claims-absent")
+
+    long_argv = ["git", "grep", "-ho", "D-0[0-9][0-9]"] + [f"refs/remotes/origin/b{i}"
+                                                         for i in range(40)]
+    rendered = str(ReadFailed(long_argv, 128, "fatal: brackets ([ ]) not balanced"))
+    check("a 44-argument command was printed in full — the exit code is buried",
+          len(rendered) < 200)
+    check("the summarised command dropped the exit code", "128" in rendered)
+    check("the summarised command dropped the count of what it elided",
+          "+38 more argument(s)" in rendered)
+    check("a short command was elided when it did not need to be",
+          summarise(["git", "show", "HEAD:x"]) == "git show HEAD:x")
 
     def exploding(code: int):
         def runner(argv, _cwd):
