@@ -7,6 +7,31 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The mirror gate read the working tree while every sibling gate read `HEAD`, and so failed open —
+  `scripts/build_maintainer_skills.py`, `scripts/mutations/build_maintainer_skills.py`** (#1008).
+  Rebuild `.claude/skills/`, forget `git add`, commit the source alone: the local sweep read the
+  rebuilt file off disk, printed `no drift` and exited 0, while CI — which checks the commit out, so
+  the working tree *is* `HEAD` — met a stale committed mirror against a new committed source and went
+  red. The local run structurally could not reproduce the failure it was there to predict, and it
+  failed **open**, the opposite direction from `build_wiki.py` and `doctrine_map.py`, which have read
+  `git show HEAD:` since #833. `CLAUDE.md` already stated the rule — *"a page built and never `git
+  add`ed fails honestly"* — so this was the one derived-artifact check diverging from our own design,
+  not a new opinion. The remedy line now says **commit**, not `git add`: `git show HEAD:` reads the
+  commit and not the index, so a staged-but-uncommitted mirror stays red, and the old wording sent
+  the reader round a loop that could not end.
+
+  **Two mutation arms, because the three that existed could not tell the fix from the bug** — all of
+  them mutate committed content, which reads identically under either tree. The fourth restores the
+  working-tree read and asserts a rebuilt-but-unstaged mirror goes red; the fifth turns
+  `git show HEAD:` into `git show :` (the INDEX), which would make `git add` alone clear the gate —
+  the same fail-open one step along, and invisible to every arm that stubs the read. So the selftest
+  gained an arm that does **not** stub git: it builds a throwaway repository in a tempdir, commits a
+  file, then changes **and stages** it, and asserts the read still returns the commit. The stubbed
+  arms keep a positive control first, because a gate whose clean case does not pass makes every
+  failing arm pass for free.
+
 ### 2026-09-16 (release v1.129.0)
 
 - **The marketplace version tracks a qa-flow release.** `metadata.version` moves with `qa-flow`
