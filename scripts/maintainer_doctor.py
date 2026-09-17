@@ -129,6 +129,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # defect `plugin-boundaries` exists to refuse, and a mirror without a drift check IS two homes.
     ("maintainer skill drift", ("python3", "scripts/build_maintainer_skills.py", "--check")),
     ("maintainer skill selftest", ("python3", "scripts/build_maintainer_skills.py", "--selftest")),
+    # `rebuild_generated.py` is the one command the arm runs so nobody rebuilds the generated
+    # surfaces from memory — and it had no gate, so its own LIST fell behind twice: the maintainer
+    # mirrors above and `mandated_gems.json` were both gated and both unregistered, and it rebuilt
+    # four of six while reporting success. The selftest reads the --check gates out of THIS table,
+    # so a new generator cannot be added without being classified.
+    ("generated artifacts registered", ("python3", "scripts/rebuild_generated.py", "--selftest")),
     # #304: contrast is the most measurable claim in the design system and was asserted in prose.
     # #129 widened its INPUT from the doctrine file to every shipped brand pack, because the #304
     # fix had been applied to the doctrine file and to neither pack — so the gate read clean over

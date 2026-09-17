@@ -9,6 +9,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`rebuild_generated.py` rebuilt four of six generated surfaces and reported success —
+  `scripts/rebuild_generated.py`, `scripts/mutations/rebuild_generated.py`, `scripts/maintainer_doctor.py`.**
+  The script exists so that nobody rebuilds the committed generated artifacts from memory; its own
+  docstring records the v1.88.0 arm forgetting the wiki and the gate catching it. Its LIST then fell
+  behind twice, the same shape one level up: `build_maintainer_skills.py` (added by #1004 and never
+  registered) and `derive_mandated_gems.py`, which writes the tracked
+  `plugins/rails-flow/mandated_gems.json`. Both were gated by the doctor and absent here, so a
+  maintainer running the one command still had two stale surfaces and no way to know. Its closing
+  line also printed a hardcoded `git add docs/ dist/`, which covered neither.
+  **Nothing could notice, because the script had no `--selftest` and no gate of its own** — the
+  claims-vs-enforcement shape this repo files bugs about, in the tool built to prevent it.
+  Each builder now declares its output paths, so the `git add` line is derived rather than
+  remembered, and `--selftest` reads the `--check` gates out of `maintainer_doctor.py` — the actual
+  registry, not a second hand-written list — and refuses any `scripts/*.py` gate that is in neither
+  `BUILDERS` nor `NOT_REBUILT`. The two exclusions carry their reason: `build_coverage.py` needs the
+  licensed corpora and its gate skips without them, and `extract_release_notes.py` writes no file.
+  Three declared mutations prove it fails: dropping a gated generator, blinding the gate-table read,
+  and letting a declared output path go stale.
+
 - **The mirror gate read the working tree while every sibling gate read `HEAD`, and so failed open —
   `scripts/build_maintainer_skills.py`, `scripts/mutations/build_maintainer_skills.py`** (#1008).
   Rebuild `.claude/skills/`, forget `git add`, commit the source alone: the local sweep read the
