@@ -2748,6 +2748,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   a later labelled assertion reports — and a different mutation's guard expects that one. A crash is
   not a verdict, and it steals the verdict from elsewhere.
 
+- **`/coordinate` measures what landed instead of standing in front of it — `plugins/rails-flow/commands/coordinate.md`** (#1010). The author lands their own PR and inherits the rebase-and-re-verify with it; this command reports on the integration branch AFTER a merge, and every finding says new-at-this-merge or pre-existing. Three sessions in one day lost time blaming inherited failures on their own diffs.
+
 ### 2026-09-17 (release v1.131.0)
 
 - **Cross-session coordination is computed from the repository instead of remembered —
@@ -5020,6 +5022,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   flip, no rebuild.
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
+
+### Unreleased
+
+- **§2a: each session merges its own work — `skills/parallel-session-lane/SKILL.md`** (#1004). Both alternatives failed in one day on one repository: routing every merge through a single session stalled eighteen merges behind one queue with two authors idle holding green work, and leaving it unstated let a session merge a peer's PR before its author's message arrived. The author merges and carries the rebase-and-re-verify; measurement moves after the merge.
 
 ### 2026-09-17 (release v1.131.0)
 

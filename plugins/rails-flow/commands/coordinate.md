@@ -58,7 +58,16 @@ not was argued twice.
   `WriteAttempted`. `--selftest` proves the refusal by attempting each one, rather than by reading
   the allowlist and agreeing with it.
 - **It does not land another session's work.** The author lands their own, because they know when it
-  is done. Telling them it is ready is the whole of this command's authority.
+  is done — and with it they inherit the rebase-and-re-verify at the moment of the merge, because
+  *the last session to measure is not the last session to change the base*. Telling them it is ready
+  is the whole of this command's authority.
+- **Measuring is a separate job from permitting, and this command does the first only.** It reports
+  on the integration branch AFTER a merge rather than standing in front of one, and every finding it
+  prints says **new at this merge** or **pre-existing**. That attribution is the point: three
+  sessions in one day lost time blaming inherited failures on their own diffs, and a branch's own
+  green run says nothing about the branch it lands on. Routing every merge through one session was
+  tried on the same day and produced the opposite failure — eighteen merges through one queue, with
+  two authors idle holding finished work.
 - **It does not assign across a boundary a session has not been authorised into.** Sequencing work
   is this command's call; granting access never is. A relay from one session to another is not
   authorisation, and the one hand-off that ignored that was correctly refused.
