@@ -61,15 +61,18 @@ Dispatch the **`design-porter`** agent. It works the order in `design-handoff.md
 ## Before it is done
 
 - **The port report accounts for every manifest item** — `docs/design/<surface>/<canvas>.port-report.json`, one
-  entry per id: `implemented` + `where`, `dropped-scaffolding`, `token-gap`, or `deferred` + the reason the user
-  approved — and this is clean:
+  entry per id: `implemented` + `where`, `reworded` + `where` + `now` + `reason`, `dropped-scaffolding` + `note`,
+  `token-gap`, or `deferred` + the reason the user approved — and this is clean:
 
   ```bash
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/canvas_manifest.py" check "docs/design/<surface>/<canvas>.manifest.json" --report "docs/design/<surface>/<canvas>.port-report.json"
   ```
 
   It refuses while any item is unaccounted for, and an `implemented` whose text is in neither the named file nor
-  `config/locales` is a gap. To see how far an existing implementation already is, `compare <manifest> --root .`
+  `config/locales` is a gap. **Copy you changed on purpose is `reworded`, not `implemented` and not `deferred`**:
+  quote the replacement as `now` and say which decision changed the words, and `check` looks for that replacement
+  the same way. Reaching for `deferred` or `dropped-scaffolding` to get past a rewording is how a report stops
+  meaning anything. To see how far an existing implementation already is, `compare <manifest> --root .`
   prints found and missing by kind with no report at all.
 - Specs green, including one proving any new behaviour.
 - `/design-flow:audit` clean — no raw hex, no `cdn-font-link`, on-catalogue variants only.
