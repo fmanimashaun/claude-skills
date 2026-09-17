@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-17 (release v1.131.0)
 
 - **`rebuild_generated.py` rebuilt four of six generated surfaces and reported success —
   `scripts/rebuild_generated.py`, `scripts/mutations/rebuild_generated.py`, `scripts/maintainer_doctor.py`.**
@@ -2707,7 +2707,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-17 (release v1.131.0)
 
 - **Cross-session coordination is computed from the repository instead of remembered —
   `plugins/rails-flow/scripts/session_coordinator.py`, `plugins/rails-flow/commands/coordinate.md`,
@@ -4976,7 +4976,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
-### Unreleased
+### 2026-09-17 (release v1.131.0)
 
 - **The parallel-session protocol now says what four sessions actually do, and the maintainers can
   finally read it — `skills/parallel-session-lane/SKILL.md`, `.claude/skills/parallel-session-lane/`,
