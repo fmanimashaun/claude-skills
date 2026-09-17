@@ -81,9 +81,15 @@ the one the artboard illustrates. An artboard shows a moment; a surface has to h
 Run the checks rather than asserting the outcome:
 
 - Write `docs/design/<surface>/<canvas>.port-report.json` — every manifest id → `implemented` (+ `where`),
-  `dropped-scaffolding`, `token-gap`, or `deferred` (+ `reason`) — and run
-  `canvas_manifest.py check <manifest> --report <report>`. It refuses while an item is unaccounted for, and an
-  `implemented` whose text is in neither the file you named nor the locales is a gap. Do not say done over a gap.
+  `reworded` (+ `where`, `now`, `reason`), `dropped-scaffolding` (+ `note`), `token-gap`, or `deferred`
+  (+ `reason`) — and run `canvas_manifest.py check <manifest> --report <report>`. It refuses while an item is
+  unaccounted for, and an `implemented` whose text is in neither the file you named nor the locales is a gap.
+  Do not say done over a gap.
+- **`reworded` is for copy you changed ON PURPOSE**, because a decision the user recorded restructured the
+  screen or the app grew something the canvas never drew. Name the file, quote the text that stands in the
+  canvas's place as `now`, and give the reason — `check` greps for `now` exactly as it greps an `implemented`
+  original, so it is more evidence than `implemented`, not less. It is never for copy nobody got round to;
+  that is `deferred`, and it needs the user's approval.
 - Specs green, including one proving any new behaviour.
 - `/design-flow:audit` clean — no raw hex, no `cdn-font-link`, on-catalogue variants only.
 - Visual parity against the source: layout, rhythm, type scale, colour, motion, and each state.

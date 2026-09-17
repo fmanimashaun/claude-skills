@@ -16,9 +16,11 @@ script, as `label: '...'` pairs and short Title-case literals. So the manifest r
   extract <canvas.dc.html> [--out manifest.json]   one entry per artboard; under it the items below
   compare  <manifest.json> --root DIR              audit: which items' text is present anywhere under DIR's
                                                    views / components / locales -- no report needed
-  check    <manifest.json> --report report.json    every item accounted for (implemented|dropped-scaffolding|
-                                                   token-gap|deferred); `implemented` copy must exist in the
-                                                   file it names. Exit 0 accounted · 1 gaps · 3 no manifest
+  check    <manifest.json> --report report.json    every item accounted for (implemented|reworded|
+                                                   dropped-scaffolding|token-gap|deferred); `implemented` copy
+                                                   must exist in the file it names, and `reworded` must name
+                                                   the text that stands in its place -- which must exist too.
+                                                   Exit 0 accounted · 1 gaps · 3 no manifest
   --selftest
 
 Items and their kinds: `heading` (text styled >= 18px, or h1-h6), `copy` (a literal text run of 3+ words),
@@ -282,7 +284,28 @@ def compare(manifest: dict, root: Path, paths: tuple[str, ...] = DEFAULT_PATHS) 
     return {"root": str(root), "files_searched": len(corpus), "found": found, "missing": missing, "skipped": len(skipped), "bound": len(bound), "by_kind": by_kind}
 
 
-STATUSES = ("implemented", "dropped-scaffolding", "token-gap", "deferred")
+# `reworded` is the status for copy the port DELIBERATELY changed -- because a recorded decision
+# restructured the screen, or because the app grew something the canvas never drew. It is harder to
+# pass than `implemented`, not softer: it demands the file, the text that stands in the canvas's
+# place, and the reason, and it greps for that replacement exactly as `implemented` greps for the
+# original. Without it the only green answers were `deferred` and `dropped-scaffolding` -- both
+# false, and neither detectable, which is how a gate teaches people to mislabel (#1000).
+STATUSES = ("implemented", "reworded", "dropped-scaffolding", "token-gap", "deferred")
+
+
+def _text_present(root: Path, where: str, needle: str) -> bool:
+    """Is `needle` in the file `where` names, or in any locale file? One search, so `implemented`
+    and `reworded` are held to the same standard -- the first against the canvas's own words, the
+    second against the words that replaced them."""
+    p = root / where
+    body = " ".join(p.read_text(encoding="utf-8", errors="replace").split()).lower() if p.is_file() else ""
+    if needle in body:
+        return True
+    locales = root / "config" / "locales"
+    if not locales.is_dir():
+        return False
+    return any(needle in " ".join(q.read_text(encoding="utf-8", errors="replace").split()).lower()
+               for q in locales.glob("*.yml"))
 
 
 def check(manifest: dict, report: dict, root: Path) -> list[str]:
@@ -299,19 +322,35 @@ def check(manifest: dict, report: dict, root: Path) -> list[str]:
             continue
         if st == "deferred" and not e.get("reason"):
             problems.append(f"{item['id']}: deferred with no reason -- a deferral the user did not approve is a gap")
-        if st == "implemented":
+        # `dropped-scaffolding` was the one status that asserted NOTHING, which made it the cheapest
+        # place to hide an item nobody had looked at. It costs a sentence now, the way a deferral does.
+        if st == "dropped-scaffolding" and not e.get("note"):
+            problems.append(f"{item['id']}: dropped-scaffolding with no note -- say what was dropped and why it is not product copy")
+        if st in ("implemented", "reworded"):
             where = e.get("where", "")
             if not where:
-                problems.append(f"{item['id']}: implemented with no `where` -- name the file")
-            elif item["kind"] in TEXT_KINDS:
-                n = _needle(item)
-                if "{{" in n:
-                    continue                          # bound to data: the literal lives in the script's data-labels, not the view (#930)
-                p = root / where
-                body = " ".join(p.read_text(encoding="utf-8", errors="replace").split()).lower() if p.is_file() else ""
-                locales = " ".join(" ".join(q.read_text(encoding="utf-8", errors="replace").split()).lower() for q in (root / "config" / "locales").glob("*.yml")) if (root / "config" / "locales").is_dir() else ""
-                if n and len(n) >= 4 and n not in body and n not in locales:
-                    problems.append(f"{item['id']}: implemented in {where} but the text {item['text'][:50]!r} is in neither that file nor config/locales")
+                problems.append(f"{item['id']}: {st} with no `where` -- name the file")
+                continue
+            if item["kind"] not in TEXT_KINDS:
+                continue
+            if st == "reworded":
+                # THE REPLACEMENT IS THE EVIDENCE. Without it `reworded` would be a way to assert a
+                # port with nothing behind it -- worse than the `implemented` it stands in for.
+                now = " ".join(str(e.get("now", "")).split()).lower()
+                if not now:
+                    problems.append(f"{item['id']}: reworded with no `now` -- name the text that stands in the canvas's place")
+                elif not e.get("reason"):
+                    problems.append(f"{item['id']}: reworded with no reason -- name the decision that changed the words")
+                elif len(now) < 4:
+                    problems.append(f"{item['id']}: reworded `now` is too short to search for -- quote enough of the replacement to find it")
+                elif not _text_present(root, where, now):
+                    problems.append(f"{item['id']}: reworded to {str(e['now'])[:50]!r} but that text is in neither {where} nor config/locales")
+                continue
+            n = _needle(item)
+            if "{{" in n:
+                continue                          # bound to data: the literal lives in the script's data-labels, not the view (#930)
+            if n and len(n) >= 4 and not _text_present(root, where, n):
+                problems.append(f"{item['id']}: implemented in {where} but the text {item['text'][:50]!r} is in neither that file nor config/locales")
     extra = [k for k in entries if not any(i["id"] == k for i in manifest["items"])]
     if extra:
         problems.append(f"{len(extra)} report entr(ies) name ids not in the manifest: {', '.join(extra[:3])}")
@@ -459,6 +498,33 @@ def selftest() -> int:
         nodefer = json.loads(json.dumps(full)); nodefer["items"][deferred_id or next(iter(full["items"]))] = {"status": "deferred"}
         check_("a deferral without a reason is a gap", any("deferred with no reason" in p for p in check(m, nodefer, root)))
         check_("no manifest is n/a (exit 3)", main(["compare", str(root / "none.json"), "--root", str(root)]) == 3)
+
+        # `reworded` (#1000): the status for copy a recorded decision changed. It has to be HARDER
+        # than `implemented`, so every one of its four demands is driven from both sides.
+        screened = next(i["id"] for i in m["items"] if i["text"] == "button[button]: Screen defect")
+
+        def reworded(**over):
+            r = json.loads(json.dumps(full))
+            r["items"][screened] = {"status": "reworded", "where": "app/views/admin/index.html.erb",
+                                    "now": "Defects awaiting screening",
+                                    "reason": "the screen was folded into the queue heading (D-00)", **over}
+            return check(m, r, root)
+
+        check_("`reworded` naming real replacement text, a file and a reason is clean", reworded() == [], "; ".join(reworded())[:300])
+        check_("`reworded` with no `now` is a gap -- it would assert a port with nothing behind it",
+               any("reworded with no `now`" in p for p in reworded(now="")))
+        check_("`reworded` with no reason is a gap", any("reworded with no reason" in p for p in reworded(reason="")))
+        check_("`reworded` with no `where` is a gap", any("reworded with no `where`" in p for p in reworded(where="")))
+        check_("`reworded` whose replacement is in neither the file nor the locales is a gap -- the "
+               "canvas text was absent and so is its stand-in, which is the case this status must NOT wave through",
+               any("is in neither" in p for p in reworded(now="a sentence nobody ever wrote")))
+        check_("`reworded` cannot pass on a scrap too short to search for", any("too short to search for" in p for p in reworded(now="ok")))
+
+        # dropped-scaffolding was the one status that asserted nothing at all (#1000).
+        dropped = json.loads(json.dumps(full)); dropped["items"][screened] = {"status": "dropped-scaffolding"}
+        check_("`dropped-scaffolding` without a note is a gap", any("dropped-scaffolding with no note" in p for p in check(m, dropped, root)))
+        dropped["items"][screened] = {"status": "dropped-scaffolding", "note": "canvas picker chrome, no product copy"}
+        check_("`dropped-scaffolding` with a note is clean", check(m, dropped, root) == [], "; ".join(check(m, dropped, root))[:300])
     for f in failures:
         print(f"FAIL {f}")
     print(f"canvas_manifest selftest: {n} checks, {len(failures)} failure(s)")

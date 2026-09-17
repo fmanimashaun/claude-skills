@@ -123,9 +123,12 @@ equality rather than assuming it; where the design needs a value the tokens cann
 - **Every item in the canvas manifest is accounted for, by id.** `canvas_manifest.py extract` reads the export
   structurally — headings, copy, controls with their labels, repeats, conditionals, icons, and the `label:` pairs
   and copy in its `text/x-dc` data script — and the port report gives each item a status: `implemented` (with the
-  file), `dropped-scaffolding`, `token-gap`, or `deferred` (with the reason the user approved). `check` refuses
-  while any item is unaccounted for, and for every `implemented` text it looks in the named file and the locales
-  — "implemented" is measured, not said. This is the half of fidelity a script can hold; parity of layout and
+  file), `reworded` (with the file, the replacement text and the decision that changed it),
+  `dropped-scaffolding` (with a note), `token-gap`, or `deferred` (with the reason the user approved). `check`
+  refuses while any item is unaccounted for, and for every `implemented` text it looks in the named file and the
+  locales — "implemented" is measured, not said. **A port may legitimately change the words**, and when the only
+  green statuses were ones the check could not verify, the honest answer was the one that went red — so
+  `reworded` is verified the same way, against the replacement (#1000). This is the half of fidelity a script can hold; parity of layout and
   rhythm is still yours to confirm against the canvas. (#908: "they pick what they want, then claim they are done.")
 - Specs are green, including one proving any new behaviour.
 - `/design-flow:audit` reports no drift: no raw hex, no bespoke field or layout CSS, on-catalogue

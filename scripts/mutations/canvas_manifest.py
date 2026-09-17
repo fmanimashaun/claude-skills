@@ -33,14 +33,14 @@ GUARD = Guard(
         ),
         Mutation(
             "`implemented` is taken at its word: the named file is never searched for the text",
-            "                if n and len(n) >= 4 and n not in body and n not in locales:",
-            "                if False:",
+            "            if n and len(n) >= 4 and not _text_present(root, where, n):",
+            "            if False:",
             "is in neither the named file nor the locales is a gap",
         ),
         Mutation(
             "a bound control's label is grepped as literal text again, so no faithful port can pass it (#930)",
-            '                if "{{" in n:\n                    continue',
-            '                if False:\n                    continue',
+            '            if "{{" in n:\n                continue',
+            '            if False:\n                continue',
             "a control whose label is a binding is implemented where its view is",
         ),
         Mutation(
@@ -54,6 +54,24 @@ GUARD = Guard(
             '        if st == "deferred" and not e.get("reason"):',
             '        if False:',
             "a deferral without a reason is a gap",
+        ),
+        Mutation(
+            "`reworded` is taken at its word: the replacement text is never searched for (#1000)",
+            '                elif not _text_present(root, where, now):',
+            '                elif False:',
+            "whose replacement is in neither the file nor the locales is a gap",
+        ),
+        Mutation(
+            "`reworded` needs no replacement text, so it waves an item through on a status alone (#1000)",
+            '                if not now:\n                    problems.append(f"{item[\'id\']}: reworded with no `now`',
+            '                if False:\n                    problems.append(f"{item[\'id\']}: reworded with no `now`',
+            "reworded` with no `now` is a gap",
+        ),
+        Mutation(
+            "`dropped-scaffolding` goes back to asserting nothing at all (#1000)",
+            '        if st == "dropped-scaffolding" and not e.get("note"):',
+            '        if False:',
+            "dropped-scaffolding` without a note is a gap",
         ),
     ),
 )
