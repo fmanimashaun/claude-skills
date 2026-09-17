@@ -254,6 +254,56 @@ COLLECTED_FIELDS: tuple[str, ...] = (
 STALL_MINUTES = 45
 
 
+def branch_key(name: str | None) -> str | None:
+    """A branch name in the one spelling both sides can be compared in.
+
+    A session announcing `origin/fix/a` and a PR reporting `fix/a` are the same branch, and an exact
+    join reads the second as unannounced — which produces a `parked` finding against a session that
+    is busy and working. That is the characteristic failure through a narrower door than #1018's,
+    and it costs two lines to close. Found by QA driving the join rather than reading it.
+    """
+    if not name:
+        return None
+    for prefix in ("refs/heads/", "refs/remotes/", "origin/"):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    return name or None
+
+
+def branch_claimants(sessions: list[Session]) -> dict[str, list[Session]]:
+    """Every session that announced each branch, normalised. More than one is a finding."""
+    claims: dict[str, list[Session]] = {}
+    for session in sessions:
+        key = branch_key(session.branch)
+        if key:
+            claims.setdefault(key, []).append(session)
+    return claims
+
+
+def branch_collisions(sessions: list[Session]) -> list[Finding]:
+    """Two sessions claiming ONE branch — the cheapest detector for the day's actual incident.
+
+    `path_collisions` compares announced paths and cannot see this. Twice in one afternoon a session
+    arrived on a branch a peer had pushed and read its open PR as its own work, and a second read a
+    peer's uncommitted file the same way. Both were branch-level collisions that no path list
+    predicted, because neither session had announced a path yet.
+    """
+    findings = []
+    for branch, claiming in sorted(branch_claimants(sessions).items()):
+        if len(claiming) < 2:
+            continue
+        names = ", ".join(s.name for s in claiming)
+        findings.append(Finding(
+            kind="collision-branch",
+            subject=f"{len(claiming)} sessions claim branch {branch}: {names}",
+            detail="one branch means one HEAD and one index — agree who holds it before either "
+                   "commits, and the other takes a worktree",
+            command="(announced under §2 moment 1, compared here rather than remembered)",
+            to=claiming[0].name,
+        ))
+    return findings
+
+
 def parked_work(prs: list[dict], sessions: list[Session], now: datetime) -> list[Finding]:
     """The crossing nobody had: a session is idle AND its PR is green and mergeable.
 
@@ -267,11 +317,15 @@ def parked_work(prs: list[dict], sessions: list[Session], now: datetime) -> list
     # to nobody, which is the false escalation this detector exists to avoid. `author.login` is no
     # help: every PR in both repositories is the same human. The branch is what a session announces
     # under §2 and what `headRefName` reports.
-    by_branch = {s.branch: s for s in sessions if s.branch}
+    # NOT last-wins. A dict comprehension resolved two sessions claiming one branch by list order,
+    # so the verdict depended on whatever order `ListAgents` happened to return. A branch claimed
+    # twice is AMBIGUOUS, and the honest answer is to name nobody and let `collision-branch` say why.
+    claimants = branch_claimants(sessions)
+    by_branch = {b: s[0] for b, s in claimants.items() if len(s) == 1}
     findings = []
     for pr in prs:
         age = age_minutes(pr["createdAt"], now)
-        session = by_branch.get(pr.get("headRefName"))
+        session = by_branch.get(branch_key(pr.get("headRefName")))
         green = pr.get("mergeStateStatus") == "CLEAN"
         if not green:
             continue
@@ -496,7 +550,8 @@ def report(sessions: list[Session], prs: list[dict], now: datetime,
     """
     if len(sessions) < 2:
         return [], []
-    findings = parked_work(prs, sessions, now) + path_collisions(sessions) + list(extra or [])
+    findings = (parked_work(prs, sessions, now) + path_collisions(sessions)
+                + branch_collisions(sessions) + list(extra or []))
     if not findings:
         return [], []
     return board_lines, findings
@@ -607,6 +662,31 @@ def selftest() -> int:
     check("an unclaimed branch produced no reading at all", len(orphan) == 1)
     check("an unclaimed branch was dressed up as a stall verdict",
           bool(orphan) and "not a stall verdict" in orphan[0].detail and orphan[0].to is None)
+
+    # 5b. Spellings. `origin/fix/b` and `fix/b` are one branch, and reading them as two escalates
+    #     at a session that is busy and working.
+    spelled = [Session("s-a", "idle", branch="refs/heads/fix/a"),
+               Session("s-b", "busy", branch="origin/fix/b")]
+    check("a session announcing `origin/fix/b` was treated as not having announced it",
+          parked_work([dict(old, headRefName="fix/b")], spelled, NOW) == [])
+    check("a session announcing `refs/heads/fix/a` lost its parked finding",
+          len(parked_work([dict(old, headRefName="fix/a")], spelled, NOW)) == 1)
+    check("branch_key mangled a plain name", branch_key("fix/a") == "fix/a")
+    check("branch_key invented a branch from nothing", branch_key(None) is None)
+
+    # 5c. Two sessions on ONE branch: reported, and never resolved by list order.
+    both = [Session("peer-a", "busy", branch="fix/shared"),
+            Session("peer-b", "idle", branch="origin/fix/shared")]
+    check("two sessions claiming one branch produced no collision",
+          len(branch_collisions(both)) == 1)
+    check("one session on its own branch was reported as a collision",
+          branch_collisions([Session("solo", "idle", branch="fix/solo")]) == [])
+    ambiguous = parked_work([dict(old, headRefName="fix/shared")], both, NOW)
+    check("an ambiguously-claimed branch named one of the claimants anyway",
+          len(ambiguous) == 1 and ambiguous[0].to is None)
+    check("reversing the session list changed the verdict",
+          [f.subject for f in parked_work([dict(old, headRefName="fix/shared")], both[::-1], NOW)]
+          == [f.subject for f in ambiguous])
 
     # 6. Collisions come from paths, not issue numbers.
     a = Session("s-a", "idle", paths=["app/models/card.rb", "app/views/cards/index.html.erb"])

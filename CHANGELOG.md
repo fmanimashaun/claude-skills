@@ -2738,7 +2738,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   held. The join is now `headRefName` against the branch a session announced, an unclaimed branch is
   reported as **an age reading and not a stall verdict**, the collector's field list is a constant
   the fixtures are asserted against, and a mutation arm mutates the JOIN rather than the guard,
-  because mutating the guard passed throughout. In the same pass: a **fatal** `git grep` (exit 128,
+  because mutating the guard passed throughout. Two residuals from the same QA pass went in with
+  it: branch spellings are normalised on both sides, because a session announcing `origin/fix/b`
+  against a PR reporting `fix/b` read as unannounced and escalated at a session that was **busy and
+  working** — the characteristic failure through a narrower door; and two sessions claiming ONE
+  branch is now a finding of its own (`collision-branch`) rather than a silent last-wins lookup whose
+  verdict depended on list order. That last one is the cheapest possible detector for the day's
+  actual incident, which `path_collisions` cannot see: twice in an afternoon a session arrived on a
+  branch a peer had pushed and read its work as its own, and neither had announced a path yet. In the same pass: a **fatal** `git grep` (exit 128,
   which a user-supplied `--claim-pattern` can cause) was reported as `claims-absent`, telling a
   session no numbers were claimed when the query had not run — now `claims-unknown`, with exit 1
   alone treated as no match. Three of the seven mutation arms make the detector *more* talkative, which is how this class
