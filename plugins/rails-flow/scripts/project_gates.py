@@ -345,6 +345,28 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x1b\x07]*(?:\x07|\x1b\\)")
 #
 # A finding names a severity or a location. Anything else is preamble by default.
 _FINDING = re.compile(r"\b(error|errors|warning|warnings|fail(ed|ure)?)\b|⚠|:\d+:\d+")
+# OUR OWN CHECKS SAY SO STRUCTURALLY, and a structural anchor cannot be spoofed by data (#1028).
+# Tried first, because `N finding(s):` is the documented convention every script here emits.
+_SUMMARY = re.compile(r"^\s*\d+\s+finding\(s\):")
+# A severity word inside a ROUTE is not a severity (#1028). `GET /auth/failure` matched
+# `\bfailure\b`, so a route's NAME became the headline of a route-coverage report and the real
+# summary was dropped as preamble -- a maintainer then chased 41 responsive routes while the gate
+# was failing on 29 untested ones. A content heuristic latches onto content, and the likelier a
+# project is to name things honestly, the likelier it is to be bitten.
+#
+# Scoped to tokens that BEGIN with a slash, which is what a route or an absolute path looks like.
+# Not every token containing one: `errors/foo.rb:3 unquoted` is a real finding and must keep
+# matching, and widening this to any slash would silently drop it.
+_ROUTEISH = re.compile(r"(?<![\w.])/\S+")
+# A location is a location even inside a path, so it is tested against the untouched line.
+_LOCATION = re.compile(r":\d+:\d+")
+
+
+def looks_like_a_finding(line: str) -> bool:
+    """Severity or location — with routes excluded from the severity half, never from the location."""
+    if _LOCATION.search(line):
+        return True
+    return bool(_FINDING.search(_ROUTEISH.sub(" ", line)))
 
 
 # A check that prints hundreds of lines is a check whose output belongs in its own run, not inlined
@@ -378,7 +400,11 @@ def summarise(output: str, returncode: int) -> tuple[str, tuple[str, ...]]:
     line rather than to nothing: a check that failed with only a banner still has to say so.
     """
     lines = [_ANSI.sub("", ln).rstrip() for ln in output.splitlines()]
-    idx = next((i for i, ln in enumerate(lines) if ln.strip() and _FINDING.search(ln)), None)
+    # A LADDER, most reliable first (#1028). Structural beats lexical because data cannot forge it.
+    idx = next((i for i, ln in enumerate(lines) if _SUMMARY.search(ln)), None)
+    if idx is None:
+        idx = next((i for i, ln in enumerate(lines)
+                    if ln.strip() and looks_like_a_finding(ln)), None)
     if idx is None:
         idx = next((i for i, ln in enumerate(lines) if ln.strip()), None)
     if idx is None:
@@ -919,6 +945,36 @@ def selftest() -> int:
     check("a path:line:col line counts as a finding",
           summarise(_t, 1)[0].startswith("app/views/a.html.erb:2:6"),
           f"got {summarise(_t, 1)[0]!r}")
+    # ---- #1028: a route named /auth/failure must not become the headline ---------------------
+    # The heuristic latched onto DATA: `\bfailure\b` matched a route path, so the real summary was
+    # dropped as preamble and the findings printed were the wrong axis of the report. A maintainer
+    # then chased 41 responsive routes while the gate was failing on 29 untested ones, and named a
+    # covered route as the first untested one. This single case is what was missing.
+    _t = ("route coverage: 198/227 (87%) — 29 untested\n"
+          "of those, 29 never reached at all\n"
+          "responsive coverage: 80/121 (66%) — 41 never measured small\n"
+          "  GET /auth/failure\n")
+    check("a route named /auth/failure does not hijack the headline",
+          summarise(_t, 1)[0] == "route coverage: 198/227 (87%) — 29 untested",
+          f"got {summarise(_t, 1)[0]!r}")
+    # Indexed defensively: with the carry removed, `findings` is empty and `[0]` RAISES, aborting
+    # the run before any later labelled assertion reports — and the guard for that mutation expects
+    # a fixture further down. A crash is not a verdict, and it steals the verdict from elsewhere.
+    _f = summarise(_t, 1)[1]
+    check("...and the findings are the section under the real summary",
+          bool(_f) and "29 never reached at all" in _f[0], f"got {_f[:1]!r}")
+    # STRUCTURAL BEATS LEXICAL: our own `N finding(s):` cannot be forged by data, so it is tried
+    # first even when a lexical match appears earlier in the output.
+    _t = "GET /auth/failure\n1 finding(s):\n  - the real one\n"
+    check("our own summary line wins over an earlier lexical match",
+          summarise(_t, 1)[0] == "1 finding(s):", f"got {summarise(_t, 1)[0]!r}")
+    # THE SCOPING MUST NOT OVER-REACH. Only tokens BEGINNING with a slash are routes; a relative
+    # path that happens to contain the word is a real finding and has to keep matching.
+    check("a relative path containing 'errors' is still a finding",
+          looks_like_a_finding("errors/foo.rb:3 unquoted attribute"), "errors/foo.rb went silent")
+    check("a location inside a path still counts",
+          looks_like_a_finding("app/views/a.html.erb:2:6 bad"), "path:line:col went silent")
+
     # FALLBACK. Nothing names a severity or a location, and a failing check still has to say
     # something -- returning "" would be a FAIL with no detail at all.
     _t = "something opaque happened\nand then more of it"
