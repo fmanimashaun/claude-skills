@@ -54,7 +54,7 @@ GUARD = Guard(
         Mutation(
             "a generated conflict is handed to the author as a judgement call, which is how a "
             "hand-resolved graph nearly lost a subsystem",
-            "    for pattern, command in GENERATED:",
+            "    for pattern, command in generated:",
             "    for pattern, command in ():",
             "generated conflict was not named as regenerable",
         ),

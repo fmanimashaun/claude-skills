@@ -2716,7 +2716,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   hand-declared generated list was two paths short on its first draft — `mandated_gems.json`, which
   sits under `plugins/` where a rule of thumb would call it authored, and the design-system
   `coverage.md` — so the list now carries the instruction to re-derive it whenever a generator is
-  added.
+  added. **The built-in list is a starting point and never the answer**, because this
+  script SHIPS: a downstream Rails app has `db/schema.rb` and none of `docs/wiki/`, `dist/*.skill`
+  or `.claude/skills/`. `--generated` takes a project's own `{glob: rebuild command}` JSON, merged
+  last so it wins. It deliberately does **not** read the maintainer repo's `rebuild_generated.py`,
+  whose `BUILDERS` now carries output paths — that script is maintainer-only and this one is
+  shipped, so importing it would break every downstream installation.
 
 ### 2026-09-07 (release v1.125.0)
 
