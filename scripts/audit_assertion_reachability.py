@@ -200,6 +200,27 @@ def mutant_outputs(guard: mc.Guard) -> tuple[list[str], list[str]]:
 # bucket instead of against the suite.
 REGRESSION_GUARD_MARKER = "[regression guard]"
 
+# THE PRECONDITION THAT MAKES A PER-CASE RESULT MEAN ANYTHING. A split is only trustworthy if the
+# current selftest HARNESS still fits the old subject. When it does not, cases fail for the wrong
+# reason and the number inflates -- and you cannot tell afterwards which case was inapplicable and
+# which genuinely failed, so a per-case "inapplicable" bucket would be a guess.
+#
+# The exit-code preflight below catches the loud version: the old subject is missing API the cases
+# call, so nothing runs. It does NOT catch the quiet one. A real migration changed a function from
+# taking file CONTENTS to taking a PATH -- same name, same arity, different meaning. No static
+# check sees that; every case fails, and the run reports a flattering, false "all discriminate".
+#
+# So: mark ONE case in the suite as the control -- the canonical shape the subject exists to
+# handle, whose expected outcome is the same under any implementation worth comparing. Run order is
+# not the point; the control's OUTCOME is. If the control fails against the old revision, the
+# harness does not fit and no split from that run is reportable. If it passes, the harness fits,
+# and every other case's outcome is a real result rather than an artefact. The inapplicable bucket
+# is then empty BY CONSTRUCTION rather than by assumption.
+#
+# The control must be a case the subject genuinely handles, never a tautology: one that passes for
+# every implementation including a broken one tells you nothing.
+CONTROL_MARKER = "[control]"
+
 
 def subject_at(guard: mc.Guard, rev: str) -> str | None:
     """The guard's subject as it was at `rev`, or None if it cannot be read there."""
@@ -253,7 +274,8 @@ def discriminate(guard: mc.Guard, rev: str) -> dict:
     output = (result.stdout + result.stderr).lower()
     unique = sorted(set(labels))
     guards_ = [lab for lab in unique if REGRESSION_GUARD_MARKER in lab.lower()]
-    rest = [lab for lab in unique if lab not in guards_]
+    rest = [lab for lab in unique
+            if lab not in guards_ and CONTROL_MARKER not in lab.lower()]
     failing = [lab for lab in rest if lab.lower() in output]
     passing = [lab for lab in rest if lab.lower() not in output]
 
@@ -273,6 +295,16 @@ def discriminate(guard: mc.Guard, rev: str) -> dict:
     #
     # An old subject missing today's API is the ORDINARY case when the change added functions, so
     # this is the common path, not an edge one.
+    controls = [lab for lab in unique if CONTROL_MARKER in lab.lower()]
+    failed_controls = [lab for lab in controls if lab.lower() in output]
+    if failed_controls:
+        # The harness does not fit this revision. Refuse the whole split rather than report one
+        # that cannot be trusted per case -- this is the quiet failure the exit code cannot see.
+        return {"guard": guard.name, "status": "UNREADABLE", "rev": rev,
+                "reason": (f"the control case failed against {rev}, so the current selftest's "
+                           f"harness does not fit that revision: cases would fail for the wrong "
+                           f"reason and the split would inflate. Failing control(s): "
+                           f"{failed_controls}")}
     if result.returncode != 0 and not failing:
         return {"guard": guard.name, "status": "UNREADABLE",
                 "reason": (f"the selftest did not run against {rev} — it exited "
@@ -292,6 +324,9 @@ def discriminate(guard: mc.Guard, rev: str) -> dict:
         "discriminating": failing,
         "non_discriminating": passing,
         "declared_regression_guards": guards_,
+        # No control means the split is unverified rather than wrong. Saying so is the difference
+        # between a caveat and a silent assumption.
+        "controls": controls,
         "unreadable_label_lines": unreadable_lines,
     }
 
@@ -306,6 +341,9 @@ def report_discrimination(results: list[dict], as_json: bool) -> int:
             continue
         d, n = len(r["discriminating"]), len(r["non_discriminating"])
         print(f"[note] {r['guard']}: {d} of {d + n} case(s) discriminate against {r['rev']}")
+        if not r.get("controls"):
+            print(f"         ! no case is marked {CONTROL_MARKER}, so nothing verified that the "
+                  f"current harness still fits {r['rev']} — this split is unverified, not wrong")
         if r["old_selftest_passed"]:
             print("         ! the OLD implementation passed this selftest WHOLESALE — the suite "
                   "cannot tell the two apart at all")
@@ -576,6 +614,56 @@ def _selftest() -> int:
               == ["[regression guard] nesting is not hoisted"]
               and "[regression guard] nesting is not hoisted"
               not in marked.get("non_discriminating", []))
+
+        # -- the control case: the precondition that makes a per-case result mean anything -----
+        # The exit-code preflight above catches "the API is gone". It cannot catch "the API means
+        # something else" -- a function changed from taking file CONTENTS to taking a PATH keeps
+        # its name and arity, every case fails, and the run reports a flattering, false "all
+        # discriminate". A control that the old subject FAILS is the only signal for that.
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            # The control is the canonical shape -- keys picked out of surrounding text -- which
+            # the OLD implementation gets wrong (it returns every token, including `noise`), so
+            # the harness reads as unfit and the whole split is refused.
+            "check('[control] the real shape', widget.keys('noise a:') == ['a:'])\n"
+            "check('a splat is refused', widget.keys('**splat') == [])\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        unfit = discriminate(wg, old_rev)
+        check("a failing control refuses the whole split rather than reporting a per-case one",
+              unfit["status"] == "UNREADABLE" and "control case failed" in unfit.get("reason", ""))
+
+        # THE CONTROL FOR THE CONTROL. The same suite whose control PASSES against the old subject
+        # must produce a real split -- otherwise "a failing control refuses" would also pass for an
+        # implementation that refused every run, which is the flattering-versus-damning asymmetry
+        # this tool is about.
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            # 'a:' is a token AND key-shaped, so old and new agree -- a fitting harness.
+            "check('[control] the real shape', widget.keys('a:') == ['a:'])\n"
+            "check('a splat is refused', widget.keys('**splat') == [])\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        fit = discriminate(wg, old_rev)
+        check("a passing control lets the split through",
+              fit["status"] == "ok" and fit.get("discriminating") == ["a splat is refused"])
+        check("the control is a precondition, not a data point — it is kept out of the split",
+              "[control] the real shape" not in fit.get("non_discriminating", [])
+              and fit.get("controls") == ["[control] the real shape"])
     finally:
         mc.REPO, globals()["REPO"] = saved_mc, saved_here
         shutil.rmtree(root, ignore_errors=True)

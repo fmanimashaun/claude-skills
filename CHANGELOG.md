@@ -51,6 +51,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   and not a pass. An old subject missing today's API is the ordinary case when a change added
   functions, so this is the common path rather than an edge one.
 
+  **A control case is what makes a per-case result mean anything.** The exit-code check above
+  catches the loud failure — the old subject is missing API the cases call, so nothing runs. It
+  cannot catch the quiet one: a function changed from taking file *contents* to taking a *path*
+  keeps its name and its arity, so every case fails and the run reports a flattering, false "all
+  discriminate". No static check sees that. So one case may be marked `[control]` — the canonical
+  shape the subject exists to handle, whose outcome is the same under any implementation worth
+  comparing. **If the control fails against the old revision the whole split is refused**, because
+  the harness does not fit and no per-case outcome from that run is trustworthy; if it passes,
+  every other outcome is a real result. That converts "which cases were inapplicable?" — unknowable
+  after the fact, and a guess if reported — into a precondition, so the inapplicable bucket is
+  empty **by construction** rather than by assumption. The control is a precondition and not a data
+  point, so it is kept out of the split, and a run with **no** control says so: that split is
+  unverified, not wrong.
+
   **Two things deliberately not built.** The *abort-versus-asserted-refusal ratio* is a real rule
   and its hand-measured `7 → 1` a real number, but "every shape a tool refuses" is not mechanically
   enumerable across this repo's guards, whose aborts share no form; a ratio that silently

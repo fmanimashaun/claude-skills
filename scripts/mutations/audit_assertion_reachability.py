@@ -90,5 +90,29 @@ GUARD = Guard(
             "    guards_ = []",
             "a declared regression guard is excluded from the split",
         ),
+        # The control-case precondition. Without it the exit-code preflight catches only the loud
+        # failure ("the API is gone") and misses the quiet one ("the API means something else"),
+        # where every case fails and the run reports a flattering, false "all discriminate".
+        Mutation(
+            "a failing control no longer refuses the split, so an unfit harness inflates it",
+            "    if failed_controls:",
+            "    if False:",
+            "a failing control refuses the whole split",
+        ),
+        Mutation(
+            # The other direction: refusing every run would also "pass" a test that only checked
+            # the refusal, so the fixture pairs a failing control with a passing one.
+            "every control counts as failing, so no split is ever reportable",
+            "    failed_controls = [lab for lab in controls if lab.lower() in output]",
+            "    failed_controls = list(controls)",
+            "a passing control lets the split through",
+        ),
+        Mutation(
+            "the control is counted as a data point instead of a precondition",
+            "    rest = [lab for lab in unique\n"
+            "            if lab not in guards_ and CONTROL_MARKER not in lab.lower()]",
+            "    rest = [lab for lab in unique if lab not in guards_]",
+            "the control is a precondition, not a data point",
+        ),
     ),
 )
