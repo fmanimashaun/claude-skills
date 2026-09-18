@@ -149,6 +149,181 @@ def mutant_outputs(guard: mc.Guard) -> tuple[list[str], list[str]]:
     return outputs, problems
 
 
+# ---------------------------------------------------------------------------------------
+# Discrimination: does this suite tell a RIGHT implementation from a WRONG one? (#1048)
+# ---------------------------------------------------------------------------------------
+# The reachability audit above measures a suite against **the mutations somebody wrote**, so it
+# carries whoever's imagination wrote them. That is the same objection it exists to raise, one
+# level up. This mode answers a different question with no imagination in it at all:
+#
+#     run the CURRENT selftest against the implementation it REPLACED.
+#
+# A case that fails there **discriminates** -- it can tell a right implementation from a known-wrong
+# one. A case that passes there does not, at least not against that particular wrongness. The old
+# implementation is already in git, so no wrong version has to be constructed: `git show
+# <rev>:<subject>` is the entire cost.
+#
+# WORKED EXAMPLE, measured by hand before this tool existed (#1048). A code generator's parser was
+# replaced after it was found able to emit a wrong answer with exit 0, and a six-case selftest was
+# written alongside. Run against the old parser: **5 of 6 failed, 1 passed.** A suite that passed
+# for every implementation would have proved nothing; five cases that fail against a known-wrong
+# one is what makes it evidence rather than decoration.
+#
+# The five failures were five DIFFERENT wrong answers, which is better evidence than the count:
+# a key invented from a multi-line keyword argument, a list truncated 4 -> 1 by a closing brace in
+# a comment, the same truncation from a brace in a string, keys hoisted out of a heredoc body, and
+# a `**splat` dropped silently with exit 0. A suite whose failures are all the same shape is
+# probing one bug six ways; these probe distinct behaviours.
+#
+# THE TRAP, AND WHY THIS REPORTS RATHER THAN GATES. "1 of 6 does not discriminate" reads as "delete
+# it", and in that example it was **wrong**. The sixth asserted that a nested hash is not hoisted
+# --- `{a:, nested: {inner_one:, inner_two:}, b:}` must yield `[a, nested, b]`. The old parser got
+# that right **by accident of construction** (it tracked brace depth, so nested keys were already
+# below depth 0); the new one gets it right **by construction** (it reads the AST and asks for the
+# hash's own elements). The two are correct there for unrelated reasons, and a third implementation
+# --- a line-oriented reader matching `^\s*(\w+):` --- would fail it immediately.
+#
+# So the case is not measuring the difference between THESE two. It holds a property any future
+# implementation could plausibly break, which generalises to the rule this mode has to be read
+# with:
+#
+#     A non-discriminating case is one the predecessor also satisfied,
+#     and the predecessor is a sample of size one.
+#
+# Deleting a case on this number alone selects the suite against the only wrong implementation you
+# happen to have had. Nothing mechanical separates "decoration" from "guards a regression this
+# comparison cannot see", so a gate here would fail honest guards --- which is how a useful
+# instrument gets switched off in a week.
+#
+# So the convention ships WITH the number, printed by the report rather than described in a
+# changelog nobody re-reads: a case whose label carries the marker below is counted in its own
+# bucket instead of against the suite.
+REGRESSION_GUARD_MARKER = "[regression guard]"
+
+
+def subject_at(guard: mc.Guard, rev: str) -> str | None:
+    """The guard's subject as it was at `rev`, or None if it cannot be read there."""
+    r = subprocess.run(("git", "show", f"{rev}:{guard.subject}"),
+                       cwd=REPO, capture_output=True, text=True, check=False)
+    return r.stdout if r.returncode == 0 else None
+
+
+def discriminate(guard: mc.Guard, rev: str) -> dict:
+    """Split this guard's selftest labels by whether they fail against `rev`'s implementation.
+
+    Only the SUBJECT is rolled back. The selftest stays current, because the question is whether
+    **today's cases** can tell today's implementation from the old one -- rolling both back would
+    just re-run the old suite against the old code and report what it reported then.
+    """
+    selftest = REPO / guard.selftest
+    if not selftest.is_file():
+        return {"guard": guard.name, "status": "UNREADABLE",
+                "reason": f"selftest {guard.selftest} not found"}
+    labels, unreadable_lines = labels_in(selftest.read_text(encoding="utf-8"))
+    if not labels:
+        return {"guard": guard.name, "status": "UNREADABLE",
+                "reason": (f"no assertion labels could be enumerated from {guard.selftest}, so a "
+                           f"split over them would mean nothing")}
+    old = subject_at(guard, rev)
+    if old is None:
+        # NOT a pass. The subject may be newer than `rev`, renamed since, or `rev` may not exist.
+        # Reporting "0 non-discriminating" here would be a clean bill of health for a comparison
+        # that never happened.
+        return {"guard": guard.name, "status": "UNREADABLE",
+                "reason": f"{guard.subject} cannot be read at {rev} (new file, renamed, or bad rev)"}
+
+    workdir = Path(tempfile.mkdtemp(prefix=f"discrim-{guard.name}-"))
+    try:
+        entry = mc.stage(guard, workdir)
+        (workdir / guard.subject).write_text(old, encoding="utf-8")
+        argv = [sys.executable, str(entry)]
+        if guard.selftest == guard.subject:
+            # The selftest lives IN the subject, so rolling the subject back rolls the cases back
+            # too and the comparison is meaningless. Say so rather than print a split of nothing.
+            return {"guard": guard.name, "status": "UNREADABLE",
+                    "reason": ("subject and selftest are the same file, so rolling the subject "
+                               "back rolls the cases back with it — there is nothing to compare")}
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return {"guard": guard.name, "status": "UNREADABLE",
+                "reason": f"the selftest timed out against {rev}"}
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+    output = (result.stdout + result.stderr).lower()
+    unique = sorted(set(labels))
+    guards_ = [lab for lab in unique if REGRESSION_GUARD_MARKER in lab.lower()]
+    rest = [lab for lab in unique if lab not in guards_]
+    failing = [lab for lab in rest if lab.lower() in output]
+    passing = [lab for lab in rest if lab.lower() not in output]
+
+    # THE TRAP THIS TOOL EXISTS TO FIND, FOUND IN THIS TOOL ON ITS FIRST REAL RUN. A selftest that
+    # CRASHES against the old subject -- because today's cases call functions that did not exist
+    # then, so it dies on an AttributeError before a single case runs -- emits no labels at all.
+    # Every label is then "not in the output", and the split reads **0 of 55 discriminate**: a
+    # confident verdict over a comparison that never happened. That is indistinguishable from a
+    # suite that genuinely cannot tell the two apart, and it is the more likely of the two.
+    #
+    # The three states, separated by whether the selftest RAN:
+    #
+    #   exit 0                        -> the old implementation passed wholesale. Legitimate, and
+    #                                    the loudest possible result: the suite proves nothing.
+    #   exit != 0, some label present -> a real split; the cases ran and some failed.
+    #   exit != 0, NO label present   -> it never ran. Not a split, and not a pass.
+    #
+    # An old subject missing today's API is the ORDINARY case when the change added functions, so
+    # this is the common path, not an edge one.
+    if result.returncode != 0 and not failing:
+        return {"guard": guard.name, "status": "UNREADABLE",
+                "reason": (f"the selftest did not run against {rev} — it exited "
+                           f"{result.returncode} without reporting a single case, which means it "
+                           f"failed to load rather than failing to discriminate. Today's cases "
+                           f"probably call API that {rev} does not have. Comparing these two "
+                           f"revisions needs a rev where the selftest can at least execute."),
+                "rev": rev}
+    return {
+        "guard": guard.name,
+        "status": "ok",
+        "rev": rev,
+        # A selftest that PASSES wholesale against the old implementation is the headline result,
+        # not a footnote: it means the suite cannot tell the two apart at all.
+        "old_selftest_passed": result.returncode == 0,
+        "labels": len(unique),
+        "discriminating": failing,
+        "non_discriminating": passing,
+        "declared_regression_guards": guards_,
+        "unreadable_label_lines": unreadable_lines,
+    }
+
+
+def report_discrimination(results: list[dict], as_json: bool) -> int:
+    if as_json:
+        print(json.dumps(results, indent=2, sort_keys=True))
+        return 0
+    for r in sorted(results, key=lambda x: x["guard"]):
+        if r["status"] == "UNREADABLE":
+            print(f"[skip] {r['guard']}: {r['reason']}")
+            continue
+        d, n = len(r["discriminating"]), len(r["non_discriminating"])
+        print(f"[note] {r['guard']}: {d} of {d + n} case(s) discriminate against {r['rev']}")
+        if r["old_selftest_passed"]:
+            print("         ! the OLD implementation passed this selftest WHOLESALE — the suite "
+                  "cannot tell the two apart at all")
+        for lab in r["non_discriminating"]:
+            print(f"         does not discriminate: {lab}")
+        if r["declared_regression_guards"]:
+            print(f"         {len(r['declared_regression_guards'])} case(s) declared "
+                  f"{REGRESSION_GUARD_MARKER} and excluded from the split:")
+            for lab in r["declared_regression_guards"]:
+                print(f"           {lab}")
+    print(f"\nA case that does NOT discriminate is EITHER decoration OR a regression guard the old\n"
+          f"implementation also satisfied — a different claim, not a weaker one. Nothing here can\n"
+          f"separate those, so deleting a case on this number alone will remove real guards. Mark a\n"
+          f"case with '{REGRESSION_GUARD_MARKER}' in its label and it moves to its own bucket.\n"
+          f"Report-only by design — it never fails the build.")
+    return 0
+
+
 def audit(guard: mc.Guard) -> dict:
     """One guard's reachability report."""
     selftest = REPO / guard.selftest
@@ -310,6 +485,97 @@ def _selftest() -> int:
                                 selftest="scripts/opaque.py", mutations=()))
         check("a selftest with no readable labels is UNREADABLE, not a pass",
               opaque["status"] == "UNREADABLE")
+
+        # -- --against: does the suite tell a right implementation from a wrong one? (#1048) ----
+        # A REAL two-revision git history, because the whole mode is `git show <rev>:<subject>`
+        # and a fixture that stubbed that out would test everything except the part that fails.
+        # Modelled on the hand measurement in #1048: a suite where SOME cases catch the old
+        # implementation and one does not, so the correct answer is a SPLIT -- not all, not none.
+        def _g(*a):
+            subprocess.run(("git", *a), cwd=root, capture_output=True, text=True, check=False)
+
+        _g("init", "-q")
+        _g("config", "user.email", "selftest@example.invalid")
+        _g("config", "user.name", "selftest")
+        # OLD: returns every token. Right on the plain case by luck, wrong on the splat.
+        (root / "scripts" / "widget.py").write_text(
+            "def keys(text):\n"
+            "    return text.split()\n", encoding="utf-8")
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            "check('a comment brace does not truncate', widget.keys('a: b:') == ['a:', 'b:'])\n"
+            "check('a splat is refused', widget.keys('**splat') == [])\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        _g("add", "-A")
+        _g("commit", "-qm", "old")
+        old_rev = subprocess.run(("git", "rev-parse", "HEAD"), cwd=root, capture_output=True,
+                                 text=True, check=False).stdout.strip()
+        # NEW: only key-shaped tokens. Both cases now pass, so exactly ONE discriminates --
+        # which is the split this mode has to be able to report, and the shape of #1048's 5-of-6.
+        (root / "scripts" / "widget.py").write_text(
+            "def keys(text):\n"
+            "    return [w for w in text.split() if w.endswith(':')]\n", encoding="utf-8")
+        _g("add", "-A")
+        _g("commit", "-qm", "new")
+
+        wg = mc.Guard(name="widget", subject="scripts/widget.py",
+                      selftest="scripts/widget_selftest.py", mutations=())
+        split = discriminate(wg, old_rev)
+        check("the two revisions can be compared at all", split["status"] == "ok")
+        # THE DISCRIMINATING PAIR, and the reason a count alone would not do. One case catches the
+        # old implementation and one does not; a tool reporting "all" or "none" passes any test
+        # that only checks a total.
+        check("the case the old implementation FAILS is reported as discriminating",
+              split.get("discriminating") == ["a splat is refused"])
+        check("the case the old implementation PASSES is reported as non-discriminating",
+              split.get("non_discriminating") == ["a comment brace does not truncate"])
+        check("a suite that still fails the old implementation is not reported as wholesale-passing",
+              split.get("old_selftest_passed") is False)
+
+        # THE CRASH CASE, found in this tool on its first real run against this repo. Today's cases
+        # calling API the old revision lacks makes the selftest die on import, emitting no labels --
+        # so every label reads as "not in the output" and the split reports 0-of-N discriminating:
+        # a confident verdict over a comparison that never happened. It must SKIP, not report.
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "widget.function_that_did_not_exist_then()\n"
+            "check('unreachable', True)\n", encoding="utf-8")
+        crashed = discriminate(wg, old_rev)
+        check("a selftest that cannot RUN against the old revision skips rather than reporting "
+              "0 discriminating",
+              crashed["status"] == "UNREADABLE" and "did not run" in crashed.get("reason", ""))
+
+        # A case marked as a regression guard is counted in its own bucket, not against the suite.
+        # Without this the split drives people to delete guards that are doing their job.
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            "check('a splat is refused', widget.keys('**splat') == [])\n"
+            "check('[regression guard] nesting is not hoisted', True)\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        marked = discriminate(wg, old_rev)
+        check("a declared regression guard is excluded from the split",
+              marked.get("declared_regression_guards")
+              == ["[regression guard] nesting is not hoisted"]
+              and "[regression guard] nesting is not hoisted"
+              not in marked.get("non_discriminating", []))
     finally:
         mc.REPO, globals()["REPO"] = saved_mc, saved_here
         shutil.rmtree(root, ignore_errors=True)
@@ -329,6 +595,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--guard", help="audit one guard by name")
+    ap.add_argument("--against", metavar="REV",
+                    help="instead of the reachability audit, run each guard's CURRENT selftest "
+                         "against the implementation at REV and report which cases discriminate")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--selftest", action="store_true", help="prove this checker can fail")
     args = ap.parse_args()
@@ -342,6 +611,8 @@ def main() -> int:
         if not guards:
             print(f"no guard named {args.guard!r}", file=sys.stderr)
             return 2
+    if args.against:
+        return report_discrimination([discriminate(g, args.against) for g in guards], args.json)
     return report([audit(g) for g in guards], args.json)
 
 
