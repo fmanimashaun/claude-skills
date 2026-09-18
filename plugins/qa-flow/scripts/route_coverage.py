@@ -621,6 +621,37 @@ def provenance_lines(prov: dict | None) -> list[str]:
 _LOOKUP_HEAD = object()
 
 
+def same_commit(a: str | None, b: str | None) -> bool:
+    """Do these two strings name the same commit, at whatever length each was written?
+
+    THE REGRESSION THIS EXISTS FOR. `stale_inventory` compared the recorded commit to `HEAD` with
+    `==`, which is a comparison of two RENDERINGS rather than of two commits. Shipped in v1.133.0
+    and it refused a downstream `doctrine` job on the first run after the bump:
+
+        REFUSING to report coverage: the route inventory was enumerated from 978814d
+        but the working tree is at 978814d29.
+
+    **Those are the same commit.** The enumerate and the report ran in the same CI job, seconds
+    apart, on the same tree -- so the gate refused the one state it must always accept, an
+    inventory enumerated from the tree being measured. And it refused with a well-formed message
+    naming a real concern, which is what made it convincing rather than obviously broken.
+
+    Git abbreviates to an unambiguous prefix and the length is not fixed -- it grows with the
+    repository and is configurable (`core.abbrev`), so any two renderings of one SHA may differ in
+    length. Seven hex characters is git's own floor for a short SHA, so a prefix match at or above
+    that is treated as the same commit. Below it, refuse to guess: a 4-character "prefix" is not
+    identification, and silently accepting it would rebuild the defect this whole check exists to
+    catch.
+    """
+    if not a or not b:
+        return False
+    x, y = a.strip().lower(), b.strip().lower()
+    if x == y:
+        return True
+    short, long_ = (x, y) if len(x) <= len(y) else (y, x)
+    return len(short) >= 7 and long_.startswith(short)
+
+
 def stale_inventory(prov: dict | None, head: str | None | object = _LOOKUP_HEAD) -> str | None:
     """Why this inventory does not describe the working tree, or None if it does (or cannot tell).
 
@@ -650,7 +681,9 @@ def stale_inventory(prov: dict | None, head: str | None | object = _LOOKUP_HEAD)
     # about staleness passed vacuously. The harness's own INERT-baseline check caught that, which
     # is the same class this rule is about -- an instrument that cannot see the thing it measures.
     head = _git("rev-parse", "HEAD") if head is _LOOKUP_HEAD else head
-    if not head or head == recorded:
+    # `same_commit`, never `==`. The two sides are written by different callers at different
+    # times and need not be the same LENGTH to be the same commit.
+    if not head or same_commit(head, recorded):
         return None
     return (f"the route inventory was enumerated from {recorded[:9]} but the working tree is at "
             f"{head[:9]}. The denominator would be one tree's route set measured against another "

@@ -9143,6 +9143,45 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 2026-09-18 (release v1.133.1)
+
+- **v1.133.0's staleness check compared two RENDERINGS of a commit, not two commits, and refused a
+  perfectly fresh inventory — `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**.
+  #1047 compared the recorded commit to `HEAD` with `==`. Git abbreviates a SHA to an unambiguous
+  prefix whose length is **not fixed** — it grows with the repository and is configurable via
+  `core.abbrev` — so two renderings of one commit routinely differ in length. Observed downstream
+  on the first run after the pin bump:
+
+  ```
+  REFUSING to report coverage: the route inventory was enumerated from 978814d
+  but the working tree is at 978814d29.
+  ```
+
+  **Those are the same commit.** The `enumerate` and the report ran in the same CI job, seconds
+  apart, on the same tree — so the gate refused **the one state it must always accept**, an
+  inventory enumerated from the tree being measured. It refused with a well-formed message naming a
+  real concern, which is what made it convincing rather than obviously broken, and it blocked that
+  project's `doctrine` job on every PR.
+
+  `same_commit()` now compares them as commits: equal, or one an unambiguous prefix of the other.
+  **Seven hex characters is git's own floor for a short SHA and it is enforced** — below that a
+  "prefix" identifies nothing, and accepting one would rebuild the defect the check exists to
+  catch. Comparison is case-insensitive, since a hand-edited artifact need not be lower-case.
+
+  **The class was invisible because every fixture used two 40-character strings.** Nothing asserted
+  that a real SHA and its abbreviation are one commit, so the check passed its whole suite while
+  being wrong about the only shape it meets in practice. Six cases now cover it — abbreviated
+  against full, full against abbreviated, mixed case, and three controls: two genuinely different
+  SHAs must still refuse when abbreviated, a prefix under seven characters must not match, and the
+  refusal must survive at all. Three declared mutations, one per direction: restoring `==`
+  reproduces the shipped bug, dropping the floor over-widens it, and making the comparison
+  unconditional leaves a gate that cannot fail.
+
+  **Found by the project it broke, and routed back by our own tooling** — `project_gates.py`
+  triaged it `DOCTRINE → upstream`, *"the check produced no verdict at all, and this project's
+  content cannot cause that"*, before anyone read the log.
+
 ### 2026-09-18 (release v1.133.0)
 
 - **The coverage percentage could not say which tree it measured —
