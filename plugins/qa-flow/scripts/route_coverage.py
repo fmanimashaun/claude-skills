@@ -377,13 +377,37 @@ class Coverage:
 
 
 def attribute(routes: list[Route], seen: dict[str, set[str]]) -> list[Coverage]:
+    """Credit each route with the artifacts that reached it. PATH IS NOT ENOUGH -- THE VERB
+    DECIDES TOO.
+
+    Every `seen` map this tool builds comes from a browser NAVIGATION -- an evidence CSV's
+    Requested/Final URL, a crawl's `page.goto`, a layout probe's -- and a navigation is a GET.
+    So a path match says "some GET reached this URL", which is no evidence at all about
+    `DELETE /users/:id`. Crediting it anyway is a false claim about the riskiest routes on the
+    list, and it is loudest exactly where it is least affordable: measured against Retask,
+    78 of 201 routes counted as covered were non-GET routes credited from a GET: the tool
+    reported 76% coverage over 263 routes where the honest figure is 46%. `DELETE /logout` was
+    "covered" by a route sweep that only ever navigated; `PUT` and `PATCH /passwords/:token` were
+    both "covered" by one page view.
+
+    This rule was already stated and enforced twice below -- on the crawl axis and on the
+    responsive axis, each with its own fixture -- and missing here, on the one axis whose
+    percentage anybody quotes (#1037). It lives in this function now so there is ONE home for it.
+
+    No evidence profile records an HTTP method (checked: none of the 90-odd declared columns is
+    a verb, and `detect_profile` matches headers exactly, so one cannot be added without
+    migrating every existing artifact). Until such a channel exists, a non-GET route CANNOT be
+    covered, and the honest report is that it is a gap -- already flagged `non-GET` in the
+    listing. Giving it credit does not make it tested; it makes the number wrong.
+    """
     out: list[Coverage] = []
     for route in routes:
         rx = compile_pattern(route.pattern)
         artifacts: set[str] = set()
-        for path, sources in seen.items():
-            if rx.match(path):
-                artifacts |= sources
+        if not route.destructive:
+            for path, sources in seen.items():
+                if rx.match(path):
+                    artifacts |= sources
         out.append(Coverage(route, sorted(artifacts)))
     return out
 
@@ -484,12 +508,13 @@ def cmd_report(args: argparse.Namespace) -> int:
     # THE THIRD STATE. A gap that a crawl loaded is still a gap -- `crawled` is a strict subset
     # of `gaps`, never added to `covered` -- but it is a different KIND of gap, and saying so is
     # what stops "untested" reading as "unvisited".
-    # `destructive` is excluded: a crawler navigates with `page.goto`, which is a GET. A DELETE
-    # route whose path happens to match a crawled URL was NOT visited, and saying it was would be
-    # a false claim about the riskiest routes on the list. Caught by this tool's own fixture,
-    # which crawled `/users/7` and saw `DELETE /users/:id` light up.
+    # `destructive` routes are excluded, but no longer HERE: a crawler navigates with `page.goto`,
+    # which is a GET, and `attribute` now refuses that credit for every navigation-derived map
+    # (#1037). This site kept its own copy of the rule while the `covered` axis had none; the rule
+    # has one home now, and the fixture below -- which crawled `/users/7` and saw
+    # `DELETE /users/:id` light up -- still proves it from there.
     visit_only = {c.route.key for c in attribute(kept, visit_only_paths(evidence))
-                  if c.covered and not c.route.destructive}
+                  if c.covered}
     crawled = [c for c in gaps if c.route.key in visit_only]
 
     # ---- AXIS TWO. Orthogonal to `covered`, never averaged with it. -----------------------

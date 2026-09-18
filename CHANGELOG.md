@@ -8916,6 +8916,36 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Route coverage credited a non-GET route whenever a GET visit matched its path; 39% of every
+  coverage claim on a real app was false — `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**
+  (#1037). `attribute()` matched on pattern alone, so a sweep that only ever navigated credited
+  `DELETE /logout`, and one view of the password page credited both `PUT` and
+  `PATCH /passwords/:token`. Measured against Retask: **78 of 201 routes counted as covered were
+  non-GET routes credited from a GET — the tool reported 76% where it now reports 46%**, and the
+  inflation landed precisely on the state-changing routes the number exists to worry about.
+
+  The rule was already written down and enforced **twice** in the same file — on the crawl axis
+  (*"a crawler navigates with `page.goto`, which is a GET"*) and on the responsive axis, each with
+  its own fixture — and absent from the one axis whose percentage anybody quotes. It now lives in
+  `attribute()`, the single place every navigation-derived evidence map passes through, and the
+  crawl call site's private copy is gone; one mutation guard trips both axes' fixtures.
+
+  The guarding assertion that looked like it already covered this
+  (`attribution: never-visited route uncovered`) passed **vacuously**: no evidence path matched
+  `/users/:id` at all, so it read identically before and after the fix. The replacement asserts a
+  discriminating pair from one evidence row at `/users/42` — `GET /users/:id` covered (the control,
+  proving the path matches) and `DELETE /users/:id` not (so the difference can only be the verb).
+  `--selftest` fails 4 checks without the fix and passes 115 with it.
+
+  **This lowers measured coverage for every adopter**, because the number it replaces was wrong.
+  Non-GET routes now report as gaps, already flagged `non-GET` in the listing. They cannot yet be
+  cleared: no evidence profile records an HTTP method, and `detect_profile` matches headers
+  exactly, so adding one is an artifact migration rather than a column — filed separately. A
+  project pinning a coverage floor must re-cut it as a deliberate, separate commit.
+
 ### 2026-09-17 (release v1.131.1)
 
 - **The plugin armed `--fail-on-untested` for every adopter, so a project with a coverage backlog

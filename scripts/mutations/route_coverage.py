@@ -21,11 +21,23 @@ GUARD = Guard(
             "    seen = {**visited_paths(evidence), **visit_only_paths(evidence)}",
             "a crawl visit changed the coverage arithmetic",
         ),
+        # #1037. This carve-out USED to live at the crawl call site, and only there -- so the
+        # `covered` axis, the one number anybody quotes, credited a GET visit to the non-GET route
+        # sharing its path. Measured against Retask: 78 of 201 "covered" routes were non-GET,
+        # reporting 76% coverage where the honest figure was 47%. The rule now lives in
+        # `attribute`, so ONE mutation trips both axes -- the covered-axis fixture named in
+        # `expects`, and the older crawl fixture ("a destructive route was claimed as crawled")
+        # which fails alongside it.
         Mutation(
-            "the GET-only carve-out goes, so a DELETE route is claimed as crawl-visited",
-            "                  if c.covered and not c.route.destructive}",
-            "                  if c.covered}",
-            "a destructive route was claimed as crawled",
+            "the verb stops deciding, so a GET visit credits the non-GET route sharing its path",
+            "        if not route.destructive:\n"
+            "            for path, sources in seen.items():\n"
+            "                if rx.match(path):\n"
+            "                    artifacts |= sources",
+            "        for path, sources in seen.items():\n"
+            "            if rx.match(path):\n"
+            "                artifacts |= sources",
+            "is NOT covered by that same visit",
         ),
         Mutation(
             "the third-state line is suppressed when zero, so nobody can tell it ran",
