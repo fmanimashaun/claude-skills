@@ -52,8 +52,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+from datetime import datetime, timezone
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -548,6 +551,113 @@ def load_config(path: Path) -> dict[str, object]:
     """
     return qa_config.load_section(path, "coverage")
 
+# ---------------------------------------------------------------------------------------
+# Provenance -- what tree, and under what environment, the route inventory was taken from
+# ---------------------------------------------------------------------------------------
+# `qa/reports/routes.json` is GENERATED and deliberately not committed, regenerated per tree from
+# `bin/rails routes`. So the denominator of every percentage this tool prints is a property of the
+# tree and the shell that enumerated it -- and until now nothing in the output said which.
+#
+# Measured, across one downstream project in one afternoon (#1047): five different denominators --
+# 263 (a raw line count under RAILS_ENV=test through an unpinned invocation), 275 (the same tree
+# under RAILS_ENV=development), 227 (correct, through the wrapper), and 226 and 223 from two older
+# commits. **None of them was wrong.** Each correctly measured a different object, and four sessions
+# quoted them to each other as though they were one number that had to be reconciled. Two spent
+# real effort trying before anyone established that they could not be.
+#
+# COMMITTING THE FILE IS NOT THE FIX and the wrapper already refuses it, for the right reason: a
+# committed inventory is a different stale object, not a fixed one. What was missing is that the
+# report could not say what it had measured.
+#
+# THE PRINTED SUMMARY CARRIES THIS AS WELL AS THE JSON, and that is the load-bearing half: the
+# summary is what gets pasted into an issue comment, and a number pasted without its provenance is
+# exactly how all five of those figures travelled.
+def _git(*args: str) -> str | None:
+    """A git value, or None outside a repository. Never raises -- provenance is never the failure."""
+    try:
+        r = subprocess.run(("git", *args), capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def enumeration_provenance() -> dict:
+    """What tree and environment this enumeration is a measurement of."""
+    commit = _git("rev-parse", "HEAD")
+    status = _git("status", "--porcelain")
+    return {
+        "commit": commit,
+        # A dirty tree means the inventory may include routes that are in no commit, so the
+        # `commit` above does not fully identify it. Recorded rather than refused: enumerating
+        # mid-change is normal, and a tool that refused it would be routed around.
+        "dirty": None if status is None else bool(status.strip()),
+        # The single biggest cause of the spread above. `rails routes` emits a different route set
+        # per environment, and nothing about a bare number reveals which one produced it.
+        "rails_env": os.environ.get("RAILS_ENV"),
+        "enumerated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+def provenance_lines(prov: dict | None) -> list[str]:
+    """The human-readable provenance block, printed under every coverage number."""
+    if not prov:
+        # An inventory written before #1047 has no provenance block at all. That is NOT an error
+        # and must never be one -- it is what every already-written file looks like, and refusing
+        # it would make the upgrade indistinguishable from a broken tool. Say the honest thing:
+        # the number is unattributable, which is the state this whole change is about.
+        return ["  route inventory provenance: UNKNOWN — enumerated before provenance was "
+                "recorded, so this percentage cannot be attributed to a tree. Re-run `enumerate`."]
+    commit = prov.get("commit") or "not a git tree"
+    dirty = prov.get("dirty")
+    env = prov.get("rails_env") or "unset"
+    mark = "" if not dirty else " +dirty"
+    return [f"  route inventory: {str(commit)[:9]}{mark} · RAILS_ENV={env} · enumerated "
+            f"{prov.get('enumerated_at') or 'at an unrecorded time'}"]
+
+
+# Distinguishes "caller did not supply a HEAD, look one up" from "there is NO HEAD" -- which
+# are different states with different answers, and `None` cannot mean both. Collapsing them is
+# the same mistake this whole issue is about: an instrument that cannot tell two states apart.
+_LOOKUP_HEAD = object()
+
+
+def stale_inventory(prov: dict | None, head: str | None | object = _LOOKUP_HEAD) -> str | None:
+    """Why this inventory does not describe the working tree, or None if it does (or cannot tell).
+
+    REFUSES rather than warns, and only when it can PROVE the mismatch. This number feeds a
+    ratchet: a floor recorded from one tree and compared against a run in another is comparing two
+    different measurements and calling the difference a regression -- or calling a real regression
+    no change. A warning on that is one people learn to scroll past, which is the same argument
+    #1039 makes about a gap nobody can clear.
+
+    Three states, and only the first is a refusal:
+
+      * the recorded commit differs from HEAD          -> REFUSE, the inventory is another tree's
+      * no provenance, or not a git tree, or unknown   -> proceed; reported as UNKNOWN above
+      * recorded commit == HEAD                        -> proceed
+
+    A DIRTY tree is deliberately not a refusal on its own. Enumerating mid-change is normal, and
+    `git status --porcelain` says nothing about whether the change touched `routes.rb`.
+    """
+    if not prov:
+        return None
+    recorded = prov.get("commit")
+    if not recorded:
+        return None
+    # `head` is injectable so this is decidable without an ambient git tree. It is not a
+    # convenience: the mutation harness stages the subject into a plain tempdir that is NOT a
+    # repository, so a version reading HEAD internally answered None there and every assertion
+    # about staleness passed vacuously. The harness's own INERT-baseline check caught that, which
+    # is the same class this rule is about -- an instrument that cannot see the thing it measures.
+    head = _git("rev-parse", "HEAD") if head is _LOOKUP_HEAD else head
+    if not head or head == recorded:
+        return None
+    return (f"the route inventory was enumerated from {recorded[:9]} but the working tree is at "
+            f"{head[:9]}. The denominator would be one tree's route set measured against another "
+            f"tree's evidence, and the difference between them would read as coverage. "
+            f"Re-run `enumerate` in this tree.")
+
+
 def cmd_enumerate(args: argparse.Namespace) -> int:
     routes: list[Route] = []
     unparsed: list[str] = []
@@ -566,11 +676,15 @@ def cmd_enumerate(args: argparse.Namespace) -> int:
     unique = {r.key: r for r in routes}
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    prov = enumeration_provenance()
     out.write_text(
-        json.dumps({"routes": [asdict(r) for r in unique.values()]}, indent=2) + "\n",
+        json.dumps({"provenance": prov, "routes": [asdict(r) for r in unique.values()]},
+                   indent=2) + "\n",
         encoding="utf-8",
     )
     print(f"enumerated {len(unique)} route(s) -> {out}")
+    for line in provenance_lines(prov):
+        print(line)
     if unparsed:
         # EXIT 2, and loudly. Every number downstream of this file is a claim about the routes in
         # it, so a partial enumeration is worse than none: it produces a confident percentage over
@@ -591,6 +705,14 @@ def cmd_enumerate(args: argparse.Namespace) -> int:
 def cmd_report(args: argparse.Namespace) -> int:
     payload = json.loads(Path(args.routes).read_text(encoding="utf-8"))
     routes = [Route(**r) for r in payload["routes"]]
+    prov = payload.get("provenance")
+    # REFUSED BEFORE ANY NUMBER IS COMPUTED, let alone printed. A percentage over another tree's
+    # route set is not a worse number, it is a number about nothing -- and printing it alongside
+    # the refusal would let it be pasted onward, which is how the five figures in #1047 travelled.
+    stale = stale_inventory(prov)
+    if stale:
+        print(f"REFUSING to report coverage: {stale}", file=sys.stderr)
+        return 2
     config = load_config(Path(args.config))
     exclusions = [str(x) for x in config.get("exclude", [])]
     auth_prefixes = [str(x) for x in config.get("authenticated_prefixes", [])]
@@ -645,6 +767,10 @@ def cmd_report(args: argparse.Namespace) -> int:
     # rows" in every figure above -- so the count has to appear beside them or it is not a warning,
     # it is a footnote nobody reaches. The zero line is the load-bearing one: it is what makes a
     # NON-zero line mean something on the day a contract moves.
+    # Printed directly under the percentage, not in a footer. The summary is what gets pasted
+    # into an issue comment, and a number that travels without its provenance is the whole defect.
+    for line in provenance_lines(prov):
+        print(line)
     print(f"  {len(unreadable)} evidence artifact(s) could not be read against any contract")
     for where, why in unreadable:
         print(f"    ! {where}: {why}")
@@ -703,7 +829,11 @@ def cmd_report(args: argparse.Namespace) -> int:
         trend = Path(args.trend)
         trend.parent.mkdir(parents=True, exist_ok=True)
         with trend.open("a", encoding="utf-8") as handle:
+            # THE RATCHET READS THIS FILE. A floor recorded from one tree and compared against
+            # a run in another is two different measurements being called a regression, so the
+            # provenance has to survive into the record, not just the screen.
             handle.write(json.dumps({
+                "provenance": prov,
                 "routes": len(kept), "covered": len(covered),
                 "untested": len(gaps), "crawled_unasserted": len(crawled),
                 "excluded": len(dropped), "percent": pct,
@@ -713,6 +843,7 @@ def cmd_report(args: argparse.Namespace) -> int:
 
     if args.json:
         print(json.dumps({
+            "provenance": prov,
             "total": len(kept), "covered": len(covered), "untested": len(gaps),
             "excluded": [r.key for r in dropped], "percent": pct,
             "crawled_unasserted": sorted(visit_only),
