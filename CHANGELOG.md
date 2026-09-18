@@ -7,6 +7,56 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`uninstallable-plugin` could not tell a README with no install line from one with a correctly
+  spelled shell install line — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1041). The rule searched for exactly one
+  spelling, `/plugin install <name>@`, which is the slash-command form. `claude plugin install
+  <name>@<marketplace>` is equally valid — `claude plugin install --help` documents
+  `plugin@marketplace` as its argument — so a README using it was reported as having no install line
+  at all. Those two states need opposite actions, *add the line* versus *nothing is wrong*, and the
+  finding said the first in both cases. Found in the wild rather than hypothesised: running this
+  linter with `--root` against an unmodified third-party plugin repository produced the finding
+  against a README whose install block, at line 150, uses the shell form. **A false positive on
+  valid input is what gets a linter switched off**, and this file's whole design rests on a finding
+  always being real.
+
+  **The widening is bounded on both sides, which is what makes it a fix rather than a deletion.** A
+  bare `plugin install x@` is still refused: the `/` or `claude ` prefix is what makes the line a
+  COMMAND rather than prose about one, and dropping it would rebuild the looser
+  `undocumented-plugin` rule under a new name. Four selftest scenarios, and three declared
+  mutations — restoring slash-only, dropping the prefix requirement, and silencing the rule
+  entirely — each caught by a different scenario, so no one of them can be silenced by widening.
+
+- **Two plugins carried a second copy of their version that Claude Code silently ignores —
+  `.claude-plugin/marketplace.json`, `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1042). `rails-flow` and `design-flow` each
+  declared `version` in `marketplace.json` *and* in their own `plugin.json`, while `qa-flow` and
+  `pipeline` declared it only in `plugin.json`. Three of five carrying a key is not a convention.
+
+  **The split was already recorded and nothing asserted it.**
+  `plugins/rails-flow/scripts/toolchain_version.py` states it as finding 4, the load-bearing one for
+  its resolver: *"the two version sources are DISJOINT, not redundant"* — `rails-stack` is a skills
+  bundle with no plugin directory and is versioned only in `marketplace.json`; every other plugin is
+  versioned only in `plugins/<name>/.claude-plugin/plugin.json`. The tree had drifted away from a
+  rule the repo already depended on.
+
+  **Verified against the CLI, not reasoned about.** `claude plugin validate --strict` on a
+  deliberately mismatched pair reports *"At install time, plugin.json wins
+  (calculatePluginVersion precedence) — the entry version is silently ignored"*, `claude plugin tag`
+  refuses the mismatch outright, and `claude plugin details`/`list` display the `plugin.json` value.
+  So a drifted copy changes nothing a user can see, which is the worst possible shape for a
+  duplicated value. The two inert copies are deleted; `claude plugin validate --strict` passes on
+  the result.
+
+  **`marketplace-version-duplicate` now asserts both halves**, because a rule enforcing only the
+  first would have driven the tree into the opposite drift: a version declared in both files is a
+  finding, and so is a plugin with a version in *neither*. `rails-stack` is carved out by testing
+  the KEY rather than the FILE — a `plugin.json` that exists but declares no version leaves the
+  marketplace entry authoritative, and flagging that would be a false positive of exactly the kind
+  #1041 was filed for. Five scenarios, three declared mutations, one per direction.
+
 ### 2026-09-17 (release v1.131.0)
 
 - **We shipped a backstop to every client project and never applied it here — `.gitignore`,

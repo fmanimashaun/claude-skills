@@ -1448,6 +1448,20 @@ def check_unreachable_coercion_fallback() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# Both spellings install a plugin, and a README is free to use either. The slash form is what you
+# type inside Claude Code; the shell form is what you run in a terminal, and `claude plugin install
+# --help` documents `plugin@marketplace` as its argument. Accepting only the first made the rule
+# unable to tell a README with NO install line from one with a correctly-spelled shell install line
+# -- opposite actions, one verdict. It false-positived on a third-party repo whose install block was
+# the shell form (#1041).
+#
+# What it deliberately still refuses: a bare `plugin install x@`. The prefix is what makes this an
+# install COMMAND rather than prose, and dropping it would widen the rule until a sentence about
+# installing satisfied it -- which is the looser `undocumented-plugin` rule again under a new name.
+def _INSTALL_LINE(name: str) -> "re.Pattern[str]":
+    return re.compile(rf"(?:/|\bclaude\s+)plugin\s+install\s+{re.escape(name)}@")
+
+
 def check_uninstallable_plugins() -> tuple[list[Finding], int]:
     """Every declared plugin needs an actual `/plugin install` line in the README.
 
@@ -1475,12 +1489,82 @@ def check_uninstallable_plugins() -> tuple[list[Finding], int]:
     body = read(readme)
     findings = []
     for name in names:
-        if not re.search(rf"/plugin\s+install\s+{re.escape(name)}@", body):
+        if not _INSTALL_LINE(name).search(body):
             findings.append(Finding(
                 "uninstallable-plugin", rel(readme), 1,
-                f"`{name}` is declared in marketplace.json but has no `/plugin install {name}@…` "
-                "line in the README -- a reader following the install block never gets it"))
+                f"`{name}` is declared in marketplace.json but has no install line for it in the "
+                f"README, in either spelling (`/plugin install {name}@…` or "
+                f"`claude plugin install {name}@…`) -- a reader following the install block "
+                "never gets it"))
     return findings, len(names)
+
+
+def check_marketplace_version_duplicate() -> tuple[list[Finding], int]:
+    """A plugin's version has exactly ONE home, and which home depends on whether it has a manifest.
+
+    `plugins/rails-flow/scripts/toolchain_version.py` already records this as finding 4, the
+    load-bearing one for its resolver: *"the two version sources are DISJOINT, not redundant"* --
+
+        rails-stack   -> marketplace.json plugins[].version   (a skills bundle, no plugin dir)
+        every other   -> plugins/<name>/.claude-plugin/plugin.json
+
+    A resolver reading either source alone reports a stale toolchain as current, which is why that
+    script reads both. But nothing asserted the split, so the tree drifted away from it: `rails-flow`
+    and `design-flow` each carried a SECOND copy of their version in `marketplace.json` while
+    `qa-flow` and `pipeline` did not. Three of five carrying a key is not a convention, it is a
+    coin-flip, and the arm had no way to know which plugins it was meant to touch.
+
+    **The duplicate is not merely redundant, it is inert**, and Claude Code says so itself:
+
+        $ claude plugin validate <marketplace.json> --strict --json
+        "plugins[0].version": "Entry declares version \"1.0.0\" but
+         plugins/foo/.claude-plugin/plugin.json says \"2.0.0\". At install time, plugin.json wins
+         (calculatePluginVersion precedence) -- the entry version is silently ignored."
+
+    So a drifted copy changes NOTHING a user sees and cannot be caught by anyone reading the
+    installed plugin -- the worst shape for a duplicated value.
+
+    Two findings, because the split has two sides and only checking one would let the tree drift
+    the other way:
+
+    - a plugin whose `plugin.json` declares a version AND whose marketplace entry repeats it --
+      the copy is inert, delete it
+    - a plugin with NO `plugin.json` version and no marketplace entry version -- nothing versions
+      it at all, which is the failure this rule's other half would otherwise create
+    """
+    manifest = ROOT / ".claude-plugin" / "marketplace.json"
+    if not manifest.is_file():
+        return [], 0
+    try:
+        payload = json.loads(read(manifest))
+    except json.JSONDecodeError:
+        return [], 0
+    findings, examined = [], 0
+    for entry in payload.get("plugins", []):
+        if not isinstance(entry, dict) or "name" not in entry:
+            continue
+        name = entry["name"]
+        examined += 1
+        source = str(entry.get("source") or "")
+        own = ROOT / source.lstrip("./") / ".claude-plugin" / "plugin.json" if source else None
+        own_version = None
+        if own is not None and own.is_file():
+            try:
+                own_version = (json.loads(read(own)) or {}).get("version")
+            except json.JSONDecodeError:
+                own_version = None
+        if own_version and "version" in entry:
+            findings.append(Finding(
+                "marketplace-version-duplicate", rel(manifest), 1,
+                f"`{name}` carries `version` in marketplace.json AND in its own plugin.json -- "
+                f"plugin.json wins at install time, so the marketplace copy is inert and can drift "
+                f"without any user seeing a difference. Delete the marketplace entry's `version`."))
+        elif not own_version and "version" not in entry:
+            findings.append(Finding(
+                "marketplace-version-duplicate", rel(manifest), 1,
+                f"`{name}` has no `version` in marketplace.json and none in a plugin.json either -- "
+                f"nothing versions it, so a release cannot say what shipped."))
+    return findings, examined
 
 
 def check_plugin_root_in_ci() -> tuple[list[Finding], int]:
@@ -2782,6 +2866,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     pointers, pointers_examined = check_doc_pointers()
     uninstallable, plugins_installable = check_uninstallable_plugins()
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
+    mkt_ver, mkt_ver_examined = check_marketplace_version_duplicate()
     outlines, outlines_examined = check_v4_outline_none()
     coercions, coercions_examined = check_unreachable_coercion_fallback()
     topologies, topology_coverage = check_undeclared_topology()
@@ -2855,7 +2940,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root + coercions + topologies + schema + unwired
+            + pointers + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
@@ -3994,6 +4079,73 @@ def selftest() -> int:
              files={".claude-plugin/marketplace.json": MANIFEST,
                     "README.md": "design-flow ships tokens. Install design-flow to use it.\n"
                                  "```\n/plugin install rails-flow@claude-skills\n```\n"})
+    # #1041. The SHELL spelling is equally valid -- `claude plugin install --help` documents
+    # `plugin@marketplace` as its argument -- and the rule used to report these as missing. A false
+    # positive on valid input is what gets a linter switched off.
+    scenario("the shell spelling satisfies it", rule=UP, expect_finding=False,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "README.md": "```\nclaude plugin install rails-flow@claude-skills\n"
+                                 "claude plugin install design-flow@claude-skills\n```\n"})
+    scenario("the two spellings mix freely across one README", rule=UP, expect_finding=False,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "README.md": "In Claude Code:\n```\n/plugin install rails-flow@claude-skills\n"
+                                 "```\nFrom a terminal:\n"
+                                 "```\nclaude plugin install design-flow@claude-skills\n```\n"})
+    # THE NEGATIVE CONTROL, and the reason the widening above is a fix rather than a deletion.
+    # Same fixture shape as the two directly above, same rule, and the ONLY difference is that no
+    # install line of either spelling is present. Without this, accepting both spellings would be
+    # indistinguishable from removing the rule -- `gate-that-cannot-fail` wearing a bug fix.
+    scenario("neither spelling anywhere is still a finding", rule=UP, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "README.md": "rails-flow and design-flow are both great.\n"})
+    # NEAR MISS: a BARE `plugin install` is not a command, it is prose about one. If this stopped
+    # firing, the rule would have widened past the boundary that makes it mechanical.
+    scenario("a bare `plugin install` with no prefix does not satisfy it",
+             rule=UP, expect_finding=True,
+             files={".claude-plugin/marketplace.json": MANIFEST,
+                    "README.md": "```\n/plugin install rails-flow@claude-skills\n```\n"
+                                 "To get the other one, plugin install design-flow@claude-skills\n"})
+
+    # ---- marketplace-version-duplicate (#1042) --------------------------------------
+    # The split this enforces is already recorded in toolchain_version.py's finding 4: rails-stack
+    # is versioned ONLY in marketplace.json (no plugin dir), every other plugin ONLY in its own
+    # plugin.json. Nothing asserted it, so the tree drifted -- rails-flow and design-flow each grew
+    # a second, inert copy. `claude plugin validate --strict` calls the copy "silently ignored".
+    MVD = "marketplace-version-duplicate"
+    PJ = '{"name": "rails-flow", "version": "1.41.1"}'
+    # THE DEFECT, exactly as it stood in the tree: both files carry it.
+    scenario("a plugin versioned in both files", rule=MVD, expect_finding=True,
+             files={".claude-plugin/marketplace.json":
+                    '{"plugins": [{"name": "rails-flow", "source": "./plugins/rails-flow",'
+                    ' "version": "1.41.1"}]}',
+                    "plugins/rails-flow/.claude-plugin/plugin.json": PJ})
+    # THE FIX: one home. This is what qa-flow and pipeline already looked like.
+    scenario("a plugin versioned only in its plugin.json", rule=MVD, expect_finding=False,
+             files={".claude-plugin/marketplace.json":
+                    '{"plugins": [{"name": "rails-flow", "source": "./plugins/rails-flow"}]}',
+                    "plugins/rails-flow/.claude-plugin/plugin.json": PJ})
+    # THE CARVE-OUT, and it needs its own case or the rule would fire on rails-stack forever. A
+    # skills bundle has no plugin directory, so marketplace.json is its ONLY home and carrying the
+    # key there is correct rather than duplicated.
+    scenario("a skills bundle with no plugin.json keeps its marketplace version",
+             rule=MVD, expect_finding=False,
+             files={".claude-plugin/marketplace.json":
+                    '{"plugins": [{"name": "rails-stack", "source": "./", "version": "1.59.3"}]}'})
+    # THE OTHER DIRECTION, which is what stops this rule becoming "delete every version key".
+    # Removing the marketplace copy from something that has no plugin.json leaves it unversioned,
+    # and a release then cannot say what shipped.
+    scenario("a plugin with no version in either file", rule=MVD, expect_finding=True,
+             files={".claude-plugin/marketplace.json":
+                    '{"plugins": [{"name": "rails-stack", "source": "./"}]}'})
+    # NEAR MISS: a plugin.json that exists but declares NO version. The marketplace copy is then
+    # the operative value, not an inert duplicate -- `claude plugin validate` does not warn here.
+    # Judging on the file's existence rather than on the KEY would get this one wrong.
+    scenario("a plugin.json without a version key leaves marketplace.json authoritative",
+             rule=MVD, expect_finding=False,
+             files={".claude-plugin/marketplace.json":
+                    '{"plugins": [{"name": "pipeline", "source": "./plugins/pipeline",'
+                    ' "version": "1.3.2"}]}',
+                    "plugins/pipeline/.claude-plugin/plugin.json": '{"name": "pipeline"}'})
 
     # ---- ci-gate-without-test-step (#391) -------------------------------------------
     # `bin/ci` is what the rails-8 skill calls "the whole gate". Rails omits every `Tests:` step

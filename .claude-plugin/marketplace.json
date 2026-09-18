@@ -59,8 +59,7 @@
         "code-review",
         "git"
       ],
-      "category": "development",
-      "version": "1.41.1"
+      "category": "development"
     },
     {
       "name": "qa-flow",
@@ -123,8 +122,7 @@
         "illustration",
         "brand"
       ],
-      "category": "design",
-      "version": "1.40.0"
+      "category": "design"
     }
   ]
 }
