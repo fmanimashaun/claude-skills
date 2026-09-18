@@ -7,6 +7,71 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Measure a selftest against the implementation it replaced, not only against mutations somebody
+  wrote — `scripts/audit_assertion_reachability.py`,
+  `scripts/mutations/audit_assertion_reachability.py`** (#1048). #1040's reachability audit
+  measures a suite against **the declared mutations**, so it carries whoever's imagination wrote
+  them — the same objection it exists to raise, one level up. `--against <rev>` answers a different
+  question with no imagination in it: roll the **subject** back to `rev`, run the **current**
+  selftest against it, and report which cases fail. A case that fails there tells a right
+  implementation from a known-wrong one. The old implementation is already in git, so no wrong
+  version has to be constructed.
+
+  **Only the subject is rolled back.** Rolling the selftest back too would just re-run the old
+  suite against the old code and report what it reported then.
+
+  **The reference measurement, taken by hand before this existed**, is a code generator's parser
+  replaced after it was found able to emit a wrong answer with exit 0: **5 of 6 cases failed
+  against the old parser.** The five failures were five *different* wrong answers — a key invented
+  from a multi-line keyword argument, a list truncated `4 → 1` by a closing brace in a comment, the
+  same truncation from a brace in a string, keys hoisted out of a heredoc body, and a `**splat`
+  dropped silently with exit 0. A suite whose failures are all one shape probes one bug six ways;
+  these probe distinct behaviours, which is why the outputs are better evidence than the count.
+
+  **The sixth case is why this reports and never gates.** It asserted that a nested hash is not
+  hoisted. The old parser got that right **by accident of construction** (brace depth), the new one
+  **by construction** (it reads the AST); the two are correct there for unrelated reasons, and a
+  line-oriented reader would fail it immediately. So it is a regression guard, not decoration —
+  and the rule that generalises: **a non-discriminating case is one the predecessor also satisfied,
+  and the predecessor is a sample of size one.** Deleting cases on this number alone selects the
+  suite against the only wrong implementation you happen to have had. A case whose label carries
+  `[regression guard]` is reported in its own bucket, and **the convention is printed by the report
+  itself** rather than described somewhere that goes stale.
+
+  **The defect this mode was built to detect, found in this mode on its first real run.** Pointed at
+  `route_coverage` before the #1037 fix, it reported **0 of 55 cases discriminate** — because
+  today's cases call functions that revision does not have, so the selftest died on import and
+  emitted no labels, and every label read as "not in the output". A confident verdict over a
+  comparison that never happened, and indistinguishable from a suite that genuinely cannot tell the
+  two apart. It now separates three states by whether the selftest **ran**: exit 0 means the old
+  implementation passed wholesale (the loudest result — the suite proves nothing); a non-zero exit
+  naming at least one case is a real split; a non-zero exit naming **none** is a skip, not a split
+  and not a pass. An old subject missing today's API is the ordinary case when a change added
+  functions, so this is the common path rather than an edge one.
+
+  **A control case is what makes a per-case result mean anything.** The exit-code check above
+  catches the loud failure — the old subject is missing API the cases call, so nothing runs. It
+  cannot catch the quiet one: a function changed from taking file *contents* to taking a *path*
+  keeps its name and its arity, so every case fails and the run reports a flattering, false "all
+  discriminate". No static check sees that. So one case may be marked `[control]` — the canonical
+  shape the subject exists to handle, whose outcome is the same under any implementation worth
+  comparing. **If the control fails against the old revision the whole split is refused**, because
+  the harness does not fit and no per-case outcome from that run is trustworthy; if it passes,
+  every other outcome is a real result. That converts "which cases were inapplicable?" — unknowable
+  after the fact, and a guess if reported — into a precondition, so the inapplicable bucket is
+  empty **by construction** rather than by assumption. The control is a precondition and not a data
+  point, so it is kept out of the split, and a run with **no** control says so: that split is
+  unverified, not wrong.
+
+  **Two things deliberately not built.** The *abort-versus-asserted-refusal ratio* is a real rule
+  and its hand-measured `7 → 1` a real number, but "every shape a tool refuses" is not mechanically
+  enumerable across this repo's guards, whose aborts share no form; a ratio that silently
+  under-counts is the instrument failure this issue is about, so it stays on the issue. And case
+  **provenance** — where a case came from — is documented rather than given a field, because a field
+  nobody fills is worse than no field.
+
 ### 2026-09-18 (release v1.132.0)
 
 - **Nothing measured whether a selftest assertion is capable of failing —
