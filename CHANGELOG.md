@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-18 (release v1.133.0)
 
 - **Measure a selftest against the implementation it replaced, not only against mutations somebody
   wrote — `scripts/audit_assertion_reachability.py`,
@@ -2888,7 +2888,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-18 (release v1.133.0)
 
 - **A PR could be opened over unfinished work while carrying the keyword that closes the issue —
   `plugins/rails-flow/commands/issues.md`**. The work loop already required **one `Closes #n` per
@@ -9143,7 +9143,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-18 (release v1.133.0)
 
 - **The coverage percentage could not say which tree it measured —
   `plugins/qa-flow/scripts/route_coverage.py`,
