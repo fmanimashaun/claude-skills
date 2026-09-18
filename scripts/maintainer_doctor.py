@@ -409,6 +409,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # because it is the slowest (it re-runs every selftest once per declared mutation).
     ("mutation check", ("python3", "scripts/mutation_check.py", "--selftest")),
     ("mutation coverage", ("python3", "scripts/mutation_check.py")),
+    # #1040. The REPORT this tool produces is advisory and deliberately gates nothing -- an
+    # unreached assertion is either vacuous or merely unguarded, and nothing here can tell those
+    # apart. Its SELFTEST is a gate like any other, because a reachability auditor that silently
+    # stopped separating the two would report an empty list forever and read exactly like a
+    # repository with no vacuous assertions in it.
+    ("assertion reachability selftest",
+     ("python3", "scripts/audit_assertion_reachability.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
