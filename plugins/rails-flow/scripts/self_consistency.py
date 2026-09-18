@@ -198,8 +198,19 @@ def check_swallowed_verdict(path: Path, text: str, root: Path) -> list[Finding]:
 # --------------------------------------------------------------------------
 
 _EXAMPLE_OPEN = re.compile(r"^(\s*)(?:it|specify|example)\b[^#]*\bdo\b")
+# `expect\w*`, not bare `expect` -- #1036. `assert\w*` and `refute\w*` have always allowed a
+# suffix, so a helper named `assert_a_way_back` counted as asserting and `expect_a_way_back` did
+# not: the verdict turned on the helper's PREFIX rather than on whether it asserted. Renaming the
+# helper made the finding vanish with no change in behaviour, which is the definition of a false
+# positive. This file's own docstring is built on findings always being real -- "a linter that
+# false-positives gets disabled and then catches nothing" -- so a rule breaking that premise is
+# worse than the defect it looks for. It was already driving a downstream acceptance criterion
+# that could only be met by adding a redundant assertion to a spec that already asserted.
+#
+# `is_expected` still needs its own alternative: the `_` before it is a word character, so
+# `\bexpect` never matches inside it.
 _ASSERTS = re.compile(
-    r"\b(?:expect|is_expected|should|should_not|assert\w*|refute\w*|"
+    r"\b(?:expect\w*|is_expected|should|should_not|assert\w*|refute\w*|"
     r"raise_error|have_\w+|be_\w+|match_array|change\s*[({]|"
     r"it_behaves_like|include_examples|satisfy|throw_symbol|"
     r"have_enqueued_job|have_broadcasted_to)\b"
