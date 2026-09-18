@@ -51,6 +51,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   everything — since a test asserting only that the unguarded label appears would pass for a tool
   that reported every label.
 
+  **The first full run, which is the output this was built to produce:** `1117 of 2049` labelled
+  assertions across `64` readable guards are unreached by any declared mutation, and `23` further
+  guards could not be enumerated at all and are excluded from that denominator rather than counted
+  as clean. On `route_coverage` alone — the guard #1037 was found in — it is `35 of 45`. **Nobody
+  should read 1117 as 1117 defects.** The overwhelming majority will be assertions nobody has
+  written a mutation for, which is why this ships as a list to read and not as a number to gate on.
+
 - **`uninstallable-plugin` could not tell a README with no install line from one with a correctly
   spelled shell install line — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1041). The rule searched for exactly one
