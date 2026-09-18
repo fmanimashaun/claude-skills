@@ -2888,6 +2888,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A PR could be opened over unfinished work while carrying the keyword that closes the issue —
+  `plugins/rails-flow/commands/issues.md`**. The work loop already required **one `Closes #n` per
+  issue**, so merging a PR closes what it names. Nothing said when the PR may be opened, and those
+  two together are a trap: **a PR raised over half-done work is a request to close an issue that
+  is not fixed**, and the remainder becomes invisible the moment it merges. Nobody re-reads a
+  closed issue.
+
+  Step 5 now states the precondition: **open the PR only when every issue it names is completely
+  done** — every claim in the issue body answered, every mandatory gate green, and nothing left
+  that you were planning to push to the branch afterwards. A PR may still close several issues, but
+  each must independently be finished; grouping is about sharing a branch, never about carrying a
+  half-done issue along on a finished one's merge.
+
+  **And the resolution when a group splits**, which is the case that otherwise stalls: if one issue
+  is unfinished when the rest are done, neither hold the finished work nor ship the unfinished one
+  — drop it from the branch, remove its `Closes`, and leave it open in the queue. One issue
+  slipping is not a reason to delay the others, and a `Closes` on it is a false claim about what
+  merged.
+
+  Three named shapes it rules out, each of which has happened: opening a PR to "get CI running" on
+  a branch you intend to keep pushing to; opening a draft naming issues you have not started; and
+  listing a `Closes` for an issue whose acceptance criteria you narrowed without saying so on the
+  issue first. Maintainer decision, recorded on this change — our own process doctrine, with no
+  upstream to verify against.
+
 ### 2026-09-18 (release v1.132.0)
 
 - **`assertion-free-spec` called a real assertion no assertion, because the verdict turned on the
