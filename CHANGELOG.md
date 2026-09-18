@@ -9,6 +9,55 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Nothing measured whether a selftest assertion is capable of failing —
+  `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`,
+  `scripts/maintainer_doctor.py`** (#1040). `scripts/mutation_check.py` proves every **declared
+  mutation** is caught by the right fixture. That is a strong guarantee and it is not this one: it
+  says the mutations we wrote down are caught, not that every assertion we wrote down can fail. An
+  assertion no mutation reaches is invisible to it.
+
+  The instance that prompted it shipped for months. `route_coverage_selftest.py` carried what read
+  as the guard for the covered axis — `check("attribution: never-visited route uncovered", …)` —
+  and it passed **vacuously**: no fixture path matched `/users/:id` at all, so the route was
+  uncovered because it was never a candidate, not because its verb was weighed. It read identically
+  before and after the #1037 fix, while the real defect credited 78 of 201 routes on a live app.
+
+  **Reachability is observed, not computed, and that is the whole design.** The first attempt at
+  this asked whether any fixture path matched a route pattern — and answered using
+  `compile_pattern`, the matcher under test. Every assertion guarding the matcher itself then looked
+  vacuous, producing a false positive on a genuine negative: the same shape as a fixture that
+  recomputes the filter it is checking. So nothing here re-implements any subject's logic or parses
+  a subject at all. A label is reachable if a mutant's selftest **actually reported it as failing**,
+  matched by the same case-insensitive substring rule `mutation_check.py` already applies to
+  `Mutation.expects` — reusing that rule rather than inventing a second one that could drift.
+
+  **It reports and never gates, deliberately.** An unreached assertion is *either* vacuous (it
+  cannot fail) *or* merely unguarded (nobody has written the mutation that trips it). This tool
+  cannot tell those apart and says so rather than guessing; that is a person's judgement. Making it
+  a gate before anyone has read the baseline would produce a carve-out, so it exits 0 on findings.
+  Ratchet it once the baseline is known, per this repo's own rule that a floor is ratcheted and
+  never set.
+
+  **The denominator is reported, not assumed.** A guard whose selftest names assertions in a shape
+  the parser cannot read would otherwise report "0 unreachable" and look perfect, so a guard with
+  zero enumerable labels is `UNREADABLE` — a skip, not a pass — and a non-literal label is counted
+  as unreadable rather than dropped. Labels are enumerated structurally with `ast`, never by regex
+  over the text.
+
+  The **report** gates nothing; the **selftest** is a gate like any other, because an auditor that
+  silently stopped separating a reached assertion from an unreached one would report an empty list
+  forever and read exactly like a repository with no vacuous assertions in it. Five declared
+  mutations, including both directions of the core claim — reporting nothing, and reporting
+  everything — since a test asserting only that the unguarded label appears would pass for a tool
+  that reported every label.
+
+  **The first full run, which is the output this was built to produce:** `1117 of 2049` labelled
+  assertions across `64` readable guards are unreached by any declared mutation, and `23` further
+  guards could not be enumerated at all and are excluded from that denominator rather than counted
+  as clean. On `route_coverage` alone — the guard #1037 was found in — it is `35 of 45`. **Nobody
+  should read 1117 as 1117 defects.** The overwhelming majority will be assertions nobody has
+  written a mutation for, which is why this ships as a list to read and not as a number to gate on.
+
 - **`uninstallable-plugin` could not tell a README with no install line from one with a correctly
   spelled shell install line — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1041). The rule searched for exactly one
