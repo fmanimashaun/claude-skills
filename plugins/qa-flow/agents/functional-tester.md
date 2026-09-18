@@ -289,6 +289,37 @@ Test ID,Title,Menu,Status,HTTP,Requested URL,Final URL,Assertion,Screenshot,Note
 - `Assertion` — the selector/role/text fragment from the case's expectation that you matched.
 - `Screenshot` — path relative to the CSV; required for every `Fail`.
 
+### State-changing requests get their own CSV — `-actions.csv`
+
+**A page view is not evidence about the `PATCH` one line below it in `routes.rb`.** Route coverage
+credits a route only when the evidence reaches it *by the verb the route declares*, and every
+artifact above records a **navigation**, which is a GET. So a `POST`, `PUT`, `PATCH` or `DELETE`
+you actually drove — submitting the form, confirming the delete — is recorded in a fourth artifact,
+`qa/manual-tests/<date>-<slug>-actions.csv`, and **nowhere else**. Without it those routes cannot be
+covered at all, and they are the ones where untested matters most.
+
+Its header is fixed — exactly these ten columns, in this order:
+
+```csv
+Method,Route,Persona,Status,HTTP,Requested URL,Final URL,Assertion,Evidence,Notes
+```
+
+- `Method` — the HTTP verb you drove, **upper-case**, spelled as `bin/rails routes` spells it:
+  `POST`, `PUT`, `PATCH` or `DELETE`. **`GET` is rejected here** — a GET is already credited from
+  the visit CSV, so recording one in this file would claim the same coverage twice.
+- `Route` — the route pattern as `bin/rails routes` prints it, e.g. `/settings/documents/:id`.
+- `Persona` — who was signed in when you drove it. A state change is usually permission-dependent,
+  and a row that does not say who did it cannot be reproduced.
+- `Status` — `exercised`, or `Blocked` / `Out of Scope`. There is no `pass`/`fail`: this artifact
+  records that the request **was made**, and any defect it revealed is a row in the visit CSV or a
+  finding.
+- `Assertion` — what you matched *after* the state changed (the flash, the row gone from the
+  table). "The button was clickable" is not an assertion that anything changed.
+- `Evidence` — screenshot or log path showing the effect.
+
+**Write this file even when it has one row.** An absent file and a file recording nothing look the
+same to a reader, and the coverage report prints the count either way.
+
 ```md
 # Functional Test Report
 **Date:** YYYY-MM-DD · **Tester:** Claude (qa-flow functional-tester) · **URL:** <url>

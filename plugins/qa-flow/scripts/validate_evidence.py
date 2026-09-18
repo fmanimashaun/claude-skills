@@ -1816,8 +1816,82 @@ NOTIFICATIONS = Profile(
 )
 
 
+# ---------------------------------------------------------------------------------------
+# Profile: state-changing requests -- the only artifact that records an HTTP VERB (#1039)
+# ---------------------------------------------------------------------------------------
+# WHY THIS IS A NEW PROFILE RATHER THAN A COLUMN ON AN EXISTING ONE. Every other profile records a
+# page VISIT, and a visit is a GET -- `route_coverage.attribute()` refuses to credit a non-GET route
+# from any of them (#1037), correctly, because a rendered page is no evidence at all about the
+# `PATCH` one line away from it in `routes.rb`. That left every state-changing route permanently
+# uncoverable: measured on one real app, 112 of 263 routes with no action that could ever clear
+# them. A gap nobody can close is a gap people learn to scroll past, and the predictable next move
+# is an exclusion rule hiding exactly the routes the number exists to worry about.
+#
+# The obvious fix -- add a `Method` column to `functional` -- is a trap, and the trap is silent.
+# `detect_profile` requires `header == list(profile.columns)` EXACTLY, so widening an existing
+# contract makes every artifact already written to it match nothing; `route_coverage.visited_paths`
+# then skips each one without a word, and coverage collapses toward zero with no error anywhere.
+# Every downstream project would read a parse failure as a regression. A NEW profile cannot do that:
+# nothing already written changes shape, and `detect_profile`'s exactness becomes the mechanism
+# instead of the hazard. The cost is one more file per run, which is visible and recoverable --
+# the other shape's cost is invisible, which is the whole argument.
+#
+# GET IS REFUSED HERE, and that is what stops this becoming a second `functional`. A GET is already
+# credited from a navigation, so a GET row in this file would be a second way to claim the same
+# thing -- and, worse, a way to launder a page view into "verb-bearing evidence" and re-create the
+# exact defect #1037 fixed. The profile that records a visit records visits; this one records
+# requests that CHANGE something.
+STATE_CHANGING_VERBS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _actions_extra(row: dict[str, str], where: str, status: str) -> list[str]:
+    """The Method must be a state-changing verb, spelled the way `bin/rails routes` spells it."""
+    findings: list[str] = []
+    method = (row.get("Method") or "").strip()
+    if not method:
+        findings.append(f"{where}: no Method -- the verb is the entire reason this profile exists")
+        return findings
+    if method != method.upper():
+        findings.append(
+            f"{where}: Method {method!r} must be upper-case -- `bin/rails routes` emits `PATCH`, "
+            f"and route coverage matches the two literally rather than case-folding, so a "
+            f"lower-case verb here silently matches no route at all")
+    if method.upper() in {"GET", "HEAD", "OPTIONS"}:
+        findings.append(
+            f"{where}: Method {method!r} is not state-changing. A GET is already credited from any "
+            f"navigation artifact, so recording one here would claim the same coverage twice and "
+            f"would re-open the path-only crediting that #1037 closed. Use the `functional` "
+            f"profile for a page visit.")
+    elif method.upper() not in STATE_CHANGING_VERBS:
+        findings.append(
+            f"{where}: Method {method!r} is not one of {sorted(STATE_CHANGING_VERBS)}")
+    return findings
+
+
+ACTIONS = Profile(
+    name="actions",
+    written_by="functional-tester (state-changing request pass)",
+    columns=(
+        "Method",
+        "Route",
+        "Persona",
+        "Status",
+        "HTTP",
+        "Requested URL",
+        "Final URL",
+        "Assertion",
+        "Evidence",
+        "Notes",
+    ),
+    result_statuses=frozenset({"exercised"}),
+    ident_columns=("Method", "Route"),
+    extra=_actions_extra,
+)
+
+
 PROFILES: tuple[Profile, ...] = (
-    FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, EMULATION, PERF, FINDINGS, HANDOFFS, NOTIFICATIONS,
+    FUNCTIONAL, A11Y, RUNTIME, KEYBOARD, FORMS, EMULATION, PERF, ACTIONS,
+    FINDINGS, HANDOFFS, NOTIFICATIONS,
 )
 
 # Kept as a module-level alias: the functional contract is the one mirrored in

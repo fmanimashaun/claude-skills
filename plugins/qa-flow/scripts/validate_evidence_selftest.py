@@ -1757,13 +1757,49 @@ def run() -> int:
                     "never be rolled up"
                 )
 
+    # ---- actions: the only profile carrying an HTTP verb (#1039) --------------------
+    # Column order: Method,Route,Persona,Status,HTTP,Requested URL,Final URL,Assertion,
+    #               Evidence,Notes
+    ACTIONS_CLEAN = ("PATCH,/settings/documents,admin,exercised,200,"
+                     "https://a/settings/documents,https://a/settings/documents,"
+                     "flash 'Saved',shot.png,")
+    expect_clean("a state-changing request with its verb recorded",
+                 ACTIONS_CLEAN, header=ve.ACTIONS.header)
+
+    # THE CARVE-OUT THAT KEEPS THIS FROM BECOMING A SECOND `functional`. A GET is already credited
+    # from any navigation artifact, so accepting one here would claim the same coverage twice AND
+    # hand back the path-only crediting that #1037 removed -- by letting a page view be written
+    # down as verb-bearing evidence.
+    expect_findings("a GET is refused -- a navigation already covers it",
+                    ACTIONS_CLEAN.replace("PATCH,", "GET,", 1),
+                    contains="not state-changing", header=ve.ACTIONS.header)
+    # THE CONTROL for the case above, on the same input shape: the identical row with a verb that
+    # IS state-changing must stay silent. Without it, "GET is refused" would also pass for a rule
+    # that refused every row.
+    expect_clean("...and the same row with DELETE is accepted",
+                 ACTIONS_CLEAN.replace("PATCH,", "DELETE,", 1), header=ve.ACTIONS.header)
+
+    expect_findings("a verb nobody routes is refused",
+                    ACTIONS_CLEAN.replace("PATCH,", "PROPFIND,", 1),
+                    contains="not one of", header=ve.ACTIONS.header)
+    # Case matters because route coverage compares this to `bin/rails routes` LITERALLY. A
+    # lower-case verb parses fine and then matches no route at all -- silent, which is the class
+    # this whole profile exists to avoid.
+    expect_findings("a lower-case verb is refused before it can silently match nothing",
+                    ACTIONS_CLEAN.replace("PATCH,", "patch,", 1),
+                    contains="upper-case", header=ve.ACTIONS.header)
+    expect_findings("a row with no verb at all is refused",
+                    ACTIONS_CLEAN.replace("PATCH,", ",", 1),
+                    contains="no Method", header=ve.ACTIONS.header)
+
     # ---- profile detection is by header, and must never guess -----------------------
     _tick()
     detected = []
     for prof, body in ((ve.FUNCTIONAL, GOOD_PASS), (ve.A11Y, A11Y_CLEAN),
                       (ve.RUNTIME, RUNTIME_CLEAN), (ve.KEYBOARD, KEYBOARD_CLEAN),
                       (ve.FORMS, FORMS_CLEAN), (ve.EMULATION, EMULATION_CLEAN),
-                      (ve.PERF, PERF_CLEAN), (ve.FINDINGS, NAVBAR),
+                      (ve.PERF, PERF_CLEAN), (ve.ACTIONS, ACTIONS_CLEAN),
+                      (ve.FINDINGS, NAVBAR),
                       (ve.HANDOFFS, H_LANDED), (ve.NOTIFICATIONS, N_SENT)):
         got, _ = ve.load_rows(_write(f"{body}\n", header=prof.header))
         detected.append(got.name)
@@ -1839,6 +1875,10 @@ def run() -> int:
         # acceptance criterion is that they are documented as distinct.
         ("perf-tester.md", ve.PERF),
         ("qa-reporter.md", ve.FINDINGS),
+        # #1039. The verb-bearing profile belongs to the same agent as the visit profile: the
+        # functional pass is where a state change is actually driven, and splitting it across two
+        # agents would put the two halves of one run in two doctrines.
+        ("functional-tester.md", ve.ACTIONS),
     ):
         _tick()
         doctrine = agents / filename
