@@ -9143,7 +9143,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-18 (release v1.133.1)
 
 - **v1.133.0's staleness check compared two RENDERINGS of a commit, not two commits, and refused a
   perfectly fresh inventory — `plugins/qa-flow/scripts/route_coverage.py`,
