@@ -672,8 +672,8 @@ GUARD = Guard(
         # check in mutation_check_selftest.py found that, three rules later.
         Mutation(
             "the install-line rule stops firing (#203, second occurrence)",
-            '        if not re.search(rf"/plugin\\s+install\\s+{re.escape(name)}@", body):',
-            '        if False:',
+            "        if not _INSTALL_LINE(name).search(body):",
+            "        if False:",
             "a declared plugin with no install line",
         ),
         Mutation(
@@ -759,6 +759,51 @@ GUARD = Guard(
             "    if len(texts) == len(HOOK_LIB_COPIES) and len(set(texts.values())) > 1:",
             "    if False:",
             "hook lib copies that differ by one byte are a finding",
+        ),
+        # #1041, and the two below are a matched pair. The rule has to sit between two failures,
+        # so one mutation each way is the only way to prove it is still between them.
+        Mutation(
+            # TOO NARROW -- this IS the reported bug, restored. Slash-only could not tell a README
+            # with no install line from one using the shell form, and reported both as missing.
+            "only the slash spelling counts, so a shell install line reads as no install line",
+            r'return re.compile(rf"(?:/|\bclaude\s+)plugin\s+install\s+{re.escape(name)}@")',
+            r'return re.compile(rf"/plugin\s+install\s+{re.escape(name)}@")',
+            "the shell spelling satisfies it",
+        ),
+        Mutation(
+            # TOO WIDE -- the failure mode the fix could have become. Drop the prefix and prose
+            # about installing satisfies the rule, which is `undocumented-plugin` again by another
+            # name and a gate that can no longer fail.
+            "any mention of `plugin install` counts, so prose satisfies the install-line rule",
+            r'return re.compile(rf"(?:/|\bclaude\s+)plugin\s+install\s+{re.escape(name)}@")',
+            r'return re.compile(rf"plugin\s+install\s+{re.escape(name)}@")',
+            "a bare `plugin install` with no prefix does not satisfy it",
+        ),
+        # #1042. Both halves of the DISJOINT split, one mutation each. The rule has to say
+        # "delete this copy" and "nothing versions this" about different plugins, and a rule that
+        # could only ever say one of them would have driven the tree to the opposite drift.
+        Mutation(
+            "a version duplicated in marketplace.json and plugin.json stops being reported",
+            '        if own_version and "version" in entry:',
+            "        if False:",
+            "a plugin versioned in both files",
+        ),
+        Mutation(
+            # Without this half, the fix for #1042 is "delete every marketplace version key",
+            # which would leave rails-stack -- the one plugin with no plugin.json -- unversioned.
+            "a plugin versioned NOWHERE stops being reported",
+            '        elif not own_version and "version" not in entry:',
+            "        elif False:",
+            "a plugin with no version in either file",
+        ),
+        Mutation(
+            # Judging on the FILE rather than the KEY is the near-miss: a plugin.json with no
+            # version leaves the marketplace copy operative, and flagging it would be a false
+            # positive of exactly the kind #1041 was filed for.
+            "presence of plugin.json counts as a declared version, whatever is in it",
+            '                own_version = (json.loads(read(own)) or {}).get("version")',
+            '                own_version = "present"',
+            "a plugin.json without a version key leaves marketplace.json authoritative",
         ),
     ),
 )
