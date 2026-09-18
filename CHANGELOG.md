@@ -7,6 +7,71 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-18 (release v1.133.0)
+
+- **Measure a selftest against the implementation it replaced, not only against mutations somebody
+  wrote — `scripts/audit_assertion_reachability.py`,
+  `scripts/mutations/audit_assertion_reachability.py`** (#1048). #1040's reachability audit
+  measures a suite against **the declared mutations**, so it carries whoever's imagination wrote
+  them — the same objection it exists to raise, one level up. `--against <rev>` answers a different
+  question with no imagination in it: roll the **subject** back to `rev`, run the **current**
+  selftest against it, and report which cases fail. A case that fails there tells a right
+  implementation from a known-wrong one. The old implementation is already in git, so no wrong
+  version has to be constructed.
+
+  **Only the subject is rolled back.** Rolling the selftest back too would just re-run the old
+  suite against the old code and report what it reported then.
+
+  **The reference measurement, taken by hand before this existed**, is a code generator's parser
+  replaced after it was found able to emit a wrong answer with exit 0: **5 of 6 cases failed
+  against the old parser.** The five failures were five *different* wrong answers — a key invented
+  from a multi-line keyword argument, a list truncated `4 → 1` by a closing brace in a comment, the
+  same truncation from a brace in a string, keys hoisted out of a heredoc body, and a `**splat`
+  dropped silently with exit 0. A suite whose failures are all one shape probes one bug six ways;
+  these probe distinct behaviours, which is why the outputs are better evidence than the count.
+
+  **The sixth case is why this reports and never gates.** It asserted that a nested hash is not
+  hoisted. The old parser got that right **by accident of construction** (brace depth), the new one
+  **by construction** (it reads the AST); the two are correct there for unrelated reasons, and a
+  line-oriented reader would fail it immediately. So it is a regression guard, not decoration —
+  and the rule that generalises: **a non-discriminating case is one the predecessor also satisfied,
+  and the predecessor is a sample of size one.** Deleting cases on this number alone selects the
+  suite against the only wrong implementation you happen to have had. A case whose label carries
+  `[regression guard]` is reported in its own bucket, and **the convention is printed by the report
+  itself** rather than described somewhere that goes stale.
+
+  **The defect this mode was built to detect, found in this mode on its first real run.** Pointed at
+  `route_coverage` before the #1037 fix, it reported **0 of 55 cases discriminate** — because
+  today's cases call functions that revision does not have, so the selftest died on import and
+  emitted no labels, and every label read as "not in the output". A confident verdict over a
+  comparison that never happened, and indistinguishable from a suite that genuinely cannot tell the
+  two apart. It now separates three states by whether the selftest **ran**: exit 0 means the old
+  implementation passed wholesale (the loudest result — the suite proves nothing); a non-zero exit
+  naming at least one case is a real split; a non-zero exit naming **none** is a skip, not a split
+  and not a pass. An old subject missing today's API is the ordinary case when a change added
+  functions, so this is the common path rather than an edge one.
+
+  **A control case is what makes a per-case result mean anything.** The exit-code check above
+  catches the loud failure — the old subject is missing API the cases call, so nothing runs. It
+  cannot catch the quiet one: a function changed from taking file *contents* to taking a *path*
+  keeps its name and its arity, so every case fails and the run reports a flattering, false "all
+  discriminate". No static check sees that. So one case may be marked `[control]` — the canonical
+  shape the subject exists to handle, whose outcome is the same under any implementation worth
+  comparing. **If the control fails against the old revision the whole split is refused**, because
+  the harness does not fit and no per-case outcome from that run is trustworthy; if it passes,
+  every other outcome is a real result. That converts "which cases were inapplicable?" — unknowable
+  after the fact, and a guess if reported — into a precondition, so the inapplicable bucket is
+  empty **by construction** rather than by assumption. The control is a precondition and not a data
+  point, so it is kept out of the split, and a run with **no** control says so: that split is
+  unverified, not wrong.
+
+  **Two things deliberately not built.** The *abort-versus-asserted-refusal ratio* is a real rule
+  and its hand-measured `7 → 1` a real number, but "every shape a tool refuses" is not mechanically
+  enumerable across this repo's guards, whose aborts share no form; a ratio that silently
+  under-counts is the instrument failure this issue is about, so it stays on the issue. And case
+  **provenance** — where a case came from — is documented rather than given a field, because a field
+  nobody fills is worse than no field.
+
 ### 2026-09-18 (release v1.132.0)
 
 - **Nothing measured whether a selftest assertion is capable of failing —
@@ -2822,6 +2887,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 2026-09-18 (release v1.133.0)
+
+- **A PR could be opened over unfinished work while carrying the keyword that closes the issue —
+  `plugins/rails-flow/commands/issues.md`**. The work loop already required **one `Closes #n` per
+  issue**, so merging a PR closes what it names. Nothing said when the PR may be opened, and those
+  two together are a trap: **a PR raised over half-done work is a request to close an issue that
+  is not fixed**, and the remainder becomes invisible the moment it merges. Nobody re-reads a
+  closed issue.
+
+  Step 5 now states the precondition: **open the PR only when every issue it names is completely
+  done** — every claim in the issue body answered, every mandatory gate green, and nothing left
+  that you were planning to push to the branch afterwards. A PR may still close several issues, but
+  each must independently be finished; grouping is about sharing a branch, never about carrying a
+  half-done issue along on a finished one's merge.
+
+  **And the resolution when a group splits**, which is the case that otherwise stalls: if one issue
+  is unfinished when the rest are done, neither hold the finished work nor ship the unfinished one
+  — drop it from the branch, remove its `Closes`, and leave it open in the queue. One issue
+  slipping is not a reason to delay the others, and a `Closes` on it is a false claim about what
+  merged.
+
+  Three named shapes it rules out, each of which has happened: opening a PR to "get CI running" on
+  a branch you intend to keep pushing to; opening a draft naming issues you have not started; and
+  listing a `Closes` for an issue whose acceptance criteria you narrowed without saying so on the
+  issue first. Maintainer decision, recorded on this change — our own process doctrine, with no
+  upstream to verify against.
 
 ### 2026-09-18 (release v1.132.0)
 
@@ -9051,6 +9143,52 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 2026-09-18 (release v1.133.0)
+
+- **The coverage percentage could not say which tree it measured —
+  `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**
+  (#1047). `qa/reports/routes.json` is generated and deliberately uncommitted, regenerated per tree
+  from `bin/rails routes`, so the denominator of every percentage is a property of the tree **and
+  the shell** that enumerated it — and nothing in the output said which.
+
+  Measured across one project in one afternoon: **five different denominators — 263, 275, 227, 226
+  and 223.** None was wrong. Each correctly measured a different object (a raw line count under
+  `RAILS_ENV=test`; the same tree under `development`; the correct figure through the wrapper; two
+  older commits). Four sessions quoted them to each other as one number that had to be reconciled,
+  and two spent real effort trying before anyone established that they could not be.
+
+  **Committing the inventory is not the fix**, and the wrapper already refuses it for the right
+  reason: a committed inventory is a different stale object, not a fixed one. That refusal stands.
+  What was missing is that the report could not state what it had measured. Enumeration now records
+  the **commit**, whether the tree was **dirty**, the **`RAILS_ENV`**, and a **timestamp**; the
+  report prints them directly under the percentage, and carries them into `--json` **and the trend
+  file the ratchet reads back**.
+
+  **The printed summary matters as much as the JSON**, because the summary is what gets pasted into
+  an issue comment — which is exactly how all five of those figures travelled.
+
+  **It refuses rather than warns, and only when it can prove the mismatch.** A warning on a number
+  that feeds a ratchet is one people learn to scroll past. Three states, and only the first is a
+  refusal: a recorded commit differing from `HEAD` refuses **before any number is computed**; a
+  **dirty** tree is annotated, never refused, because enumerating mid-change is ordinary and
+  refusing it would train people around the tool; and an inventory with **no provenance block at
+  all** — which is what every already-written file looks like — is read normally and reported as
+  `UNKNOWN`. Refusing that last one would have made the upgrade indistinguishable from a broken
+  tool, which is #1039's lesson applied rather than relearned.
+
+  Staleness is decided on the **commit**, never on file times: a fresh clone, a `git checkout`, a
+  new worktree and a restored CI cache all make an enumeration look "older than the tree" while it
+  is perfectly current, and a refusal that fires spuriously is worse than the warning it replaces.
+
+  **Five declared mutations, one per way this can fail**, including both directions of the refusal —
+  never refusing, and refusing always — because a check that only ever did one of those would pass a
+  test asserting the other. Two defects in this change's own tests were found by running those
+  mutations rather than by reading: asserting the provenance field *names* let a mutation that
+  hardcoded `rails_env: None` survive, so the selftest now sets the variable and looks; and the
+  staleness checks read the ambient `HEAD`, which is absent in the mutation harness's staged
+  tempdir, so every one of them passed **vacuously** there until `head` was made injectable. The
+  harness's own INERT-baseline check is what surfaced the second.
 ### 2026-09-18 (release v1.132.0)
 
 - **No evidence profile recorded an HTTP method, so a non-GET route could never be covered —

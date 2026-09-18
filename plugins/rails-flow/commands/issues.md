@@ -139,8 +139,26 @@ For the issue — or group — at the head of the queue:
    - **chore/docs** → lightweight, but the gates below still apply.
 4. Gates (all mandatory): code-reviewer → `VERDICT: CLEAN`; test-runner → full suite,
    0 failures; security-auditor / design-auditor when their domains were touched.
-5. PR with the closing keyword so merge closes the issue — **one `Closes #n` per issue** on a
-   grouped branch, never one line for the group:
+5. **Open the PR only when every issue it names is COMPLETELY done.** The PR carries a closing
+   keyword, so merging it closes those issues — a PR opened over unfinished work is a request to
+   close an issue that is not fixed, and the remainder becomes invisible the moment it merges.
+   "Done" is the whole of it: every claim in the issue body answered, every gate in step 4 green,
+   and nothing left that you were planning to push to this branch afterwards.
+
+   **A PR may close several issues; each one must independently be finished.** Grouping is about
+   sharing a branch, never about carrying a half-done issue along on a finished one's merge.
+
+   If part of a grouped branch is not finished when the rest is, **do not hold the finished work
+   and do not ship the unfinished issue**: drop that issue from the branch, remove its `Closes`,
+   and leave it open in the queue. One issue slipping is not a reason to delay the others, and a
+   `Closes` on it is a false claim about what merged.
+
+   What this rules out, because each has happened: opening a PR to "get CI running" on a branch
+   you intend to keep pushing to; opening a draft that names issues you have not started; and
+   listing a `Closes` for an issue whose acceptance criteria you decided to narrow without saying
+   so on the issue first.
+
+   **One `Closes #n` per issue** on a grouped branch, never one line for the group:
    ```bash
    gh pr create --base <base> --title "<type>: <summary> (#<n>)" \
      --body "Closes #<n>. <Summary / Changes / Proof (specs added)>"
