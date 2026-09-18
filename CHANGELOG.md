@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-18 (release v1.132.0)
 
 - **Nothing measured whether a selftest assertion is capable of failing —
   `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`,
@@ -2823,7 +2823,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-18 (release v1.132.0)
 
 - **`assertion-free-spec` called a real assertion no assertion, because the verdict turned on the
   helper's PREFIX — `plugins/rails-flow/scripts/self_consistency.py`,
@@ -9051,7 +9051,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-18 (release v1.132.0)
 
 - **No evidence profile recorded an HTTP method, so a non-GET route could never be covered —
   `plugins/qa-flow/scripts/validate_evidence.py`, `plugins/qa-flow/scripts/route_coverage.py`,
@@ -9128,10 +9128,17 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   `--selftest` fails 4 checks without the fix and passes 115 with it.
 
   **This lowers measured coverage for every adopter**, because the number it replaces was wrong.
-  Non-GET routes now report as gaps, already flagged `non-GET` in the listing. They cannot yet be
-  cleared: no evidence profile records an HTTP method, and `detect_profile` matches headers
-  exactly, so adding one is an artifact migration rather than a column — filed separately. A
-  project pinning a coverage floor must re-cut it as a deliberate, separate commit.
+  Non-GET routes now report as gaps, already flagged `non-GET` in the listing. **The drop is a
+  correction, not a regression** — the routes losing credit were never exercised; a page was
+  rendered and a write endpoint was marked tested. A project pinning a coverage floor must re-cut
+  it as a deliberate, separate commit that says so, or the next reader reads an honest number as a
+  fall in quality.
+
+  When this was written those gaps could not be cleared at all, because no evidence profile
+  recorded an HTTP method. **They can now: #1039 ships the `actions` profile in this same release**,
+  and a non-GET route is covered by recording the request that drove it. The two entries are two
+  halves of one change — this one stops the false credit, that one opens the only honest way to
+  earn it.
 
 ### 2026-09-17 (release v1.131.1)
 
