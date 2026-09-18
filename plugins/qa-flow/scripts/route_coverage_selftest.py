@@ -15,6 +15,7 @@ Stdlib + the sibling modules only; no network, no browser.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -58,6 +59,34 @@ RAILS = """                                   Prefix Verb   URI Pattern         
                                rails_health GET  /up(.:format)                   rails/health#show
                                  requests GET    /requests(.:format)             placeholders#show {screen: "All requests", feature: "F-06"}
 """
+
+
+def _stale(prov, head, label):
+    """`stale_inventory`, with an exception recorded as a FAILURE instead of killing the run.
+
+    A mutation that bypasses the guard clause leaves `head` None on a path that then slices it, so
+    the selftest died with a TypeError before printing anything -- and the mutation harness then
+    reported the break as "caught, but not by the expected fixture", because the fixture that
+    SHOULD have named it never got to print. A crash is not a verdict; it has to fail as a value.
+    """
+    try:
+        return rc.stale_inventory(prov, head=head)
+    except Exception as exc:                                   # noqa: BLE001 -- any break, reported
+        FAILURES.append(f"stale_inventory raised on {label}: {type(exc).__name__}: {exc}")
+        return None
+
+
+def _json_payload(text: str) -> dict:
+    """The `--json` object a captured cmd_report printed, or {} when it printed none.
+
+    Every call site used `text[text.index("{"):]` directly, which raises ValueError when
+    cmd_report REFUSED and printed nothing -- so a mutation that makes it refuse killed the
+    selftest with a traceback instead of failing an assertion. A crash is not a verdict, and the
+    mutation harness rejects a fixture that dies rather than failing. Three separate sites hit
+    this in turn while #1047 was being written, which is why it is a helper and not a third
+    inline guard.
+    """
+    return json.loads(text[text.index("{"):]) if "{" in text else {}
 
 
 def run() -> int:
@@ -234,6 +263,90 @@ def run() -> int:
           ["POST /users"].covered, False)
     check("attribution: names which artifact covered it",
           any("runtime:" in a for a in cov["GET /users/:id/edit"].by), True)
+
+    # PLACED EARLY, BEFORE ANYTHING DRIVES cmd_report. These are pure-function checks that
+    # need no fixtures, and run late they were unreachable: a mutation making cmd_report
+    # refuse killed the selftest on a missing trend file first, so the break read as a
+    # crash rather than as these assertions failing. A crash is not a verdict.
+    # ---- the report says which tree it measured (#1047) -----------------------------------
+    # Five different denominators were quoted to each other across one afternoon -- 263, 275, 227,
+    # 226, 223 -- and none was wrong. Each correctly measured a different object, and nothing in
+    # the output said which. These pin the THREE states apart, because a refusal that cannot tell
+    # them apart is worse than the missing provenance it replaces.
+    #
+    # HEAD IS INJECTED, never read from the ambient tree. These ran in a tempdir that is not a git
+    # repository, where a HEAD-reading version answered None and every one of them passed
+    # vacuously -- exactly the shape #1040 exists to find, in the checks for #1047.
+    HEAD_A, HEAD_B = "a" * 40, "b" * 40
+    _tick()
+    # STATE 1: a recorded commit that is not HEAD -> REFUSE.
+    why = _stale({"commit": HEAD_A}, HEAD_B, "a foreign commit")
+    if not why or HEAD_A[:9] not in why:
+        FAILURES.append(f"stale_inventory: an inventory from another commit must refuse, got {why!r}")
+    _tick()
+    # THE CONTROL that stops this being a refusal which always fires: the SAME shape at the SAME
+    # commit must proceed. Without it, "refuses on a foreign commit" also passes for a function
+    # that refuses everything.
+    if _stale({"commit": HEAD_A}, HEAD_A, "the same commit") is not None:
+        FAILURES.append("stale_inventory: an inventory from THIS commit must not refuse")
+    _tick()
+    # STATE 2: no provenance at all -- what every file written before #1047 looks like. Refusing it
+    # would make the upgrade indistinguishable from a broken tool (#1039's lesson, applied).
+    if _stale(None, HEAD_A, "no provenance") is not None:
+        FAILURES.append("stale_inventory: a pre-#1047 inventory must be readable, not refused")
+    _tick()
+    if _stale({"commit": None}, HEAD_A, "a null commit") is not None:
+        FAILURES.append("stale_inventory: an inventory taken outside a git tree must not refuse")
+    _tick()
+    # ...and the mirror: with no HEAD to compare against, staleness is UNDECIDABLE, so it must not
+    # refuse. Proving a mismatch is the only thing that licenses a refusal.
+    if _stale({"commit": HEAD_A}, None, "no HEAD") is not None:
+        FAILURES.append("stale_inventory: with no HEAD to compare, it must not claim staleness")
+    _tick()
+    # ...but a missing block must still SAY the number is unattributable, or nothing changed.
+    unknown = " ".join(rc.provenance_lines(None))
+    if "UNKNOWN" not in unknown:
+        FAILURES.append(f"provenance_lines: a missing block must report UNKNOWN, got {unknown!r}")
+    _tick()
+    # STATE 3: a dirty tree is ANNOTATED, never refused. Enumerating mid-change is ordinary, and
+    # `git status --porcelain` says nothing about whether the change touched routes.rb. A refusal
+    # here blocks a legitimate workflow, and a gate that blocks people wrongly gets turned off.
+    dirty_line = " ".join(rc.provenance_lines(
+        {"commit": "abc123def456", "dirty": True, "rails_env": "test",
+         "enumerated_at": "2026-09-18T12:00:00Z"}))
+    if "+dirty" not in dirty_line or "RAILS_ENV=test" not in dirty_line:
+        FAILURES.append(f"provenance_lines: a dirty tree and its env must be visible, got {dirty_line!r}")
+    _tick()
+    if _stale({"commit": HEAD_A, "dirty": True}, HEAD_A, "a dirty tree") is not None:
+        FAILURES.append("stale_inventory: a dirty tree at the right commit must annotate, not refuse")
+    _tick()
+    # RAILS_ENV alone produced 263 vs 275 on ONE tree, so an unset one must READ as unset rather
+    # than vanish -- a blank is indistinguishable from `production`.
+    unset_line = " ".join(rc.provenance_lines(
+        {"commit": "abc123def456", "dirty": False, "rails_env": None,
+         "enumerated_at": "2026-09-18T12:00:00Z"}))
+    if "RAILS_ENV=unset" not in unset_line:
+        FAILURES.append(f"provenance_lines: an unset RAILS_ENV must say so, got {unset_line!r}")
+    _tick()
+    # The recorder must populate what the reporter reads. Two halves written apart is how a field
+    # goes quietly empty.
+    made = rc.enumeration_provenance()
+    if set(made) != {"commit", "dirty", "rails_env", "enumerated_at"}:
+        FAILURES.append(f"enumeration_provenance: wrong fields: {sorted(made)}")
+    _tick()
+    # ...and the env var must actually be READ, not merely present as a key. Asserting field names
+    # alone passed a mutation that hardcoded `rails_env: None`, which would have shipped a
+    # permanently empty field -- the exact hole #1047 is about. Set it and look.
+    _env_before = os.environ.get("RAILS_ENV")
+    os.environ["RAILS_ENV"] = "selftest-env"
+    try:
+        if rc.enumeration_provenance().get("rails_env") != "selftest-env":
+            FAILURES.append("enumeration_provenance: RAILS_ENV is not read from the environment")
+    finally:
+        if _env_before is None:
+            os.environ.pop("RAILS_ENV", None)
+        else:
+            os.environ["RAILS_ENV"] = _env_before
 
     # ---- the ONLY channel that can cover a non-GET route (#1039) --------------------------
     # #1037 stopped a GET crediting a DELETE. That was correct and it left every state-changing
@@ -495,10 +608,22 @@ def run() -> int:
     if rc.fail_axes(args, {"fail_on": "none"}) != (True, False):
         FAILURES.append("fail_axes: an explicit --fail-on-untested must beat coverage.fail_on: none")
     _tick()
-    lines = [json.loads(x) for x in trend.read_text(encoding="utf-8").splitlines()]
+    # Read defensively. Under a mutation that makes cmd_report REFUSE -- e.g. one that treats a
+    # pre-#1047 inventory as stale -- no trend file is written at all, and reading it unguarded
+    # raised FileNotFoundError: the selftest died instead of reporting, and a crash is not a
+    # verdict. The harness rejects a fixture that dies rather than failing.
+    lines = ([json.loads(x) for x in trend.read_text(encoding="utf-8").splitlines()]
+             if trend.exists() else [])
+    if not trend.exists():
+        FAILURES.append("trend: no trend file was written — cmd_report did not complete a run")
     if len(lines) != 2:
         FAILURES.append(f"trend: expected 2 appended runs, got {len(lines)}")
-    elif lines[0] != {"routes": 2, "covered": 1, "untested": 1, "crawled_unasserted": 0,
+    elif lines[0] != {# #1047. The ratchet reads this file, so the provenance has to survive into
+                      # the record and not only onto the screen. None here because this fixture's
+                      # routes.json predates the block -- which is exactly what an inventory
+                      # written by an older version looks like, and it must still be readable.
+                      "provenance": None,
+                      "routes": 2, "covered": 1, "untested": 1, "crawled_unasserted": 0,
                       "excluded": 0, "percent": 50,
                       # AXIS TWO in the same line, because a trend file that records one axis is a
                       # trend nobody can read the other from later (#953).
@@ -541,15 +666,21 @@ def run() -> int:
     with contextlib.redirect_stdout(io.StringIO()) as cap2:
         rc.cmd_report(args2)
     body = cap2.getvalue()
-    payload = json.loads(body[body.index("{"):])
-    if payload["covered"] != 1 or payload["untested"] != 2 or payload["percent"] != 33:
+    # Parsed defensively, for the same reason the trend read above is: under a mutation that makes
+    # cmd_report REFUSE, it prints nothing to stdout and `body.index("{")` raised ValueError --
+    # the selftest died instead of reporting a wrong value. An empty payload makes the assertions
+    # below fail honestly rather than crash.
+    payload = _json_payload(body)
+    if not payload:
+        FAILURES.append("--json printed no payload — cmd_report did not complete a run")
+    if payload.get("covered") != 1 or payload.get("untested") != 2 or payload.get("percent") != 33:
         FAILURES.append(f"a crawl visit changed the coverage arithmetic: {payload}")
     _tick()
-    if payload["crawled_unasserted"] != ["GET /reports"]:
+    if payload.get("crawled_unasserted") != ["GET /reports"]:
         FAILURES.append(f"the crawled gap, and ONLY it, must be named: "
-                        f"{payload['crawled_unasserted']}")
+                        f"{payload.get('crawled_unasserted')}")
     _tick()
-    flags = {g["route"]: g.get("crawled") for g in payload["gaps"]}
+    flags = {g["route"]: g.get("crawled") for g in payload.get("gaps", [])}
     if flags.get("GET /reports") is not True:
         FAILURES.append(f"the crawled gap must be FLAGGED, not silently reclassified: {flags}")
     # A GET crawl of /users/7 must NOT be claimed as a visit to `DELETE /users/:id`. The crawler
@@ -687,21 +818,24 @@ def run() -> int:
                          fail_on_untested=False, fail_on_unmeasured=False)
     with contextlib.redirect_stdout(io.StringIO()) as cap4:
         rc.cmd_report(args4)
-    axis = json.loads(cap4.getvalue()[cap4.getvalue().index("{"):])
+    axis = _json_payload(cap4.getvalue())
+    if not axis:
+        FAILURES.append("axis two: --json printed no payload")
     # 1 of 3 asserted. `/reports` is measured small and asserted by nothing: if the axes merged it
     # would be credited as covered and this number would move to 66%.
-    if axis["percent"] != 25 or axis["covered"] != 1:
-        FAILURES.append(f"axis one moved when small evidence arrived: {axis['percent']}% "
-                        f"covered={axis['covered']}")
+    if axis.get("percent") != 25 or axis.get("covered") != 1:
+        FAILURES.append(f"axis one moved when small evidence arrived: "
+                        f"{axis.get('percent')}% covered={axis.get('covered')}")
     _tick()
     # 2 measured small of 3 GET routes; `/deep/page` is the one nothing measured.
-    if axis["measured_small"] != 2 or axis["unmeasured_small"] != ["GET /deep/page"]:
-        FAILURES.append(f"axis two wrong: {axis['measured_small']} / {axis['unmeasured_small']}")
+    if axis.get("measured_small") != 2 or axis.get("unmeasured_small") != ["GET /deep/page"]:
+        FAILURES.append(f"axis two wrong: {axis.get('measured_small')} / "
+                        f"{axis.get('unmeasured_small')}")
     # A NON-GET ROUTE IS NOT IN THE DENOMINATOR. A layout probe navigates with `page.goto`, so
     # `DELETE /users/:id` cannot be measured at any width — this fixture reported it missing until
     # the denominator was corrected, which would have made the axis permanently unreachable.
     _tick()
-    if "DELETE /users/:id" in axis["unmeasured_small"]:
+    if "DELETE /users/:id" in (axis.get("unmeasured_small") or []):
         FAILURES.append("a non-GET route must not be counted as unmeasured on the responsive axis")
 
     _tick()

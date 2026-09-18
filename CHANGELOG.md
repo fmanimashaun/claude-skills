@@ -9051,6 +9051,52 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The coverage percentage could not say which tree it measured —
+  `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**
+  (#1047). `qa/reports/routes.json` is generated and deliberately uncommitted, regenerated per tree
+  from `bin/rails routes`, so the denominator of every percentage is a property of the tree **and
+  the shell** that enumerated it — and nothing in the output said which.
+
+  Measured across one project in one afternoon: **five different denominators — 263, 275, 227, 226
+  and 223.** None was wrong. Each correctly measured a different object (a raw line count under
+  `RAILS_ENV=test`; the same tree under `development`; the correct figure through the wrapper; two
+  older commits). Four sessions quoted them to each other as one number that had to be reconciled,
+  and two spent real effort trying before anyone established that they could not be.
+
+  **Committing the inventory is not the fix**, and the wrapper already refuses it for the right
+  reason: a committed inventory is a different stale object, not a fixed one. That refusal stands.
+  What was missing is that the report could not state what it had measured. Enumeration now records
+  the **commit**, whether the tree was **dirty**, the **`RAILS_ENV`**, and a **timestamp**; the
+  report prints them directly under the percentage, and carries them into `--json` **and the trend
+  file the ratchet reads back**.
+
+  **The printed summary matters as much as the JSON**, because the summary is what gets pasted into
+  an issue comment — which is exactly how all five of those figures travelled.
+
+  **It refuses rather than warns, and only when it can prove the mismatch.** A warning on a number
+  that feeds a ratchet is one people learn to scroll past. Three states, and only the first is a
+  refusal: a recorded commit differing from `HEAD` refuses **before any number is computed**; a
+  **dirty** tree is annotated, never refused, because enumerating mid-change is ordinary and
+  refusing it would train people around the tool; and an inventory with **no provenance block at
+  all** — which is what every already-written file looks like — is read normally and reported as
+  `UNKNOWN`. Refusing that last one would have made the upgrade indistinguishable from a broken
+  tool, which is #1039's lesson applied rather than relearned.
+
+  Staleness is decided on the **commit**, never on file times: a fresh clone, a `git checkout`, a
+  new worktree and a restored CI cache all make an enumeration look "older than the tree" while it
+  is perfectly current, and a refusal that fires spuriously is worse than the warning it replaces.
+
+  **Five declared mutations, one per way this can fail**, including both directions of the refusal —
+  never refusing, and refusing always — because a check that only ever did one of those would pass a
+  test asserting the other. Two defects in this change's own tests were found by running those
+  mutations rather than by reading: asserting the provenance field *names* let a mutation that
+  hardcoded `rails_env: None` survive, so the selftest now sets the variable and looks; and the
+  staleness checks read the ambient `HEAD`, which is absent in the mutation harness's staged
+  tempdir, so every one of them passed **vacuously** there until `head` was made injectable. The
+  harness's own INERT-baseline check is what surfaced the second.
 ### 2026-09-18 (release v1.132.0)
 
 - **No evidence profile recorded an HTTP method, so a non-GET route could never be covered —

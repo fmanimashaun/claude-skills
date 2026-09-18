@@ -212,5 +212,49 @@ GUARD = Guard(
             "                pass",
             "a CSV matching no contract is reported",
         ),
+        # #1047. The report has to separate THREE states, and a mutation for each, because a
+        # refusal that cannot tell them apart is worse than the missing provenance it replaces.
+        Mutation(
+            # The defect: a number that cannot say which tree it measured. Five denominators were
+            # quoted to each other in one afternoon and none of them was wrong.
+            "a stale inventory never refuses, so a percentage over another tree's routes prints",
+            "    if not head or head == recorded:\n        return None",
+            "    if True:\n        return None",
+            "an inventory from another commit must refuse",
+        ),
+        Mutation(
+            # THE OPPOSITE FAILURE, and the one a reviewer specifically warned about: a refusal
+            # that fires spuriously is worse than the warning it replaces, because the first thing
+            # anyone does with a gate that blocks them wrongly is find the flag that turns it off.
+            "the staleness check refuses ALWAYS, including on the tree it was enumerated from",
+            "    if not head or head == recorded:\n        return None",
+            "    if False:\n        return None",
+            "an inventory from THIS commit must not refuse",
+        ),
+        Mutation(
+            # The migration half. An inventory written before #1047 has no provenance block, which
+            # is what EVERY already-written file looks like; refusing it would make the upgrade
+            # indistinguishable from a broken tool -- the #1039 lesson applied rather than relearned.
+            "a pre-#1047 inventory is treated as stale, breaking every already-written file",
+            '    if not prov:\n        return None\n    recorded = prov.get("commit")',
+            '    if not prov:\n        return "no provenance"\n    recorded = prov.get("commit")',
+            "a pre-#1047 inventory must be readable, not refused",
+        ),
+        Mutation(
+            # ...but it must still SAY it cannot attribute the number, or the percentage is exactly
+            # as unattributable as before and the change accomplished nothing.
+            "a missing provenance block reports as fine instead of UNKNOWN",
+            '        return ["  route inventory provenance: UNKNOWN \u2014 enumerated before provenance was "',
+            '        return ["  route inventory provenance: fine \u2014 "',
+            "a missing block must report UNKNOWN",
+        ),
+        Mutation(
+            # RAILS_ENV alone produced 263 vs 275 on ONE tree. Asserting the field NAMES was not
+            # enough -- this mutation survived that -- so the selftest sets the variable and looks.
+            "RAILS_ENV stops being read, so the field ships permanently empty",
+            '        "rails_env": os.environ.get("RAILS_ENV"),',
+            '        "rails_env": None,',
+            "RAILS_ENV is not read from the environment",
+        ),
     ),
 )
