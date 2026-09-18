@@ -9053,6 +9053,58 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **No evidence profile recorded an HTTP method, so a non-GET route could never be covered —
+  `plugins/qa-flow/scripts/validate_evidence.py`, `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/agents/functional-tester.md`, `scripts/mutations/route_coverage.py`** (#1039).
+  #1037 stopped a GET visit crediting the `PATCH` one line below it in `routes.rb` — correct, and
+  it left every state-changing route **permanently uncoverable**: measured on one real app, 112 of
+  263 routes with no action that could ever clear them. A gap nobody can close is a gap people
+  learn to scroll past, and the predictable next move is an exclusion rule hiding exactly the
+  routes the number exists to worry about.
+
+  **A new `actions` profile, not a new column — and the difference is the whole decision.**
+  `detect_profile` requires `header == list(profile.columns)` **exactly**, so widening an existing
+  contract makes every artifact already written to it match nothing; `visited_paths` then skips
+  each one without a word and coverage collapses toward zero with no error anywhere. Every adopter
+  would read a parse failure as a regression. A new profile cannot do that: nothing already
+  written changes shape, and `detect_profile`'s exactness becomes the mechanism instead of the
+  hazard. The cost is one more file per run, which is visible and recoverable; the other shape's
+  cost is invisible, which is the argument.
+
+  **Matched on `(verb, route pattern)`, exactly, with no inference.** Every other evidence read
+  resolves a URL and matches it against a compiled pattern, because a navigation records where the
+  browser went. This one does not: the `actions` profile carries a `Route` column, so the agent
+  **states** which route it drove. Inferring `DELETE /users/:id` from `/users/42` would mean
+  deciding that URL "is" that route when it is equally `GET` and `PATCH /users/:id` — the exact
+  defect #1037 removed. An exact match cannot make that mistake, and a pattern naming no route
+  credits **nothing**, so a wrong pattern under-claims. `VERB_SOURCES` is a third category beside
+  `ROUTE_SOURCES` and `ROUTE_LESS` rather than an entry in the first, because one dict whose values
+  meant two different things depending on the key is how the next reader credits a state-changing
+  route from a page view again.
+
+  **A GET row is refused by the profile itself**, so a page view cannot be laundered into
+  verb-bearing evidence and re-open path-only crediting through the new door. A lower-case verb is
+  refused too: route coverage compares the verb to `bin/rails routes` literally, so `patch` would
+  parse cleanly and then match no route at all — silent, which is the class this profile exists to
+  avoid.
+
+- **An evidence artifact that failed to parse was indistinguishable from one with no matching rows
+  — `plugins/qa-flow/scripts/route_coverage.py`** (#1039). `visited_paths` caught `Unusable` and
+  continued, so an unreadable artifact contributed nothing and the coverage number simply came out
+  lower, with no error. That is tolerable only while the contracts never move — and the moment one
+  does, the whole corpus goes quiet at once and a project goes looking for a regression that is not
+  there.
+
+  `unusable_artifacts()` names the condition and `route_coverage` prints the count **beside the
+  number it qualifies**, unconditionally, including the zero case: a line that appears only when
+  non-zero cannot be read as "nothing failed to parse" versus "nobody looked", and the zero line is
+  what makes a non-zero line mean something later. What counts as coverage is unchanged —
+  `visited_paths` still skips what it cannot read, because guessing at a malformed artifact is
+  worse than ignoring it. The skip is simply no longer silent.
+
+  Deliberately landed **before** the contract change that would first exploit it rather than
+  alongside it, so the guard exists independently of the thing it guards.
+
 - **Route coverage credited a non-GET route whenever a GET visit matched its path; 39% of every
   coverage claim on a real app was false — `plugins/qa-flow/scripts/route_coverage.py`,
   `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**

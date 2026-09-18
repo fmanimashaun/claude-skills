@@ -235,6 +235,85 @@ def run() -> int:
     check("attribution: names which artifact covered it",
           any("runtime:" in a for a in cov["GET /users/:id/edit"].by), True)
 
+    # ---- the ONLY channel that can cover a non-GET route (#1039) --------------------------
+    # #1037 stopped a GET crediting a DELETE. That was correct and it left every state-changing
+    # route permanently uncoverable -- a gap nobody can close, which is the pressure that ends in
+    # someone excluding the state-changing routes. The `actions` profile is the channel; these are
+    # the checks that it opens ONLY as far as it claims to.
+    act_ev = _tmp()
+    (act_ev / "2026-09-18-x-actions.csv").write_text(
+        ve.ACTIONS.header + "\n"
+        "DELETE,/users/:id,admin,exercised,302,https://x.test/users/42,https://x.test/users,"
+        "flash 'Deleted',shot.png,\n",
+        encoding="utf-8",
+    )
+    av = rc.verb_paths([act_ev])
+    check("actions: the row is read as (verb, pattern)", sorted(av), [("DELETE", "/users/:id")])
+    acov = {c.route.key: c
+            for c in rc.attribute(rc.from_rails(RAILS), {}, av)}
+    # THE POINT OF THE WHOLE ISSUE: a non-GET route can now be covered, and only this way.
+    check("actions: DELETE /users/:id IS covered by a row that drove it",
+          acov["DELETE /users/:id"].covered, True)
+    # THE DISCRIMINATING CONTROL, on the SAME evidence. `GET /users/:id` shares the pattern and
+    # differs only in verb, so if this were True the match would be path-only again -- the exact
+    # defect #1037 removed, re-entering through the new door.
+    check("actions: GET /users/:id is NOT covered by a DELETE row on the same pattern",
+          acov["GET /users/:id"].covered, False)
+    check("actions: POST /users is NOT covered by a DELETE row on a different pattern",
+          acov["POST /users"].covered, False)
+    check("actions: the artifact is named as the source",
+          acov["DELETE /users/:id"].by, ["actions:2026-09-18-x-actions.csv"])
+
+    # A PATTERN THAT NAMES NO ROUTE CREDITS NOTHING rather than guessing. Exact matching on both
+    # halves is what makes the verb channel safe: a wrong pattern under-claims, and under-claiming
+    # is the direction this file takes everywhere else.
+    #
+    # `/users` is deliberately a strict SUBSTRING of the real `/users/:id`, and that is the whole
+    # value of this fixture. An earlier version used `/user/:id`, which is not a substring of
+    # anything -- so loosening `==` to `in` passed it, and the check proved nothing about the one
+    # loosening anybody would actually write. There is no `DELETE /users` route, so the honest
+    # answer is that `DELETE /users/:id` stays uncovered; a substring or prefix match credits it.
+    typo_ev = _tmp()
+    (typo_ev / "typo-actions.csv").write_text(
+        ve.ACTIONS.header + "\n"
+        "DELETE,/users,admin,exercised,302,https://x.test/users,https://x.test/users,"
+        "flash 'Deleted',shot.png,\n",
+        encoding="utf-8",
+    )
+    tcov = {c.route.key: c
+            for c in rc.attribute(rc.from_rails(RAILS), {}, rc.verb_paths([typo_ev]))}
+    check("actions: a pattern naming no route credits nothing -- a wrong pattern under-claims",
+          tcov["DELETE /users/:id"].covered, False)
+
+    # A SKIPPED row is not evidence. Same file, same route, one word different.
+    skip_ev = _tmp()
+    (skip_ev / "skip-actions.csv").write_text(
+        ve.ACTIONS.header + "\n"
+        "DELETE,/users/:id,admin,Out of Scope,none,,,,,not in this release\n",
+        encoding="utf-8",
+    )
+    check("actions: an Out of Scope row drives nothing and credits nothing",
+          rc.verb_paths([skip_ev]), {})
+
+    # ---- an unreadable artifact is REPORTED, not silently skipped (#1039) -----------------
+    # `visited_paths` still skips what it cannot parse -- guessing at a malformed artifact is
+    # worse than ignoring it -- but the skip is now visible. Without this the day a contract
+    # moves, every written artifact stops parsing and coverage falls to near zero with no error,
+    # which reads as a regression rather than as the parse failure it is.
+    bad_ev = _tmp()
+    (bad_ev / "broken.csv").write_text("Not,A,Known,Header\n1,2,3,4\n", encoding="utf-8")
+    bad = rc.unusable_artifacts([bad_ev])
+    check("unusable: a CSV matching no contract is reported", len(bad), 1)
+    # Indexed defensively. Under the mutation that restores the silent swallow this list is EMPTY,
+    # and `bad[0]` would raise IndexError -- a crash, which is not a verdict. The harness rejects a
+    # fixture that dies instead of failing, so it has to report a wrong value rather than blow up.
+    check("unusable: it says which file",
+          bool(bad) and bad[0][0].endswith("broken.csv"), True)
+    # THE CONTROL. A directory of well-formed evidence must report NOTHING -- otherwise "1 could
+    # not be read" would be printed on every healthy run and would mean nothing at all.
+    check("unusable: well-formed evidence reports nothing", rc.unusable_artifacts([act_ev]), [])
+
+
     # ---- a findings rollup must never be counted as visits ---------------------------
     # Its Example Routes are up to three examples of a deduped defect. Counting them would
     # credit coverage for routes nobody opened -- inflating the exact number this makes honest.
@@ -247,7 +326,7 @@ def run() -> int:
     check("findings rollup contributes no coverage", rc.visited_paths([ev2]), {})
     # ...and that exclusion is deliberate, not an oversight: every profile must be classified.
     _tick()
-    classified = set(rc.ROUTE_SOURCES) | set(rc.ROUTE_LESS)
+    classified = set(rc.ROUTE_SOURCES) | set(rc.VERB_SOURCES) | set(rc.ROUTE_LESS)
     unclassified = {p.name for p in ve.PROFILES} - classified
     if unclassified:
         FAILURES.append(
