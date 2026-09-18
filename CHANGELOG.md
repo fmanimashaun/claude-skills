@@ -2724,6 +2724,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`assertion-free-spec` called a real assertion no assertion, because the verdict turned on the
+  helper's PREFIX — `plugins/rails-flow/scripts/self_consistency.py`,
+  `plugins/rails-flow/scripts/self_consistency_selftest.py`,
+  `scripts/mutations/self_consistency.py`** (#1036). `_ASSERTS` allowed a suffix on `assert\w*` and
+  `refute\w*` but not on bare `expect`, and `_` is a word character, so `\bexpect\b` never matched
+  inside `expect_a_way_back`. A helper named `assert_a_way_back` counted as asserting and the
+  identical helper named `expect_a_way_back` did not — **rename it and the finding disappears with
+  no change in behaviour**, which is the definition of a false positive.
+
+  **Observed downstream with the examples proved able to fail**, not read off the regex:
+  `Retask-platform`, `spec/requests/subpage_navigation_spec.rb:78` and `:84`, both reported as
+  *"runs code but asserts nothing"*. Both assert through a helper twenty lines above them, and
+  removing the four real patterns that helper checks makes both examples fail with the helper's own
+  message — so the finding was false about them.
+
+  **This mattered more than two rows because it was already driving a bad change.** The downstream
+  issue it produced carried the acceptance criterion *"reports 0 assertion-free findings"*, which
+  for these two rows was satisfiable only by adding a redundant assertion to a spec that already
+  asserted — a checker asking for a clean spec to be damaged. And the rule's own file docstring is
+  built on the opposite premise: *"Every rule is mechanical, so a finding is always real. A linter
+  that false-positives gets disabled and then catches nothing."*
+
+  **One token, `expect` to `expect\w*`, restoring the symmetry the rule already had.** The three
+  other findings in that downstream run are true positives — assertion-free perf reporters, one of
+  which let a real regression through — and are untouched.
+
+  **The suffix stays a suffix, and that needed a second negative control to prove.** The obvious
+  over-correction, `\w*expect\w*`, passes every other case in the selftest including the
+  `do_something` control, because none of them contains the substring at all — so the widening
+  would have been unfalsifiable. Only a name that contains `expect` without starting with it can
+  separate the two regexes, and `unexpected_thing` is now that case. Four scenarios and two declared
+  mutations, one for each direction the rule can fail in: too narrow reproduces the reported bug,
+  too wide makes the rule unable to fail at all.
+
 ### 2026-09-17 (release v1.131.1)
 
 - **A route named `/auth/failure` hijacked the headline of every report it appeared in —

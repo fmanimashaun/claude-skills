@@ -168,6 +168,55 @@ expect("assertion-free-spec",
        {"app/models/user.rb": 'class User\n  def it(x) = x\nend\n'},
        flagged=False, label="application code is out of scope")
 
+# #1036. THE REPORTED CASE, verbatim in shape: an example whose only call is a helper named
+# `expect_*` defined elsewhere in the file. The helper asserts -- proved downstream by mutation,
+# removing the patterns it checks made both examples fail with its own message -- but bare
+# `expect` could not match across the `_`, so the rule called a real assertion no assertion.
+expect("assertion-free-spec",
+       {"spec/requests/subpage_navigation_spec.rb":
+        'RSpec.describe "subpages" do\n'
+        '  def expect_a_way_back(path)\n'
+        '    get path\n'
+        '    expect(response).to have_http_status(:ok)\n'
+        '  end\n'
+        '  it "offers a way back from a contract" do\n'
+        '    expect_a_way_back("/contracts/1")\n'
+        '  end\n'
+        'end\n'},
+       flagged=False, label="a helper named expect_* counts as asserting")
+
+# The `expects_*` spelling too -- \w* has to mean any suffix, not just a leading underscore.
+expect("assertion-free-spec",
+       {"spec/requests/nav_spec.rb":
+        'RSpec.describe "nav" do\n'
+        '  it "has a way back" do\n    expects_a_way_back("/x")\n  end\n'
+        'end\n'},
+       flagged=False, label="a helper named expects_* counts as asserting")
+
+# THE NEGATIVE CONTROL, and the reason the widening above is a fix and not a deletion. Same file
+# shape, same rule, one word different: the call does not name an assertion at all. Without this,
+# `expect\w*` would be indistinguishable from matching any identifier -- a rule that cannot fail,
+# which is the exact class this rule exists to catch.
+expect("assertion-free-spec",
+       {"spec/requests/nav_spec.rb":
+        'RSpec.describe "nav" do\n'
+        '  it "has a way back" do\n    do_something("/x")\n  end\n'
+        'end\n'},
+       flagged=True, label="a helper that names no assertion is still a finding")
+
+# THE SECOND NEGATIVE CONTROL, and it exists because the first one did not do the job. `\w*` after
+# `expect` has to stay a SUFFIX: the word boundary in front is what keeps `expect_a_way_back`
+# (asserts) apart from `unexpected_thing` (does not). Widening to `\w*expect\w*` -- the obvious
+# over-correction -- passes every other case in this file including `do_something`, because none of
+# them contains the substring at all. Only a name that CONTAINS "expect" without starting with it
+# can tell the two regexes apart, so without this case the widening would have been unfalsifiable.
+expect("assertion-free-spec",
+       {"spec/requests/nav_spec.rb":
+        'RSpec.describe "nav" do\n'
+        '  it "has a way back" do\n    unexpected_thing("/x")\n  end\n'
+        'end\n'},
+       flagged=True, label="a name merely CONTAINING expect is not an assertion")
+
 # ---------------------------------------------------------------------------
 # dead-env-var  (repo-wide)
 # ---------------------------------------------------------------------------
