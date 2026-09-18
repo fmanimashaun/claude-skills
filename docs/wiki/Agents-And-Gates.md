@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 106 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 107 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.40.0 | 5 | 12 | 5 | 18 |
 | `pipeline` | 1.3.2 | 2 | 8 | 2 | 1 |
-| `qa-flow` | 1.30.1 | 11 | 8 | 11 | 15 |
-| `rails-flow` | 1.41.1 | 11 | 20 | 11 | 23 |
+| `qa-flow` | 1.31.0 | 11 | 8 | 11 | 15 |
+| `rails-flow` | 1.41.2 | 11 | 20 | 11 | 23 |
 
 ## Agents
 
@@ -137,6 +137,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-flow/agents --tiers plugins/rails-flow/reference/model-tiers.md` | live check |
 | rails-flow toolchain version | `rails-flow` | `python3 plugins/rails-flow/scripts/toolchain_version.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
+| assertion reachability selftest | `repo` | `python3 scripts/audit_assertion_reachability.py --selftest` | selftest |
 | changelog coverage selftest | `repo` | `python3 scripts/check_changelog_coverage.py --selftest` | selftest |
 | checks.json paths | `repo` | `python3 scripts/check_manifest_paths.py` | live check |
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |

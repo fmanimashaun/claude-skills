@@ -7,6 +7,105 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-18 (release v1.132.0)
+
+- **Nothing measured whether a selftest assertion is capable of failing —
+  `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`,
+  `scripts/maintainer_doctor.py`** (#1040). `scripts/mutation_check.py` proves every **declared
+  mutation** is caught by the right fixture. That is a strong guarantee and it is not this one: it
+  says the mutations we wrote down are caught, not that every assertion we wrote down can fail. An
+  assertion no mutation reaches is invisible to it.
+
+  The instance that prompted it shipped for months. `route_coverage_selftest.py` carried what read
+  as the guard for the covered axis — `check("attribution: never-visited route uncovered", …)` —
+  and it passed **vacuously**: no fixture path matched `/users/:id` at all, so the route was
+  uncovered because it was never a candidate, not because its verb was weighed. It read identically
+  before and after the #1037 fix, while the real defect credited 78 of 201 routes on a live app.
+
+  **Reachability is observed, not computed, and that is the whole design.** The first attempt at
+  this asked whether any fixture path matched a route pattern — and answered using
+  `compile_pattern`, the matcher under test. Every assertion guarding the matcher itself then looked
+  vacuous, producing a false positive on a genuine negative: the same shape as a fixture that
+  recomputes the filter it is checking. So nothing here re-implements any subject's logic or parses
+  a subject at all. A label is reachable if a mutant's selftest **actually reported it as failing**,
+  matched by the same case-insensitive substring rule `mutation_check.py` already applies to
+  `Mutation.expects` — reusing that rule rather than inventing a second one that could drift.
+
+  **It reports and never gates, deliberately.** An unreached assertion is *either* vacuous (it
+  cannot fail) *or* merely unguarded (nobody has written the mutation that trips it). This tool
+  cannot tell those apart and says so rather than guessing; that is a person's judgement. Making it
+  a gate before anyone has read the baseline would produce a carve-out, so it exits 0 on findings.
+  Ratchet it once the baseline is known, per this repo's own rule that a floor is ratcheted and
+  never set.
+
+  **The denominator is reported, not assumed.** A guard whose selftest names assertions in a shape
+  the parser cannot read would otherwise report "0 unreachable" and look perfect, so a guard with
+  zero enumerable labels is `UNREADABLE` — a skip, not a pass — and a non-literal label is counted
+  as unreadable rather than dropped. Labels are enumerated structurally with `ast`, never by regex
+  over the text.
+
+  The **report** gates nothing; the **selftest** is a gate like any other, because an auditor that
+  silently stopped separating a reached assertion from an unreached one would report an empty list
+  forever and read exactly like a repository with no vacuous assertions in it. Five declared
+  mutations, including both directions of the core claim — reporting nothing, and reporting
+  everything — since a test asserting only that the unguarded label appears would pass for a tool
+  that reported every label.
+
+  **The first full run, which is the output this was built to produce:** `1117 of 2049` labelled
+  assertions across `64` readable guards are unreached by any declared mutation, and `23` further
+  guards could not be enumerated at all and are excluded from that denominator rather than counted
+  as clean. On `route_coverage` alone — the guard #1037 was found in — it is `35 of 45`. **Nobody
+  should read 1117 as 1117 defects.** The overwhelming majority will be assertions nobody has
+  written a mutation for, which is why this ships as a list to read and not as a number to gate on.
+
+- **`uninstallable-plugin` could not tell a README with no install line from one with a correctly
+  spelled shell install line — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1041). The rule searched for exactly one
+  spelling, `/plugin install <name>@`, which is the slash-command form. `claude plugin install
+  <name>@<marketplace>` is equally valid — `claude plugin install --help` documents
+  `plugin@marketplace` as its argument — so a README using it was reported as having no install line
+  at all. Those two states need opposite actions, *add the line* versus *nothing is wrong*, and the
+  finding said the first in both cases. Found in the wild rather than hypothesised: running this
+  linter with `--root` against an unmodified third-party plugin repository produced the finding
+  against a README whose install block, at line 150, uses the shell form. **A false positive on
+  valid input is what gets a linter switched off**, and this file's whole design rests on a finding
+  always being real.
+
+  **The widening is bounded on both sides, which is what makes it a fix rather than a deletion.** A
+  bare `plugin install x@` is still refused: the `/` or `claude ` prefix is what makes the line a
+  COMMAND rather than prose about one, and dropping it would rebuild the looser
+  `undocumented-plugin` rule under a new name. Four selftest scenarios, and three declared
+  mutations — restoring slash-only, dropping the prefix requirement, and silencing the rule
+  entirely — each caught by a different scenario, so no one of them can be silenced by widening.
+
+- **Two plugins carried a second copy of their version that Claude Code silently ignores —
+  `.claude-plugin/marketplace.json`, `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1042). `rails-flow` and `design-flow` each
+  declared `version` in `marketplace.json` *and* in their own `plugin.json`, while `qa-flow` and
+  `pipeline` declared it only in `plugin.json`. Three of five carrying a key is not a convention.
+
+  **The split was already recorded and nothing asserted it.**
+  `plugins/rails-flow/scripts/toolchain_version.py` states it as finding 4, the load-bearing one for
+  its resolver: *"the two version sources are DISJOINT, not redundant"* — `rails-stack` is a skills
+  bundle with no plugin directory and is versioned only in `marketplace.json`; every other plugin is
+  versioned only in `plugins/<name>/.claude-plugin/plugin.json`. The tree had drifted away from a
+  rule the repo already depended on.
+
+  **Verified against the CLI, not reasoned about.** `claude plugin validate --strict` on a
+  deliberately mismatched pair reports *"At install time, plugin.json wins
+  (calculatePluginVersion precedence) — the entry version is silently ignored"*, `claude plugin tag`
+  refuses the mismatch outright, and `claude plugin details`/`list` display the `plugin.json` value.
+  So a drifted copy changes nothing a user can see, which is the worst possible shape for a
+  duplicated value. The two inert copies are deleted; `claude plugin validate --strict` passes on
+  the result.
+
+  **`marketplace-version-duplicate` now asserts both halves**, because a rule enforcing only the
+  first would have driven the tree into the opposite drift: a version declared in both files is a
+  finding, and so is a plugin with a version in *neither*. `rails-stack` is carved out by testing
+  the KEY rather than the FILE — a `plugin.json` that exists but declares no version leaves the
+  marketplace entry authoritative, and flagging that would be a false positive of exactly the kind
+  #1041 was filed for. Five scenarios, three declared mutations, one per direction.
+
 ### 2026-09-17 (release v1.131.0)
 
 - **We shipped a backstop to every client project and never applied it here — `.gitignore`,
@@ -2723,6 +2822,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 2026-09-18 (release v1.132.0)
+
+- **`assertion-free-spec` called a real assertion no assertion, because the verdict turned on the
+  helper's PREFIX — `plugins/rails-flow/scripts/self_consistency.py`,
+  `plugins/rails-flow/scripts/self_consistency_selftest.py`,
+  `scripts/mutations/self_consistency.py`** (#1036). `_ASSERTS` allowed a suffix on `assert\w*` and
+  `refute\w*` but not on bare `expect`, and `_` is a word character, so `\bexpect\b` never matched
+  inside `expect_a_way_back`. A helper named `assert_a_way_back` counted as asserting and the
+  identical helper named `expect_a_way_back` did not — **rename it and the finding disappears with
+  no change in behaviour**, which is the definition of a false positive.
+
+  **Observed downstream with the examples proved able to fail**, not read off the regex:
+  `Retask-platform`, `spec/requests/subpage_navigation_spec.rb:78` and `:84`, both reported as
+  *"runs code but asserts nothing"*. Both assert through a helper twenty lines above them, and
+  removing the four real patterns that helper checks makes both examples fail with the helper's own
+  message — so the finding was false about them.
+
+  **This mattered more than two rows because it was already driving a bad change.** The downstream
+  issue it produced carried the acceptance criterion *"reports 0 assertion-free findings"*, which
+  for these two rows was satisfiable only by adding a redundant assertion to a spec that already
+  asserted — a checker asking for a clean spec to be damaged. And the rule's own file docstring is
+  built on the opposite premise: *"Every rule is mechanical, so a finding is always real. A linter
+  that false-positives gets disabled and then catches nothing."*
+
+  **One token, `expect` to `expect\w*`, restoring the symmetry the rule already had.** The three
+  other findings in that downstream run are true positives — assertion-free perf reporters, one of
+  which let a real regression through — and are untouched.
+
+  **The suffix stays a suffix, and that needed a second negative control to prove.** The obvious
+  over-correction, `\w*expect\w*`, passes every other case in the selftest including the
+  `do_something` control, because none of them contains the substring at all — so the widening
+  would have been unfalsifiable. Only a name that contains `expect` without starting with it can
+  separate the two regexes, and `unexpected_thing` is now that case. Four scenarios and two declared
+  mutations, one for each direction the rule can fail in: too narrow reproduces the reported bug,
+  too wide makes the rule unable to fail at all.
 
 ### 2026-09-17 (release v1.131.1)
 
@@ -8915,6 +9050,95 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### 2026-09-18 (release v1.132.0)
+
+- **No evidence profile recorded an HTTP method, so a non-GET route could never be covered —
+  `plugins/qa-flow/scripts/validate_evidence.py`, `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/agents/functional-tester.md`, `scripts/mutations/route_coverage.py`** (#1039).
+  #1037 stopped a GET visit crediting the `PATCH` one line below it in `routes.rb` — correct, and
+  it left every state-changing route **permanently uncoverable**: measured on one real app, 112 of
+  263 routes with no action that could ever clear them. A gap nobody can close is a gap people
+  learn to scroll past, and the predictable next move is an exclusion rule hiding exactly the
+  routes the number exists to worry about.
+
+  **A new `actions` profile, not a new column — and the difference is the whole decision.**
+  `detect_profile` requires `header == list(profile.columns)` **exactly**, so widening an existing
+  contract makes every artifact already written to it match nothing; `visited_paths` then skips
+  each one without a word and coverage collapses toward zero with no error anywhere. Every adopter
+  would read a parse failure as a regression. A new profile cannot do that: nothing already
+  written changes shape, and `detect_profile`'s exactness becomes the mechanism instead of the
+  hazard. The cost is one more file per run, which is visible and recoverable; the other shape's
+  cost is invisible, which is the argument.
+
+  **Matched on `(verb, route pattern)`, exactly, with no inference.** Every other evidence read
+  resolves a URL and matches it against a compiled pattern, because a navigation records where the
+  browser went. This one does not: the `actions` profile carries a `Route` column, so the agent
+  **states** which route it drove. Inferring `DELETE /users/:id` from `/users/42` would mean
+  deciding that URL "is" that route when it is equally `GET` and `PATCH /users/:id` — the exact
+  defect #1037 removed. An exact match cannot make that mistake, and a pattern naming no route
+  credits **nothing**, so a wrong pattern under-claims. `VERB_SOURCES` is a third category beside
+  `ROUTE_SOURCES` and `ROUTE_LESS` rather than an entry in the first, because one dict whose values
+  meant two different things depending on the key is how the next reader credits a state-changing
+  route from a page view again.
+
+  **A GET row is refused by the profile itself**, so a page view cannot be laundered into
+  verb-bearing evidence and re-open path-only crediting through the new door. A lower-case verb is
+  refused too: route coverage compares the verb to `bin/rails routes` literally, so `patch` would
+  parse cleanly and then match no route at all — silent, which is the class this profile exists to
+  avoid.
+
+- **An evidence artifact that failed to parse was indistinguishable from one with no matching rows
+  — `plugins/qa-flow/scripts/route_coverage.py`** (#1039). `visited_paths` caught `Unusable` and
+  continued, so an unreadable artifact contributed nothing and the coverage number simply came out
+  lower, with no error. That is tolerable only while the contracts never move — and the moment one
+  does, the whole corpus goes quiet at once and a project goes looking for a regression that is not
+  there.
+
+  `unusable_artifacts()` names the condition and `route_coverage` prints the count **beside the
+  number it qualifies**, unconditionally, including the zero case: a line that appears only when
+  non-zero cannot be read as "nothing failed to parse" versus "nobody looked", and the zero line is
+  what makes a non-zero line mean something later. What counts as coverage is unchanged —
+  `visited_paths` still skips what it cannot read, because guessing at a malformed artifact is
+  worse than ignoring it. The skip is simply no longer silent.
+
+  Deliberately landed **before** the contract change that would first exploit it rather than
+  alongside it, so the guard exists independently of the thing it guards.
+
+- **Route coverage credited a non-GET route whenever a GET visit matched its path; 39% of every
+  coverage claim on a real app was false — `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**
+  (#1037). `attribute()` matched on pattern alone, so a sweep that only ever navigated credited
+  `DELETE /logout`, and one view of the password page credited both `PUT` and
+  `PATCH /passwords/:token`. Measured against Retask: **78 of 201 routes counted as covered were
+  non-GET routes credited from a GET — the tool reported 76% where it now reports 46%**, and the
+  inflation landed precisely on the state-changing routes the number exists to worry about.
+
+  The rule was already written down and enforced **twice** in the same file — on the crawl axis
+  (*"a crawler navigates with `page.goto`, which is a GET"*) and on the responsive axis, each with
+  its own fixture — and absent from the one axis whose percentage anybody quotes. It now lives in
+  `attribute()`, the single place every navigation-derived evidence map passes through, and the
+  crawl call site's private copy is gone; one mutation guard trips both axes' fixtures.
+
+  The guarding assertion that looked like it already covered this
+  (`attribution: never-visited route uncovered`) passed **vacuously**: no evidence path matched
+  `/users/:id` at all, so it read identically before and after the fix. The replacement asserts a
+  discriminating pair from one evidence row at `/users/42` — `GET /users/:id` covered (the control,
+  proving the path matches) and `DELETE /users/:id` not (so the difference can only be the verb).
+  `--selftest` fails 4 checks without the fix and passes 115 with it.
+
+  **This lowers measured coverage for every adopter**, because the number it replaces was wrong.
+  Non-GET routes now report as gaps, already flagged `non-GET` in the listing. **The drop is a
+  correction, not a regression** — the routes losing credit were never exercised; a page was
+  rendered and a write endpoint was marked tested. A project pinning a coverage floor must re-cut
+  it as a deliberate, separate commit that says so, or the next reader reads an honest number as a
+  fall in quality.
+
+  When this was written those gaps could not be cleared at all, because no evidence profile
+  recorded an HTTP method. **They can now: #1039 ships the `actions` profile in this same release**,
+  and a non-GET route is covered by recording the request that drove it. The two entries are two
+  halves of one change — this one stops the false credit, that one opens the only honest way to
+  earn it.
 
 ### 2026-09-17 (release v1.131.1)
 

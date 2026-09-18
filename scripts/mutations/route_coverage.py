@@ -21,11 +21,23 @@ GUARD = Guard(
             "    seen = {**visited_paths(evidence), **visit_only_paths(evidence)}",
             "a crawl visit changed the coverage arithmetic",
         ),
+        # #1037. This carve-out USED to live at the crawl call site, and only there -- so the
+        # `covered` axis, the one number anybody quotes, credited a GET visit to the non-GET route
+        # sharing its path. Measured against Retask: 78 of 201 "covered" routes were non-GET,
+        # reporting 76% coverage where the honest figure was 47%. The rule now lives in
+        # `attribute`, so ONE mutation trips both axes -- the covered-axis fixture named in
+        # `expects`, and the older crawl fixture ("a destructive route was claimed as crawled")
+        # which fails alongside it.
         Mutation(
-            "the GET-only carve-out goes, so a DELETE route is claimed as crawl-visited",
-            "                  if c.covered and not c.route.destructive}",
-            "                  if c.covered}",
-            "a destructive route was claimed as crawled",
+            "the verb stops deciding, so a GET visit credits the non-GET route sharing its path",
+            "        if not route.destructive:\n"
+            "            for path, sources in seen.items():\n"
+            "                if rx.match(path):\n"
+            "                    artifacts |= sources",
+            "        for path, sources in seen.items():\n"
+            "            if rx.match(path):\n"
+            "                artifacts |= sources",
+            "is NOT covered by that same visit",
         ),
         Mutation(
             "the third-state line is suppressed when zero, so nobody can tell it ran",
@@ -155,6 +167,50 @@ GUARD = Guard(
             "        print(f\"  no {SMALL_VIEWPORT_ARTIFACT} evidence found — run \"",
             "        print(f\"  \" + \"\" or f\"  no {SMALL_VIEWPORT_ARTIFACT} evidence \"",
             "no small evidence at all must say so",
+        ),
+        # #1039. The verb channel is the ONLY way a non-GET route is ever credited, so it needs
+        # a mutation on each thing that could go wrong: the verb half, the pattern half, the
+        # channel itself, the status filter, and the swallow that made the whole class invisible.
+        Mutation(
+            # Path-only crediting re-entering through the new door. This is #1037 all over again,
+            # which is why the fixture that catches it is a GET and a DELETE on ONE pattern.
+            "the verb half of the match is dropped, so any verb credits any other on that route",
+            "            if verb == route.verb.upper() and pattern == route.pattern:",
+            "            if pattern == route.pattern:",
+            "GET /users/:id is NOT covered by a DELETE row on the same pattern",
+        ),
+        Mutation(
+            # Exactness is what makes the verb channel safe. A substring match credits a route the
+            # artifact never named -- inference, which is the thing this channel exists to avoid.
+            "the pattern match loosens to a substring, so a pattern naming no route still credits",
+            "            if verb == route.verb.upper() and pattern == route.pattern:",
+            "            if verb == route.verb.upper() and pattern in route.pattern:",
+            "a pattern naming no route credits nothing",
+        ),
+        Mutation(
+            "the verb channel is disconnected, so no non-GET route can ever be covered",
+            "        for (verb, pattern), sources in verb_seen.items():",
+            "        for (verb, pattern), sources in {}.items():",
+            "DELETE /users/:id IS covered by a row that drove it",
+        ),
+        Mutation(
+            "an Out of Scope action row counts as driven",
+            '                if row["Status"].lower() in {ve.SKIPPED_STATUS}:\n'
+            "                    continue  # never driven, and not claimed to be",
+            "                if False:\n"
+            "                    continue",
+            "an Out of Scope row drives nothing and credits nothing",
+        ),
+        Mutation(
+            # The swallow itself. With this restored, the day a contract moves every artifact
+            # stops parsing and coverage falls to near zero with no error anywhere -- which reads
+            # as a regression rather than as the parse failure it is.
+            "an unreadable evidence artifact is swallowed again instead of reported",
+            "            except ve.Unusable as exc:\n"
+            "                problems.append((str(path), str(exc)))",
+            "            except ve.Unusable:\n"
+            "                pass",
+            "a CSV matching no contract is reported",
         ),
     ),
 )

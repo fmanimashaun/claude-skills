@@ -89,6 +89,15 @@ VISIT_ONLY_ARTIFACTS: dict[str, str] = {
     "links.json": "visited to inventory its links",
 }
 
+# Profiles credited by (VERB, route pattern) rather than by matching a URL against a pattern
+# (#1039). A THIRD category, and it has to be a third rather than an entry in ROUTE_SOURCES: those
+# profiles are read by resolving a URL, and this one is read by taking the route the artifact
+# NAMES. Folding it in would mean one dict whose values meant two different things depending on
+# the key, which is how the next reader credits a state-changing route from a page view again.
+VERB_SOURCES: dict[str, tuple[str, str]] = {
+    "actions": ("Method", "Route"),
+}
+
 # Profiles that must NOT contribute coverage, and why. `findings` carries `Example Routes`, but
 # those are up to three EXAMPLES of a deduplicated defect -- counting them would credit coverage
 # for routes nobody visited and inflate the number this tool exists to make honest.
@@ -293,6 +302,84 @@ def visited_paths(evidence_dirs: list[Path]) -> dict[str, set[str]]:
     return seen
 
 
+def verb_paths(evidence_dirs: list[Path]) -> dict[tuple[str, str], set[str]]:
+    """(VERB, route pattern) -> the artifacts that DROVE it. The only verb-bearing read (#1039).
+
+    Every other evidence read in this file resolves a URL and matches it against a compiled route
+    pattern, because a navigation records where the browser went and the route has to be inferred.
+    This one does not, and the difference is deliberate: the `actions` profile carries the `Route`
+    column, so the agent STATES which route it drove, and an exact string match against
+    `bin/rails routes` needs no inference at all.
+
+    That matters here more than elsewhere. Inferring `DELETE /users/:id` from a URL would mean
+    deciding that `/users/42` "is" that route -- and `/users/42` is also `GET /users/:id` and
+    `PATCH /users/:id`. Getting it wrong credits a state-changing route that was never exercised,
+    which is the entire defect #1037 removed. An exact match on the declared pattern cannot make
+    that mistake: a pattern that does not match any route credits NOTHING, so a typo under-claims.
+    Under-claiming is the safe direction for a coverage gate and the one this file takes
+    everywhere else.
+
+    `validate_evidence` has already refused any GET-like verb in this profile, so nothing here can
+    launder a page view into verb-bearing evidence.
+    """
+    seen: dict[tuple[str, str], set[str]] = {}
+    for directory in evidence_dirs:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.rglob("*.csv")):
+            try:
+                profile, rows = ve.load_rows(path)
+            except ve.Unusable:
+                continue  # reported by `unusable_artifacts`, never guessed at
+            columns = VERB_SOURCES.get(profile.name)
+            if not columns:
+                continue
+            verb_column, route_column = columns
+            for row in rows:
+                if row["Status"].lower() in {ve.SKIPPED_STATUS}:
+                    continue  # never driven, and not claimed to be
+                verb = (row.get(verb_column) or "").strip().upper()
+                pattern = (row.get(route_column) or "").strip()
+                if not verb or not pattern.startswith("/"):
+                    continue
+                seen.setdefault((verb, pattern), set()).add(f"{profile.name}:{path.name}")
+    return seen
+
+
+def unusable_artifacts(evidence_dirs: list[Path]) -> list[tuple[str, str]]:
+    """Every CSV under `evidence_dirs` that does NOT match an evidence contract, and why.
+
+    THE SILENT-SKIP HAZARD, WHICH IS WHY THIS IS SEPARATE FROM THE COVERAGE READ (#1039).
+    `visited_paths` catches `Unusable` and continues, so an artifact that fails to parse contributes
+    nothing -- and contributing nothing is **indistinguishable from an artifact with no matching
+    rows**. The coverage number simply comes out lower, with no error anywhere.
+
+    That is tolerable only while the contracts never move. The moment one does -- and #1039 exists
+    because one has to, to record an HTTP verb -- `detect_profile`'s exact `header ==
+    list(profile.columns)` makes every already-written artifact match nothing, and the whole corpus
+    goes quiet at once. A project would read that as a coverage collapse and go looking for a
+    regression that is not there.
+
+    So the condition gets a name and a report of its own BEFORE any contract moves, rather than
+    alongside the change that would first exploit it. Reported unconditionally, including the zero
+    case: "no evidence failed to parse" and "nobody looked" must not print the same line.
+
+    This does not change what counts as coverage. `visited_paths` still skips what it cannot read --
+    guessing at a malformed artifact is worse than ignoring it. What changes is that the skip is now
+    visible, and it is visible in the one place a number is quoted from.
+    """
+    problems: list[tuple[str, str]] = []
+    for directory in evidence_dirs:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.rglob("*.csv")):
+            try:
+                ve.load_rows(path)
+            except ve.Unusable as exc:
+                problems.append((str(path), str(exc)))
+    return problems
+
+
 def visit_only_paths(evidence_dirs: list[Path]) -> dict[str, set[str]]:
     """Routes a crawl artifact records having LOADED. Never merged with `visited_paths`."""
     seen: dict[str, set[str]] = {}
@@ -376,13 +463,49 @@ class Coverage:
         return bool(self.by)
 
 
-def attribute(routes: list[Route], seen: dict[str, set[str]]) -> list[Coverage]:
+def attribute(routes: list[Route], seen: dict[str, set[str]],
+              verb_seen: dict[tuple[str, str], set[str]] | None = None,
+              ) -> list[Coverage]:
+    """Credit each route with the artifacts that reached it. PATH IS NOT ENOUGH -- THE VERB
+    DECIDES TOO.
+
+    Every `seen` map this tool builds comes from a browser NAVIGATION -- an evidence CSV's
+    Requested/Final URL, a crawl's `page.goto`, a layout probe's -- and a navigation is a GET.
+    So a path match says "some GET reached this URL", which is no evidence at all about
+    `DELETE /users/:id`. Crediting it anyway is a false claim about the riskiest routes on the
+    list, and it is loudest exactly where it is least affordable: measured against Retask,
+    78 of 201 routes counted as covered were non-GET routes credited from a GET: the tool
+    reported 76% coverage over 263 routes where the honest figure is 46%. `DELETE /logout` was
+    "covered" by a route sweep that only ever navigated; `PUT` and `PATCH /passwords/:token` were
+    both "covered" by one page view.
+
+    This rule was already stated and enforced twice below -- on the crawl axis and on the
+    responsive axis, each with its own fixture -- and missing here, on the one axis whose
+    percentage anybody quotes (#1037). It lives in this function now so there is ONE home for it.
+
+    No evidence profile records an HTTP method (checked: none of the 90-odd declared columns is
+    a verb, and `detect_profile` matches headers exactly, so one cannot be added without
+    migrating every existing artifact). Until such a channel exists, a non-GET route CANNOT be
+    covered, and the honest report is that it is a gap -- already flagged `non-GET` in the
+    listing. Giving it credit does not make it tested; it makes the number wrong.
+    """
+    verb_seen = verb_seen or {}
     out: list[Coverage] = []
     for route in routes:
         rx = compile_pattern(route.pattern)
         artifacts: set[str] = set()
-        for path, sources in seen.items():
-            if rx.match(path):
+        if not route.destructive:
+            for path, sources in seen.items():
+                if rx.match(path):
+                    artifacts |= sources
+        # THE ONLY WAY A NON-GET ROUTE IS EVER CREDITED (#1039). Exact on both halves: the verb
+        # and the route pattern as `bin/rails routes` prints them. No regex, because there is
+        # nothing to infer -- the artifact names the route it drove. Applied to GET-like routes
+        # too rather than being gated on `destructive`: `validate_evidence` already refuses a
+        # GET row in this profile, so gating here would be a second place enforcing one rule,
+        # and the second one is what goes stale.
+        for (verb, pattern), sources in verb_seen.items():
+            if verb == route.verb.upper() and pattern == route.pattern:
                 artifacts |= sources
         out.append(Coverage(route, sorted(artifacts)))
     return out
@@ -476,20 +599,22 @@ def cmd_report(args: argparse.Namespace) -> int:
 
     kept, dropped = excluded(routes, exclusions)
     evidence = [Path(d) for d in args.evidence]
+    unreadable = unusable_artifacts(evidence)
     seen = visited_paths(evidence)
-    coverage = attribute(kept, seen)
+    coverage = attribute(kept, seen, verb_paths(evidence))
     gaps = sorted((c for c in coverage if not c.covered), key=lambda c: priority(c, auth_prefixes))
     covered = [c for c in coverage if c.covered]
 
     # THE THIRD STATE. A gap that a crawl loaded is still a gap -- `crawled` is a strict subset
     # of `gaps`, never added to `covered` -- but it is a different KIND of gap, and saying so is
     # what stops "untested" reading as "unvisited".
-    # `destructive` is excluded: a crawler navigates with `page.goto`, which is a GET. A DELETE
-    # route whose path happens to match a crawled URL was NOT visited, and saying it was would be
-    # a false claim about the riskiest routes on the list. Caught by this tool's own fixture,
-    # which crawled `/users/7` and saw `DELETE /users/:id` light up.
+    # `destructive` routes are excluded, but no longer HERE: a crawler navigates with `page.goto`,
+    # which is a GET, and `attribute` now refuses that credit for every navigation-derived map
+    # (#1037). This site kept its own copy of the rule while the `covered` axis had none; the rule
+    # has one home now, and the fixture below -- which crawled `/users/7` and saw
+    # `DELETE /users/:id` light up -- still proves it from there.
     visit_only = {c.route.key for c in attribute(kept, visit_only_paths(evidence))
-                  if c.covered and not c.route.destructive}
+                  if c.covered}
     crawled = [c for c in gaps if c.route.key in visit_only]
 
     # ---- AXIS TWO. Orthogonal to `covered`, never averaged with it. -----------------------
@@ -514,6 +639,15 @@ def cmd_report(args: argparse.Namespace) -> int:
     # cannot be read as "the crawler reached nothing" versus "nobody looked".
     print(f"  of those, {len(crawled)} visited by a crawl but never asserted, "
           f"{len(gaps) - len(crawled)} never reached at all")
+
+    # #1039. Printed unconditionally, next to the number it qualifies. An artifact that failed to
+    # parse contributed nothing, and "contributed nothing" looks exactly like "had no matching
+    # rows" in every figure above -- so the count has to appear beside them or it is not a warning,
+    # it is a footnote nobody reaches. The zero line is the load-bearing one: it is what makes a
+    # NON-zero line mean something on the day a contract moves.
+    print(f"  {len(unreadable)} evidence artifact(s) could not be read against any contract")
+    for where, why in unreadable:
+        print(f"    ! {where}: {why}")
 
     # Printed unconditionally, including 0/0: "nothing was measured small" and "there is no
     # small-viewport evidence at all" must not look like the same clean line, and neither may look
