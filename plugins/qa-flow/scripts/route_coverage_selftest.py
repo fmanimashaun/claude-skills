@@ -198,6 +198,40 @@ def run() -> int:
     check("attribution: /users/:id NOT covered by a visit to /users/42/edit",
           cov["GET /users/:id"].covered, False)
     check("attribution: never-visited route uncovered", cov["DELETE /users/:id"].covered, False)
+
+    # ---- THE VERB DECIDES, NOT JUST THE PATH (#1037) -----------------------------------
+    # The check directly above passes VACUOUSLY: no evidence path matches `/users/:id` at all,
+    # so `DELETE /users/:id` is uncovered because it was never reached, not because its verb was
+    # weighed. It passed identically before and after the fix -- a carve-out with no negative
+    # test, in the very assertion that looked like one.
+    #
+    # This block supplies the missing discrimination: ONE evidence row at `/users/42`, and a pair
+    # of routes that share that path and differ ONLY in verb. `GET` must be covered and `DELETE`
+    # must not, from the same row. The GET half is the control -- it proves the path really does
+    # match, so the DELETE half can only be False because of the verb. Without it, a matcher that
+    # had simply stopped matching anything would pass too.
+    #
+    # A SEPARATE evidence dir, so the arithmetic pinned above is not perturbed.
+    verb_ev = _tmp()
+    (verb_ev / "2026-09-18-x-summary.csv").write_text(
+        ve.FUNCTIONAL.header + "\n"
+        "TC-9,User,Users,Pass,200,https://x.test/users/42,https://x.test/users/42,"
+        "heading 'User',,\n",
+        encoding="utf-8",
+    )
+    verb_seen = rc.visited_paths([verb_ev])
+    check("verb: the fixture row was read at all", sorted(verb_seen), ["/users/42"])
+    vcov = {c.route.key: c for c in rc.attribute(rc.from_rails(RAILS), verb_seen)}
+    check("verb: GET /users/:id IS covered by a visit to /users/42 (the control -- the path "
+          "matches, so a False below is the verb and nothing else)",
+          vcov["GET /users/:id"].covered, True)
+    check("verb: DELETE /users/:id is NOT covered by that same visit -- a navigation is a GET, "
+          "and crediting it would be a false claim about the riskiest route on the list",
+          vcov["DELETE /users/:id"].covered, False)
+    check("verb: POST /users is NOT covered by a visit to /users",
+          {c.route.key: c for c in rc.attribute(rc.from_rails(RAILS),
+                                                {"/users": {"functional:x.csv"}})}
+          ["POST /users"].covered, False)
     check("attribution: names which artifact covered it",
           any("runtime:" in a for a in cov["GET /users/:id/edit"].by), True)
 
