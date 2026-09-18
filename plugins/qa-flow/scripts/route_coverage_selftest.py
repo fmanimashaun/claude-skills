@@ -290,6 +290,43 @@ def run() -> int:
     if _stale({"commit": HEAD_A}, HEAD_A, "the same commit") is not None:
         FAILURES.append("stale_inventory: an inventory from THIS commit must not refuse")
     _tick()
+    # THE SHIPPED REGRESSION. v1.133.0 compared the recorded commit to HEAD with `==`, which
+    # compares two RENDERINGS rather than two commits, and refused a downstream `doctrine` job on
+    # the first run after the bump: "enumerated from 978814d but the working tree is at
+    # 978814d29" -- the SAME commit, written at two lengths, with the enumerate and the report
+    # running seconds apart in one CI job. The gate refused the one state it must always accept.
+    #
+    # Every fixture here used two 40-character strings, so the whole class was invisible: nothing
+    # asserted that a real sha and its abbreviation are one commit. These are the missing cases,
+    # in the exact shape that failed.
+    if _stale({"commit": "978814d"}, "978814d29", "an abbreviated sha") is not None:
+        FAILURES.append("stale_inventory: an ABBREVIATED recorded sha must not refuse its own "
+                        "full-length HEAD -- this is the v1.133.0 regression")
+    _tick()
+    FULL = "978814d2912f7c8a4b5e6d0f1a2b3c4d5e6f7a8b"
+    if _stale({"commit": FULL[:7]}, FULL, "short vs full") is not None:
+        FAILURES.append("stale_inventory: a 7-char prefix of HEAD must not refuse")
+    _tick()
+    # ...and the other direction, because which side is abbreviated is not fixed: the recorded
+    # value is whatever `enumerate` wrote and HEAD is whatever the caller resolved.
+    if _stale({"commit": FULL}, FULL[:8], "full vs short") is not None:
+        FAILURES.append("stale_inventory: a full recorded sha must not refuse an abbreviated HEAD")
+    _tick()
+    # THE CONTROL, and the reason this widening is a fix and not a deletion: a prefix match is
+    # still a MATCH, not a licence. Two shas that genuinely differ must still refuse at any length.
+    if _stale({"commit": "978814d"}, "978815a29", "a different commit, abbreviated") is None:
+        FAILURES.append("stale_inventory: two DIFFERENT shas must still refuse when abbreviated")
+    _tick()
+    # And a prefix too short to identify anything is not a match. Seven is git's own floor; below
+    # it, accepting a "prefix" would rebuild the defect this check exists to catch.
+    if _stale({"commit": "978"}, FULL, "a 3-char prefix") is None:
+        FAILURES.append("stale_inventory: a prefix shorter than 7 chars must not count as a match")
+    _tick()
+    # Case must not decide it either -- git renders lower-case, but a hand-edited artifact may not.
+    if _stale({"commit": FULL.upper()}, FULL, "upper-case") is not None:
+        FAILURES.append("stale_inventory: sha comparison must be case-insensitive")
+
+    _tick()
     # STATE 2: no provenance at all -- what every file written before #1047 looks like. Refusing it
     # would make the upgrade indistinguishable from a broken tool (#1039's lesson, applied).
     if _stale(None, HEAD_A, "no provenance") is not None:

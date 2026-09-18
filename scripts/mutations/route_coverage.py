@@ -218,7 +218,7 @@ GUARD = Guard(
             # The defect: a number that cannot say which tree it measured. Five denominators were
             # quoted to each other in one afternoon and none of them was wrong.
             "a stale inventory never refuses, so a percentage over another tree's routes prints",
-            "    if not head or head == recorded:\n        return None",
+            "    if not head or same_commit(head, recorded):\n        return None",
             "    if True:\n        return None",
             "an inventory from another commit must refuse",
         ),
@@ -227,7 +227,7 @@ GUARD = Guard(
             # that fires spuriously is worse than the warning it replaces, because the first thing
             # anyone does with a gate that blocks them wrongly is find the flag that turns it off.
             "the staleness check refuses ALWAYS, including on the tree it was enumerated from",
-            "    if not head or head == recorded:\n        return None",
+            "    if not head or same_commit(head, recorded):\n        return None",
             "    if False:\n        return None",
             "an inventory from THIS commit must not refuse",
         ),
@@ -255,6 +255,28 @@ GUARD = Guard(
             '        "rails_env": os.environ.get("RAILS_ENV"),',
             '        "rails_env": None,',
             "RAILS_ENV is not read from the environment",
+        ),
+        # The v1.133.0 regression: `==` compares two RENDERINGS of a sha, not two commits. It
+        # refused a downstream gate on an inventory enumerated seconds earlier from the same tree.
+        Mutation(
+            "the sha comparison returns to `==`, so an abbreviated sha refuses its own HEAD",
+            "    if not head or same_commit(head, recorded):",
+            "    if not head or head == recorded:",
+            "an ABBREVIATED recorded sha must not refuse its own full-length HEAD",
+        ),
+        Mutation(
+            # The over-correction. A prefix match is still a MATCH and not a licence: without a
+            # floor, a 3-character "prefix" identifies nothing and the check stops being one.
+            "the 7-character floor is dropped, so any prefix counts as the same commit",
+            "    return len(short) >= 7 and long_.startswith(short)",
+            "    return long_.startswith(short)",
+            "a prefix shorter than 7 chars must not count as a match",
+        ),
+        Mutation(
+            "every pair of shas counts as the same commit, so staleness can never be detected",
+            "    if not a or not b:\n        return False",
+            "    if True:\n        return True",
+            "two DIFFERENT shas must still refuse when abbreviated",
         ),
     ),
 )
