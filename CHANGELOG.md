@@ -11050,6 +11050,35 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Browser mode could not reach an authenticated page or the accessibility tree —
+  `plugins/design-flow/commands/audit.md`**. The conformance collector launches a *fresh*
+  Playwright browser and reads the DOM plus computed styles, so it has two structural blind spots:
+  it never sees a screen behind a login, and it never sees the **accessibility tree** — which is
+  what decides whether an icon-only row action is actually named.
+
+  **Chrome DevTools MCP is documented as a second instrument, explicitly not a replacement.** The
+  collector stays the default: deterministic, sweeps route × viewport × theme unattended, and judged
+  by a script rather than by reading. DevTools is what you reach for when the question is *"what
+  does a screen reader get on this authenticated page"* and inspection is the only way to answer it.
+  `--autoConnect` attaches to the Chrome already open — your session, your cookies, the admin screen
+  you are actually looking at; without it the server launches an empty browser and re-creates the
+  collector with fewer guarantees.
+
+  **Scoped to five asks**, because an inspection tool with no scope becomes a way to browse: is this
+  icon-only action named (`take_snapshot`), does the label wrap in its cell (`take_screenshot` +
+  `resize_page`), is the focus ring painted (`press_key` Tab), what did the cascade resolve to
+  (`evaluate_script`), and the Lighthouse categories (`lighthouse_audit`).
+
+  **Three rules carry the failure modes.** Name the page with `list_pages` then `select_page` — a
+  session attached to a real browser has whatever tabs the human left open, and a measurement
+  against the wrong tab is a confident number about a page nobody asked about. Re-snapshot after a
+  Turbo navigation rather than reasoning forward from the tree you already took. And **never read a
+  clean inspection as coverage**: the collector's sweep is the denominator, this is a probe, and an
+  audit reporting "looks right in the browser" over three screens out of forty is the shape this
+  file exists to refuse. A missing server is a **skip**, reported as one.
+
 ### 2026-09-17 (release v1.130.0)
 
 - **`reworded` — the status a faithful port needed and the check did not have** (#1000).
