@@ -105,6 +105,10 @@
               {"kind": "line"},
               {"kind": "text", "label": "Overview", "size": 14}]
   },
+  "A surface must not impose layout; a composition must declare that it does": {
+    "drawable": false,
+    "why": "doctrine, not a component — it states the surface/composition distinction that decides whether a component may arrange the content it is handed (#1117). There is nothing to draw."
+  },
   "Search field": {
     "shape": "control",
     "width": 280,

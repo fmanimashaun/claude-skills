@@ -522,6 +522,37 @@ DEFAULTS = { variant: :primary, size: :md }
   mobile drawer's nested disclosure list — the same `aria-expanded` button per section, stacked, with no
   hover path. That reuses the drawer contract rather than inventing a second mobile nav.
 
+## A surface must not impose layout; a composition must declare that it does
+
+Layout is composed in the template from the `@utility` recipes and tuned with custom properties.
+What the doctrine never said is what happens when a **component** arranges the content it is handed,
+and nothing checked — so there was nothing to drift from.
+
+**The distinction is the rule, and it is checkable:**
+
+- A **SURFACE** takes arbitrary content and gives it a background, a border, padding. **It cannot
+  know what it will hold, so it must not arrange it.**
+- A **COMPOSITION** is a named thing with a defined internal arrangement — a dialog with a title and
+  actions, a media object whose side-by-side relationship *is* the component. Its layout **is** the
+  component, and it says so: `<%# composition: <why> %>`.
+
+**The visible half is the lesser half.** A card component wrapped its content in `stack` with a
+hardcoded `--space`. Measured across its call sites before anything changed: **112 occurrences in 63
+files, 77 of which already passed `class="stack"` with their own spacing** — and the component's
+inner value won on the children that mattered. Four grid layouts also collapsed to one column,
+because a grid cannot survive being wrapped in a flex column.
+
+The flattening is visible eventually. **The override is not**: no error, no glitch on most screens,
+and every individual template still reading correctly. That is why this is doctrine and a gate rather
+than a one-line fix — a component that quietly contradicts the majority of its callers is a bug
+review does not catch.
+
+The slot machinery that wrapper existed to arrange was used **once** in the whole application.
+
+Enforced downstream by `check_surface_layout.py`. Every composition in
+[component-implementations.md](component-implementations.md) carries its declaration, so the code a
+consumer copies demonstrates the rule rather than contradicting it.
+
 ## Search field
 - **Every admin index has one**, and the row exists because `forms.md` lists `search` as an input
   *type* while the pattern is the thing that gets hand-rolled.
