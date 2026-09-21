@@ -47,3 +47,19 @@ concrete repro / failure scenario, a severity (**BLOCKING** = must fix before co
 and the developer flow + the human decide what to act on. Keep the deduped list **issue-ready**
 (each filable verbatim). End with a verdict: CLEAN or BLOCKED — emitted alongside the full list,
 never in place of it.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+BLOCKING  app/models/order.rb:42 — unscoped query crosses the tenant boundary
+ADVISORY  app/jobs/sync_job.rb:8 — perform takes a record; this codebase passes ids
+2 blocking, 1 advisory across 7 changed files.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

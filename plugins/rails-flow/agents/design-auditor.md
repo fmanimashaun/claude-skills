@@ -44,3 +44,19 @@ no matter how small** — each with `file:line`, a concrete repro / what-it-brea
 (**BLOCKING** = breaks the design system, vs **Suggestion**), and fix option(s). You do **not**
 decide disposition — never drop or "accept" a real finding; a minor one is still reported, and the
 developer flow + the human decide what to act on. Keep the list deduped and **issue-ready**.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+DRIFT  app/views/admin/index.html.erb:14 — raw hex #1f2937; use the `surface` role token
+DRIFT  app/views/orders/_form.html.erb:3 — form_with where simple_form is mandated
+2 drift findings across 9 changed views.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

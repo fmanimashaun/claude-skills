@@ -71,9 +71,37 @@ jobs:
       # carried a qa-flow Unreleased block onto main -- shipped, unversioned, notes never published --
       # against a rule CLAUDE.md stated and nothing enforced. `--promotion` is NOT in the doctor's
       # sweep on purpose: on dev, Unreleased is the normal state between promotions.
+      # The `if` below is the intent. It is NOT trusted on its own, because it has been observed
+      # to be wrong (#1092): on 2026-09-21 this step RAN on a pull request whose base was `dev`,
+      # four times, and was correctly skipped on sibling PRs minutes apart. Every hypothesis was
+      # tested and refuted -- a stale workflow file (byte-identical on both refs, and the `if` has
+      # been there since b4adaa7), an open `dev -> main` PR (closed at 12:25:58; the run is
+      # 12:28:09), a stale rerun context (a fresh close/reopen reproduced it), two colliding runs
+      # (they were Gates and CodeQL), and a merge commit on the branch (probed deliberately in
+      # #1101: skipped).
+      #
+      # A PR into `dev` is REQUIRED to carry `### Unreleased`, so a misfire here is a gate that is
+      # red on correct code -- and the response it trains is the dangerous one: strip the
+      # Unreleased block, which is exactly what #990 added this step to prevent.
+      #
+      # So the step now establishes its own precondition instead of trusting the context, and
+      # prints what it saw. If the `if` ever misfires again the run says so in one line, and the
+      # check no-ops rather than failing a correct branch.
       - name: Promotion carries no Unreleased heading
         if: github.event_name == 'pull_request' && github.base_ref == 'main'
-        run: python3 scripts/extract_release_notes.py --check --all-tags --promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "context: event=${{ github.event_name }} base_ref=${{ github.base_ref }} head_ref=${{ github.head_ref }}"
+          base="$(gh pr view "${{ github.event.pull_request.number }}" --json baseRefName --jq .baseRefName)"
+          echo "resolved base of PR #${{ github.event.pull_request.number }}: ${base}"
+          if [ "$base" != "main" ]; then
+            echo "NOT a promotion (base is '${base}', not 'main') — the promotion-only check does"
+            echo "not apply. On dev, an Unreleased heading is the required state. See #1092."
+            exit 0
+          fi
+          python3 scripts/extract_release_notes.py --check --all-tags --promotion
 
       # `dist/` drift is a DIAGNOSTIC rather than a gate, so `--gates-only` does not cover it. It is
       # checked here too because release.yml checks it only at release time, on `main`, AFTER merge

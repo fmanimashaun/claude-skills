@@ -145,3 +145,20 @@ certified feature.
 "PASS","report":"qa/reports/<file>"}`. The release-gate hook reads this. NEVER write
 it for verify runs, partial passes, or with open S1/S2 defects. State plainly which
 sha is cleared for main.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+REPORT   qa/reports/<date>-<slug>.md
+FINDINGS qa/reports/<date>-<slug>-findings.csv
+ISSUES   filed #412, #413 (labelled)
+STAMP    qa/CERTIFICATION written — certification PASSED
+2 defects filed; the stamp is written only on a passing certification.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

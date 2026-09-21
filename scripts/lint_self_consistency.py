@@ -3025,6 +3025,119 @@ def _assertions_below_the_tally(source: str) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: promotion-gate-trusts-its-context
+# ---------------------------------------------------------------------------
+
+_PROMOTION_STEP = re.compile(r"- name: Promotion carries no Unreleased heading(.*?)(?=\n      - name:|\Z)",
+                             re.S)
+_SELF_CHECK = re.compile(r"baseRefName|resolved base of PR")
+
+
+def check_promotion_gate_trusts_its_context() -> tuple[list[Finding], int]:
+    """The promotion-only CI step must establish its own precondition (#1092).
+
+    On 2026-09-21 this step RAN on a pull request whose base was `dev`, four times, while sibling
+    PRs minutes apart skipped it correctly -- despite `if: github.base_ref == 'main'`. Every
+    hypothesis was tested and refuted: a stale workflow file (byte-identical on both refs, and the
+    condition has been present since `b4adaa7`), an open `dev -> main` PR (closed at 12:25:58; the
+    failing run is 12:28:09), a stale rerun context (a fresh close/reopen reproduced it), two
+    colliding runs (they were Gates and CodeQL), and a merge commit on the branch (probed
+    deliberately in #1101, and skipped).
+
+    THE CAUSE IS STILL UNKNOWN, and that is precisely why the step must not depend on being told
+    the truth. A PR into `dev` is REQUIRED to carry `### Unreleased` -- CLAUDE.md says so -- so a
+    misfire is a gate red on correct code, and the response it trains is the dangerous one: strip
+    the Unreleased block, which is exactly what #990 added the step to prevent.
+
+    So the step resolves the PR's real base itself and no-ops when it is not `main`. This rule
+    keeps that guard in place: an `if:` alone is a claim about the context, and the context is what
+    was wrong.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    workflow = ROOT / ".github/workflows/gates.yml"
+    if not workflow.is_file():
+        return findings, examined
+    body = read(workflow)
+    match = _PROMOTION_STEP.search(body)
+    if not match:
+        return findings, examined
+    examined = 1
+    if not _SELF_CHECK.search(match.group(1)):
+        findings.append(Finding(
+            "promotion-gate-trusts-its-context", rel(workflow),
+            body[: match.start()].count("\n") + 1,
+            "the promotion-only step trusts `github.base_ref` and nothing else. That context has "
+            "been observed to be wrong (#1092): the step ran on a pull request whose base was "
+            "`dev`, where an `### Unreleased` heading is the REQUIRED state, so the gate was red "
+            "on correct code. Resolve the PR's base in the step and no-op when it is not `main` -- "
+            "an `if:` is a claim about the context, and the context is what failed",
+        ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
+# Rule: doctrine-we-ship-but-do-not-follow
+# ---------------------------------------------------------------------------
+
+# Behavioural doctrine that must hold BOTH in the CLAUDE.md we scaffold for other people and in
+# this repository's own agent instructions. Each entry: (label, marker in the scaffold, marker here).
+_BOTH_WAYS = (
+    ("the advisor stance", "## How to work with me", "## Act as an advisor"),
+    ("the context budget", "## Context is billed on every turn", "## Spend context like it is billed"),
+)
+
+
+def check_doctrine_we_ship_but_do_not_follow() -> tuple[list[Finding], int]:
+    """Behavioural doctrine we scaffold for others must hold here too (#1088).
+
+    Two rules went into the scaffolded `CLAUDE.md` on the same day: act as an advisor rather than an
+    assistant, and treat context as billed on every turn. Both are about how an agent behaves toward
+    the person using it, and neither is Rails-specific -- so a copy that shipped to every downstream
+    project while this repository followed neither would be the plainest form of the defect this
+    lint exists for. We refuse a skill edit without a citation and would have been handing out
+    unlabelled answers ourselves.
+
+    THE HOME IS `AGENTS.md`, NOT `CLAUDE.md`, and that is a measurement rather than a preference:
+    `CLAUDE.md` carries a hard ceiling (`claude-md: max-lines`) and sat at 260 of 262 when this was
+    written -- two lines of headroom for forty lines of doctrine. `AGENTS.md` is the harness-neutral
+    file and already holds exactly this kind of rule.
+
+    CHECKED AS PRESENCE, NOT WORDING. The two files address different readers -- one instructs an
+    agent working on somebody's Rails app, the other an agent working on this marketplace -- so
+    demanding identical text would force a copy that reads wrong in one of them. The section
+    existing in both is the enforceable half; that it says the same thing is a review question.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    scaffold = ROOT / "plugins/rails-flow/commands/setup-flow.md"
+    ours = ROOT / "AGENTS.md"
+    if not scaffold.is_file() or not ours.is_file():
+        return findings, examined
+    shipped_text, our_text = read(scaffold), read(ours)
+    for label, shipped_marker, our_marker in _BOTH_WAYS:
+        examined += 1
+        in_shipped = shipped_marker in shipped_text
+        in_ours = our_marker in our_text
+        if in_shipped and not in_ours:
+            findings.append(Finding(
+                "doctrine-we-ship-but-do-not-follow", rel(ours), 1,
+                f"{label} is scaffolded into every downstream project's `CLAUDE.md` "
+                f"(`{shipped_marker}`) and this repository does not follow it -- no "
+                f"`{our_marker}` here. Shipping a rule we exempt ourselves from is the defect this "
+                f"lint exists for",
+            ))
+        elif in_ours and not in_shipped:
+            findings.append(Finding(
+                "doctrine-we-ship-but-do-not-follow", rel(scaffold), 1,
+                f"{label} is stated for this repository (`{our_marker}`) and no longer scaffolded "
+                f"into downstream projects -- the section `{shipped_marker}` is gone from the "
+                f"template, so new projects get none of it",
+            ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3075,6 +3188,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     flat_role, flat_role_examined = check_flattened_conditional_role()
     unowned, unowned_examined = check_adopts_an_unowned_server()
     ci_step, ci_step_examined = check_ci_verdict_without_a_step_count()
+    promo_ctx, promo_ctx_examined = check_promotion_gate_trusts_its_context()
+    bothways, bothways_examined = check_doctrine_we_ship_but_do_not_follow()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -3119,6 +3234,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         "shipped_docs_contemplating_a_running_server": unowned_examined,
         "shipped_docs_reading_ci_status": ci_step_examined,
+        "promotion_only_ci_steps": promo_ctx_examined,
+        "doctrines_required_in_both_places": bothways_examined,
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
@@ -3127,7 +3244,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
-            + xplugin + unowned + toggles + ci_step,
+            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways,
             coverage)
 
 
@@ -5027,6 +5144,49 @@ def selftest() -> int:
             f"{len(_own)} assertion(s) run AFTER the count is printed (lines "
             f"{', '.join(str(x) for x in _own)}) -- the printed tally excludes them and is "
             f"therefore too low; move the print below the last scenario")
+
+    # ---- promotion-gate-trusts-its-context (#1092) ----------------------------------
+    PGC = "promotion-gate-trusts-its-context"
+    STEP = ("jobs:\n  gates:\n    steps:\n"
+            "      - name: Promotion carries no Unreleased heading\n"
+            "        if: github.base_ref == 'main'\n")
+    # THE DEFECT: an `if:` and nothing else. That context was observed to be wrong.
+    scenario("a promotion step that trusts github.base_ref alone",
+             {".github/workflows/gates.yml": STEP + "        run: python3 x.py --promotion\n"},
+             rule=PGC, expect_finding=True)
+    # MUST PASS: it resolves the base itself and no-ops when it is not main.
+    scenario("a promotion step that resolves the base itself is silent",
+             {".github/workflows/gates.yml": STEP + "        run: |\n"
+              "          base=\"$(gh pr view 1 --json baseRefName --jq .baseRefName)\"\n"
+              "          [ \"$base\" = main ] || exit 0\n"},
+             rule=PGC, expect_finding=False)
+    # SCOPE: a workflow without the step at all is not this rule's business.
+    scenario("a workflow with no promotion step is out of scope",
+             {".github/workflows/gates.yml": "jobs:\n  gates:\n    steps:\n"
+              "      - name: Gate sweep\n        run: python3 doctor.py\n"},
+             rule=PGC, expect_finding=False)
+
+    # ---- doctrine-we-ship-but-do-not-follow (#1088) ---------------------------------
+    DWS = "doctrine-we-ship-but-do-not-follow"
+    SCAFFOLD = "plugins/rails-flow/commands/setup-flow.md"
+    # Scaffolded for everyone else, absent here -- the plainest form of the defect.
+    scenario("doctrine we scaffold and do not follow ourselves",
+             {SCAFFOLD: "## How to work with me\nact as an advisor\n", "AGENTS.md": "# A\n"},
+             rule=DWS, expect_finding=True)
+    # The mirror: still ours, quietly dropped from the template, so new projects get none of it.
+    scenario("doctrine we follow and stopped shipping",
+             {SCAFFOLD: "# setup\n", "AGENTS.md": "## Act as an advisor\nscrutiny\n"},
+             rule=DWS, expect_finding=True)
+    # MUST PASS: both present. Without this the rule is satisfied by one that fires on everything.
+    scenario("doctrine present in both places is silent",
+             {SCAFFOLD: "## How to work with me\n## Context is billed on every turn\n",
+              "AGENTS.md": "## Act as an advisor\n## Spend context like it is billed\n"},
+             rule=DWS, expect_finding=False)
+    # MUST PASS: absent from both is out of scope. A rule nobody has written yet is not a defect,
+    # and firing on it would make every new repo red before anyone had done anything wrong.
+    scenario("doctrine absent from both is out of scope",
+             {SCAFFOLD: "# setup\n", "AGENTS.md": "# A\n"},
+             rule=DWS, expect_finding=False)
 
     # The count is printed HERE, after the LAST scenario. It used to sit further up, and a
     # block appended below it reported a total that excluded itself -- a tally that is wrong

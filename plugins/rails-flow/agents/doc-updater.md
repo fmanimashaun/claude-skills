@@ -55,3 +55,18 @@ Given the session's changes (`git log --oneline <base>..HEAD` + `git diff --stat
 Rules: edit surgically — never rewrite documents wholesale; keep MEMORY.md a one-line-per-
 entry index (link + 8-15 word summary); never document aspirations as facts. Report which
 docs you touched and why, or state explicitly that nothing needed updating.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+UPDATED docs/GUIDE.md, docs/brain/MEMORY.md, CLAUDE.md § Patterns
+VERDICT 3 files synchronised with what actually shipped
+3 docs updated. Nothing invented — every change traces to a commit in this session.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

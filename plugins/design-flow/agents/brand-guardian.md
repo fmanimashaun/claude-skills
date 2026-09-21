@@ -38,3 +38,19 @@ else re-themes.
 Brand elements checked, violations with `file:line` + the rule, and the correct asset/token.
 Flag any hardcoded brand color or off-brand icon set. Never introduce a second token system
 for the "other" brand — it's one system, prefix `fm-*`.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+OFF-BRAND  app/views/marketing/_hero.html.erb:8 — logo below the 24px clear-space floor
+OFF-BRAND  app/components/ui/badge_component.rb:12 — brand colour hardcoded; use `accent`
+2 findings across the marketing surfaces.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

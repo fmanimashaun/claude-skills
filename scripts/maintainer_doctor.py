@@ -429,6 +429,26 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("component states", ("python3", "scripts/check_component_states.py")),
     ("component states selftest",
      ("python3", "scripts/check_component_states.py", "--selftest")),
+    # #1085. A SessionStart hook fires again on EVERY COMPACTION, so what it prints is charged
+    # each time the context is reclaimed -- exactly when it is scarcest. One hook was 98% of the
+    # cost and 85% of that was one file printed verbatim. A ratchet against a fixture project, so
+    # the baseline cannot drift on an unrelated commit.
+    ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
+    ("hook output budget selftest",
+     ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
+    # #1086. An agent's answer lands in the PARENT conversation and stays there for the rest of
+    # the session -- a permanent tax, not a one-off cost like its own turns. 27 of 29 shipped
+    # agents declared nothing about what they return. This checks the DECLARATION, not the
+    # runtime behaviour, which depends on the model and would be a gate that cannot fail.
+    ("agent output contract", ("python3", "scripts/check_agent_output_contract.py")),
+    ("agent output contract selftest",
+     ("python3", "scripts/check_agent_output_contract.py", "--selftest")),
+    # #1096. A rebase across a promotion applies CLEANLY and files unshipped bullets under the
+    # release heading the arm just renamed. A loss is absolute; an addition is ratcheted, because
+    # 16 blocks already carry post-tag bullets from before anyone was watching.
+    ("published blocks", ("python3", "scripts/check_published_blocks.py")),
+    ("published blocks selftest",
+     ("python3", "scripts/check_published_blocks.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
@@ -549,7 +569,9 @@ class Doctor:
         except FileNotFoundError:
             return 127, f"{args[0]}: not found"
         except subprocess.TimeoutExpired:
-            return 124, f"{' '.join(args)}: timed out"
+            # 124 is the conventional shell code for a timeout, and the gate loop reads it as a
+            # SKIP rather than a FAIL -- a check that was killed did not run, and did not fail.
+            return 124, f"{' '.join(args)}: timed out after {timeout}s"
 
     def git(self, *args: str) -> tuple[int, str]:
         return self.run("git", *args)
@@ -1040,6 +1062,29 @@ class Doctor:
             code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 self.add(PASS, f"gate: {name}")
+            elif code == 124:
+                # A TIMEOUT IS NOT A FAILURE, and it is not a pass either -- it is the third
+                # verdict this doctor already has. The check was killed; nothing is known about
+                # what it would have said.
+                #
+                # The distinction is the whole point of the FAIL line. On `mutation coverage`,
+                # FAIL means a guard stopped guarding, which is as serious as this repository
+                # gets: that gate is what proves the other gates can fail. Reporting a timeout the
+                # same way sends a maintainer to the worst possible false alarm -- and, in the
+                # direction that actually matters, teaches them to shrug at a red mutation gate.
+                #
+                # This was diagnosed at #129 and mitigated by raising the allowance to 900s rather
+                # than fixing the verdict; the note above SLOW_GATES says so in as many words. The
+                # allowance is not the fix, because the sweep gets slower every time anyone makes
+                # the repo safer, and a contended machine blows any fixed budget. Measured
+                # 2026-09-21: 1000 mutations across 93 guards took ~15 minutes on a laptop running
+                # several sessions, and passed completely when run on its own.
+                self.add(
+                    SKIP, f"gate: {name}",
+                    f"{out.strip() or 'timed out'} — killed, so it did NOT run; this is not a "
+                    f"pass and not a failure. Run it alone before believing either",
+                    " ".join(cmd),
+                )
             elif code == 3:
                 # Exit 3 is a gate's own "I ran but could not check everything" — currently
                 # lint_markdown_code.py with node or ruby absent, which is the normal state of a

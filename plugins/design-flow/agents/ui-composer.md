@@ -59,3 +59,19 @@ renderings of one idea is a failed run even when each is individually good.
 What you built/changed, the primitives + role tokens + catalog recipe used, the
 variants/sizes/states exposed, the interaction + responsive behavior, and any proposed system
 additions. Keep views free of raw color and bespoke layout CSS.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+WROTE  app/views/orders/index.html.erb, app/components/ui/table_component.rb
+COMPOSED grid-auto, cluster, Table, Button — no freehand CSS
+2 files. Every layout is a primitive; every colour a role token.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

@@ -74,3 +74,18 @@ matrix; a11y targets; perf thresholds; security focus; exploratory charters; dat
 prerequisites for `qa/seed.rb`. Severity ladder for filing: S1 data-loss/security/
 blocked-core · S2 broken feature no workaround · S3 workaround / serious a11y · S4
 cosmetic.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+PLAN    qa/plans/<date>-<slug>.md
+VERDICT 6 risk areas, 3 high — blast radius is the orders state machine
+Plan written. It is risk-based, not a mirror of the developer suite.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.
