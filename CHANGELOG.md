@@ -9,6 +9,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Two guards went INERT the moment the harness shipped, and one of them was my own invariant —
+  `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`,
+  `scripts/mutations/design_prompt.py`** (#1109). `doctrine_map`'s selftest copies the repo into a
+  tempdir and **re-imports `mutation_check`**, where a file a guard legitimately needs — `CHANGELOG.md`
+  — is not staged. The "every declared path resolves from its base" check ran at **import time** and
+  raised there, breaking a guard that was correct: a gate red on correct code, from the invariant
+  added to prevent exactly that class. It now runs in the selftest, against the real tree, one
+  assertion per declared path (**1209 → 1520 checks**). Separately `design_prompt`'s `needs` was
+  `plugins/design-flow/scripts` and the relocation stripped it to `scripts`; moving the guard back
+  did not restore it, so it staged the repo-root `scripts/` — which has no `doctrine_path.py`, the
+  sibling it imports. Restored by diffing against the pre-relocation commit rather than guessing; the
+  other three moved-back guards were verified identical to theirs.
 - **The last INERT hook guard — `scripts/mutations/hook_normalize_cmd.py`** (#1109). The previous
   fix matched guards by the exact `needs` string they shared, and this one's differs because it is
   cross-plugin, so it was missed: `dev`'s sweep went from **6 INERT guards to 1 of 1028**. Same
