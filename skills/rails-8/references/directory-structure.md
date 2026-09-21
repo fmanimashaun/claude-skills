@@ -143,7 +143,21 @@ own lookup follows the controller path to `app/views/cards/card_requests/`.
 
 ## What is checked
 
-`check_layer_structure.py` reports the table above as an **advisory** — projects legitimately
+`check_layer_structure.py` reports the per-layer table as an **advisory** — projects legitimately
 differ, and the table is what makes the disagreement *between* layers visible at all. It **fails**
 on one thing only: a controller whose file path contradicts the module it is actually routed as,
 which is derivable from `config/routes.rb` and the file tree with no configuration.
+
+`structure_ratchet.py` is the second half, and the only structure check that gates. **It records a
+floor per layer — the files at that layer's root — and refuses a rise.** Run `--set-floor` once,
+commit `.rails-flow/structure-floors.json`, and you are **green on day one**; each slice that groups
+a domain lowers the floor. A floor left *above* the real count also fails, as **STALE**: the work
+was done and the floor was not re-cut, so the layer is currently free to drift back.
+
+**Neither one dictates a folder name, and that is deliberate.** The right grouping for one app is
+its domains; another's is different. A gate naming folders is wrong everywhere it was not written
+for, and the first team it is wrong for switches it off — after which it reports nothing while still
+looking present. So: the ratchet says *"this got worse"*, never *"this is wrong"*; the doctrine above
+says what good looks like; and a person still does the grouping, because deciding that a `Uploads::`
+namespace in models deserves a matching one in controllers requires knowing the domain, and no gate
+knows that.
