@@ -3159,6 +3159,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.45.0 (release v1.137.0) — 2026-09-21
 
+- **The structure gate that can actually fail, and it has no opinion about names —
+  `plugins/rails-flow/scripts/structure_ratchet.py` (new), `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/structure_ratchet.py`** (#1072). Counts files at the **root**
+  of each `app/` layer and refuses a **rise**: a directory already this flat may not get flatter.
+  **A fixed threshold was ruled out by our own doctrine** — `check_coverage_ratchet.py` already says
+  one *"set above where a repo sits turns every run red and gets switched off in a week"* — and a
+  prescribed taxonomy by `setup-flow.md`, which lists a custom `app/services` layout as a
+  **Project Override**: *"Leave it untouched."* **Two arms**: a count above its floor, and a floor
+  left *above* the real count, which fails as **STALE** because the grouping work was done and the
+  floor was not re-cut, so that layer is silently free to drift back. **A layer with no floor is
+  reported, never failed** — adding `app/queries` is growth, not regression — and a mutation judges
+  it against an implicit zero to prove that carve-out is load-bearing. Layers come from
+  `check_layer_structure.discover_layers`, so there is **no second list to go stale**. `--set-floor`
+  writes `.rails-flow/structure-floors.json` with the commit it was measured at; adoption is green
+  on day one. 14 assertions, 4 mutations, all caught.
+- **A third copy of the same frozen table — `plugins/rails-flow/checks.json`** (#1124). The
+  `layer-structure` entry's `why` quoted the counts too, and the grep that found it is the one the
+  new `frozen-figure` review class prescribes: when you find one contradiction, look for the
+  pattern. The digits are gone; the `why` now also records that an explicit `to:` declares a module.
+
 - **A frozen table in the docstring, and a false positive in the half that fails —
   `plugins/rails-flow/scripts/check_layer_structure.py`,
   `plugins/rails-flow/scripts/mutations/check_layer_structure.py`** (#1124). Three fixes, found by

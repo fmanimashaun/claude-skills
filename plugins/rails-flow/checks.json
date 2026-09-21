@@ -16,10 +16,24 @@
   "checks": [
     {
       "id": "layer-structure",
-      "why": "rails-flow gates what is IN a file and said nothing about where a file should LIVE, so nothing drifted -- a flat app/controllers root is not a violation, it is an absence. Measured on a mature app built with this toolchain: models 58 flat / 18 namespaced, controllers 49 flat / 6, views 0 / 51 (one per CONTROLLER, which Rails forces and is not organisation), components 0 / 1 holding all 64 files. Read ACROSS the rows: no two layers agree, so one flow's job, controller, views and models sit in four unrelated places. The table is ADVISORY because projects legitimately differ; the one FAILURE is a controller whose directory contradicts the module its route declares, which is derivable with no configuration and is drift rather than taste.",
+      "why": "rails-flow gates what is IN a file and said nothing about where a file should LIVE, so nothing drifted -- a flat app/controllers root is not a violation, it is an absence. The check PRINTS the per-layer flat/namespaced table; no counts are quoted here, because a copy of a number this script computes goes stale silently and this one already had (#1124). Read ACROSS the rows: layers that disagree with each other are the finding, so one flow's job, controller, views and models end up in unrelated places. The table is ADVISORY because projects legitimately differ; the one FAILURE is a controller whose directory contradicts the module its route declares -- via scope module:, namespace, or an explicit to: -- which is derivable with no configuration and is drift rather than taste.",
       "command": [
         "python3",
         "{plugin}/scripts/check_layer_structure.py"
+      ],
+      "applies_when": [
+        "app"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "structure-ratchet",
+      "why": "The companion to layer-structure, and the only STRUCTURE gate that fails. It counts files at the ROOT of each app/ layer and refuses a rise: a directory already this flat may not get flatter. It has no opinion about folder names, because the right grouping for one app is its domains and another's is different -- a gate that dictates names is wrong everywhere it was not written for, and the first team it is wrong for switches it off. Two arms: a RISE above the floor, and a floor left ABOVE the real count, which is STALE and means the ratchet has quietly stopped ratcheting. A layer with no floor recorded is reported, never failed -- growth is not regression. n/a until a project runs --set-floor and commits .rails-flow/structure-floors.json, so adoption is green on day one.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/structure_ratchet.py"
       ],
       "applies_when": [
         "app"
