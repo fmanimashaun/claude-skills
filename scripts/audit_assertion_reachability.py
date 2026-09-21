@@ -60,7 +60,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
+import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -222,6 +225,36 @@ REGRESSION_GUARD_MARKER = "[regression guard]"
 CONTROL_MARKER = "[control]"
 
 
+def reported_as_failing(output: str, label: str) -> bool:
+    """Did the HARNESS report this label as a failing case? Anchored, never a substring test.
+
+    TWO DEFECTS, ONE CAUSE (#1059, #1060). The original test was `label.lower() in output`, and a
+    bare substring match is wrong in both directions at once:
+
+      * **It counts a label the harness never reported.** A Python traceback prints the offending
+        SOURCE LINE, so when the old revision dies on an `AttributeError` inside
+        `check('some label', new_api(...))`, that label appears in stderr. `failing` becomes
+        non-empty, the "did it run at all" preflight is skipped because it keys off `failing` being
+        empty, and the tool reports `1 of 2 discriminate` over a run in which **not one case
+        executed** -- the exact false verdict that preflight exists to prevent (#1059).
+      * **It counts a label that is merely a PREFIX of another.** `'an unprobed target is named'`
+        is a substring of `'an unprobed target is named as unprobed'`, so the shorter case reads as
+        failing -- and therefore as discriminating -- whenever the longer one does, whether or not
+        it ran. Measured on `dev`: 11 such collisions across two shipped tools (#1060).
+
+    Both inflate the split in the flattering direction, which is the dangerous one: nobody audits a
+    number that says their tests are good.
+
+    So the match is anchored to the SHAPE A HARNESS REPORTS A FAILURE IN, which a traceback cannot
+    forge: the label begins a reported unit -- at line start, after a `- ` bullet, or after a
+    `<rule> / ` prefix -- and ENDS the unit, at end-of-line or immediately before the `:` that
+    introduces the failure detail. A label sitting inside a source line, inside quotes, or in the
+    middle of a longer label matches none of those.
+    """
+    pattern = re.compile(r"(?:^|[-*]\s|/\s)" + re.escape(label.strip().lower()) + r"(?=$|:)")
+    return any(pattern.search(line.strip().lower()) for line in output.splitlines())
+
+
 def subject_at(guard: mc.Guard, rev: str) -> str | None:
     """The guard's subject as it was at `rev`, or None if it cannot be read there."""
     r = subprocess.run(("git", "show", f"{rev}:{guard.subject}"),
@@ -271,13 +304,16 @@ def discriminate(guard: mc.Guard, rev: str) -> dict:
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
-    output = (result.stdout + result.stderr).lower()
+    output = result.stdout + result.stderr
     unique = sorted(set(labels))
     guards_ = [lab for lab in unique if REGRESSION_GUARD_MARKER in lab.lower()]
     rest = [lab for lab in unique
             if lab not in guards_ and CONTROL_MARKER not in lab.lower()]
-    failing = [lab for lab in rest if lab.lower() in output]
-    passing = [lab for lab in rest if lab.lower() not in output]
+    # `reported_as_failing`, never `in`. See its docstring: a substring test counts labels the
+    # harness never reported (a traceback echoing a source line) and labels that are merely a
+    # prefix of a longer one, and both inflate the split in the flattering direction.
+    failing = [lab for lab in rest if reported_as_failing(output, lab)]
+    passing = [lab for lab in rest if not reported_as_failing(output, lab)]
 
     # THE TRAP THIS TOOL EXISTS TO FIND, FOUND IN THIS TOOL ON ITS FIRST REAL RUN. A selftest that
     # CRASHES against the old subject -- because today's cases call functions that did not exist
@@ -296,7 +332,7 @@ def discriminate(guard: mc.Guard, rev: str) -> dict:
     # An old subject missing today's API is the ORDINARY case when the change added functions, so
     # this is the common path, not an edge one.
     controls = [lab for lab in unique if CONTROL_MARKER in lab.lower()]
-    failed_controls = [lab for lab in controls if lab.lower() in output]
+    failed_controls = [lab for lab in controls if reported_as_failing(output, lab)]
     if failed_controls:
         # The harness does not fit this revision. Refuse the whole split rather than report one
         # that cannot be trusted per case -- this is the quiet failure the exit code cannot see.
@@ -344,6 +380,14 @@ def report_discrimination(results: list[dict], as_json: bool) -> int:
         if not r.get("controls"):
             print(f"         ! no case is marked {CONTROL_MARKER}, so nothing verified that the "
                   f"current harness still fits {r['rev']} — this split is unverified, not wrong")
+        # #1061. Computed at the top of `discriminate` and, until now, never printed here -- so a
+        # suite whose labels are f-strings got a confident "3 of 4 discriminate" over a denominator
+        # with holes nobody was told about. The uncounted cases are precisely the ones a reader
+        # wants flagged. Same shape `report()` already uses, because two renderings of one fact
+        # drift and the drifted one is what somebody reads.
+        if r.get("unreadable_label_lines"):
+            print(f"         ! {len(r['unreadable_label_lines'])} label(s) not literal strings, "
+                  f"at line(s) {r['unreadable_label_lines']} -- not counted either way")
         if r["old_selftest_passed"]:
             print("         ! the OLD implementation passed this selftest WHOLESALE — the suite "
                   "cannot tell the two apart at all")
@@ -592,6 +636,100 @@ def _selftest() -> int:
         check("a selftest that cannot RUN against the old revision skips rather than reporting "
               "0 discriminating",
               crashed["status"] == "UNREADABLE" and "did not run" in crashed.get("reason", ""))
+
+        # -- #1059: the crash must land on a LABELLED line -------------------------------------
+        # The shipped crash fixture called `widget.function_that_did_not_exist_then()` on a line
+        # carrying NO label, so nothing reached `failing` and the preflight fired correctly. The
+        # real shape is the opposite: the old subject is missing API that today's cases CALL, so
+        # the traceback prints a source line WITH a label in it. A substring match then counts that
+        # label as failing, the preflight is skipped because it keys off `failing` being empty, and
+        # the tool reports a split over a run in which not one case executed.
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            "check('a splat is refused', widget.brand_new_api('**splat') == [])\n"
+            "check('a comment brace does not truncate', widget.keys('a: b:') == ['a:', 'b:'])\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        crashed_labelled = discriminate(wg, old_rev)
+        check("a crash on a LABELLED line still skips rather than reporting a split",
+              crashed_labelled["status"] == "UNREADABLE"
+              and "did not run" in crashed_labelled.get("reason", ""))
+
+        # -- #1060: a label that is a PREFIX of another must not ride on its failure ------------
+        # 11 such collisions were measured across two shipped tools. The shorter case reads as
+        # failing -- and so as discriminating -- whenever the longer one does, whether or not it
+        # ran. The split inflates in the flattering direction, which is the one nobody audits.
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            # The LONGER label fails against the old subject; the shorter one passes against both.
+            "check('a splat is refused', widget.keys('**splat') == [])\n"
+            "check('a splat', True)\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        prefixed = discriminate(wg, old_rev)
+        check("the LONGER failing label is reported as discriminating",
+              prefixed.get("discriminating") == ["a splat is refused"])
+        check("a label that is merely a PREFIX of a failing one is NOT counted as discriminating",
+              prefixed.get("non_discriminating") == ["a splat"])
+
+        # ...and the SUFFIX case, which is a different guard. The leading half of the anchor is
+        # what stops `'is refused'` matching inside `'- a splat is refused'`; the trailing half
+        # stops `'a splat'` matching. Neither fixture catches the other's mutation, so the anchor
+        # needs one of each or half of it is unguarded.
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            "check('a splat is refused', widget.keys('**splat') == [])\n"
+            "check('is refused', True)\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        suffixed = discriminate(wg, old_rev)
+        check("a label that is merely a SUFFIX of a failing one is NOT counted as discriminating",
+              suffixed.get("non_discriminating") == ["is refused"])
+
+        # -- #1061: the denominator's holes are printed, not merely recorded -------------------
+        (root / "scripts" / "widget_selftest.py").write_text(
+            "import sys\n"
+            "sys.path.insert(0, 'scripts')\n"
+            "import widget\n"
+            "bad = []\n"
+            "def check(label, cond):\n"
+            "    if not cond:\n"
+            "        bad.append(label)\n"
+            "check('a splat is refused', widget.keys('**splat') == [])\n"
+            "check(f'computed {1}', True)\n"
+            "for b in bad:\n"
+            "    print('  - ' + b)\n"
+            "sys.exit(1 if bad else 0)\n", encoding="utf-8")
+        holed = discriminate(wg, old_rev)
+        check("a non-literal label is recorded as a hole in the denominator",
+              len(holed.get("unreadable_label_lines") or []) == 1)
+        check("...and excluded from the labels counted", holed.get("labels") == 1)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_discrimination([holed], as_json=False)
+        check("...and the report PRINTS it rather than only recording it",
+              "not literal strings" in buf.getvalue())
 
         # A case marked as a regression guard is counted in its own bucket, not against the suite.
         # Without this the split drives people to delete guards that are doing their job.

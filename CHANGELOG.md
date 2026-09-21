@@ -7,6 +7,52 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The discrimination verdict was more confident than its evidence, three ways —
+  `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`**
+  (#1059, #1060, #1061). All three are one mechanism: `--against` decided which cases failed by
+  substring-matching each label against the mutant's combined stdout+stderr, and a bare substring
+  test is wrong in both directions at once.
+
+  **It counted labels the harness never reported** (#1059). A Python traceback prints the offending
+  **source line**, so when the old revision dies on an `AttributeError` inside
+  `check('some label', new_api(...))`, that label lands in stderr. `failing` becomes non-empty, the
+  "did this suite run at all" preflight is skipped *because it keys off `failing` being empty*, and
+  the tool reports a split over a run in which **not one case executed** — the exact false verdict
+  that preflight exists to prevent. The shipped fixture missed it by crashing on a line carrying no
+  label, while the ordinary shape is the opposite: the old subject is missing API that today's cases
+  **call**.
+
+  **And it counted labels that are merely a PREFIX of another** (#1060). `'an unprobed target is
+  named'` is a substring of `'an unprobed target is named as unprobed'`, so the shorter case read as
+  failing — and therefore as discriminating — whenever the longer one did. **Re-measured here rather
+  than taken on report: 11 collisions across two shipped tools** (`link_audit.py` 5, `extract_claims.py`
+  6), and the two other files an earlier account named have **none** — no literal `check("…")` labels
+  at all.
+
+  Matching is now **anchored to the shape a harness reports a failure in**, which a traceback cannot
+  forge: the label begins a reported unit — line start, after a `- ` bullet, or after a `<rule> / `
+  prefix — and **ends** it, at end-of-line or immediately before the `:` that introduces the detail.
+  A label inside a source line, inside quotes, or in the middle of a longer label matches none of
+  those.
+
+  **The two halves of that anchor guard different collisions and neither fixture catches the other's
+  break**, so there is one of each: the leading half stops a **suffix** (`'is refused'` inside
+  `'- a splat is refused'`), the trailing half stops a **prefix**. That was not a design intention —
+  the leading-anchor mutation **survived** its first run, which is what showed the suffix case had no
+  guard at all.
+
+  **And `report_discrimination()` recorded the denominator's holes without printing them** (#1061),
+  so a suite whose labels are f-strings got a confident "3 of 4 discriminate" over a denominator with
+  gaps nobody was told about. It now prints the same line `report()` already used — two renderings of
+  one fact drift, and the drifted one is what somebody reads.
+
+  Five declared mutations, and the guard's own harness found two defects in them before they landed:
+  one mutation was **caught by the wrong fixture**, and another **survived**. `failing` and `passing`
+  are mutated separately because breaking only one leaves the other still anchored and the pair would
+  survive as a set.
+
 ### 2026-09-18 (release v1.133.0)
 
 - **Measure a selftest against the implementation it replaced, not only against mutations somebody
