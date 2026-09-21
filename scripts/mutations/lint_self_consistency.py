@@ -6,6 +6,22 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        # #1092. The step ran on a PR into dev four times despite its `if`. Cause unknown, every
+        # hypothesis refuted -- so the step must not depend on being told the truth.
+        Mutation(
+            "the promotion step may trust github.base_ref alone again",
+            "    if not _SELF_CHECK.search(match.group(1)):",
+            "    if False:",
+            "a promotion step that trusts github.base_ref alone",
+        ),
+        Mutation(
+            # The MUST-PASS half: a step that DOES resolve the base must not be flagged, or the
+            # rule is red on the very shape it is asking for.
+            "any promotion step is flagged, including one that already self-checks",
+            "    if not _SELF_CHECK.search(match.group(1)):",
+            "    if True:",
+            "a promotion step that resolves the base itself is silent",
+        ),
         # The tally that lied. Seven assertions sat below the print for a whole release and the
         # stale number was quoted into a merged PR body.
         Mutation(
@@ -79,8 +95,8 @@ GUARD = Guard(
         # they call the check function directly. This mutation re-orphans it.
         Mutation(
             "a rule's findings are computed and dropped from run()'s return",
-            "            + xplugin + unowned + toggles + ci_step,",
-            "            + xplugin + unowned + ci_step,",
+            "            + xplugin + unowned + toggles + ci_step + promo_ctx,",
+            "            + xplugin + unowned + ci_step + promo_ctx,",
             "drops them from its return",
         ),
         Mutation(
