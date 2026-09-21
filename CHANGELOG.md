@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-21 (release v1.135.0)
 
 - **We were about to ship behavioural doctrine we did not follow — `AGENTS.md`,
   `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1088). The
@@ -3102,7 +3102,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-21 (release v1.135.0)
 
 - **We shipped a claim about Claude Code that had become false, and a quotation the docs no longer
   contain — `plugins/rails-flow/commands/setup-flow.md`,
