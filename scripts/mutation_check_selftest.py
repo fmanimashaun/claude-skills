@@ -175,7 +175,8 @@ def run() -> int:
     # Without this the mutation list rots silently: an anchor that drifts raises at run time, but
     # only for whoever runs the checker. Asserting it here makes drift a selftest failure.
     for real_guard in mc.GUARDS:
-        source = (original_repo / real_guard.subject).read_text(encoding="utf-8")
+        # Relative to the guard's BASE: a shipped guard's paths are plugin-relative (#1109).
+        source = (original_repo / real_guard.base / real_guard.subject).read_text(encoding="utf-8")
         for mutation in real_guard.mutations:
             _tick()
             hits = source.count(mutation.old)
@@ -203,8 +204,9 @@ def run() -> int:
         # no guard declares a directory dep, so the two behave identically today, and a dep that
         # resolves to a directory could never be imported — it is a typo worth catching.
         missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
-                   if not (original_repo / p).is_file()]
-        missing += [p for p in real_guard.needs if not (original_repo / p).exists()]
+                   if not (original_repo / real_guard.base / p).is_file()]
+        missing += [p for p in real_guard.needs
+                    if not (original_repo / real_guard.base / p).exists()]
         if missing:
             FAILURES.append(f"{real_guard.name}: declares paths that do not exist: {missing}")
         if not real_guard.mutations:
@@ -226,7 +228,7 @@ def run() -> int:
     import re as _re
 
     for guard in mc.GUARDS:
-        subject = original_repo / guard.subject
+        subject = original_repo / guard.base / guard.subject
         if not subject.is_file():
             continue
         body = subject.read_text(encoding="utf-8")
