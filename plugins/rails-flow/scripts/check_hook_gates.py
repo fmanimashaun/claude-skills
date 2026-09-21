@@ -256,9 +256,14 @@ def release_gate_fixtures() -> None:
         check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
 
-    def run(cmd: str) -> int:
+    def run(cmd: str, marketplace: bool = False) -> int:
         with tempfile.TemporaryDirectory() as td:
             _git_repo(Path(td))
+            if marketplace:
+                # What MAKES a tree a marketplace. No consumer project has one.
+                (Path(td) / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+                (Path(td) / ".claude-plugin" / "marketplace.json").write_text(
+                    '{"name": "x", "plugins": []}', encoding="utf-8")
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
             done = subprocess.run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
@@ -268,6 +273,16 @@ def release_gate_fixtures() -> None:
         check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, "exit 0")
     for cmd in ('git commit -m "push origin main"', 'echo "git push origin main"', "# git push origin main", "git push origin feature/x"):
         check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, "exit 2")
+
+    # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
+    # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
+    # first case the gate denies every promotion of its own source repo, which is a gate wrong
+    # about correct code; without the second, the carve-out would be indistinguishable from
+    # exempting any project that never ran `/qa-flow:setup-qa` -- which is most of them.
+    check("release-gate: the marketplace's OWN repo is not a consumer, so promotion passes",
+          run("git push origin main", marketplace=True) == 0, "exit 2")
+    check("release-gate: an ordinary repo with no certification is STILL blocked",
+          run("git push origin main") == 2, "exit 0")
 
 
 def selftest() -> int:
