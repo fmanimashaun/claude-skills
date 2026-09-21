@@ -3157,6 +3157,56 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.45.0 (release v1.137.0) — 2026-09-21
+
+- **The structure gate that can actually fail, and it has no opinion about names —
+  `plugins/rails-flow/scripts/structure_ratchet.py` (new), `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/structure_ratchet.py`** (#1072). Counts files at the **root**
+  of each `app/` layer and refuses a **rise**: a directory already this flat may not get flatter.
+  **A fixed threshold was ruled out by our own doctrine** — `check_coverage_ratchet.py` already says
+  one *"set above where a repo sits turns every run red and gets switched off in a week"* — and a
+  prescribed taxonomy by `setup-flow.md`, which lists a custom `app/services` layout as a
+  **Project Override**: *"Leave it untouched."* **Two arms**: a count above its floor, and a floor
+  left *above* the real count, which fails as **STALE** because the grouping work was done and the
+  floor was not re-cut, so that layer is silently free to drift back. **A layer with no floor is
+  reported, never failed** — adding `app/queries` is growth, not regression — and a mutation judges
+  it against an implicit zero to prove that carve-out is load-bearing. Layers come from
+  `check_layer_structure.discover_layers`, so there is **no second list to go stale**. `--set-floor`
+  writes `.rails-flow/structure-floors.json` with the commit it was measured at; adoption is green
+  on day one. 14 assertions, 4 mutations, all caught.
+- **A third copy of the same frozen table — `plugins/rails-flow/checks.json`** (#1124). The
+  `layer-structure` entry's `why` quoted the counts too, and the grep that found it is the one the
+  new `frozen-figure` review class prescribes: when you find one contradiction, look for the
+  pattern. The digits are gone; the `why` now also records that an explicit `to:` declares a module.
+
+- **A frozen table in the docstring, and a false positive in the half that fails —
+  `plugins/rails-flow/scripts/check_layer_structure.py`,
+  `plugins/rails-flow/scripts/mutations/check_layer_structure.py`** (#1124). Three fixes, found by
+  running the check against a real app instead of reading it. **The docstring's hand-written layer
+  counts are gone** — the script computes that table, so a copy of it is wrong by construction and
+  three of its five rows were already stale; the argument stays, the digits go. **Layers are now
+  discovered, never enumerated**: a fixed list of eight names is what hid `app/javascript/controllers`
+  (22 files, all flat — the largest flat layer in the motivating app after models and controllers),
+  and `.js` is counted so Stimulus is visible at all. `app/javascript` is treated as a *container*
+  whose children are layers, or its `controllers/` child would read as one of its namespaces.
+  **And an explicit `to: "sessions/omniauth#create"` now declares its module** — the first version
+  read only `scope module:` and `namespace`, so two correctly-organised, correctly-routed
+  controllers were reported as drift, **in the failing half of the gate**. Mutations 4 → **9**,
+  selftest 9 → **17 assertions**, including a fixture that builds two layers named nowhere in the
+  script and a control proving that reading `to:` narrowed nothing.
+
+- **The layers disagreed and nothing made it visible —
+  `plugins/rails-flow/scripts/check_layer_structure.py` (new), `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_layer_structure.py`** (#1072). Reports the per-layer
+  flat/namespaced table as **advisory**, because projects legitimately differ and the table is what
+  makes the disagreement *between* layers visible at all. It **fails** on one thing: a controller
+  whose directory contradicts the module its route declares — derivable from `config/routes.rb` and
+  the tree with no configuration, and drift rather than taste. **A flat controller is explicitly not
+  a finding**, and there is a mutation that makes it one, because failing a project for a shape
+  nobody told it to adopt is how a gate gets switched off. The issue's third gate — a namespace in
+  one layer and absent in another — is deliberately **not** shipped: it needs the project to have
+  declared its taxonomy first.
+
 ### 2026-09-21 (release v1.136.0)
 
 - **The mutation harness now ships, so a project can prove the gates can still fail —
@@ -11454,6 +11504,18 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.42.0 (release v1.137.0) — 2026-09-21
+
+- **Nothing checked that a surface keeps its hands off the content —
+  `plugins/design-flow/scripts/check_surface_layout.py` (new),
+  `plugins/design-flow/checks.json`,
+  `plugins/design-flow/scripts/mutations/check_surface_layout.py`** (#1117). A consumer gate: a
+  component that renders a slot **and** wraps it in a layout recipe is a finding unless it declares
+  itself a composition with a reason. **The detector matches slot RENDERING, never the word** — a
+  first version keying on `content` produced four false positives in one run, including Tailwind's
+  own `before:content-['']` utility, and all four are fixtures here. Four declared mutations, one of
+  which reinstates the word-matching to prove those fixtures are what holds the line.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **Browser mode audited whatever answered on the port —
@@ -14088,6 +14150,54 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.62.0 (release v1.137.0) — 2026-09-21
+
+- **The rule was quotable but not actionable, and a review class had no name —
+  `skills/rails-8/references/directory-structure.md`, `skills/code-review/SKILL.md`,
+  `dist/rails-8.skill`, `dist/code-review.skill`** (#1124). The doctrine gains a **worked example**:
+  one real domain whose files sit in seven unrelated places, the target layout, and the entire
+  routing change — a single `scope module:` block that leaves every URL byte-identical — plus the
+  two things that deliberately do **not** move (a UI primitive sharing the word, because a name
+  collision is not domain membership; and small flat layers, because twelve jobs at the root are
+  fine). New `code-review` class **`frozen-figure`**: a number hand-copied into prose that something
+  else computes, whose sharper symptom is **omission rather than staleness** — a frozen table cannot
+  notice a row it never had. This entry's own predecessor was an instance, which is why the measured
+  table now carries the `git ls-tree` command that re-takes it.
+
+- **A component could impose layout on content it cannot see, and the silent half was the expensive
+  one — `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-implementations.md` (16 declarations),
+  `dist/design-system.skill`** (#1117). The doctrine said layout is composed in the template; it
+  never said what happens when a **component** arranges what it is handed, so there was nothing to
+  drift from. A card wrapped its content in `stack` with a hardcoded `--space`. Measured before
+  anything changed: **112 call sites in 63 files, 77 of which already passed `class="stack"` with
+  their own spacing** — the component's inner value won on the children that mattered. Four grid
+  layouts also collapsed, because a grid cannot survive a flex column. **The flattening is
+  eventually visible; the override is not** — no error, no glitch on most screens, every individual
+  template still reading correctly, which is exactly why review misses it. The rule is a
+  distinction: a **surface** takes arbitrary content and must not arrange it; a **composition**
+  whose layout *is* the component declares `<%# composition: <why> %>`. **All 16 compositions in our
+  own reference implementations now carry that declaration**, so the code a consumer copies
+  demonstrates the rule rather than contradicting it.
+- **Nothing said where a file should live, so nothing drifted —
+  `skills/rails-8/references/directory-structure.md` (new), `skills/rails-8/SKILL.md`,
+  `dist/rails-8.skill`** (#1072). The toolchain gates what is *in* a file and was silent on
+  structure: **a flat `app/controllers` root is not a violation, it is an absence**, which is why
+  this is doctrine first. Measured on a mature app built with this toolchain, with
+  `git ls-tree -r --name-only <ref> -- app/<layer>` so anyone can re-run it — models **58 flat / 18
+  namespaced** of 144, controllers **48 / 6** of 64, views **0 / 51** of 132 (one per *controller*,
+  which Rails forces and is not organisation), components **0 / 1** holding all 61, and
+  `app/javascript/controllers` **22 / 0**, the largest flat layer after models and controllers and
+  the one a sweep of `app/*/` never descends into. **Read across the rows: no two layers agree**, so
+  one flow's job, controller, views and models sit in four unrelated places and no layer tells you
+  where the others are. The doctrine names which layers are free (models,
+  jobs, mailers, services, components — the path binds to the class name) and which are
+  URL-constrained (controllers), and carries the two things that make a restructure tractable:
+  **`scope module:` groups controllers without touching routes** — already documented at
+  `controllers-routing.md:35`, a correction to the issue, which claimed it was absent — and
+  **request specs are the regression harness**, because URLs are invariant under it, so 100 specs
+  must pass unchanged and a diff touching `spec/requests/` is itself the alarm.
 
 ### 2026-09-21 (release v1.136.0)
 
