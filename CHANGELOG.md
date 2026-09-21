@@ -9,6 +9,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Nothing required an agent to state its output contract —
+  `scripts/check_agent_output_contract.py` (new), `scripts/maintainer_doctor.py`,
+  `scripts/mutations/check_agent_output_contract.py`** (#1086). Requires a declared `## Output`
+  section that either names an artifact file or is bounded. **It checks the declaration, never the
+  runtime behaviour** — what an agent actually emits depends on the model and the input, so a check
+  claiming to verify it would be a gate that cannot fail. Anchored on the heading *being* `Output`:
+  a first draft matched any heading containing the word and counted `design-critic`'s *"Ranking
+  `/design-flow:variants` output"* as a contract, making the baseline read 3 when it was 2. Two
+  declared mutations were defective and the harness said so — one was caught by a crash rather than
+  its fixture, and one **survived** because the artifact fixture was also short enough to pass the
+  bounded rule, so the two contracts overlapped and deleting one changed nothing.
 - **Nothing measured what a hook costs, so it could grow for ever unnoticed —
   `scripts/check_hook_output_budget.py` (new), `docs/evidence/hook-output-baseline.json` (new),
   `scripts/maintainer_doctor.py`, `scripts/mutations/check_hook_output_budget.py`,
@@ -2994,6 +3005,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **29 agents, and 2 said anything about what they return —
+  `plugins/rails-flow/reference/agent-output-contract.md` (new), and an `## Output` section added
+  to 27 agents across all four plugins** (#1086). An agent's final message lands in the **parent**
+  conversation and stays there for the rest of the session: not a one-off cost like its own turns,
+  but a permanent tax on every later request the parent makes. **This is a different budget from
+  `reference/model-tiers.md`**, which settles which model an agent runs on (deliberately, with
+  citations, on #127) and is not reopened here — that governs what the agent's work costs, this
+  governs what its answer costs. Two contracts, and neither was invented: a **bounded structured
+  verdict**, lifted from `claim-verifier`, and **artifacts on disk with a path returned**, lifted
+  from `functional-tester`. The second is the real lever, and several qa-flow agents already did it
+  without it ever being stated as a rule.
 
 - **The session-start banner was paid again at every compaction, and 85% of it was one file printed
   verbatim — `plugins/rails-flow/hooks/scripts/session-start.sh`,

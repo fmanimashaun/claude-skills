@@ -409,3 +409,19 @@ clipped** — a full-page capture proving a focus ring or a contrast failure is 
 `<route-slug>--<viewport>-<theme>[--<state>].png`, with validity recorded on every capture. The
 full contract is in `functional-tester.md` under *A long run must survive being killed* (#111,
 #120); follow it there rather than restating it.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+REPORT  qa/reports/a11y-<slug>.md
+CSV     qa/reports/a11y-<slug>-pages.csv
+VERDICT 3 serious, 11 moderate across 14 routes — 2 routes could not be reached
+3 serious violations. Detail in the CSV.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

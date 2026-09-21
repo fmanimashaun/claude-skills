@@ -277,3 +277,19 @@ Exit `0` = clean · `1` = findings · `2` = the CSV is unusable. On findings, fi
 checker. Evidence durability follows the same contract as every long browser run — append one JSON
 line per route to `qa/reports/<run>/results.jsonl` as it completes; the full rules are in
 `functional-tester.md` under *A long run must survive being killed*.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+REPORT  qa/reports/perf-<slug>.md
+CSV     qa/reports/perf-<slug>-pages.csv
+k6      qa/reports/k6-<slug>.json
+VERDICT p95 640ms on /orders against a 500ms threshold — 1 breach.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

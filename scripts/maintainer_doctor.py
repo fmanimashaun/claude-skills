@@ -436,6 +436,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
     ("hook output budget selftest",
      ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
+    # #1086. An agent's answer lands in the PARENT conversation and stays there for the rest of
+    # the session -- a permanent tax, not a one-off cost like its own turns. 27 of 29 shipped
+    # agents declared nothing about what they return. This checks the DECLARATION, not the
+    # runtime behaviour, which depends on the model and would be a gate that cannot fail.
+    ("agent output contract", ("python3", "scripts/check_agent_output_contract.py")),
+    ("agent output contract selftest",
+     ("python3", "scripts/check_agent_output_contract.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
