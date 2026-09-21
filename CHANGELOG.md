@@ -3157,7 +3157,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.45.0 (release v1.137.0) — 2026-09-21
 
 - **The layers disagreed and nothing made it visible —
   `plugins/rails-flow/scripts/check_layer_structure.py` (new), `plugins/rails-flow/checks.json`,
@@ -11468,7 +11468,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.42.0 (release v1.137.0) — 2026-09-21
 
 - **Nothing checked that a surface keeps its hands off the content —
   `plugins/design-flow/scripts/check_surface_layout.py` (new),
@@ -14115,7 +14115,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.62.0 (release v1.137.0) — 2026-09-21
 
 - **A component could impose layout on content it cannot see, and the silent half was the expensive
   one — `skills/design-system/references/components.md`,
