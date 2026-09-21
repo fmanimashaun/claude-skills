@@ -3117,6 +3117,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A project got the gates and no proof they work —
+  `plugins/rails-flow/scripts/check_toolchain_selftests.py` (new),
+  `plugins/rails-flow/checks.json`, `plugins/rails-flow/scripts/project_gates.py`,
+  `scripts/mutations/check_toolchain_selftests.py`** (#1109). Measured: **33 consumer gate entries,
+  20 of 20 shipped check scripts carrying a `--selftest`, and 0 of 33 entries running one.**
+  Upstream, `mutation coverage` runs 1000 mutations across 97 guards and is the only reason any of
+  it is trusted — and it caught **four gates written that same day being partly vacuous**, every one
+  of which looked right and passed its own fixtures. None of that machinery crossed into a project,
+  so a shipped check whose regex stopped matching after a Rails or Tailwind upgrade would report
+  clean for ever. **One gate runs all 29 selftests in under four seconds** rather than 29 entries
+  that would nearly double the report; a check carrying no selftest is **counted as unproven**, not
+  silently accepted. **A failing selftest routes to `ERROR`, not `FAIL`** — the runner's existing
+  state model already distinguishes *ours to explain* from *the project's to fix*, and collapsing
+  them is how a team learns to ignore a red gate (#1097, one level out). It answers the question the
+  toolchain's own CI is structurally unable to answer: our CI proves a check discriminates on **our**
+  machine, never on yours.
+
 - **A PR body's numbers were checked by an agent nobody remembered to run —
   `plugins/rails-flow/hooks/scripts/guard-claims.sh` (new),
   `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/scripts/check_hook_gates.py`,
