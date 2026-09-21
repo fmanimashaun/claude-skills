@@ -201,6 +201,12 @@
               {"kind": "pill", "label": "Month", "fill": "secondary",
                "color": "secondary-foreground"}]
   },
+  "Row actions (table)": {
+    "shape": "bar", "width": 180,
+    "parts": [{"kind": "pill", "label": "Edit", "fill": "muted", "color": "foreground"},
+              {"kind": "pill", "label": "Archive", "fill": "muted", "color": "foreground"},
+              {"kind": "pill", "label": "\u22ef", "fill": "muted", "color": "muted-foreground"}]
+  },
   "Media object": {
     "shape": "bar", "width": 360,
     "parts": [{"kind": "avatar"},
@@ -353,6 +359,10 @@
                "color": "muted-foreground"},
               {"kind": "pill", "label": "New invoice", "fill": "primary",
                "color": "primary-foreground"}]
+  },
+  "There is no escape hatch. If the component does not exist, you build it": {
+    "drawable": false,
+    "why": "a rule, not a component -- it states that a missing component is built rather than hand-written in raw HTML, and why a copied class string is a silent fork. Nothing to draw; drawing it would put a rule in a library of shapes."
   },
   "Forms": {
     "drawable": false,

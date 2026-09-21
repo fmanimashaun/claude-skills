@@ -13510,6 +13510,60 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **No doctrine on when raw HTML is allowed where a component is mandated, and the catalogue that
+  produced the question was itself under-built — `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-shapes.json`** (#1063). Maintainer decision, recorded on
+  the issue: **there is no escape hatch.** If a component does not exist you build one — a primitive
+  if irreducible, a composite of existing components if not — and a composite is a component, with
+  the same variant × size × state vocabulary and its own catalogue row.
+
+  **The stated reason is consistency and maintainability, and the second half is the sharper one:**
+  raw UI elements written in raw HTML cannot be tracked down when a fix has to reach them. A
+  component is one grep-able name; eighteen hand-written `<button>` tags are eighteen strings that
+  resemble each other.
+
+  **The evidence is the proof.** In one audited app, nine of eighteen raw buttons hand-wrote the
+  class string and one identical string appeared three times. It differs from the component's
+  `variant: :outline, size: :md` in seven ways, and one matters: it omits `whitespace-nowrap`, a
+  class the component gained *because a table's action column broke mid-word*. **Two of the three
+  copies sit in admin table action cells.** They carry the exact defect the component was fixed for
+  and can never receive the fix.
+
+  **"The component cannot express this" is named as a NON-REASON**, because it is the
+  plausible-sounding thing a consumer reaches for — and because it was reached for here. The audit
+  first reported six of the eighteen as legitimate; reading the component disproved it. Its
+  constructor already took `**attrs` and both render branches already passed them through, so every
+  stated reason was carried by the component as written. **The check that reversed the finding was
+  one file read**, and the doctrine now says to make it.
+
+  **There is exactly one real exception and it is a framework constraint:** `button_to` and
+  `form.submit` build their own `<button>`, so there is nothing to hand a component. Take the
+  classes from the component's class helper there and never retype them. Reading that narrow,
+  documented purpose as a general licence is what produced the original count.
+
+  **The argument to lead with is centralising the ELEMENT, not the class string.** A raw instance
+  sits outside the component's accessibility guard — which *raises* on a button with no accessible
+  name — outside its loading and busy states, and outside any future structural change. Matching the
+  classes makes it look right while leaving it outside every guarantee.
+
+  **A mandate with no gate has already drifted**, measured in the same app: zero raw form fields,
+  where a request spec asserts form anatomy; eighteen raw buttons, where only prose did. So a project
+  with a mandated component **gates** it — and the gate is written to be provably able to tell the
+  two apart, with one must-PASS (the framework-helper case) and one must-FAIL (a hand-written
+  element) in its own selftest. A suite of only failures is satisfied by a gate that refuses
+  everything; a suite of only passes by one that refuses nothing. A gate wrong about correct code on
+  day one gets an exclusion list or gets disabled, and then reports nothing in a way that reads
+  exactly like finding nothing.
+
+  **Two catalogue gaps closed with it.** `Button` now states attribute passthrough as contract, with
+  the instruction to pass `**attrs` through *every* render branch — a dropped branch is the one a
+  consumer hits — plus `whitespace-nowrap` for a table action column. And **`Row actions (table)` is
+  a new row** with its `component-shapes.json` entry: the composite that was hand-rolled three times
+  and had no row at all. The shapes gate refused the row until its entry existed, which is that
+  reconciliation working.
+
 ### 1.15.0 — 2026-07-29
 - **First increment of Phase 2**, honouring that issue's own instruction to ship one group at a time
   rather than all ~17 components at once.
