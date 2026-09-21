@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **The discrimination verdict was more confident than its evidence, three ways —
   `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`**
@@ -9189,7 +9189,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **The provenance line truncated its own "not a git tree" fallback to "not a git" —
   `plugins/qa-flow/scripts/route_coverage.py`,
@@ -11050,7 +11050,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **Browser mode could not reach an authenticated page or the accessibility tree —
   `plugins/design-flow/commands/audit.md`**. The conformance collector launches a *fresh*
@@ -13644,7 +13644,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **17 of the 23 shipped components could not carry a caller's attribute, so the catalogue produced
   the raw HTML it forbids — `skills/design-system/references/components.md`,
