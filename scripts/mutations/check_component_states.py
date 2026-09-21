@@ -40,6 +40,27 @@ GUARD = Guard(
             "            if i:",
             "'Button' declaration was truncated at the line break",
         ),
+        # THE SPLIT (#1068 follow-up). Merging the two slots back is the mutation that matters:
+        # it restores exactly the state the follow-up removed, where a row covers whichever of
+        # error/empty is easier and the parser cannot see the hole.
+        #
+        # IT DROPS `error`, NOT `empty`, AND THE DIRECTION IS NOT ARBITRARY -- the first version
+        # dropped `empty` and SURVIVED, because the fixture covers empty and is silent on error, so
+        # it still failed on the error slot and the guard read as caught. Removing the slot the
+        # fixture DOES NOT satisfy proves nothing; removing the one it does is what lets it pass.
+        Mutation(
+            "error and empty become one slot again, so covering either satisfies both",
+            'SLOTS = ("default", "hover", "focused", "loading", "disabled", "error", "empty")',
+            'SLOTS = ("default", "hover", "focused", "loading", "disabled", "empty")',
+            "covering 'empty' while silent on 'error' fails",
+        ),
+        # Without this the pre-split spelling passes both slots on a word boundary, silently.
+        Mutation(
+            "the pre-split 'error/empty' spelling stops being refused",
+            "    if COMBINED.search(claim):",
+            "    if False:",
+            "the old combined 'error/empty' spelling is refused by name",
+        ),
         # Both halves of the ratchet. Neither alone is one.
         Mutation(
             "the floor stops refusing a drop, so a declaration can be deleted unnoticed",
