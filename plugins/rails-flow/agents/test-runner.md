@@ -24,3 +24,19 @@ Strategy:
 
 Never mark the task done with a red suite. Output: command run, pass/fail counts, per-failure
 analysis, recommended next action for the orchestrator.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+RED   spec/models/order_spec.rb:24 — expected 3, got 2 (scope excludes cancelled)
+GREEN 412 examples, 1 failure, 0 pending in 38.2s
+1 failure; the scope change is the cause, not the spec.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

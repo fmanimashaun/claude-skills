@@ -77,3 +77,19 @@ sections — Summary, What was built, How to test (with expected results), Expec
 results checklist, Out of scope, Risk notes, Proof. A PR missing "How to test" or
 "Expected results" is BLOCKED: QA cannot plan from it. This is process enforcement,
 not style — the downstream QA flow depends on it.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+VERDICT: BLOCKED
+BLOCKING  db/migrate/20260921_add_index.rb — no algorithm: :concurrently on a 2M-row table
+1 blocking, 2 advisory. CLEAN once the blocking item is resolved.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

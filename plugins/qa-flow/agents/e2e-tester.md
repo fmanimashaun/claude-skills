@@ -129,3 +129,19 @@ Per charter: pass/fail, classification, evidence under `qa/reports/<framework>/`
   keeps the Markdown/CSV summary as well. Never hand-edit `allure-results` — it's tool-owned.
 Keep the tags (`@smoke`/`@regression`/`@feature`) in the results so the report groups by
 suite and feature.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+SUITE    qa/e2e/**
+RESULTS  qa/reports/e2e-<slug>.md
+VERDICT  38 specs, 2 failures — both classified as product defects, not flake
+2 real failures; neither is a flake.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

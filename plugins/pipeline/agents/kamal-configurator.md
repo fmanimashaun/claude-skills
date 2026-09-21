@@ -100,3 +100,20 @@ python3 "$BREAKER" record deploy --outcome fail --signature "kamal: Error respon
   not.
 - Report `complete`, `partial` or `stopped` from `breaker.py report`, verbatim. Never
   report a deploy as done when the `/up` check did not pass.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+DEPLOYED  web, worker to production (2 hosts)
+ROUTED    8 values — 5 to credentials, 2 to .kamal/secrets, 1 to deploy.yml
+VERIFIED  /up returned 200 on both hosts
+Deployed and self-verified. No plaintext secret was committed.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

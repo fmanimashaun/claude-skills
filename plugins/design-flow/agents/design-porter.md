@@ -97,3 +97,20 @@ Run the checks rather than asserting the outcome:
 
 Report which artboard class you chose, what you dropped as scaffolding, and any token gap you found.
 A port that silently invented a value is worse than one that stopped and asked.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+PORTED  3 screens, 12 components from the canvas
+FIDELITY inline grid-template-columns moved to a CSS variable (see notes)
+GAP     canvas has no empty state for /orders — flagged, not invented
+3 screens ported; 1 design gap raised rather than filled.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

@@ -41,3 +41,19 @@ drop one — a residual is still REPORTED, as a low-severity finding; the develo
 reviewer-dismissed.** Keep the list deduped and **issue-ready** (each filable verbatim via
 `/rails-flow:issues`). Keep the verdict — CLEAN or BLOCKED — but emit the full finding list
 regardless of the verdict.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+BLOCKING  app/controllers/api/v1/orders_controller.rb:18 — no authorize! before update
+CLEAN     brakeman: 0 warnings (was 0)
+1 blocking across 3 new endpoints.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.
