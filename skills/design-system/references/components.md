@@ -48,6 +48,89 @@ silently replace every class the variant computed.
 **A pass-through is not an escape hatch.** It carries *attributes*; it never carries styling. A
 caller passing `class:` to restyle a component is the class-string fork described below wearing a
 keyword argument.
+## There is no escape hatch. If the component does not exist, you build it
+
+**Raw HTML is never the answer for a UI element a component covers, and "the component does not
+expose what I need" is a component defect, not a licence.** When what you need is missing:
+
+1. **Extend the component** so it exposes the attribute or binding — a Stimulus target, a `form=`,
+   an `aria-*` passthrough. A component that cannot accept these is under-built, and every consumer
+   after you needs the same thing.
+2. **If no component covers the element at all, build one** — a *primitive* if it is irreducible
+   (button, input, badge), or a *composite* assembled from existing components if it is not (a
+   toolbar, a table action cell, a filter bar). A composite is a component: it gets the same
+   variant × size × state vocabulary and the same catalog entry.
+
+**Never hand-write the class string, and never copy it out of a component.** This is the rule the
+rest of the section exists to serve.
+
+### Why: a copied class string is a silent fork, and you cannot find it again
+
+**Consistency and maintainability, and the second is the sharper half — raw UI elements written in
+raw HTML cannot be tracked down when the time comes to maintain them.** A component is one
+grep-able name; eighteen hand-written `<button>` tags are eighteen strings that resemble each other.
+
+Measured in a consumer app with a mandated button component: **139 component buttons against 18 raw
+ones.** Nine of the eighteen hand-wrote the class string, and they clustered — **one identical
+string appeared three times.**
+
+**That triplicated string differs from `variant: :outline, size: :md` in seven ways, and one of them
+matters: it omits `whitespace-nowrap`** — a class the component gained *because a table's action
+column broke mid-word*. **Two of the three copies sit in admin table action cells.** They carry the
+exact defect the component was fixed for, and they can never receive the fix, because they are not
+the component.
+
+**That is what a copied class string is.** Correct the day it is written, wrong by construction from
+the next fix onward, and invisible to the grep that would have found it.
+
+### "The component cannot express this" is almost always false — check the constructor
+
+The audit behind this section first reported six of the eighteen raw buttons as *legitimate*, each
+needing a JS binding, a form association or a hidden state the component supposedly could not carry.
+**Reading the component disproved it.** Its constructor already took `**attrs` and both render
+branches already passed them through: **every stated reason was carried by the component as written,
+with no change needed.** The check that reversed the finding was one file read.
+
+**So "the component does not expose X" is a NON-REASON, and it is named here because it is the
+plausible-sounding one a consumer reaches for.** Before concluding a component cannot express
+something, open its constructor. If it genuinely cannot, that is a defect in the component and the
+fix is there — not a raw element here.
+
+**There is exactly one real exception, and it is a constraint of the framework rather than of the
+component: a helper that builds the element itself.** `button_to` and `form.submit` emit their own
+`<button>`; you cannot hand them a component, so there is nothing to pass. **That is the whole of
+it.** In that case take the classes from the component's own class helper and never retype them —
+the helper exists for this case and for no other.
+
+**And the reason to centralise is the ELEMENT, not the class string.** A raw instance sits outside
+the component's accessibility guard — which *raises* on a button with no accessible name — outside
+its loading and busy states, and outside any future structural change, with no way to find it except
+grepping for raw HTML, which is precisely what the mandate existed to make unnecessary. Matching the
+classes makes it *look* right; it is still outside every guarantee the component provides.
+
+### A mandate with no gate has already drifted
+
+In that same audit, **raw form fields: zero.** Fields have a request spec that asserts form anatomy.
+Buttons had only prose. **Where the rule was enforced it was clean; where it was only written down it
+had drifted** — and that is not a finding about discipline.
+
+**So a project with a mandated component gates it, rather than documenting it.** A grep for the
+element outside a component, or an assertion on rendered anatomy, is enough; what is not enough is a
+sentence.
+
+**Write the gate so it is provably able to tell the two apart.** It forbids the raw element broadly
+and exempts only the framework-helper case above, and **its selftest carries one of each**: a
+framework-helper instance that must PASS, and a hand-written element that must FAIL. A suite of only
+failures is satisfied by a gate that refuses everything; a suite of only passes by a gate that
+refuses nothing. **Neither tells you it discriminates** — and a gate that is wrong about correct code
+on day one gets an exclusion list, or gets disabled, and then reports nothing in a way that reads
+exactly like finding nothing.
+
+**And a gate must not excuse a neighbouring concern by assumption.** That project's forms gate
+carried the comment *"Buttons come from the button component and are not fields"* — enforced by
+nothing, and false in nine places. **A comment asserting a fact the gate does not check is worse than
+silence**, because it tells the next reader the ground is covered. If a gate does not check
+something, it says so, or it says nothing.
 
 ## The focus ring: `outline-hidden`, never `outline-none` (Tailwind v4)
 
@@ -106,6 +189,17 @@ DEFAULTS = { variant: :primary, size: :md }
 - **The `link` variant is a BUTTON that looks like a link** — an action in a toolbar, not a link in a
   sentence. For prose see [Inline link](#inline-link) below, which explains why its
   `hover:underline` is the wrong contract inside running text.
+- **It passes arbitrary attributes through, and that is part of the contract, not a convenience.**
+  A `data-*` Stimulus target, a `form=` pointing at a form elsewhere in the document, an `aria-*`,
+  an `id` — all reach the real `<button>`. Take `**attrs` and pass it through **every** render
+  branch; a branch that drops them is the one a consumer will hit, and the symptom is a raw
+  `<button>` written by someone who concluded the component could not express what they needed.
+  **That conclusion is almost always wrong, and checking costs one file read** — see
+  [There is no escape hatch](#there-is-no-escape-hatch-if-the-component-does-not-exist-you-build-it).
+- **In a table's action column the label must not wrap: `whitespace-nowrap`.** A two-word action
+  ("Deactivate", "Resend invite") breaks mid-word in a narrow action cell. This is the class whose
+  absence from a hand-copied string shipped the defect described at the top of this file, in the
+  very cells it was added for — see [Row actions (table)](#row-actions-table).
 
 ## Inline link
 - **This row has a real APG pattern** — unusually, for this file. Purpose: *"A link widget provides an
@@ -986,6 +1080,28 @@ see [Activity feed / Timeline](#activity-feed--timeline).
 - **Responsive:** ~3 items is the ceiling on a phone. Beyond that use a `Ui::Dropdown` (actions) or
   `Ui::Tabs` (single-select) rather than letting the group wrap — a wrapped button group loses the
   shared-edge affordance that made it a group.
+
+## Row actions (table)
+- **The composite that gets hand-rolled**, and the one the audit behind this file's opening section
+  found copied three times. It is a component because a table row's actions are a *recurring
+  arrangement*, not a one-off: the same two-or-three controls, the same overflow rule, the same
+  alignment, in every CRUD table in the app.
+- **Shape:** a `cluster gap-2 justify-end` of `Ui::ButtonComponent(variant: :ghost, size: :sm)` —
+  icon-only past two actions — inside the row's last `<td>`. Beyond **three** actions, collapse to a
+  single icon-only [Dropdown](#dropdown--menu) trigger rather than letting the cell grow; the column
+  is the narrowest in the table and the first to break the layout.
+- **Every child carries `whitespace-nowrap`.** A wrapped action label is what this composite exists
+  to prevent, and it is the exact class a hand-copied string omitted.
+- **a11y:** each action is named by the row's subject, never by the verb alone — `aria-label="Edit
+  Ada Lovelace"`, not `"Edit"` — because a screen-reader user listing the page hears the verb N
+  times with nothing to tell the rows apart. A destructive action is `variant: :destructive` and
+  confirms; it never relies on the icon alone to say what it does.
+- **Responsive:** on the card-stack fallback the actions move into the card footer as full-width
+  stacked buttons (`w-full`), not a shrunken cluster — see [Table (CRUD)](#table-crud) for when the
+  stack replaces the table.
+- **Sticky interaction:** when the table sticks its identifier column, the action cell is the one
+  most likely to sit under a horizontal scrollbar. It is not sticky; scrolling to it is correct, and
+  pinning both ends leaves nothing scrollable on a phone.
 
 ## Media object
 - Fixed-size media beside flowing content — the row of the [Stacked list](#stacked-list), the
