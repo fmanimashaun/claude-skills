@@ -103,6 +103,7 @@ Running as: <model> — <second opinion | same model as the author>
 
 CONFIRMED   "the sweep runs on every PR"
             gh run list --workflow=gates.yml → 12 runs, all pull_request events
+            ci_verdict.py → 12 examined, 0 did-not-run (all executed steps)
 
 REFUTED     "the publish is gated on it"
             release.yml has no `needs:` — the release job runs independently of gates
@@ -115,3 +116,22 @@ UNVERIFIABLE "this makes the crawl more reliable"
 
 A refuted or unverifiable claim is a **blocking** finding: the description is wrong, and the
 description is what the next reader will believe.
+
+## A run that never started verifies nothing
+
+Before any claim about CI — *"the sweep runs on every PR"*, *"this is green"*, *"the gate blocks
+it"* — check that the runs you are reading **executed steps**:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ci_verdict.py" --limit 20
+```
+
+When GitHub cannot allocate a runner, every job is marked `failure` — the identical string a suite
+that ran and failed produces. A run with **zero executed steps** is evidence of nothing in either
+direction: it neither confirms a gate fired nor refutes it. Measured live: one repository reported
+`failure` with 10 executed steps while another reported `failure` with 0, eight runs in a row.
+
+**Verifying a claim against runs that never ran is the exact defect this agent exists to refuse**,
+one level out — a confident verdict over a comparison that never happened. Such a claim is
+`UNVERIFIABLE`, not `REFUTED`: the evidence is missing, not contrary. Say which, and say that the
+runs did not execute, or the next reader will read `UNVERIFIABLE` as "the author overclaimed".

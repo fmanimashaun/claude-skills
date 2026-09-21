@@ -6,6 +6,38 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        # The tally that lied. Seven assertions sat below the print for a whole release and the
+        # stale number was quoted into a merged PR body.
+        Mutation(
+            "assertions may sit below the printed tally again",
+            "    return sorted(line for line in raisers if line > printed)",
+            "    return []",
+            "the tally guard misses assertions that run after the count is printed",
+        ),
+        # #1077. `conclusion: failure` is the same string whether a suite ran and failed or no
+        # runner ever started. Each mutation removes one half of the separation.
+        Mutation(
+            "the step-count discriminator stops being required",
+            "        if _STEP_COUNT.search(body):",
+            "        if True:",
+            "reading ci status with no step-count discriminator",
+        ),
+        Mutation(
+            # Accepting ONLY our own script would fail correct code that measured the right
+            # thing with a bare `gh api` call -- a gate wrong about correct code gets removed.
+            "only our own helper counts, so measuring the steps by hand is not a measurement",
+            '_STEP_COUNT = re.compile(r"ci_verdict\\.py|steps\\|length|steps=0|executed no steps|zero .{0,12}steps")',
+            '_STEP_COUNT = re.compile(r"ci_verdict\\.py")',
+            "counting the steps inline satisfies it without our script",
+        ),
+        Mutation(
+            # SCOPE in the flattering direction: firing on every shipped command makes the rule
+            # unusable, and an unusable rule is deleted rather than fixed.
+            "the trigger widens past instructions that actually read CI",
+            '_READS_CI = re.compile(r"gh pr checks|gh run list|gh run view|actions/runs")',
+            '_READS_CI = re.compile(r"gh |bundle")',
+            "a command that never reads ci status is out of scope",
+        ),
         # #1080. Three shipped commands checked that a server ANSWERED and none checked whose
         # working tree it served. Each mutation below removes one half of the answer.
         Mutation(
@@ -47,8 +79,8 @@ GUARD = Guard(
         # they call the check function directly. This mutation re-orphans it.
         Mutation(
             "a rule's findings are computed and dropped from run()'s return",
-            "            + xplugin + unowned + toggles,",
-            "            + xplugin + unowned,",
+            "            + xplugin + unowned + toggles + ci_step,",
+            "            + xplugin + unowned + ci_step,",
             "drops them from its return",
         ),
         Mutation(

@@ -64,6 +64,7 @@ Stdlib only. Run:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -2172,7 +2173,6 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
     plugin has the depth problem. So the rule fires on `skills/design-system`, and `parents[N]`
     reaching a sibling directory of the same plugin is not its business.
     """
-    import ast as _ast
 
     findings: list[Finding] = []
     examined = 0
@@ -2185,7 +2185,7 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
             continue
         rel = path.relative_to(ROOT).as_posix()
         try:
-            tree = _ast.parse(text)
+            tree = ast.parse(text)
         except SyntaxError:                          # a broken file is another gate's finding
             continue
         # DOCSTRINGS ARE EXCLUDED STRUCTURALLY, not by pattern. Half this corpus explains the
@@ -2195,14 +2195,14 @@ def check_cross_plugin_doctrine_path() -> tuple[list[Finding], int]:
         # other literal is in an expression, which is where a path actually gets built.
         docstrings = {
             id(node.body[0].value)
-            for node in _ast.walk(tree)
-            if isinstance(node, (_ast.Module, _ast.ClassDef, _ast.FunctionDef, _ast.AsyncFunctionDef))
-            and node.body and isinstance(node.body[0], _ast.Expr)
-            and isinstance(node.body[0].value, _ast.Constant)
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.body and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
             and isinstance(node.body[0].value.value, str)
         }
-        for node in _ast.walk(tree):
-            if not (isinstance(node, _ast.Constant) and isinstance(node.value, str)):
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
                 continue
             # A PATH SEGMENT OR A PATH, not a mention (#840). The skill was `fidara-design`, a string no
             # English sentence contains; renamed to `design-system` it appears in argparse descriptions
@@ -2932,6 +2932,99 @@ def check_adopts_an_unowned_server() -> tuple[list[Finding], int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: ci-verdict-without-a-step-count
+# ---------------------------------------------------------------------------
+
+# Shipped prose that tells an agent to READ CI status. These are the three ways we spell it.
+_READS_CI = re.compile(r"gh pr checks|gh run list|gh run view|actions/runs")
+
+# The discriminator, in any spelling that reaches it: the helper, or the step count by hand.
+_STEP_COUNT = re.compile(r"ci_verdict\.py|steps\|length|steps=0|executed no steps|zero .{0,12}steps")
+
+
+def check_ci_verdict_without_a_step_count() -> tuple[list[Finding], int]:
+    """Instructions that read CI must separate "failed" from "never ran" (#1077).
+
+    When GitHub cannot allocate a runner -- Actions billing, a spending limit, a quota -- it marks
+    every job in the run `failure`. That is the SAME STRING a suite that ran and failed produces,
+    and the two demand opposite responses: one means fix your diff, the other means your diff was
+    never tested and the red is not about you.
+
+    Measured live, one API call apart, while this rule was written:
+
+        fmanimashaun/claude-skills     conclusion=failure  steps=10   <- ran, really failed
+        fmanimashaun/Retask-platform   conclusion=failure  steps=0    <- no runner, 8 in a row
+
+    It cost two sessions in one morning on one repository. One read three red checks as real,
+    pushed a fix, saw FIVE red and concluded their change had made things worse -- it had not, the
+    failure mode had gone from selective (54 steps ran, 3 jobs failed) to total (0 steps ran, all 5
+    failed instantly), and **the count rose because nothing ran at all**. A second reported the
+    repository healthy from `completed/success` rows three days old.
+
+    THE STEP COUNT IS THE ONLY DISCRIMINATOR, and it is a property of the run rather than of
+    whichever job you open. `gh run view --log-failed` returns EMPTY in this state, which reads
+    like a permissions or tooling problem and is neither -- no step wrote a log because no step
+    ran, so the most obvious next move produces the most misleading result.
+
+    SATISFIED BY THE HELPER OR BY THE MEASUREMENT, never by a caveat. `ci_verdict.py` counts, and
+    so does counting steps inline; a sentence saying "CI may be flaky" does not, because a reader
+    cannot act on it. This is the same refusal `audit_assertion_reachability` makes in another
+    guise -- a confident verdict over a comparison that never happened.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted((ROOT / "plugins").glob("**/*.md")) if (ROOT / "plugins").is_dir() else []:
+        body = read(path)
+        match = _READS_CI.search(body)
+        if not match:
+            continue
+        examined += 1
+        if _STEP_COUNT.search(body):
+            continue
+        findings.append(Finding(
+            "ci-verdict-without-a-step-count", rel(path), body[:match.start()].count("\n") + 1,
+            f"tells an agent to read CI status without separating a suite that RAN and failed from "
+            f"one that never started. `conclusion` is `failure` for both, so the reader cannot tell "
+            f"a broken diff from an unverified one and will spend the afternoon on whichever they "
+            f"guessed. Count the executed steps -- "
+            f"`python3 \"${{CLAUDE_PLUGIN_ROOT}}/scripts/ci_verdict.py\"`, or "
+            f"`gh api repos/O/R/actions/runs/<id>/jobs --jq '[.jobs[].steps|length]|add'` -- and "
+            f"report zero as an ENVIRONMENT finding, never as a finding about the diff",
+        ))
+    return findings, examined
+
+
+def _assertions_below_the_tally(source: str) -> list[int]:
+    """Line numbers of selftest assertions that run AFTER the count is printed.
+
+    PURE, AND OVER ARBITRARY SOURCE, on purpose. An earlier version read only this module's own
+    text -- which is correct, so the check found nothing whatever it did, and a mutation blanking
+    its comparison SURVIVED. A guard that can only be exercised against known-good input proves
+    nothing; this one is driven by a fixture that carries the defect.
+    """
+    tree = ast.parse(source)
+    st = next((n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef) and n.name == "selftest"), None)
+    if st is None:
+        return []
+    printed = max(
+        (n.lineno for n in ast.walk(st)
+         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "print"
+         and n.args and isinstance(n.args[0], ast.JoinedStr)
+         and any(isinstance(v, ast.Constant) and "self-consistency assertion" in str(v.value)
+                 for v in n.args[0].values)),
+        default=0)
+    if not printed:
+        return [-1]                    # no tally printed at all -- its own kind of failure
+    raisers = [n.lineno for n in ast.walk(st)
+               if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                   and n.func.id == "scenario")
+               or (isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name)
+                   and n.target.id == "checks")]
+    return sorted(line for line in raisers if line > printed)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -2981,6 +3074,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
     unowned, unowned_examined = check_adopts_an_unowned_server()
+    ci_step, ci_step_examined = check_ci_verdict_without_a_step_count()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -3024,6 +3118,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         "shipped_docs_contemplating_a_running_server": unowned_examined,
+        "shipped_docs_reading_ci_status": ci_step_examined,
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
@@ -3032,7 +3127,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
-            + xplugin + unowned + toggles,
+            + xplugin + unowned + toggles + ci_step,
             coverage)
 
 
@@ -4770,7 +4865,6 @@ def selftest() -> int:
                         _inventory("modal", "search", "multistep", "countdown"),
                     f"{REFS}/forms.md": '<div data-controller="modal">…</div>\n'})
 
-    print(f"ran {checks} self-consistency assertion(s)")
     # ---- adopts-an-unowned-server (#1080) ------------------------------------------
     AUS = "adopts-an-unowned-server"
     PROBE = ("```bash\n"
@@ -4839,24 +4933,105 @@ def selftest() -> int:
     # proved the helper discriminates and nothing proved the caller forwards it. Every rule added
     # here from now on is covered by this one assertion, including a rule added by the very change
     # that would otherwise orphan it.
-    import ast as _ast
     checks += 1
-    _mod = _ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    _mod = ast.parse(Path(__file__).read_text(encoding="utf-8"))
     _run = next(n for n in _mod.body
-                if isinstance(n, _ast.FunctionDef) and n.name == "run")
+                if isinstance(n, ast.FunctionDef) and n.name == "run")
     _assigned = {t.elts[0].id
-                 for node in _ast.walk(_run) if isinstance(node, _ast.Assign)
+                 for node in ast.walk(_run) if isinstance(node, ast.Assign)
                  for t in node.targets
-                 if isinstance(t, _ast.Tuple) and len(t.elts) == 2
-                 and isinstance(t.elts[0], _ast.Name)}
-    _returned = {n.id for n in _ast.walk(_run.body[-1].value.elts[0])
-                 if isinstance(n, _ast.Name)}
+                 if isinstance(t, ast.Tuple) and len(t.elts) == 2
+                 and isinstance(t.elts[0], ast.Name)}
+    _returned = {n.id for n in ast.walk(_run.body[-1].value.elts[0])
+                 if isinstance(n, ast.Name)}
     _orphans = sorted(_assigned - _returned)
     if _orphans:
         failures.append(
             f"run() computes {', '.join(_orphans)} and drops them from its return -- those rules "
             f"can never report, whatever their own fixtures prove")
 
+    # ---- ci-verdict-without-a-step-count (#1077) -----------------------------------
+    CVS = "ci-verdict-without-a-step-count"
+
+    # THE DEFECT: reading CI status with nothing that separates "ran and failed" from "never ran".
+    scenario("reading CI status with no step-count discriminator",
+             {"plugins/rf/commands/pr-comments.md":
+              "Collect the feedback, then `gh pr checks <n>` — failures are raised issues too.\n"},
+             rule=CVS, expect_finding=True)
+
+    # MUST PASS: the helper IS the discriminator. Without this half, "flags reading CI" is
+    # satisfied by a rule that flags every mention of CI — red on the fixed file too.
+    scenario("naming the ci_verdict helper satisfies it",
+             {"plugins/rf/commands/pr-comments.md":
+              "`gh pr checks <n>`, then `python3 ci_verdict.py --limit 10` before you classify.\n"},
+             rule=CVS, expect_finding=False)
+
+    # MUST PASS: counting the steps by hand is the same measurement. A rule that accepted only
+    # OUR script would fail correct code that measured the right thing a different way.
+    scenario("counting the steps inline satisfies it without our script",
+             {"plugins/rf/commands/pr-comments.md":
+              "`gh run list`, then\n"
+              "`gh api repos/O/R/actions/runs/$ID/jobs --jq '[.jobs[].steps|length]|add'`\n"},
+             rule=CVS, expect_finding=False)
+
+    # A CAVEAT IS NOT A DISCRIMINATOR, and this is the case the rule is really about. Prose that
+    # warns CI "may be flaky" reads like diligence and gives the reader nothing to act on.
+    scenario("a caveat about flaky CI is not a discriminator",
+             {"plugins/rf/commands/pr-comments.md":
+              "`gh pr checks <n>` — note that CI is sometimes unreliable, so use judgement.\n"},
+             rule=CVS, expect_finding=True)
+
+    # SCOPE: prose that never reads CI is not this rule's business.
+    scenario("a command that never reads CI status is out of scope",
+             {"plugins/rf/commands/fix.md":
+              "Run the specs locally with `bundle exec rspec` and read the failures.\n"},
+             rule=CVS, expect_finding=False)
+
+    # ---- structural: the printed tally must be the FINAL tally -----------------------
+    # A scenario appended BELOW the print reports a total that excludes itself. That happened:
+    # seven assertions were added under the print, the selftest went on saying 292, and the stale
+    # 292 was quoted into a merged PR body as "up from 285" -- a number wrong in the flattering
+    # direction, arrived at by reading the tool's own honest-looking output.
+    #
+    # DRIVEN BY A FIXTURE, not only by this file. Checking its own (correct) source found nothing
+    # whatever the comparison did, and a mutation blanking that comparison SURVIVED. The negative
+    # and positive cases below are what make it a guard rather than a decoration.
+    GOOD_TALLY = (
+        "def selftest():\n"
+        "    checks = 0\n"
+        "    scenario('a', {}, rule='r', expect_finding=True)\n"
+        "    print(f'ran {checks} self-consistency assertion(s)')\n"
+        "    return 0\n")
+    LATE_TALLY = (
+        "def selftest():\n"
+        "    checks = 0\n"
+        "    print(f'ran {checks} self-consistency assertion(s)')\n"
+        "    scenario('a', {}, rule='r', expect_finding=True)\n"
+        "    checks += 1\n"
+        "    return 0\n")
+    checks += 1
+    if _assertions_below_the_tally(GOOD_TALLY):
+        failures.append("the tally guard reports a correctly-ordered selftest as defective")
+    checks += 1
+    if _assertions_below_the_tally(LATE_TALLY) != [4, 5]:
+        failures.append(
+            "the tally guard misses assertions that run after the count is printed -- "
+            f"got {_assertions_below_the_tally(LATE_TALLY)}, want [4, 5]")
+    checks += 1
+    if _assertions_below_the_tally("def selftest():\n    return 0\n") != [-1]:
+        failures.append("a selftest that prints no tally at all is not reported")
+    checks += 1
+    _own = _assertions_below_the_tally(Path(__file__).read_text(encoding="utf-8"))
+    if _own:
+        failures.append(
+            f"{len(_own)} assertion(s) run AFTER the count is printed (lines "
+            f"{', '.join(str(x) for x in _own)}) -- the printed tally excludes them and is "
+            f"therefore too low; move the print below the last scenario")
+
+    # The count is printed HERE, after the LAST scenario. It used to sit further up, and a
+    # block appended below it reported a total that excluded itself -- a tally that is wrong
+    # in the flattering direction and was quoted into a PR body before anyone noticed.
+    print(f"ran {checks} self-consistency assertion(s)")
     if failures:
         print(f"\n{len(failures)} FAILED:")
         for failure in failures:
