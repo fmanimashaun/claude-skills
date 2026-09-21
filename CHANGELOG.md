@@ -11504,6 +11504,35 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Comments are prose, and three gates read them as code —
+  `plugins/design-flow/scripts/source_text.py` (new),
+  `plugins/design-flow/scripts/check_surface_layout.py`,
+  `check_component_contract.py`, `check_layout_composition.py`** (#1128). A component that only
+  *described* the anti-pattern was reported as committing it, and **the false positive landed on the
+  remediated file**: you remove the wrapper, write a comment saying why, and the comment re-trips the
+  gate the fix satisfies — so the natural response is to delete the explanation. The reporter named
+  two siblings as likely to share it; **both were checked by running them, and both did** — a view
+  warning against a raw `<button>` was reported for having one, and a view quoting the markup it
+  replaced was reported for still containing it. `strip_comments` **blanks in place, preserving every
+  newline**, because two of the three callers cite `file:line` and a fix that traded a false positive
+  for a wrong citation would be worse. A **trailing** `#` is deliberately left alone — it is legal in
+  a Ruby string and begins `#{}` interpolation — and a mutation eats real code to prove that
+  carve-out is load-bearing. The same root cause runs backwards in one place: a commented-out
+  `def initialize(**attrs)` made a component that drops its caller's attributes look compliant, a
+  false **negative**, now fixed as well. **This is the class the gate was born fixing** — its release
+  note said *"the detector matches slot RENDERING, never the word"* — caught then for `content` and
+  missed for `stack`, `cluster`, `<button>` and every breakpoint utility.
+- **Two coverage gaps the fix exposed — `plugins/design-flow/scripts/check_layout_composition.py`,
+  `plugins/design-flow/scripts/mutations/check_layout_composition.py`** (#1128). The `layout-swap:`
+  opt-out **lives in a comment on purpose**, so blanking comments for it silently disabled every
+  declaration — the first attempt at this fix did exactly that and a pre-existing fixture caught it.
+  The declaration is now read from the **raw** line and the markup from the blanked one. Mutating
+  that revealed the second gap: the code excuses a declaration *on the line or the one above*, only
+  the line-above case had a fixture, and the same-line branch could be broken without any assertion
+  noticing. Both now have one. 16 assertions, 8 mutations.
+
 ### 1.42.0 (release v1.137.0) — 2026-09-21
 
 - **Nothing checked that a surface keeps its hands off the content —

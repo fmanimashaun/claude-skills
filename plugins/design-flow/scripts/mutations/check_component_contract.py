@@ -5,6 +5,7 @@ GUARD = Guard(
     name="check_component_contract",
     subject="scripts/check_component_contract.py",
     selftest="scripts/check_component_contract.py",
+    needs=("scripts/source_text.py",),   # comments are blanked here (#1128)
     mutations=(
         Mutation(
             # The must-FAIL half. A gate that stops reporting hand-written elements is the prose
@@ -39,5 +40,13 @@ GUARD = Guard(
             "            elif False:",
             "a fixed keyword list is reported",
         ),
+    Mutation(
+        # Comments are prose (#1128). Without this call the gate reports a file for DESCRIBING the
+        # anti-pattern -- and the file that describes it is usually the one that fixed it.
+        "comments are matched as if they were code",
+        '            source = strip_comments(path.read_text(encoding="utf-8", errors="replace"))',
+        '            source = path.read_text(encoding="utf-8", errors="replace")',
+        'a comment warning against a raw `<button>` is not a raw `<button>`',
+    ),
     ),
 )
