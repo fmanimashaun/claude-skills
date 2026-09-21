@@ -14079,6 +14079,22 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **A lane was described as one resource when it is three, and the mechanism it recommended caused
+  a second failure — `skills/parallel-session-lane/SKILL.md`** (#1078). §1 said *"a private test
+  database"*. Correct and a third of the answer: six sessions on one repository in a day produced
+  **three distinct cross-session corruptions**, and **every one first presented as a defect in the
+  code under test**. A shared test database deadlocks (`PG::TRDeadlockDetected`, the blocking PID
+  another session's) and the loser sees `PG::UniqueViolation` from a seed — it reads as a broken
+  seed. A shared **development** database has rows destroyed between load and use, surfacing as
+  `ActiveRecord::InvalidForeignKey` inside a rake task — it reads as a broken task. And a **reused
+  server** runs the browser against another worktree's code against a third session's database.
+  **`DATABASE_URL` is the wrong lever**, and the skill recommended it: it names *one* database while
+  a lane needs two, so a value set to isolate the test database is inherited by a browser step that
+  boots a development server — measured as 12 browser failures inside a CI run and 182 standalone,
+  neither about the code. Per-lane names belong in `config/database.yml`. The third requirement is
+  already enforced: `/qa-flow:smoke` §2 resolves the listener's working directory and **refuses** a
+  stranger (#1080), and `crawl`, `walkthrough` and `/design-flow:audit` delegate to it.
+
 - **Five components a CRUD admin needs, that the catalogue had no row for —
   `skills/design-system/references/components.md`,
   `skills/design-system/references/component-shapes.json`,
