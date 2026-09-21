@@ -14,6 +14,20 @@
   ],
   "checks": [
     {
+      "id": "component-contract",
+      "why": "The component mandate was prose, and prose drifts where nothing checks it. Measured on a consumer app: ZERO raw form fields, where a request spec asserted anatomy; EIGHTEEN raw buttons, where only a sentence did. Nine retyped the class string and one copy appeared three times, omitting a class the component had gained because a table action column broke mid-word -- carrying the exact defect the component was fixed for, unable to receive the fix. The second rule is the cause of the first: a component that cannot take a caller's data- or form- attribute is one a developer writes by hand instead.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_component_contract.py"
+      ],
+      "applies_when": [
+        "app/components"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "variant-conformance",
       "why": "Variants that differ in anything but composition are a fork of the design system, and a switcher route left reachable in production ships every rejected screen.",
       "command": [
