@@ -10,6 +10,10 @@ GUARD = Guard(
     # otherwise, and the discovery assertions fail for an environmental reason the
     # `expects` check correctly refuses to count as a caught mutation.
     needs=(
+        # This repo's OWN SessionStart hook -- the selftest asserts it is discovered, and
+        # a staged mutant has no `.claude/` tree without these two.
+        ".claude/settings.json",
+        ".claude/hooks/scripts/maintainer-status.sh",
         "plugins/design-flow/hooks/hooks.json",
         "plugins/pipeline/hooks/hooks.json",
         "plugins/pipeline/hooks/scripts/pipeline-status.sh",

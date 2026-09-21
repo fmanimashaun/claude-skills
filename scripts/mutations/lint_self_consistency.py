@@ -6,6 +6,31 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        # #1088. The advisor stance and the context budget are scaffolded into every downstream
+        # CLAUDE.md. A copy that shipped while this repo followed neither is the plainest form of
+        # the defect this whole lint exists for.
+        Mutation(
+            "we may ship behavioural doctrine we do not follow ourselves",
+            "        if in_shipped and not in_ours:",
+            "        if False:",
+            "doctrine we scaffold and do not follow ourselves",
+        ),
+        Mutation(
+            # The mirror direction: dropping it from the template while keeping it here would
+            # leave every NEW project without it, silently.
+            "doctrine may be dropped from the scaffold while we keep it",
+            "        elif in_ours and not in_shipped:",
+            "        elif False:",
+            "doctrine we follow and stopped shipping",
+        ),
+        Mutation(
+            # SCOPE. Firing when it is absent from both would make a fresh checkout red before
+            # anyone had written anything, which is how a rule gets deleted.
+            "the rule fires even when the doctrine exists in neither place",
+            "        if in_shipped and not in_ours:",
+            "        if not in_ours:",
+            "doctrine absent from both is out of scope",
+        ),
         # #1092. The step ran on a PR into dev four times despite its `if`. Cause unknown, every
         # hypothesis refuted -- so the step must not depend on being told the truth.
         Mutation(
@@ -95,8 +120,8 @@ GUARD = Guard(
         # they call the check function directly. This mutation re-orphans it.
         Mutation(
             "a rule's findings are computed and dropped from run()'s return",
-            "            + xplugin + unowned + toggles + ci_step + promo_ctx,",
-            "            + xplugin + unowned + ci_step + promo_ctx,",
+            "            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways,",
+            "            + xplugin + unowned + ci_step + promo_ctx + bothways,",
             "drops them from its return",
         ),
         Mutation(
