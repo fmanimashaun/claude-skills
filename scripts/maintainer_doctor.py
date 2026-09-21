@@ -443,6 +443,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("agent output contract", ("python3", "scripts/check_agent_output_contract.py")),
     ("agent output contract selftest",
      ("python3", "scripts/check_agent_output_contract.py", "--selftest")),
+    # #1096. A rebase across a promotion applies CLEANLY and files unshipped bullets under the
+    # release heading the arm just renamed. A loss is absolute; an addition is ratcheted, because
+    # 16 blocks already carry post-tag bullets from before anyone was watching.
+    ("published blocks", ("python3", "scripts/check_published_blocks.py")),
+    ("published blocks selftest",
+     ("python3", "scripts/check_published_blocks.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
