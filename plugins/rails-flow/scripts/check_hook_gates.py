@@ -247,6 +247,99 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#906): ...and the fallback is honestly the OLD behaviour (git -C slips through), which is why the lib ships in the plugin", r2.returncode == 0)
 
 
+# ---- guard-claims.sh (#1106) --------------------------------------------------------------------
+# `claim-verifier` exists, works, covers "any number: counts, ratios, versions, timings", and is
+# named in /maintainer-work -- and it was skipped for a whole working day while two wrong numbers
+# reached merged PR bodies. The capability was never the gap; remembering to use it was. So the
+# check runs whether or not anyone remembers, and these fixtures drive BOTH directions, because a
+# guard that blocks everything is as useless as one that blocks nothing.
+
+
+def guard_claims_fixtures() -> None:
+    def run(cmd: str, body: str | None = None, env_extra=None) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            if body is not None:
+                (Path(td) / "body.md").write_text(body, encoding="utf-8")
+                cmd = cmd.replace("BODY", str(Path(td) / "body.md"))
+            return run_hook("guard-claims.sh", cwd=Path(td),
+                            stdin=json.dumps({"tool_input": {"command": cmd}}),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]),
+                                       **(env_extra or {})})[0]
+
+    NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
+    CHECKED = NUMERIC + "Verified against the v1.134.0 tag.\n"
+    PROSE = "Tidy up the wording in the README.\n"
+
+    # MUST BLOCK: the exact shape that shipped wrong, twice, on the day this was written.
+    check("guard-claims: an unchecked numeric claim in a PR body is blocked",
+          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, "exit 0")
+
+    # MUST PASS -- and these are the half that keeps the guard alive. A hook that blocked every
+    # `gh pr create` would be switched off within a day, and then nothing is checked at all.
+    check("guard-claims: the same claim passes once the body shows it was verified",
+          run("gh pr create --base dev --body-file BODY", CHECKED) == 0, "exit 2")
+    check("guard-claims: a PR body with no load-bearing claim passes",
+          run("gh pr create --base dev --body-file BODY", PROSE) == 0, "exit 2")
+    # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
+    # so these could not reach the check at all: deleting the `gh pr create` scope test left them
+    # green, and the mutation SURVIVED. A control that cannot reach the code it guards proves
+    # nothing. With a numeric body, any widening of the scope fails right here.
+    for cmd in ("git status", "gh pr view 42", "gh pr merge 42 --merge",
+                "gh issue create --title x --body-file BODY",
+                "gh release create v1.0.0 --notes-file BODY"):
+        check(f"guard-claims: `{cmd[:34]}` is out of scope even with a numeric body",
+              run(cmd, NUMERIC) == 0, "exit 2")
+
+    # The audited escape. A fail-closed guard with no visible way past it gets disabled the first
+    # time it is wrong, and then it protects nothing.
+    check("guard-claims: RAILS_FLOW_CLAIMS_OK=1 overrides, and says so",
+          run("gh pr create --base dev --body-file BODY", NUMERIC,
+              env_extra={"RAILS_FLOW_CLAIMS_OK": "1"}) == 0, "exit 2")
+
+    # ---- the change-type declaration (doctrine-map's one tracked gap, #1106) ----
+    # The map carried this as a GAP whose recorded reason was "it would live in CI against the PR
+    # body, which no gate in this repo reads". This hook reads the PR body, so it is mechanisable
+    # now. Driven in a real git repo, because the rule is scoped by `git diff --name-only`.
+    def run_in_repo(cmd: str, body: str, touch: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "body.md").write_text(body, encoding="utf-8")
+            target = root / touch
+            target.parent.mkdir(parents=True, exist_ok=True)
+            for args in (["init", "-q", "-b", "main"],):
+                subprocess.run(["git", *args], cwd=root, capture_output=True)
+            target.write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
+            subprocess.run(["git", "-c", "user.email=f@e", "-c", "user.name=f",
+                            "commit", "-qm", "base"], cwd=root, capture_output=True)
+            target.write_text("changed\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=root,
+                            stdin=json.dumps({"tool_input": {
+                                "command": cmd.replace("BODY", str(root / "body.md"))}}),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    CREATE = "gh pr create --base dev --body-file BODY"
+    check("guard-claims: a skills/** PR naming no change type is blocked",
+          run_in_repo(CREATE, "Tidy the wording.\n", "skills/rails-8/references/x.md") == 2, "exit 0")
+    # MUST PASS, both declarations. A rule that accepted neither would block every skill PR.
+    check("guard-claims: ...unless it says framework claim",
+          run_in_repo(CREATE, "Change type: a framework claim, verified against the docs.\n",
+                      "skills/rails-8/references/x.md") == 0, "exit 2")
+    check("guard-claims: ...or architecture decision",
+          run_in_repo(CREATE, "Our own design — an architecture decision.\n",
+                      "skills/rails-8/references/x.md") == 0, "exit 2")
+    # SCOPE: a PR touching no skill is not subject to the rule, whatever its body says.
+    check("guard-claims: a PR touching no skill needs no change type",
+          run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, "exit 2")
+
+    # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
+    # it can, never to block opening a PR because a path could not be resolved.
+    check("guard-claims: an unreadable body file fails OPEN rather than blocking",
+          run("gh pr create --base dev --body-file /nonexistent/body.md") == 0, "exit 2")
+    check("guard-claims: an inline --body fails open too",
+          run('gh pr create --base dev --body "292 assertions, up from 285"') == 0, "exit 2")
+
+
 # ---- release-gate.sh (qa-flow) shares the normaliser: drive it too, or the "one normaliser" claim is prose (#906) ----
 QA_HOOK = HOOKS.parents[2] / "qa-flow" / "hooks" / "scripts" / "release-gate.sh"
 
@@ -287,7 +380,8 @@ def release_gate_fixtures() -> None:
 
 def selftest() -> int:
     for fn in (stop_gate_fixtures, guard_lane_fixtures, lint_ruby_fixtures,
-               self_consistency_fixtures, guard_bash_fixtures, release_gate_fixtures):
+               self_consistency_fixtures, guard_bash_fixtures, guard_claims_fixtures,
+               release_gate_fixtures):
         fn()
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
