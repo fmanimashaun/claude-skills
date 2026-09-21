@@ -100,23 +100,12 @@ def discover_all() -> tuple[Guard, ...]:
     found = list(discover(MUTATIONS_DIR))
     for manifest in sorted(REPO.glob("plugins/*/scripts/mutations")):
         found += discover(manifest, base=str(manifest.relative_to(REPO).parents[1]))
-    # EVERY PATH OF A SHIPPED GUARD MUST RESOLVE INSIDE ITS PLUGIN. A guard ships so a consumer
-    # project can run it against the copy it installed; one reaching out to `skills/` or to a
-    # sibling plugin cannot resolve there, and the failure is a FileNotFoundError deep in staging
-    # rather than a sentence anyone can act on. Four guards were relocated wrongly the day this
-    # was written -- three design-flow ones needing repo-root `skills/`, and `hook_session_start`
-    # spanning plugins -- because the move only checked for leftover `plugins/` prefixes (#1109).
-    for guard in found:
-        root = REPO / guard.base
-        for relative in {guard.subject, guard.selftest, *guard.deps, *guard.needs}:
-            if not (root / relative).exists():
-                raise RuntimeError(
-                    f"{guard.name} (base {guard.base}) names {relative!r}, which is not there. "
-                    f"Every path a guard declares must resolve from its base, or staging dies on a "
-                    f"FileNotFoundError nobody can act on. A shipped guard's paths are relative to "
-                    f"its plugin; a guard under scripts/mutations/ uses marketplace-relative ones. "
-                    f"If it cannot be expressed plugin-relative, the guard belongs in "
-                    f"scripts/mutations/.")
+    # The "every declared path resolves from its base" invariant lives in the SELFTEST, not here.
+    # At import time this module is also loaded inside a STAGED tempdir -- `doctrine_map`'s own
+    # selftest copies the repo and re-imports it -- where a file a guard legitimately needs (say
+    # `CHANGELOG.md`) is simply not staged. Raising there broke two guards that were correct, which
+    # is the "gate red on correct code" shape. Import stays cheap and tolerant; validation is a
+    # check that runs against the real tree (#1109).
     names = [g.name for g in found]
     duplicated = {n for n in names if names.count(n) > 1}
     if duplicated:
