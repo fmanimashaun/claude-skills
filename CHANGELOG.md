@@ -9,6 +9,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The last INERT hook guard — `scripts/mutations/hook_normalize_cmd.py`** (#1109). The previous
+  fix matched guards by the exact `needs` string they shared, and this one's differs because it is
+  cross-plugin, so it was missed: `dev`'s sweep went from **6 INERT guards to 1 of 1028**. Same
+  cause, same remedy — the five scripts a driven hook runs are now declared here too.
 - **Six hook guards were INERT, so `dev`'s full sweep was red for four hours —
   `scripts/mutations/hook_guard_bash.py`, `scripts/mutations/hook_guard_lane.py`,
   `scripts/mutations/hook_lint_ruby.py`, `scripts/mutations/hook_self_consistency.py`,
