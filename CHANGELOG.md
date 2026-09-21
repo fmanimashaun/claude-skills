@@ -11050,6 +11050,41 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The component mandate had no gate in a consumer project, so it drifted exactly where nothing
+  looked — `plugins/design-flow/scripts/check_component_contract.py`,
+  `plugins/design-flow/checks.json`, `scripts/mutations/check_component_contract.py`** (#1063). The
+  upstream rules were prose. Measured on a real consumer app: **zero raw form fields**, where a
+  request spec asserts form anatomy — and **18 raw `<button>` tags**, where only a sentence did.
+  Where the rule was enforced it was clean; where it was written down it had drifted, and that is
+  not a finding about discipline.
+
+  **Two rules, and the second is the cause of the first.** `raw-element` flags a hand-written
+  `<button>` in `app/views/**`. `component-drops-attributes` flags a component whose initializer
+  takes a fixed keyword list, or accepts a splat and never stores it — because a developer who needs
+  a Stimulus target on a Modal, finds the component cannot carry one, writes the tag by hand.
+
+  **Run against that app it reports 18 and 14 — and the 18 matches the hand audit exactly.** The 14
+  were not previously known: `ModalComponent`, `ToastComponent`, `TableComponent`,
+  `NavigationComponent` and ten others cannot carry a caller's attribute today.
+
+  **Scoped to `app/views/**`, and that scope came from running it rather than reasoning.** The first
+  version also scanned `app/components/**` and found 31 raw buttons — but **13 of those are inside
+  component templates and every one is correct**, because a component's own template is where the
+  element belongs. Shipping that would have produced 13 findings against correct code on the first
+  run, and a gate wrong about correct code on day one earns an exclusion list or gets switched off.
+
+  **The framework-helper exemption was written, found to be dead, and removed.** `button_to` emits
+  no literal `<button` into ERB source, so the scan never sees it and never needed to exempt it — a
+  mutation deleting the exemption changed nothing, which is how it was found. **A carve-out no
+  fixture can reach is a carve-out without a negative test**, so it is gone rather than kept as
+  reassurance; the doctrine explains why none is needed.
+
+  Four declared mutations, including both halves the issue demanded: one that stops the gate
+  reporting a hand-written element, and one that widens the match from the literal tag to any
+  mention of a button — which would flag `<%= button_to %>`, correct code, immediately.
+
 ### 2026-09-17 (release v1.130.0)
 
 - **`reworded` — the status a faithful port needed and the check did not have** (#1000).
