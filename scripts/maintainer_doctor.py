@@ -429,6 +429,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("component states", ("python3", "scripts/check_component_states.py")),
     ("component states selftest",
      ("python3", "scripts/check_component_states.py", "--selftest")),
+    # #1085. A SessionStart hook fires again on EVERY COMPACTION, so what it prints is charged
+    # each time the context is reclaimed -- exactly when it is scarcest. One hook was 98% of the
+    # cost and 85% of that was one file printed verbatim. A ratchet against a fixture project, so
+    # the baseline cannot drift on an unrelated commit.
+    ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
+    ("hook output budget selftest",
+     ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
