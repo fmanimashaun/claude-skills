@@ -58,6 +58,25 @@ fi
 [ "$targets_main" -eq 1 ] || exit 0
 
 deny() { echo "BLOCKED by qa-flow release gate: $1" >&2; exit 2; }
+
+# NOT THE MARKETPLACE'S OWN REPO. This hook gates a CONSUMER project's promotion: it asks whether
+# QA certified the app before it ships. The repository that SHIPS qa-flow is not a consumer of it
+# -- it has no app, no staging and no `qa/` surface, so there is nothing to certify and never will
+# be. Until this check existed the gate denied every promotion of its own source repo, which is a
+# gate that is wrong about correct code: the maintainer either overrides it every release, or
+# switches it off, and then it protects nobody.
+#
+# `.claude-plugin/marketplace.json` is the discriminator because it is what MAKES a tree a
+# marketplace -- no consumer project has one, and a consumer cannot acquire one by accident.
+# Deliberately NOT keyed on "the project has no qa/ directory": that is the ordinary state of an
+# app which has simply never run `/qa-flow:setup-qa`, and exempting it would let every such app
+# promote unchecked. That distinction is the whole safety of this block, and the harness carries
+# both cases -- a marketplace tree that must PASS and a bare repo that must still be BLOCKED.
+if [ -f ".claude-plugin/marketplace.json" ]; then
+  echo "qa-flow: this is the marketplace repo itself, which ships qa-flow rather than consuming it — release gate not applicable." >&2
+  exit 0
+fi
+
 [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: QA_ALLOW_MAIN=1 override — promotion allowed without a fresh stamp (audited)." >&2; exit 0; }
 
 stamp="qa/CERTIFICATION"
