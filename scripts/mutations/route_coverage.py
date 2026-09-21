@@ -278,5 +278,26 @@ GUARD = Guard(
             "    if True:\n        return True",
             "two DIFFERENT shas must still refuse when abbreviated",
         ),
+        # #1062, the shipped defect. `[:9]` is for a SHA and was applied to the fallback too, so a
+        # tree with no git rendered `route inventory: not a git` -- a truncated-looking
+        # value on the one line a reader consults to decide whether a percentage can be
+        # attributed to a tree. Same class as the abbreviated-SHA defect in `same_commit`:
+        # a RENDERING treated as the value.
+        Mutation(
+            'the no-git fallback is truncated like a SHA again',
+            '    commit = str(recorded)[:9] if recorded else "not a git tree"',
+            '    commit = str(recorded or "not a git tree")[:9]',
+            'the no-git fallback must print in full',
+        ),
+        # The over-correction, and it needs its own mutation because the fixture above cannot see
+        # it: stop truncating at all and a 40-character hex string lands in a one-line
+        # stamp. The fallback printing in full is not the same claim as nothing being
+        # abbreviated.
+        Mutation(
+            'nothing is abbreviated, so a full SHA lands in the one-line stamp',
+            '    commit = str(recorded)[:9] if recorded else "not a git tree"',
+            '    commit = str(recorded) if recorded else "not a git tree"',
+            'a real SHA must still be abbreviated',
+        ),
     ),
 )

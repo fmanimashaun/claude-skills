@@ -607,11 +607,18 @@ def provenance_lines(prov: dict | None) -> list[str]:
         # the number is unattributable, which is the state this whole change is about.
         return ["  route inventory provenance: UNKNOWN — enumerated before provenance was "
                 "recorded, so this percentage cannot be attributed to a tree. Re-run `enumerate`."]
-    commit = prov.get("commit") or "not a git tree"
+    recorded = prov.get("commit")
+    # TRUNCATE ONLY A SHA (#1062). `[:9]` was applied to the fallback too, so a tree with no git
+    # printed `route inventory: not a git` -- which reads like a truncated or corrupted SHA rather
+    # than the deliberate "there is no git tree here" the code means. On a PROVENANCE line, the one
+    # a reader consults to decide whether a percentage can be attributed to a tree, that is the
+    # opposite of the job. Same class as the abbreviated-SHA defect in `same_commit`: a RENDERING
+    # treated as the value.
+    commit = str(recorded)[:9] if recorded else "not a git tree"
     dirty = prov.get("dirty")
     env = prov.get("rails_env") or "unset"
     mark = "" if not dirty else " +dirty"
-    return [f"  route inventory: {str(commit)[:9]}{mark} · RAILS_ENV={env} · enumerated "
+    return [f"  route inventory: {commit}{mark} · RAILS_ENV={env} · enumerated "
             f"{prov.get('enumerated_at') or 'at an unrecorded time'}"]
 
 

@@ -365,6 +365,29 @@ def run() -> int:
     if "RAILS_ENV=unset" not in unset_line:
         FAILURES.append(f"provenance_lines: an unset RAILS_ENV must say so, got {unset_line!r}")
     _tick()
+    # #1062. `[:9]` is for a SHA and was being applied to the fallback too, so a tree with no git
+    # rendered `route inventory: not a git` -- which reads as a truncated or corrupted value rather
+    # than the deliberate statement it is. On a provenance line, the one a reader consults to decide
+    # whether a percentage can be attributed to a tree, that is the opposite of the job.
+    #
+    # Asserted on the RENDERED LINE, not the dict: the dict was always right, and it is the
+    # rendering that was wrong. A test reading the dict here would pass against the defect.
+    no_git = " ".join(rc.provenance_lines(
+        {"commit": None, "dirty": None, "rails_env": None, "enumerated_at": None}))
+    if "not a git tree" not in no_git:
+        FAILURES.append(f"provenance_lines: the no-git fallback must print in full, got {no_git!r}")
+    _tick()
+    # THE CONTROL on the same call: a real SHA must still be truncated, or "print the fallback in
+    # full" would also pass for a version that stopped truncating anything and printed 40 characters
+    # of hex into a one-line stamp.
+    long_sha = "978814d2912f7c8a4b5e6d0f1a2b3c4d5e6f7a8b"
+    rendered = " ".join(rc.provenance_lines(
+        {"commit": long_sha, "dirty": False, "rails_env": "test",
+         "enumerated_at": "2026-09-21T08:00:00Z"}))
+    if long_sha in rendered or "978814d29" not in rendered:
+        FAILURES.append(f"provenance_lines: a real SHA must still be abbreviated, got {rendered!r}")
+
+    _tick()
     # The recorder must populate what the reporter reads. Two halves written apart is how a field
     # goes quietly empty.
     made = rc.enumeration_provenance()
