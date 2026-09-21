@@ -11081,6 +11081,41 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Layout composition was doctrine with no gate, so it drifted —
+  `plugins/design-flow/scripts/check_layout_composition.py`, `plugins/design-flow/checks.json`,
+  `scripts/mutations/check_layout_composition.py`**. `responsive.md` states a **priority order**,
+  not a preference: fluid, then intrinsic, then breakpoints as an exception that must justify
+  itself — *"if you're writing breakpoint classes to change layout, first check whether a primitive
+  expresses it intrinsically."* Nothing checked it. The audit checklist mentioned it in prose; no
+  script had ever read a view.
+
+  **Measured on a consumer app that declares 20-odd primitives of its own**: `grid-auto` is used
+  **21 times**, so the idea took — and **31 elements still hand-roll `flex` + an alignment + a
+  gap**, which is precisely what `cluster` is. Three more change the layout **axis** at a
+  breakpoint, where `switcher`, `Layout::Sidebar` and `grid-auto` adapt with no query at all.
+
+  **Two rules, both mechanical, and the omissions are the design.** A `flex`/`items-*`/`gap-*`
+  triple is `cluster` by definition, so it is a finding rather than an opinion about what "could
+  have been" a primitive. A breakpoint variant is a finding only when it changes the **axis or
+  track count** — `md:flex-row`, `sm:flex-col`, `lg:grid-cols-2`. **Sizing at a breakpoint is not
+  flagged**, because the doctrine itself prescribes `w-full md:w-auto` for toolbar buttons, and a
+  gate that fails prescribed code is one that gets switched off.
+
+  **The primitives are read from the project's own CSS**, never hardcoded. A project that renames
+  or extends its vocabulary is not told it is wrong for using it.
+
+  **§3's structural swap is DECLARED, not inferred.** `layout-swap: <reason>` in an ERB comment
+  suppresses the finding; without it the identical element is still reported. An exception nobody
+  can see is how a rule gets quietly abandoned — one you have to write down is one a reviewer can
+  argue with.
+
+  Six declared mutations, and **two of them survived the first run** because the fixtures were
+  wrong rather than the rule: the "already composes a primitive" cases were not themselves
+  cluster-shaped, so neither ever reached the skip they existed to prove. Both now carry the
+  primitive *and* the utilities, which is the shape a real view has.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **Browser mode could not reach an authenticated page or the accessibility tree —
