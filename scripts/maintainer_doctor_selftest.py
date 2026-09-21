@@ -212,7 +212,65 @@ def ruleset_fixtures() -> None:
             md.RULESET_ARGS = saved
 
 
+def timeout_fixtures() -> None:
+    """A gate that is KILLED did not run -- so it is a skip, and a real failure is still a FAIL.
+
+    #1097. `mutation coverage` spawns one subprocess per declared mutation, so it gets slower every
+    time anyone makes this repository safer. It crossed 180s at 236 mutations (#129); the fix then
+    was to raise its allowance to 900s. On 2026-09-21 it crossed 900s too -- 1000 mutations across
+    93 guards on a laptop running several sessions -- and the sweep reported `FAIL`, which on that
+    gate means "a guard stopped guarding". Run alone on the same commit it passed completely. An
+    hour went into deciding which run to believe, and the doctor's own output had said `timed out`
+    in plain words the whole time.
+
+    An allowance can always be exceeded; the VERDICT is the thing that can be correct. Both
+    directions are driven below, because "a timeout is a skip" is satisfied by a doctor that never
+    fails anything at all.
+
+    `check_gates()` is called directly rather than through `diagnose()`, which deliberately runs
+    only the git and corpora checks -- the gates hit the real environment, and these two must not.
+    """
+    work = fixture()
+    saved_gates, saved_slow, real = md.GATES, md.SLOW_GATES, md.REPO
+    try:
+        md.REPO = work
+        scripts = work / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "_slow.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        (scripts / "_fails.py").write_text(
+            "import sys\nprint('a guard survived')\nsys.exit(1)\n", encoding="utf-8")
+        md.GATES = (("selftest slow", ("python3", "scripts/_slow.py")),
+                    ("selftest fails", ("python3", "scripts/_fails.py")))
+        md.SLOW_GATES = {"selftest slow": 1}
+
+        d = md.Doctor()
+        d.check_gates()
+
+        r = expect("a gate that times out is SKIP, never FAIL", d, "selftest slow", md.SKIP)
+        _tick()
+        if r is not None and "did NOT run" not in r.detail:
+            FAILURES.append(
+                f"the timeout skip must say the check did not run, or a reader takes it for a "
+                f"pass: {r.detail!r}")
+        _tick()
+        if r is not None and "timed out after 1s" not in r.detail:
+            FAILURES.append(
+                f"the timeout skip must name the allowance it exceeded, or nobody can tell "
+                f"whether to raise it or fix the gate: {r.detail!r}")
+        # THE NEGATIVE CONTROL, on the same code path. Without it, "timeouts are skips" is
+        # satisfied by a doctor that reports everything as a skip -- which would hide the one
+        # verdict that matters most on this gate.
+        expect("a gate that RUNS and fails is still FAIL", d, "selftest fails", md.FAIL)
+        # ...and the summary must not tell anyone to fix a check that never ran.
+        _tick()
+        if any(x.status == md.FAIL and "slow" in x.name for x in d.results):
+            FAILURES.append("a timed-out gate still counts as a failure in the summary")
+    finally:
+        md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
+
+
 def run() -> int:
+    timeout_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------
     d = diagnose(fixture(corpora=True))
