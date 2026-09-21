@@ -33,3 +33,20 @@ Implementation rules:
 
 When done, report: files changed, specs added, commands the orchestrator should run next,
 and anything you deliberately deferred.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+WROTE  app/services/orders/cancel.rb, spec/services/orders/cancel_spec.rb
+SPECS  8 examples, 0 failures
+NOTE   follows the Result-object convention in CLAUDE.md § Patterns
+Done: cancellation service plus specs. Nothing else touched.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

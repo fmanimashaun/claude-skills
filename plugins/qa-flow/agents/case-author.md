@@ -85,3 +85,18 @@ never `git add -A`.
 Counts (added/updated/deprecated/total active), the Areas covered, any requirement with no
 case yet (a gap to confirm), and the next step: `/qa-flow:functional` to execute them, or a
 maintainer's regression run.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+CATALOGUE qa/test-cases.csv
+VERDICT   +14 added, 3 updated, 2 deprecated — no id renumbered, nothing hard-deleted
+14 new cases derived from the PRD and the route map.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

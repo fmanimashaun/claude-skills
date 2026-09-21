@@ -23,3 +23,19 @@ You test the API of the RUNNING app against its published contract.
 
 Any 5xx is a defect. Contract violations default S2; tenancy leaks are S1. Report
 endpoints covered, checks run, failures with repro commands.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+FAIL  GET /api/v1/orders — 500 on `?limit=-1`, spec says 400
+AUTHZ viewer can PATCH /api/v1/orders/{id} — expected 403, got 200
+2 findings: 1 contract, 1 authorization.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

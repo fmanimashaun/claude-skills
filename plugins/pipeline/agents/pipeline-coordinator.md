@@ -70,3 +70,20 @@ represents resolves (a `/qa-flow:verify` PASS, or the user confirms the merge ha
 to verify), CLEAR the marker (`rm -f "$(git rev-parse --git-dir)/pipeline-pending"`) so it
 stops re-surfacing — "clears when the stage completes" must be literally true. The user can
 also dismiss it directly with `/pipeline:ack` (nudge-only, no spend).
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+STAGE     verify (build complete, certification absent)
+NEXT      /qa-flow:verify
+BLOCKED   promotion — qa/CERTIFICATION missing or stale
+One next action: run /qa-flow:verify.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

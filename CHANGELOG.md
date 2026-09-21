@@ -9,6 +9,53 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **A timed-out gate was reported as `FAIL`, which is the one verdict it cannot mean —
+  `scripts/maintainer_doctor.py`, `scripts/maintainer_doctor_selftest.py`,
+  `scripts/mutations/maintainer_doctor.py`** (#1097). The doctor's contract is three verdicts, and
+  `CLAUDE.md` states it: `ok`, `FAIL`, and **`skip`, which means the check did not run and is not a
+  pass**. A timeout is exactly that third case and was landing in the second. The two demand
+  opposite responses — on `mutation coverage`, `FAIL` means *a guard stopped guarding*, which is as
+  serious as this repository gets, since that gate is what proves the others can fail. **The defect
+  was diagnosed at #129 and the fix chosen was raising the allowance to 900s**; the note above
+  `SLOW_GATES` says so in as many words — *"a timeout reported as FAIL is indistinguishable from a
+  real survivor"* — and then nothing enforced it. On 2026-09-21 the sweep crossed 900s too (1000
+  mutations across 93 guards on a contended laptop, ~15 minutes) and cost an hour of the v1.134.0
+  pre-flight deciding which run to believe; run alone on the same commit it passed completely, and
+  the doctor's own output had said `timed out` in plain words the whole time. **An allowance can
+  always be exceeded; the verdict is the thing that can be correct.** It now reports `skip`, names
+  the allowance it blew so a reader can tell whether to raise the budget or fix the gate, and says
+  the check did **not** run. The negative control is carried on the same path — a gate that runs and
+  genuinely fails is still `FAIL`, because "a timeout is a skip" is otherwise satisfied by a doctor
+  that never fails anything.
+- **A clean rebase across a promotion filed unshipped work under a published release, and a
+  published note was destroyed — `scripts/check_published_blocks.py` (new),
+  `docs/evidence/published-block-baseline.json` (new), `scripts/maintainer_doctor.py`,
+  `scripts/mutations/check_published_blocks.py`, `CHANGELOG.md`** (#1096). Before an arm a branch's
+  notes sit under `### Unreleased`; **the arm renames that heading**, so a branch cut beforehand and
+  rebased onto the armed `dev` finds no such heading and git places its bullets at the nearest
+  matching context — the top of the renamed block. It applies **cleanly, with no conflict**, and the
+  cleaner the rebase the less likely anyone looks. Resolving the resulting duplicate by hand then
+  deleted the wrong bullet: **a real v1.133.0 note, published weeks earlier, was gone from the file**
+  — restored here verbatim from `git show v1.133.0:CHANGELOG.md`. `extract_release_notes --check`
+  cannot see any of it, correctly: it validates that a heading names a real tag and has the
+  publishing shape, never whether a bullet underneath it was there when the tag was cut. **A loss is
+  absolute and an addition is ratcheted**, because 16 blocks already carry post-tag bullets from
+  before anyone watched, and an absolute rule would be red on day one. A note's identity is its
+  bolded lead with cited paths stripped — a first draft keyed on the whole first line and read four
+  path corrections (`docs/coverage.html` → `docs/evidence/coverage.html` and friends) as destroyed
+  notes across v1.44.0, v1.92.0 and v1.112.0, which would have made the rule refuse the maintenance
+  it should welcome. **176 tagged blocks now compare clean against their tags.**
+- **Nothing required an agent to state its output contract —
+  `scripts/check_agent_output_contract.py` (new), `scripts/maintainer_doctor.py`,
+  `scripts/mutations/check_agent_output_contract.py`** (#1086). Requires a declared `## Output`
+  section that either names an artifact file or is bounded. **It checks the declaration, never the
+  runtime behaviour** — what an agent actually emits depends on the model and the input, so a check
+  claiming to verify it would be a gate that cannot fail. Anchored on the heading *being* `Output`:
+  a first draft matched any heading containing the word and counted `design-critic`'s *"Ranking
+  `/design-flow:variants` output"* as a contract, making the baseline read 3 when it was 2. Two
+  declared mutations were defective and the harness said so — one was caught by a crash rather than
+  its fixture, and one **survived** because the artifact fixture was also short enough to pass the
+  bounded rule, so the two contracts overlapped and deleting one changed nothing.
 - **Nothing measured what a hook costs, so it could grow for ever unnoticed —
   `scripts/check_hook_output_budget.py` (new), `docs/evidence/hook-output-baseline.json` (new),
   `scripts/maintainer_doctor.py`, `scripts/mutations/check_hook_output_budget.py`,
@@ -176,6 +223,31 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   under-counts is the instrument failure this issue is about, so it stays on the issue. And case
   **provenance** — where a case came from — is documented rather than given a field, because a field
   nobody fills is worse than no field.
+
+- **A PR could be opened over unfinished work while carrying the keyword that closes the issue —
+  `plugins/rails-flow/commands/issues.md`**. The work loop already required **one `Closes #n` per
+  issue**, so merging a PR closes what it names. Nothing said when the PR may be opened, and those
+  two together are a trap: **a PR raised over half-done work is a request to close an issue that
+  is not fixed**, and the remainder becomes invisible the moment it merges. Nobody re-reads a
+  closed issue.
+
+  Step 5 now states the precondition: **open the PR only when every issue it names is completely
+  done** — every claim in the issue body answered, every mandatory gate green, and nothing left
+  that you were planning to push to the branch afterwards. A PR may still close several issues, but
+  each must independently be finished; grouping is about sharing a branch, never about carrying a
+  half-done issue along on a finished one's merge.
+
+  **And the resolution when a group splits**, which is the case that otherwise stalls: if one issue
+  is unfinished when the rest are done, neither hold the finished work nor ship the unfinished one
+  — drop it from the branch, remove its `Closes`, and leave it open in the queue. One issue
+  slipping is not a reason to delay the others, and a `Closes` on it is a false claim about what
+  merged.
+
+  Three named shapes it rules out, each of which has happened: opening a PR to "get CI running" on
+  a branch you intend to keep pushing to; opening a draft naming issues you have not started; and
+  listing a `Closes` for an issue whose acceptance criteria you narrowed without saying so on the
+  issue first. Maintainer decision, recorded on this change — our own process doctrine, with no
+  upstream to verify against.
 
 ### 2026-09-18 (release v1.132.0)
 
@@ -2994,6 +3066,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **29 agents, and 2 said anything about what they return —
+  `plugins/rails-flow/reference/agent-output-contract.md` (new), and an `## Output` section added
+  to 27 agents across all four plugins** (#1086). An agent's final message lands in the **parent**
+  conversation and stays there for the rest of the session: not a one-off cost like its own turns,
+  but a permanent tax on every later request the parent makes. **This is a different budget from
+  `reference/model-tiers.md`**, which settles which model an agent runs on (deliberately, with
+  citations, on #127) and is not reopened here — that governs what the agent's work costs, this
+  governs what its answer costs. Two contracts, and neither was invented: a **bounded structured
+  verdict**, lifted from `claim-verifier`, and **artifacts on disk with a path returned**, lifted
+  from `functional-tester`. The second is the real lever, and several qa-flow agents already did it
+  without it ever being stated as a rule.
 
 - **The session-start banner was paid again at every compaction, and 85% of it was one file printed
   verbatim — `plugins/rails-flow/hooks/scripts/session-start.sh`,

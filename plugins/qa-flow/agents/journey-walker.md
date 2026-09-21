@@ -134,3 +134,18 @@ Then hand everything to `qa-reporter`: it dedupes by signature, writes the findi
 `Source` = `journey`, and files one issue per distinct defect with facts, reproduction, severity,
 acceptance criteria and the embedded screenshot. **Every issue names the spec section it was
 judged against** — the finding is "the page contradicts §14.4", never "this looks wrong".
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+REPORT  qa/walkthrough/<date>-<slug>.md
+CSVs    pages.csv, handoffs.csv, notifications.csv
+VERDICT 4 personas walked; 2 hand-off failures, 1 notification the catalogue names and the app never sent.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

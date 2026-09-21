@@ -66,3 +66,18 @@ its tools and model — never create agents without explicit approval.
 
 Report: docs scanned, plan proposed/applied, manifest state, and a reminder that a
 brand-new `.claude/skills/` directory needs a Claude Code restart to be watched.
+
+## Output
+
+**Write the detail to a file; return the path and the verdict.** Your answer lands in the parent
+conversation and stays there for the rest of the session, so a long report costs the parent on every
+later request. A path costs one line. See `reference/agent-output-contract.md`.
+
+```
+CURATED .claude/skills/<name>/SKILL.md
+MANIFEST .claude/skills/MANIFEST.md (hashes refreshed)
+VERDICT 2 skills regenerated, 1 drifted source reconciled.
+```
+
+Do not paste the report body back into the conversation. Do not restate the task or narrate the
+search — the file holds the detail, and the parent reads it only if it needs to.

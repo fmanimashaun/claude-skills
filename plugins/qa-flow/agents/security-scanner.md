@@ -21,3 +21,19 @@ classics (CSP/HSTS) → one consolidated S3 unless already set per the app's CLA
 **Active scan** only against staging, only with explicit user approval in the
 conversation — never production, never implied. Report alerts by risk, confirmed vs
 dismissed with reasons.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+HIGH   ZAP 10202 — anti-CSRF token missing on /sessions
+TRIAGED 14 alerts: 1 high, 3 medium, 10 informational (suppressed, listed in the run log)
+1 actionable finding; the rest are triaged noise.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

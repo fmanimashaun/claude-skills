@@ -128,3 +128,20 @@ saw and deliberately did not grade.
 resolves at runtime, anything requiring a rendered page rather than markup. A critique that reads
 complete while having skipped surfaces is worse than a short one, and unlike the auditor you have no
 gate behind you to catch what you missed.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+RANKED 1  variant-b — clearest focal point; the primary action wins the page
+RANKED 2  variant-a — even weight across three cards, so nothing leads
+IMPROVE   variant-a: raise the card's heading a step and drop the body to `muted`
+3 variants ranked. A lens, not a gate — none of this blocks a merge.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.

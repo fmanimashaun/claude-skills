@@ -46,3 +46,20 @@ an unexpected error page or redirect is a **finding**, not spoiled evidence — 
 BLOCKED and move on. The reason is narrower: a defect whose evidence cannot say which URL and
 status produced it is unreproducible, and it wastes a developer's afternoon before anyone
 notices the capture came from a redirect target.
+
+## Output
+
+A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays
+there for the rest of the session** — it is charged on every later request, not once. See
+`reference/agent-output-contract.md`.
+
+```
+CHARTER  'attack the checkout state machine' — 45 min
+FOUND    back-button after payment re-submits the order (no idempotency key)
+FOUND    cancelled order still counts toward the dashboard total
+2 findings from 1 charter.
+```
+
+Do not restate the task, echo file contents the parent already has, or narrate the search that
+produced a finding. If the evidence for one finding runs past a few lines, write it to a file and
+return the path instead.
