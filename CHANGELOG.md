@@ -13646,6 +13646,46 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The catalogue stated the six-state rule, predicted its own drift, and nothing enforced it —
+  `scripts/check_component_states.py`, `scripts/mutations/check_component_states.py`,
+  `skills/design-system/references/components.md`, `scripts/maintainer_doctor.py`** (#1068).
+  `components.md` opens with *"Every entry covers six states, or says which do not apply (#978) …
+  the loading and empty states are the ones always missing."* **The prediction was correct.**
+  Measured on `dev`: `loading` appeared as a state of the component being described in **1 of 44
+  rows**, the *"or says which do not apply"* escape hatch was used **zero times**, and five rows
+  named none of the six.
+
+  **The check reads a claim the row makes, never the prose around it**, and that is the whole
+  design rather than an implementation detail. Getting `loading` down to a true 1 of 44 required
+  separating *a state of the component described* from *a row that **is** a loading indicator*
+  (`Skeleton`, `Spinner`, `Background operation`), a Toast `:loading` variant, and `Activity
+  feed`'s "no scroll-loading" — **a grep for the six words scores every one of those as
+  compliant**, and so would a row saying *"see Skeleton for loading"*. A row now carries a
+  `**States:**` line naming all six, each either covered or `n/a — <reason>`; the selftest's
+  discriminating fixture is prose containing all six words, which must NOT count.
+
+  **A bare `n/a` is refused.** The hatch went unused for its whole life even while free, so the
+  first thing a free one would produce is 43 rows of it. A reason is the part a reviewer can
+  disagree with.
+
+  **Two verdicts, because one alone fails differently from how it looks.** Any declaration that
+  exists must be complete — a hard failure, and it fired immediately on `Button`, the only row that
+  had a `States:` line, which named four of the six. And the number of declaring rows is
+  **ratcheted in both directions**: a drop is refused, and unrecorded growth is too, because a
+  floor nobody raises stops protecting anything. A flat "44 of 44" would have been red on day one
+  until the last row landed, which is how a build gets ignored.
+
+  **The doctrine sections declare themselves**, with `<!-- states: not-a-component -->` in the file,
+  rather than this script keeping a list of section names — a second list nobody compares against
+  the first is the defect the rest of this entry is about. The checker also accepts the catalogue's
+  own `focus-visible` spelling instead of renaming doctrine to suit a parser.
+
+  **The mutation runner refused the guard as INERT on its first run** — the selftest reads the real
+  catalogue, which was not staged into the mutant, so the unmutated run died of `FileNotFoundError`
+  and all seven mutations would have read as "caught" without breaking anything. Declared via
+  `needs`. Seven mutations now, each caught by its intended fixture. **43 rows remain undeclared**;
+  they convert one PR at a time and the floor rises with them.
+
 - **17 of the 23 shipped components could not carry a caller's attribute, so the catalogue produced
   the raw HTML it forbids — `skills/design-system/references/components.md`,
   `skills/design-system/references/component-implementations.md`,
