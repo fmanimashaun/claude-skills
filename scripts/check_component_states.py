@@ -94,7 +94,7 @@ MARKER = "**States:**"
 
 # THE RATCHET. Rows carrying a complete declaration, as measured on the tree this floor was
 # committed with. Raise it in the same PR that converts a row; it never goes down.
-DECLARED_FLOOR = 1
+DECLARED_FLOOR = 6
 
 # `n/a` and the reason that must follow it. An em dash, an en dash or a plain hyphen, because the
 # file uses all three and refusing a punctuation choice is not what this is for.
