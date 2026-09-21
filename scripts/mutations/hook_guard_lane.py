@@ -8,7 +8,14 @@ GUARD = Guard(
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
-    needs=('plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts'),   # check_hook_gates drives BOTH plugins' hooks (#906)
+    needs=('plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
+           # guard-claims.sh runs extract_claims.py; without it the harness's two claim
+           # fixtures fail in the staged tempdir and every mutation reads as caught (#1109).
+           'plugins/rails-flow/scripts/check_criteria.py',
+           'plugins/rails-flow/scripts/check_handoff.py',
+           'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/rails-flow/scripts/self_consistency.py',
+           'plugins/rails-flow/scripts/extract_claims.py'),   # check_hook_gates drives BOTH plugins' hooks (#906)
     mutations=(
         Mutation(
             'the `..` refusal is removed, so a lane escape passes the prefix match again',

@@ -9,6 +9,20 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Six hook guards were INERT, so `dev`'s full sweep was red for four hours —
+  `scripts/mutations/hook_guard_bash.py`, `scripts/mutations/hook_guard_lane.py`,
+  `scripts/mutations/hook_lint_ruby.py`, `scripts/mutations/hook_self_consistency.py`,
+  `scripts/mutations/hook_stop_gate.py`, `scripts/mutations/hook_session_start.py`,
+  `scripts/mutations/hook_release_gate.py`** (#1109). #1106 added `guard-claims` fixtures to
+  `check_hook_gates.py`; that hook runs `extract_claims.py`, and no guard listed it in `needs`. A
+  staged mutant therefore ran without it, the **unmutated** selftest already failed, and
+  `mutation_check` reports that as **INERT** — every mutation counted as "caught" whether or not it
+  broke anything. Six guards went blind at once. **`dev` went red at 16:06 and three further merges
+  landed on top**, each green on its own PR because `--fast` skips `mutation coverage` by design
+  (438 of the sweep's 475 s) — so the push-to-`dev` run is the one that carries the answer, and
+  nobody read it. Five dependencies are now declared across seven guards; **four predated this
+  change** and are declared rather than baselined, because being in `needs` costs nothing and being
+  absent is a latent INERT.
 - **The fail-closed gate list was recorded in two places — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`, `CLAUDE.md`** (#1106). `hook-count-drift` derives
   the advisory hook count as *total minus the gates CLAUDE.md names*, and held those gate names in a
