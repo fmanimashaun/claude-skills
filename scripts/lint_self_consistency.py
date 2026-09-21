@@ -3025,6 +3025,58 @@ def _assertions_below_the_tally(source: str) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: promotion-gate-trusts-its-context
+# ---------------------------------------------------------------------------
+
+_PROMOTION_STEP = re.compile(r"- name: Promotion carries no Unreleased heading(.*?)(?=\n      - name:|\Z)",
+                             re.S)
+_SELF_CHECK = re.compile(r"baseRefName|resolved base of PR")
+
+
+def check_promotion_gate_trusts_its_context() -> tuple[list[Finding], int]:
+    """The promotion-only CI step must establish its own precondition (#1092).
+
+    On 2026-09-21 this step RAN on a pull request whose base was `dev`, four times, while sibling
+    PRs minutes apart skipped it correctly -- despite `if: github.base_ref == 'main'`. Every
+    hypothesis was tested and refuted: a stale workflow file (byte-identical on both refs, and the
+    condition has been present since `b4adaa7`), an open `dev -> main` PR (closed at 12:25:58; the
+    failing run is 12:28:09), a stale rerun context (a fresh close/reopen reproduced it), two
+    colliding runs (they were Gates and CodeQL), and a merge commit on the branch (probed
+    deliberately in #1101, and skipped).
+
+    THE CAUSE IS STILL UNKNOWN, and that is precisely why the step must not depend on being told
+    the truth. A PR into `dev` is REQUIRED to carry `### Unreleased` -- CLAUDE.md says so -- so a
+    misfire is a gate red on correct code, and the response it trains is the dangerous one: strip
+    the Unreleased block, which is exactly what #990 added the step to prevent.
+
+    So the step resolves the PR's real base itself and no-ops when it is not `main`. This rule
+    keeps that guard in place: an `if:` alone is a claim about the context, and the context is what
+    was wrong.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    workflow = ROOT / ".github/workflows/gates.yml"
+    if not workflow.is_file():
+        return findings, examined
+    body = read(workflow)
+    match = _PROMOTION_STEP.search(body)
+    if not match:
+        return findings, examined
+    examined = 1
+    if not _SELF_CHECK.search(match.group(1)):
+        findings.append(Finding(
+            "promotion-gate-trusts-its-context", rel(workflow),
+            body[: match.start()].count("\n") + 1,
+            "the promotion-only step trusts `github.base_ref` and nothing else. That context has "
+            "been observed to be wrong (#1092): the step ran on a pull request whose base was "
+            "`dev`, where an `### Unreleased` heading is the REQUIRED state, so the gate was red "
+            "on correct code. Resolve the PR's base in the step and no-op when it is not `main` -- "
+            "an `if:` is a claim about the context, and the context is what failed",
+        ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3075,6 +3127,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     flat_role, flat_role_examined = check_flattened_conditional_role()
     unowned, unowned_examined = check_adopts_an_unowned_server()
     ci_step, ci_step_examined = check_ci_verdict_without_a_step_count()
+    promo_ctx, promo_ctx_examined = check_promotion_gate_trusts_its_context()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -3119,6 +3172,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         "shipped_docs_contemplating_a_running_server": unowned_examined,
         "shipped_docs_reading_ci_status": ci_step_examined,
+        "promotion_only_ci_steps": promo_ctx_examined,
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
@@ -3127,7 +3181,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
-            + xplugin + unowned + toggles + ci_step,
+            + xplugin + unowned + toggles + ci_step + promo_ctx,
             coverage)
 
 
@@ -5027,6 +5081,27 @@ def selftest() -> int:
             f"{len(_own)} assertion(s) run AFTER the count is printed (lines "
             f"{', '.join(str(x) for x in _own)}) -- the printed tally excludes them and is "
             f"therefore too low; move the print below the last scenario")
+
+    # ---- promotion-gate-trusts-its-context (#1092) ----------------------------------
+    PGC = "promotion-gate-trusts-its-context"
+    STEP = ("jobs:\n  gates:\n    steps:\n"
+            "      - name: Promotion carries no Unreleased heading\n"
+            "        if: github.base_ref == 'main'\n")
+    # THE DEFECT: an `if:` and nothing else. That context was observed to be wrong.
+    scenario("a promotion step that trusts github.base_ref alone",
+             {".github/workflows/gates.yml": STEP + "        run: python3 x.py --promotion\n"},
+             rule=PGC, expect_finding=True)
+    # MUST PASS: it resolves the base itself and no-ops when it is not main.
+    scenario("a promotion step that resolves the base itself is silent",
+             {".github/workflows/gates.yml": STEP + "        run: |\n"
+              "          base=\"$(gh pr view 1 --json baseRefName --jq .baseRefName)\"\n"
+              "          [ \"$base\" = main ] || exit 0\n"},
+             rule=PGC, expect_finding=False)
+    # SCOPE: a workflow without the step at all is not this rule's business.
+    scenario("a workflow with no promotion step is out of scope",
+             {".github/workflows/gates.yml": "jobs:\n  gates:\n    steps:\n"
+              "      - name: Gate sweep\n        run: python3 doctor.py\n"},
+             rule=PGC, expect_finding=False)
 
     # The count is printed HERE, after the LAST scenario. It used to sit further up, and a
     # block appended below it reported a total that excluded itself -- a tally that is wrong

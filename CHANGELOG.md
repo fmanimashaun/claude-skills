@@ -9,6 +9,22 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The promotion-only CI step trusted a context that was observed to be wrong —
+  `.github/workflows/gates.yml`, `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1092). On 2026-09-21 the step *Promotion carries
+  no Unreleased heading* **ran on a pull request whose base was `dev`**, four times, while sibling
+  PRs minutes apart skipped it correctly — despite `if: github.base_ref == 'main'`. **Every
+  hypothesis was tested and refuted**: a stale workflow file (byte-identical on both refs; the
+  condition has been present since `b4adaa7`), an open `dev → main` PR (closed 12:25:58, the failing
+  run is 12:28:09), a stale rerun context (a fresh close/reopen reproduced it), two colliding runs
+  (they were Gates and CodeQL), and a merge commit on the branch — probed deliberately in #1101, and
+  **skipped**. The cause is still unknown, **and that is exactly why the step must not depend on
+  being told the truth**: a PR into `dev` is *required* to carry `### Unreleased`, so a misfire is a
+  gate red on correct code, and the response it trains is to strip the Unreleased block — precisely
+  what #990 added the step to prevent. It now resolves the PR's own base, no-ops when that is not
+  `main`, and prints the context it saw, so a recurrence is one line in the log instead of an hour
+  of archaeology. New rule `promotion-gate-trusts-its-context` keeps the guard in place, because an
+  `if:` is a claim about the context and the context is what failed.
 - **A timed-out gate was reported as `FAIL`, which is the one verdict it cannot mean —
   `scripts/maintainer_doctor.py`, `scripts/maintainer_doctor_selftest.py`,
   `scripts/mutations/maintainer_doctor.py`** (#1097). The doctor's contract is three verdicts, and
