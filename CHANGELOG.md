@@ -9,6 +9,25 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Nothing stopped the next command from reading CI the same way —
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1077). New
+  rule `ci-verdict-without-a-step-count`: shipped prose that reads CI status must separate a suite
+  that ran and failed from one that never started. Satisfied by the helper **or** by counting the
+  steps inline — a rule that accepted only our own script would fail correct code measuring the
+  right thing another way — and **not** satisfied by a caveat, because "CI is sometimes unreliable"
+  gives a reader nothing to act on. It found the second site itself: `claim-verifier` verified
+  claims about CI from `gh run list` alone.
+- **The selftest's own assertion count was too low, and the wrong number reached a merged PR body —
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`**. `print(f"ran
+  {checks} …")` sat above the last scenarios, so seven assertions added for #1080 were never
+  counted: the selftest reported **292** both before and after they were added, and that 292 was
+  quoted in #1083 as *"292 assertions, up from 285"* — wrong in both halves, and arrived at by
+  reading the tool's own output honestly. The tool was lying. The print moved below the last
+  scenario (the true figure is **308**), and `_assertions_below_the_tally()` now asserts by line
+  number that nothing raising the count sits after it. **Driven by fixtures, not by its own
+  source**: checking only this file — which is correct — found nothing whatever the comparison did,
+  and the first mutation blanking it **survived**. A guard exercised only against known-good input
+  proves nothing.
 - **Nothing stopped the next command from shipping the same unowned-server adoption —
   `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1080). New
   rule `adopts-an-unowned-server`: shipped prose that contemplates a server already listening on the
@@ -2957,6 +2976,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **A red check was read as a failed test when nothing had run —
+  `plugins/rails-flow/scripts/ci_verdict.py` (new), `plugins/rails-flow/commands/pr-comments.md`,
+  `plugins/rails-flow/agents/claim-verifier.md`, `scripts/mutations/ci_verdict.py`** (#1077). When
+  GitHub cannot allocate a runner — Actions billing, a spending limit, a quota — it marks every job
+  `failure`, which is the identical string a suite that ran and failed produces. The two demand
+  opposite responses: one means fix your diff, the other means the diff was never tested. Measured
+  live, one API call apart: `claude-skills` reported `failure` with **10** executed steps while
+  `Retask-platform` reported `failure` with **0**, eight runs in a row. It cost two sessions in one
+  morning — one pushed a fix, saw the red go from three to five and concluded they had made it
+  worse; the count had risen because the failure mode went from selective (54 steps ran) to total
+  (0 ran). `ci_verdict.py` counts executed steps across every job and exits **1** for a real
+  failure, **3** for an environment finding and **2** for no runs at all, so a caller cannot
+  collapse them; `--from` and `--selftest` never touch the network. **Unmeasured is not zero** — an
+  unreadable jobs endpoint falls back to the conclusion rather than claiming no runner, which would
+  send someone to a billing page over a genuinely failing suite. `pr-comments` gained an
+  *environment, not the diff* classification, and `claim-verifier` now treats a claim checked
+  against runs that never executed as `UNVERIFIABLE` rather than `REFUTED` — evidence missing, not
+  contrary.
 
 ### 2026-09-18 (release v1.133.0)
 
