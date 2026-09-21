@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **Nothing stopped the next command from reading CI the same way —
   `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1077). New
@@ -49,8 +49,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   closed rather than the instance — the selftest now parses its own `run()` with `ast` and asserts
   every findings list assigned there reaches the return expression, which covers all 44 rules and
   every rule added later, including one orphaned by the change that adds it.
-
-### 2026-09-21 (release v1.134.0)
 
 - **The discrimination verdict was more confident than its evidence, three ways —
   `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`**
@@ -2977,7 +2975,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **A red check was read as a failed test when nothing had run —
   `plugins/rails-flow/scripts/ci_verdict.py` (new), `plugins/rails-flow/commands/pr-comments.md`,
@@ -9253,7 +9251,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **Three commands adopted any server that answered on the port, and never asked whose it was —
   `plugins/qa-flow/commands/smoke.md`, `plugins/qa-flow/commands/crawl.md`,
@@ -9301,8 +9299,6 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
   Two declared mutations, one per direction: remove the carve-out and the gate blocks its own repo
   again; fire it unconditionally and the gate stops gating anything at all.
-
-### 2026-09-21 (release v1.134.0)
 
 - **The provenance line truncated its own "not a git tree" fallback to "not a git" —
   `plugins/qa-flow/scripts/route_coverage.py`,
@@ -11163,7 +11159,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **Browser mode audited whatever answered on the port —
   `plugins/design-flow/commands/audit.md`** (#1080). §1 carried the same probe as
@@ -11205,8 +11201,6 @@ boot/validation path — with a bullet each so the promotion could close them se
   wrong rather than the rule: the "already composes a primitive" cases were not themselves
   cluster-shaped, so neither ever reached the skip they existed to prove. Both now carry the
   primitive *and* the utilities, which is the shape a real view has.
-
-### 2026-09-21 (release v1.134.0)
 
 - **Browser mode could not reach an authenticated page or the accessibility tree —
   `plugins/design-flow/commands/audit.md`**. The conformance collector launches a *fresh*
@@ -13800,7 +13794,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 2026-09-21 (release v1.134.0)
 
 - **`error` and `empty` are two states, not one — `scripts/check_component_states.py`,
   `scripts/mutations/check_component_states.py`, `skills/design-system/references/components.md`**
@@ -13825,8 +13819,6 @@ boot/validation path — with a bullet each so the promotion could close them se
   on `error`, so the check still failed — on the wrong slot — and the guard read as caught.
   Removing the slot the fixture does *not* satisfy proves nothing; the mutation drops `error`,
   which is the one that lets the fixture through.
-
-### 2026-09-21 (release v1.134.0)
 
 - **The catalogue stated the six-state rule, predicted its own drift, and nothing enforced it —
   `scripts/check_component_states.py`, `scripts/mutations/check_component_states.py`,
