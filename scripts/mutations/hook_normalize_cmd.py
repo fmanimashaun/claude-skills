@@ -7,7 +7,12 @@ GUARD = Guard(
     name="hook_normalize_cmd",
     subject="plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
-    needs=("plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/qa-flow/scripts"),
+    needs=("plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/qa-flow/scripts",
+           'plugins/rails-flow/scripts/check_criteria.py',
+           'plugins/rails-flow/scripts/check_handoff.py',
+           'plugins/rails-flow/scripts/extract_claims.py',
+           'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         Mutation(
             "git global options are no longer peeled, so `git -C repo add -A` presents as `git -C ...` and passes",
