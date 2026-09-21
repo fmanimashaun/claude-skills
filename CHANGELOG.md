@@ -9233,6 +9233,34 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   running, since it may be running different code than the working tree"* — and that sentence was
   the defect: if it may be running different code than the working tree, it is not a valid subject
   for a test of the working tree.
+- **The release gate blocked every promotion of the repository that ships it —
+  `plugins/qa-flow/hooks/scripts/release-gate.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_release_gate.py`**.
+  The hook gates a **consumer** project's promotion: it asks whether QA certified the app before
+  it ships. The repository that *ships* qa-flow is not a consumer of it — no app, no staging, no
+  `qa/` surface, and never will have one. So it denied `dev → main` here with *"no certification
+  found. Run /qa-flow:certify against staging first"*, on a promotion whose full sweep was green.
+
+  **It blocked v1.134.0 in exactly that way**, and the only escape was `QA_ALLOW_MAIN=1` — an
+  environment variable a hook reads from its own process, so overriding it from inside a session
+  means writing it into settings, where it would then sit permanently disabling a fail-closed gate.
+  **That is the exclusion-list failure this project keeps finding in other people's gates**: wrong
+  about correct code on day one, so it gets overridden every release or switched off, and then it
+  protects nobody.
+
+  **The discriminator is `.claude-plugin/marketplace.json`**, because that file is what *makes* a
+  tree a marketplace — no consumer project has one and none can acquire one by accident.
+
+  **Deliberately NOT keyed on "the project has no `qa/` directory."** That is the ordinary state of
+  an app which has simply never run `/qa-flow:setup-qa`, and exempting it would let every such app
+  promote uncertified — which is most of them. The distinction is the entire safety of the change,
+  so the harness carries **both** halves as one pair: a marketplace tree that must PASS and a bare
+  repo with no certification that must still be **BLOCKED**, differing only by that one file. The
+  four pre-existing "blocked without a certification" fixtures are untouched and still green, which
+  is what proves the gate was not weakened.
+
+  Two declared mutations, one per direction: remove the carve-out and the gate blocks its own repo
+  again; fire it unconditionally and the gate stops gating anything at all.
 
 ### 2026-09-21 (release v1.134.0)
 
