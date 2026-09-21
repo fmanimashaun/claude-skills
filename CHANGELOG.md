@@ -27,6 +27,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   nobody read it. Five dependencies are now declared across seven guards; **four predated this
   change** and are declared rather than baselined, because being in `needs` costs nothing and being
   absent is a latent INERT.
+- **A driven hook gained a dependency nothing declared, and six guards went vacuous at once —
+  `scripts/lint_self_consistency.py`, 7 guard modules, `scripts/mutations/lint_self_consistency.py`**
+  (#1109). #1106 added `guard-claims` fixtures to `check_hook_gates.py`; that hook runs
+  `extract_claims.py`, which no guard listed in `needs`. A staged mutant therefore ran without it,
+  the **unmutated** selftest already failed, and `mutation_check` reports that as **INERT** — every
+  mutation "caught" whether or not it breaks anything. **`dev`'s full sweep went red at 16:06 and
+  three further merges landed on top of it**, each green on its own PR because `--fast` skips
+  `mutation coverage` by design (438 of the sweep's 475 s). The INERT check caught it; new rule
+  `harness-dependency-undeclared` makes it catchable at the PR instead, by following
+  harness → driven hook → script. It found **five** gaps, four of them predating this change, and
+  all five are now declared rather than baselined: being in `needs` is free, being absent is a
+  latent INERT.
 - **The fail-closed gate list was recorded in two places — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`, `CLAUDE.md`** (#1106). `hook-count-drift` derives
   the advisory hook count as *total minus the gates CLAUDE.md names*, and held those gate names in a
@@ -3134,6 +3146,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **The mutation harness now ships, so a project can prove the gates can still fail —
+  `plugins/rails-flow/scripts/check_toolchain_mutations.py` (new), 59 guards relocated into
+  `plugins/*/scripts/mutations/`, `plugins/rails-flow/commands/setup-flow.md` §8c** (#1109, tier 2).
+  Guards are discovered from **two roots** now: `scripts/mutations/` for maintainer-only and
+  cross-plugin subjects, and `plugins/<name>/scripts/mutations/` for a guard whose subject and every
+  dependency sit inside one plugin — those ship, written **plugin-relative**, because `plugins/…`
+  is a path no consumer project has. **59 of 65 relocated; 6 stayed** (`project_gates` reading three
+  manifests, `hook_normalize_cmd` proving two plugins share one normaliser, and four more) because a
+  project that installed one plugin could not verify a cross-plugin claim anyway — a real limit, and
+  the runner reports it rather than hiding it. **Deliberately NOT in the per-run sweep**: a mutation
+  catches nothing while you work; it proves a property of the *checker*, which moves on a toolchain
+  upgrade, not when you edit your app. `setup-flow` §8c runs it at setup and after an upgrade.
 
 - **A project got the gates and no proof they work —
   `plugins/rails-flow/scripts/check_toolchain_selftests.py` (new),

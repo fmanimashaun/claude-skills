@@ -3153,6 +3153,67 @@ def check_doctrine_we_ship_but_do_not_follow() -> tuple[list[Finding], int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: harness-dependency-undeclared
+# ---------------------------------------------------------------------------
+
+# A selftest that DRIVES other scripts must declare each of them, or a staged mutant runs without
+# them and the unmutated baseline already fails.
+_HARNESS = "plugins/rails-flow/scripts/check_hook_gates.py"
+_INVOKES = re.compile(r"scripts/([a-z_]+\.py)")
+
+
+def check_harness_dependency_undeclared() -> tuple[list[Finding], int]:
+    """A script a driven hook runs must be in the guards' `needs` (#1109).
+
+    `check_hook_gates.py` runs the REAL hook scripts, and a hook script may shell out to a python
+    script of its own. A staged mutant copies only what the guard's `needs` lists -- so an
+    undeclared one means the UNMUTATED selftest already fails in the tempdir, and `mutation_check`
+    calls that **INERT**: every mutation reads as "caught" whether or not it breaks anything.
+
+    On 2026-09-21 `guard-claims.sh` began running `extract_claims.py`, nothing declared it, and
+    **six `hook_*` guards went vacuous at once**. `dev`'s full sweep went red and three more merges
+    landed on top, each green on its own PR because `--fast` skips `mutation coverage` by design.
+    The INERT check caught it, an hour later. This makes it catchable at the PR, where the lint runs.
+
+    SCOPED TO HOOKS THE HARNESS ACTUALLY DRIVES, read from the harness rather than globbed: a hook
+    nobody drives cannot make a guard inert, and flagging it would be noise.
+    """
+    findings: list[Finding] = []
+    harness = ROOT / _HARNESS
+    if not harness.is_file():
+        return findings, 0
+    harness_body = read(harness)
+
+    # Hook scripts this harness names, and the python each of them invokes.
+    needed: dict[str, str] = {}
+    for hook in sorted(ROOT.glob("plugins/*/hooks/scripts/*.sh")):
+        if hook.name not in harness_body:
+            continue
+        for script in _INVOKES.findall(read(hook)):
+            target = hook.parents[2] / "scripts" / script
+            if target.is_file():
+                needed[script] = hook.name
+
+    if not needed:
+        return findings, 0
+
+    guards = [g for g in sorted(ROOT.glob("scripts/mutations/*.py"))
+              + sorted(ROOT.glob("plugins/*/scripts/mutations/*.py"))
+              if harness.name in read(g)]
+    for script, hook in sorted(needed.items()):
+        missing = [g for g in guards if script not in read(g)]
+        if missing:
+            findings.append(Finding(
+                "harness-dependency-undeclared", _HARNESS, 1,
+                f"the harness drives `{hook}`, which runs `{script}`, and {len(missing)} guard(s) "
+                f"do not list it in `needs` ({', '.join(g.stem for g in missing[:4])}). A staged "
+                f"mutant runs without it, so the UNMUTATED selftest fails and every mutation reads "
+                f"as caught — the INERT shape that blinded six guards at once",
+            ))
+    return findings, len(needed)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3205,6 +3266,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     ci_step, ci_step_examined = check_ci_verdict_without_a_step_count()
     promo_ctx, promo_ctx_examined = check_promotion_gate_trusts_its_context()
     bothways, bothways_examined = check_doctrine_we_ship_but_do_not_follow()
+    harness_dep, harness_dep_examined = check_harness_dependency_undeclared()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -3251,6 +3313,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_docs_reading_ci_status": ci_step_examined,
         "promotion_only_ci_steps": promo_ctx_examined,
         "doctrines_required_in_both_places": bothways_examined,
+        "scripts_the_hook_harness_runs": harness_dep_examined,
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
@@ -3259,7 +3322,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
-            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways,
+            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
 
@@ -5221,6 +5284,34 @@ def selftest() -> int:
     scenario("doctrine absent from both is out of scope",
              {SCAFFOLD: "# setup\n", "AGENTS.md": "# A\n"},
              rule=DWS, expect_finding=False)
+
+    # ---- harness-dependency-undeclared (#1109) ---------------------------------------
+    HDU = "harness-dependency-undeclared"
+    HARNESS = "plugins/rails-flow/scripts/check_hook_gates.py"
+    # THE DEFECT: the harness drives a hook that shells out to a script no guard stages, so the
+    # UNMUTATED selftest fails in the tempdir and every mutation reads as caught. Six guards went
+    # vacuous this way at once.
+    scenario("a script a driven hook runs, undeclared by a guard",
+             {HARNESS: "drives guard-x.sh\n",
+              "plugins/rails-flow/hooks/scripts/guard-x.sh": "python3 scripts/helper.py\n",
+              "plugins/rails-flow/scripts/helper.py": "x = 1\n",
+              "scripts/mutations/g.py": "selftest='plugins/rails-flow/scripts/check_hook_gates.py'\n"},
+             rule=HDU, expect_finding=True)
+    # MUST PASS: declared. Without this half the rule fires on correct guards and gets removed.
+    scenario("...declared in needs is silent",
+             {HARNESS: "drives guard-x.sh\n",
+              "plugins/rails-flow/hooks/scripts/guard-x.sh": "python3 scripts/helper.py\n",
+              "plugins/rails-flow/scripts/helper.py": "x = 1\n",
+              "scripts/mutations/g.py": "selftest='plugins/rails-flow/scripts/check_hook_gates.py'\n"
+                                        "needs=('plugins/rails-flow/scripts/helper.py',)\n"},
+             rule=HDU, expect_finding=False)
+    # SCOPE: a hook the harness does NOT drive cannot make a guard inert, so it is out of scope.
+    scenario("a hook the harness never drives is out of scope",
+             {HARNESS: "drives nothing\n",
+              "plugins/rails-flow/hooks/scripts/guard-x.sh": "python3 scripts/helper.py\n",
+              "plugins/rails-flow/scripts/helper.py": "x = 1\n",
+              "scripts/mutations/g.py": "selftest='plugins/rails-flow/scripts/check_hook_gates.py'\n"},
+             rule=HDU, expect_finding=False)
 
     # The count is printed HERE, after the LAST scenario. It used to sit further up, and a
     # block appended below it reported a total that excluded itself -- a tally that is wrong
