@@ -12,6 +12,42 @@ substitute raw colors.
 loading and empty states are the ones always missing, and a state an entry does not mention is one
 you must decide and record, not invent silently. When you build from an entry, the six are the checklist.
 
+## Every component takes `**attrs` and renders them on its root element
+
+**This is contract, not convenience, and it is checked** —
+`python3 scripts/check_component_passthrough.py`. A component that cannot carry a caller's
+`data-controller`, `form=`, `aria-*` or `id` is one a developer writes by hand instead, and that is
+not a discipline problem: it is the component being under-built.
+
+```ruby
+def initialize(variant: :primary, **attrs)
+  @variant, @attrs = variant, attrs          # ACCEPT it, and STORE it
+end
+
+def call
+  tag.button(class: [BASE, VARIANT.fetch(@variant), @attrs.delete(:class)].compact.join(" "),
+             **@attrs) do                    # ...and RENDER it on the root
+    content
+  end
+end
+```
+
+**All three steps, and the middle one is the trap.** A signature that accepts `**attrs` and never
+stores them is *worse* than a fixed keyword list: Ruby binds the hash and discards it, so the
+caller's attribute vanishes with **no error at all**, where a fixed list would have raised
+`ArgumentError` loudly. A loud failure sends a developer to the component; a silent one sends them
+to hand-written HTML and they never learn why. **Measured when this was written: 17 of the 23
+components this kit ships took a fixed keyword list** — including Modal, Dropdown, Combobox,
+Disclosure, Toast, Breadcrumbs and ButtonGroup, which are exactly the ones a Stimulus controller
+needs to reach.
+
+**Merge `class`, never overwrite it.** `@attrs.delete(:class)` pulls the caller's classes out of the
+hash and appends them to the component's own; splatting `**@attrs` without that lets a caller
+silently replace every class the variant computed.
+
+**A pass-through is not an escape hatch.** It carries *attributes*; it never carries styling. A
+caller passing `class:` to restyle a component is the class-string fork described below wearing a
+keyword argument.
 ## There is no escape hatch. If the component does not exist, you build it
 
 **Raw HTML is never the answer for a UI element a component covers, and "the component does not

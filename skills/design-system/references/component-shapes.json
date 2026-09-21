@@ -360,6 +360,10 @@
               {"kind": "pill", "label": "New invoice", "fill": "primary",
                "color": "primary-foreground"}]
   },
+  "Every component takes `**attrs` and renders them on its root element": {
+    "drawable": false,
+    "why": "a contract, not a component -- it states that every component accepts, stores and renders a caller's attributes, and that accepting without storing is the silent form of dropping them. Enforced by scripts/check_component_passthrough.py. Nothing to draw."
+  },
   "There is no escape hatch. If the component does not exist, you build it": {
     "drawable": false,
     "why": "a rule, not a component -- it states that a missing component is built rather than hand-written in raw HTML, and why a copied class string is a silent fork. Nothing to draw; drawing it would put a rule in a library of shapes."

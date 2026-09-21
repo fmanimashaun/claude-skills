@@ -7,6 +7,52 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The discrimination verdict was more confident than its evidence, three ways —
+  `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`**
+  (#1059, #1060, #1061). All three are one mechanism: `--against` decided which cases failed by
+  substring-matching each label against the mutant's combined stdout+stderr, and a bare substring
+  test is wrong in both directions at once.
+
+  **It counted labels the harness never reported** (#1059). A Python traceback prints the offending
+  **source line**, so when the old revision dies on an `AttributeError` inside
+  `check('some label', new_api(...))`, that label lands in stderr. `failing` becomes non-empty, the
+  "did this suite run at all" preflight is skipped *because it keys off `failing` being empty*, and
+  the tool reports a split over a run in which **not one case executed** — the exact false verdict
+  that preflight exists to prevent. The shipped fixture missed it by crashing on a line carrying no
+  label, while the ordinary shape is the opposite: the old subject is missing API that today's cases
+  **call**.
+
+  **And it counted labels that are merely a PREFIX of another** (#1060). `'an unprobed target is
+  named'` is a substring of `'an unprobed target is named as unprobed'`, so the shorter case read as
+  failing — and therefore as discriminating — whenever the longer one did. **Re-measured here rather
+  than taken on report: 11 collisions across two shipped tools** (`link_audit.py` 5, `extract_claims.py`
+  6), and the two other files an earlier account named have **none** — no literal `check("…")` labels
+  at all.
+
+  Matching is now **anchored to the shape a harness reports a failure in**, which a traceback cannot
+  forge: the label begins a reported unit — line start, after a `- ` bullet, or after a `<rule> / `
+  prefix — and **ends** it, at end-of-line or immediately before the `:` that introduces the detail.
+  A label inside a source line, inside quotes, or in the middle of a longer label matches none of
+  those.
+
+  **The two halves of that anchor guard different collisions and neither fixture catches the other's
+  break**, so there is one of each: the leading half stops a **suffix** (`'is refused'` inside
+  `'- a splat is refused'`), the trailing half stops a **prefix**. That was not a design intention —
+  the leading-anchor mutation **survived** its first run, which is what showed the suffix case had no
+  guard at all.
+
+  **And `report_discrimination()` recorded the denominator's holes without printing them** (#1061),
+  so a suite whose labels are f-strings got a confident "3 of 4 discriminate" over a denominator with
+  gaps nobody was told about. It now prints the same line `report()` already used — two renderings of
+  one fact drift, and the drifted one is what somebody reads.
+
+  Five declared mutations, and the guard's own harness found two defects in them before they landed:
+  one mutation was **caught by the wrong fixture**, and another **survived**. `failing` and `passing`
+  are mutated separately because breaking only one leaves the other still anchored and the pair would
+  survive as a set.
+
 ### 2026-09-18 (release v1.133.0)
 
 - **Measure a selftest against the implementation it replaced, not only against mutations somebody
@@ -9143,6 +9189,33 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The provenance line truncated its own "not a git tree" fallback to "not a git" —
+  `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**
+  (#1062). `[:9]` is meant for a commit SHA and was applied to the fallback string as well, so a
+  tree with no git printed:
+
+  ```
+    route inventory: not a git · RAILS_ENV=unset · enumerated at an unrecorded time
+  ```
+
+  Cosmetic anywhere else. **Not here:** this is the provenance line, the one a reader consults to
+  decide whether a coverage percentage can be attributed to a tree, and `not a git` reads like a
+  truncated or corrupted value rather than the deliberate *"there is no git tree here"* the code
+  means. A provenance stamp that looks corrupted is worse than none.
+
+  **The same class as #1047's abbreviated-SHA defect, in the same function: a rendering treated as
+  the value.** Truncation now applies only when there is a real SHA.
+
+  Asserted on the **rendered line**, not the dict — the dict was always right and it is the
+  rendering that was wrong, so a test reading the dict would have passed against the defect. Two
+  mutations, because "the fallback prints in full" and "a real SHA is still abbreviated" are
+  different claims and the fixture for one cannot see the other's break: restoring the truncation
+  reproduces the reported string exactly, and removing it entirely drops a 40-character hex string
+  into a one-line stamp.
+
 ### 2026-09-18 (release v1.133.1)
 
 - **v1.133.0's staleness check compared two RENDERINGS of a commit, not two commits, and refused a
@@ -10976,6 +11049,67 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **Browser mode could not reach an authenticated page or the accessibility tree —
+  `plugins/design-flow/commands/audit.md`**. The conformance collector launches a *fresh*
+  Playwright browser and reads the DOM plus computed styles, so it has two structural blind spots:
+  it never sees a screen behind a login, and it never sees the **accessibility tree** — which is
+  what decides whether an icon-only row action is actually named.
+
+  **Chrome DevTools MCP is documented as a second instrument, explicitly not a replacement.** The
+  collector stays the default: deterministic, sweeps route × viewport × theme unattended, and judged
+  by a script rather than by reading. DevTools is what you reach for when the question is *"what
+  does a screen reader get on this authenticated page"* and inspection is the only way to answer it.
+  `--autoConnect` attaches to the Chrome already open — your session, your cookies, the admin screen
+  you are actually looking at; without it the server launches an empty browser and re-creates the
+  collector with fewer guarantees.
+
+  **Scoped to five asks**, because an inspection tool with no scope becomes a way to browse: is this
+  icon-only action named (`take_snapshot`), does the label wrap in its cell (`take_screenshot` +
+  `resize_page`), is the focus ring painted (`press_key` Tab), what did the cascade resolve to
+  (`evaluate_script`), and the Lighthouse categories (`lighthouse_audit`).
+
+  **Three rules carry the failure modes.** Name the page with `list_pages` then `select_page` — a
+  session attached to a real browser has whatever tabs the human left open, and a measurement
+  against the wrong tab is a confident number about a page nobody asked about. Re-snapshot after a
+  Turbo navigation rather than reasoning forward from the tree you already took. And **never read a
+  clean inspection as coverage**: the collector's sweep is the denominator, this is a probe, and an
+  audit reporting "looks right in the browser" over three screens out of forty is the shape this
+  file exists to refuse. A missing server is a **skip**, reported as one.
+- **The component mandate had no gate in a consumer project, so it drifted exactly where nothing
+  looked — `plugins/design-flow/scripts/check_component_contract.py`,
+  `plugins/design-flow/checks.json`, `scripts/mutations/check_component_contract.py`** (#1063). The
+  upstream rules were prose. Measured on a real consumer app: **zero raw form fields**, where a
+  request spec asserts form anatomy — and **18 raw `<button>` tags**, where only a sentence did.
+  Where the rule was enforced it was clean; where it was written down it had drifted, and that is
+  not a finding about discipline.
+
+  **Two rules, and the second is the cause of the first.** `raw-element` flags a hand-written
+  `<button>` in `app/views/**`. `component-drops-attributes` flags a component whose initializer
+  takes a fixed keyword list, or accepts a splat and never stores it — because a developer who needs
+  a Stimulus target on a Modal, finds the component cannot carry one, writes the tag by hand.
+
+  **Run against that app it reports 18 and 14 — and the 18 matches the hand audit exactly.** The 14
+  were not previously known: `ModalComponent`, `ToastComponent`, `TableComponent`,
+  `NavigationComponent` and ten others cannot carry a caller's attribute today.
+
+  **Scoped to `app/views/**`, and that scope came from running it rather than reasoning.** The first
+  version also scanned `app/components/**` and found 31 raw buttons — but **13 of those are inside
+  component templates and every one is correct**, because a component's own template is where the
+  element belongs. Shipping that would have produced 13 findings against correct code on the first
+  run, and a gate wrong about correct code on day one earns an exclusion list or gets switched off.
+
+  **The framework-helper exemption was written, found to be dead, and removed.** `button_to` emits
+  no literal `<button` into ERB source, so the scan never sees it and never needed to exempt it — a
+  mutation deleting the exemption changed nothing, which is how it was found. **A carve-out no
+  fixture can reach is a carve-out without a negative test**, so it is gone rather than kept as
+  reassurance; the doctrine explains why none is needed.
+
+  Four declared mutations, including both halves the issue demanded: one that stops the gate
+  reporting a hand-written element, and one that widens the match from the literal tag to any
+  mention of a button — which would flag `<%= button_to %>`, correct code, immediately.
 
 ### 2026-09-17 (release v1.130.0)
 
@@ -13512,6 +13646,40 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **17 of the 23 shipped components could not carry a caller's attribute, so the catalogue produced
+  the raw HTML it forbids — `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-implementations.md`,
+  `skills/design-system/references/component-shapes.json`,
+  `scripts/check_component_passthrough.py`, `scripts/mutations/check_component_passthrough.py`,
+  `scripts/maintainer_doctor.py`** (#1063). A consumer audit found 18 raw `<button>` tags and
+  reported the cause as *"the component cannot express what I need"*. **For the button that was
+  false** — it already took `**attrs` — but measuring the rest of the kit made the claim true:
+  **17 of 23 ViewComponent classes took a fixed keyword list** and would drop a `form:` or `data:`
+  on the floor, including Modal, Dropdown, Combobox, Disclosure, Toast, Breadcrumbs and
+  ButtonGroup — precisely the ones a Stimulus controller needs to reach.
+
+  **Every component now accepts, stores and renders a caller's attributes**, stated once in the
+  catalogue preamble rather than repeated per row, and **checked** by
+  `scripts/check_component_passthrough.py`: a prose contract the shipped code contradicts is the
+  claims-vs-enforcement defect this repository is organised around.
+
+  **The check has two halves, and the first alone would have shipped a worse defect than it fixed.**
+  Widening the 17 signatures made a signature-only check green while every one of them still
+  discarded the hash — Ruby binds `**attrs` and drops it with **no error**, so a caller's
+  `data-controller` would have vanished *silently* where before it raised `ArgumentError` loudly. A
+  loud failure sends a developer to the component; a silent one sends them to hand-written HTML and
+  they never learn why. The gate therefore requires the splat to be **stored**, and the selftest
+  carries the discriminating pair: the same signature, one storing and one dropping.
+
+  What it deliberately does **not** assert is that the stored attributes reach the root element —
+  that lives in an ERB template or a `call` method and is not decidable from the class body, so a
+  check claiming it would be a gate that cannot fail. Accept and store are exact; the render is
+  doctrine, stated beside the rule with the `class` merge (`@attrs.delete(:class)`) that stops a
+  caller silently replacing every class the variant computed.
+
+  Four declared mutations, including the flattering one that started this: a wrapped signature read
+  only to its first line **under-counts in the direction that looks clean** — it is how an earlier
+  tally reported 21 classes where there are 23.
 - **No doctrine on when raw HTML is allowed where a component is mandated, and the catalogue that
   produced the question was itself under-built — `skills/design-system/references/components.md`,
   `skills/design-system/references/component-shapes.json`** (#1063). Maintainer decision, recorded on
