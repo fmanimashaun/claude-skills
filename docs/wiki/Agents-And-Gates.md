@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 115 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 117 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
@@ -179,6 +179,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
+| published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
+| published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
 | release notes selftest | `repo` | `python3 scripts/extract_release_notes.py --selftest` | selftest |
 | section landmarks | `repo` | `python3 scripts/check_section_landmarks.py` | live check |
