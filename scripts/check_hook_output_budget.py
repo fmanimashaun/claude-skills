@@ -34,6 +34,13 @@ WHAT IT DELIBERATELY DOES NOT DO. It does not judge whether the content is WORTH
 is the `reference/context-budget.md` doctrine and a review question. This answers only "did it grow
 without anyone deciding to let it".
 
+AND WHAT IT CANNOT SEE, stated rather than left for someone to discover. The fixture pins every
+input, which is what makes the ratchet trustworthy -- and it means a hook whose output comes
+entirely from the network or from `gh` measures **0** here and its growth is invisible to this
+check. `.claude/hooks/scripts/maintainer-status.sh` is exactly that shape: it prints an open-issue
+count, so it is 100 bytes against the live repository and 0 against the fixture. The baseline is
+honest about what it measured; it is not a claim that the hook is free.
+
 Stdlib only. Exit 0 within budget, 1 over, 2 cannot measure.
 """
 
@@ -56,29 +63,52 @@ BASELINE = REPO / "docs/evidence/hook-output-baseline.json"
 TOLERANCE = 64
 
 
-def session_start_hooks(root: Path = REPO) -> list[tuple[str, Path]]:
-    """(plugin, script path) for every SessionStart hook a plugin declares.
-
-    Read from each plugin's `hooks.json` rather than globbed off disk: a script that exists but is
-    not wired costs nothing, and one that is wired under an unexpected name would be missed by a
-    glob. The declaration is what the runtime acts on.
-    """
+def _declared(data: dict, label: str, script_dir: Path) -> list[tuple[str, Path]]:
+    """SessionStart hook scripts a manifest declares, resolved under `script_dir`."""
     found = []
+    for entry in data.get("hooks", {}).get("SessionStart", []):
+        for hook in entry.get("hooks", []):
+            for token in hook.get("command", "").split():
+                # STRIP THE QUOTES FIRST. The maintainer hook is invoked as
+                # `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/maintainer-status.sh"`, so the
+                # token ends with `.sh"` and a bare `endswith(".sh")` silently missed it -- the
+                # gate reported 3 hooks and looked healthy while never measuring our own.
+                token = token.strip('"\'')
+                if token.endswith(".sh"):
+                    path = script_dir / token.split("/")[-1]
+                    if path.is_file():
+                        found.append((label, path))
+    return found
+
+
+def session_start_hooks(root: Path = REPO) -> list[tuple[str, Path]]:
+    """(owner, script path) for every SessionStart hook, SHIPPED AND OUR OWN.
+
+    Read from each manifest rather than globbed off disk: a script that exists but is not wired
+    costs nothing, and one wired under an unexpected name would be missed by a glob. The
+    declaration is what the runtime acts on.
+
+    `.claude/settings.json` IS INCLUDED, and leaving it out was the defect. The first version
+    measured only `plugins/*/hooks/hooks.json` -- so the budget we ship to other people did not
+    apply to the hook that fires in this repository, which is the shape of defect this repo has a
+    whole lint rule for (`doctrine-we-ship-but-do-not-follow`). A maintainer's own session pays the
+    same cost at every compaction as anyone else's.
+    """
+    found: list[tuple[str, Path]] = []
     for manifest in sorted(root.glob("plugins/*/hooks/hooks.json")):
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        plugin = manifest.parent.parent.name
-        for entry in data.get("hooks", {}).get("SessionStart", []):
-            for hook in entry.get("hooks", []):
-                command = hook.get("command", "")
-                for token in command.split():
-                    if token.endswith(".sh"):
-                        name = token.split("/")[-1]
-                        path = manifest.parent / "scripts" / name
-                        if path.is_file():
-                            found.append((plugin, path))
+        found += _declared(data, manifest.parent.parent.name, manifest.parent / "scripts")
+
+    settings = root / ".claude/settings.json"
+    if settings.is_file():
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        found += _declared(data, "(this repo)", root / ".claude/hooks/scripts")
     return found
 
 
@@ -117,6 +147,8 @@ def measure(root: Path = REPO, lessons: int = 20) -> dict[str, int] | None:
         for plugin, path in hooks:
             env = {**os.environ,
                    "CLAUDE_PLUGIN_ROOT": str(path.parent.parent),
+                   # The maintainer hook reads this; the plugin ones ignore it.
+                   "CLAUDE_PROJECT_DIR": str(project),
                    "CLAUDE_PROJECT_DIR": str(project),
                    # Hooks that shell out to `gh` must not reach the network from a gate.
                    "GH_TOKEN": "", "PATH": os.environ.get("PATH", "")}
@@ -180,6 +212,14 @@ def _selftest() -> int:
 
     hooks = session_start_hooks()
     expect("the shipped SessionStart hooks are discovered from hooks.json", len(hooks) >= 3)
+    # THIS REPO'S OWN HOOK COUNTS. The first version globbed `plugins/*` only, so the budget we
+    # ship did not apply to the hook that fires here -- and then a bare `endswith(".sh")` missed
+    # it a second time, because the maintainer hook is invoked in quotes and the token ends `.sh"`.
+    # The gate reported 3 hooks and looked healthy both times.
+    expect("this repository's OWN SessionStart hook is measured, not just the shipped ones",
+           any(label == "(this repo)" for label, _ in hooks))
+    expect("...and a quoted command path is resolved, not skipped",
+           any(p.name == "maintainer-status.sh" for _, p in hooks))
     expect("...and every discovered path exists", all(p.is_file() for _, p in hooks))
 
     sizes = measure()

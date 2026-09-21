@@ -9,6 +9,27 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **We were about to ship behavioural doctrine we did not follow — `AGENTS.md`,
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1088). The
+  advisor stance and the context budget are scaffolded into every downstream `CLAUDE.md`; both are
+  harness-neutral, so both now hold here too. **`AGENTS.md` rather than `CLAUDE.md`, and that is a
+  measurement**: `CLAUDE.md` carries a hard ceiling and sat at **260 of 262** — two lines of
+  headroom for forty lines of doctrine — while `AGENTS.md` is the harness-neutral file that already
+  holds exactly this kind of rule. New rule `doctrine-we-ship-but-do-not-follow` requires each in
+  both places and fires in **both directions**: shipped-but-not-followed, and followed-but-quietly-
+  dropped-from-the-template, which would leave every new project without it. Presence is checked,
+  not wording — the two files address different readers, and demanding identical text would force a
+  copy that reads wrong in one of them.
+- **The hook budget did not cover this repository's own hook —
+  `scripts/check_hook_output_budget.py`, `docs/evidence/hook-output-baseline.json`,
+  `scripts/mutations/check_hook_output_budget.py`** (#1085). It globbed `plugins/*/hooks/hooks.json`
+  only, so the budget we ship to other people did not apply to the hook that fires here — the exact
+  shape the rule above exists for. `.claude/settings.json` is now read too, and **the fix was wrong
+  twice before it was right**: a bare `endswith(".sh")` missed the maintainer hook because it is
+  invoked in quotes and the token ends `.sh"`, so the gate reported 3 hooks and looked healthy a
+  second time. **4 hooks are now measured**, and the docstring states what the check cannot see: a
+  hook whose output comes entirely from `gh` measures 0 against the fixture, so the baseline is
+  honest about what it measured rather than claiming the hook is free.
 - **The promotion-only CI step trusted a context that was observed to be wrong —
   `.github/workflows/gates.yml`, `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1092). On 2026-09-21 the step *Promotion carries
@@ -3082,6 +3103,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **The scaffolded `CLAUDE.md` said what the project is and nothing about how to behave toward the
+  person — `plugins/rails-flow/commands/setup-flow.md`** (#1088). Two sections, 31 lines, both
+  always-on because a behavioural rule that only loads on demand is not a rule. **How to work with
+  me**: advisor not assistant, with an explicit scope carve-out (syntax, lookups and small fixes are
+  answered, not negotiated — without it this turns a one-line question into a debate and gets
+  deleted in a week), the four provenance labels `[Verified]`/`[Recall]`/`[Inferred]`/`[Guess]`, a
+  shape for disagreement, and **"do not manufacture disagreement"** stated outright, because
+  inventing an objection to look rigorous is the same defect as agreeing to be pleasant.
+  **Context is billed on every turn**: a `SessionStart` hook re-fires after every compaction, and a
+  subagent's answer stays in the conversation for the rest of the session. The stack-specific
+  examples from the source draft were dropped; the general rule — name the version you assume for
+  any framework API and treat it as `[Recall]` until verified — carries them.
 
 - **29 agents, and 2 said anything about what they return —
   `plugins/rails-flow/reference/agent-output-contract.md` (new), and an `## Output` section added
