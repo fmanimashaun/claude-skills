@@ -3157,6 +3157,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The layers disagreed and nothing made it visible —
+  `plugins/rails-flow/scripts/check_layer_structure.py` (new), `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_layer_structure.py`** (#1072). Reports the per-layer
+  flat/namespaced table as **advisory**, because projects legitimately differ and the table is what
+  makes the disagreement *between* layers visible at all. It **fails** on one thing: a controller
+  whose directory contradicts the module its route declares — derivable from `config/routes.rb` and
+  the tree with no configuration, and drift rather than taste. **A flat controller is explicitly not
+  a finding**, and there is a mutation that makes it one, because failing a project for a shape
+  nobody told it to adopt is how a gate gets switched off. The issue's third gate — a namespace in
+  one layer and absent in another — is deliberately **not** shipped: it needs the project to have
+  declared its taxonomy first.
+
 ### 2026-09-21 (release v1.136.0)
 
 - **The mutation harness now ships, so a project can prove the gates can still fail —
@@ -14118,6 +14132,21 @@ boot/validation path — with a bullet each so the promotion could close them se
   whose layout *is* the component declares `<%# composition: <why> %>`. **All 16 compositions in our
   own reference implementations now carry that declaration**, so the code a consumer copies
   demonstrates the rule rather than contradicting it.
+- **Nothing said where a file should live, so nothing drifted —
+  `skills/rails-8/references/directory-structure.md` (new), `skills/rails-8/SKILL.md`,
+  `dist/rails-8.skill`** (#1072). The toolchain gates what is *in* a file and was silent on
+  structure: **a flat `app/controllers` root is not a violation, it is an absence**, which is why
+  this is doctrine first. Measured on a mature app built with this toolchain — models **58 flat / 18
+  namespaced**, controllers **49 / 6**, views **0 / 51** (one per *controller*, which Rails forces
+  and is not organisation), components **0 / 1** holding all 64 files. **Read across the rows: no
+  two layers agree**, so one flow's job, controller, views and models sit in four unrelated places
+  and no layer tells you where the others are. The doctrine names which layers are free (models,
+  jobs, mailers, services, components — the path binds to the class name) and which are
+  URL-constrained (controllers), and carries the two things that make a restructure tractable:
+  **`scope module:` groups controllers without touching routes** — already documented at
+  `controllers-routing.md:35`, a correction to the issue, which claimed it was absent — and
+  **request specs are the regression harness**, because URLs are invariant under it, so 100 specs
+  must pass unchanged and a diff touching `spec/requests/` is itself the alarm.
 
 ### 2026-09-21 (release v1.136.0)
 
