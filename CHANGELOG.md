@@ -9189,6 +9189,33 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The provenance line truncated its own "not a git tree" fallback to "not a git" —
+  `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**
+  (#1062). `[:9]` is meant for a commit SHA and was applied to the fallback string as well, so a
+  tree with no git printed:
+
+  ```
+    route inventory: not a git · RAILS_ENV=unset · enumerated at an unrecorded time
+  ```
+
+  Cosmetic anywhere else. **Not here:** this is the provenance line, the one a reader consults to
+  decide whether a coverage percentage can be attributed to a tree, and `not a git` reads like a
+  truncated or corrupted value rather than the deliberate *"there is no git tree here"* the code
+  means. A provenance stamp that looks corrupted is worse than none.
+
+  **The same class as #1047's abbreviated-SHA defect, in the same function: a rendering treated as
+  the value.** Truncation now applies only when there is a real SHA.
+
+  Asserted on the **rendered line**, not the dict — the dict was always right and it is the
+  rendering that was wrong, so a test reading the dict would have passed against the defect. Two
+  mutations, because "the fallback prints in full" and "a real SHA is still abbreviated" are
+  different claims and the fixture for one cannot see the other's break: restoring the truncation
+  reproduces the reported string exactly, and removing it entirely drops a 40-character hex string
+  into a one-line stamp.
+
 ### 2026-09-18 (release v1.133.1)
 
 - **v1.133.0's staleness check compared two RENDERINGS of a commit, not two commits, and refused a
