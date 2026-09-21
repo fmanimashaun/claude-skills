@@ -14,6 +14,20 @@
   ],
   "checks": [
     {
+      "id": "surface-layout",
+      "why": "A surface takes arbitrary content and cannot know what it will hold, so it must not arrange it. Measured where this was found: a card wrapped its content in `stack` with a hardcoded --space, and 77 of its 112 call sites had already declared their own spacing on the same element -- the component's inner value won, silently, with no error and no visual glitch on most screens. Four grid layouts also collapsed to one column, because a grid cannot survive a flex column. The flattening is eventually visible; the override is not, and every individual template still reads correctly, which is why review misses it. A COMPOSITION whose layout IS the component declares itself with `# composition: <why>` and the check stands aside.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_surface_layout.py"
+      ],
+      "applies_when": [
+        "app/components"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "layout-composition",
       "why": "The doctrine is a priority order -- fluid, then intrinsic, then breakpoints as an exception that must justify itself -- and until now it was prose that nothing checked. Measured on a consumer app that declares 20-odd primitives of its own: grid-auto used 21 times, so the idea took, and 31 elements still hand-roll `flex` + an alignment + a gap, which is what cluster IS. Three more change the layout axis at a breakpoint where switcher, Sidebar and grid-auto adapt with no query. Sizing breakpoints are not flagged because the doctrine prescribes them, and a genuine structural swap is exempt when it is DECLARED.",
       "command": [
