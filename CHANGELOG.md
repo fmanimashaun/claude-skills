@@ -13760,6 +13760,32 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **`error` and `empty` are two states, not one — `scripts/check_component_states.py`,
+  `scripts/mutations/check_component_states.py`, `skills/design-system/references/components.md`**
+  (#1068). #978 wrote the rule with `error or empty` as a single slot and #1068 enforced it that
+  way. **They are not two spellings of one state, they are two different absences with two
+  different remedies**: *empty* is "the query returned nothing, and here is what you do next";
+  *error* is "the request failed, and here is how you retry". As one slot a row satisfied it by
+  covering whichever was easier and the parser could not see the hole — **`Table (CRUD)` is missing
+  `empty` specifically**, on the central admin row, while `Stacked list` beside it sends the
+  zero-row case to `Empty state`.
+
+  **The rule is now seven slots and it is strictly wider**, so it is a doctrine change rather than
+  a fix. It fired on its first run against the only row that declares: `Button` named six and is
+  now complete at seven.
+
+  **The pre-split `error/empty` spelling is refused by name.** Left alone it passes BOTH slots
+  silently, because `/` is a word boundary and a regex looking for each one matches both inside the
+  single token — a row written before the split would keep passing while covering one of the two.
+
+  Two mutations added, nine in total, all caught. **The first version of the split's own mutation
+  SURVIVED**: it dropped `empty` from the slot list, but the fixture covers `empty` and is silent
+  on `error`, so the check still failed — on the wrong slot — and the guard read as caught.
+  Removing the slot the fixture does *not* satisfy proves nothing; the mutation drops `error`,
+  which is the one that lets the fixture through.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **The catalogue stated the six-state rule, predicted its own drift, and nothing enforced it —

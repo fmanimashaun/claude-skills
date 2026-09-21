@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Every catalogue row declares the six states, or declares which do not apply (#1068).
+"""Every catalogue row declares the seven states, or declares which do not apply (#1068).
 
 Run:  python3 scripts/check_component_states.py
       python3 scripts/check_component_states.py --selftest
 
-WHY THIS EXISTS. `components.md` opens by stating a rule about itself: *"Every entry covers six
+WHY THIS EXISTS. `components.md` opens by stating a rule about itself: *"Every entry covers the
 states, or says which do not apply (#978): default, hover, focused, loading, disabled, and error or
 empty. An entry that specifies four is where drift enters -- the loading and empty states are the
 ones always missing."*
@@ -58,9 +58,17 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 CATALOGUE = REPO / "skills/design-system/references/components.md"
 
-# The six, in the order the file's own preamble lists them. `error or empty` is ONE slot because
-# that is how #978 wrote it; see the note on SLOT_ALIASES below for why that is not ideal.
-SLOTS = ("default", "hover", "focused", "loading", "disabled", "error or empty")
+# SEVEN SLOTS, AND #978 NAMED SIX. `error or empty` was one slot until #1068's follow-up, and
+# splitting it is a widening of the rule rather than a tidy-up: they are not two spellings of one
+# state, they are two different absences with two different remedies.
+#
+#   empty   the query returned nothing, and here is what the person does next
+#   error   the request failed, and here is how they retry
+#
+# As one slot a row satisfied it by covering whichever was easier, and the parser could not see the
+# hole. `Table (CRUD)` is the case that made it concrete: it is missing EMPTY specifically, on the
+# central admin row, while its sibling `Stacked list` sends the zero-row case to `Empty state`.
+SLOTS = ("default", "hover", "focused", "loading", "disabled", "error", "empty")
 
 # `error or empty` is a single slot naming two different concerns -- a form field's error and a
 # table's zero-row state are not the same thing, and a row can satisfy the slot by covering
@@ -71,8 +79,10 @@ SLOTS = ("default", "hover", "focused", "loading", "disabled", "error or empty")
 # the thing a reader searches for -- so demanding the word "focused" would be a checker renaming
 # doctrine to suit its parser.
 SLOT_ALIASES = {
-    "error or empty": ("error or empty", "error/empty", "error", "empty"),
     "focused": ("focused", "focus-visible", "focus"),
+    # A row that genuinely has one state for both still says so once per slot -- `error/empty`
+    # satisfies neither on its own, deliberately. Accepting the old combined spelling would let
+    # every row written before the split keep passing while covering one of the two.
 }
 
 # A section that is doctrine rather than a component says so, in the file, next to itself. The
@@ -136,12 +146,23 @@ def parse(text: str) -> list[Row]:
     return rows
 
 
+# THE PRE-SPLIT SPELLING, REFUSED BY NAME. `error/empty` reads as one treatment for both, which is
+# exactly the ambiguity #1068's follow-up removes -- and it would otherwise slip through, because a
+# `/` is a word boundary, so a regex looking for each slot matches BOTH inside the single token. A
+# row claiming the same handling for a failed request and a zero-row result is making the claim the
+# split exists to stop; it says so twice or it says so once and is wrong.
+COMBINED = re.compile(r"\berror\s*(?:/|\bor\b)\s*empty\b", re.I)
+
+
 def slot_findings(row: Row) -> list[str]:
     """What is wrong with this row's declaration. Empty means complete."""
     claim = row.declaration
     if claim is None:
         return []  # not declared at all -- the ratchet's business, not this one's
     out = []
+    if COMBINED.search(claim):
+        out.append("uses the pre-split 'error or empty' spelling -- name 'error' and 'empty' "
+                   "separately, each covered or n/a with a reason")
     for slot in SLOTS:
         spellings = SLOT_ALIASES.get(slot, (slot,))
         hit = next((s for s in spellings if re.search(rf"\b{re.escape(s)}\b", claim, re.I)), None)
@@ -196,15 +217,31 @@ def check(path: Path, floor: int) -> tuple[int, list[str]]:
 
 COMPLETE = """## Widget
 - **States:** default `bg-card` · hover `/90` · focused ring-2 · loading `aria-busy` ·
-  disabled `opacity-50` · empty n/a - always has content
+  disabled `opacity-50` · error `aria-invalid` · empty n/a - always has content
 """
 MISSING_LOADING = """## Widget
 - **States:** default `bg-card` · hover `/90` · focused ring-2 · disabled `opacity-50` ·
-  empty `Empty state`
+  error `aria-invalid` · empty `Empty state`
+"""
+
+# THE CASE THE SPLIT EXISTS FOR. Covers `empty` and is SILENT on `error` -- which is what a row
+# looked like under the old combined slot, and it passed. `Table (CRUD)` is the real instance,
+# inverted: it covers neither, but a row covering one and not the other is the shape that was
+# invisible.
+EMPTY_BUT_NO_ERROR = """## Widget
+- **States:** default `bg-card` · hover `/90` · focused ring-2 · loading `aria-busy` ·
+  disabled `opacity-50` · empty `Empty state`
+"""
+
+# The old spelling, which must NOT satisfy either slot on its own -- otherwise every row written
+# before the split keeps passing while covering one of the two.
+COMBINED_SPELLING = """## Widget
+- **States:** default `bg-card` · hover `/90` · focused ring-2 · loading `aria-busy` ·
+  disabled `opacity-50` · error/empty `Empty state`
 """
 BARE_NA = """## Widget
 - **States:** default `bg-card` · hover n/a · focused ring-2 · loading `aria-busy` ·
-  disabled `opacity-50` · empty n/a - always has content
+  disabled `opacity-50` · error `aria-invalid` · empty n/a - always has content
 """
 DOCTRINE = f"""## A rule about the file
 {NOT_A_COMPONENT}
@@ -235,6 +272,14 @@ def selftest() -> int:
     run("a complete declaration passes", COMPLETE, floor=1, expect_findings=False)
     run("a declaration missing 'loading' fails", MISSING_LOADING, floor=1,
         expect_findings=True, matching="'loading'")
+
+    # THE SPLIT'S OWN DISCRIMINATING PAIR (#1068 follow-up). `error` and `empty` are two slots, so
+    # a row covering one and silent on the other must fail -- that row PASSED under the combined
+    # slot, which is the defect. Paired with COMPLETE above, which differs only in having both.
+    run("covering 'empty' while silent on 'error' fails", EMPTY_BUT_NO_ERROR, floor=1,
+        expect_findings=True, matching="'error'")
+    run("the old combined 'error/empty' spelling is refused by name", COMBINED_SPELLING, floor=1,
+        expect_findings=True, matching="pre-split")
 
     # The escape hatch must not become a loophole.
     run("a bare n/a is refused", BARE_NA, floor=1, expect_findings=True, matching="no reason")
@@ -299,7 +344,7 @@ def main() -> int:
             print(f"  {f}")
         return 1
     total = sum(1 for r in parse(CATALOGUE.read_text(encoding="utf-8")) if not r.exempt)
-    print(f"component states: {declared} of {total} rows declare all six, floor {DECLARED_FLOOR}")
+    print(f"component states: {declared} of {total} rows declare all seven, floor {DECLARED_FLOOR}")
     return 0
 
 

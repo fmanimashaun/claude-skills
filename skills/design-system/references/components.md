@@ -186,8 +186,9 @@ DEFAULTS = { variant: :primary, size: :md }
 - **Variants:** `primary · secondary · destructive · outline · ghost · link`. **Sizes:** `sm/md/lg/icon`.
   **States:** default the variant recipe above · hover (`/90` shift) · `focus-visible` ring ·
   `loading` (inline `animate-spin` Lucide `loader-2` + keep label; set `aria-busy`) · `disabled`
-  (`disabled:opacity-50 disabled:pointer-events-none`) · empty n/a — a button always has a label,
-  and an icon-only one has an `sr-only` one. Icon: `left|right|only` (icon-only → `sr-only` label).
+  (`disabled:opacity-50 disabled:pointer-events-none`) · error n/a — a button reports nothing about
+  its own validity; the field it submits owns that, see [forms.md](forms.md) · empty n/a — a button
+  always has a label, and an icon-only one has an `sr-only` one. Icon: `left|right|only` (icon-only → `sr-only` label).
 - **a11y:** real `<button>`/`<a>`; `min-h-touch`; visible focus ring; `aria-busy` when loading.
 - **Responsive:** in toolbars/headers, full-width stacked on mobile → inline at `md`: `w-full md:w-auto`.
 - **The `link` variant is a BUTTON that looks like a link** — an action in a toolbar, not a link in a
