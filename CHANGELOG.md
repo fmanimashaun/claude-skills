@@ -17817,3 +17817,5 @@ own repo with a label its setup never creates) and `undeclared-component-label` 
   flow, autonomy, the phased code-review install-and-verify runbook, graphify.
 - Releases: v1.0 (skills), v1.1.3, v1.1.4 (post-LF-normalization).
 - `.gitattributes` (LF everywhere, binaries marked).
+
+<!-- #1092 probe: does a branch carrying a merge commit of dev run the promotion-only gate? -->
