@@ -3133,6 +3133,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   them is how a team learns to ignore a red gate (#1097, one level out). It answers the question the
   toolchain's own CI is structurally unable to answer: our CI proves a check discriminates on **our**
   machine, never on yours.
+- **A spelled-out number was not a claim, and that is the one a reader never re-derives —
+  `plugins/rails-flow/scripts/extract_claims.py`, `scripts/mutations/extract_claims.py`** (#1106).
+  The extractor found `292 assertions` and missed *"quotes the marker **ten times** in its own
+  bullets"* in the same body — which was wrong (2 in that release, 8 in older published entries) and
+  was caught by the maintainer rather than by anything we ship. **Bound to a countable noun, exactly
+  as the digit rule is**, and that binding is what keeps the tool usable: number words are far
+  commoner in prose than digits, so matching them bare would turn *"one of the reasons"*, *"two
+  halves of one failure"* and *"the one place it lives"* into claims, flood every report, and a
+  report nobody triages is indistinguishable from a passing one. Three prose fixtures hold that
+  line, and a declared mutation unbinds the noun to prove they do.
 
 - **A PR body's numbers were checked by an agent nobody remembered to run —
   `plugins/rails-flow/hooks/scripts/guard-claims.sh` (new),

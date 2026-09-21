@@ -71,6 +71,22 @@ KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
         r"\b\d+(?:\.\d+)?%", r"\b\d+\s*(?:checks?|fixtures?|mutations?|gates?|files?|rows?|sites?|"
         r"occurrences?|routes?|agents?|lines?|commits?)\b", r"\bv?\d+\.\d+\.\d+\b",
         r"\b\d+\s*(?:->|→)\s*\d+\b",
+        # SPELLED-OUT NUMBERS, and they are the ones a reader is least likely to re-derive.
+        # "This release quotes the marker TEN TIMES in its own bullets" went into a commit message
+        # unchecked and was wrong -- 2 there, 8 in older published entries -- while the digits in
+        # the same body were extracted correctly (#1106).
+        #
+        # BOUND TO A COUNTABLE NOUN, exactly as the digit rule is, and that is what keeps this
+        # usable. Number words are far commoner in prose than digits: "one of the reasons", "two
+        # halves of one failure", "the one place it lives" are all ordinary English asserting
+        # nothing. Matching a bare number word would flood the report, and a report nobody
+        # triages is indistinguishable from a passing one.
+        r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
+        r"fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|"
+        r"eighty|ninety|hundred)\s+(?:checks?|fixtures?|mutations?|gates?|files?|rows?|sites?|"
+        r"occurrences?|routes?|agents?|lines?|commits?|times?|issues?|bullets?|assertions?)\b",
+        # "twice" and "three times" are the same claim without a noun to hang on.
+        r"\b(?:twice|thrice)\b",
     )),
 )
 
@@ -193,6 +209,18 @@ def selftest() -> int:
           kinds("Selftest 33 checks passed.") == ["enforcement"],
           "the ordering rule says enforcement wins when both match")
     check("a percentage is a measurement", kinds("Coverage rose to 94% overall.") == ["measurement"])
+    # SPELLED-OUT NUMBERS (#1106). The claim that slipped through was "quotes the marker TEN TIMES
+    # in its own bullets" -- wrong, and the digits in the same body were extracted correctly.
+    check("a spelled-out count is a measurement",
+          kinds("This release quotes the marker ten times in its own bullets.") == ["measurement"])
+    check("'twice' is a measurement with no noun to hang on",
+          kinds("I got that wrong twice.") == ["measurement"])
+    # THE MUST-PASS HALF, and it is what keeps the tool usable. Number words are far commoner in
+    # prose than digits; matching them bare would flood every report and the tool would be ignored.
+    for prose in ("One of the reasons is clarity.",
+                  "Two halves of one failure, and the one place it lives.",
+                  "There is one more thing worth saying."):
+        check(f"prose is not a measurement: {prose[:34]}", kinds(prose) == [], f"{kinds(prose)}")
 
     # STAYS SILENT on the unfalsifiable. This half decides whether the output is worth reading: a
     # verifier handed "this is cleaner" has nothing to run, and a list of those trains people to skim.
