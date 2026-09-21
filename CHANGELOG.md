@@ -14034,6 +14034,39 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **Five components a CRUD admin needs, that the catalogue had no row for —
+  `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-shapes.json`,
+  `scripts/check_component_states.py`, `dist/design-system.skill`** (#1069). From the systematic
+  sweep against seven established libraries: **Search field, Multi-select / token input, Toolbar,
+  Split button, Code block** — the five the issue ranks as most likely to produce hand-written HTML.
+  Every admin index has a search field; a bulk-actions bar currently ships as **five tab stops in the
+  middle of a table**; `Combobox` is written single-value throughout, so a developer needing a set
+  bounces off it; and **our own `Empty state` row already required *"a short error identifier the
+  person can quote to support"* while saying nothing about how to render it** — `Code block` is that
+  missing half. Tree view and OTP are **deferred rather than dropped**: both carry framework claims
+  needing their own verified change. Maintainer decision recorded on the issue, 2026-09-21.
+
+  **The ARIA facts are a framework claim and carry citations**, fetched at the moment of writing, not
+  recalled: `role="toolbar"` with roving tabindex, `aria-labelledby`/`aria-label` and
+  `aria-orientation` ([APG Toolbar]); `aria-haspopup="menu"`, `aria-expanded`, and Enter/Space opening
+  the menu onto the first item ([APG Menu Button]); `aria-multiselectable="true"`, `aria-selected` on
+  selected options, and the modifier-free `Space` model APG recommends ([APG Listbox]). Verified
+  2026-09-21.
+
+  **Two things are deliberately NOT claimed.** APG's Menu Button page states **no Escape behaviour** —
+  it defers to the Menu pattern — so the Split button row points at our existing `Dropdown` row
+  instead of inventing a citation, which is #142's defect exactly. And APG gives **no recommendation**
+  on selection-follows-focus for multi-select, describing it only for single-select; the row says
+  that, rather than claiming APG forbids it. `Down Arrow`/`Up Arrow` on the split button are marked
+  **APG-optional, ours by decision**.
+
+  Two gates enforced the rest: `check_component_states` required all seven states per row and the
+  ratchet moved **1 → 6**; `check_component_shapes` refused every row until it had a skeleton, and now
+  reconciles **62 rows against 62 shapes**.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **`error` and `empty` are two states, not one — `scripts/check_component_states.py`,

@@ -105,6 +105,107 @@
               {"kind": "line"},
               {"kind": "text", "label": "Overview", "size": 14}]
   },
+  "Search field": {
+    "shape": "control",
+    "width": 280,
+    "parts": [
+      {
+        "kind": "icon-slot",
+        "label": "search"
+      },
+      {
+        "kind": "field",
+        "label": "Search orders…"
+      },
+      {
+        "kind": "icon-slot",
+        "label": "clear"
+      }
+    ]
+  },
+  "Multi-select / token input": {
+    "shape": "panel",
+    "width": 320,
+    "parts": [
+      {
+        "kind": "pill",
+        "label": "Billing ×"
+      },
+      {
+        "kind": "pill",
+        "label": "Support ×"
+      },
+      {
+        "kind": "field",
+        "label": "Add a role…"
+      },
+      {
+        "kind": "line"
+      },
+      {
+        "kind": "text",
+        "label": "Engineering",
+        "size": 14
+      },
+      {
+        "kind": "text",
+        "label": "Operations",
+        "size": 14
+      }
+    ]
+  },
+  "Toolbar": {
+    "shape": "control",
+    "width": 300,
+    "parts": [
+      {
+        "kind": "text",
+        "label": "Archive",
+        "size": 14
+      },
+      {
+        "kind": "text",
+        "label": "Export",
+        "size": 14
+      },
+      {
+        "kind": "text",
+        "label": "Delete",
+        "size": 14
+      }
+    ]
+  },
+  "Split button": {
+    "shape": "control",
+    "width": 180,
+    "parts": [
+      {
+        "kind": "text",
+        "label": "Save",
+        "size": 14,
+        "weight": "500"
+      },
+      {
+        "kind": "icon-slot",
+        "label": "chevron-down"
+      }
+    ]
+  },
+  "Code block": {
+    "shape": "panel",
+    "width": 320,
+    "parts": [
+      {
+        "kind": "text",
+        "label": "ERR_PAYMENT_DECLINED_4021",
+        "size": 13
+      },
+      {
+        "kind": "icon-slot",
+        "label": "copy"
+      }
+    ]
+  },
   "Combobox / Autocomplete": {
     "shape": "panel", "width": 280,
     "parts": [{"kind": "field", "label": "Search…"},

@@ -522,6 +522,115 @@ DEFAULTS = { variant: :primary, size: :md }
   mobile drawer's nested disclosure list — the same `aria-expanded` button per section, stacked, with no
   hover path. That reuses the drawer contract rather than inventing a second mobile nav.
 
+## Search field
+- **Every admin index has one**, and the row exists because `forms.md` lists `search` as an input
+  *type* while the pattern is the thing that gets hand-rolled.
+- `Ui::SearchField` — a `type="search"` input inside a `role="search"` landmark, with a **clear
+  button that is a real control**: `type="button"`, its own accessible name (`aria-label="Clear
+  search"`), and inside the tab order. A hand-rolled `×` span is a second focusable thing with no
+  name, or not focusable at all.
+- **The results count is a live region**, `aria-live="polite"` on the element that says "14 results"
+  — not on the table. Announcing the whole table on every keystroke is the common mistake.
+- **Debounce is a Turbo concern, not a styling one**: the form targets a `turbo_frame`, and the
+  input carries `data-turbo-permanent` so focus and caret survive the frame swap.
+- Shape: `cluster` of input + clear button; `bg-background border border-input rounded-md h-9`, icon
+  `text-muted-foreground`.
+- **States:** `default` · `hover` `border-ring` · `focus-visible` ring on the wrapper, never the bare
+  input · `loading` spinner replaces the icon while the frame is in flight · `disabled` `opacity-50`
+  and the clear button goes too · `error` reuses the field contract (`aria-invalid`,
+  `aria-describedby`) · `empty` is **the query returned nothing** — render `Empty state`, and keep
+  the field populated so the person can edit rather than retype.
+- **Behavior:** `search` controller on the **debounced-submit** mixin.
+
+## Multi-select / token input
+- **Reach for it when the value is a SET.** `Combobox` is written single-value throughout and its
+  *"selection follows focus"* contract is the wrong one here — [APG's Listbox pattern][apg-listbox]
+  describes selection-follows-focus for single-select and **gives no recommendation for multi-select**
+  (verified 2026-09-21), which is precisely why a developer reaching for `Combobox` bounces off.
+- `Ui::MultiSelect` — a token list plus a popup. The popup is `role="listbox"` with
+  **`aria-multiselectable="true"`**: *"If the listbox supports selection of more than one option, the
+  element with role `listbox` has `aria-multiselectable` set to `true`"* ([APG][apg-listbox]).
+- **Selected options carry `aria-selected="true"`** — *"If any options are selected, each selected
+  option has either `aria-selected` or `aria-checked` set to `true`"* ([APG][apg-listbox]). We use
+  `aria-selected`, so the recipe has one spelling rather than two.
+- **Two keyboard models exist and APG recommends the modifier-free one**: `Space` toggles the option
+  under focus. The `Shift`/`Control` model is the documented alternative; do not mix them.
+- **A token is removable from the keyboard.** Each token carries a remove `button` with its own name
+  (`aria-label="Remove Billing"`), and removal is announced through the same polite live region that
+  reports the count. A `<div>` of chips beside a hidden `<select multiple>` is the hand-roll this row
+  exists to stop: no role, no announcement, no keyboard path to delete.
+- Tokens are a `cluster` of `Badge`-shaped chips; the input grows on the same line.
+- **States:** `default` · `hover` on token and option · `focus-visible` ring on the token, not the
+  chip's remove button alone · `loading` while the popup is fetching · `disabled` removes the remove
+  buttons from the tab order · `error` via `aria-invalid` on the input · `empty` — **no options match**
+  is a message inside the popup, not a closed popup, which silently looks broken.
+- **Behavior:** `multi-select` controller on the **list-navigation** + **anchored-position** mixins.
+
+## Toolbar
+- **A bulk-actions bar is ONE tab stop, not five.** Today five sibling buttons put five tab stops in
+  the middle of a table; `page-anatomies.md` owns the order of a toolbar's contents and never states
+  the role or the focus contract.
+- **`role="toolbar"` on the container** — *"The element that serves as the toolbar container has role
+  toolbar"* ([APG's Toolbar pattern][apg-toolbar], verified 2026-09-21).
+- **Roving tabindex.** *"Tab and Shift + Tab: Move focus into and out of the toolbar"*, while
+  *"Left Arrow: Moves focus to the previous control"* and *"Right Arrow: Moves focus to the next
+  control"* ([APG][apg-toolbar]). One control carries `tabindex="0"`, the rest `-1`.
+- **It must be named**: *"If the toolbar has a visible label, it is referenced by `aria-labelledby` on
+  the toolbar element. Otherwise, the toolbar element has a label provided by `aria-label`"*
+  ([APG][apg-toolbar]). An unnamed toolbar is the default hand-roll and it announces nothing.
+- **Vertical toolbars declare it**: `aria-orientation="vertical"`; horizontal is the default and needs
+  no attribute. Up/Down then take the roles Left/Right have ([APG][apg-toolbar]).
+- Shape: `cluster` with `gap-1`, `bg-muted rounded-md p-1`.
+- **States:** `default` · `hover` per control · `focus-visible` on the roving control only ·
+  `loading` disables the set and shows a spinner in place of the acting control · `disabled` for the
+  whole bar when no rows are selected · `error` surfaces through `Toast`, not inside the bar ·
+  `empty` — **no selection** is the bar's hidden state; render nothing rather than a disabled bar,
+  which reads as broken.
+- **Behavior:** `toolbar` controller on the **roving-focus** mixin.
+
+## Split button
+- "Save ▾ / Save and add another" — a primary action beside a menu toggle. **Zero coverage today**,
+  and hand-rolled it becomes one button with a click-target hack.
+- **Two controls, sharing a visual edge and NOT an accessible name.** The primary is an ordinary
+  `button`; the toggle is a second `button` with its own name (`aria-label="More save options"`).
+- **`aria-haspopup`** — *"The element with role `button` has `aria-haspopup` set to either `menu` or
+  `true`"* ([APG's Menu Button pattern][apg-menubutton], verified 2026-09-21). Use `menu`.
+- **`aria-expanded` tracks the menu**: *"When the menu is displayed, the element with role `button`
+  has `aria-expanded` set to `true`. When the menu is hidden, `aria-expanded` is set to `false`"*
+  ([APG][apg-menubutton]).
+- **Opening the menu moves focus into it**: *"Enter: opens the menu and places focus on the first menu
+  item"*, and `Space` the same ([APG][apg-menubutton]). `Down Arrow` (first item) and `Up Arrow`
+  (last item) are marked **optional** by APG — ours implements them, which is our decision, not the
+  spec's.
+- **APG's Menu Button page does not state Escape behaviour**; it defers to the Menu pattern. Our
+  `Dropdown` row already owns dismissal, so this row points there rather than inventing a citation.
+- Shape: `cluster gap-0`; primary `rounded-l-md`, toggle `rounded-r-md border-l border-border px-2`.
+- **States:** `default` · `hover` per half, independently · `focus-visible` per half · `loading` on
+  the primary only, with the toggle disabled · `disabled` both halves · `error` surfaces through
+  `Toast` · `empty` — **no secondary actions** means render a plain `Button`, never a toggle opening
+  an empty menu.
+- **Behavior:** `split-button` controller on the **anchored-position** mixin.
+
+## Code block
+- API keys, webhook payloads, error identifiers. **Our own `Empty state` row already requires "a short
+  error identifier the person can quote to support"** and says nothing about rendering it — this row
+  is that missing half. `forms.md` covers the copy button, not the block.
+- `Ui::CodeBlock` — `<pre><code>`, never a `<div>` with `white-space: pre`. The `pre` keeps the
+  whitespace semantics a screen reader and a copy-paste both rely on.
+- **Long content scrolls and is keyboard reachable**: a scrollable region needs `tabindex="0"` and a
+  name, or a keyboard user cannot reach the scrollbar. Give it `role="region"` and `aria-label`.
+- **The copy button reports its result** through the polite live region, not by mutating its own
+  label — a button whose name changes under focus re-announces as a different control.
+- **Do not syntax-highlight an error identifier.** Highlighting implies a language; these are opaque
+  strings, and colour here is decoration that fails 1.4.1 if it carries meaning.
+- Shape: `bg-muted text-step--1 font-mono rounded-md border border-border p-3 overflow-auto`.
+- **States:** `default` · `hover` reveals the copy button · `focus-visible` ring on the region ·
+  `loading` skeleton while a payload is fetched · `disabled` is **not a state** for this component —
+  say so rather than inventing one · `error` — the payload could not be loaded, render the reason,
+  not an empty block · `empty` — **zero-length content** renders the reason, because an empty bordered
+  box reads as broken.
+
+
 ## Combobox / Autocomplete
 - **Reach for it only for one of APG's two scenarios**, not by option count: the value must come from
   a **closed set** and the list is too long to scan, or the value is **arbitrary** and suggestions
@@ -1517,3 +1626,7 @@ can carry.
 
 ## Forms
 See [forms.md](forms.md).
+
+[apg-toolbar]: https://www.w3.org/WAI/ARIA/apg/patterns/toolbar/
+[apg-menubutton]: https://www.w3.org/WAI/ARIA/apg/patterns/menu-button/
+[apg-listbox]: https://www.w3.org/WAI/ARIA/apg/patterns/listbox/
