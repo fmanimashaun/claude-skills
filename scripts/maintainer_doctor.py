@@ -563,7 +563,9 @@ class Doctor:
         except FileNotFoundError:
             return 127, f"{args[0]}: not found"
         except subprocess.TimeoutExpired:
-            return 124, f"{' '.join(args)}: timed out"
+            # 124 is the conventional shell code for a timeout, and the gate loop reads it as a
+            # SKIP rather than a FAIL -- a check that was killed did not run, and did not fail.
+            return 124, f"{' '.join(args)}: timed out after {timeout}s"
 
     def git(self, *args: str) -> tuple[int, str]:
         return self.run("git", *args)
@@ -1054,6 +1056,29 @@ class Doctor:
             code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 self.add(PASS, f"gate: {name}")
+            elif code == 124:
+                # A TIMEOUT IS NOT A FAILURE, and it is not a pass either -- it is the third
+                # verdict this doctor already has. The check was killed; nothing is known about
+                # what it would have said.
+                #
+                # The distinction is the whole point of the FAIL line. On `mutation coverage`,
+                # FAIL means a guard stopped guarding, which is as serious as this repository
+                # gets: that gate is what proves the other gates can fail. Reporting a timeout the
+                # same way sends a maintainer to the worst possible false alarm -- and, in the
+                # direction that actually matters, teaches them to shrug at a red mutation gate.
+                #
+                # This was diagnosed at #129 and mitigated by raising the allowance to 900s rather
+                # than fixing the verdict; the note above SLOW_GATES says so in as many words. The
+                # allowance is not the fix, because the sweep gets slower every time anyone makes
+                # the repo safer, and a contended machine blows any fixed budget. Measured
+                # 2026-09-21: 1000 mutations across 93 guards took ~15 minutes on a laptop running
+                # several sessions, and passed completely when run on its own.
+                self.add(
+                    SKIP, f"gate: {name}",
+                    f"{out.strip() or 'timed out'} — killed, so it did NOT run; this is not a "
+                    f"pass and not a failure. Run it alone before believing either",
+                    " ".join(cmd),
+                )
             elif code == 3:
                 # Exit 3 is a gate's own "I ran but could not check everything" — currently
                 # lint_markdown_code.py with node or ruby absent, which is the normal state of a

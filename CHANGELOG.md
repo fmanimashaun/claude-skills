@@ -9,6 +9,24 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **A timed-out gate was reported as `FAIL`, which is the one verdict it cannot mean —
+  `scripts/maintainer_doctor.py`, `scripts/maintainer_doctor_selftest.py`,
+  `scripts/mutations/maintainer_doctor.py`** (#1097). The doctor's contract is three verdicts, and
+  `CLAUDE.md` states it: `ok`, `FAIL`, and **`skip`, which means the check did not run and is not a
+  pass**. A timeout is exactly that third case and was landing in the second. The two demand
+  opposite responses — on `mutation coverage`, `FAIL` means *a guard stopped guarding*, which is as
+  serious as this repository gets, since that gate is what proves the others can fail. **The defect
+  was diagnosed at #129 and the fix chosen was raising the allowance to 900s**; the note above
+  `SLOW_GATES` says so in as many words — *"a timeout reported as FAIL is indistinguishable from a
+  real survivor"* — and then nothing enforced it. On 2026-09-21 the sweep crossed 900s too (1000
+  mutations across 93 guards on a contended laptop, ~15 minutes) and cost an hour of the v1.134.0
+  pre-flight deciding which run to believe; run alone on the same commit it passed completely, and
+  the doctor's own output had said `timed out` in plain words the whole time. **An allowance can
+  always be exceeded; the verdict is the thing that can be correct.** It now reports `skip`, names
+  the allowance it blew so a reader can tell whether to raise the budget or fix the gate, and says
+  the check did **not** run. The negative control is carried on the same path — a gate that runs and
+  genuinely fails is still `FAIL`, because "a timeout is a skip" is otherwise satisfied by a doctor
+  that never fails anything.
 - **Nothing required an agent to state its output contract —
   `scripts/check_agent_output_contract.py` (new), `scripts/maintainer_doctor.py`,
   `scripts/mutations/check_agent_output_contract.py`** (#1086). Requires a declared `## Output`

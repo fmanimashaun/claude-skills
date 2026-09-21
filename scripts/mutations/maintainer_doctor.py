@@ -16,6 +16,30 @@ GUARD = Guard(
         "evals",
     ),
     mutations=(
+        # #1097. A gate that was KILLED did not run. Reporting it as FAIL is the one verdict it
+        # cannot mean, and on `mutation coverage` that verdict means "a guard stopped guarding".
+        Mutation(
+            "a timed-out gate is reported as a failure again",
+            "            elif code == 124:",
+            "            elif False:",
+            "a gate that times out is SKIP, never FAIL",
+        ),
+        Mutation(
+            # THE NEGATIVE CONTROL's guard. "A timeout is a skip" must not become "everything is
+            # a skip" -- that would hide the survivor this gate exists to surface.
+            "every non-zero exit becomes a skip, so a real failure stops being reported",
+            "            elif code == 124:",
+            "            elif code != 0:",
+            "a gate that RUNS and fails is still FAIL",
+        ),
+        Mutation(
+            # The reason has to name the allowance, or a reader cannot tell whether to raise the
+            # budget or fix the gate -- which is the decision the skip exists to hand them.
+            "the skip stops naming the allowance that was exceeded",
+            '            return 124, f"{\' \'.join(args)}: timed out after {timeout}s"',
+            '            return 124, "timed out"',
+            "the timeout skip must name the allowance it exceeded",
+        ),
         # #895. The doctor only MAPS the shipped checker's exit code; the two ways to get that wrong are
         # a FAIL read as PASS and n/a read as PASS. Each is one branch.
         Mutation(
