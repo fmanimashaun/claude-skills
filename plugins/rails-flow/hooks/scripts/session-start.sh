@@ -17,9 +17,19 @@ if [ -f docs/brain/STATUS.md ]; then
   echo "- brain STATUS (docs/brain/STATUS.md, top):"
   head -8 docs/brain/STATUS.md | sed 's/^/  /'
 fi
+# MEMORY.md, stripped of its link scaffolding. SessionStart fires on EVERY COMPACTION, not once
+# per session -- so whatever this prints is paid again each time the context is reclaimed, which is
+# exactly when it is most expensive. Measured on this repository: the index block was 3805 of the
+# hook's 4451 bytes, and 42% of that was `[slug](path)` markdown no model acts on. The lesson text
+# is what a reader can use without opening anything; the path is one `grep` away when they want it.
+# See reference/context-budget.md.
 if [ -f docs/brain/MEMORY.md ]; then
-  echo "- memory index (docs/brain/MEMORY.md):"
-  head -12 docs/brain/MEMORY.md | sed 's/^/  /'
+  _total="$(grep -c '^- \[' docs/brain/MEMORY.md 2>/dev/null || echo 0)"
+  _shown="${RAILS_FLOW_MEMORY_LINES:-8}"
+  echo "- memory: ${_total} lesson(s) in docs/brain/MEMORY.md — newest ${_shown} below; /rails-flow:brain for the rest"
+  grep '^- \[' docs/brain/MEMORY.md 2>/dev/null \
+    | head -"${_shown}" \
+    | sed -E 's/^- \[[^]]*\]\([^)]*\)[[:space:]]*(—[[:space:]]*)?/  - /'
 fi
 
 # brain-review cadence nudge (local, offline). /rails-flow:brain-review stamps an epoch into

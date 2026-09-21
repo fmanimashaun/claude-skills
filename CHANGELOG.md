@@ -7,6 +7,24 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Nothing measured what a hook costs, so it could grow for ever unnoticed —
+  `scripts/check_hook_output_budget.py` (new), `docs/evidence/hook-output-baseline.json` (new),
+  `scripts/maintainer_doctor.py`, `scripts/mutations/check_hook_output_budget.py`,
+  `docs/wiki/Agents-And-Gates.md`** (#1085). A **ratchet, not a threshold** — a fixed byte limit is
+  inert above today's size and red on day one below it, so this records what each hook costs now and
+  fails only on growth past a 64-byte noise tolerance; `--update` raises it in a commit somebody
+  reviews. **Measured against a fixture project, never this repository**: hooks print the branch,
+  the last commit subject and an issue count, so a live baseline would drift on unrelated commits
+  and a gate that goes red on its own gets switched off. The selftest asserts two runs agree **and**
+  that a bigger fixture measures bigger — determinism alone cannot show the fixture is what is read,
+  because this tree is stable within a run too. Proven both ways: baseline **1245** bytes on the
+  fixed hook, **1952** on the previous one, failing at +707. One declared mutation **survived** a
+  first draft that targeted `CLAUDE_PROJECT_DIR` — the hooks resolve `docs/brain/MEMORY.md` from the
+  working directory, so `cwd` is the lever that actually pins the measurement, and that is what the
+  mutation now breaks.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **Nothing stopped the next command from reading CI the same way —
@@ -2975,6 +2993,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The session-start banner was paid again at every compaction, and 85% of it was one file printed
+  verbatim — `plugins/rails-flow/hooks/scripts/session-start.sh`,
+  `plugins/rails-flow/reference/context-budget.md` (new)** (#1085). `SessionStart` does not fire
+  once per session; it fires again after **every compaction** — into the window a compaction just
+  reclaimed, before any work happens. Nobody had measured it: a grep for `/compact`, "context
+  window" or anything like them across `plugins/` and `skills/` returned **one** hit, about
+  RubyLLM's model registry. Measured, the hook printed **4451 bytes**, of which **3805 were
+  `docs/brain/MEMORY.md` dumped whole** and **42% of that block was `[slug](path)` markdown no model
+  acts on**. The other three shipped SessionStart hooks printed 100, 0 and 0 — one hook was 98% of
+  the cost. It now prints a count, a pointer and the newest lessons **with their text intact and the
+  link scaffolding stripped**: 4451 → **about 2000 bytes**, with no actionable content removed. The
+  new reference records the rule — apply the harness-doctrine test to every line a hook prints, and
+  a count plus a pointer beats a list that grows without bound.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **A red check was read as a failed test when nothing had run —
@@ -2997,20 +3031,6 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   contrary.
 
 ### 2026-09-18 (release v1.133.0)
-
-- **A PR could be opened over unfinished work while carrying the keyword that closes the issue —
-  `plugins/rails-flow/commands/issues.md`**. The work loop already required **one `Closes #n` per
-  issue**, so merging a PR closes what it names. Nothing said when the PR may be opened, and those
-  two together are a trap: **a PR raised over half-done work is a request to close an issue that
-  is not fixed**, and the remainder becomes invisible the moment it merges. Nobody re-reads a
-  closed issue.
-
-  Step 5 now states the precondition: **open the PR only when every issue it names is completely
-  done** — every claim in the issue body answered, every mandatory gate green, and nothing left
-  that you were planning to push to the branch afterwards. A PR may still close several issues, but
-  each must independently be finished; grouping is about sharing a branch, never about carrying a
-  half-done issue along on a finished one's merge.
-
   **And the resolution when a group splits**, which is the case that otherwise stalls: if one issue
   is unfinished when the rest are done, neither hold the finished work nor ship the unfinished one
   — drop it from the branch, remove its `Closes`, and leave it open in the queue. One issue
