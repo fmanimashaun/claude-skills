@@ -3159,6 +3159,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.45.0 (release v1.137.0) — 2026-09-21
 
+- **A frozen table in the docstring, and a false positive in the half that fails —
+  `plugins/rails-flow/scripts/check_layer_structure.py`,
+  `plugins/rails-flow/scripts/mutations/check_layer_structure.py`** (#1124). Three fixes, found by
+  running the check against a real app instead of reading it. **The docstring's hand-written layer
+  counts are gone** — the script computes that table, so a copy of it is wrong by construction and
+  three of its five rows were already stale; the argument stays, the digits go. **Layers are now
+  discovered, never enumerated**: a fixed list of eight names is what hid `app/javascript/controllers`
+  (22 files, all flat — the largest flat layer in the motivating app after models and controllers),
+  and `.js` is counted so Stimulus is visible at all. `app/javascript` is treated as a *container*
+  whose children are layers, or its `controllers/` child would read as one of its namespaces.
+  **And an explicit `to: "sessions/omniauth#create"` now declares its module** — the first version
+  read only `scope module:` and `namespace`, so two correctly-organised, correctly-routed
+  controllers were reported as drift, **in the failing half of the gate**. Mutations 4 → **9**,
+  selftest 9 → **17 assertions**, including a fixture that builds two layers named nowhere in the
+  script and a control proving that reading `to:` narrowed nothing.
+
 - **The layers disagreed and nothing made it visible —
   `plugins/rails-flow/scripts/check_layer_structure.py` (new), `plugins/rails-flow/checks.json`,
   `plugins/rails-flow/scripts/mutations/check_layer_structure.py`** (#1072). Reports the per-layer
@@ -14117,6 +14133,18 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.62.0 (release v1.137.0) — 2026-09-21
 
+- **The rule was quotable but not actionable, and a review class had no name —
+  `skills/rails-8/references/directory-structure.md`, `skills/code-review/SKILL.md`,
+  `dist/rails-8.skill`, `dist/code-review.skill`** (#1124). The doctrine gains a **worked example**:
+  one real domain whose files sit in seven unrelated places, the target layout, and the entire
+  routing change — a single `scope module:` block that leaves every URL byte-identical — plus the
+  two things that deliberately do **not** move (a UI primitive sharing the word, because a name
+  collision is not domain membership; and small flat layers, because twelve jobs at the root are
+  fine). New `code-review` class **`frozen-figure`**: a number hand-copied into prose that something
+  else computes, whose sharper symptom is **omission rather than staleness** — a frozen table cannot
+  notice a row it never had. This entry's own predecessor was an instance, which is why the measured
+  table now carries the `git ls-tree` command that re-takes it.
+
 - **A component could impose layout on content it cannot see, and the silent half was the expensive
   one — `skills/design-system/references/components.md`,
   `skills/design-system/references/component-implementations.md` (16 declarations),
@@ -14136,11 +14164,14 @@ boot/validation path — with a bullet each so the promotion could close them se
   `skills/rails-8/references/directory-structure.md` (new), `skills/rails-8/SKILL.md`,
   `dist/rails-8.skill`** (#1072). The toolchain gates what is *in* a file and was silent on
   structure: **a flat `app/controllers` root is not a violation, it is an absence**, which is why
-  this is doctrine first. Measured on a mature app built with this toolchain — models **58 flat / 18
-  namespaced**, controllers **49 / 6**, views **0 / 51** (one per *controller*, which Rails forces
-  and is not organisation), components **0 / 1** holding all 64 files. **Read across the rows: no
-  two layers agree**, so one flow's job, controller, views and models sit in four unrelated places
-  and no layer tells you where the others are. The doctrine names which layers are free (models,
+  this is doctrine first. Measured on a mature app built with this toolchain, with
+  `git ls-tree -r --name-only <ref> -- app/<layer>` so anyone can re-run it — models **58 flat / 18
+  namespaced** of 144, controllers **48 / 6** of 64, views **0 / 51** of 132 (one per *controller*,
+  which Rails forces and is not organisation), components **0 / 1** holding all 61, and
+  `app/javascript/controllers` **22 / 0**, the largest flat layer after models and controllers and
+  the one a sweep of `app/*/` never descends into. **Read across the rows: no two layers agree**, so
+  one flow's job, controller, views and models sit in four unrelated places and no layer tells you
+  where the others are. The doctrine names which layers are free (models,
   jobs, mailers, services, components — the path binds to the class name) and which are
   URL-constrained (controllers), and carries the two things that make a restructure tractable:
   **`scope module:` groups controllers without touching routes** — already documented at
