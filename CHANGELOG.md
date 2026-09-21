@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-21 (release v1.136.0)
 
 - **Two guards went INERT the moment the harness shipped, and one of them was my own invariant —
   `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`,
@@ -3157,7 +3157,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 2026-09-21 (release v1.136.0)
 
 - **The mutation harness now ships, so a project can prove the gates can still fail —
   `plugins/rails-flow/scripts/check_toolchain_mutations.py` (new), 59 guards relocated into
@@ -14089,7 +14089,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 2026-09-21 (release v1.136.0)
 
 - **A lane was described as one resource when it is three, and the mechanism it recommended caused
   a second failure — `skills/parallel-session-lane/SKILL.md`** (#1078). §1 said *"a private test
