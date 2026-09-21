@@ -251,6 +251,7 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/project-setup.md` | `rails new`, app structure, generators, config/environments, credentials, dev workflow (`bin/setup`, `bin/dev`), upgrading |
 | `references/models.md` | Migrations, Active Record models, validations, associations, callbacks, scopes/queries, enums, `normalizes`, tokens, encryption, multi-DB |
 | `references/controllers-routing.md` | Routes, **URL design (human vanity paths for user-facing pages vs REST for records + JSON API; the reconciliation)**, controllers, `params.expect`, filters, rate limiting, sessions/cookies/flash, redirects & status codes, API-only apps |
+| `references/directory-structure.md` | **Where a file lives** — the same folder name in every layer; which layers are free (models, jobs, mailers, services, components) and which are URL-constrained (controllers); `scope module:` as the lever that groups without touching routes; request specs as the regression harness for the move |
 | `references/views-hotwire.md` | ERB, layouts, partials, helpers, forms (simple_form; Turbo contract), Turbo Drive/Frames/Streams, morphing, Stimulus, importmap/Propshaft, markdown rendering |
 | `references/jobs-and-realtime.md` | Active Job, Solid Queue, recurring jobs, 8.1 continuations, concurrency limits, Action Cable / Solid Cable |
 | `references/mail-storage-richtext.md` | Action Mailer, Action Mailbox, Active Storage (uploads/variants/direct upload), Action Text |

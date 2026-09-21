@@ -15,6 +15,20 @@
   ],
   "checks": [
     {
+      "id": "layer-structure",
+      "why": "rails-flow gates what is IN a file and said nothing about where a file should LIVE, so nothing drifted -- a flat app/controllers root is not a violation, it is an absence. Measured on a mature app built with this toolchain: models 58 flat / 18 namespaced, controllers 49 flat / 6, views 0 / 51 (one per CONTROLLER, which Rails forces and is not organisation), components 0 / 1 holding all 64 files. Read ACROSS the rows: no two layers agree, so one flow's job, controller, views and models sit in four unrelated places. The table is ADVISORY because projects legitimately differ; the one FAILURE is a controller whose directory contradicts the module its route declares, which is derivable with no configuration and is drift rather than taste.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_layer_structure.py"
+      ],
+      "applies_when": [
+        "app"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "toolchain-selftests",
       "why": "A project gets the gates and, until now, no proof they work. Measured when this was added: 33 consumer gate entries, 20 of 20 shipped check scripts carrying a --selftest, and 0 of 33 entries running one. Upstream, mutation coverage is the only reason any of it is trusted, and it caught four gates written that same day being partly vacuous -- none of that machinery crosses into a project. This runs every shipped selftest HERE, which is the one question the toolchain's own CI is structurally unable to answer: our CI proves a check discriminates on our machine, never on yours. 29 selftests in under four seconds. A FAILING selftest means the GATE is broken in this project -- it may have rotted against a framework or Python version we do not have -- and is routed to the toolchain, never filed against your code.",
       "command": [
