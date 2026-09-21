@@ -50,8 +50,8 @@ tools from **one** source of truth: [`AGENTS.md`][f-agents] is the tool-neutral 
 neutral AGENTS.md; it is not decoration.
 
 Because we chose Claude-native, **`CLAUDE.md` is already our native canonical file** and the indirection
-buys us nothing on a greenfield repo — Claude Code reads `CLAUDE.md` directly ([claude-md][ccmem]:
-*"Claude Code reads `CLAUDE.md`, not `AGENTS.md`"*). So most of what follows is not "adopt their file
+buys us nothing on a greenfield repo — Claude Code reads `CLAUDE.md` directly, and where both files
+exist it reads **the `CLAUDE.md` only** ([claude-md][ccmem], re-verified 2026-09-21). So most of what follows is not "adopt their file
 layout" but "adopt the *discipline* their layout encodes, using the Claude-native mechanism for it."
 Twice, that mechanism turns out to be one 37signals' tool-neutral shape can't assume — path-scoped
 `.claude/rules/` — which is where we are genuinely ahead, not behind.
@@ -72,13 +72,25 @@ Twice, that mechanism turns out to be one 37signals' tool-neutral shape can't as
 ## A. Coexist with an existing `AGENTS.md` by importing it (ADOPTED)
 
 fizzy and writebook both make Claude Code read their canonical `AGENTS.md` through a one-line
-[`.claude/CLAUDE.md`][f-claude] import. Claude Code's docs prescribe this exact move:
+[`.claude/CLAUDE.md`][f-claude] import.
 
-> *"Claude Code reads `CLAUDE.md`, not `AGENTS.md`. If your repository already uses `AGENTS.md` for
-> other coding agents, create a `CLAUDE.md` that imports it so both tools read the same instructions
-> without duplicating them."* — [claude-md][ccmem]
+**The quotation that used to sit here no longer exists.** This reference cited the docs as saying
+*"Claude Code reads `CLAUDE.md`, not `AGENTS.md`"* — true when it was written, and **removed
+upstream when `AGENTS.md` support shipped in v2.1.277**. A quotation attributed to a source that no
+longer says it is worse than a stale sentence: the next reader checks the attribution, not the
+claim. Re-verified against [claude-md][ccmem] on 2026-09-21, the docs now say:
 
-with the documented shape:
+> *"Claude Code can read `AGENTS.md` as your project instructions, so a repository already set up
+> for other coding agents works without adding a `CLAUDE.md`, an import, or a setting."*
+
+and give a three-row table for which file wins. **The import is still the right move** — it is the
+one arrangement that works when direct `AGENTS.md` support is unavailable (before v2.1.277, on
+Amazon Bedrock or other third-party providers, with telemetry disabled, on the first session after
+an upgrade, and under `disableAllHooks`/`allowManagedHooksOnly`) — but it is now a *coexistence*
+choice rather than the only way Claude can see the file. `setup-flow` §1b carries the table and the
+suppression trap.
+
+The documented shape is unchanged:
 
 ```markdown
 @AGENTS.md
