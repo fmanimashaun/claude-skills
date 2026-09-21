@@ -13583,6 +13583,43 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **17 of the 23 shipped components could not carry a caller's attribute, so the catalogue produced
+  the raw HTML it forbids — `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-implementations.md`,
+  `skills/design-system/references/component-shapes.json`,
+  `scripts/check_component_passthrough.py`, `scripts/mutations/check_component_passthrough.py`,
+  `scripts/maintainer_doctor.py`** (#1063). A consumer audit found 18 raw `<button>` tags and
+  reported the cause as *"the component cannot express what I need"*. **For the button that was
+  false** — it already took `**attrs` — but measuring the rest of the kit made the claim true:
+  **17 of 23 ViewComponent classes took a fixed keyword list** and would drop a `form:` or `data:`
+  on the floor, including Modal, Dropdown, Combobox, Disclosure, Toast, Breadcrumbs and
+  ButtonGroup — precisely the ones a Stimulus controller needs to reach.
+
+  **Every component now accepts, stores and renders a caller's attributes**, stated once in the
+  catalogue preamble rather than repeated per row, and **checked** by
+  `scripts/check_component_passthrough.py`: a prose contract the shipped code contradicts is the
+  claims-vs-enforcement defect this repository is organised around.
+
+  **The check has two halves, and the first alone would have shipped a worse defect than it fixed.**
+  Widening the 17 signatures made a signature-only check green while every one of them still
+  discarded the hash — Ruby binds `**attrs` and drops it with **no error**, so a caller's
+  `data-controller` would have vanished *silently* where before it raised `ArgumentError` loudly. A
+  loud failure sends a developer to the component; a silent one sends them to hand-written HTML and
+  they never learn why. The gate therefore requires the splat to be **stored**, and the selftest
+  carries the discriminating pair: the same signature, one storing and one dropping.
+
+  What it deliberately does **not** assert is that the stored attributes reach the root element —
+  that lives in an ERB template or a `call` method and is not decidable from the class body, so a
+  check claiming it would be a gate that cannot fail. Accept and store are exact; the render is
+  doctrine, stated beside the rule with the `class` merge (`@attrs.delete(:class)`) that stops a
+  caller silently replacing every class the variant computed.
+
+  Four declared mutations, including the flattering one that started this: a wrapped signature read
+  only to its first line **under-counts in the direction that looks clean** — it is how an earlier
+  tally reported 21 classes where there are 23.
+
 ### 1.15.0 — 2026-07-29
 - **First increment of Phase 2**, honouring that issue's own instruction to ship one group at a time
   rather than all ~17 components at once.

@@ -354,6 +354,10 @@
               {"kind": "pill", "label": "New invoice", "fill": "primary",
                "color": "primary-foreground"}]
   },
+  "Every component takes `**attrs` and renders them on its root element": {
+    "drawable": false,
+    "why": "a contract, not a component -- it states that every component accepts, stores and renders a caller's attributes, and that accepting without storing is the silent form of dropping them. Enforced by scripts/check_component_passthrough.py. Nothing to draw."
+  },
   "Forms": {
     "drawable": false,
     "why": "a chapter, not a component — it covers field anatomy, validation timing and error copy across every input type. Its individual controls are drawn by their own rows (Combobox, Payment, Password strength); a single 'Forms' shape would be a picture of a form, which composes into nothing."
