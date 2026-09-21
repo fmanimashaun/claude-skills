@@ -67,6 +67,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: the mark and its clear-space are one lockup %>
 <%# clear-space (brand.md 1.5×) is a placement rule — keep the lockup uncrowded; the gap here
     sizes to the mark. Wordmark = Bricolage Black on `foreground` (re-points to slate-50 in dark). %>
 <span class="with-icon" style="--space: <%= (@px * 0.45).round %>px" role="img" aria-label="<%= label %>">
@@ -94,6 +95,7 @@ is automatic (`text-foreground`); for busy/photographic backgrounds use the reve
 **Auth / focused-page recipe** — pair it with the `cover` vertical-centering composition (the named
 rule in [layout-primitives.md](layout-primitives.md)):
 ```erb
+<%# composition: a full-page single-focus screen; the centring IS the screen %>
 <%# a single-focus full-page screen (sign-in, splash): VERTICALLY centered, mark at the top %>
 <div class="cover"><div class="cover-centered center" style="--measure: 24rem">
   <div class="box bg-card text-card-foreground rounded-lg border border-border stack">
@@ -164,6 +166,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: icon beside message is the alert's anatomy %>
 <%# alert_component.html.erb %>
 <div class="<%= classes %>" role="<%= role %>"
      <%= tag.attributes(data: { controller: ("dismiss" if @dismissible) }) %> <%= tag.attributes(@attrs) %>>
@@ -331,6 +334,7 @@ same recipe + a trailing chevron.
 ### Checkbox / Radio / Switch
 
 ```erb
+<%# composition: control beside label is the field's anatomy %>
 <%# checkbox / radio — wrap in a cluster so control + label align %>
 <label class="cluster min-h-touch" style="--space: var(--space-2xs)">
   <%= check_box_tag name, "1", checked, class: "size-4 rounded border-input text-primary focus-visible:ring-ring/30" %>
@@ -381,6 +385,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: title, body and actions in that order IS the dialog %>
 <%# modal_component.html.erb — rendered into <turbo-frame id="modal">; modal controller = trap+dismiss %>
 <%# NO Escape key filter on this element. Escape belongs to the dismissable layer the controller
     opens: it reads `e.key` itself AND respects the layer stack, so a nested overlay closes one
@@ -507,6 +512,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: input above listbox IS the combobox %>
 <%# combobox_component.html.erb — role=combobox goes on the INPUT, never a wrapper div. %>
 <%# A wrapper with aria-owns is the superseded ARIA 1.1 model and no longer conforms. %>
 <div data-controller="combobox" class="stack" style="--space: var(--space-3xs)">
@@ -671,6 +677,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: summary above panel IS the disclosure %>
 <%# disclosure_component.html.erb %>
 <%# The heading contains ONLY the button (APG). A badge or overflow menu goes outside it. %>
 <div data-controller="disclosure" data-state="<%= state %>"
@@ -788,6 +795,7 @@ landmark noise outweighs the structure.
 ## Tabs — `app/components/ui/tabs_component.rb`
 
 ```erb
+<%# composition: tabs sit in a row; that is what a tablist is %>
 <%# tabs_controller uses list-navigation. `aria-selected` IS the state — the attribute APG already %>
 <%# requires — so nothing toggles a second data-state beside it. Four things here are required by  %>
 <%# the pattern and are the ones that go missing: the tablist's NAME, each tab's `id`, each panel's %>
@@ -901,6 +909,7 @@ end
 ```
 
 ```erb
+<%# composition: icon, message and dismiss are the toast's fixed parts %>
 <%# A toast (turbo_stream.prepend "toasts") — the ROLE carries the severity, and nothing beside it: %>
 <%# `status` already implies aria-live="polite", `alert` already implies aria-live="assertive", so %>
 <%# writing aria-live here restates the role at best and contradicts it at worst. %>
@@ -1077,6 +1086,7 @@ end
 ```
 
 ```erb
+<%# composition: the region's own parts, not caller content %>
 <%# The live region is present from FIRST PAINT and starts empty — same rule as Toast: a region must
     exist before content enters it. `role="status"` implies polite AND atomic; nothing beside it. %>
 <div class="stack" style="--space: var(--space-xs)"
@@ -1364,6 +1374,7 @@ end
 ## Empty state — `app/components/ui/empty_state_component.rb`
 
 ```erb
+<%# composition: the named three-layer arrangement IS this component %>
 <%# cover > center > stack %>
 <div class="cover" style="--min-height: 40vh">
   <div class="cover-centered center text-center stack" style="--space: var(--space-s)">
@@ -1385,6 +1396,7 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
 `aria-selected` on a role that does not support it, and a live region that announces a bare number.
 
 ```erb
+<%# composition: link and button are deliberate siblings; the arrangement is the point %>
 <%# ---- PRODUCT CARD. The link and the button are SIBLINGS. Nesting the button inside the ---- %>
 <%# link violates the <a> content model ("no interactive content descendant") -- and the %>
 <%# stretched overlay would cover it anyway, so a grid card carries the link ALONE and the %>
@@ -1910,6 +1922,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: heading above its optional description IS the pairing %>
 <%# heading_component.html.erb %>
 <div class="stack" style="--space: var(--space-2xs)">
   <%= eyebrow %>
@@ -2074,6 +2087,7 @@ def separator = tag.span(helpers.lucide_icon("chevron-right"), class: "with-icon
 def crumb_link_class = "min-h-touch inline-flex items-center hover:text-foreground"
 ```
 ```erb
+<%# composition: a trail is a row by definition %>
 <%# breadcrumbs_component.html.erb — separators are markup + aria-hidden, never ::after %>
 <nav aria-label="Breadcrumb">
   <ol role="list" class="cluster text-step--1 text-muted-foreground" style="--space: var(--space-3xs)">
@@ -2208,6 +2222,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: adjacency IS the group %>
 <%# button_group_component.html.erb %>
 <%# isolate + focus-visible:z-10 on children so the focus ring is not clipped by the overlap %>
 <div class="cluster isolate" style="--space: 0"
@@ -2243,6 +2258,7 @@ module Ui
 end
 ```
 ```erb
+<%# composition: never stacks; the side-by-side relationship IS the component %>
 <%# media_object_component.html.erb — never stacks; the side-by-side relationship IS the pattern %>
 <div class="cluster items-start">
   <% if media? %><div class="<%= media_class %>"><%= media %></div><% end %>

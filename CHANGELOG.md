@@ -11468,6 +11468,18 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **Nothing checked that a surface keeps its hands off the content —
+  `plugins/design-flow/scripts/check_surface_layout.py` (new),
+  `plugins/design-flow/checks.json`,
+  `plugins/design-flow/scripts/mutations/check_surface_layout.py`** (#1117). A consumer gate: a
+  component that renders a slot **and** wraps it in a layout recipe is a finding unless it declares
+  itself a composition with a reason. **The detector matches slot RENDERING, never the word** — a
+  first version keying on `content` produced four false positives in one run, including Tailwind's
+  own `before:content-['']` utility, and all four are fixtures here. Four declared mutations, one of
+  which reinstates the word-matching to prove those fixtures are what holds the line.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **Browser mode audited whatever answered on the port —
@@ -14105,6 +14117,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **A component could impose layout on content it cannot see, and the silent half was the expensive
+  one — `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-implementations.md` (16 declarations),
+  `dist/design-system.skill`** (#1117). The doctrine said layout is composed in the template; it
+  never said what happens when a **component** arranges what it is handed, so there was nothing to
+  drift from. A card wrapped its content in `stack` with a hardcoded `--space`. Measured before
+  anything changed: **112 call sites in 63 files, 77 of which already passed `class="stack"` with
+  their own spacing** — the component's inner value won on the children that mattered. Four grid
+  layouts also collapsed, because a grid cannot survive a flex column. **The flattening is
+  eventually visible; the override is not** — no error, no glitch on most screens, every individual
+  template still reading correctly, which is exactly why review misses it. The rule is a
+  distinction: a **surface** takes arbitrary content and must not arrange it; a **composition**
+  whose layout *is* the component declares `<%# composition: <why> %>`. **All 16 compositions in our
+  own reference implementations now carry that declaration**, so the code a consumer copies
+  demonstrates the rule rather than contradicting it.
 - **Nothing said where a file should live, so nothing drifted —
   `skills/rails-8/references/directory-structure.md` (new), `skills/rails-8/SKILL.md`,
   `dist/rails-8.skill`** (#1072). The toolchain gates what is *in* a file and was silent on
