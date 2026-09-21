@@ -2846,6 +2846,92 @@ def check_unapplied_client_gitignore() -> tuple[list[Finding], int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: adopts-an-unowned-server
+# ---------------------------------------------------------------------------
+
+_LISTENER_CONTEMPLATED = re.compile(
+    r"already (?:listening|running)"
+    r"|(?:server|app) (?:already )?(?:listening|running) on"
+    r"|a second (?:dev |app )?server"
+    r"|(?:starting|launching) a second", re.I)
+
+# Resolving the LISTENER'S OWN working directory is the only thing that answers "is it mine".
+# `lsof -a -d cwd -p <pid>` on BSD/macOS, `/proc/<pid>/cwd` on Linux -- both spellings count.
+_OWNER_RESOLVED = re.compile(r"-d cwd|/proc/[^\s\"']*/cwd")
+
+_SLASH_COMMAND = re.compile(r"/([a-z][a-z0-9-]*):([a-z][a-z0-9-]*)")
+
+
+def check_adopts_an_unowned_server() -> tuple[list[Finding], int]:
+    """Shipped prose that contemplates a running server must resolve WHOSE it is (#1080).
+
+    Three commands told an agent that if something answers on the configured port it should be
+    reused rather than launching a second. Every one of them checked that a server answered and
+    none checked that the server was serving THIS working tree. `qa-flow:smoke` went furthest and
+    filed the gap under reporting: *"say in the report that the app was already running, since it
+    may be running different code than the working tree."* That sentence was the defect. **If it
+    may be running different code than the working tree, it is not a valid subject for a test of
+    the working tree**, and disclosing it afterwards does not make the result mean anything.
+
+    The assumption that fails is "one project directory". With several worktrees on one machine --
+    which is how this repository tells people to run parallel sessions -- the listener on that port
+    was booted from a different checkout, serving different code, against a different database.
+    Adopting it is not avoiding cache contention; it is testing somebody else's tree and filing the
+    result as yours. Measured while the fix was written: a Ruby server answering on `3001` resolved
+    to an entirely different project's checkout than the one asking.
+
+    KEYED ON THE PRECONDITION, NOT THE DECISION, and that is the whole design of this rule. The
+    obvious trigger is the reuse sentence itself -- "reuse it rather than starting a second". A
+    first draft used exactly that, and rewording the four offending files to say "adopt" and
+    "is reused" instead dropped the examined count from 5 files to 2: **the gate stopped watching
+    precisely the files it had just been used to fix.** Matching instead on a file CONTEMPLATING a
+    pre-existing listener is stable under any rewording of what to do about one, and it held the
+    denominator at 4 files across the fix -- same population before and after, only the verdict
+    moved.
+
+    A POINTER COUNTS, and is resolved rather than believed. `crawl` and `walkthrough` do not carry
+    the probe; they say to confirm a target "the way `/qa-flow:smoke` does". Demanding every file
+    inline the probe would mandate the duplication this repository gates against elsewhere
+    (`duplicated-release-extractor`). So a `/plugin:command` reference satisfies the rule only when
+    that command's own file is read and found to resolve the owner -- a pointer to a file that does
+    not is not a delegation, it is the same defect one hop away.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted((ROOT / "plugins").glob("**/*.md")) if (ROOT / "plugins").is_dir() else []:
+        body = read(path)
+        hits = [(body[:m.start()].count("\n") + 1, m.group(0))
+                for m in _LISTENER_CONTEMPLATED.finditer(body)]
+        if not hits:
+            continue
+        examined += 1
+        if _OWNER_RESOLVED.search(body):
+            continue
+        delegated = False
+        for plugin, command in set(_SLASH_COMMAND.findall(body)):
+            target = ROOT / "plugins" / plugin / "commands" / f"{command}.md"
+            # Resolve the pointer. A reference to a command that does not itself resolve the
+            # owner is not a delegation -- it is this same defect, one file away.
+            if target.is_file() and _OWNER_RESOLVED.search(read(target)):
+                delegated = True
+                break
+        if delegated:
+            continue
+        line, phrase = hits[0]
+        findings.append(Finding(
+            "adopts-an-unowned-server", rel(path), line,
+            f"contemplates a server that is {phrase.lower()!s} and never resolves whose working "
+            f"tree it serves. `curl` proves something answered; it cannot prove the thing that "
+            f"answered is running THIS checkout, and with more than one worktree it routinely is "
+            f"not -- so the run measures another tree's code and files it as this one's. Resolve "
+            f"the listener's cwd (`lsof -a -d cwd -p <pid>`, or `/proc/<pid>/cwd`) and REFUSE when "
+            f"it is not `$PWD`; an unresolvable owner is a refusal too, because \"cannot show it "
+            f"is mine\" is not \"it is mine\". Or point at a command that does",
+        ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -2894,6 +2980,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     hook_cnt, hook_cnt_examined = check_hook_script_count()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
+    unowned, unowned_examined = check_adopts_an_unowned_server()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -2914,7 +3001,6 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_docs_scanned_for_coercion_fallbacks": coercions_examined,
         **topology_coverage,
         "findings_schema_fields_compared": schema_examined,
-        "scaffolded_boolean_toggles": toggles_examined,
         "flows_checked_for_claim_verifier": unwired_examined,
         "shipped_ci_run_examples": ci_gates_examined,
         "client_gitignore_rules_applied_here": cl_ignore_examined,
@@ -2937,6 +3023,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "hook_scripts_counted": hook_cnt_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
+        "shipped_docs_contemplating_a_running_server": unowned_examined,
+        "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + components + call_sites + invisible
@@ -2944,7 +3032,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
-            + xplugin,
+            + xplugin + unowned + toggles,
             coverage)
 
 
@@ -4683,6 +4771,92 @@ def selftest() -> int:
                     f"{REFS}/forms.md": '<div data-controller="modal">…</div>\n'})
 
     print(f"ran {checks} self-consistency assertion(s)")
+    # ---- adopts-an-unowned-server (#1080) ------------------------------------------
+    AUS = "adopts-an-unowned-server"
+    PROBE = ("```bash\n"
+             'OWNER_PID="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t | head -1)"\n'
+             'OWNER_DIR="$(lsof -a -d cwd -p "$OWNER_PID" -Fn | sed -n \'s/^n//p\' | head -1)"\n'
+             '[ "$OWNER_DIR" = "$PWD" ] || exit 2\n'
+             "```\n")
+
+    # THE DEFECT, in the exact shape all three shipped commands had it: a liveness answer treated
+    # as a licence to adopt.
+    scenario("a reuse instruction that never asks whose server it is",
+             {"plugins/qa/commands/smoke.md":
+              "If a server is already listening on that port, reuse it rather than starting a "
+              "second.\n"},
+             rule=AUS, expect_finding=True)
+
+    # THE MUST-PASS HALF. Without it, "flags an unowned adoption" is satisfied by a rule that
+    # flags every mention of a running server -- which is red on the fixed files too, and a gate
+    # that is red after the fix is one somebody switches off.
+    scenario("resolving the listener's cwd in the same file is silent",
+             {"plugins/qa/commands/smoke.md":
+              "If a server is already listening on that port, reuse it only when it is yours.\n"
+              + PROBE},
+             rule=AUS, expect_finding=False)
+
+    # Linux spells it differently and must count. A rule that knew only the BSD spelling would
+    # report a correctly-written command as defective on every Linux runner.
+    scenario("the /proc spelling of the same resolution counts",
+             {"plugins/qa/commands/smoke.md":
+              "A server already running on that port is adopted only after\n"
+              '`readlink -f /proc/$OWNER_PID/cwd` matches $PWD.\n'},
+             rule=AUS, expect_finding=False)
+
+    # A POINTER IS RESOLVED, NOT BELIEVED -- and this is the pair that proves it. Same sentence,
+    # same reference, and the verdict turns entirely on what the REFERENCED file does.
+    scenario("a pointer to a command that DOES resolve the owner is a delegation",
+             {"plugins/qa/commands/crawl.md":
+              "Confirm the target the way `/qa:smoke` does: a server already listening on that "
+              "port is reused only when it is yours.\n",
+              "plugins/qa/commands/smoke.md": PROBE},
+             rule=AUS, expect_finding=False)
+    scenario("a pointer to a command that does NOT is the same defect one hop away",
+             {"plugins/qa/commands/crawl.md":
+              "Confirm the target the way `/qa:smoke` does: a server already listening on that "
+              "port is reused rather than starting a second.\n",
+              "plugins/qa/commands/smoke.md": "Boot the app however you like.\n"},
+             rule=AUS, expect_finding=True)
+
+    # SCOPE. Prose that never contemplates a pre-existing listener is not this rule's business,
+    # and a rule that fired on every shipped command would be triaged into silence.
+    # The control MENTIONS a server on a port, and contemplates no PRE-EXISTING one. That is the
+    # whole distinction the rule is keyed on, so a control that never said "server" would be
+    # passed by a rule that fired on the word.
+    scenario("a command that never contemplates a running server is out of scope",
+             {"plugins/qa/commands/smoke.md":
+              "Boot the app's dev server on the configured port with `bin/dev`, then crawl it.\n"},
+             rule=AUS, expect_finding=False)
+
+    # ---- structural: every rule's findings must reach run()'s return (#1082) --------
+    # NOT a content rule -- an invariant over this module's own wiring, and the only thing that
+    # makes the class impossible rather than this instance fixed.
+    #
+    # `unhonoured-config-toggle` was computed in run(), counted in coverage, and left out of the
+    # summed return for months. Its own four fixtures passed the whole time because they call the
+    # check function DIRECTLY (it reads real repo paths, so scenario() cannot drive it) -- they
+    # proved the helper discriminates and nothing proved the caller forwards it. Every rule added
+    # here from now on is covered by this one assertion, including a rule added by the very change
+    # that would otherwise orphan it.
+    import ast as _ast
+    checks += 1
+    _mod = _ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    _run = next(n for n in _mod.body
+                if isinstance(n, _ast.FunctionDef) and n.name == "run")
+    _assigned = {t.elts[0].id
+                 for node in _ast.walk(_run) if isinstance(node, _ast.Assign)
+                 for t in node.targets
+                 if isinstance(t, _ast.Tuple) and len(t.elts) == 2
+                 and isinstance(t.elts[0], _ast.Name)}
+    _returned = {n.id for n in _ast.walk(_run.body[-1].value.elts[0])
+                 if isinstance(n, _ast.Name)}
+    _orphans = sorted(_assigned - _returned)
+    if _orphans:
+        failures.append(
+            f"run() computes {', '.join(_orphans)} and drops them from its return -- those rules "
+            f"can never report, whatever their own fixtures prove")
+
     if failures:
         print(f"\n{len(failures)} FAILED:")
         for failure in failures:

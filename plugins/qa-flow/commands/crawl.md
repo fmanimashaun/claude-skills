@@ -15,7 +15,12 @@ nothing could have told you — run `--selftest` on each judge for the real one.
 
 Read `qa/qa.config.yml`'s `app:` block (`start`, `port`, `health`, `boot_timeout`) and use it. **Do
 not invent a boot command** — the project already declared one, and a second one drifts from it.
-If a server is already listening on that port, reuse it rather than starting a second.
+If a server is already listening on that port, **resolve whose working tree it is serving before
+you adopt it** — `/qa-flow:smoke` §2 carries the probe, and it refuses a listener whose cwd is not
+`$PWD`. "Something is listening" and "the thing listening is serving this checkout" are different
+facts, and with more than one worktree on a machine the second is routinely false. A crawl is
+evidence four judges then grade: adopting a stranger does not weaken that evidence, it makes every
+number in it a measurement of somebody else's code filed under your run.
 
 ## 2. Collect
 

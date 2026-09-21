@@ -32,9 +32,11 @@ plugin: `skills/design-system/references/` (page anatomies, responsive bands, co
 must be readable — it arrives with `rails-stack`. If it is absent, say which plugin is missing
 **and stop**; a walk judged against no doctrine files taste as findings.
 
-Then confirm a testable target the way `/qa-flow:smoke` does: reuse the server already listening on
-the configured port, or boot it as `app.start` says; run the project's freshness check if it has
-one. Record the sha under test — every issue carries it.
+Then confirm a testable target the way `/qa-flow:smoke` does — **including its refusal**: a server
+already listening on the configured port is reused only once its working directory resolves to this
+checkout, and otherwise the walk stops rather than judging somebody else's code. Failing that, boot
+it as `app.start` says; run the project's freshness check if it has one. Record the sha under test —
+every issue carries it.
 
 ## Phase 1 — Walk
 

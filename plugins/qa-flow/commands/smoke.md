@@ -50,10 +50,47 @@ launching** and just liveness-check that URL (an already-running or staging targ
    `%{http_code}` separates them — `000` means no HTTP response reached us, anything else means
    something is listening and speaking HTTP, whatever it thinks of its own health.
 
-   Two dev servers against one project directory contend over the same build cache
-   (`.next/`, `tmp/cache`) and can corrupt it. A reused server is also **not yours to kill**:
-   skip teardown for it, and say in the report that the app was already running, since it may
-   be running different code than the working tree.
+   **Then ask the second question, which is the one that matters with more than one session:
+   is it MINE?** "Something answered" and "the thing that answered is serving this working tree"
+   are different facts, and only the first was ever checked:
+
+   ```bash
+   OWNER_PID="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1)"
+   if [ -r "/proc/$OWNER_PID/cwd" ]; then
+     OWNER_DIR="$(readlink -f "/proc/$OWNER_PID/cwd")"          # Linux
+   else
+     OWNER_DIR="$(lsof -a -d cwd -p "$OWNER_PID" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+   fi
+   if [ -n "$OWNER_DIR" ] && [ "$OWNER_DIR" = "$PWD" ]; then
+     REUSED=1
+     echo "reusing the server on $PORT — same working tree"
+   else
+     echo "REFUSING to reuse the server on $PORT: it is serving ${OWNER_DIR:-an unresolved directory}, not $PWD"
+     exit 2
+   fi
+   ```
+
+   **"One project directory" is the assumption that fails.** With several worktrees the server on
+   that port was booted from a *different* directory, serving *different code*, against a
+   *different database*. Adopting it is not avoiding contention — **it is testing somebody else's
+   checkout and reporting the result as yours.** Measured on this machine while the fix was being
+   written: a Ruby server answering on `3001` resolved to a completely different project's
+   checkout than the one asking.
+
+   **An unresolvable owner is a refusal, not a shrug.** If the cwd cannot be read — a container, a
+   remote runner, a process owned by another user — you cannot show the server is yours, and
+   "cannot show" is not "is". Say so and stop; do not test against it and qualify the result
+   afterwards.
+
+   **The old text half-noticed this and filed it under reporting:** *"say in the report that the
+   app was already running, since it may be running different code than the working tree."* That
+   sentence was the defect. **If it may be running different code than the working tree, it is not
+   a valid subject for a test of the working tree**, and saying so in the report does not make the
+   result mean anything.
+
+   When the server IS yours, the rest still holds: two dev servers against one project directory
+   contend over the same build cache (`.next/`, `tmp/cache`) and can corrupt it, and a reused
+   server is **not yours to kill** — skip teardown for it and say it was already running.
 
 3. **Otherwise launch in a test env, backgrounded**, capturing PID + logs; **always trap
    teardown** so a failed run never leaks a server:

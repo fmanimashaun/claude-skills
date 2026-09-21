@@ -6,6 +6,51 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        # #1080. Three shipped commands checked that a server ANSWERED and none checked whose
+        # working tree it served. Each mutation below removes one half of the answer.
+        Mutation(
+            # The rule's whole content: an answer is not ownership.
+            "resolving the listener's working directory stops being required",
+            "        if _OWNER_RESOLVED.search(body):",
+            "        if True:",
+            "a reuse instruction that never asks whose server it is",
+        ),
+        Mutation(
+            # BSD-only. A rule blind to /proc reports every correctly-written command as
+            # defective on Linux, which is where CI runs -- red on correct code is how a gate
+            # gets switched off.
+            "only the BSD spelling of the cwd lookup counts, so Linux's is not a resolution",
+            '_OWNER_RESOLVED = re.compile(r"-d cwd|/proc/[^\\s\\"\']*/cwd")',
+            '_OWNER_RESOLVED = re.compile(r"-d cwd")',
+            "the /proc spelling of the same resolution counts",
+        ),
+        Mutation(
+            # A POINTER BELIEVED RATHER THAN RESOLVED. This is the flattering direction: every
+            # `/plugin:command` mention would excuse the file, including a pointer at a command
+            # with the identical defect.
+            "a slash-command reference excuses the file without reading what it points at",
+            "            if target.is_file() and _OWNER_RESOLVED.search(read(target)):",
+            "            if target.is_file():",
+            "a pointer to a command that does NOT is the same defect one hop away",
+        ),
+        Mutation(
+            # SCOPE, in the direction nobody audits. Firing on every shipped command makes the
+            # rule unusable, and an unusable rule is removed rather than fixed.
+            "the trigger widens from a PRE-EXISTING listener to any mention of a server",
+            '    r"|(?:starting|launching) a second", re.I)',
+            '    r"|(?:starting|launching) a second|server", re.I)',
+            "a command that never contemplates a running server is out of scope",
+        ),
+
+        # #1082. The invariant, not the instance. `unhonoured-config-toggle` was computed in
+        # run() and dropped from its return for months while its own fixtures passed, because
+        # they call the check function directly. This mutation re-orphans it.
+        Mutation(
+            "a rule's findings are computed and dropped from run()'s return",
+            "            + xplugin + unowned + toggles,",
+            "            + xplugin + unowned,",
+            "drops them from its return",
+        ),
         Mutation(
             # #1017. The rule exists because a backstop reached every client except its author;
             # a mutation that drops the comparison makes it agree with any .gitignore at all.

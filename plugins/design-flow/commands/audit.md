@@ -127,15 +127,43 @@ place an app's launch is described, and `/qa-flow:smoke` already reads it. Probe
 PORT="$(python3 -c 'import re,sys;m=re.search(r"^\s+port:\s*(\d+)",open("qa/qa.config.yml").read(),re.M);print(m.group(1) if m else 3000)' 2>/dev/null || echo 3000)"
 CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${PORT}/up" 2>/dev/null)
 case "$CODE" in
-  ''|000) echo "nothing answered on ${PORT}: boot it with qa/qa.config.yml app.start, then re-run" ;;
-  *) echo "reusing the server on ${PORT} (/up answered ${CODE}) — not launching a second" ;;
+  ''|000)
+    echo "nothing answered on ${PORT}: boot it with qa/qa.config.yml app.start, then re-run"
+    exit 2 ;;
 esac
+
+OWNER_PID="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1)"
+if [ -r "/proc/$OWNER_PID/cwd" ]; then
+  OWNER_DIR="$(readlink -f "/proc/$OWNER_PID/cwd")"          # Linux
+else
+  OWNER_DIR="$(lsof -a -d cwd -p "$OWNER_PID" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+fi
+if [ -n "$OWNER_DIR" ] && [ "$OWNER_DIR" = "$PWD" ]; then
+  echo "reusing the server on ${PORT} (/up answered ${CODE}) — same working tree"
+else
+  echo "REFUSING to audit the server on ${PORT}: it is serving ${OWNER_DIR:-an unresolved directory}, not $PWD"
+  exit 2
+fi
 ```
 
 Probe for **an answer**, not a healthy one. `curl -f` exits non-zero on 4xx/5xx, so an app that is
 up but whose `/up` returns 500 is indistinguishable from an empty port — and the branch above would
 then print *"nothing on ${PORT}"*, which is false, and send you to boot a server already running.
 `%{http_code}` is `000` only when no HTTP response arrived.
+
+**An answer is not ownership, and here that distinction decides whether the audit means anything.**
+This mode exists to measure what the *cascade* resolves to in *this working tree* — so a snapshot
+taken against a server booted from a different checkout is not a weaker measurement of this tree's
+CSS, it is a precise measurement of some other tree's. Every downstream number — resolved colours,
+focus rules, token membership — would be attributed to the wrong source. Resolving the listener's
+working directory and refusing a stranger is what keeps the rest of this mode's arithmetic about
+the code you are auditing. Measured on this machine while the fix was written: a Ruby server
+answering on `3001` resolved to a different project's checkout entirely.
+
+**An unresolvable owner is a refusal, not a shrug.** In a container, on a remote runner, or when
+the process belongs to another user, the cwd cannot be read — and "cannot show it is mine" is not
+"it is mine". Fall back to the source checklist and say so; do not audit against it and qualify the
+finding afterwards.
 
 No `app:` block? Infer the Rails default (`bin/dev`, port 3000, `/up`) and say so.
 
