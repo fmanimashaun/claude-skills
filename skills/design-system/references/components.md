@@ -13,6 +13,7 @@ loading and empty states are the ones always missing, and a state an entry does 
 you must decide and record, not invent silently. When you build from an entry, the six are the checklist.
 
 ## Every component takes `**attrs` and renders them on its root element
+<!-- states: not-a-component -->
 
 **This is contract, not convenience, and it is checked** —
 `python3 scripts/check_component_passthrough.py`. A component that cannot carry a caller's
@@ -133,6 +134,7 @@ silence**, because it tells the next reader the ground is covered. If a gate doe
 something, it says so, or it says nothing.
 
 ## The focus ring: `outline-hidden`, never `outline-none` (Tailwind v4)
+<!-- states: not-a-component -->
 
 **Every focus recipe in this kit is `focus-visible:outline-hidden focus-visible:ring-2 …`, and the
 first half is not interchangeable with `outline-none`.** Writing `outline-none` in a v4 project
@@ -182,8 +184,10 @@ DEFAULTS = { variant: :primary, size: :md }
 
 ## Button
 - **Variants:** `primary · secondary · destructive · outline · ghost · link`. **Sizes:** `sm/md/lg/icon`.
-  **States:** hover (`/90` shift), `focus-visible` ring, `disabled`, `loading` (inline `animate-spin`
-  Lucide `loader-2` + keep label; set `aria-busy`). Icon: `left|right|only` (icon-only → `sr-only` label).
+  **States:** default the variant recipe above · hover (`/90` shift) · `focus-visible` ring ·
+  `loading` (inline `animate-spin` Lucide `loader-2` + keep label; set `aria-busy`) · `disabled`
+  (`disabled:opacity-50 disabled:pointer-events-none`) · empty n/a — a button always has a label,
+  and an icon-only one has an `sr-only` one. Icon: `left|right|only` (icon-only → `sr-only` label).
 - **a11y:** real `<button>`/`<a>`; `min-h-touch`; visible focus ring; `aria-busy` when loading.
 - **Responsive:** in toolbars/headers, full-width stacked on mobile → inline at `md`: `w-full md:w-auto`.
 - **The `link` variant is a BUTTON that looks like a link** — an action in a toolbar, not a link in a

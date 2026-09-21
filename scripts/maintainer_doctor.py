@@ -422,6 +422,13 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("component passthrough", ("python3", "scripts/check_component_passthrough.py")),
     ("component passthrough selftest",
      ("python3", "scripts/check_component_passthrough.py", "--selftest")),
+    # #1068. The catalogue's preamble states the six-state rule and predicted its own drift
+    # correctly: `loading` appeared as a state of the component described in 1 of 44 rows, and the
+    # "or says which do not apply" hatch was used zero times. This reads a declaration the row
+    # makes, never the prose -- a grep for the six words passes on a sentence that claims nothing.
+    ("component states", ("python3", "scripts/check_component_states.py")),
+    ("component states selftest",
+     ("python3", "scripts/check_component_states.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a

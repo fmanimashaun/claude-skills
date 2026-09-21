@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 109 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 111 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
@@ -145,6 +145,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | component passthrough selftest | `repo` | `python3 scripts/check_component_passthrough.py --selftest` | selftest |
 | component shapes reconciled | `repo` | `python3 scripts/check_component_shapes.py` | live check |
 | component shapes selftest | `repo` | `python3 scripts/check_component_shapes.py --selftest` | selftest |
+| component states | `repo` | `python3 scripts/check_component_states.py` | live check |
+| component states selftest | `repo` | `python3 scripts/check_component_states.py --selftest` | selftest |
 | coverage artifact drift | `repo` | `python3 scripts/build_coverage_artifact.py --check` | live check |
 | coverage artifact selftest | `repo` | `python3 scripts/build_coverage_artifact.py --selftest` | selftest |
 | coverage matrix drift | `repo` | `python3 scripts/build_coverage.py --check` | live check · SKIPs without the licensed corpora |
