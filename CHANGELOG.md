@@ -3104,6 +3104,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **We shipped a claim about Claude Code that had become false, and a quotation the docs no longer
+  contain — `plugins/rails-flow/commands/setup-flow.md`,
+  `plugins/rails-flow/reference/agent-instruction-conventions.md`** (#1087).
+  **Citation: <https://code.claude.com/docs/en/memory>, §AGENTS.md, fetched and re-verified
+  2026-09-21. Version boundary: Claude Code v2.1.277.** §1b said *"Claude Code reads `CLAUDE.md`,
+  **not** `AGENTS.md`"* — true when written, false since v2.1.277 — and the conventions reference
+  carried the same sentence **as a blockquote attributed to those docs**, which is the worse form:
+  the next reader checks the attribution rather than the claim, and the attribution had silently
+  stopped being true. Both corrected, with the three-row table of what Claude reads for each
+  combination of files. **The trap this command could spring is now stated**: `setup-flow` writes a
+  `CLAUDE.md`, and creating one in a repo with a live `AGENTS.md` and no import **silently stops
+  Claude reading that `AGENTS.md`** — so the import goes in the same change. Two counterintuitive
+  facts recorded with it: `CLAUDE.local.md` **counts** for that check, so a developer's own
+  uncommitted notes can suppress `AGENTS.md` for themselves alone — a per-developer failure nobody
+  else can reproduce — while `~/.claude/CLAUDE.md`, managed instructions and `.claude/rules/` do
+  **not** count and keep loading alongside. **The import remains the recommendation**, now on firmer
+  ground: it is the one arrangement that works where direct `AGENTS.md` support is unavailable —
+  before v2.1.277, on Amazon Bedrock or other third-party providers, with telemetry disabled, on the
+  first session after an upgrade, and under `disableAllHooks`/`allowManagedHooksOnly`.
+
 - **The scaffolded `CLAUDE.md` said what the project is and nothing about how to behave toward the
   person — `plugins/rails-flow/commands/setup-flow.md`** (#1088). Two sections, 31 lines, both
   always-on because a behavioural rule that only loads on demand is not a rule. **How to work with

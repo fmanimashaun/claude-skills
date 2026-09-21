@@ -76,11 +76,34 @@ beside it creates two entry points that can contradict each other. Handle it per
 
 ## 1b. Coexist with an existing `AGENTS.md` (one source of truth)
 
-Claude Code reads `CLAUDE.md`, **not** `AGENTS.md`. When a repo already has an `AGENTS.md`
-(kept for other coding agents), do NOT duplicate its content into `CLAUDE.md` and do NOT leave
-two competing orientation files — **import it**, which is the pattern Claude Code's own memory
-docs prescribe and the one 37signals use in fizzy and writebook (their `.claude/CLAUDE.md` is a
-single line, `@../AGENTS.md`):
+Claude Code reads `AGENTS.md` too, from **v2.1.277**, and which file wins depends on what the
+repo has ([memory docs][cc-memory], verified 2026-09-21):
+
+| the repo has | Claude reads |
+|---|---|
+| `AGENTS.md`, and no `CLAUDE.md`/`CLAUDE.local.md` at or above the cwd | the `AGENTS.md` |
+| `AGENTS.md` **and** a `CLAUDE.md`/`CLAUDE.local.md` | **the `CLAUDE.md` only** |
+| a `CLAUDE.md` that imports `AGENTS.md` | both, through the import |
+
+**Row 2 is the trap, and it is the one this command can spring.** `setup-flow` writes a
+`CLAUDE.md`. Creating one in a repo with a live `AGENTS.md` and no import **silently stops Claude
+reading that `AGENTS.md`** — no warning, no error, the file simply stops being consulted. So:
+**before writing a `CLAUDE.md` where an `AGENTS.md` exists, say so and add the import in the same
+change.**
+
+Two more facts worth stating, because both are counterintuitive:
+
+- **`CLAUDE.local.md` counts.** A developer adding one for their own uncommitted notes stops Claude
+  reading `AGENTS.md` *for themselves only* — a per-developer failure nobody else can reproduce.
+- **`~/.claude/CLAUDE.md`, managed instructions and `.claude/rules/` do NOT count**; they keep
+  loading alongside.
+
+**The import is still the recommendation**, and the docs now support it more strongly than the old
+reasoning did: it is the one arrangement that works when direct `AGENTS.md` support is unavailable —
+before v2.1.277, on Amazon Bedrock or other third-party providers, with telemetry disabled, on the
+first session after an upgrade, and under `disableAllHooks`/`allowManagedHooksOnly`. It is also the
+pattern 37signals use in fizzy and writebook (their `.claude/CLAUDE.md` is a single line,
+`@../AGENTS.md`):
 
 ```markdown
 @AGENTS.md
@@ -105,6 +128,8 @@ what is missing. Rules:
   state which; do not create both.
 - Treat an authored `AGENTS.md` as hand-authored content under the idempotency contract —
   never rewrite or gitignore it (see also §5, which guards it against the graph installer).
+
+[cc-memory]: https://code.claude.com/docs/en/memory
 
 ## 2. CLAUDE.md — create or update within markers
 
