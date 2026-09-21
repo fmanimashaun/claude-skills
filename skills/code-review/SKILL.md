@@ -140,6 +140,26 @@ A check whose failure path cannot fail anything.
 is not known to work. And when a check reports clean, confirm what it examined —
 "no findings" over zero inputs is not a pass.
 
+### `frozen-figure`
+A number hand-copied into prose that something else computes.
+
+Doctrine quotes "48 controllers of 64" or "112 call sites"; a script, a query or a
+generator owns that quantity. The copy is wrong by construction and only the
+interval varies — the first `rails generate` invalidates it, silently, because
+prose has no build step.
+
+The sharper symptom is **omission, not staleness**: a frozen table cannot notice a
+row it never had. One shipped here listed five layers and was missing the largest
+flat layer in the app, so no amount of re-checking the five would have found it.
+
+**Detect:** for each figure, ask **who owns this number.** If a command owns it,
+either delete the figure and point at the command, or keep it *with its
+provenance* — the command that re-takes it, a date, a commit, a citation.
+A figure inside the docstring of the very script that computes it is the clearest
+case: delete it. And check the copy against the source once, now: a figure
+inherited from an issue body, a chat message or an earlier draft has never been
+measured by you.
+
 ## Reporting
 
 Two rules keep this from becoming ritual:

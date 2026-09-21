@@ -10,20 +10,17 @@ anatomy, token drift. Nothing said where a file should LIVE, so nothing drifted:
 `app/controllers` root is not a violation, it is an absence.** That is why the doctrine
 (`directory-structure.md`) matters at least as much as this check.
 
-WHAT IT REPORTS, AND WHY THAT IS ADVISORY. Measured on a mature app built with this toolchain:
+WHAT IT REPORTS, AND WHY THAT IS ADVISORY. Run it: the per-layer table IS the output. There are
+deliberately NO example counts in this docstring (#1124). A hand-copied figure duplicating a number
+this script already computes is wrong by construction and only the interval varies — the first
+version carried five rows, three of them were wrong within a day, and a sixth layer was missing
+because a frozen list cannot notice what it omitted. The argument is what teaches; the digits date it.
 
-    layer         flat   namespaced   total
-    models          58       18        144
-    controllers     49        6         65
-    views            0       51        132
-    components       0        1         64
-    jobs            12        0         12
-
-**Read across the rows, not down: no two layers agree with each other.** Models drifted toward the
-domain because a model's path binds only to its class name. Controllers stayed flat because a
-controller's path binds to its URL and grouping LOOKS like it rewrites every route — it does under
-`namespace`, and does not under `scope module:`. Views have 51 directories, one per CONTROLLER, not
-per domain; Rails forces that and it is not organisation.
+**Read across the rows, not down: the finding is that no two layers agree with each other.** Models
+drift toward the domain because a model's path binds only to its class name — it is free. Controllers
+stay flat because a controller's path binds to its URL and grouping LOOKS like it rewrites every
+route — it does under `namespace`, and does NOT under `scope module:`. Views have one directory per
+CONTROLLER, not per domain; Rails forces that and it is not organisation.
 
 Projects legitimately differ, so the table is **reported, never failed**. It is also the whole
 finding: nothing in the toolchain made the disagreement BETWEEN layers visible, and once it is, it
@@ -49,36 +46,68 @@ import re
 import sys
 from pathlib import Path
 
-LAYERS = ("models", "controllers", "views", "components", "jobs", "mailers", "helpers", "services")
+# `app/javascript` HOLDS layers rather than being one: Rails' own generator puts Stimulus at
+# `app/javascript/controllers`, so counting `javascript` as a layer would report `controllers/` as
+# one of its namespaces, which inverts the reading. Every OTHER directory under `app/` is discovered,
+# never enumerated -- a hard-coded list is what hid Stimulus from the first version (#1124).
+CONTAINERS = ("javascript",)
+CODE_SUFFIXES = (".rb", ".erb", ".js")
 
-# `scope module: :billing do` / `namespace :billing do` — the two ways a controller module is set.
+# THREE ways a controller module is declared, not two. `scope module:` and `namespace` are the
+# block forms; `to: "sessions/omniauth#create"` names the module inline on a single route and is the
+# one the first version missed -- which made every correctly-organised controller routed that way
+# read as drift, in the FAILING half of the check. A false positive in a gate that fails is how the
+# gate gets switched off, so this is parsed, not documented.
 SCOPE_MODULE = re.compile(r"scope\s+module:\s*[:'\"]([a-z_]+)['\"]?")
 NAMESPACE = re.compile(r"namespace\s+[:'\"]([a-z_]+)['\"]?")
+EXPLICIT_TO = re.compile(r"""to:\s*["']([a-z0-9_/]+)#""")
+
+
+def discover_layers(root: Path) -> list[tuple[str, Path]]:
+    """Every layer under `app/`, found by walking the tree -- NEVER a fixed list.
+
+    Returns (name, directory) sorted by name. A directory in CONTAINERS contributes its children
+    instead of itself, so `app/javascript/controllers` is a layer and `app/javascript` is not.
+    """
+    app = root / "app"
+    if not app.is_dir():
+        return []
+    out: list[tuple[str, Path]] = []
+    for entry in sorted(app.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name in CONTAINERS:
+            out.extend((f"{entry.name}/{c.name}", c) for c in sorted(entry.iterdir()) if c.is_dir())
+        else:
+            out.append((entry.name, entry))
+    return out
 
 
 def layer_table(root: Path) -> dict[str, tuple[int, int, int]]:
     """{layer: (flat at root, namespaced dirs, total files)}."""
     table: dict[str, tuple[int, int, int]] = {}
-    for layer in LAYERS:
-        base = root / "app" / layer
-        if not base.is_dir():
-            continue
-        files = [p for p in base.rglob("*") if p.is_file() and p.suffix in (".rb", ".erb")]
+    for name, base in discover_layers(root):
+        files = [p for p in base.rglob("*") if p.is_file() and p.suffix in CODE_SUFFIXES]
         if not files:
             continue
         flat = sum(1 for p in files if p.parent == base)
         dirs = len({p.parent for p in files if p.parent != base})
-        table[layer] = (flat, dirs, len(files))
+        table[name] = (flat, dirs, len(files))
     return table
 
 
 def routed_modules(root: Path) -> set[str]:
-    """Modules `config/routes.rb` declares, via `scope module:` or `namespace`."""
+    """Modules `config/routes.rb` declares, via `scope module:`, `namespace`, or an explicit `to:`."""
     routes = root / "config" / "routes.rb"
     if not routes.is_file():
         return set()
     body = routes.read_text(encoding="utf-8", errors="replace")
-    return set(SCOPE_MODULE.findall(body)) | set(NAMESPACE.findall(body))
+    declared = set(SCOPE_MODULE.findall(body)) | set(NAMESPACE.findall(body))
+    for target in EXPLICIT_TO.findall(body):
+        segments = target.split("/")[:-1]          # the last segment is the CONTROLLER, not a module
+        for i in range(1, len(segments) + 1):      # every prefix, so a nested module declares its parent
+            declared.add("/".join(segments[:i]))
+    return declared
 
 
 def contradictions(root: Path) -> list[str]:
@@ -165,6 +194,52 @@ def _selftest() -> int:
         expect("the table counts flat and namespaced per layer",
                table["controllers"][0] == 1 and table["models"][0] == 1
                and table["models"][1] == 1)
+
+        # THE OMISSION TEST (#1124). The first version enumerated eight layer names, so Stimulus --
+        # `app/javascript/controllers`, the largest FLAT layer in the app that motivated this check --
+        # was never counted, and no assertion could notice because the fixture only built layers the
+        # author had already listed. These two build layers that appear in NO list in this file.
+        (root / "app/queries").mkdir()
+        (root / "app/queries/overdue_invoices.rb").write_text("x\n", encoding="utf-8")
+        (root / "app/javascript/controllers").mkdir(parents=True)
+        (root / "app/javascript/application.js").write_text("x\n", encoding="utf-8")
+        (root / "app/javascript/controllers/dropdown_controller.js").write_text("x\n",
+                                                                               encoding="utf-8")
+        _, table = run(root)
+        expect("a layer nobody enumerated is discovered, not skipped", "queries" in table)
+        # A control on the SAME input: discovery that merely globbed `app/*` would put Stimulus under
+        # a `javascript` layer and report `controllers/` as one of its namespace dirs -- inverted.
+        expect("Stimulus is its own layer", table.get("javascript/controllers") == (1, 0, 1))
+        expect("...and `javascript` is NOT a layer, so its child is not read as a namespace",
+               "javascript" not in table)
+
+        # EXPLICIT `to:` DECLARES A MODULE. Real routes do this and the first version did not read
+        # it, so a correctly-organised controller was reported as drift.
+        (root / "app/controllers/sessions").mkdir()
+        (root / "app/controllers/sessions/omniauth_controller.rb").write_text("x\n",
+                                                                             encoding="utf-8")
+        (root / "app/controllers/reports").mkdir()
+        (root / "app/controllers/reports/monthly_controller.rb").write_text("x\n", encoding="utf-8")
+        (root / "config/routes.rb").write_text(
+            "Rails.application.routes.draw do\n"
+            '  get "/auth/:provider/callback", to: "sessions/omniauth#create"\n'
+            '  get "/", to: "home#index"\n'
+            "end\n", encoding="utf-8")
+        declared = routed_modules(root)
+        expect("an explicit `to:` declares its module", "sessions" in declared)
+        # Without this, `to: "home#index"` would declare a module named after the CONTROLLER, and
+        # every flat route would silence a directory of the same name.
+        expect("...but the last segment is the controller, not a module", "home" not in declared)
+        f, _ = run(root)
+        # THE CONTROL, on the same routes file: `reports/` is declared nowhere, in any of the three
+        # forms. If reading `to:` had silenced the check wholesale, this assertion is what notices.
+        # Three directories are undeclared under these routes -- billing/ and accounts/ survive from
+        # the fixture above -- so name the one under test rather than counting.
+        expect("a directory no route declares in ANY form is still reported",
+               any("reports/monthly_controller" in x for x in f))
+        expect("...and the other undeclared directories are still reported too, so reading `to:` "
+               "narrowed nothing", len(f) == 3)
+        expect("...and the `to:`-declared one is silent", not any("omniauth" in x for x in f))
 
         # A tree with routes that declare NOTHING cannot contradict anything.
         (root / "config/routes.rb").write_text("Rails.application.routes.draw do\nend\n",

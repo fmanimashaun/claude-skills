@@ -27,9 +27,50 @@ GUARD = Guard(
             # `namespace` sets the module too. Reading only `scope module:` would report every
             # namespaced controller in the app as contradicting its route.
             "only `scope module:` counts, so `namespace` no longer declares a module",
-            "    return set(SCOPE_MODULE.findall(body)) | set(NAMESPACE.findall(body))",
-            "    return set(SCOPE_MODULE.findall(body))",
+            "    declared = set(SCOPE_MODULE.findall(body)) | set(NAMESPACE.findall(body))",
+            "    declared = set(SCOPE_MODULE.findall(body))",
             "`namespace` also declares a module",
+        ),
+        Mutation(
+            # The false positive that shipped: real routes name a module inline with
+            # `to: "sessions/omniauth#create"`, and not reading it reported correctly-organised
+            # controllers as drift -- in the half of this check that FAILS a build (#1124).
+            "an explicit `to:` stops declaring its module",
+            "    for target in EXPLICIT_TO.findall(body):",
+            "    for target in []:",
+            "an explicit `to:` declares its module",
+        ),
+        Mutation(
+            # The opposite error, and the reason the slice is `[:-1]`: `to: "home#index"` must not
+            # declare a module called `home`, or any flat route silences a directory of that name.
+            "the controller segment is counted as a module too",
+            '        segments = target.split("/")[:-1]',
+            '        segments = target.split("/")',
+            "...but the last segment is the controller, not a module",
+        ),
+        Mutation(
+            # A fixed list is what hid `app/javascript/controllers` from the first version. The
+            # fixture builds `app/queries`, a layer named nowhere in the script.
+            "layers are enumerated again instead of discovered",
+            "    for entry in sorted(app.iterdir()):",
+            '    for entry in [app / "models", app / "controllers"]:',
+            "a layer nobody enumerated is discovered, not skipped",
+        ),
+        Mutation(
+            # Without the container rule, `app/javascript` becomes a layer and its `controllers/`
+            # child reads as one of its NAMESPACE directories -- the inverse of the truth.
+            "`app/javascript` is treated as a layer rather than a container",
+            "        if entry.name in CONTAINERS:",
+            "        if False:",
+            "...and `javascript` is NOT a layer, so its child is not read as a namespace",
+        ),
+        Mutation(
+            # Stimulus controllers are `.js`. Counting only Ruby made the largest flat layer in the
+            # motivating app invisible even once it was discovered.
+            "only Ruby and ERB are counted, so Stimulus disappears",
+            'CODE_SUFFIXES = (".rb", ".erb", ".js")',
+            'CODE_SUFFIXES = (".rb", ".erb")',
+            "Stimulus is its own layer",
         ),
         Mutation(
             # With nothing declared anywhere there is nothing to contradict; reporting then would
