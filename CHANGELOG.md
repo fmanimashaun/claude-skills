@@ -7,6 +7,19 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The fail-closed gate list was recorded in two places — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`, `CLAUDE.md`** (#1106). `hook-count-drift` derives
+  the advisory hook count as *total minus the gates CLAUDE.md names*, and held those gate names in a
+  hardcoded Python set. The set's own comment defended it correctly — which hooks fail closed is a
+  **decision**, not something inferable from a script, since `exit 2` appears in advisory hooks too
+  — but the deliberate act is *writing it in `CLAUDE.md`*, and that is enough on its own. Adding a
+  fourth gate meant editing two places, and the second was a list that could go stale exactly like
+  the count the rule exists to protect. The names are now parsed from the sentence that records the
+  decision; a paragraph naming **no** gate is its own finding, because then the decision is recorded
+  nowhere and a new fail-closed hook would join the set unclassified.
+
 ### 2026-09-21 (release v1.135.0)
 
 - **We were about to ship behavioural doctrine we did not follow — `AGENTS.md`,
@@ -3101,6 +3114,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **A PR body's numbers were checked by an agent nobody remembered to run —
+  `plugins/rails-flow/hooks/scripts/guard-claims.sh` (new),
+  `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `CLAUDE.md`, `scripts/lint_self_consistency.py`** (#1106). `claim-verifier` exists, works, covers
+  *"any number: counts, ratios, versions, timings"*, and is named in `/maintainer-work` — and it was
+  skipped for an entire working day while **two wrong numbers reached merged PR bodies**: *"292
+  assertions, up from 285"* (it was 292 both before and after) and *"ten times in this release's own
+  bullets"* (2 here, 8 in older published entries, the second caught by the maintainer rather than
+  by anything we ship). **The capability was never the gap; remembering to use it was**, so this is
+  a fail-closed `PreToolUse` hook — the **fourth**, scoped to `gh pr create/edit` carrying a body —
+  rather than another line of doctrine. It fails **open** when it cannot read the body, because its
+  job is to make the check happen where it can, never to block opening a PR.
+
+  **It also closes the doctrine map's one tracked gap**, and the map is what made that findable: the
+  gap row recorded its own blocker exactly — *"mechanisable in principle … but it would live in CI
+  against the PR body, **which no gate in this repo reads**"* — and a hook built for an unrelated
+  reason made that untrue. A PR touching `skills/**` whose body names neither **framework claim**
+  nor **architecture decision** is now refused. `doctrine_map.py` goes from 1 gap to **0**.
+
+  Two fixture defects surfaced on the way, both the same shape: **a control that cannot reach the
+  code it guards proves nothing.** The out-of-scope cases carried a claim-free body, so deleting the
+  scope test left them green and the mutation SURVIVED; and the missing-gate fixture's numbers also
+  mismatched at zero gates, so a finding appeared either way. Both now isolate exactly one variable.
 
 ### 2026-09-21 (release v1.135.0)
 

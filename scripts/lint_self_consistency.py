@@ -1854,13 +1854,28 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
             "hook-count-drift", "CLAUDE.md", 0,
             "the hook-script sentence is gone or reworded, so nothing reconciles the count against "
             "the scripts on disk -- restore it or drop this rule deliberately")], total
-    # The fail-CLOSED gates CLAUDE.md names by path. A hardcoded set is right here rather than a
-    # heuristic: which hooks are gates is a DECISION recorded in that section, per the
-    # guarantee-vs-advice test, and inferring it from the scripts would let a new fail-closed hook
-    # silently join the set without anyone classifying it. Adding one is meant to be deliberate --
-    # this list is the deliberateness. `guard-lane.sh` joined it in #660.
-    NAMED_GATES = {"guard-bash.sh", "release-gate.sh", "guard-lane.sh"}
-    gates = sum(1 for s in scripts if s.name in NAMED_GATES)
+    # The fail-CLOSED gates, READ FROM THE SENTENCE THAT NAMES THEM.
+    #
+    # Which hooks are gates is a DECISION, per the guarantee-vs-advice test -- it cannot be
+    # inferred from the scripts, because `exit 2` appears in advisory hooks too, and a heuristic
+    # would let a new fail-closed hook silently join the set without anyone classifying it. Adding
+    # one must be deliberate.
+    #
+    # BUT THE DELIBERATE ACT IS WRITING IT IN CLAUDE.md, and that is enough on its own. This used
+    # to be a hardcoded Python set as well, so classifying a hook meant editing two places -- and
+    # the second was a list that could go stale exactly like the count this rule exists to protect
+    # (#1106: it did, the moment a fourth gate arrived). Parsing the paragraph keeps the decision
+    # deliberate and leaves one place to record it.
+    gate_block = re.search(r"\*\*gates fail closed\*\*(.*?)Classify a new hook", body, re.S)
+    named = set(re.findall(r"`[^`]*hooks/scripts/([a-z0-9_-]+\.sh)`", gate_block.group(1))) \
+        if gate_block else set()
+    if not named:
+        return [Finding(
+            "hook-count-drift", "CLAUDE.md", 0,
+            "the fail-closed gates are no longer named by path in the hook paragraph, so nothing "
+            "says which hooks are gates -- the advisory count cannot be derived, and a new "
+            "fail-closed hook would join silently without being classified")], total
+    gates = sum(1 for s in scripts if s.name in named)
     findings = []
     if m.group(1) != WORDS.get(total, str(total)):
         findings.append(Finding(
@@ -3613,24 +3628,43 @@ def selftest() -> int:
         for i in range(n):
             files[f"plugins/p{i}/hooks/scripts/h{i}.sh"] = "#!/bin/sh\n"
         return files
+    # The gate names are READ FROM THIS SENTENCE (#1106), so EVERY fixture below carries it --
+    # that is the single place the advisory/gate decision is recorded. A fixture without it trips
+    # the "no gate named" branch instead, which produces a finding for a DIFFERENT reason and
+    # masks the mutation the fixture exists to catch. Two mutations survived exactly that way
+    # before these were made uniform.
+    GATES = ("**gates fail closed**, each scoped to what it guards: "
+             "`plugins/pz/hooks/scripts/guard-bash.sh`. Classify a new hook\n")
     # ONLY the total is wrong here — advisory is correct (3 scripts, 1 named gate = 2 advisory).
     # A fixture with BOTH numbers wrong cannot isolate the total check: the advisory check fires
     # too, so disabling the total comparison would still leave a finding and the mutation survives.
-    only_total = _hooks(2, "Of the ten hook scripts, two are advisory.\n")
+    only_total = _hooks(2, "Of the ten hook scripts, two are advisory. " + GATES)
     only_total["plugins/pz/hooks/scripts/guard-bash.sh"] = "#!/bin/sh\n"
     scenario("a wrong total is reported", rule=HC, expect_finding=True, files=only_total)
     scenario("the right total and derived advisory count is silent", rule=HC, expect_finding=False,
-             files=_hooks(3, "Of the three hook scripts, three are advisory.\n"))
+             files=_hooks(3, "Of the three hook scripts, three are advisory. " + GATES))
     # The advisory figure is DERIVED (total minus the named gates), not a second free number.
-    gated = _hooks(2, "Of the three hook scripts, two are advisory.\n")
+    gated = _hooks(2, "Of the three hook scripts, two are advisory. " + GATES)
     gated["plugins/pz/hooks/scripts/guard-bash.sh"] = "#!/bin/sh\n"
     scenario("advisory is total minus the named gates", rule=HC, expect_finding=False, files=gated)
-    wrong = dict(gated); wrong["CLAUDE.md"] = "Of the three hook scripts, three are advisory.\n"
+    # A paragraph that names NO gate means the decision is recorded nowhere -- a new fail-closed
+    # hook would join the set without anyone classifying it.
+    #
+    # THE NUMBERS HERE DELIBERATELY RECONCILE at gates=0 (3 scripts, "three are advisory"), so the
+    # ONLY thing that can produce a finding is the missing gate names. A first version said "two
+    # are advisory", which also mismatches when no gate is found -- so a finding appeared either
+    # way and the mutation deleting this branch SURVIVED.
+    scenario("a paragraph naming no gate by path is reported", rule=HC, expect_finding=True,
+             files=_hooks(3, "Of the three hook scripts, three are advisory.\n"))
+    wrong = dict(gated)
+    wrong["CLAUDE.md"] = "Of the three hook scripts, three are advisory. " + GATES
     scenario("a wrong advisory count is reported even when the total is right",
              rule=HC, expect_finding=True, files=wrong)
     # The sentence disappearing must FAIL LOUD, not silently stop checking.
+    # The sentence gone entirely: the gate paths go with it, so this must report the MISSING
+    # SENTENCE, which is checked before the gate names are read.
     scenario("a reworded sentence is reported, not ignored", rule=HC, expect_finding=True,
-             files=_hooks(3, "We ship some hooks.\n"))
+             files=_hooks(3, "We ship some hooks. " + GATES))
     scenario("no hook scripts at all is silent", rule=HC, expect_finding=False,
              files={"CLAUDE.md": "Of the ten hook scripts, eight are advisory.\n"})
 

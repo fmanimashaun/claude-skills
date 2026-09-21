@@ -35,14 +35,8 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>40 claims</b><b>32 enforced guarantees</b><b>7 advisory</b><b>1 tracked gaps</b></div>
+<div class="tally"><b>40 claims</b><b>33 enforced guarantees</b><b>7 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
-<div class="row" data-k="gap">
-<h2>A change to a skill states its type -- framework claim or architecture decision -- in the PR, before editing. Silence is not a claim of exemption.</h2>
-<div class="meta"><span class="k k-gap">gap</span><span>stated in <code>CLAUDE.md</code> &middot; #655</span></div>
-<p class="none">Nothing enforces this.</p>
-<p class="note">A trial reviewer&#x27;s single most-cited finding here was literally &#x27;missing change-type classification&#x27;, verbatim from CLAUDE.md. Mechanisable in principle -- a PR touching `skills/**` whose body names neither type -- but it would live in CI against the PR body, which no gate in this repo reads. Filed rather than hand-waved.</p>
-</div>
 <div class="row" data-k="guarantee">
 <h2>A promotion merges with `--merge`; a squash drops dev&#x27;s ancestry and the NEXT promotion cannot merge at all.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
@@ -162,6 +156,15 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>script:scripts/release_local.sh</code></li>
 </ul>
 <p class="note">A hand-typed list is how a release silently drops a newly added skill. Both paths glob, and CLAUDE.md says change one when you change the other.</p>
+</div>
+<div class="row" data-k="guarantee">
+<h2>A change to a skill states its type -- framework claim or architecture decision -- in the PR, before editing. Silence is not a claim of exemption.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code> &middot; #655 &middot; #1106</span></div>
+<ul class="enf">
+<li><code>hook:plugins/rails-flow/hooks/scripts/guard-claims.sh</code></li>
+<li><code>script:plugins/rails-flow/scripts/check_hook_gates.py</code></li>
+</ul>
+<p class="note">Carried as a GAP for a long time, and the recorded reason was exact: &#x27;mechanisable in principle -- a PR touching `skills/**` whose body names neither type -- but it would live in CI against the PR body, WHICH NO GATE IN THIS REPO READS.&#x27; #1106 built a PreToolUse hook that reads the PR body, for an unrelated reason (two wrong numbers reached merged bodies in one day), and the blocker simply stopped being true. The hook now refuses `gh pr create` on a PR touching `skills/**` whose body names neither change type. The gap row is what made the connection findable.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>An advisory hook fails OPEN; a hook carrying a guarantee fails CLOSED, scoped to the command it guards.</h2>

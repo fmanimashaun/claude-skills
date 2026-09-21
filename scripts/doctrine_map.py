@@ -512,12 +512,17 @@ CLAIMS: tuple[Claim, ...] = (
               "the PR, before editing. Silence is not a claim of exemption.",
         stated_in="CLAUDE.md",
         anchor="**State which kind of change you are making, in the PR, before editing.**",
-        kind=GAP,
-        refs=(655,),
-        note="A trial reviewer's single most-cited finding here was literally 'missing change-type "
-             "classification', verbatim from CLAUDE.md. Mechanisable in principle -- a PR touching "
-             "`skills/**` whose body names neither type -- but it would live in CI against the PR "
-             "body, which no gate in this repo reads. Filed rather than hand-waved.",
+        kind=GUARANTEE,
+        enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-claims.sh",
+                     "script:plugins/rails-flow/scripts/check_hook_gates.py"),
+        refs=(655, 1106),
+        note="Carried as a GAP for a long time, and the recorded reason was exact: 'mechanisable in "
+             "principle -- a PR touching `skills/**` whose body names neither type -- but it would "
+             "live in CI against the PR body, WHICH NO GATE IN THIS REPO READS.' #1106 built a "
+             "PreToolUse hook that reads the PR body, for an unrelated reason (two wrong numbers "
+             "reached merged bodies in one day), and the blocker simply stopped being true. The "
+             "hook now refuses `gh pr create` on a PR touching `skills/**` whose body names "
+             "neither change type. The gap row is what made the connection findable.",
     ),
 
     # ---- what the plugins promise downstream ------------------------------------------------
