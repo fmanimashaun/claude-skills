@@ -7,6 +7,30 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Nothing stopped the next command from shipping the same unowned-server adoption —
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1080). New
+  rule `adopts-an-unowned-server`: shipped prose that contemplates a server already listening on the
+  app's port must resolve whose working tree it serves, either in the same file or by pointing at a
+  command that does — and the pointer is **resolved, not believed**, since a reference to a command
+  with the identical defect is that defect one hop away. Keyed on the *precondition* rather than the
+  reuse sentence, and that is the design: a first draft matched "reuse it rather than starting a
+  second", and rewording the four offending files dropped the examined population from 5 to 2 —
+  **the gate stopped watching precisely the files it had just been used to fix.** Matching on a file
+  contemplating a pre-existing listener held the denominator at 4 across the fix: same population
+  before and after, only the verdict moved. Four findings against `dev`, zero here.
+- **`run()` computed one rule's findings and dropped them — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1082). `unhonoured-config-toggle` was called,
+  counted in coverage, and left out of the summed return since `738ebca` — the commit that removed
+  the only toggle it had ever found, so it went inert and unreachable in one change and the
+  inertness hid the unreachability. Its own four fixtures passed throughout, because they call the
+  check function **directly** (it reads real repo paths, so `scenario()` cannot drive it): they
+  proved the helper discriminates and nothing proved the caller forwards it. Fixed, and the class
+  closed rather than the instance — the selftest now parses its own `run()` with `ast` and asserts
+  every findings list assigned there reaches the return expression, which covers all 44 rules and
+  every rule added later, including one orphaned by the change that adds it.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **The discrimination verdict was more confident than its evidence, three ways —
@@ -9191,6 +9215,24 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **Three commands adopted any server that answered on the port, and never asked whose it was —
+  `plugins/qa-flow/commands/smoke.md`, `plugins/qa-flow/commands/crawl.md`,
+  `plugins/qa-flow/commands/walkthrough.md`** (#1080). `curl` proved something was listening and
+  every one of them treated that as a licence to test against it. "Something answered" and "the
+  thing that answered is serving this working tree" are different facts, and with more than one
+  worktree on a machine — which is how this repository tells people to run parallel sessions — the
+  second is routinely false: the listener was booted from a different checkout, serving different
+  code, against a different database. Measured while writing the fix, a Ruby server answering on
+  `3001` resolved to an entirely different project's checkout than the one asking. `smoke` §2 now
+  resolves the listener's own working directory (`lsof -a -d cwd -p <pid>` on BSD/macOS,
+  `/proc/<pid>/cwd` on Linux) and **refuses** a stranger — and refuses an owner it cannot resolve,
+  because "cannot show it is mine" is not "it is mine". `crawl` and `walkthrough` delegate to it
+  by name rather than carrying a fourth copy. The issue named two sites; reading for the pattern
+  found `crawl.md` carrying it in prose and `walkthrough.md` inheriting it by reference. The old
+  text had half-noticed and filed it under reporting — *"say in the report that the app was already
+  running, since it may be running different code than the working tree"* — and that sentence was
+  the defect: if it may be running different code than the working tree, it is not a valid subject
+  for a test of the working tree.
 - **The release gate blocked every promotion of the repository that ships it —
   `plugins/qa-flow/hooks/scripts/release-gate.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_release_gate.py`**.
@@ -11083,6 +11125,14 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **Browser mode audited whatever answered on the port —
+  `plugins/design-flow/commands/audit.md`** (#1080). §1 carried the same probe as
+  `qa-flow:smoke` and the same blind spot. It matters more here than anywhere: the mode exists to
+  measure what the *cascade resolves to in this working tree*, so a snapshot taken against a server
+  booted from another checkout is not a weaker measurement of this tree's CSS — it is a precise
+  measurement of a different tree's, with every resolved colour, focus rule and token-membership
+  number attributed to the wrong source. It now resolves the listener's working directory and
+  refuses a stranger, falling back to the documented source checklist.
 - **Layout composition was doctrine with no gate, so it drifted —
   `plugins/design-flow/scripts/check_layout_composition.py`, `plugins/design-flow/checks.json`,
   `scripts/mutations/check_layout_composition.py`**. `responsive.md` states a **priority order**,
