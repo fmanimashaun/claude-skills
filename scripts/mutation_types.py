@@ -43,3 +43,12 @@ class Guard:
     # `expects` check correctly refused to count as a caught mutation.
     needs: tuple[str, ...] = ()
     mutations: tuple[Mutation, ...] = field(default_factory=tuple)
+    # The directory every path above is relative to, as a repo-relative string.
+    #
+    # `.` for a guard under `scripts/mutations/`, whose subject is a maintainer-only script or
+    # spans plugins. `plugins/<name>` for one shipped INSIDE a plugin, whose paths are written
+    # plugin-relative so the guard still resolves in a consumer project, where `plugins/` does not
+    # exist (#1109). Set by the runner from where the guard module was found, never by hand --
+    # a declared base that disagreed with the file's location would be a second thing to keep in
+    # step, which is the defect this repo keeps finding.
+    base: str = "."

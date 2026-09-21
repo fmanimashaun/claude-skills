@@ -7,7 +7,7 @@ GUARD = Guard(
     name="design_prompt",
     subject="plugins/design-flow/scripts/design_prompt.py",
     selftest="plugins/design-flow/scripts/design_prompt.py",
-    needs=("plugins/design-flow/scripts", "skills"),
+    needs=("scripts", "skills"),
     mutations=(
         Mutation(
             # A primitive in the prompt invites the canvas to bind to a private name.

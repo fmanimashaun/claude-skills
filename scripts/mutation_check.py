@@ -39,6 +39,7 @@ Stdlib only, no network.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import shutil
 import subprocess
 import sys
@@ -52,7 +53,7 @@ REPO = Path(__file__).resolve().parents[1]
 MUTATIONS_DIR = Path(__file__).resolve().parent / "mutations"
 
 
-def discover(directory: Path = MUTATIONS_DIR) -> tuple[Guard, ...]:
+def discover(directory: Path = MUTATIONS_DIR, base: str = ".") -> tuple[Guard, ...]:
     """Every `GUARD` declared under scripts/mutations/, sorted by filename, names asserted unique.
 
     THE DECLARATION SPLIT; THE RUNNER DID NOT (#866). The table lived here as one 5,986-line tuple
@@ -77,7 +78,9 @@ def discover(directory: Path = MUTATIONS_DIR) -> tuple[Guard, ...]:
         if guard.name != path.stem:
             raise RuntimeError(f"{path.relative_to(REPO)}: GUARD.name is {guard.name!r}; the filename is the "
                                "name, so `--guard <name>` and the file agree")
-        guards.append(guard)
+        # Stamp where this guard's paths resolve from. `replace` rather than asking each module
+        # to declare it: the location IS the fact, and a declared copy could disagree with it.
+        guards.append(dataclasses.replace(guard, base=base) if base != "." else guard)
     names = [g.name for g in guards]
     dupes = sorted({n for n in names if names.count(n) > 1})
     if dupes:
@@ -85,7 +88,45 @@ def discover(directory: Path = MUTATIONS_DIR) -> tuple[Guard, ...]:
     return tuple(guards)
 
 
-GUARDS: tuple[Guard, ...] = discover()
+def discover_all() -> tuple[Guard, ...]:
+    """Guards from BOTH roots: this repo's, and the ones shipped inside each plugin (#1109).
+
+    A guard whose subject and every dependency live in one plugin ships WITH that plugin, written
+    plugin-relative, so a consumer project can run it against the copy it actually installed. A
+    guard that spans plugins -- `project_gates` reading three manifests, `hook_normalize_cmd`
+    proving qa-flow and rails-flow share one normaliser -- stays here, because a project that
+    installed one plugin could not verify the claim anyway.
+    """
+    found = list(discover(MUTATIONS_DIR))
+    for manifest in sorted(REPO.glob("plugins/*/scripts/mutations")):
+        found += discover(manifest, base=str(manifest.relative_to(REPO).parents[1]))
+    # EVERY PATH OF A SHIPPED GUARD MUST RESOLVE INSIDE ITS PLUGIN. A guard ships so a consumer
+    # project can run it against the copy it installed; one reaching out to `skills/` or to a
+    # sibling plugin cannot resolve there, and the failure is a FileNotFoundError deep in staging
+    # rather than a sentence anyone can act on. Four guards were relocated wrongly the day this
+    # was written -- three design-flow ones needing repo-root `skills/`, and `hook_session_start`
+    # spanning plugins -- because the move only checked for leftover `plugins/` prefixes (#1109).
+    for guard in found:
+        root = REPO / guard.base
+        for relative in {guard.subject, guard.selftest, *guard.deps, *guard.needs}:
+            if not (root / relative).exists():
+                raise RuntimeError(
+                    f"{guard.name} (base {guard.base}) names {relative!r}, which is not there. "
+                    f"Every path a guard declares must resolve from its base, or staging dies on a "
+                    f"FileNotFoundError nobody can act on. A shipped guard's paths are relative to "
+                    f"its plugin; a guard under scripts/mutations/ uses marketplace-relative ones. "
+                    f"If it cannot be expressed plugin-relative, the guard belongs in "
+                    f"scripts/mutations/.")
+    names = [g.name for g in found]
+    duplicated = {n for n in names if names.count(n) > 1}
+    if duplicated:
+        raise RuntimeError(
+            f"guard name(s) declared in two places: {sorted(duplicated)} -- `--guard <name>` "
+            f"could not say which, and one of them would never run")
+    return tuple(found)
+
+
+GUARDS: tuple[Guard, ...] = discover_all()
 
 
 def stage(guard: Guard, workdir: Path) -> Path:
@@ -96,9 +137,9 @@ def stage(guard: Guard, workdir: Path) -> Path:
     for relative in {guard.subject, guard.selftest, *guard.deps}:
         target = workdir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text((REPO / relative).read_text(encoding="utf-8"), encoding="utf-8")
+        target.write_text((REPO / guard.base / relative).read_text(encoding="utf-8"), encoding="utf-8")
     for relative in guard.needs:
-        source, target = REPO / relative, workdir / relative
+        source, target = REPO / guard.base / relative, workdir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         # A whole directory, not just a file: `build_coverage_selftest` reads EVERY doc under
         # `references/`, and naming the 19 of them here would go quiet the day a 20th is added --
@@ -116,7 +157,7 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
     Raises if the anchor is absent or non-unique: a mutation that did not apply produces a mutant
     identical to the original, which passes and reads exactly like a caught mutation.
     """
-    subject = REPO / guard.subject
+    subject = REPO / guard.base / guard.subject
     source = subject.read_text(encoding="utf-8")
     hits = source.count(mutation.old)
     if hits != 1:

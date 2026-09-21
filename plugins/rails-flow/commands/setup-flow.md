@@ -988,6 +988,30 @@ fails the build until a setup step creates it.
 If `gh` is unauthenticated, say so and skip — name it **not done** rather than letting a complete
 report imply it happened.
 
+## 8c. Prove the toolchain's gates can still fail (#1109)
+
+Run it **here, at setup, and again after any toolchain upgrade** — the two moments the answer can
+change:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_toolchain_mutations.py"
+```
+
+**Not in the per-run gate sweep, and that is the design.** A mutation catches nothing while you
+work: it proves a property of the *checker*, which moves when the toolchain or the environment
+moves, never when you edit your app. Upstream the full sweep is 438 of 475 seconds; spending that
+on every merge to re-check somebody else's code would be cost without a case.
+
+**It is a different question from `toolchain-selftests`**, which runs on every sweep. That one asks
+*does this gate still discriminate here*. This asks *would its fixtures still notice if the gate
+broke* — a selftest that passes against a deliberately broken checker has stopped guarding, and
+looks identical to a healthy one from outside. Four gates written in a single day upstream were
+partly vacuous and every one passed its own fixtures; only mutation testing found them.
+
+Guards that span plugins stay in the marketplace and are **not** covered here — a project that
+installed one plugin could not verify a cross-plugin claim anyway. That limit is reported, not
+hidden.
+
 ## 9. Report
 
 List created files, the detected Project Overrides, and any ambiguity you need the user to
