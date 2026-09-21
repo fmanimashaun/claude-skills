@@ -1854,13 +1854,28 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
             "hook-count-drift", "CLAUDE.md", 0,
             "the hook-script sentence is gone or reworded, so nothing reconciles the count against "
             "the scripts on disk -- restore it or drop this rule deliberately")], total
-    # The fail-CLOSED gates CLAUDE.md names by path. A hardcoded set is right here rather than a
-    # heuristic: which hooks are gates is a DECISION recorded in that section, per the
-    # guarantee-vs-advice test, and inferring it from the scripts would let a new fail-closed hook
-    # silently join the set without anyone classifying it. Adding one is meant to be deliberate --
-    # this list is the deliberateness. `guard-lane.sh` joined it in #660.
-    NAMED_GATES = {"guard-bash.sh", "release-gate.sh", "guard-lane.sh"}
-    gates = sum(1 for s in scripts if s.name in NAMED_GATES)
+    # The fail-CLOSED gates, READ FROM THE SENTENCE THAT NAMES THEM.
+    #
+    # Which hooks are gates is a DECISION, per the guarantee-vs-advice test -- it cannot be
+    # inferred from the scripts, because `exit 2` appears in advisory hooks too, and a heuristic
+    # would let a new fail-closed hook silently join the set without anyone classifying it. Adding
+    # one must be deliberate.
+    #
+    # BUT THE DELIBERATE ACT IS WRITING IT IN CLAUDE.md, and that is enough on its own. This used
+    # to be a hardcoded Python set as well, so classifying a hook meant editing two places -- and
+    # the second was a list that could go stale exactly like the count this rule exists to protect
+    # (#1106: it did, the moment a fourth gate arrived). Parsing the paragraph keeps the decision
+    # deliberate and leaves one place to record it.
+    gate_block = re.search(r"\*\*gates fail closed\*\*(.*?)Classify a new hook", body, re.S)
+    named = set(re.findall(r"`[^`]*hooks/scripts/([a-z0-9_-]+\.sh)`", gate_block.group(1))) \
+        if gate_block else set()
+    if not named:
+        return [Finding(
+            "hook-count-drift", "CLAUDE.md", 0,
+            "the fail-closed gates are no longer named by path in the hook paragraph, so nothing "
+            "says which hooks are gates -- the advisory count cannot be derived, and a new "
+            "fail-closed hook would join silently without being classified")], total
+    gates = sum(1 for s in scripts if s.name in named)
     findings = []
     if m.group(1) != WORDS.get(total, str(total)):
         findings.append(Finding(
@@ -3138,6 +3153,67 @@ def check_doctrine_we_ship_but_do_not_follow() -> tuple[list[Finding], int]:
 
 
 # ---------------------------------------------------------------------------
+# Rule: harness-dependency-undeclared
+# ---------------------------------------------------------------------------
+
+# A selftest that DRIVES other scripts must declare each of them, or a staged mutant runs without
+# them and the unmutated baseline already fails.
+_HARNESS = "plugins/rails-flow/scripts/check_hook_gates.py"
+_INVOKES = re.compile(r"scripts/([a-z_]+\.py)")
+
+
+def check_harness_dependency_undeclared() -> tuple[list[Finding], int]:
+    """A script a driven hook runs must be in the guards' `needs` (#1109).
+
+    `check_hook_gates.py` runs the REAL hook scripts, and a hook script may shell out to a python
+    script of its own. A staged mutant copies only what the guard's `needs` lists -- so an
+    undeclared one means the UNMUTATED selftest already fails in the tempdir, and `mutation_check`
+    calls that **INERT**: every mutation reads as "caught" whether or not it breaks anything.
+
+    On 2026-09-21 `guard-claims.sh` began running `extract_claims.py`, nothing declared it, and
+    **six `hook_*` guards went vacuous at once**. `dev`'s full sweep went red and three more merges
+    landed on top, each green on its own PR because `--fast` skips `mutation coverage` by design.
+    The INERT check caught it, an hour later. This makes it catchable at the PR, where the lint runs.
+
+    SCOPED TO HOOKS THE HARNESS ACTUALLY DRIVES, read from the harness rather than globbed: a hook
+    nobody drives cannot make a guard inert, and flagging it would be noise.
+    """
+    findings: list[Finding] = []
+    harness = ROOT / _HARNESS
+    if not harness.is_file():
+        return findings, 0
+    harness_body = read(harness)
+
+    # Hook scripts this harness names, and the python each of them invokes.
+    needed: dict[str, str] = {}
+    for hook in sorted(ROOT.glob("plugins/*/hooks/scripts/*.sh")):
+        if hook.name not in harness_body:
+            continue
+        for script in _INVOKES.findall(read(hook)):
+            target = hook.parents[2] / "scripts" / script
+            if target.is_file():
+                needed[script] = hook.name
+
+    if not needed:
+        return findings, 0
+
+    guards = [g for g in sorted(ROOT.glob("scripts/mutations/*.py"))
+              + sorted(ROOT.glob("plugins/*/scripts/mutations/*.py"))
+              if harness.name in read(g)]
+    for script, hook in sorted(needed.items()):
+        missing = [g for g in guards if script not in read(g)]
+        if missing:
+            findings.append(Finding(
+                "harness-dependency-undeclared", _HARNESS, 1,
+                f"the harness drives `{hook}`, which runs `{script}`, and {len(missing)} guard(s) "
+                f"do not list it in `needs` ({', '.join(g.stem for g in missing[:4])}). A staged "
+                f"mutant runs without it, so the UNMUTATED selftest fails and every mutation reads "
+                f"as caught — the INERT shape that blinded six guards at once",
+            ))
+    return findings, len(needed)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3190,6 +3266,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     ci_step, ci_step_examined = check_ci_verdict_without_a_step_count()
     promo_ctx, promo_ctx_examined = check_promotion_gate_trusts_its_context()
     bothways, bothways_examined = check_doctrine_we_ship_but_do_not_follow()
+    harness_dep, harness_dep_examined = check_harness_dependency_undeclared()
     coverage = {
         "python_modules": len(python_sources),
         "json_settings_files_examined": dead_examined,
@@ -3236,6 +3313,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_docs_reading_ci_status": ci_step_examined,
         "promotion_only_ci_steps": promo_ctx_examined,
         "doctrines_required_in_both_places": bothways_examined,
+        "scripts_the_hook_harness_runs": harness_dep_examined,
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
@@ -3244,7 +3322,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
-            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways,
+            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
 
@@ -3613,24 +3691,43 @@ def selftest() -> int:
         for i in range(n):
             files[f"plugins/p{i}/hooks/scripts/h{i}.sh"] = "#!/bin/sh\n"
         return files
+    # The gate names are READ FROM THIS SENTENCE (#1106), so EVERY fixture below carries it --
+    # that is the single place the advisory/gate decision is recorded. A fixture without it trips
+    # the "no gate named" branch instead, which produces a finding for a DIFFERENT reason and
+    # masks the mutation the fixture exists to catch. Two mutations survived exactly that way
+    # before these were made uniform.
+    GATES = ("**gates fail closed**, each scoped to what it guards: "
+             "`plugins/pz/hooks/scripts/guard-bash.sh`. Classify a new hook\n")
     # ONLY the total is wrong here — advisory is correct (3 scripts, 1 named gate = 2 advisory).
     # A fixture with BOTH numbers wrong cannot isolate the total check: the advisory check fires
     # too, so disabling the total comparison would still leave a finding and the mutation survives.
-    only_total = _hooks(2, "Of the ten hook scripts, two are advisory.\n")
+    only_total = _hooks(2, "Of the ten hook scripts, two are advisory. " + GATES)
     only_total["plugins/pz/hooks/scripts/guard-bash.sh"] = "#!/bin/sh\n"
     scenario("a wrong total is reported", rule=HC, expect_finding=True, files=only_total)
     scenario("the right total and derived advisory count is silent", rule=HC, expect_finding=False,
-             files=_hooks(3, "Of the three hook scripts, three are advisory.\n"))
+             files=_hooks(3, "Of the three hook scripts, three are advisory. " + GATES))
     # The advisory figure is DERIVED (total minus the named gates), not a second free number.
-    gated = _hooks(2, "Of the three hook scripts, two are advisory.\n")
+    gated = _hooks(2, "Of the three hook scripts, two are advisory. " + GATES)
     gated["plugins/pz/hooks/scripts/guard-bash.sh"] = "#!/bin/sh\n"
     scenario("advisory is total minus the named gates", rule=HC, expect_finding=False, files=gated)
-    wrong = dict(gated); wrong["CLAUDE.md"] = "Of the three hook scripts, three are advisory.\n"
+    # A paragraph that names NO gate means the decision is recorded nowhere -- a new fail-closed
+    # hook would join the set without anyone classifying it.
+    #
+    # THE NUMBERS HERE DELIBERATELY RECONCILE at gates=0 (3 scripts, "three are advisory"), so the
+    # ONLY thing that can produce a finding is the missing gate names. A first version said "two
+    # are advisory", which also mismatches when no gate is found -- so a finding appeared either
+    # way and the mutation deleting this branch SURVIVED.
+    scenario("a paragraph naming no gate by path is reported", rule=HC, expect_finding=True,
+             files=_hooks(3, "Of the three hook scripts, three are advisory.\n"))
+    wrong = dict(gated)
+    wrong["CLAUDE.md"] = "Of the three hook scripts, three are advisory. " + GATES
     scenario("a wrong advisory count is reported even when the total is right",
              rule=HC, expect_finding=True, files=wrong)
     # The sentence disappearing must FAIL LOUD, not silently stop checking.
+    # The sentence gone entirely: the gate paths go with it, so this must report the MISSING
+    # SENTENCE, which is checked before the gate names are read.
     scenario("a reworded sentence is reported, not ignored", rule=HC, expect_finding=True,
-             files=_hooks(3, "We ship some hooks.\n"))
+             files=_hooks(3, "We ship some hooks. " + GATES))
     scenario("no hook scripts at all is silent", rule=HC, expect_finding=False,
              files={"CLAUDE.md": "Of the ten hook scripts, eight are advisory.\n"})
 
@@ -5187,6 +5284,34 @@ def selftest() -> int:
     scenario("doctrine absent from both is out of scope",
              {SCAFFOLD: "# setup\n", "AGENTS.md": "# A\n"},
              rule=DWS, expect_finding=False)
+
+    # ---- harness-dependency-undeclared (#1109) ---------------------------------------
+    HDU = "harness-dependency-undeclared"
+    HARNESS = "plugins/rails-flow/scripts/check_hook_gates.py"
+    # THE DEFECT: the harness drives a hook that shells out to a script no guard stages, so the
+    # UNMUTATED selftest fails in the tempdir and every mutation reads as caught. Six guards went
+    # vacuous this way at once.
+    scenario("a script a driven hook runs, undeclared by a guard",
+             {HARNESS: "drives guard-x.sh\n",
+              "plugins/rails-flow/hooks/scripts/guard-x.sh": "python3 scripts/helper.py\n",
+              "plugins/rails-flow/scripts/helper.py": "x = 1\n",
+              "scripts/mutations/g.py": "selftest='plugins/rails-flow/scripts/check_hook_gates.py'\n"},
+             rule=HDU, expect_finding=True)
+    # MUST PASS: declared. Without this half the rule fires on correct guards and gets removed.
+    scenario("...declared in needs is silent",
+             {HARNESS: "drives guard-x.sh\n",
+              "plugins/rails-flow/hooks/scripts/guard-x.sh": "python3 scripts/helper.py\n",
+              "plugins/rails-flow/scripts/helper.py": "x = 1\n",
+              "scripts/mutations/g.py": "selftest='plugins/rails-flow/scripts/check_hook_gates.py'\n"
+                                        "needs=('plugins/rails-flow/scripts/helper.py',)\n"},
+             rule=HDU, expect_finding=False)
+    # SCOPE: a hook the harness does NOT drive cannot make a guard inert, so it is out of scope.
+    scenario("a hook the harness never drives is out of scope",
+             {HARNESS: "drives nothing\n",
+              "plugins/rails-flow/hooks/scripts/guard-x.sh": "python3 scripts/helper.py\n",
+              "plugins/rails-flow/scripts/helper.py": "x = 1\n",
+              "scripts/mutations/g.py": "selftest='plugins/rails-flow/scripts/check_hook_gates.py'\n"},
+             rule=HDU, expect_finding=False)
 
     # The count is printed HERE, after the LAST scenario. It used to sit further up, and a
     # block appended below it reported a total that excluded itself -- a tally that is wrong

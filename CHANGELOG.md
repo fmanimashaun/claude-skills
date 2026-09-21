@@ -7,6 +7,61 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-21 (release v1.136.0)
+
+- **Two guards went INERT the moment the harness shipped, and one of them was my own invariant —
+  `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`,
+  `scripts/mutations/design_prompt.py`** (#1109). `doctrine_map`'s selftest copies the repo into a
+  tempdir and **re-imports `mutation_check`**, where a file a guard legitimately needs — `CHANGELOG.md`
+  — is not staged. The "every declared path resolves from its base" check ran at **import time** and
+  raised there, breaking a guard that was correct: a gate red on correct code, from the invariant
+  added to prevent exactly that class. It now runs in the selftest, against the real tree, one
+  assertion per declared path (**1209 → 1520 checks**). Separately `design_prompt`'s `needs` was
+  `plugins/design-flow/scripts` and the relocation stripped it to `scripts`; moving the guard back
+  did not restore it, so it staged the repo-root `scripts/` — which has no `doctrine_path.py`, the
+  sibling it imports. Restored by diffing against the pre-relocation commit rather than guessing; the
+  other three moved-back guards were verified identical to theirs.
+- **The last INERT hook guard — `scripts/mutations/hook_normalize_cmd.py`** (#1109). The previous
+  fix matched guards by the exact `needs` string they shared, and this one's differs because it is
+  cross-plugin, so it was missed: `dev`'s sweep went from **6 INERT guards to 1 of 1028**. Same
+  cause, same remedy — the five scripts a driven hook runs are now declared here too.
+- **Six hook guards were INERT, so `dev`'s full sweep was red for four hours —
+  `scripts/mutations/hook_guard_bash.py`, `scripts/mutations/hook_guard_lane.py`,
+  `scripts/mutations/hook_lint_ruby.py`, `scripts/mutations/hook_self_consistency.py`,
+  `scripts/mutations/hook_stop_gate.py`, `scripts/mutations/hook_session_start.py`,
+  `scripts/mutations/hook_release_gate.py`** (#1109). #1106 added `guard-claims` fixtures to
+  `check_hook_gates.py`; that hook runs `extract_claims.py`, and no guard listed it in `needs`. A
+  staged mutant therefore ran without it, the **unmutated** selftest already failed, and
+  `mutation_check` reports that as **INERT** — every mutation counted as "caught" whether or not it
+  broke anything. Six guards went blind at once. **`dev` went red at 16:06 and three further merges
+  landed on top**, each green on its own PR because `--fast` skips `mutation coverage` by design
+  (438 of the sweep's 475 s) — so the push-to-`dev` run is the one that carries the answer, and
+  nobody read it. Five dependencies are now declared across seven guards; **four predated this
+  change** and are declared rather than baselined, because being in `needs` costs nothing and being
+  absent is a latent INERT.
+- **A driven hook gained a dependency nothing declared, and six guards went vacuous at once —
+  `scripts/lint_self_consistency.py`, 7 guard modules, `scripts/mutations/lint_self_consistency.py`**
+  (#1109). #1106 added `guard-claims` fixtures to `check_hook_gates.py`; that hook runs
+  `extract_claims.py`, which no guard listed in `needs`. A staged mutant therefore ran without it,
+  the **unmutated** selftest already failed, and `mutation_check` reports that as **INERT** — every
+  mutation "caught" whether or not it breaks anything. **`dev`'s full sweep went red at 16:06 and
+  three further merges landed on top of it**, each green on its own PR because `--fast` skips
+  `mutation coverage` by design (438 of the sweep's 475 s). The INERT check caught it; new rule
+  `harness-dependency-undeclared` makes it catchable at the PR instead, by following
+  harness → driven hook → script. It found **five** gaps, four of them predating this change, and
+  all five are now declared rather than baselined: being in `needs` is free, being absent is a
+  latent INERT.
+- **The fail-closed gate list was recorded in two places — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`, `CLAUDE.md`** (#1106). `hook-count-drift` derives
+  the advisory hook count as *total minus the gates CLAUDE.md names*, and held those gate names in a
+  hardcoded Python set. The set's own comment defended it correctly — which hooks fail closed is a
+  **decision**, not something inferable from a script, since `exit 2` appears in advisory hooks too
+  — but the deliberate act is *writing it in `CLAUDE.md`*, and that is enough on its own. Adding a
+  fourth gate meant editing two places, and the second was a list that could go stale exactly like
+  the count the rule exists to protect. The names are now parsed from the sentence that records the
+  decision; a paragraph naming **no** gate is its own finding, because then the decision is recorded
+  nowhere and a new fail-closed hook would join the set unclassified.
+
 ### 2026-09-21 (release v1.135.0)
 
 - **We were about to ship behavioural doctrine we did not follow — `AGENTS.md`,
@@ -3101,6 +3156,72 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 2026-09-21 (release v1.136.0)
+
+- **The mutation harness now ships, so a project can prove the gates can still fail —
+  `plugins/rails-flow/scripts/check_toolchain_mutations.py` (new), 59 guards relocated into
+  `plugins/*/scripts/mutations/`, `plugins/rails-flow/commands/setup-flow.md` §8c** (#1109, tier 2).
+  Guards are discovered from **two roots** now: `scripts/mutations/` for maintainer-only and
+  cross-plugin subjects, and `plugins/<name>/scripts/mutations/` for a guard whose subject and every
+  dependency sit inside one plugin — those ship, written **plugin-relative**, because `plugins/…`
+  is a path no consumer project has. **59 of 65 relocated; 6 stayed** (`project_gates` reading three
+  manifests, `hook_normalize_cmd` proving two plugins share one normaliser, and four more) because a
+  project that installed one plugin could not verify a cross-plugin claim anyway — a real limit, and
+  the runner reports it rather than hiding it. **Deliberately NOT in the per-run sweep**: a mutation
+  catches nothing while you work; it proves a property of the *checker*, which moves on a toolchain
+  upgrade, not when you edit your app. `setup-flow` §8c runs it at setup and after an upgrade.
+
+- **A project got the gates and no proof they work —
+  `plugins/rails-flow/scripts/check_toolchain_selftests.py` (new),
+  `plugins/rails-flow/checks.json`, `plugins/rails-flow/scripts/project_gates.py`,
+  `scripts/mutations/check_toolchain_selftests.py`** (#1109). Measured: **33 consumer gate entries,
+  20 of 20 shipped check scripts carrying a `--selftest`, and 0 of 33 entries running one.**
+  Upstream, `mutation coverage` runs 1000 mutations across 97 guards and is the only reason any of
+  it is trusted — and it caught **four gates written that same day being partly vacuous**, every one
+  of which looked right and passed its own fixtures. None of that machinery crossed into a project,
+  so a shipped check whose regex stopped matching after a Rails or Tailwind upgrade would report
+  clean for ever. **One gate runs all 29 selftests in under four seconds** rather than 29 entries
+  that would nearly double the report; a check carrying no selftest is **counted as unproven**, not
+  silently accepted. **A failing selftest routes to `ERROR`, not `FAIL`** — the runner's existing
+  state model already distinguishes *ours to explain* from *the project's to fix*, and collapsing
+  them is how a team learns to ignore a red gate (#1097, one level out). It answers the question the
+  toolchain's own CI is structurally unable to answer: our CI proves a check discriminates on **our**
+  machine, never on yours.
+- **A spelled-out number was not a claim, and that is the one a reader never re-derives —
+  `plugins/rails-flow/scripts/extract_claims.py`, `scripts/mutations/extract_claims.py`** (#1106).
+  The extractor found `292 assertions` and missed *"quotes the marker **ten times** in its own
+  bullets"* in the same body — which was wrong (2 in that release, 8 in older published entries) and
+  was caught by the maintainer rather than by anything we ship. **Bound to a countable noun, exactly
+  as the digit rule is**, and that binding is what keeps the tool usable: number words are far
+  commoner in prose than digits, so matching them bare would turn *"one of the reasons"*, *"two
+  halves of one failure"* and *"the one place it lives"* into claims, flood every report, and a
+  report nobody triages is indistinguishable from a passing one. Three prose fixtures hold that
+  line, and a declared mutation unbinds the noun to prove they do.
+
+- **A PR body's numbers were checked by an agent nobody remembered to run —
+  `plugins/rails-flow/hooks/scripts/guard-claims.sh` (new),
+  `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `CLAUDE.md`, `scripts/lint_self_consistency.py`** (#1106). `claim-verifier` exists, works, covers
+  *"any number: counts, ratios, versions, timings"*, and is named in `/maintainer-work` — and it was
+  skipped for an entire working day while **two wrong numbers reached merged PR bodies**: *"292
+  assertions, up from 285"* (it was 292 both before and after) and *"ten times in this release's own
+  bullets"* (2 here, 8 in older published entries, the second caught by the maintainer rather than
+  by anything we ship). **The capability was never the gap; remembering to use it was**, so this is
+  a fail-closed `PreToolUse` hook — the **fourth**, scoped to `gh pr create/edit` carrying a body —
+  rather than another line of doctrine. It fails **open** when it cannot read the body, because its
+  job is to make the check happen where it can, never to block opening a PR.
+
+  **It also closes the doctrine map's one tracked gap**, and the map is what made that findable: the
+  gap row recorded its own blocker exactly — *"mechanisable in principle … but it would live in CI
+  against the PR body, **which no gate in this repo reads**"* — and a hook built for an unrelated
+  reason made that untrue. A PR touching `skills/**` whose body names neither **framework claim**
+  nor **architecture decision** is now refused. `doctrine_map.py` goes from 1 gap to **0**.
+
+  Two fixture defects surfaced on the way, both the same shape: **a control that cannot reach the
+  code it guards proves nothing.** The out-of-scope cases carried a claim-free body, so deleting the
+  scope test left them green and the mutation SURVIVED; and the missing-gate fixture's numbers also
+  mismatched at zero gates, so a finding appeared either way. Both now isolate exactly one variable.
 
 ### 2026-09-21 (release v1.135.0)
 
@@ -13967,6 +14088,55 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 2026-09-21 (release v1.136.0)
+
+- **A lane was described as one resource when it is three, and the mechanism it recommended caused
+  a second failure — `skills/parallel-session-lane/SKILL.md`** (#1078). §1 said *"a private test
+  database"*. Correct and a third of the answer: six sessions on one repository in a day produced
+  **three distinct cross-session corruptions**, and **every one first presented as a defect in the
+  code under test**. A shared test database deadlocks (`PG::TRDeadlockDetected`, the blocking PID
+  another session's) and the loser sees `PG::UniqueViolation` from a seed — it reads as a broken
+  seed. A shared **development** database has rows destroyed between load and use, surfacing as
+  `ActiveRecord::InvalidForeignKey` inside a rake task — it reads as a broken task. And a **reused
+  server** runs the browser against another worktree's code against a third session's database.
+  **`DATABASE_URL` is the wrong lever**, and the skill recommended it: it names *one* database while
+  a lane needs two, so a value set to isolate the test database is inherited by a browser step that
+  boots a development server — measured as 12 browser failures inside a CI run and 182 standalone,
+  neither about the code. Per-lane names belong in `config/database.yml`. The third requirement is
+  already enforced: `/qa-flow:smoke` §2 resolves the listener's working directory and **refuses** a
+  stranger (#1080), and `crawl`, `walkthrough` and `/design-flow:audit` delegate to it.
+
+- **Five components a CRUD admin needs, that the catalogue had no row for —
+  `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-shapes.json`,
+  `scripts/check_component_states.py`, `dist/design-system.skill`** (#1069). From the systematic
+  sweep against seven established libraries: **Search field, Multi-select / token input, Toolbar,
+  Split button, Code block** — the five the issue ranks as most likely to produce hand-written HTML.
+  Every admin index has a search field; a bulk-actions bar currently ships as **five tab stops in the
+  middle of a table**; `Combobox` is written single-value throughout, so a developer needing a set
+  bounces off it; and **our own `Empty state` row already required *"a short error identifier the
+  person can quote to support"* while saying nothing about how to render it** — `Code block` is that
+  missing half. Tree view and OTP are **deferred rather than dropped**: both carry framework claims
+  needing their own verified change. Maintainer decision recorded on the issue, 2026-09-21.
+
+  **The ARIA facts are a framework claim and carry citations**, fetched at the moment of writing, not
+  recalled: `role="toolbar"` with roving tabindex, `aria-labelledby`/`aria-label` and
+  `aria-orientation` ([APG Toolbar]); `aria-haspopup="menu"`, `aria-expanded`, and Enter/Space opening
+  the menu onto the first item ([APG Menu Button]); `aria-multiselectable="true"`, `aria-selected` on
+  selected options, and the modifier-free `Space` model APG recommends ([APG Listbox]). Verified
+  2026-09-21.
+
+  **Two things are deliberately NOT claimed.** APG's Menu Button page states **no Escape behaviour** —
+  it defers to the Menu pattern — so the Split button row points at our existing `Dropdown` row
+  instead of inventing a citation, which is #142's defect exactly. And APG gives **no recommendation**
+  on selection-follows-focus for multi-select, describing it only for single-select; the row says
+  that, rather than claiming APG forbids it. `Down Arrow`/`Up Arrow` on the split button are marked
+  **APG-optional, ours by decision**.
+
+  Two gates enforced the rest: `check_component_states` required all seven states per row and the
+  ratchet moved **1 → 6**; `check_component_shapes` refused every row until it had a skeleton, and now
+  reconciles **62 rows against 62 shapes**.
 
 ### 2026-09-21 (release v1.134.0)
 

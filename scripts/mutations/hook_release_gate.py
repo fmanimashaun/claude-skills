@@ -10,7 +10,12 @@ GUARD = Guard(
     # DECLARED, not assumed: an undeclared read makes the unmutated baseline die in the tempdir and
     # every mutation then reads as "caught" by an error that has nothing to do with the mutation.
     needs=("plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
-           "plugins/qa-flow/scripts"),
+           "plugins/qa-flow/scripts",
+           'plugins/rails-flow/scripts/check_criteria.py',
+           'plugins/rails-flow/scripts/check_handoff.py',
+           'plugins/rails-flow/scripts/extract_claims.py',
+           'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is

@@ -6,6 +6,36 @@ GUARD = Guard(
     subject="scripts/lint_self_consistency.py",
     selftest="scripts/lint_self_consistency.py",   # --selftest lives in the module itself
     mutations=(
+        # #1109. Six hook_* guards went INERT at once because a driven hook gained a script
+        # dependency nothing declared -- the unmutated selftest already failed in the staged
+        # tempdir, so every mutation read as caught, and dev's full sweep was red for an hour.
+        Mutation(
+            "an undeclared harness dependency stops being a finding",
+            "        missing = [g for g in guards if script not in read(g)]",
+            "        missing = []",
+            "a script a driven hook runs, undeclared by a guard",
+        ),
+        Mutation(
+            # SCOPE: a hook the harness never drives cannot blind a guard, and flagging it would
+            # be noise -- a rule that reports things nobody triages gets switched off.
+            "hooks the harness never drives are flagged too",
+            "        if hook.name not in harness_body:",
+            "        if False:",
+            "a hook the harness never drives is out of scope",
+        ),
+        # #1106. The named gates are parsed from the CLAUDE.md sentence rather than hardcoded, so
+        # classifying a hook is ONE deliberate act instead of two places to keep in step.
+        Mutation(
+            # A paragraph naming NO gate means the decision is not recorded anywhere. Silence
+            # there would let a fail-closed hook join without ever being classified.
+            "a paragraph that names no gate at all stops being a finding",
+            "    if not named:",
+            "    if False:",
+            # The FIXTURE'S label, not the finding text -- this mutation makes that finding
+            # disappear, so expecting its message fails for the wrong reason (mutation_types.py
+            # says so in as many words, and I did it anyway).
+            "a paragraph naming no gate by path is reported",
+        ),
         # #1088. The advisor stance and the context budget are scaffolded into every downstream
         # CLAUDE.md. A copy that shipped while this repo followed neither is the plainest form of
         # the defect this whole lint exists for.
@@ -120,8 +150,8 @@ GUARD = Guard(
         # they call the check function directly. This mutation re-orphans it.
         Mutation(
             "a rule's findings are computed and dropped from run()'s return",
-            "            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways,",
-            "            + xplugin + unowned + ci_step + promo_ctx + bothways,",
+            "            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,",
+            "            + xplugin + unowned + ci_step + promo_ctx + bothways + harness_dep,",
             "drops them from its return",
         ),
         Mutation(
@@ -443,9 +473,11 @@ GUARD = Guard(
         ),
         Mutation(
             "the advisory figure stops subtracting the gates, so it drifts freely",
-            # #660 extracted the set to NAMED_GATES when guard-lane.sh joined it; the anchor
-            # follows the code and the assertion it guards is unchanged.
-            "    gates = sum(1 for s in scripts if s.name in NAMED_GATES)",
+            # #660 extracted the set to NAMED_GATES when guard-lane.sh joined it; #1106 replaced
+            # that hardcoded set with the names parsed from CLAUDE.md, so classifying a hook is
+            # one deliberate act rather than two. The anchor follows the code; the assertion it
+            # guards is unchanged.
+            "    gates = sum(1 for s in scripts if s.name in named)",
             "    gates = 0",
             "advisory is total minus the named gates",
         ),

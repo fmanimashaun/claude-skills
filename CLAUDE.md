@@ -33,7 +33,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 3. **Verify the claim before editing.** Framework claim → `doctrine-verifier` CONFIRMED, or no edit.
    Our own design → the maintainer's decision recorded on the issue → *The gate*.
 4. Branch `fix/*` or `feature/*` **off `dev`** → *Git flow*.
-5. Every check you add must be able to fail: a `--selftest`, and a guard under `scripts/mutations/`.
+5. Every check you add must be able to fail: a `--selftest`, and a guard (see the two roots below).
 6. Edited a command or skill? `python3 scripts/lint_markdown_shell.py` and `lint_markdown_code.py`.
    Edited `skills/**`? `python3 scripts/package_core.py`, commit the `dist/` change → *Packaging*.
 7. CHANGELOG bullet under the component's **`### Unreleased`**, naming a path in backticks → *Versioning*.
@@ -127,7 +127,8 @@ it before publishing.
 - **A pull request runs `--fast`; a push to `dev` and the promotion run everything.** `--fast` skips
   exactly `PR_SKIPPED_GATES` (`mutation coverage`, 438 of the sweep's 475 s) and reports the skip as
   `skip` with its reason. The set is pinned by the doctor's selftest in both directions (#866).
-  Guards live one per file under `scripts/mutations/`, discovered by glob.
+  Guards live one per file, globbed from **two roots**: `scripts/mutations/` (maintainer-only or
+  cross-plugin) and `plugins/<name>/scripts/mutations/` (plugin-relative, ships, #1109).
 - **It asserts `node` and `ruby` are present**; without them `lint_markdown_code.py` exits 3 and a skip
   is indistinguishable from a pass. `dist/` drift is checked here **and** in `release.yml`; change one,
   change the other — same for `scripts/release_local.sh`.
@@ -250,11 +251,12 @@ re-prompt on **one** unlisted binary; the example deliberately omits `rm`, `curl
 ## Platform
 
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
-open.** Of the twelve hook scripts, nine are advisory and fail open — an advisory that blocks work on a
-missing dependency gets disabled. Three **gates fail closed**, each scoped to what it guards:
+open.** Of the thirteen hook scripts, nine are advisory and fail open — an advisory that blocks work on a
+missing dependency gets disabled. Four **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (falls back to the raw payload;
 `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
-`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned). Classify a new hook
+`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned),
+`plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body). Classify a new hook
 with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the
 environments that broke them (#822–#826).

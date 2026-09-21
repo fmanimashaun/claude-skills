@@ -7,7 +7,8 @@ GUARD = Guard(
     name="design_prompt",
     subject="plugins/design-flow/scripts/design_prompt.py",
     selftest="plugins/design-flow/scripts/design_prompt.py",
-    needs=("plugins/design-flow/scripts", "skills"),
+    needs=("plugins/design-flow/scripts", "skills"),   # the whole scripts/ dir: design_prompt
+           # imports its sibling `doctrine_path`, and the relocation stripped the prefix (#1109)
     mutations=(
         Mutation(
             # A primitive in the prompt invites the canvas to bind to a private name.

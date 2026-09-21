@@ -83,6 +83,26 @@ def _fixture_guard(mutations: tuple[mc.Mutation, ...]) -> tuple[mc.Guard, Path]:
 def run() -> int:
     original_repo = mc.REPO
 
+    # ---- 0. EVERY DECLARED PATH RESOLVES FROM ITS GUARD'S BASE ------------------------
+    # A shipped guard's paths are plugin-relative so it can run in a project that installed only
+    # that plugin; one reaching out to `skills/` or a sibling plugin cannot resolve there, and the
+    # failure is a FileNotFoundError deep in staging rather than a sentence anyone can act on.
+    #
+    # CHECKED HERE RATHER THAN AT IMPORT, and that placement is the point. This module is also
+    # loaded inside a STAGED tempdir -- `doctrine_map`'s own selftest copies the repo and re-imports
+    # it -- where a file a guard legitimately needs, such as `CHANGELOG.md`, is simply not staged.
+    # Raising at import broke two guards that were correct, which is the "gate red on correct code"
+    # shape. The real tree is the only place the question is meaningful (#1109).
+    for guard in mc.GUARDS:
+        base = original_repo / guard.base
+        for relative in sorted({guard.subject, guard.selftest, *guard.deps, *guard.needs}):
+            _tick()
+            if not (base / relative).exists():
+                FAILURES.append(
+                    f"{guard.name}: {relative!r} does not resolve from base {guard.base!r} — a "
+                    f"shipped guard's paths are plugin-relative; if it cannot be expressed that "
+                    f"way the guard belongs in scripts/mutations/")
+
     # ---- 1. a real break must be CAUGHT, and attributed to the right fixture ------------
     guard, root = _fixture_guard((
         mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
@@ -175,7 +195,8 @@ def run() -> int:
     # Without this the mutation list rots silently: an anchor that drifts raises at run time, but
     # only for whoever runs the checker. Asserting it here makes drift a selftest failure.
     for real_guard in mc.GUARDS:
-        source = (original_repo / real_guard.subject).read_text(encoding="utf-8")
+        # Relative to the guard's BASE: a shipped guard's paths are plugin-relative (#1109).
+        source = (original_repo / real_guard.base / real_guard.subject).read_text(encoding="utf-8")
         for mutation in real_guard.mutations:
             _tick()
             hits = source.count(mutation.old)
@@ -203,8 +224,9 @@ def run() -> int:
         # no guard declares a directory dep, so the two behave identically today, and a dep that
         # resolves to a directory could never be imported — it is a typo worth catching.
         missing = [p for p in (real_guard.subject, real_guard.selftest, *real_guard.deps)
-                   if not (original_repo / p).is_file()]
-        missing += [p for p in real_guard.needs if not (original_repo / p).exists()]
+                   if not (original_repo / real_guard.base / p).is_file()]
+        missing += [p for p in real_guard.needs
+                    if not (original_repo / real_guard.base / p).exists()]
         if missing:
             FAILURES.append(f"{real_guard.name}: declares paths that do not exist: {missing}")
         if not real_guard.mutations:
@@ -226,7 +248,7 @@ def run() -> int:
     import re as _re
 
     for guard in mc.GUARDS:
-        subject = original_repo / guard.subject
+        subject = original_repo / guard.base / guard.subject
         if not subject.is_file():
             continue
         body = subject.read_text(encoding="utf-8")

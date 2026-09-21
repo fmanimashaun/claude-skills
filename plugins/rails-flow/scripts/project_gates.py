@@ -106,6 +106,11 @@ class Check:
     applies_when: list[str]
     requires: list[str]
     root: Path            # the plugin directory this came from
+    # A SELFTEST checks the CHECKER, not the project. Its failure is ours to explain, never the
+    # project's to fix -- so a non-zero exit routes to DOCTRINE like an ERROR, not to APP like a
+    # FAIL. Collapsing those is how a team learns to ignore a red gate (#1097 is the same defect
+    # one level in: a timeout reported as a failure).
+    selftest: bool = False
 
 
 @dataclass
@@ -253,7 +258,8 @@ def load_checks(roots: list[Path]) -> tuple[list[Check], list[str]]:
             checks.append(Check(
                 plugin=data.get("plugin", root.name), id=raw["id"], why=raw["why"],
                 command=list(raw["command"]), applies_when=list(raw.get("applies_when", [])),
-                requires=list(raw.get("requires", [])), root=root))
+                requires=list(raw.get("requires", [])), root=root,
+                selftest=bool(raw.get("selftest", False))))
     return checks, problems
 
 
@@ -493,6 +499,13 @@ def run_check(check: Check, project: Path) -> Result:
                 return Result(check, NA, summary, findings)
             if done.returncode == 2:
                 return Result(check, ERROR, summary, findings)
+            if check.selftest:
+                # THE GATE IS BROKEN HERE, which is not "your code is wrong". A selftest proves
+                # the checker still discriminates in THIS project -- its Python, its tree shape,
+                # its framework version -- and our CI can only ever prove it in ours. When it
+                # fails, the finding belongs to whoever ships the gate.
+                return Result(check, ERROR, f"the checker's own selftest failed here — "
+                                            f"{summary}", findings)
             return Result(check, FAIL, summary, findings)
     return Result(check, PASS, f"{len(argvs)} invocation(s)")
 
