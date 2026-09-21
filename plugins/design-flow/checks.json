@@ -14,6 +14,34 @@
   ],
   "checks": [
     {
+      "id": "layout-composition",
+      "why": "The doctrine is a priority order -- fluid, then intrinsic, then breakpoints as an exception that must justify itself -- and until now it was prose that nothing checked. Measured on a consumer app that declares 20-odd primitives of its own: grid-auto used 21 times, so the idea took, and 31 elements still hand-roll `flex` + an alignment + a gap, which is what cluster IS. Three more change the layout axis at a breakpoint where switcher, Sidebar and grid-auto adapt with no query. Sizing breakpoints are not flagged because the doctrine prescribes them, and a genuine structural swap is exempt when it is DECLARED.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_layout_composition.py"
+      ],
+      "applies_when": [
+        "app/views"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "component-contract",
+      "why": "The component mandate was prose, and prose drifts where nothing checks it. Measured on a consumer app: ZERO raw form fields, where a request spec asserted anatomy; EIGHTEEN raw buttons, where only a sentence did. Nine retyped the class string and one copy appeared three times, omitting a class the component had gained because a table action column broke mid-word -- carrying the exact defect the component was fixed for, unable to receive the fix. The second rule is the cause of the first: a component that cannot take a caller's data- or form- attribute is one a developer writes by hand instead.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_component_contract.py"
+      ],
+      "applies_when": [
+        "app/components"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "variant-conformance",
       "why": "Variants that differ in anything but composition are a fork of the design system, and a switcher route left reachable in production ships every rejected screen.",
       "command": [

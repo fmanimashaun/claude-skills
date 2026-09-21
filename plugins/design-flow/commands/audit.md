@@ -127,15 +127,43 @@ place an app's launch is described, and `/qa-flow:smoke` already reads it. Probe
 PORT="$(python3 -c 'import re,sys;m=re.search(r"^\s+port:\s*(\d+)",open("qa/qa.config.yml").read(),re.M);print(m.group(1) if m else 3000)' 2>/dev/null || echo 3000)"
 CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${PORT}/up" 2>/dev/null)
 case "$CODE" in
-  ''|000) echo "nothing answered on ${PORT}: boot it with qa/qa.config.yml app.start, then re-run" ;;
-  *) echo "reusing the server on ${PORT} (/up answered ${CODE}) — not launching a second" ;;
+  ''|000)
+    echo "nothing answered on ${PORT}: boot it with qa/qa.config.yml app.start, then re-run"
+    exit 2 ;;
 esac
+
+OWNER_PID="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1)"
+if [ -r "/proc/$OWNER_PID/cwd" ]; then
+  OWNER_DIR="$(readlink -f "/proc/$OWNER_PID/cwd")"          # Linux
+else
+  OWNER_DIR="$(lsof -a -d cwd -p "$OWNER_PID" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"
+fi
+if [ -n "$OWNER_DIR" ] && [ "$OWNER_DIR" = "$PWD" ]; then
+  echo "reusing the server on ${PORT} (/up answered ${CODE}) — same working tree"
+else
+  echo "REFUSING to audit the server on ${PORT}: it is serving ${OWNER_DIR:-an unresolved directory}, not $PWD"
+  exit 2
+fi
 ```
 
 Probe for **an answer**, not a healthy one. `curl -f` exits non-zero on 4xx/5xx, so an app that is
 up but whose `/up` returns 500 is indistinguishable from an empty port — and the branch above would
 then print *"nothing on ${PORT}"*, which is false, and send you to boot a server already running.
 `%{http_code}` is `000` only when no HTTP response arrived.
+
+**An answer is not ownership, and here that distinction decides whether the audit means anything.**
+This mode exists to measure what the *cascade* resolves to in *this working tree* — so a snapshot
+taken against a server booted from a different checkout is not a weaker measurement of this tree's
+CSS, it is a precise measurement of some other tree's. Every downstream number — resolved colours,
+focus rules, token membership — would be attributed to the wrong source. Resolving the listener's
+working directory and refusing a stranger is what keeps the rest of this mode's arithmetic about
+the code you are auditing. Measured on this machine while the fix was written: a Ruby server
+answering on `3001` resolved to a different project's checkout entirely.
+
+**An unresolvable owner is a refusal, not a shrug.** In a container, on a remote runner, or when
+the process belongs to another user, the cwd cannot be read — and "cannot show it is mine" is not
+"it is mine". Fall back to the source checklist and say so; do not audit against it and qualify the
+finding afterwards.
 
 No `app:` block? Infer the Rails default (`bin/dev`, port 3000, `/up`) and say so.
 
@@ -201,6 +229,59 @@ which is itself the finding.
 Report the FACT lines (`dark:` occurrences, breakpoint occurrences, the radius-language
 distribution, the shadow-only focus count) even when nothing fails: those numbers are the trend
 this mode exists to produce, and a regression in them is a diff rather than an opinion.
+
+### 4. The second instrument — Chrome DevTools MCP, for what the collector cannot reach
+
+**The collector above is the right tool for token conformance and it has two structural blind
+spots.** It launches a *fresh* browser, so it never sees a page behind a login; and it reads the
+DOM and computed styles, so it never sees the **accessibility tree** — the thing that decides
+whether an icon-only action is actually named. Chrome DevTools MCP covers both, by attaching to a
+browser that is already open.
+
+**Use it in addition, never instead.** The collector stays the default: it is deterministic, it
+sweeps route × viewport × theme unattended, and its output is judged by a script rather than by
+reading. DevTools is the instrument you reach for when the question is *"what does a screen reader
+get on this authenticated page"*, and answering it by inspection is the only option.
+
+**Setup** — one line, then restart the session:
+
+```bash
+claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics
+```
+
+`--autoConnect` attaches to the Chrome you already have open, which is the whole point: your
+session, your cookies, the admin screen you are actually looking at. Without it the server launches
+its own empty browser and you have re-created the collector with fewer guarantees.
+
+**What to measure with it, and nothing else** — this list is the scope, because an inspection tool
+with no scope becomes a way to browse:
+
+| ask | tool | what a finding looks like |
+|---|---|---|
+| is this icon-only action named? | `take_snapshot` | the a11y tree shows `button "Edit"` where it must show `button "Edit Ada Lovelace"` |
+| does this action label wrap in its cell? | `take_screenshot` + `resize_page` | the label breaks mid-word at the narrow width — the `whitespace-nowrap` defect |
+| is the focus ring actually painted? | `press_key` Tab, then `take_screenshot` | no visible ring, or a ring clipped by an overflow ancestor |
+| what did the cascade resolve to here? | `evaluate_script` → `getComputedStyle` | a literal colour where a role token was written |
+| is this page's a11y/perf below par? | `lighthouse_audit` | a category score with its failing audits named |
+
+**Three rules, each of which has already cost somebody an afternoon.**
+
+**Name the page you measured.** `list_pages` first, `select_page` explicitly. A DevTools session
+attached to a real browser has whatever tabs the human left open, and a measurement taken against
+the wrong tab is not wrong-looking — it is a confident number about a page nobody asked about.
+
+**A snapshot is evidence of one state, not of the component.** The a11y tree after a Turbo
+navigation is a different tree; re-snapshot after the interaction rather than reasoning forward
+from the one you took.
+
+**Never treat a clean inspection as coverage.** You looked at the pages you chose, at the widths you
+chose. The collector's sweep is the denominator; this is a probe. Say which you ran, and say that
+this one has no denominator — an audit that reports "checked in the browser, looks right" over
+three screens out of forty is the shape this whole file exists to refuse.
+
+**When the server is absent, say so and fall back.** The collector is the documented path and a
+source audit is the documented fallback. A missing inspection tool is a skip, reported as a skip,
+and skips are not passes.
 
 ## Checklist (cite file:line for each finding)
 

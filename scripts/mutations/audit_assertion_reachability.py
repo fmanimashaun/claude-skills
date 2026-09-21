@@ -70,7 +70,7 @@ GUARD = Guard(
             # A case the old implementation FAILS is the evidence the suite works. Losing it makes
             # every suite look like decoration.
             "no case is ever counted as discriminating",
-            "    failing = [lab for lab in rest if lab.lower() in output]",
+            "    failing = [lab for lab in rest if reported_as_failing(output, lab)]",
             "    failing = []",
             "the case the old implementation FAILS is reported as discriminating",
         ),
@@ -78,7 +78,7 @@ GUARD = Guard(
             # ...and the other direction: counting every case as discriminating makes every suite
             # look like proof, which is the flattering answer and therefore the dangerous one.
             "every case is counted as discriminating, so no suite is ever decoration",
-            "    passing = [lab for lab in rest if lab.lower() not in output]",
+            "    passing = [lab for lab in rest if not reported_as_failing(output, lab)]",
             "    passing = []",
             "the case the old implementation PASSES is reported as non-discriminating",
         ),
@@ -103,7 +103,7 @@ GUARD = Guard(
             # The other direction: refusing every run would also "pass" a test that only checked
             # the refusal, so the fixture pairs a failing control with a passing one.
             "every control counts as failing, so no split is ever reportable",
-            "    failed_controls = [lab for lab in controls if lab.lower() in output]",
+            "    failed_controls = [lab for lab in controls if reported_as_failing(output, lab)]",
             "    failed_controls = list(controls)",
             "a passing control lets the split through",
         ),
@@ -113,6 +113,52 @@ GUARD = Guard(
             "            if lab not in guards_ and CONTROL_MARKER not in lab.lower()]",
             "    rest = [lab for lab in unique if lab not in guards_]",
             "the control is a precondition, not a data point",
+        ),
+        # #1059 / #1060, the SHIPPED defect. A bare substring match counts a label the harness
+        # never reported -- a traceback echoes the source line -- and a label merely a
+        # prefix of a longer failing one. Both inflate the split in the flattering
+        # direction, which is the one nobody audits. `failing` and `passing` are mutated
+        # separately because each is caught by a DIFFERENT fixture: breaking only one
+        # leaves the other's guard still anchored, and the pair would survive as a set.
+        Mutation(
+            'the FAILING side returns to a bare substring test',
+            '    failing = [lab for lab in rest if reported_as_failing(output, lab)]',
+            '    failing = [lab for lab in rest if lab.lower() in output.lower()]',
+            'a crash on a LABELLED line still skips',
+        ),
+        # The companion. With only `failing` broken, a prefix label still lands in `passing` via
+        # the anchored test and the prefix fixture stays green -- measured, not assumed.
+        Mutation(
+            'the PASSING side returns to a bare substring test',
+            '    passing = [lab for lab in rest if not reported_as_failing(output, lab)]',
+            '    passing = [lab for lab in rest if lab.lower() not in output.lower()]',
+            'a label that is merely a PREFIX of a failing one is NOT counted',
+        ),
+        # The anchor's two halves guard DIFFERENT collisions and neither fixture catches the
+        # other's break. The LEADING half stops a label matching inside a longer one --
+        # `'is refused'` within `'- a splat is refused'`.
+        Mutation(
+            'the leading anchor is dropped, so a SUFFIX of a longer label counts',
+            '    pattern = re.compile(r"(?:^|[-*]\\s|/\\s)" + re.escape(label.strip().lower()) + r"(?=$|:)")',
+            '    pattern = re.compile(re.escape(label.strip().lower()) + r"(?=$|:)")',
+            'a label that is merely a SUFFIX of a failing one is NOT counted',
+        ),
+        # The TRAILING half stops a PREFIX riding on the longer label's failure. Measured on dev:
+        # 11 such collisions across two shipped tools, 5 and 6, and two files an earlier
+        # account named have none at all.
+        Mutation(
+            "the trailing anchor is dropped, so a PREFIX rides on a longer label's failure",
+            '    pattern = re.compile(r"(?:^|[-*]\\s|/\\s)" + re.escape(label.strip().lower()) + r"(?=$|:)")',
+            '    pattern = re.compile(r"(?:^|[-*]\\s|/\\s)" + re.escape(label.strip().lower()))',
+            'a label that is merely a PREFIX of a failing one is NOT counted',
+        ),
+        # #1061. The holes are computed either way; printing them is the entire fix, and a report
+        # that records a caveat nobody sees is a report without the caveat.
+        Mutation(
+            "the denominator's holes are recorded but never printed",
+            '        if r.get("unreadable_label_lines"):\n            print(f"         ! {len(r[\'unreadable_label_lines\'])} label(s) not literal strings, "\n                  f"at line(s) {r[\'unreadable_label_lines\']} -- not counted either way")\n        if r["old_selftest_passed"]:',
+            '        if r["old_selftest_passed"]:',
+            'the report PRINTS it rather than only recording it',
         ),
     ),
 )

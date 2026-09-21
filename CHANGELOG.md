@@ -7,6 +7,93 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-21 (release v1.134.0)
+
+- **Nothing stopped the next command from reading CI the same way —
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1077). New
+  rule `ci-verdict-without-a-step-count`: shipped prose that reads CI status must separate a suite
+  that ran and failed from one that never started. Satisfied by the helper **or** by counting the
+  steps inline — a rule that accepted only our own script would fail correct code measuring the
+  right thing another way — and **not** satisfied by a caveat, because "CI is sometimes unreliable"
+  gives a reader nothing to act on. It found the second site itself: `claim-verifier` verified
+  claims about CI from `gh run list` alone.
+- **The selftest's own assertion count was too low, and the wrong number reached a merged PR body —
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`**. `print(f"ran
+  {checks} …")` sat above the last scenarios, so seven assertions added for #1080 were never
+  counted: the selftest reported **292** both before and after they were added, and that 292 was
+  quoted in #1083 as *"292 assertions, up from 285"* — wrong in both halves, and arrived at by
+  reading the tool's own output honestly. The tool was lying. The print moved below the last
+  scenario (the true figure is **308**), and `_assertions_below_the_tally()` now asserts by line
+  number that nothing raising the count sits after it. **Driven by fixtures, not by its own
+  source**: checking only this file — which is correct — found nothing whatever the comparison did,
+  and the first mutation blanking it **survived**. A guard exercised only against known-good input
+  proves nothing.
+- **Nothing stopped the next command from shipping the same unowned-server adoption —
+  `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1080). New
+  rule `adopts-an-unowned-server`: shipped prose that contemplates a server already listening on the
+  app's port must resolve whose working tree it serves, either in the same file or by pointing at a
+  command that does — and the pointer is **resolved, not believed**, since a reference to a command
+  with the identical defect is that defect one hop away. Keyed on the *precondition* rather than the
+  reuse sentence, and that is the design: a first draft matched "reuse it rather than starting a
+  second", and rewording the four offending files dropped the examined population from 5 to 2 —
+  **the gate stopped watching precisely the files it had just been used to fix.** Matching on a file
+  contemplating a pre-existing listener held the denominator at 4 across the fix: same population
+  before and after, only the verdict moved. Four findings against `dev`, zero here.
+- **`run()` computed one rule's findings and dropped them — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1082). `unhonoured-config-toggle` was called,
+  counted in coverage, and left out of the summed return since `738ebca` — the commit that removed
+  the only toggle it had ever found, so it went inert and unreachable in one change and the
+  inertness hid the unreachability. Its own four fixtures passed throughout, because they call the
+  check function **directly** (it reads real repo paths, so `scenario()` cannot drive it): they
+  proved the helper discriminates and nothing proved the caller forwards it. Fixed, and the class
+  closed rather than the instance — the selftest now parses its own `run()` with `ast` and asserts
+  every findings list assigned there reaches the return expression, which covers all 44 rules and
+  every rule added later, including one orphaned by the change that adds it.
+
+- **The discrimination verdict was more confident than its evidence, three ways —
+  `scripts/audit_assertion_reachability.py`, `scripts/mutations/audit_assertion_reachability.py`**
+  (#1059, #1060, #1061). All three are one mechanism: `--against` decided which cases failed by
+  substring-matching each label against the mutant's combined stdout+stderr, and a bare substring
+  test is wrong in both directions at once.
+
+  **It counted labels the harness never reported** (#1059). A Python traceback prints the offending
+  **source line**, so when the old revision dies on an `AttributeError` inside
+  `check('some label', new_api(...))`, that label lands in stderr. `failing` becomes non-empty, the
+  "did this suite run at all" preflight is skipped *because it keys off `failing` being empty*, and
+  the tool reports a split over a run in which **not one case executed** — the exact false verdict
+  that preflight exists to prevent. The shipped fixture missed it by crashing on a line carrying no
+  label, while the ordinary shape is the opposite: the old subject is missing API that today's cases
+  **call**.
+
+  **And it counted labels that are merely a PREFIX of another** (#1060). `'an unprobed target is
+  named'` is a substring of `'an unprobed target is named as unprobed'`, so the shorter case read as
+  failing — and therefore as discriminating — whenever the longer one did. **Re-measured here rather
+  than taken on report: 11 collisions across two shipped tools** (`link_audit.py` 5, `extract_claims.py`
+  6), and the two other files an earlier account named have **none** — no literal `check("…")` labels
+  at all.
+
+  Matching is now **anchored to the shape a harness reports a failure in**, which a traceback cannot
+  forge: the label begins a reported unit — line start, after a `- ` bullet, or after a `<rule> / `
+  prefix — and **ends** it, at end-of-line or immediately before the `:` that introduces the detail.
+  A label inside a source line, inside quotes, or in the middle of a longer label matches none of
+  those.
+
+  **The two halves of that anchor guard different collisions and neither fixture catches the other's
+  break**, so there is one of each: the leading half stops a **suffix** (`'is refused'` inside
+  `'- a splat is refused'`), the trailing half stops a **prefix**. That was not a design intention —
+  the leading-anchor mutation **survived** its first run, which is what showed the suffix case had no
+  guard at all.
+
+  **And `report_discrimination()` recorded the denominator's holes without printing them** (#1061),
+  so a suite whose labels are f-strings got a confident "3 of 4 discriminate" over a denominator with
+  gaps nobody was told about. It now prints the same line `report()` already used — two renderings of
+  one fact drift, and the drifted one is what somebody reads.
+
+  Five declared mutations, and the guard's own harness found two defects in them before they landed:
+  one mutation was **caught by the wrong fixture**, and another **survived**. `failing` and `passing`
+  are mutated separately because breaking only one leaves the other still anchored and the pair would
+  survive as a set.
+
 ### 2026-09-18 (release v1.133.0)
 
 - **Measure a selftest against the implementation it replaced, not only against mutations somebody
@@ -2887,6 +2974,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 2026-09-21 (release v1.134.0)
+
+- **A red check was read as a failed test when nothing had run —
+  `plugins/rails-flow/scripts/ci_verdict.py` (new), `plugins/rails-flow/commands/pr-comments.md`,
+  `plugins/rails-flow/agents/claim-verifier.md`, `scripts/mutations/ci_verdict.py`** (#1077). When
+  GitHub cannot allocate a runner — Actions billing, a spending limit, a quota — it marks every job
+  `failure`, which is the identical string a suite that ran and failed produces. The two demand
+  opposite responses: one means fix your diff, the other means the diff was never tested. Measured
+  live, one API call apart: `claude-skills` reported `failure` with **10** executed steps while
+  `Retask-platform` reported `failure` with **0**, eight runs in a row. It cost two sessions in one
+  morning — one pushed a fix, saw the red go from three to five and concluded they had made it
+  worse; the count had risen because the failure mode went from selective (54 steps ran) to total
+  (0 ran). `ci_verdict.py` counts executed steps across every job and exits **1** for a real
+  failure, **3** for an environment finding and **2** for no runs at all, so a caller cannot
+  collapse them; `--from` and `--selftest` never touch the network. **Unmeasured is not zero** — an
+  unreadable jobs endpoint falls back to the conclusion rather than claiming no runner, which would
+  send someone to a billing page over a genuinely failing suite. `pr-comments` gained an
+  *environment, not the diff* classification, and `claim-verifier` now treats a claim checked
+  against runs that never executed as `UNVERIFIABLE` rather than `REFUTED` — evidence missing, not
+  contrary.
 
 ### 2026-09-18 (release v1.133.0)
 
@@ -9143,6 +9251,80 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 2026-09-21 (release v1.134.0)
+
+- **Three commands adopted any server that answered on the port, and never asked whose it was —
+  `plugins/qa-flow/commands/smoke.md`, `plugins/qa-flow/commands/crawl.md`,
+  `plugins/qa-flow/commands/walkthrough.md`** (#1080). `curl` proved something was listening and
+  every one of them treated that as a licence to test against it. "Something answered" and "the
+  thing that answered is serving this working tree" are different facts, and with more than one
+  worktree on a machine — which is how this repository tells people to run parallel sessions — the
+  second is routinely false: the listener was booted from a different checkout, serving different
+  code, against a different database. Measured while writing the fix, a Ruby server answering on
+  `3001` resolved to an entirely different project's checkout than the one asking. `smoke` §2 now
+  resolves the listener's own working directory (`lsof -a -d cwd -p <pid>` on BSD/macOS,
+  `/proc/<pid>/cwd` on Linux) and **refuses** a stranger — and refuses an owner it cannot resolve,
+  because "cannot show it is mine" is not "it is mine". `crawl` and `walkthrough` delegate to it
+  by name rather than carrying a fourth copy. The issue named two sites; reading for the pattern
+  found `crawl.md` carrying it in prose and `walkthrough.md` inheriting it by reference. The old
+  text had half-noticed and filed it under reporting — *"say in the report that the app was already
+  running, since it may be running different code than the working tree"* — and that sentence was
+  the defect: if it may be running different code than the working tree, it is not a valid subject
+  for a test of the working tree.
+- **The release gate blocked every promotion of the repository that ships it —
+  `plugins/qa-flow/hooks/scripts/release-gate.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_release_gate.py`**.
+  The hook gates a **consumer** project's promotion: it asks whether QA certified the app before
+  it ships. The repository that *ships* qa-flow is not a consumer of it — no app, no staging, no
+  `qa/` surface, and never will have one. So it denied `dev → main` here with *"no certification
+  found. Run /qa-flow:certify against staging first"*, on a promotion whose full sweep was green.
+
+  **It blocked v1.134.0 in exactly that way**, and the only escape was `QA_ALLOW_MAIN=1` — an
+  environment variable a hook reads from its own process, so overriding it from inside a session
+  means writing it into settings, where it would then sit permanently disabling a fail-closed gate.
+  **That is the exclusion-list failure this project keeps finding in other people's gates**: wrong
+  about correct code on day one, so it gets overridden every release or switched off, and then it
+  protects nobody.
+
+  **The discriminator is `.claude-plugin/marketplace.json`**, because that file is what *makes* a
+  tree a marketplace — no consumer project has one and none can acquire one by accident.
+
+  **Deliberately NOT keyed on "the project has no `qa/` directory."** That is the ordinary state of
+  an app which has simply never run `/qa-flow:setup-qa`, and exempting it would let every such app
+  promote uncertified — which is most of them. The distinction is the entire safety of the change,
+  so the harness carries **both** halves as one pair: a marketplace tree that must PASS and a bare
+  repo with no certification that must still be **BLOCKED**, differing only by that one file. The
+  four pre-existing "blocked without a certification" fixtures are untouched and still green, which
+  is what proves the gate was not weakened.
+
+  Two declared mutations, one per direction: remove the carve-out and the gate blocks its own repo
+  again; fire it unconditionally and the gate stops gating anything at all.
+
+- **The provenance line truncated its own "not a git tree" fallback to "not a git" —
+  `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `scripts/mutations/route_coverage.py`**
+  (#1062). `[:9]` is meant for a commit SHA and was applied to the fallback string as well, so a
+  tree with no git printed:
+
+  ```
+    route inventory: not a git · RAILS_ENV=unset · enumerated at an unrecorded time
+  ```
+
+  Cosmetic anywhere else. **Not here:** this is the provenance line, the one a reader consults to
+  decide whether a coverage percentage can be attributed to a tree, and `not a git` reads like a
+  truncated or corrupted value rather than the deliberate *"there is no git tree here"* the code
+  means. A provenance stamp that looks corrupted is worse than none.
+
+  **The same class as #1047's abbreviated-SHA defect, in the same function: a rendering treated as
+  the value.** Truncation now applies only when there is a real SHA.
+
+  Asserted on the **rendered line**, not the dict — the dict was always right and it is the
+  rendering that was wrong, so a test reading the dict would have passed against the defect. Two
+  mutations, because "the fallback prints in full" and "a real SHA is still abbreviated" are
+  different claims and the fixture for one cannot see the other's break: restoring the truncation
+  reproduces the reported string exactly, and removing it entirely drops a 40-character hex string
+  into a one-line stamp.
+
 ### 2026-09-18 (release v1.133.1)
 
 - **v1.133.0's staleness check compared two RENDERINGS of a commit, not two commits, and refused a
@@ -10976,6 +11158,108 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 2026-09-21 (release v1.134.0)
+
+- **Browser mode audited whatever answered on the port —
+  `plugins/design-flow/commands/audit.md`** (#1080). §1 carried the same probe as
+  `qa-flow:smoke` and the same blind spot. It matters more here than anywhere: the mode exists to
+  measure what the *cascade resolves to in this working tree*, so a snapshot taken against a server
+  booted from another checkout is not a weaker measurement of this tree's CSS — it is a precise
+  measurement of a different tree's, with every resolved colour, focus rule and token-membership
+  number attributed to the wrong source. It now resolves the listener's working directory and
+  refuses a stranger, falling back to the documented source checklist.
+- **Layout composition was doctrine with no gate, so it drifted —
+  `plugins/design-flow/scripts/check_layout_composition.py`, `plugins/design-flow/checks.json`,
+  `scripts/mutations/check_layout_composition.py`**. `responsive.md` states a **priority order**,
+  not a preference: fluid, then intrinsic, then breakpoints as an exception that must justify
+  itself — *"if you're writing breakpoint classes to change layout, first check whether a primitive
+  expresses it intrinsically."* Nothing checked it. The audit checklist mentioned it in prose; no
+  script had ever read a view.
+
+  **Measured on a consumer app that declares 20-odd primitives of its own**: `grid-auto` is used
+  **21 times**, so the idea took — and **31 elements still hand-roll `flex` + an alignment + a
+  gap**, which is precisely what `cluster` is. Three more change the layout **axis** at a
+  breakpoint, where `switcher`, `Layout::Sidebar` and `grid-auto` adapt with no query at all.
+
+  **Two rules, both mechanical, and the omissions are the design.** A `flex`/`items-*`/`gap-*`
+  triple is `cluster` by definition, so it is a finding rather than an opinion about what "could
+  have been" a primitive. A breakpoint variant is a finding only when it changes the **axis or
+  track count** — `md:flex-row`, `sm:flex-col`, `lg:grid-cols-2`. **Sizing at a breakpoint is not
+  flagged**, because the doctrine itself prescribes `w-full md:w-auto` for toolbar buttons, and a
+  gate that fails prescribed code is one that gets switched off.
+
+  **The primitives are read from the project's own CSS**, never hardcoded. A project that renames
+  or extends its vocabulary is not told it is wrong for using it.
+
+  **§3's structural swap is DECLARED, not inferred.** `layout-swap: <reason>` in an ERB comment
+  suppresses the finding; without it the identical element is still reported. An exception nobody
+  can see is how a rule gets quietly abandoned — one you have to write down is one a reviewer can
+  argue with.
+
+  Six declared mutations, and **two of them survived the first run** because the fixtures were
+  wrong rather than the rule: the "already composes a primitive" cases were not themselves
+  cluster-shaped, so neither ever reached the skip they existed to prove. Both now carry the
+  primitive *and* the utilities, which is the shape a real view has.
+
+- **Browser mode could not reach an authenticated page or the accessibility tree —
+  `plugins/design-flow/commands/audit.md`**. The conformance collector launches a *fresh*
+  Playwright browser and reads the DOM plus computed styles, so it has two structural blind spots:
+  it never sees a screen behind a login, and it never sees the **accessibility tree** — which is
+  what decides whether an icon-only row action is actually named.
+
+  **Chrome DevTools MCP is documented as a second instrument, explicitly not a replacement.** The
+  collector stays the default: deterministic, sweeps route × viewport × theme unattended, and judged
+  by a script rather than by reading. DevTools is what you reach for when the question is *"what
+  does a screen reader get on this authenticated page"* and inspection is the only way to answer it.
+  `--autoConnect` attaches to the Chrome already open — your session, your cookies, the admin screen
+  you are actually looking at; without it the server launches an empty browser and re-creates the
+  collector with fewer guarantees.
+
+  **Scoped to five asks**, because an inspection tool with no scope becomes a way to browse: is this
+  icon-only action named (`take_snapshot`), does the label wrap in its cell (`take_screenshot` +
+  `resize_page`), is the focus ring painted (`press_key` Tab), what did the cascade resolve to
+  (`evaluate_script`), and the Lighthouse categories (`lighthouse_audit`).
+
+  **Three rules carry the failure modes.** Name the page with `list_pages` then `select_page` — a
+  session attached to a real browser has whatever tabs the human left open, and a measurement
+  against the wrong tab is a confident number about a page nobody asked about. Re-snapshot after a
+  Turbo navigation rather than reasoning forward from the tree you already took. And **never read a
+  clean inspection as coverage**: the collector's sweep is the denominator, this is a probe, and an
+  audit reporting "looks right in the browser" over three screens out of forty is the shape this
+  file exists to refuse. A missing server is a **skip**, reported as one.
+- **The component mandate had no gate in a consumer project, so it drifted exactly where nothing
+  looked — `plugins/design-flow/scripts/check_component_contract.py`,
+  `plugins/design-flow/checks.json`, `scripts/mutations/check_component_contract.py`** (#1063). The
+  upstream rules were prose. Measured on a real consumer app: **zero raw form fields**, where a
+  request spec asserts form anatomy — and **18 raw `<button>` tags**, where only a sentence did.
+  Where the rule was enforced it was clean; where it was written down it had drifted, and that is
+  not a finding about discipline.
+
+  **Two rules, and the second is the cause of the first.** `raw-element` flags a hand-written
+  `<button>` in `app/views/**`. `component-drops-attributes` flags a component whose initializer
+  takes a fixed keyword list, or accepts a splat and never stores it — because a developer who needs
+  a Stimulus target on a Modal, finds the component cannot carry one, writes the tag by hand.
+
+  **Run against that app it reports 18 and 14 — and the 18 matches the hand audit exactly.** The 14
+  were not previously known: `ModalComponent`, `ToastComponent`, `TableComponent`,
+  `NavigationComponent` and ten others cannot carry a caller's attribute today.
+
+  **Scoped to `app/views/**`, and that scope came from running it rather than reasoning.** The first
+  version also scanned `app/components/**` and found 31 raw buttons — but **13 of those are inside
+  component templates and every one is correct**, because a component's own template is where the
+  element belongs. Shipping that would have produced 13 findings against correct code on the first
+  run, and a gate wrong about correct code on day one earns an exclusion list or gets switched off.
+
+  **The framework-helper exemption was written, found to be dead, and removed.** `button_to` emits
+  no literal `<button` into ERB source, so the scan never sees it and never needed to exempt it — a
+  mutation deleting the exemption changed nothing, which is how it was found. **A carve-out no
+  fixture can reach is a carve-out without a negative test**, so it is gone rather than kept as
+  reassurance; the doctrine explains why none is needed.
+
+  Four declared mutations, including both halves the issue demanded: one that stops the gate
+  reporting a hand-written element, and one that widens the match from the literal tag to any
+  mention of a button — which would flag `<%= button_to %>`, correct code, immediately.
 
 ### 2026-09-17 (release v1.130.0)
 
@@ -13509,6 +13793,158 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 2026-09-21 (release v1.134.0)
+
+- **`error` and `empty` are two states, not one — `scripts/check_component_states.py`,
+  `scripts/mutations/check_component_states.py`, `skills/design-system/references/components.md`**
+  (#1068). #978 wrote the rule with `error or empty` as a single slot and #1068 enforced it that
+  way. **They are not two spellings of one state, they are two different absences with two
+  different remedies**: *empty* is "the query returned nothing, and here is what you do next";
+  *error* is "the request failed, and here is how you retry". As one slot a row satisfied it by
+  covering whichever was easier and the parser could not see the hole — **`Table (CRUD)` is missing
+  `empty` specifically**, on the central admin row, while `Stacked list` beside it sends the
+  zero-row case to `Empty state`.
+
+  **The rule is now seven slots and it is strictly wider**, so it is a doctrine change rather than
+  a fix. It fired on its first run against the only row that declares: `Button` named six and is
+  now complete at seven.
+
+  **The pre-split `error/empty` spelling is refused by name.** Left alone it passes BOTH slots
+  silently, because `/` is a word boundary and a regex looking for each one matches both inside the
+  single token — a row written before the split would keep passing while covering one of the two.
+
+  Two mutations added, nine in total, all caught. **The first version of the split's own mutation
+  SURVIVED**: it dropped `empty` from the slot list, but the fixture covers `empty` and is silent
+  on `error`, so the check still failed — on the wrong slot — and the guard read as caught.
+  Removing the slot the fixture does *not* satisfy proves nothing; the mutation drops `error`,
+  which is the one that lets the fixture through.
+
+- **The catalogue stated the six-state rule, predicted its own drift, and nothing enforced it —
+  `scripts/check_component_states.py`, `scripts/mutations/check_component_states.py`,
+  `skills/design-system/references/components.md`, `scripts/maintainer_doctor.py`** (#1068).
+  `components.md` opens with *"Every entry covers six states, or says which do not apply (#978) …
+  the loading and empty states are the ones always missing."* **The prediction was correct.**
+  Measured on `dev`: `loading` appeared as a state of the component being described in **1 of 44
+  rows**, the *"or says which do not apply"* escape hatch was used **zero times**, and five rows
+  named none of the six.
+
+  **The check reads a claim the row makes, never the prose around it**, and that is the whole
+  design rather than an implementation detail. Getting `loading` down to a true 1 of 44 required
+  separating *a state of the component described* from *a row that **is** a loading indicator*
+  (`Skeleton`, `Spinner`, `Background operation`), a Toast `:loading` variant, and `Activity
+  feed`'s "no scroll-loading" — **a grep for the six words scores every one of those as
+  compliant**, and so would a row saying *"see Skeleton for loading"*. A row now carries a
+  `**States:**` line naming all six, each either covered or `n/a — <reason>`; the selftest's
+  discriminating fixture is prose containing all six words, which must NOT count.
+
+  **A bare `n/a` is refused.** The hatch went unused for its whole life even while free, so the
+  first thing a free one would produce is 43 rows of it. A reason is the part a reviewer can
+  disagree with.
+
+  **Two verdicts, because one alone fails differently from how it looks.** Any declaration that
+  exists must be complete — a hard failure, and it fired immediately on `Button`, the only row that
+  had a `States:` line, which named four of the six. And the number of declaring rows is
+  **ratcheted in both directions**: a drop is refused, and unrecorded growth is too, because a
+  floor nobody raises stops protecting anything. A flat "44 of 44" would have been red on day one
+  until the last row landed, which is how a build gets ignored.
+
+  **The doctrine sections declare themselves**, with `<!-- states: not-a-component -->` in the file,
+  rather than this script keeping a list of section names — a second list nobody compares against
+  the first is the defect the rest of this entry is about. The checker also accepts the catalogue's
+  own `focus-visible` spelling instead of renaming doctrine to suit a parser.
+
+  **The mutation runner refused the guard as INERT on its first run** — the selftest reads the real
+  catalogue, which was not staged into the mutant, so the unmutated run died of `FileNotFoundError`
+  and all seven mutations would have read as "caught" without breaking anything. Declared via
+  `needs`. Seven mutations now, each caught by its intended fixture. **43 rows remain undeclared**;
+  they convert one PR at a time and the floor rises with them.
+
+- **17 of the 23 shipped components could not carry a caller's attribute, so the catalogue produced
+  the raw HTML it forbids — `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-implementations.md`,
+  `skills/design-system/references/component-shapes.json`,
+  `scripts/check_component_passthrough.py`, `scripts/mutations/check_component_passthrough.py`,
+  `scripts/maintainer_doctor.py`** (#1063). A consumer audit found 18 raw `<button>` tags and
+  reported the cause as *"the component cannot express what I need"*. **For the button that was
+  false** — it already took `**attrs` — but measuring the rest of the kit made the claim true:
+  **17 of 23 ViewComponent classes took a fixed keyword list** and would drop a `form:` or `data:`
+  on the floor, including Modal, Dropdown, Combobox, Disclosure, Toast, Breadcrumbs and
+  ButtonGroup — precisely the ones a Stimulus controller needs to reach.
+
+  **Every component now accepts, stores and renders a caller's attributes**, stated once in the
+  catalogue preamble rather than repeated per row, and **checked** by
+  `scripts/check_component_passthrough.py`: a prose contract the shipped code contradicts is the
+  claims-vs-enforcement defect this repository is organised around.
+
+  **The check has two halves, and the first alone would have shipped a worse defect than it fixed.**
+  Widening the 17 signatures made a signature-only check green while every one of them still
+  discarded the hash — Ruby binds `**attrs` and drops it with **no error**, so a caller's
+  `data-controller` would have vanished *silently* where before it raised `ArgumentError` loudly. A
+  loud failure sends a developer to the component; a silent one sends them to hand-written HTML and
+  they never learn why. The gate therefore requires the splat to be **stored**, and the selftest
+  carries the discriminating pair: the same signature, one storing and one dropping.
+
+  What it deliberately does **not** assert is that the stored attributes reach the root element —
+  that lives in an ERB template or a `call` method and is not decidable from the class body, so a
+  check claiming it would be a gate that cannot fail. Accept and store are exact; the render is
+  doctrine, stated beside the rule with the `class` merge (`@attrs.delete(:class)`) that stops a
+  caller silently replacing every class the variant computed.
+
+  Four declared mutations, including the flattering one that started this: a wrapped signature read
+  only to its first line **under-counts in the direction that looks clean** — it is how an earlier
+  tally reported 21 classes where there are 23.
+- **No doctrine on when raw HTML is allowed where a component is mandated, and the catalogue that
+  produced the question was itself under-built — `skills/design-system/references/components.md`,
+  `skills/design-system/references/component-shapes.json`** (#1063). Maintainer decision, recorded on
+  the issue: **there is no escape hatch.** If a component does not exist you build one — a primitive
+  if irreducible, a composite of existing components if not — and a composite is a component, with
+  the same variant × size × state vocabulary and its own catalogue row.
+
+  **The stated reason is consistency and maintainability, and the second half is the sharper one:**
+  raw UI elements written in raw HTML cannot be tracked down when a fix has to reach them. A
+  component is one grep-able name; eighteen hand-written `<button>` tags are eighteen strings that
+  resemble each other.
+
+  **The evidence is the proof.** In one audited app, nine of eighteen raw buttons hand-wrote the
+  class string and one identical string appeared three times. It differs from the component's
+  `variant: :outline, size: :md` in seven ways, and one matters: it omits `whitespace-nowrap`, a
+  class the component gained *because a table's action column broke mid-word*. **Two of the three
+  copies sit in admin table action cells.** They carry the exact defect the component was fixed for
+  and can never receive the fix.
+
+  **"The component cannot express this" is named as a NON-REASON**, because it is the
+  plausible-sounding thing a consumer reaches for — and because it was reached for here. The audit
+  first reported six of the eighteen as legitimate; reading the component disproved it. Its
+  constructor already took `**attrs` and both render branches already passed them through, so every
+  stated reason was carried by the component as written. **The check that reversed the finding was
+  one file read**, and the doctrine now says to make it.
+
+  **There is exactly one real exception and it is a framework constraint:** `button_to` and
+  `form.submit` build their own `<button>`, so there is nothing to hand a component. Take the
+  classes from the component's class helper there and never retype them. Reading that narrow,
+  documented purpose as a general licence is what produced the original count.
+
+  **The argument to lead with is centralising the ELEMENT, not the class string.** A raw instance
+  sits outside the component's accessibility guard — which *raises* on a button with no accessible
+  name — outside its loading and busy states, and outside any future structural change. Matching the
+  classes makes it look right while leaving it outside every guarantee.
+
+  **A mandate with no gate has already drifted**, measured in the same app: zero raw form fields,
+  where a request spec asserts form anatomy; eighteen raw buttons, where only prose did. So a project
+  with a mandated component **gates** it — and the gate is written to be provably able to tell the
+  two apart, with one must-PASS (the framework-helper case) and one must-FAIL (a hand-written
+  element) in its own selftest. A suite of only failures is satisfied by a gate that refuses
+  everything; a suite of only passes by one that refuses nothing. A gate wrong about correct code on
+  day one gets an exclusion list or gets disabled, and then reports nothing in a way that reads
+  exactly like finding nothing.
+
+  **Two catalogue gaps closed with it.** `Button` now states attribute passthrough as contract, with
+  the instruction to pass `**attrs` through *every* render branch — a dropped branch is the one a
+  consumer hits — plus `whitespace-nowrap` for a table action column. And **`Row actions (table)` is
+  a new row** with its `component-shapes.json` entry: the composite that was hand-rolled three times
+  and had no row at all. The shapes gate refused the row until its entry existed, which is that
+  reconciliation working.
 
 ### 1.15.0 — 2026-07-29
 - **First increment of Phase 2**, honouring that issue's own instruction to ship one group at a time

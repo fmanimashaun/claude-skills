@@ -45,7 +45,7 @@ module Ui
     # `variant:` is the LOCKUP form (mark vs lockup); `brand_variant:` picks the brand pack's
     # variant (product surface vs parent). No brand NAMES appear here — identity comes from the
     # pack manifest, so a client brand needs no code change.
-    def initialize(variant: :lockup, size: :md, brand_variant: nil)
+    def initialize(variant: :lockup, size: :md, brand_variant: nil, **attrs)
       @variant = variant.to_sym                        # :mark (prism only) | :lockup (+ wordmark)
       # `size:` is a SIZE key OR a px number (brand.md: prism min 20px digital). Branch on the type,
       # and `to_s` before `to_i`: neither Integer nor Symbol responds to the other branch's method,
@@ -56,6 +56,7 @@ module Ui
       v = brand.variants[key] || brand.variants[brand.default_variant.to_s]
       @label = v.fetch(:name)
       @endorsement = v[:endorsement]                   # nil for a parent/standalone brand
+      @attrs = attrs
     end
     attr_reader :label
     # The endorsement ties a PRODUCT to its parent ("fmworkflows by Fidara"), so it lives on the
@@ -275,8 +276,9 @@ module Ui
     # browser fills both from one saved address. :none omits it (a single-address form).
     MODES = { none: nil, shipping: "shipping", billing: "billing" }.freeze
 
-    def initialize(form:, mode: :none)
+    def initialize(form:, mode: :none, **attrs)
       @form, @mode = form, mode.to_sym
+      @attrs = attrs
     end
     attr_reader :form
 
@@ -365,8 +367,9 @@ module Ui
       right:  "fixed inset-y-0 right-0 h-full rounded-none",
       bottom: "fixed inset-x-0 bottom-0 w-full rounded-t-lg rounded-b-none",
     }.freeze
-    def initialize(size: :md, labelledby: "modal-title", placement: :center)
+    def initialize(size: :md, labelledby: "modal-title", placement: :center, **attrs)
       @size, @labelledby, @placement = size.to_sym, labelledby, placement.to_sym
+      @attrs = attrs
     end
     # A modal is a card-class surface → `rounded-lg` (= --radius-lg = 12px via the token),
     # NOT an arbitrary `rounded-[12px]`. Stay in the radius vocabulary (SKILL non-negotiable).
@@ -415,9 +418,10 @@ module Ui
 
     # `items` is an Array of `{label:, href:}` — a plain collection rather than a slot, because a
     # menu's items are data, and `role="menuitem"` must be on the anchor itself.
-    def initialize(items:, id: nil)
+    def initialize(items:, id: nil, **attrs)
       @items = items
       @id = id || "dropdown-#{SecureRandom.hex(4)}"
+      @attrs = attrs
     end
 
     attr_reader :items, :id
@@ -460,9 +464,10 @@ module Ui
     AUTOCOMPLETE = { none: nil, list: "list", both: "both" }.freeze
 
     def initialize(id:, name:, label:, autocomplete: :list, select_only: false,
-                   invalid: false, popup: :listbox)
+                   invalid: false, popup: :listbox, **attrs)
       @id, @name, @label = id, name, label
       @autocomplete, @select_only, @invalid, @popup = autocomplete.to_sym, select_only, invalid, popup.to_sym
+      @attrs = attrs
     end
 
     def popup_id = "#{@id}-popup"
@@ -487,8 +492,9 @@ module Ui
     # Each option carries its own id so aria-activedescendant has something to point at, and
     # aria-selected starts false — it tracks the ACTIVE option, set by the controller as focus moves.
     class OptionComponent < ViewComponent::Base
-      def initialize(id:, value:)
+      def initialize(id:, value:, **attrs)
         @id, @value = id, value
+        @attrs = attrs
       end
 
       def call
@@ -645,8 +651,9 @@ module Ui
     # `region:` adds role=region + aria-labelledby to the panel. Default nil = let the parent decide,
     # because APG discourages it past ~6 simultaneously-expandable panels (landmark proliferation) —
     # so this cannot be hardcoded true without being wrong for large accordions.
-    def initialize(id:, open: false, heading: nil, region: nil, group: nil)
+    def initialize(id:, open: false, heading: nil, region: nil, group: nil, **attrs)
       @id, @open, @heading, @region, @group = id, open, heading, region, group
+      @attrs = attrs
     end
 
     def panel_id = "#{@id}-panel"
@@ -856,12 +863,13 @@ module Ui
     # ANATOMY, per the reference: container · optional icon · text · optional action · optional close.
     # `title` + optional `description` rather than one `message`, because a component with one slot
     # forces a headline and its detail onto one line.
-    def initialize(intent: :info, title:, description: nil, icon: nil, action: nil)
+    def initialize(intent: :info, title:, description: nil, icon: nil, action: nil, **attrs)
       @intent = intent.to_sym
       @title = title
       @description = description
       @icon = icon
       @action = action
+      @attrs = attrs
     end
 
     # Severity decides the lifetime (#977). `status` toasts — info, success, warning — auto-dismiss.
@@ -1054,10 +1062,11 @@ module Ui
     # The floor comes from the MODEL, never a literal here. Two numbers for one policy is how a
     # relaxed validator and a stale meter end up disagreeing in front of the user — and the meter is
     # the one they believe.
-    def initialize(floor: User::PASSWORD_FLOOR, input_id:, confirm_id: nil)
+    def initialize(floor: User::PASSWORD_FLOOR, input_id:, confirm_id: nil, **attrs)
       @floor = floor
       @input_id = input_id
       @confirm_id = confirm_id
+      @attrs = attrs
     end
 
     private
@@ -1823,8 +1832,10 @@ module Layout
   class SidebarComponent < ViewComponent::Base
     renders_one :sidebar
     renders_one :main
-    def initialize(side_width: "18rem", content_min: "50%", space: "var(--space-m)", side: :left)
+    def initialize(side_width: "18rem", content_min: "50%", space: "var(--space-m)", side: :left,
+                   **attrs)
       @side_width, @content_min, @space, @side = side_width, content_min, space, side
+      @attrs = attrs
     end
     def style = "display:flex;flex-wrap:wrap;gap:#{@space}"
   end
@@ -1844,8 +1855,9 @@ end
 module Layout
   class SwitcherComponent < ViewComponent::Base
     renders_many :items
-    def initialize(threshold: "30rem", space: "var(--space-s)", limit: 4)
+    def initialize(threshold: "30rem", space: "var(--space-s)", limit: 4, **attrs)
       @threshold, @space, @limit = threshold, space, limit
+      @attrs = attrs
     end
     def container_style = "display:flex;flex-wrap:wrap;gap:#{@space}"
     def item_style = "flex-grow:1;flex-basis:calc((#{@threshold} - 100%) * 999)"
@@ -1885,9 +1897,10 @@ module Ui
       card:    { tag: :h3, size: "text-step-1" },
     }.freeze
 
-    def initialize(title:, level: :section, id: nil)
+    def initialize(title:, level: :section, id: nil, **attrs)
       raise ArgumentError, "unknown level #{level}" unless LEVEL.key?(level.to_sym)
       @title, @level, @id = title, level.to_sym, id
+      @attrs = attrs
     end
 
     def tag = LEVEL.fetch(@level)[:tag]
@@ -2037,8 +2050,9 @@ WCAG **2.4.1 Bypass Blocks is Level A**, and every shell in `page-anatomies.md` 
 module Ui
   class BreadcrumbsComponent < ViewComponent::Base
     # [{ label:, href: }, ...] — the LAST entry is the current page and is never a link.
-    def initialize(items:, collapse_after: 3)
+    def initialize(items:, collapse_after: 3, **attrs)
       @items, @collapse_after = items, collapse_after
+      @attrs = attrs
     end
 
     def crumbs = @items
@@ -2111,9 +2125,10 @@ module Ui
       grid:    "grid-auto",                                          # wide summaries
     }.freeze
 
-    def initialize(layout: :stacked)
+    def initialize(layout: :stacked, **attrs)
       raise ArgumentError, "unknown layout #{layout}" unless LAYOUT.key?(layout.to_sym)
       @layout = layout.to_sym
+      @attrs = attrs
     end
 
     def container_class = LAYOUT.fetch(@layout)
@@ -2127,11 +2142,12 @@ module Ui
       # brand.md scopes --font-mono to references/timers/code/timestamps, so money takes
       # `tabular-nums` instead -- equal digit widths in the interface face, not a face swap.
       # Passing both on one value is a contradiction rather than a combination, so it raises.
-      def initialize(label:, values: nil, value: nil, mono: false, numeric: false)
+      def initialize(label:, values: nil, value: nil, mono: false, numeric: false, **attrs)
         raise ArgumentError, "a value is a reference or a figure, not both" if mono && numeric
         @label = label
         @values = Array(values || value)
         @mono, @numeric = mono, numeric
+        @attrs = attrs
       end
       attr_reader :label, :values
 
@@ -2179,9 +2195,10 @@ module Ui
     # a view switcher is a radiogroup, a toolbar is a group of buttons.
     ROLE = { actions: "group", select: "radiogroup" }.freeze
 
-    def initialize(label:, kind: :actions)
+    def initialize(label:, kind: :actions, **attrs)
       raise ArgumentError, "unknown kind #{kind}" unless ROLE.key?(kind.to_sym)
       @label, @kind = label, kind.to_sym
+      @attrs = attrs
     end
 
     def role = ROLE.fetch(@kind)
@@ -2215,9 +2232,10 @@ module Ui
 
     SIZE = { sm: "size-8", md: "size-10", lg: "size-12" }.freeze
 
-    def initialize(size: :md)
+    def initialize(size: :md, **attrs)
       raise ArgumentError, "unknown size #{size}" unless SIZE.key?(size.to_sym)
       @size = size.to_sym
+      @attrs = attrs
     end
 
     def media_class = "frame flex-none #{SIZE.fetch(@size)}"
