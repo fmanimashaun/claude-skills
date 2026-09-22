@@ -3279,6 +3279,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   the worktree and would rebuild the defect), else the directory with a **warning naming the
   derived title**, so a wrong one is visible in the transcript rather than only in a committed diff.
 
+- **An expression index vanished from the generated Data-Model page, so strengthening a guarantee
+  was documented as removing one — `plugins/rails-flow/scripts/build_project_wiki.py`,
+  `plugins/rails-flow/scripts/mutations/build_project_wiki.py`** (#1157). One regex at `:64`
+  required a bracketed column list, `t.index [`. Rails writes an **expression** index as a bare
+  string — `t.index "lower((code)::text)", name: …, unique: true` — so the line never matched, was
+  skipped, and nothing reported a skip. A downstream app moved case-insensitive uniqueness **out**
+  of a model validator and **into** a `lower(code)` unique index; the page then rendered
+  `Indexes: public_id (unique); status` and **a reader would conclude the constraint had been
+  dropped.**
+
+  **Why no test caught it, which is the reusable half.** Both selftest fixtures were bracketed. The
+  parser had never been shown the form it cannot read, so every assertion passed and the guard
+  fired correctly under mutation — `gate-that-cannot-fail`'s test (*make the check fail on purpose
+  once*) returns a clean verdict here, measured: mutate the regex and the selftest goes from
+  `0 failure(s)` to `2`. What was missing was not a failure path but **an input shape**.
+
+  **An index line it cannot classify is now recorded and printed on the page**, never dropped — a
+  third syntax will exist, and a silently shorter index list is believed. The page says what it
+  could not read and states that it is incomplete, not the database.
+
+  Three mutations added, fourteen in total, all caught. **Two near-misses on the way, both
+  instructive**: folding the new forms into the existing `invoices` fixture coupled its index
+  *count* to this change, so a pre-existing mutation started being caught by a different check —
+  the new forms now live in a `clients` table of their own. And the new control indexed `[0]`
+  without a length guard, so a mutation that empties the list **raised `IndexError` and aborted the
+  selftest** before the checks written for it ran. Length is asserted first.
 ### 1.46.0 (release v1.140.0) — 2026-09-22
 
 - **The one guard that has ever stopped a wrong number watched PRs only —

@@ -69,6 +69,27 @@ GUARD = Guard(
             '    return [(d, "?") for d in deps]',
             "direct dependencies resolved to installed versions",
         ),
+        # #1157. The expression-index branch and the refusal to drop what it cannot classify.
+        Mutation(
+            "an expression index is skipped again, so a unique constraint vanishes from the page",
+            "            e = None if i else re.match(r'\\s*t\\.index\\s+(\"(?:[^\"\\\\]|\\\\.)*\")(.*)', line)",
+            "            e = None",
+            "an EXPRESSION index is parsed, not skipped",
+        ),
+        Mutation(
+            "an index line the parser cannot classify is dropped in silence again",
+            "                unparsed.append(line.strip())",
+            "                pass",
+            "an index line it CANNOT classify is recorded rather than dropped",
+        ),
+        # THE CONTROL'S OWN MUTATION. Without it, "parses expression indexes" is satisfied by a
+        # parser that treats the bracketed form as an expression too -- the same defect inverted.
+        Mutation(
+            "the bracketed form is parsed as a single expression instead of a column list",
+            "                    cols_in = [x.strip().strip('\"') for x in i.group(1).split(\",\") if x.strip()]",
+            "                    cols_in = [i.group(1)]",
+            "the bracketed form still parses as columns, not as an expression",
+        ),
         Mutation(
             "a source problem no longer blocks --print, so a page renders from inputs the tool knows are wrong",
             '    if problems:\n        return 2',
