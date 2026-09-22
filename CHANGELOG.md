@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-22 (release v1.140.0)
 
 - **Four of `AGENTS.md`'s five rules were outside the doctrine map's accounting —
   `scripts/doctrine_map.py`, `docs/architecture/doctrine-map.html`**. The map reported
@@ -3239,7 +3239,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.46.0 (release v1.140.0) — 2026-09-22
 
 - **The one guard that has ever stopped a wrong number watched PRs only —
   `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
