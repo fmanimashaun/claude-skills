@@ -251,7 +251,7 @@ re-prompt on **one** unlisted binary; the example deliberately omits `rm`, `curl
 ## Platform
 
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
-open.** Of the thirteen hook scripts, nine are advisory and fail open — an advisory that blocks work on a
+open.** Of the fourteen hook scripts, ten are advisory and fail open — an advisory that blocks work on a
 missing dependency gets disabled. Four **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (falls back to the raw payload;
 `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),

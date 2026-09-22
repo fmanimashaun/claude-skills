@@ -9,6 +9,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The fourteenth hook script found the edge of a number table, and eight guards went inert
+  adding it — `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`,
+  `scripts/mutations/hook_ci_verdict_hint.py`, `CLAUDE.md`** (#1173). `hook-count-drift` refused
+  *"fourteen"* against 14 scripts, because its number-to-word map ended at thirteen — while a second,
+  separate word-to-number map in the same file ended at twelve. There is now one table to twenty, the
+  other direction derived from it, with a scenario past the old edge and a mutation that removes it.
+  And every existing hook guard stages `check_hook_gates.py`, whose new fixture runs
+  `ci_verdict_hint.py`: unstaged, the unmutated selftest failed in the tempdir and **the harness
+  reported all eight guards INERT** — every mutation would have read as caught whether or not it broke
+  anything. It is in each guard's `needs`; all nine hook guards pass.
+
 - **Nothing announced the arm window, so a merge into `dev` could break the next promotion —
   `scripts/check_arm_window.py`, `scripts/mutations/check_arm_window.py`,
   `scripts/maintainer_doctor.py`** (#1170). Between the arm and the promotion the CHANGELOG's shape
@@ -3262,6 +3273,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **A red CI result is not yet a test failure, and now something says so when it matters —
+  `plugins/rails-flow/hooks/scripts/ci-verdict-hint.sh`, `plugins/rails-flow/scripts/ci_verdict_hint.py`,
+  `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `plugins/rails-flow/scripts/mutations/ci_verdict_hint.py`** (#1173). **Maintainer decision recorded
+  on the issue**; our own architecture, no upstream for the design. `ci_verdict.py` (#1077) already
+  told a suite that failed from a runner that never started, and went unused for about four hours
+  while two sessions diagnosed ten `BLOCKED` pull requests on a repository whose Actions billing had
+  lapsed — one of them telling the maintainer the red was real. Both had typed `gh pr checks` into a
+  shell, and the tool was reachable only from the claim-verifier agent and `/rails-flow:pr-comments`.
+  A new **advisory** hook adds one line of context naming `ci_verdict.py` when — and only when — a
+  command that reads CI conclusions shows a failing one; it never runs the verdict and never guesses
+  the cause. **It listens on two events, and the reason is measured rather than documented:** a Bash
+  call that exits non-zero fires `PostToolUseFailure`, not `PostToolUse` — in one session's
+  transcript, 2348 of 2348 successful Bash calls recorded `PostToolUse` and 0 of 43 failed ones did —
+  and plain `gh pr checks` exits 1 exactly when a check has failed, while `--json`, `gh run list` and
+  `gh run view` exit 0. The failure event carries its text in `error`, not `tool_response`; that shape
+  is taken from the official `claude-security` plugin, because the hooks documentation is silent on
+  the event's payload and on whether it honours `additionalContext`. **That last point is unverified
+  until the hook runs installed**, and #1173 stays open until it has been seen to fire; as an
+  advisory it fails open, so the worst case is silence. Fixtures are `gh`'s own output in all five
+  renderings, captured from a live billing outage, each paired with a passing control on the same
+  command. 21 assertions and 9 mutations for the logic; 6 end-to-end fixtures and 4 mutations for
+  the wrapper, which lost the `command -v python3` and `[ -f ]` guards its siblings carry because no
+  fixture could tell them from their absence.
 
 ### 1.47.0 (release v1.141.0) — 2026-09-22
 
@@ -14559,6 +14597,18 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **A count the quality-pass worked example quotes moved with the repository —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1173). The
+  `check(label, ok, detail)` selftest harness row goes from **33 files / reach 17** to **34 / 18**:
+  #1173 added a copy in `plugins/rails-flow/scripts/ci_verdict_hint.py`. `check_shared_shapes.py`
+  re-derived both and refused the old figures, which is the gate doing exactly its job — it counts,
+  it does not refuse copies. Re-reading the decision that rests on the row, as the gate asks, found
+  the boundary argument intact and the **arithmetic beneath it about five times stale** (10R − 16 at
+  R=18 is ~164 lines, not "the low thirties"); that is a packaging decision rather than a hook's, so it
+  is #1174 and not changed here.
 
 ### 1.64.0 (release v1.141.0) — 2026-09-22
 
