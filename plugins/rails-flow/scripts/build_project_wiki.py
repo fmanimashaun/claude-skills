@@ -54,6 +54,7 @@ def parse_schema(text: str) -> dict:
     schema.rb is Rails' own generated, regular DSL -- a structured source, not prose."""
     version = (re.search(r"define\(version:\s*([\d_]+)\)", text) or [None, ""])[1]
     tables: dict[str, dict] = {}
+    unparsed: list[str] = []
     for m in re.finditer(r'^\s*create_table\s+"([^"]+)"(.*?)do \|t\|\n(.*?)^\s*end\s*$', text, re.S | re.M):
         name, opts, body = m.group(1), m.group(2), m.group(3)
         cols, idx = [], []
@@ -61,14 +62,39 @@ def parse_schema(text: str) -> dict:
             c = re.match(r'\s*t\.(\w+)\s+"([^"]+)"(.*)', line)
             if c and c.group(1) != "index":
                 cols.append((c.group(2), c.group(1), c.group(3).strip(" ,")))
+            # TWO FORMS, AND THE SECOND ONE CARRIED A GUARANTEE (#1157). Rails writes a plain
+            # index as a bracketed column list and an EXPRESSION index as a bare string:
+            #
+            #     t.index ["public_id"], name: "...", unique: true
+            #     t.index "lower((code)::text)", name: "...", unique: true
+            #
+            # Only the bracketed form was matched, so an expression index was skipped with no
+            # report. A downstream app moved case-insensitive uniqueness OUT of a model validator
+            # and INTO `lower(code)`, and this page recorded the change as the constraint being
+            # REMOVED -- documentation that inverts the meaning of a strengthened guarantee.
             i = re.match(r'\s*t\.index\s+\[([^\]]*)\](.*)', line)
-            if i:
-                cols_in = [x.strip().strip('"') for x in i.group(1).split(",") if x.strip()]
-                iname = (re.search(r'name:\s*"([^"]+)"', i.group(2)) or [None, ""])[1]
-                idx.append((cols_in, iname, "unique: true" in i.group(2)))
+            e = None if i else re.match(r'\s*t\.index\s+("(?:[^"\\]|\\.)*")(.*)', line)
+            if i or e:
+                rest = (i or e).group(2)
+                if i:
+                    cols_in = [x.strip().strip('"') for x in i.group(1).split(",") if x.strip()]
+                else:
+                    # The expression verbatim, quotes and all, because `lower((code)::text)` is not
+                    # a column and must not be rendered as though a column of that name existed.
+                    cols_in = [e.group(1).strip('"')]
+                iname = (re.search(r'name:\s*"([^"]+)"', rest) or [None, ""])[1]
+                idx.append((cols_in, iname, "unique: true" in rest))
+            elif line.lstrip().startswith("t.index"):
+                # A THIRD FORM WOULD VANISH IN SILENCE, which is how the second one survived for
+                # months: the page renders the indexes it understood and reads as complete. An
+                # index line this parser cannot classify is recorded and surfaced, never dropped.
+                # Rails can emit `t.index` with options this does not model, and the page must say
+                # so rather than quietly shorten the list.
+                unparsed.append(line.strip())
         tables[name] = {"columns": cols, "indexes": idx, "id": (re.search(r"id:\s*(:\w+)", opts) or [None, "bigint"])[1]}
     fks = re.findall(r'^\s*add_foreign_key\s+"([^"]+)",\s*"([^"]+)"', text, re.M)
     return {"version": version, "tables": tables, "foreign_keys": fks,
+            "unparsed_indexes": unparsed,
             "declared_tables": len(re.findall(r"^\s*create_table\s", text, re.M))}
 
 
@@ -186,6 +212,16 @@ def page_data_model(m: dict) -> str:
     assoc = [e for e in m["edges"] if e.get("kind") in ("belongs_to", "has_many", "has_one", "has_and_belongs_to_many")]
     out = [_banner(m, "db/schema.rb", "docs/architecture/graph.json (association edges)"), "# Data model\n",
            f"**{len(s['tables'])} tables** (schema version `{s['version']}`), **{len(s['foreign_keys'])} foreign keys**, **{len(assoc)} associations** declared in models.\n"]
+    # THE PARSER SAYS WHAT IT COULD NOT READ (#1157). Before this, an index form the parser did not
+    # model was skipped and the page rendered the rest, reading as a complete list -- so a dropped
+    # unique index looked like a dropped constraint. A page that admits a gap is usable; a page that
+    # is silently short is worse than no page, because it is believed.
+    if s.get("unparsed_indexes"):
+        out.append("> **This generator could not classify "
+                   f"{len(s['unparsed_indexes'])} `t.index` line(s)**, so they are absent from the "
+                   "index lists below. They are in `db/schema.rb` and are real; this page is "
+                   "incomplete, not the database:\n>\n"
+                   + "\n".join(f"> - `{line}`" for line in s["unparsed_indexes"]) + "\n")
     for name, t in sorted(s["tables"].items()):
         out.append(f"## `{name}`\n")
         out.append(_table(["column", "type", "options"], [[c, ty, o] for c, ty, o in t["columns"]]))
@@ -356,6 +392,14 @@ def selftest() -> int:
               '  create_table "customers", id: :uuid, force: :cascade do |t|\n    t.string "name", null: false\n    t.datetime "created_at", null: false\n  end\n'
               '  create_table "invoices", force: :cascade do |t|\n    t.uuid "customer_id", null: false\n    t.decimal "total", precision: 12, scale: 2\n'
               '    t.index ["customer_id"], name: "index_invoices_on_customer_id"\n    t.index ["customer_id", "total"], name: "idx_ct", unique: true\n  end\n'
+              # A TABLE OF ITS OWN FOR THE FORMS THE FIXTURES NEVER CONTAINED (#1157), so the
+              # existing assertions above keep asserting exactly what they always did. Folding
+              # these into `invoices` coupled its index COUNT to this change, and a pre-existing
+              # mutation then started being caught by a different check than the one written for
+              # it -- a near-miss the runner reports rather than passes.
+              '  create_table "clients", force: :cascade do |t|\n    t.string "code", null: false\n'
+              '    t.index "lower((code)::text)", name: "idx_lower_code", unique: true\n'
+              '    t.index({ code: :desc }, name: "idx_weird")\n  end\n'
               '  add_foreign_key "invoices", "customers"\nend\n')
     QUEUE = 'default: &default\n  dispatchers:\n    - polling_interval: 1\n  workers:\n    - queues: "*"\n      threads: 3\n\ndevelopment:\n  <<: *default\n'
     RECURRING = '# examples:\n#   x:\n#     class: Y\n\nproduction:\n  clear_finished:\n    command: "SolidQueue::Job.clear_finished_in_batches"\n    schedule: every hour\n  nightly_invoices:\n    class: SendInvoiceJob\n    queue: background\n    schedule: at 2am every day\n'
@@ -369,11 +413,30 @@ def selftest() -> int:
 
     s = parse_schema(SCHEMA)
     check("schema.rb: tables, columns, options, indexes, foreign keys and the version are parsed",
-          set(s["tables"]) == {"customers", "invoices"} and s["version"] == "2026_08_30_011027"
+          set(s["tables"]) == {"customers", "invoices", "clients"} and s["version"] == "2026_08_30_011027"
           and len(s["tables"]["invoices"]["columns"]) == 2 and s["tables"]["invoices"]["columns"][1] == ("total", "decimal", "precision: 12, scale: 2")
           and len(s["tables"]["invoices"]["indexes"]) == 2 and s["tables"]["invoices"]["indexes"][1] == (["customer_id", "total"], "idx_ct", True)
           and s["foreign_keys"] == [("invoices", "customers")] and s["tables"]["customers"]["id"] == ":uuid", str(s)[:300])
-    check("schema.rb: the parsed table count is asserted against the declared count", s["declared_tables"] == 2 == len(s["tables"]))
+    check("schema.rb: the parsed table count is asserted against the declared count", s["declared_tables"] == 3 == len(s["tables"]))
+    # #1157. AN EXPRESSION INDEX IS AN INDEX. Rails writes `lower((code)::text)` as a bare string,
+    # not a bracketed list, and the page dropped it -- so an app that moved uniqueness INTO the
+    # index had the change documented as a removal.
+    check("schema.rb: an EXPRESSION index is parsed, not skipped",
+          s["tables"]["clients"]["indexes"] == [(["lower((code)::text)"], "idx_lower_code", True)],
+          str(s["tables"]["clients"]["indexes"]))
+    # THE CONTROL FOR IT. Without this, "parses expression indexes" is satisfied by a parser that
+    # accepts any string at all -- including the bracketed form re-matched by a looser regex.
+    check("schema.rb: the bracketed form still parses as columns, not as an expression",
+          len(s["tables"]["invoices"]["indexes"]) == 2
+          and s["tables"]["invoices"]["indexes"][0] == (["customer_id"], "index_invoices_on_customer_id", False),
+          str(s["tables"]["invoices"]["indexes"]))
+    # THE RULE THAT MAKES THE NEXT FORM SURVIVABLE. A third syntax will exist; it must be reported,
+    # not dropped, because a silently-short index list is believed.
+    check("schema.rb: an index line it CANNOT classify is recorded rather than dropped",
+          s["unparsed_indexes"] == ['t.index({ code: :desc }, name: "idx_weird")'], str(s["unparsed_indexes"]))
+    check("schema.rb: an unclassifiable line is NOT counted as a parsed index",
+          all("idx_weird" != name for _, name, _ in s["tables"]["clients"]["indexes"]))
+
     r = parse_yaml_subset(RECURRING)
     check("recurring.yml: commented examples are ignored; entries carry class/command, queue, schedule",
           set(r) == {"production"} and r["production"]["nightly_invoices"] == {"class": "SendInvoiceJob", "queue": "background", "schedule": "at 2am every day"}
@@ -397,7 +460,15 @@ def selftest() -> int:
         check("Data model: tables with columns and indexes, associations from the models, foreign keys",
               "## `invoices`" in pages["Data-Model.md"] and "| total | decimal | precision: 12, scale: 2 |" in pages["Data-Model.md"]
               and "`customer_id+total` (unique)" in pages["Data-Model.md"] and "| Invoice | belongs_to | Customer |" in pages["Data-Model.md"]
-              and "**2 tables**" in pages["Data-Model.md"], pages["Data-Model.md"][:500])
+              and "**3 tables**" in pages["Data-Model.md"], pages["Data-Model.md"][:500])
+        # #1157 ON THE PAGE, not only in the parser. The defect was a RENDERED page that read as a
+        # complete index list while a unique constraint was missing from it -- so the assertion has
+        # to be about the page a person reads.
+        check("Data model: an expression index REACHES the page, marked unique",
+              "`lower((code)::text)` (unique)" in pages["Data-Model.md"], pages["Data-Model.md"][:800])
+        check("Data model: the page ADMITS the index line it could not classify",
+              "could not classify 1 `t.index` line(s)" in pages["Data-Model.md"]
+              and "idx_weird" in pages["Data-Model.md"], pages["Data-Model.md"][:800])
         check("Jobs: the job, who enqueues it, the mailer and its enqueuer, the queue config and the recurring schedule",
               "| SendInvoiceJob | app/jobs/send_invoice_job.rb | InvoicesController |" in pages["Jobs-And-Queues.md"]
               and "| InvoiceMailer | app/mailers/invoice_mailer.rb | SendInvoiceJob |" in pages["Jobs-And-Queues.md"]
@@ -424,7 +495,7 @@ def selftest() -> int:
             m2 = build_model(root); probs = assert_totals(m2, render_all(m2))
         except Exception as exc:  # noqa: BLE001
             probs = [f"crash {exc}"]
-        check("a table the parser missed is a PROBLEM (declared 3, parsed 2), not a quietly shorter page", any("declares 3" in p and "2 parsed" in p for p in probs), str(probs))
+        check("a table the parser missed is a PROBLEM (declared 4, parsed 3), not a quietly shorter page", any("declares 4" in p and "3 parsed" in p for p in probs), str(probs))
         import contextlib, io
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
