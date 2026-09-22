@@ -528,6 +528,13 @@ for (const route of routes) {
     record = {
       route,
       status: response ? response.status() : null,
+      // WHAT THE SERVER SAID THIS IS (#1130). Without it a judge cannot tell a PDF from an empty
+      // page: Playwright's BUNDLED chromium and webkit render no PDF at all -- <iframe> and
+      // <embed> come back blank, <object> shows fallback -- while real Chrome renders all three
+      // identically. So every judge downstream graded a working route as a blank document and
+      // reported a defect in an app that was fine. A response the browser cannot render must be
+      // CLASSIFIED, never scored.
+      contentType: response ? (response.headers()['content-type'] || '') : '',
       title: await page.title(),
       // The first heading, because a framework error template puts its message there while the
       // <title> may still say the app's name.

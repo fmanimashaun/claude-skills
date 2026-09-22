@@ -100,11 +100,43 @@ class Finding:
     detail: str
 
 
+# A response a browser renders AS A PAGE. Everything else is a download or a plugin document, and
+# a DOM judge has nothing to say about it.
+PAGE_TYPES = ("text/html", "application/xhtml+xml")
+
+
+def renders_as_a_page(content_type: str) -> bool:
+    """Is this a document the DOM judges can judge at all? (#1130)
+
+    THE WRONG VERDICT THIS PREVENTS. Playwright's BUNDLED chromium and webkit render no PDF: at one
+    source, `<iframe>` came back blank, `<embed>` said "Couldn't load plugin." and `<object>` showed
+    its fallback -- while real Chrome (`channel: "chrome"`) rendered all three pixel-identically.
+    Read naively the bundled run says *"`<embed>` is broken and `<iframe>` is fine"*, which is a
+    confident, reproducible, **exactly inverted** conclusion. A downstream app has a `.pdf` route in
+    its sweep's persona map today, and every judge downstream of that navigation graded an empty
+    document and reported a defect in a working app.
+
+    UNKNOWN IS JUDGED, and getting this backwards is worse than the bug. A crawl recorded before
+    the collector emitted `contentType` carries none, and the first version of this treated a blank
+    as "not a page" -- which classified away every route of every existing crawl and returned ZERO
+    findings for a 500 error page. That is not a stricter gate, it is the gate switched off, and it
+    would have shipped looking like a fix. A blank means nobody recorded what this was, and the only
+    safe reading of that is the behaviour that was already in place: judge it.
+
+    So this refuses ONLY on a content type that was recorded and is not HTML. A route the collector
+    positively said was a PDF is the case the issue reports; everything else is unchanged.
+    """
+    kind = (content_type or "").split(";", 1)[0].strip().lower()
+    return not kind or kind in PAGE_TYPES
+
+
 @dataclass
 class Judged:
     findings: list[Finding] = field(default_factory=list)
     routes: int = 0
     skipped: list[str] = field(default_factory=list)
+    # NOT a finding and NOT a pass: a route the DOM judges are not the instrument for.
+    not_a_page: list[str] = field(default_factory=list)
 
 
 class Unusable(RuntimeError):
@@ -177,6 +209,19 @@ def judge(pages: list[dict]) -> Judged:
             # A route the crawl could not reach did NOT pass. Named, and never counted as clean.
             result.skipped.append(f"{page.get('route', '?')}: {page.get('skipped')}")
             continue
+        content_type = str(page.get("contentType") or "")
+        # The blank case belongs to `renders_as_a_page`, not here. Guarding it in both places made
+        # the predicate's half unreachable, and a mutation deleting it survived -- two homes for one
+        # rule, where the second one silently cannot fail.
+        if not renders_as_a_page(content_type):
+            # CLASSIFIED, NOT GRADED (#1130). Judging a PDF's DOM produces a finding about the
+            # browser build, not about the app.
+            result.not_a_page.append(
+                f"{page.get('route', '?')}: {content_type} — not a "
+                f"rendered page, so the DOM judges are not the instrument for it. This is neither a "
+                f"pass nor a finding. If it must be SEEN, drive it with a real browser install "
+                f"(`channel: \"chrome\"`); the bundled chromium and webkit render no PDF at all.")
+            continue
         result.findings.extend(judge_page(page))
     return result
 
@@ -206,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json:
         print(json.dumps({"routes": result.routes, "skipped": result.skipped,
+                          "not_a_page": result.not_a_page,
                           "findings": [f.__dict__ for f in result.findings]}, indent=2))
     else:
         # #108 item J: one line per (rule, route) is how a 72-page crawl reports 773 "defects"
@@ -220,7 +266,9 @@ def main(argv: list[str] | None = None) -> int:
                       f"e.g. {', '.join(routes[:MAX_EXAMPLES])})")
         for s in result.skipped:
             print(f"  [skipped] {s}")
-        judged = result.routes - len(result.skipped)
+        for s in result.not_a_page:
+            print(f"  [not a page] {s}")
+        judged = result.routes - len(result.skipped) - len(result.not_a_page)
         distinct = len(_grouped(result.findings))
         # BOTH numbers, always. The occurrence count is what tells you a defect is systemic
         # rather than local, and printing only the distinct count would hide exactly that.
@@ -295,6 +343,31 @@ def selftest() -> int:
     r = judge([{"route": "/admin", "skipped": "auth required"}])
     check("a skipped route is not judged clean", r.skipped and not r.findings, f"{r}")
     check("a skipped route is named", "auth required" in r.skipped[0], f"{r.skipped}")
+
+    # ---- #1130: a route the DOM judges are not the instrument for -------------------------
+    # Playwright's BUNDLED chromium and webkit render no PDF at all, so every judge downstream of
+    # that navigation graded an empty document and reported a defect in a working app.
+    broken = {"route": "/x", "status": 500, "title": "E", "h1": "Something went wrong",
+              "console": [], "pageErrors": [], "failedRequests": [], "skipped": None}
+    r = judge([{**broken, "route": "/form.pdf", "contentType": "application/pdf"}])
+    check("a PDF route is classified, not graded", r.not_a_page and not r.findings, f"{r}")
+    check("...and the classification names the real-browser remedy",
+          bool(r.not_a_page) and 'channel: "chrome"' in r.not_a_page[0], f"{r.not_a_page}")
+
+    # THE CONTROL that the first version of this failed: an HTML page must still be JUDGED. The
+    # first cut treated a blank content type as "not a page", which classified away every route of
+    # every crawl written before the collector recorded it and returned ZERO findings for this
+    # error page -- the gate switched off, shipping as a fix. The selftest passed anyway, because
+    # nothing here asserted that a normal page still produces its finding.
+    r = judge([{**broken, "contentType": "text/html; charset=utf-8"}])
+    check("an HTML page is still judged", len(r.findings) == 1 and not r.not_a_page, f"{r}")
+    # ...and the same record with NO content type, which is every pre-upgrade crawl.
+    r = judge([broken])
+    check("a crawl with no content type recorded is still judged",
+          len(r.findings) == 1 and not r.not_a_page, f"{r}")
+    # A charset parameter must not defeat the match.
+    r = judge([{**broken, "contentType": "TEXT/HTML;charset=UTF-8"}])
+    check("the type is matched without its parameters or case", len(r.findings) == 1, f"{r}")
 
     # ---- #108 item J: grouping repeats WITHOUT merging distinct defects ------------------
     F = Finding

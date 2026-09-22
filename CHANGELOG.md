@@ -9628,6 +9628,31 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **A browser judge graded a PDF as a blank page and blamed the app —
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/crawl_report.py`,
+  `plugins/qa-flow/agents/a11y-auditor.md`** (#1130). **Playwright's bundled chromium and webkit
+  render no PDF at all.** On one page holding `<iframe>`, `<embed>` and `<object>` at the same
+  source: bundled chromium gave blank / *"Couldn't load plugin."* / fallback, bundled webkit gave
+  three blanks, and **real Chrome rendered all three pixel-identically** — so the bundled run says
+  *"`<embed>` is broken and `<iframe>` is fine"*, reproducible, confident and **exactly inverted**.
+  A downstream app has a `.pdf` route in its sweep's persona map today. The collector now records
+  the response's **`Content-Type`**, which it recorded nowhere before, and a route whose recorded
+  type is not HTML is **classified, never graded**: a third bucket beside `skipped`, neither a pass
+  nor a finding, naming `channel: "chrome"` as the remedy if the document must actually be seen. It
+  is **out of the judged denominator**, so it cannot inflate a clean run either. The trap is written
+  down beside the `page.pdf()` note it neighbours, as a general rule: **anything a browser delegates
+  to a plugin is not a fact about the app.**
+- **The first version of that fix switched the whole judge off, and the selftest passed —
+  `plugins/qa-flow/scripts/crawl_report.py`** (#1130). Treating an **unrecorded** `Content-Type` as
+  "not a page" classified away every route of every crawl written before the collector emitted it:
+  a 500 error page returned **zero findings**. That is not a stricter gate, it is the gate off,
+  shipping as a fix — and the existing fixtures never asserted that a normal page still produces its
+  finding, so nothing caught it. A blank now means *nobody recorded what this was*, and the only
+  safe reading is the prior behaviour: **judge it**. The refusal fires only on a type that was
+  recorded and is not HTML. Both directions now have a fixture and a mutation, and the blank case
+  lives in **one** place — guarding it in the caller too made the predicate's half unreachable, and
+  the mutation that deleted it survived.
+
 - **The gate was dark exactly where it was needed —
   `plugins/qa-flow/scripts/route_coverage.py`,
   `plugins/qa-flow/scripts/route_coverage_selftest.py`** (#1129). The route inventory is stamped
