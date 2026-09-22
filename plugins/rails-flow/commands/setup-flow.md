@@ -625,13 +625,23 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_ci_runs_tests.py"
 ```
 
 Exit **1** means propose the steps; exit **3** means the project has no `config/ci.rb` and there is
-nothing to offer. Take the block verbatim from `rails-8` `references/testing.md` — both steps, since
-Rails drops `Tests: Seeds` on the same flag — and insert it **before** the Style and Security steps,
-so a broken suite stops the run before the slower checks:
+nothing to offer. Take the block verbatim from `rails-8` `references/testing.md` — **all three
+steps**, since Rails drops them on the same flag — and insert it **before** the Style and Security
+steps, so a broken suite stops the run before the slower checks.
+
+Read the block from that file rather than from here. This command printed its own copy until #1154,
+and the copy had drifted in four ways at once — a different order, a different reset task, a
+different step name and a different binstub — while still calling itself verbatim. The order in
+particular was inverted: it seeded **before** the suite, which is the one thing `testing.md`'s own
+reasoning forbids. Two copies of a block that must agree is one copy too many.
+
+The shape to expect, so you can recognise a correct insertion — `db:test:prepare` first (`db:prepare`
+does **not** purge), the suite second, the seed check last:
 
 ```ruby
-  step "Tests: Seeds", "bin/rails db:test:prepare db:seed:replant"
-  step "Tests", "bin/rspec"
+  step "Tests: DB reset", "bin/rails db:test:prepare"
+  step "Tests: RSpec", "bundle exec rspec"
+  step "Tests: Seeds", "env RAILS_ENV=test bin/rails db:seed:replant"
 ```
 
 **Propose the generators block in the same diff**, because it fails the same way. `project-setup.md`
