@@ -716,8 +716,15 @@ def check_bare_plugin_entries() -> tuple[list[Finding], int]:
     return findings, len(plugins)
 
 
+# ONE table, both directions. There were two -- this word->number map ending at twelve, and the
+# hook-count rule's own number->word map ending at thirteen -- and the fourteenth hook script (#1173)
+# found the second's edge: "fourteen" was refused as drift against 14, so the only way to satisfy the
+# rule was to write a digit in prose. A second copy of a mapping is a second place for it to end.
 _COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
-                "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+                "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+                "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+                "nineteen": 19, "twenty": 20}
+_NUMBER_WORDS = {n: w for w, n in _COUNT_WORDS.items()}
 
 
 def check_misdescribed_agents() -> tuple[list[Finding], int]:
@@ -1899,8 +1906,7 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
     total = len(scripts)
     if not total:
         return [], 0
-    WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
-             8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen"}
+    WORDS = _NUMBER_WORDS
     body = read(doc)
     m = re.search(r"Of the (\w+) hook scripts, (\w+) are advisory", body)
     if not m:
@@ -3793,6 +3799,13 @@ def selftest() -> int:
              files=_hooks(3, "We ship some hooks. " + GATES))
     scenario("no hook scripts at all is silent", rule=HC, expect_finding=False,
              files={"CLAUDE.md": "Of the ten hook scripts, eight are advisory.\n"})
+    # PAST THE OLD EDGE (#1173). The map ended at thirteen, so fourteen scripts described correctly in
+    # words were reported as drift. 13 scripts + the named gate = 14, advisory 13: both numbers are
+    # correct, so the only way to produce a finding is the missing word.
+    fourteen = _hooks(13, "Of the fourteen hook scripts, thirteen are advisory. " + GATES)
+    fourteen["plugins/pz/hooks/scripts/guard-bash.sh"] = "#!/bin/sh\n"
+    scenario("a correct count past thirteen, in words, is silent", rule=HC, expect_finding=False,
+             files=fourteen)
 
     # -- duplicate-unreleased ---------------------------------------------
     DUP = "duplicate-unreleased"

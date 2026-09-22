@@ -449,6 +449,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("published blocks", ("python3", "scripts/check_published_blocks.py")),
     ("published blocks selftest",
      ("python3", "scripts/check_published_blocks.py", "--selftest")),
+    # #1170. The arm window: between `chore/arm-vX.Y.Z` merging into dev and the dev -> main
+    # promotion, a merge that re-opens `### Unreleased` breaks the promotion, and dev looks
+    # identical to merge into throughout. Silent for a dev that is not armed, which is most of the
+    # time -- the discriminator is an un-promoted release block, not the absence of Unreleased.
+    ("arm window", ("python3", "scripts/check_arm_window.py")),
+    ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
