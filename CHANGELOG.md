@@ -3316,6 +3316,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Three memory systems could inject into every session and nothing noticed —
+  `plugins/rails-flow/scripts/check_memory_systems.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `plugins/rails-flow/reference/context-budget.md`,
+  `plugins/rails-flow/scripts/mutations/check_memory_systems.py`, `.rails-flow/memory.json`** (#1181).
+  **Maintainer decision recorded on the issue, with a condition: it must not add tokens to any
+  session.** Our budget gate ratchets only what **we** print — ~520 tokens here — while the same
+  session loaded ~5,700 from the `remember` plugin and ~3,800 from Claude Code's auto-memory: three
+  memory systems, none aware of the others. Running two can be deliberate, so there is no rule to
+  impose; `/rails-flow:setup-flow` §4a now **asks** and records the answer in `.rails-flow/memory.json`,
+  and a new `memory-systems` check in `project_gates` holds the **committed** `.claude/settings.json`
+  to it — `remember` explicitly on or off, `autoMemoryEnabled` explicitly off when not chosen (it is
+  on by default), the brain present exactly when chosen. A mismatch fails; no recorded choice is not
+  applicable, never a pass; `[]` is a decision, distinct from no file. It reads only what the
+  project commits, never user or local settings, so the verdict is the same on every machine and in
+  CI — and that is also why a choice must be explicit: Claude Code applies a key set at a higher scope
+  over the same key lower down (verified against code.claude.com/docs/en/settings), so a project that
+  says nothing inherits each user's global plugin choice. Auto-memory's default, storage and
+  `autoMemoryEnabled` are verified against code.claude.com/docs/en/memory; that `enabledPlugins`
+  merges per plugin rather than replacing the object is **observed** (a session here loaded the
+  user's globally-enabled plugins while the project named only one), not documented. **The token
+  condition is measured, not promised:** `check_hook_output_budget.py` reports 1,245 bytes before and
+  after, and `session-start.sh` in this repository prints 2,094 bytes before and after — the check runs
+  on demand and in CI only. This repository records its own choice (`auto-memory`,
+  `rails-flow-brain`) and passes; a copy with `remember: false` removed fails for the right reason.
+  21 assertions, 8 mutations.
+
 ### 1.48.0 (release v1.142.0) — 2026-09-22
 
 - **A red CI result is not yet a test failure, and now something says so when it matters —
@@ -14639,6 +14667,15 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **The quality-pass worked example's harness row moves again, to 35 files / reach 19 —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1181).
+  `plugins/rails-flow/scripts/check_memory_systems.py` is one more copy of the `check(label, ok,
+  detail)` selftest harness, and `check_shared_shapes.py` refused the old figure — counting, as it
+  should, never refusing the copy. The decision resting on the row is unchanged here; its stale
+  arithmetic is #1174.
 
 ### 1.64.1 (release v1.142.0) — 2026-09-22
 
