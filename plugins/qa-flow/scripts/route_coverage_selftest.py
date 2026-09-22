@@ -61,7 +61,7 @@ RAILS = """                                   Prefix Verb   URI Pattern         
 """
 
 
-def _stale(prov, head, label):
+def _stale(prov, head, label, **kw):
     """`stale_inventory`, with an exception recorded as a FAILURE instead of killing the run.
 
     A mutation that bypasses the guard clause leaves `head` None on a path that then slices it, so
@@ -70,7 +70,7 @@ def _stale(prov, head, label):
     SHOULD have named it never got to print. A crash is not a verdict; it has to fail as a value.
     """
     try:
-        return rc.stale_inventory(prov, head=head)
+        return rc.stale_inventory(prov, head=head, **kw)
     except Exception as exc:                                   # noqa: BLE001 -- any break, reported
         FAILURES.append(f"stale_inventory raised on {label}: {type(exc).__name__}: {exc}")
         return None
@@ -289,6 +289,55 @@ def run() -> int:
     # that refuses everything.
     if _stale({"commit": HEAD_A}, HEAD_A, "the same commit") is not None:
         FAILURES.append("stale_inventory: an inventory from THIS commit must not refuse")
+    _tick()
+    # #1129: A DIFFERENT COMMIT IS NOT YET A DIFFERENT ROUTE SET. Refusing on the sha alone left
+    # this gate permanently ERROR on every working branch -- measured downstream at 11 commits
+    # without one verdict -- because any commit invalidates the inventory and adding a route is
+    # exactly when coverage matters. `moved` is injected so this is decidable with no git tree.
+    if _stale({"commit": HEAD_A}, HEAD_B, "no route source moved", moved=False) is not None:
+        FAILURES.append("stale_inventory: a commit that touched no route source must NOT refuse")
+    _tick()
+    # THE CONTROL, on the same two commits: when a route source DID move, it must still refuse --
+    # or the narrowing above has simply turned the check off.
+    why = _stale({"commit": HEAD_A}, HEAD_B, "a route source moved", moved=True)
+    if not why:
+        FAILURES.append("stale_inventory: a commit that moved a route source must still refuse")
+    _tick()
+    # #1129: the message must name the REMEDY. Someone hitting this for the first time could not
+    # act on it -- it stated the two shas and no command.
+    if not why or "enumerate --rails" not in why:
+        FAILURES.append("stale_inventory: the refusal must name the command that clears it")
+    _tick()
+    # CANNOT TELL IS NOT CAN. A shallow clone or an unknown commit cannot be diffed, and guessing
+    # "probably fine" there rebuilds the defect the refusal exists to prevent.
+    why_unknown = _stale({"commit": HEAD_A}, HEAD_B, "git cannot compare", moved=None)
+    if not why_unknown or "cannot diff" not in why_unknown:
+        FAILURES.append("stale_inventory: an undecidable diff must refuse AND say it is assumed")
+    _tick()
+    # ...and the same thing through the REAL function, not an injected verdict: two commits git
+    # cannot diff must come back None. The fixture above injects `moved`, so it never reaches this
+    # branch -- a mutation there survived until this line existed.
+    if rc.route_sources_changed("a" * 40, "b" * 40) is not None:
+        FAILURES.append("route_sources_changed: an undiffable pair must be None, not a verdict")
+    _tick()
+    # The pure predicate, which is what makes the above decidable without a repository.
+    if not rc.names_a_route_source(["config/routes.rb"]):
+        FAILURES.append("names_a_route_source: config/routes.rb must count")
+    _tick()
+    if not rc.names_a_route_source(["config/routes/admin.rb"]):
+        FAILURES.append("names_a_route_source: a split route file must count")
+    _tick()
+    if not rc.names_a_route_source(["engines/billing/config/routes.rb"]):
+        FAILURES.append("names_a_route_source: an engine's routes must count")
+    _tick()
+    # THE CONTROL: the ordinary commit. If this counted, the narrowing would be a no-op and the
+    # gate would stay dark exactly as before.
+    if rc.names_a_route_source(["app/models/user.rb", "README.md", "config/database.yml"]):
+        FAILURES.append("names_a_route_source: files that define no route must NOT count")
+    _tick()
+    # A near-miss that must not count, or `startswith` would swallow a neighbour.
+    if rc.names_a_route_source(["config/routes_helper.rb"]):
+        FAILURES.append("names_a_route_source: config/routes_helper.rb does not define routes")
     _tick()
     # THE SHIPPED REGRESSION. v1.133.0 compared the recorded commit to HEAD with `==`, which
     # compares two RENDERINGS rather than two commits, and refused a downstream `doctrine` job on
