@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-22 (release v1.139.0)
 
 - **The feedback-loop section claimed every issue arrives through the report command, and it does
   not — `CLAUDE.md`** (#1141). *"Every issue arrived this way"* is a universal claim, and one
@@ -3223,7 +3223,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.45.1 (release v1.139.0) — 2026-09-22
 
 - **A `{match:...}` check reported one file and never ran the rest —
   `plugins/rails-flow/scripts/project_gates.py`** (#1141). `expand()` correctly produces one
@@ -9675,7 +9675,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.32.1 (release v1.139.0) — 2026-09-22
 
 - **A constant advertised a status word the vocabulary rejects —
   `plugins/qa-flow/scripts/validate_evidence.py`, `plugins/qa-flow/scripts/route_coverage.py`**
