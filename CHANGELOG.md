@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-22 (release v1.138.0)
 
 - **The trap is enforceable where an agent would copy it from — `scripts/lint_self_consistency.py`**
   (#1131). New rule **`author-me-as-identity`**: shipped content may not hand an agent
@@ -9636,7 +9636,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.32.0 (release v1.138.0) — 2026-09-22
 
 - **A browser judge graded a PDF as a blank page and blamed the app —
   `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/crawl_report.py`,
@@ -11613,7 +11613,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.42.1 (release v1.138.0) — 2026-09-22
 
 - **Comments are prose, and three gates read them as code —
   `plugins/design-flow/scripts/source_text.py` (new),
@@ -14289,7 +14289,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.63.0 (release v1.138.0) — 2026-09-22
 
 - **A lane says what is private and never said how to tell what is yours —
   `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1131). §3
