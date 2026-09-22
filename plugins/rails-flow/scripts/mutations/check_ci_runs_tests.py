@@ -13,17 +13,23 @@ GUARD = Guard(
     selftest="scripts/check_ci_runs_tests.py",
     mutations=(
         Mutation(
-            "every config/ci.rb passes, so the gate cannot fail",
+            # WAS "every config/ci.rb passes, so the gate cannot fail", expecting the VERDICT
+            # fixture. Since #1154 added a second way to return 1, this no longer flips the exit
+            # code for a --skip-test file -- it flips the REASON, reporting a file with no suite
+            # at all as one that merely forgot a reset. So the message fixture is the
+            # discriminator now, and the verdict fixture is not; naming the old one would have
+            # let it go quiet under a later change.
+            "a file with no suite step is judged as though it had one",
             "    if running:",
             "    if True:",
-            "a --skip-test config/ci.rb FAILS",
+            "...and the message names the zero-spec consequence",
         ),
         Mutation(
             # A step NAMED "Tests" that runs rubocop is the exact false confidence this refuses.
             "the step LABEL decides instead of the command",
             "if SUITE.search(cmd)]",
             "if SUITE.search(label)]",
-            "a step LABELLED rspec that runs rubocop still fails",
+            "...as a zero-spec file, not as one missing a reset",
         ),
         Mutation(
             "a repo with no config/ci.rb reads as a pass",
@@ -46,6 +52,29 @@ GUARD = Guard(
             'r"""^\\s*step\\s+',
             'r"""\\s*step\\s+',
             "a commented-out suite step does not count",
+        ),
+        # ---- #1154: the reset rule. The database a suite reads is state the previous run wrote.
+        Mutation(
+            "the reset requirement is dropped, so a suite reading last run's rows passes",
+            "        if not reset_precedes_suite(declared):",
+            "        if False:",
+            "a suite with no reset at all fails",
+        ),
+        Mutation(
+            # THE ONE THAT MATTERS. `db:prepare` and `db:test:prepare` differ by four characters
+            # and by whether anything is truncated; the reported project had the former and a
+            # stage named "DB reset" over it. A PURGE pattern that accepts both is the defect.
+            "PURGE accepts db:prepare, which truncates nothing",
+            'PURGE = re.compile(r"\\bdb:(?:test:(?:prepare|purge|load_schema)|reset)\\b")',
+            'PURGE = re.compile(r"\\bdb:(?:test:)?(?:prepare|purge|load_schema|reset)\\b")',
+            "db:prepare before the suite is NOT a reset and still fails",
+        ),
+        Mutation(
+            # Presence, not order -- and a purge the suite never reached is not a purge.
+            "the reset may appear anywhere, so one running AFTER the suite counts",
+            "    return any(PURGE.search(cmd) for _, cmd in declared[:first_suite])",
+            "    return any(PURGE.search(cmd) for _, cmd in declared)",
+            "a reset AFTER the suite does not count",
         ),
     ),
 )

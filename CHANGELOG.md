@@ -3241,6 +3241,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The CI scaffold we ship left the test database seeded for the next run, and the two places we
+  ship it disagreed — `plugins/rails-flow/commands/setup-flow.md`,
+  `plugins/rails-flow/scripts/check_ci_runs_tests.py`,
+  `plugins/rails-flow/scripts/mutations/check_ci_runs_tests.py`** (#1154). **Maintainer decision
+  recorded on the issue** for the placement; the Rails semantics below are verified against
+  `activerecord-8.1.3.1` on disk. `setup-flow.md` said to take the block *verbatim* from
+  `rails-8` `references/testing.md` and then printed a copy that had drifted in **four** ways —
+  a different order, reset task, step name and binstub — and its order was the inverted one,
+  seeding **before** the suite, which `testing.md`'s own reasoning forbids. It now points at the
+  one block instead of reprinting a second. The enforcement half is new: `check_ci_runs_tests.py`
+  refuses a `config/ci.rb` whose suite step is not preceded by a step that empties the test
+  database, and **`db:prepare` does not satisfy it** — `databases.rake:395` is
+  `DatabaseTasks.prepare_all`, create-if-absent then migrate, truncating nothing, while
+  `db:test:prepare` (`:553`) invokes `db:test:load_schema` (`:537`), which depends on
+  `db:test:purge` (`:546`) and drops the database. Order is the check, not presence: a purge after
+  the suite is one a crash mid-suite never reaches. 25 assertions, 8 mutations. Three pre-existing
+  mutations stopped discriminating when a second way to return `1` appeared — the
+  `signal-that-cannot-discriminate` class from #1156, caught by the harness rather than by review —
+  and their fixtures now assert the message, not only the verdict.
+
 - **The architecture page was titled after whichever directory rebuilt it —
   `plugins/rails-flow/scripts/architecture_graph.py`,
   `plugins/rails-flow/scripts/mutations/architecture_graph.py`** (#1158). The title came from
@@ -14491,6 +14511,19 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **`bin/ci` handed each run the previous run's rows — `skills/rails-8/references/testing.md`,
+  `dist/rails-8.skill`** (#1154). The shipped block ran the suite and then `Tests: Seeds`, and
+  `db:seed:replant` is truncate-**then**-seed (`activerecord-8.1.3.1`, `databases.rake:407`), so
+  every run *ended* seeded and the next one opened on those rows — reported downstream as 14
+  `Validation failed: Code has already been taken` failures that read as a defect in the diff under
+  test. A `step "Tests: DB reset", "bin/rails db:test:prepare"` now leads the block. `db:prepare` is
+  **not** a reset and never was: `:395` is `DatabaseTasks.prepare_all`, create-if-absent then
+  migrate, with no truncation on any path; `db:test:prepare` (`:553`) reaches `db:test:purge`
+  (`:546`) and drops the database. The reset leads rather than trailing because a run that dies
+  mid-suite never reaches its own tail, and because the rows in the downstream reproduction came
+  from a manual probe with no seed involved — a fix expressed in terms of `db:seed:replant` could
+  not have covered it. The `:540` reasoning kept its first half and gained the second.
 
 - **A ninth review class: a value two causes both produce, read as if it named one —
   `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1156). **Maintainer decision recorded

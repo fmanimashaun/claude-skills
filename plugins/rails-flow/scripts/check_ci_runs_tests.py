@@ -41,6 +41,16 @@ SUITE = re.compile(
     r")"
 )
 
+# Commands that genuinely EMPTY the test database before the suite reads it (#1154).
+#
+# `db:prepare` IS DELIBERATELY ABSENT and must stay absent. Measured against activerecord-8.1.3.1:
+# `db:prepare` (databases.rake:395) is `DatabaseTasks.prepare_all` -- create-if-absent then migrate,
+# with no truncation on any path. `db:test:prepare` (:553) invokes `db:test:load_schema` (:537),
+# which depends on `db:test:purge` (:546) and drops the database. Only the latter resets anything.
+# A project whose reset stage is `db:prepare` is the reported defect, not an exemption from it, so
+# the `db:test:` prefix here is load-bearing and a mutation removing it must fail a fixture.
+PURGE = re.compile(r"\bdb:(?:test:(?:prepare|purge|load_schema)|reset)\b")
+
 # `step "Label", "command"` -- the command is the second argument, and it is the only half that
 # decides anything here.
 STEP = re.compile(r"""^\s*step\s+(?P<q1>['"])(?P<label>.*?)(?P=q1)\s*,\s*(?P<q2>['"])(?P<cmd>.*?)(?P=q2)""",
@@ -64,6 +74,20 @@ def suite_steps(source: str) -> list[tuple[str, str]]:
     return [(label, cmd) for label, cmd in steps(source) if SUITE.search(cmd)]
 
 
+def reset_precedes_suite(declared: list[tuple[str, str]]) -> bool:
+    """Does a step that PURGES the test database run before the first step that reads it?
+
+    ORDER IS THE WHOLE CHECK, not presence. A purge after the suite protects the next run only if
+    the run reaches it, so a crash mid-suite -- or any stage that writes rows afterwards -- leaves
+    the database dirty for the next start. The head of the consuming stage is the only placement
+    that holds under a run that dies halfway, which is the case the reporter actually hit.
+    """
+    first_suite = next((i for i, (_, cmd) in enumerate(declared) if SUITE.search(cmd)), None)
+    if first_suite is None:
+        return False
+    return any(PURGE.search(cmd) for _, cmd in declared[:first_suite])
+
+
 def run(root: Path = Path(".")) -> tuple[int, str]:
     """(exit, message). 0 pass, 1 fail, 3 not-applicable."""
     doc = root / CI_RB
@@ -77,7 +101,17 @@ def run(root: Path = Path(".")) -> tuple[int, str]:
     running = suite_steps(source)
     if running:
         names = ", ".join(f"{label!r}" for label, _ in running)
-        return 0, f"{CI_RB} runs the suite — {len(running)} step(s): {names}"
+        if not reset_precedes_suite(declared):
+            return 1, (
+                f"{CI_RB} runs the suite ({names}) but NO step empties the test database first, so "
+                "the suite reads whatever the previous run left behind.\n"
+                "  `db:prepare` does not count and is not a reset: it creates-if-absent and "
+                "migrates, and truncates nothing (activerecord-8.1.3 databases.rake:395).\n"
+                "  `db:test:prepare` does — it invokes db:test:load_schema, which depends on "
+                "db:test:purge and drops the database.\n"
+                '  Add `step "Tests: DB reset", "bin/rails db:test:prepare"` BEFORE the suite step. '
+                "The block is in skills/rails-8/references/testing.md.")
+        return 0, f"{CI_RB} runs the suite — {len(running)} step(s): {names} — after a test-database reset"
     labels = ", ".join(f"{label!r}" for label, _ in declared)
     return 1, (
         f"{CI_RB} declares {len(declared)} step(s) — {labels} — and NONE runs the test suite, so "
@@ -114,6 +148,14 @@ def selftest() -> int:
   step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn"
 end
 '''
+    # The reset stage every PASSING fixture below needs, so that the suite-recognition checks
+    # witness suite recognition ONLY. Without this they fail for the #1154 reason and stop saying
+    # anything about the thing they were written for.
+    RESET = '  step "Tests: DB reset", "bin/rails db:test:prepare"\n'
+
+    def ci(*step_lines: str) -> str:
+        return SKIPPED.replace('end\n', "".join(step_lines) + 'end\n')
+
     code, msg = verdict(SKIPPED)
     check("a --skip-test config/ci.rb FAILS", code == 1, f"exit {code}: {msg}")
     check("...and the message names the zero-spec consequence", "zero specs" in msg, msg)
@@ -121,7 +163,7 @@ end
     # THE FIX passes -- without this the gate could be "always fail", which is equally useless.
     for label, cmd in (("bundle exec", 'bundle exec rspec'), ("binstub", "bin/rspec"),
                        ("minitest", "bin/rails test")):
-        code, msg = verdict(SKIPPED.replace('end\n', f'  step "Tests", "{cmd}"\nend\n'))
+        code, msg = verdict(ci(RESET, f'  step "Tests", "{cmd}"\n'))
         check(f"a suite step via {label} passes", code == 0, f"exit {code}: {msg}")
 
     # THE LABEL IS NOT THE SIGNAL. A step *named* Tests that runs rubocop is the exact false
@@ -136,9 +178,14 @@ end
     # the weaker fixture as a coincidental catch, which is exactly what it is for.
     code, msg = verdict(SKIPPED.replace('end\n', '  step "rspec", "bin/rubocop"\nend\n'))
     check("a step LABELLED rspec that runs rubocop still fails", code == 1, f"exit {code}: {msg}")
+    # ...AND FOR THE RIGHT REASON. Since #1154 both branches return 1, so `code == 1` no longer
+    # says which defect was found: a label-matching implementation ALSO returns 1 here, via the
+    # missing-reset branch, and this fixture went quiet under its own mutation until it asserted
+    # the message. The verdict stopped discriminating the moment a second way to fail existed.
+    check("...as a zero-spec file, not as one missing a reset", "zero specs" in msg, msg[:160])
 
     # ...and conversely the label may be anything, because a project names its own steps.
-    code, _ = verdict(SKIPPED.replace('end\n', '  step "Suite", "bundle exec rspec"\nend\n'))
+    code, _ = verdict(ci(RESET, '  step "Suite", "bundle exec rspec"\n'))
     check("a suite step under any label passes", code == 0)
 
     # NOT APPLICABLE is the third state and never a pass.
@@ -156,15 +203,51 @@ end
           "declares no `step` at all" in msg, msg[:110])
 
     # COMMENTS DO NOT COUNT -- held by `STEP`'s line anchor, not by stripping.
-    code, _ = verdict(SKIPPED.replace('end\n', '  # step "Tests", "bundle exec rspec"\nend\n'))
-    check("a commented-out suite step does not count", code == 1)
+    code, msg = verdict(SKIPPED.replace('end\n', '  # step "Tests", "bundle exec rspec"\nend\n'))
+    check("a commented-out suite step does not count", code == 1 and "zero specs" in msg,
+          f"exit {code}: {msg[:160]}")
 
     # ...AND A REAL COMMAND MAY CONTAIN A `#`. This is the fixture the first draft lacked: stripping
     # comments truncated the command past its closing quote, so a project that DOES run its suite was
     # reported as one that does not. Measured before the stripping came out.
-    code, msg = verdict(SKIPPED.replace(
-        'end\n', '  step "Tests", "bundle exec rspec --tag ~slow # skip the slow ones"\nend\n'))
+    code, msg = verdict(ci(RESET, '  step "Tests", "bundle exec rspec --tag ~slow # skip the slow ones"\n'))
     check("a suite command containing # is still found", code == 0, f"exit {code}: {msg}")
+
+    # ------------------------------------------------------------------ #1154: the reset must
+    # PRECEDE the suite, and `db:prepare` is not a reset.
+    SUITE_STEP = '  step "Tests", "bundle exec rspec"\n'
+
+    code, msg = verdict(ci(SUITE_STEP))
+    check("a suite with no reset at all fails", code == 1, f"exit {code}: {msg}")
+    check("...naming the previous run as the source, not the project's specs",
+          "previous run left behind" in msg, msg[:140])
+
+    # THE DISCRIMINATOR. This is the shipped defect: a project that believes it resets, because the
+    # stage is named for it and the task is spelled `prepare`. A pattern matching `db:.*prepare`
+    # passes this and is useless; only one requiring `db:test:` refuses it.
+    code, msg = verdict(ci('  step "Tests: DB reset", "bin/rails db:prepare"\n', SUITE_STEP))
+    check("db:prepare before the suite is NOT a reset and still fails", code == 1, f"exit {code}: {msg}")
+    check("...and the message says db:prepare truncates nothing",
+          "does not count and is not a reset" in msg, msg[:140])
+
+    # ORDER IS THE CHECK, not presence -- a purge after the suite is a purge the suite never saw,
+    # and a run that dies mid-suite never reaches it at all. A presence-only implementation passes
+    # this fixture; that is what it is here to catch.
+    code, msg = verdict(ci(SUITE_STEP, '  step "Tests: DB reset", "bin/rails db:test:prepare"\n'))
+    check("a reset AFTER the suite does not count", code == 1, f"exit {code}: {msg}")
+
+    # ...and each spelling that genuinely purges is accepted, since a project picks its own.
+    for task in ("db:test:prepare", "db:test:purge", "db:reset"):
+        code, msg = verdict(ci(f'  step "Reset", "bin/rails {task}"\n', SUITE_STEP))
+        check(f"{task} before the suite passes", code == 0, f"exit {code}: {msg}")
+    check("...and the passing message says the reset was seen",
+          "after a test-database reset" in msg, msg)
+
+    # A ci.rb with a reset and NO suite still fails for the original reason -- the two rules must not
+    # mask one another.
+    code, msg = verdict(ci(RESET))
+    check("a reset without a suite still fails as zero-spec", code == 1 and "zero specs" in msg,
+          f"exit {code}: {msg[:120]}")
 
     for f in failures:
         print(f"FAIL {f}")
