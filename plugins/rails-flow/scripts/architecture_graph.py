@@ -1971,6 +1971,63 @@ def load_graph_file(path: str) -> dict | None:
 # cli
 # --------------------------------------------------------------------------
 
+def project_name(root: str) -> str:
+    """The project's name, as a property of the REPOSITORY rather than of this checkout's path.
+
+    THE DEFECT THIS REPLACES (#1158). The title came from `os.path.basename(root)`, and the
+    parallel-session-lane skill tells every session to work in a git worktree whose directory is
+    named after the branch or the task. So the sequence the toolchain itself prescribes -- take a
+    worktree, change code, push, the guard says rebuild, rebuild, commit -- retitled the project's
+    committed architecture page to a scratch directory's name, for everyone.
+
+    Measured downstream over the generated page's full history: **37 of 113 commits carried a wrong
+    title, in 28 distinct spellings**, every one a worktree directory. And the 76 that look correct
+    are LUCK, not a gate: a later rebuild from the primary checkout overwrote them, so the 37 is a
+    floor rather than a total -- every wrong rebuild a correct one happened to overwrite leaves no
+    trace at all.
+
+    Nothing could see it. The pre-push guard compares `content_digest`, computed over the graph
+    DATA, which correctly excludes the title; and `wt-401 architecture` is a plausible page title
+    unless you happen to know the project's name.
+
+    Three sources, in order, each a property of the repository and not of the directory:
+      1. the `origin` remote's repository name -- identical from any worktree;
+      2. the primary checkout's basename via `--git-common-dir`, which resolves a worktree back;
+      3. the directory basename, as before, with a warning naming the derived title, so a wrong one
+         is visible in the transcript rather than only in a committed diff.
+    """
+    def git(*args: str) -> str | None:
+        try:
+            r = subprocess.run(("git", "-C", root, *args), capture_output=True, text=True,
+                               timeout=10, check=False)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return r.stdout.strip() or None if r.returncode == 0 else None
+
+    url = git("remote", "get-url", "origin")
+    if url:
+        name = url.rstrip("/").rsplit("/", 1)[-1]
+        if name.endswith(".git"):
+            name = name[:-4]
+        if name:
+            return name
+
+    # `--git-common-dir` resolves a worktree back to the primary checkout's `.git`, whose parent is
+    # the real project directory. `--show-toplevel` would return the WORKTREE and rebuild the bug.
+    common = git("rev-parse", "--git-common-dir")
+    if common:
+        common_path = os.path.abspath(os.path.join(root, common))
+        parent = os.path.basename(os.path.dirname(common_path))
+        if parent:
+            return parent
+
+    fallback = os.path.basename(os.path.abspath(root))
+    print(f"architecture_graph: no git remote and no common dir — titling the page "
+          f"{fallback!r} from this directory's name. If that is a worktree, pass --title.",
+          file=sys.stderr)
+    return fallback
+
+
 def write_if_changed(path: str, content: str) -> bool:
     """Only touch the file when bytes differ — keeps `git status` honest and
     stops a no-op regeneration from looking like a change."""
@@ -1999,6 +2056,39 @@ def selftest() -> int:
         checks += 1
         if not ok:
             failures.append(f"{label}: {detail}" if detail else label)
+
+    # --- THE TITLE IS A PROPERTY OF THE REPOSITORY, NOT OF THIS CHECKOUT (#1158) -------------
+    # Measured downstream over the generated page's whole history: 37 of 113 commits carried a
+    # WRONG title in 28 distinct spellings, every one a worktree directory name -- produced by
+    # sessions following the pre-push guard's own printed instruction from the worktree the lane
+    # skill told them to use. And the 76 that look right are LUCK: a later rebuild from the primary
+    # checkout overwrote them, so 37 is a floor, not a total.
+    import subprocess as _sp
+    with tempfile.TemporaryDirectory() as td:
+        primary = os.path.join(td, "myproject")
+        os.makedirs(primary)
+        _sp.run(["git", "init", "-q", primary], check=True)
+        _sp.run(["git", "-C", primary, "commit", "-q", "--allow-empty", "-m", "x"],
+                check=True, env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        check("with no remote, the name comes from the PRIMARY checkout",
+              project_name(primary) == "myproject", project_name(primary))
+
+        # THE CASE THAT SHIPPED 28 WRONG TITLES: the same repository, seen from a worktree whose
+        # directory is named for the task. `--show-toplevel` would return the worktree and rebuild
+        # the defect; `--git-common-dir` resolves it back.
+        wt = os.path.join(td, "wt-401")
+        _sp.run(["git", "-C", primary, "worktree", "add", "-q", wt, "-b", "t"], check=True)
+        check("a worktree resolves back to the primary checkout, not its own directory",
+              project_name(wt) == "myproject", project_name(wt))
+
+        # A remote wins, because it is identical from every checkout and survives a rename of the
+        # directory itself.
+        _sp.run(["git", "-C", primary, "remote", "add", "origin",
+                 "https://example.test/acme/realname.git"], check=True)
+        check("the origin remote's repository name wins", project_name(wt) == "realname",
+              project_name(wt))
+        check("...and a `.git` suffix is stripped", not project_name(wt).endswith(".git"))
 
     check("an explicit --max-flows wins over the committed cap", check_cap({"max_flows": 200}, 5, 80) == 5)
     check("--check rebuilds with the COMMITTED cap when none is given", check_cap({"max_flows": 200}, None, 80) == 200)
@@ -2176,7 +2266,7 @@ def main(argv: list[str]) -> int:
     if args.enrich:
         enrich(fresh, root)
 
-    title = args.title or (os.path.basename(root) + " architecture")
+    title = args.title or (project_name(root) + " architecture")
     written = []
     if write_if_changed(json_path, json.dumps(fresh, indent=2, sort_keys=True) + "\n"):
         written.append("graph.json")

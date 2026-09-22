@@ -15,7 +15,7 @@ GUARD = Guard(
         Mutation(
             # The route tie: a path the app does not serve cannot have returned a status.
             "an unroutable path stops being a finding",
-            "    return sorted({p for p in paths if not any(rx.fullmatch(p) for rx in compiled)})",
+            "    return sorted({p for p in paths if not routed(p)})",
             "    return []",
             "a path matching no route is reported",
         ),
@@ -84,6 +84,23 @@ GUARD = Guard(
         "    for row in rows:\n        if not makes_a_claim(row):\n            continue",
         "    if any(not makes_a_claim(r) for r in rows):\n        return []\n    for row in rows:\n        if False:\n            continue",
         "...and a claiming row beside it is still read",
+    ),
+    Mutation(
+        # A Rails route is `(.:format)`-bearing and `normalise()` strips that from the PATTERN, so
+        # nothing stripped it from the observed path: every CSV export a sweep legitimately fetched
+        # read as unroutable -- seven of eight findings in one downstream file.
+        "a format suffix is no longer forgiven, so every export reads as unroutable",
+        "        bare = FORMAT_SUFFIX.sub(\"\", path)",
+        "        bare = path",
+        "a `.csv` rendering of a real route is routable",
+    ),
+    Mutation(
+        # THE CONTROL: forgiving the suffix UNCONDITIONALLY would let an invented path match by
+        # losing its last segment, which is the checker quietly agreeing with a fabrication.
+        "the suffix is stripped even when the bare path routes nowhere",
+        "        return bare != path and any(rx.fullmatch(bare) for rx in compiled)",
+        "        return True",
+        "a suffix on a path that routes nowhere is still reported",
     ),
     ),
 )

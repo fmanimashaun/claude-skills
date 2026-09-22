@@ -515,8 +515,10 @@ plugins:            # `require:` on RuboCop < 1.72
   add one, `bin/ci` runs setup, RuboCop and three security audits and **zero specs**, and a green
   run means "lint and audits passed", not "the suite passed".
 
-  This is the whole file for a `--skip-test` app. Everything but the two `Tests:` lines is what
-  Rails generated; those two are the ones it omitted, and they are what makes `bin/ci` a gate:
+  This is the whole file for a `--skip-test` app. Everything but the three `Tests:` lines is what
+  Rails generated. Two of them — `Tests: RSpec` and `Tests: Seeds` — are the ones Rails omitted on
+  the flag, and they are what makes `bin/ci` a gate. The third, `Tests: DB reset`, Rails never
+  generates at any flag: it exists because the suite must not read the rows the previous run left.
 
 ```ruby
 # config/ci.rb — run with bin/ci
@@ -528,7 +530,8 @@ CI.run do
   step "Security: Importmap vulnerability audit", "bin/importmap audit"
   step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error"
 
-  # Rails omits BOTH of these under --skip-test. Without them bin/ci is not a test gate.
+  # Rails omits ALL of these under --skip-test. Without them bin/ci is not a test gate.
+  step "Tests: DB reset", "bin/rails db:test:prepare"
   step "Tests: RSpec", "bundle exec rspec"
   step "Tests: Seeds", "env RAILS_ENV=test bin/rails db:seed:replant"
 
@@ -536,11 +539,19 @@ CI.run do
 end
 ```
 
-  Three things about that file:
+  Four things about that file:
+  - **`Tests: DB reset` goes first, and `db:prepare` will not do.** The suite must open on an
+    empty database, and the only thing that guarantees that is emptying it at the head of the
+    run — not at the tail of the previous one, which a crash mid-suite never reaches. `db:prepare`
+    is **not a reset**: it creates the database if absent and migrates it, and truncates nothing
+    (`databases.rake:395`, Rails 8.1). `db:test:prepare` invokes `db:test:load_schema`, which
+    depends on `db:test:purge` and drops the database (`:553`, `:537`, `:546`).
   - **`Tests: Seeds` goes after the suite, not before.** `db:seed:replant` truncates every table
-    and re-seeds, so running it first would hand the suite a seeded database. Its value is
-    catching a `db/seeds.rb` that has drifted from the schema — a break that no spec sees and
-    that surfaces on the next `bin/setup`.
+    and re-seeds, so running it first would hand the suite a seeded database. It also *ends*
+    seeded — `replant` is truncate-**then**-seed — which is precisely why the reset above belongs
+    at the start of the next run rather than being bolted onto this step. Its value is catching a
+    `db/seeds.rb` that has drifted from the schema — a break that no spec sees and that surfaces
+    on the next `bin/setup`.
   - **No separate system-test step.** RSpec system specs live in `spec/system` and already run
     inside `bundle exec rspec`; Rails' skipped `Tests: System` comment has no RSpec counterpart
     to restore.

@@ -3239,6 +3239,72 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.47.0 (release v1.141.0) — 2026-09-22
+
+- **The CI scaffold we ship left the test database seeded for the next run, and the two places we
+  ship it disagreed — `plugins/rails-flow/commands/setup-flow.md`,
+  `plugins/rails-flow/scripts/check_ci_runs_tests.py`,
+  `plugins/rails-flow/scripts/mutations/check_ci_runs_tests.py`** (#1154). **Maintainer decision
+  recorded on the issue** for the placement; the Rails semantics below are verified against
+  `activerecord-8.1.3.1` on disk. `setup-flow.md` said to take the block *verbatim* from
+  `rails-8` `references/testing.md` and then printed a copy that had drifted in **four** ways —
+  a different order, reset task, step name and binstub — and its order was the inverted one,
+  seeding **before** the suite, which `testing.md`'s own reasoning forbids. It now points at the
+  one block instead of reprinting a second. The enforcement half is new: `check_ci_runs_tests.py`
+  refuses a `config/ci.rb` whose suite step is not preceded by a step that empties the test
+  database, and **`db:prepare` does not satisfy it** — `databases.rake:395` is
+  `DatabaseTasks.prepare_all`, create-if-absent then migrate, truncating nothing, while
+  `db:test:prepare` (`:553`) invokes `db:test:load_schema` (`:537`), which depends on
+  `db:test:purge` (`:546`) and drops the database. Order is the check, not presence: a purge after
+  the suite is one a crash mid-suite never reaches. 25 assertions, 8 mutations. Three pre-existing
+  mutations stopped discriminating when a second way to return `1` appeared — the
+  `signal-that-cannot-discriminate` class from #1156, caught by the harness rather than by review —
+  and their fixtures now assert the message, not only the verdict.
+
+- **The architecture page was titled after whichever directory rebuilt it —
+  `plugins/rails-flow/scripts/architecture_graph.py`,
+  `plugins/rails-flow/scripts/mutations/architecture_graph.py`** (#1158). The title came from
+  `os.path.basename(root)`, and `parallel-session-lane` tells every session to work in a worktree
+  named for its branch or task — so **the sequence the toolchain itself prescribes** (take a
+  worktree, change code, push, the guard says rebuild, rebuild, commit) retitled a project's
+  committed architecture page to a scratch directory's name, for everyone. Measured downstream over
+  that page's whole history: **37 of 113 commits carried a wrong title, in 28 distinct spellings**,
+  every one a worktree directory. **The 76 that look correct are luck** — a later rebuild from the
+  primary checkout overwrote them — so 37 is a **floor**, not a total, and a correct title today is
+  evidence only that the last person to touch it was in the right directory. Nothing could see it:
+  the pre-push guard compares `content_digest`, computed over the graph **data**, which correctly
+  excludes the title; and `wt-401 architecture` is a plausible page title unless you know the
+  project's name. The name now comes from the **repository** — the `origin` remote, else the
+  primary checkout resolved through `--git-common-dir` (**not** `--show-toplevel`, which returns
+  the worktree and would rebuild the defect), else the directory with a **warning naming the
+  derived title**, so a wrong one is visible in the transcript rather than only in a committed diff.
+
+- **An expression index vanished from the generated Data-Model page, so strengthening a guarantee
+  was documented as removing one — `plugins/rails-flow/scripts/build_project_wiki.py`,
+  `plugins/rails-flow/scripts/mutations/build_project_wiki.py`** (#1157). One regex at `:64`
+  required a bracketed column list, `t.index [`. Rails writes an **expression** index as a bare
+  string — `t.index "lower((code)::text)", name: …, unique: true` — so the line never matched, was
+  skipped, and nothing reported a skip. A downstream app moved case-insensitive uniqueness **out**
+  of a model validator and **into** a `lower(code)` unique index; the page then rendered
+  `Indexes: public_id (unique); status` and **a reader would conclude the constraint had been
+  dropped.**
+
+  **Why no test caught it, which is the reusable half.** Both selftest fixtures were bracketed. The
+  parser had never been shown the form it cannot read, so every assertion passed and the guard
+  fired correctly under mutation — `gate-that-cannot-fail`'s test (*make the check fail on purpose
+  once*) returns a clean verdict here, measured: mutate the regex and the selftest goes from
+  `0 failure(s)` to `2`. What was missing was not a failure path but **an input shape**.
+
+  **An index line it cannot classify is now recorded and printed on the page**, never dropped — a
+  third syntax will exist, and a silently shorter index list is believed. The page says what it
+  could not read and states that it is incomplete, not the database.
+
+  Three mutations added, fourteen in total, all caught. **Two near-misses on the way, both
+  instructive**: folding the new forms into the existing `invoices` fixture coupled its index
+  *count* to this change, so a pre-existing mutation started being caught by a different check —
+  the new forms now live in a `clients` table of their own. And the new control indexed `[0]`
+  without a length guard, so a mutation that empties the list **raised `IndexError` and aborted the
+  selftest** before the checks written for it ran. Length is asserted first.
 ### 1.46.0 (release v1.140.0) — 2026-09-22
 
 - **The one guard that has ever stopped a wrong number watched PRs only —
@@ -9711,6 +9777,21 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.32.2 (release v1.141.0) — 2026-09-22
+
+- **A CSV export is the same route, and an annotated cell is a different defect —
+  `plugins/qa-flow/scripts/evidence_app_tie.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`**. Measured on a downstream evidence file:
+  **8 findings, 7 of them false.** A Rails route is `(.:format)`-bearing and
+  `route_coverage.normalise()` strips that from the **pattern** — so `/capacity` in the inventory is
+  `/capacity.csv` on the wire — but nothing stripped it from the **observed path**, and every CSV
+  export a sweep legitimately fetched read as unroutable. The suffix is forgiven **only when the
+  bare path is itself a real route**, so an invented path cannot match by losing its last segment;
+  a mutation strips unconditionally to prove that control holds. The eighth,
+  `/dashboard (scope EG)`, is a real path with a note typed into the cell — now reported as **what
+  it is**, a `Requested URL` that is not a URL, because calling it a missing route sends a reader
+  hunting for one that exists. **8 → 1 on that file**, and the one that remains is accurate.
+
 ### 1.32.1 (release v1.139.0) — 2026-09-22
 
 - **A constant advertised a status word the vocabulary rejects —
@@ -11732,6 +11813,52 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.42.2 (release v1.141.0) — 2026-09-22
+
+- **An attribute reader is not a slot, and the check reported a table that has none —
+  `plugins/design-flow/scripts/check_surface_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_surface_layout.py`**. Reported downstream on a
+  `TableComponent` that declares `renders_one`/`renders_many` **nowhere**: the two matches were
+  `<%= caption %>`, a constructor keyword exposed by `attr_reader`, and `<%= caption_classes %>`,
+  a private method returning a CSS class string. The `cluster` they were paired with sits on a sort
+  **link**, forty lines away, wrapping a header label the component composes itself. **This is
+  #1128 surviving one variant along** — *match the construct, never the word* was closed for
+  `content` and left open for `[a-z_]+`, so the first fix was too narrow rather than wrong, which
+  is the reusable part. A slot is now **what the component declared**: `content`, plus every
+  `renders_one`/`renders_many` name, read from the paired `.rb` because a template cannot tell a
+  slot from an attribute reader — both are `<%= name %>`. Verified on the reporting tree:
+  **1 finding → 0 across 64 component files**, with a positive control proving a declared slot
+  wrapped in a recipe is still reported, because narrowing what counts as a slot is one edit away
+  from switching the check off. **Known and not fixed here**: `wraps_slot_in_recipe` still checks
+  that a slot and a recipe **co-occur in the file**, not that the recipe **contains** the slot —
+  its name claims containment and the code does not. That is invisible to every passing fixture,
+  since each exercises a case where the recipe genuinely wraps the slot.
+
+- **The check asked whether a recipe and a slot co-occur; its name said the recipe wrapped the slot
+  — `plugins/design-flow/scripts/check_surface_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_surface_layout.py`** (#1152). The gap I recorded as
+  unfixable-here was fixable once a reviewer supplied **the input that tells the two mechanisms
+  apart**: a declared slot rendered **outside** every recipe, with a recipe on an unrelated element.
+  Co-occurrence reports it; containment does not. **Every fixture written before that one satisfied
+  both mechanisms**, which is the general trap worth naming — *a test whose passing is compatible
+  with two different mechanisms proves neither*, and a positive control has to be an input on which
+  they disagree. Containment now walks the element tree, honouring nesting and void elements.
+  **Markup gets containment; Ruby-built markup keeps co-occurrence** — a `call` composing with
+  `tag.div(class: "cluster") { … content … }` has no tags to walk, and that is precisely the surface
+  case this gate exists for, so dropping it would trade a false positive for a hole. **Landing this
+  made four existing mutations stop discriminating** — containment subsumed their fixtures, two
+  SURVIVED and two were caught by the wrong assertion — so each fixture moved to an input where only
+  its own mechanism can save it. 20 → **25 assertions**, 8 → **12 mutations**.
+  **And the scan now says when it cannot read the markup**: an ERB template that opens a tag in one
+  branch and closes it in another is unbalanced as text, and a containment scan that quietly
+  discards those elements under-reports with nothing to show for it. *Could not decide* is distinct
+  from *decided: no*, and falls back to co-occurrence — which may over-report and cannot silently
+  lose a surface. That question came from a reviewer who had just shipped the other side of it: a
+  regex that silently skipped the one form it could not read. **Three attempts were needed to write
+  a fixture that exercises it** — a balanced `<div>` wrapped in conditionals reads fine because ERB
+  lines are not tags, and an unbalanced file where the scan *decides* before reaching the end never
+  reaches the fallback at all.
 
 ### 1.42.1 (release v1.138.0) — 2026-09-22
 
@@ -14408,6 +14535,99 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.64.0 (release v1.141.0) — 2026-09-22
+
+- **§3a could say *not mine* and never *whose* —
+  `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1167).
+  **Maintainer decision recorded on the issue**; our own doctrine, no upstream. The reflog method
+  from #1131 is **elimination**, so a session holding a green PR it could not place messaged three
+  peers and interrupted two for nothing. A lane worktree's path carries its owning session's id, so
+  `git worktree list --porcelain` identifies the holder directly. **Shipped with its boundary rather
+  than as a rule**, because the boundary is where it misleads: **no row does not mean no owner, and
+  the dangerous case is live work** — measured across 11 worktree rows on one repository,
+  `qa/528-applicant-pipeline-evidence` appeared in **none** of them while carrying commits and an
+  open PR, because its worktree had vanished (§5a). A reader would have concluded nobody was on it.
+  Also recorded: the mapping is **one-to-many** (one session held five worktrees in that listing);
+  the **shared checkout has no owner** and must never be attributed to its current HEAD, which moved
+  between two commands; a `(detached)` row is a rebase in progress, not an unowned branch; and when
+  there is no row **there is no fallback — ask**, since the branch name routes to an issue and the PR
+  author is the shared account. Two near-misses are recorded beside the code that produces them:
+  widening the reflog grep to `worktrees/*` yields a **worktree directory name**, not a session, and
+  `--porcelain` emits **blank-line-separated records**, so the first `awk` draft printed one row and
+  read as a complete answer. A **second route to the same confusion** is recorded alongside: a
+  resumed-session handoff file is keyed on the **project directory**, not the session — one file per
+  repository, read at every `SessionStart` and after every compaction, rewritten by whichever session
+  wrote last — while being written in the first person, one of its own headings reading *"Corrections
+  **I** made under **my own name** — do not re-derive them"*. A session claimed a PR from the line
+  *"#1157 shipped as PR #1162"* and was wrong with the file open in front of it. The companion rule:
+  **a first-person record does not mean you are the author**.
+
+- **A worktree can disappear, and prune-and-recreate looks like success either way —
+  `skills/parallel-session-lane/SKILL.md` (§5a, §3), `dist/parallel-session-lane.skill`** (#1159).
+  **Maintainer decision recorded on the issue**; our own doctrine, no upstream. The skill sent every
+  session into a scratch worktree and never said what to do when the directory is gone — which
+  happened to three sessions in one day. New §5a gives the **discriminator before the recovery**,
+  because `git worktree prune && git worktree add` on a branch with no commits produces a clean empty
+  worktree with no error: `git log --oneline -1 <branch>` printing means the ref survived in the
+  common `.git`, silence means there is nothing to recover, and it must be run **before** `prune`.
+  Push is re-argued from **durability rather than discovery** — the old text framed it as letting §3
+  see your work, which invites a session to keep an unannounced branch local, and a never-pushed
+  branch has exactly one copy. §3's reassuring *"18 of 19 branches were already pushed"* now also
+  reads the other way: the 1 is the one that can be lost. And a recovered worktree is a fresh
+  worktree, so §5 applies again at the moment it is least obvious — measured, `app/assets/builds/`
+  missing made `rspec` refuse to run at all (0 examples, exit 1, loud and self-naming) while a
+  missing `config/master.key` produced **hundreds of red examples reading as a false regression** in
+  the branch just recovered.
+
+- **A set question is never answered by reading a list —
+  `skills/parallel-session-lane/SKILL.md` (§3), `dist/parallel-session-lane.skill`** (#1160).
+  **Maintainer decision recorded on the issue**; our own doctrine, no upstream. Five sessions in two
+  days read a truncated list and reported the prefix as the whole — `tail -80` over a 31-stage run
+  called "7 green, 1 red" while **8** were dying; `head -12` over 46 commits concluded a PR was
+  absent from a branch that contained it; a regex on `in [0-9.]+s` dropped a stage whose duration
+  read `4m43.21s`. The rule keys on **the shape of the question, not the command**: ask with a
+  predicate or a count (`git merge-base --is-ancestor`, `grep -c`, a `--jq … | length`), and print
+  the total beside any list you must show. **A syntactic lint on `| head` / `| tail` is recorded as
+  considered and rejected, with the measurement** — re-measured today at **7 instances in the
+  shipped corpus, 7 legitimate, 0 true positives** (`sort -u | tail -1` is a maximum, `lsof … |
+  head -1` is *the* single listener), and none of the five defects is in shipped shell at all, so the
+  check would be wrong on every instance it fired. It also records **why the previous attempt
+  failed**: a session wrote the rule as *"for a run's verdict, print every stage and count them"* and
+  it did not fire the next day, when the list was git commits — a rule scoped to the noun you last
+  met it on does not generalise, and its author is the last to notice.
+
+- **`bin/ci` handed each run the previous run's rows — `skills/rails-8/references/testing.md`,
+  `dist/rails-8.skill`** (#1154). The shipped block ran the suite and then `Tests: Seeds`, and
+  `db:seed:replant` is truncate-**then**-seed (`activerecord-8.1.3.1`, `databases.rake:407`), so
+  every run *ended* seeded and the next one opened on those rows — reported downstream as 14
+  `Validation failed: Code has already been taken` failures that read as a defect in the diff under
+  test. A `step "Tests: DB reset", "bin/rails db:test:prepare"` now leads the block. `db:prepare` is
+  **not** a reset and never was: `:395` is `DatabaseTasks.prepare_all`, create-if-absent then
+  migrate, with no truncation on any path; `db:test:prepare` (`:553`) reaches `db:test:purge`
+  (`:546`) and drops the database. The reset leads rather than trailing because a run that dies
+  mid-suite never reaches its own tail, and because the rows in the downstream reproduction came
+  from a manual probe with no seed involved — a fix expressed in terms of `db:seed:replant` could
+  not have covered it. The `:540` reasoning kept its first half and gained the second.
+
+- **A ninth review class: a value two causes both produce, read as if it named one —
+  `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1156). **Maintainer decision recorded
+  on the issue**, as `CLAUDE.md` requires for our own doctrine. `signal-that-cannot-discriminate`:
+  `conclusion: failure` cannot separate a failed suite from **a runner that never started**;
+  `0 findings` cannot separate a clean repository from **a judge you just silenced**; an empty `grep`
+  cannot separate *no matches* from **a broken pattern**; `Status: pass` cannot separate a coverage
+  claim from a correctness one. **The reader is not wrong about the value — they are wrong that it
+  identifies a cause**, and because it looks like an answer the cost is time spent debugging the
+  wrong half. Detect by **naming the other thing that produces it**; in every instance the
+  discriminator already existed and was not being read. It carries the near-miss that teaches it:
+  **a positive control whose input satisfies both mechanisms proves neither** — a slot nested inside
+  a recipe fires under containment *and* co-occurrence, so only a slot placed **outside** every
+  recipe separates them, and that near-miss shipped as a control before someone built the
+  disagreeing input. **Sibling of `gate-that-cannot-fail`, cross-referenced both ways**: that one
+  asks *make the check fail on purpose*, about a check you author; this asks *what else produces this
+  value*, about a value you consume — where four of the five reported instances have nothing of ours
+  to mutate. The proposer's own counter-argument (*a class an existing one would have caught is a
+  cost*) was tested against all eight before approval: one of five overlapped, four did not.
 
 ### 1.63.0 (release v1.138.0) — 2026-09-22
 

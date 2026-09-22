@@ -52,3 +52,5 @@ How to build anything whose numbers come from somewhere else — read the genera
 
 Operating protocol for working as one of several agent sessions against the same repository at once — take your own worktree and test database, announce the FILE PATHS you are about to touch, query git for claimed decision numbers and migration timestamps rather than asking a peer, and copy the gitignored files a fresh worktree lacks before trusting any test result.
 
+2 reference file(s): `reading-a-list`, `session-identity`
+
