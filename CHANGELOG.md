@@ -3239,6 +3239,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The one guard that has ever stopped a wrong number watched PRs only —
+  `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_guard_claims.py` (new)** (#1141). It now covers **`gh issue comment`** as
+  well as `gh pr create` / `gh pr edit`. On the day it fired on a PR body carrying **eight**
+  unverified claims — every one re-measured before that PR opened — **four issue comments carrying
+  counts went out unchecked**, because the scope was PRs alone. An issue comment is the same
+  artifact: durable, read by someone else, quoted onward. **It gates the consequence, not the
+  cause**: a grep with a typo returns empty and an empty result is a valid answer, so no hook can
+  tell a broken query from a true negative — but a hook can see the moment that output becomes a
+  claim in something another person reads. `gh issue create` stays **out of scope** deliberately;
+  widening happens one verb at a time, and a new issue goes through `/rails-flow:report`, which has
+  its own shape. **And the hook had no mutation guard at all** — the only fail-closed hook without
+  one, while `guard-bash`, `guard-lane`, `release-gate` and `stop-gate` each had theirs. It has one
+  now, including a mutation that narrows the scope back and a control that the audited
+  `RAILS_FLOW_CLAIMS_OK=1` escape still works, because a fail-closed guard with no visible way past
+  it gets disabled the first time it is wrong.
+
 ### 1.45.1 (release v1.139.0) — 2026-09-22
 
 - **A `{match:...}` check reported one file and never ran the rest —
