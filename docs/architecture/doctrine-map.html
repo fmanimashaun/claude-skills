@@ -35,8 +35,17 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>40 claims</b><b>33 enforced guarantees</b><b>7 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>44 claims</b><b>34 enforced guarantees</b><b>10 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
+<div class="row" data-k="guarantee">
+<h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>AGENTS.md</code></span></div>
+<ul class="enf">
+<li><code>script:scripts/check_hook_output_budget.py</code></li>
+<li><code>script:scripts/check_agent_output_contract.py</code></li>
+</ul>
+<p class="note">The one AGENTS.md section with numbers behind it: the hook is ratcheted at its measured size, and 27 of 29 shipped agents declare a contract. Measured once at 4451 bytes per fire, of which 3805 were one file printed verbatim.</p>
+</div>
 <div class="row" data-k="guarantee">
 <h2>A promotion merges with `--merge`; a squash drops dev&#x27;s ancestry and the NEXT promotion cannot merge at all.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
@@ -348,6 +357,24 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>rule:unbounded-issue-query</code></li>
 </ul>
 <p class="note">Only the mechanical half is enforceable: an unbounded `gh issue list` measures one page carefully and calls it the total. Whether a stated number was actually re-run cannot be observed from the tree, so the rest is advice -- and it has already been got wrong.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>A mechanism is spelled out -- what is true today, what the proposal changes, what breaks -- before it is given a name to refer back to.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>AGENTS.md</code></span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">UNENFORCEABLE, and recorded so the map does not read as silence. A checker would have to understand the mechanism to know whether the label hid it. Both phrases that prompted this rule came back as &#x27;not sure i understand this&#x27; -- a reader caught it, which is the only instrument there is.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>A design analysis closes with ONE recommended next move, already chosen, and then carries it out.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>AGENTS.md</code></span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">UNENFORCEABLE. A ranked menu is greppable; a write-up that stops one step short while looking complete is not, and that is the actual failure. Three separate corrections (&#x27;so what is your proposal?&#x27;) are the evidence it needs stating.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>Lead with the most consequential point, label a claim&#x27;s provenance where the label changes what the reader would do, and never manufacture disagreement.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>AGENTS.md</code></span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">UNENFORCEABLE: knowing which point was unwelcome requires knowing the reader. Same class as a constant whose NAME lied while its value was correct -- invisible to a test suite by construction, found only by a reader.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>A version number is never assigned on a merge into `dev`, because on `dev` the claim that a user can install it is false.</h2>
