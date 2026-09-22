@@ -7,6 +7,30 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Nothing announced the arm window, so a merge into `dev` could break the next promotion —
+  `scripts/check_arm_window.py`, `scripts/mutations/check_arm_window.py`,
+  `scripts/maintainer_doctor.py`** (#1170). Between the arm and the promotion the CHANGELOG's shape
+  is load-bearing and **`dev` looks identical to merge into**. A PR merged in that window re-opens
+  `### Unreleased`, and the promotion is then refused by `extract_release_notes.py --promotion`
+  **with no sign that a merge three minutes earlier caused it**.
+
+  It happened twice in one afternoon and only the second was noticed: one merge landed *below* the
+  arm commit and was swept up — timing, not judgement — and an earlier one was saved because a
+  session sent a message. Two arms, neither protected by a mechanism.
+
+  **The discriminator is the un-promoted release block, not the absence of `### Unreleased`.** Keying
+  on the absence alone fires on every merge just after a promotion, which is how a check gets
+  switched off. **And the tag is read from `git tag -l`, never from the CHANGELOG's own text** — the
+  file naming `v1.141.0` is the claim under test, and using it as its own evidence would leave a
+  promoted `dev` armed forever.
+
+  `--promotion-closes` covers the half the incident actually cost: the arm's author listed the
+  shipping issues before a silent merge and the list was wrong by one, so the promotion's `Closes`
+  had to be corrected from eight to nine. An issue left open over a release containing it reads as
+  unshipped work.
+
 ### 2026-09-22 (release v1.140.0)
 
 - **Four of `AGENTS.md`'s five rules were outside the doctrine map's accounting —
