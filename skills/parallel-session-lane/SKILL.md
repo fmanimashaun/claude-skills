@@ -219,8 +219,10 @@ a private database, a private port — are **which of the things on this machine
 **Neither obvious identifier works.** `--author @me` is the **account**: every session commits as the
 same configured git user, measured at five open PRs of which one belonged to the session that ran it.
 **Session names rotate and are reused**, including mid-session — a remembered name may denote somebody
-else by the time you read it. Detail and incidents:
-[`references/session-identity.md`](references/session-identity.md).
+else by the time you read it. And **a first-person handoff is not yours**: a resumed-session summary
+written in *"I shipped #1162"* voice is usually keyed to the **project directory**, so every session
+here reads and overwrites the same one. It means *somebody in this directory* shipped it. Detail and
+incidents: [`references/session-identity.md`](references/session-identity.md).
 
 **"Is it mine?" — ask this worktree's own reflog.**
 

@@ -14529,7 +14529,13 @@ boot/validation path — with a bullet each so the promotion could close them se
   author is the shared account. Two near-misses are recorded beside the code that produces them:
   widening the reflog grep to `worktrees/*` yields a **worktree directory name**, not a session, and
   `--porcelain` emits **blank-line-separated records**, so the first `awk` draft printed one row and
-  read as a complete answer.
+  read as a complete answer. A **second route to the same confusion** is recorded alongside: a
+  resumed-session handoff file is keyed on the **project directory**, not the session — one file per
+  repository, read at every `SessionStart` and after every compaction, rewritten by whichever session
+  wrote last — while being written in the first person, one of its own headings reading *"Corrections
+  **I** made under **my own name** — do not re-derive them"*. A session claimed a PR from the line
+  *"#1157 shipped as PR #1162"* and was wrong with the file open in front of it. The companion rule:
+  **a first-person record does not mean you are the author**.
 
 - **A worktree can disappear, and prune-and-recreate looks like success either way —
   `skills/parallel-session-lane/SKILL.md` (§5a, §3), `dist/parallel-session-lane.skill`** (#1159).

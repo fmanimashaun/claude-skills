@@ -65,3 +65,26 @@ sending.
 
 This is §3's prefix-as-the-whole defect arriving *inside the tool built to settle ownership*, which is
 why the warning sits beside the code in `SKILL.md` rather than being left to the general rule.
+
+## A first-person handoff is a project artifact, not a session one
+
+The worst version of this is not the PR author — the PR author at least does not claim to be you.
+
+A resumed-session handoff file is typically keyed on the **project directory**, one file per
+repository, read at every `SessionStart` **and after every compaction** and rewritten by whichever
+session wrote last. Verified here: sibling directories under the handoff root are one per project,
+never one per session, and the file had been rewritten three times in a day by different sessions —
+twice under names in one session's own lineage, which is what made it read as continuous.
+
+It is written in the first person throughout, and one of its own headings read:
+
+> *"Corrections **I** made under **my own name** — do not re-derive them"*
+
+That is an instruction to trust the first person, in a file whose author is not recorded. A session
+reading it after a compaction cannot separate its own prior work from a peer's, and one did not — it
+claimed a PR from the line *"#1157 shipped as PR #1162"* and was wrong, with the file open in front of
+it.
+
+**So: "I" in a handoff means "some session in this directory".** The companion to *no row does not
+mean no owner* is **a first-person record does not mean you are the author**. Both are settled by the
+worktree listing above, which is the one artifact in this that is per-session by construction.
