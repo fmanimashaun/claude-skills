@@ -9609,6 +9609,33 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The evidence validator proved a file was consistent with itself and nothing else —
+  `plugins/qa-flow/scripts/evidence_app_tie.py` (new),
+  `plugins/qa-flow/scripts/validate_evidence.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`** (#1133). A **fabricated** artifact was
+  found downstream: 21 rows of `HTTP 200` against URLs the app is structurally incapable of serving.
+  `validate_evidence.py` reported 21 findings and **every one of them was the column name** — rename
+  the column and the invented file passes. Every rule it has reads only the file, so **a generator
+  writing plausible rows satisfies all of them**. Two ties now ask the *application*: a
+  **`Requested URL` matching no pattern** in the app's own `qa/reports/routes.json`, and a dynamic
+  segment whose ids are **wholly of a shape this project's other evidence never shows** — the
+  contrast the reporter used by eye, `/pages/pag_uf4BMshTJEQS/exclude` beside `/pages/1/exclude`.
+  **The id shape is read from the project, never hard-coded**: an app keyed on integers is correct,
+  and a mutation reports it to prove that carve-out is load-bearing. The verdict is **whole-file** —
+  one odd id is a fixture or a redirect, every id is a file that was not driven — and a **partial**
+  mismatch is deliberately silent. **Both ties say when they could not run**, naming the command that
+  produces the missing input, because a tie that did not run must never read as a tie that held.
+- **A cycle that only one entry point could see — `plugins/qa-flow/scripts/evidence_app_tie.py`**
+  (#1133). The new module borrows `route_coverage`'s pattern compiler rather than copying it — a
+  second copy of *`:id` matches exactly one segment* would drift from the coverage numbers — but
+  `route_coverage` imports `validate_evidence`, which now imports this. Running the file directly
+  **passed**, because then it is `__main__` and the second import makes a fresh module object; every
+  other entry point died on `ImportError`. The import is lazy now, and the selftest **drives
+  `route_coverage.py` and `validate_evidence.py` as subprocesses** so the cycle cannot come back
+  through an entry point the selftest never uses.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **Three commands adopted any server that answered on the port, and never asked whose it was —
