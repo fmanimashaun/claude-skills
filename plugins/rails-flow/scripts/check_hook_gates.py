@@ -390,10 +390,62 @@ def release_gate_fixtures() -> None:
           run("git push origin main") == 2, "exit 0")
 
 
+# ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
+# An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate
+# nobody asked for. What varies is whether it SPEAKS, and on which event.
+def ci_verdict_hint_fixtures() -> None:
+    # The PLUGIN root, two levels above hooks/scripts -- `HOOKS.parent` is hooks/, and pointing there
+    # made every fixture silent for the wrong reason until the positive one said so.
+    root = str(HOOKS.parents[1])
+    fail_rows = "test\tfail\t8s\thttps://x/runs/1/job/1\t\nlint\tfail\t9s\thttps://x/runs/1/job/2\t\n"
+    pass_rows = "test\tpass\t8s\thttps://x/runs/2/job/1\t\n"
+    # THE CASE IT EXISTS FOR: plain `gh pr checks` exits 1 on a failing check, so the harness sends
+    # PostToolUseFailure with the text in `error`, not PostToolUse with `tool_response`.
+    failed = json.dumps({"hook_event_name": "PostToolUseFailure", "tool_name": "Bash",
+                         "tool_input": {"command": "gh pr checks 580"},
+                         "error": "Exit code 1\n" + fail_rows, "is_interrupt": False})
+    passed = json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Bash",
+                         "tool_input": {"command": "gh pr checks 1172"},
+                         "tool_response": {"stdout": pass_rows, "stderr": "", "exit_code": 0}})
+    with tempfile.TemporaryDirectory() as td:
+        proj = Path(td)
+        code, out = run_hook("ci-verdict-hint.sh", cwd=proj, stdin=failed,
+                             env_extra={"CLAUDE_PLUGIN_ROOT": root})
+        check("ci-verdict-hint: a failing `gh pr checks` (PostToolUseFailure) emits additionalContext",
+              code == 0 and '"additionalContext"' in out and "ci_verdict.py" in out,
+              f"exit {code}: {out.strip()[:140]!r}")
+        check("ci-verdict-hint: ...under the PostToolUseFailure event name",
+              '"hookEventName": "PostToolUseFailure"' in out, out.strip()[:140])
+        code, out = run_hook("ci-verdict-hint.sh", cwd=proj, stdin=passed,
+                             env_extra={"CLAUDE_PLUGIN_ROOT": root})
+        check("ci-verdict-hint: an all-passing `gh pr checks` is silent and exits 0",
+              code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        # #825's environment: the harness sets the variable; a person driving the script does not.
+        code, out = run_hook("ci-verdict-hint.sh", cwd=proj, stdin=failed, unset=("CLAUDE_PLUGIN_ROOT",))
+        check("ci-verdict-hint: with CLAUDE_PLUGIN_ROOT unset it exits 0 silently, not `unbound variable`",
+              code == 0 and "unbound" not in out and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        # No python3 on PATH: only a `bash` survives, so `command -v python3` must miss and it must
+        # fail OPEN. Proved by a PATH that genuinely lacks it, not by assuming the guard works.
+        bare = proj / "bare-bin"
+        bare.mkdir()
+        (bare / "bash").symlink_to(shutil.which("bash"))
+        done = subprocess.run([str(bare / "bash"), str(HOOKS / "ci-verdict-hint.sh")], cwd=proj,
+                              input=failed, capture_output=True, text=True, timeout=60,
+                              env={"PATH": str(bare), "CLAUDE_PLUGIN_ROOT": root, "HOME": td})
+        check("ci-verdict-hint: with no python3 on PATH it exits 0 and says nothing",
+              done.returncode == 0 and (done.stdout + done.stderr).strip() == "",
+              f"exit {done.returncode}: {(done.stdout + done.stderr).strip()[:120]!r}")
+        # Garbage in must be silence out -- an advisory that errors takes the tool call down with it.
+        code, out = run_hook("ci-verdict-hint.sh", cwd=proj, stdin="not json",
+                             env_extra={"CLAUDE_PLUGIN_ROOT": root})
+        check("ci-verdict-hint: an unreadable payload exits 0 silently",
+              code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+
+
 def selftest() -> int:
     for fn in (stop_gate_fixtures, guard_lane_fixtures, lint_ruby_fixtures,
                self_consistency_fixtures, guard_bash_fixtures, guard_claims_fixtures,
-               release_gate_fixtures):
+               release_gate_fixtures, ci_verdict_hint_fixtures):
         fn()
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)

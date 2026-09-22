@@ -20,7 +20,9 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/check_handoff.py",
            "plugins/qa-flow/scripts/read_certification.py",
            "plugins/rails-flow/scripts/self_consistency.py",
-           "plugins/rails-flow/scripts/extract_claims.py"),
+           "plugins/rails-flow/scripts/extract_claims.py",
+           # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
+           "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
         Mutation(
             # #1141: the scope was `gh pr create|edit` alone. On the day this hook fired on a PR

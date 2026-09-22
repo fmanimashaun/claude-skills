@@ -992,5 +992,14 @@ GUARD = Guard(
         r'_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]+)`")',
         "a bullet naming only a ROOT file is placeable",
     ),
+    Mutation(
+        # #1173: the number-word table ended at thirteen, so the fourteenth hook script described
+        # correctly in words read as drift. The table is shared now; losing an entry past the old
+        # edge must be caught by the fixture written at that edge.
+        "the number-word table ends at thirteen again",
+        '"fourteen": 14, ',
+        '',
+        "a correct count past thirteen, in words, is silent",
+    ),
     ),
 )
