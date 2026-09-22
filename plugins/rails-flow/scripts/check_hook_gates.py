@@ -274,6 +274,15 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: an unchecked numeric claim in a PR body is blocked",
           run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, "exit 0")
 
+    # `gh issue comment` IS THE SAME ARTIFACT (#1141). This guard is the only thing that has ever
+    # actually stopped a wrong number here, and it watched PRs alone -- so on the day it fired on a
+    # PR body carrying eight unverified claims, four issue comments carrying counts went out
+    # unchecked. An issue comment is durable, read by someone else and quoted onward.
+    check("guard-claims: an unchecked numeric claim in an ISSUE COMMENT is blocked",
+          run("gh issue comment 1141 --body-file BODY", NUMERIC) == 2, "exit 0")
+    check("guard-claims: ...and the same comment passes once it shows it was verified",
+          run("gh issue comment 1141 --body-file BODY", CHECKED) == 0, "exit 2")
+
     # MUST PASS -- and these are the half that keeps the guard alive. A hook that blocked every
     # `gh pr create` would be switched off within a day, and then nothing is checked at all.
     check("guard-claims: the same claim passes once the body shows it was verified",
@@ -285,7 +294,10 @@ def guard_claims_fixtures() -> None:
     # green, and the mutation SURVIVED. A control that cannot reach the code it guards proves
     # nothing. With a numeric body, any widening of the scope fails right here.
     for cmd in ("git status", "gh pr view 42", "gh pr merge 42 --merge",
+                # STILL out of scope, deliberately: widening is one verb at a time, and a new
+                # issue goes through /rails-flow:report which has its own shape.
                 "gh issue create --title x --body-file BODY",
+                "gh issue list --limit 5",
                 "gh release create v1.0.0 --notes-file BODY"):
         check(f"guard-claims: `{cmd[:34]}` is out of scope even with a numeric body",
               run(cmd, NUMERIC) == 0, "exit 2")
