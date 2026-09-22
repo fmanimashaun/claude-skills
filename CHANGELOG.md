@@ -7,6 +7,32 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-22 (release v1.139.0)
+
+- **The feedback-loop section claimed every issue arrives through the report command, and it does
+  not — `CLAUDE.md`** (#1141). *"Every issue arrived this way"* is a universal claim, and one
+  counter-example settles it: the session that filed #1141 disclosed it used
+  `gh issue create --body-file` directly. The consequence is not cosmetic — issues filed that way
+  arrive **unlabelled**, and the labels are load-bearing: `comp:*` decides which CHANGELOG section
+  and which component version moves, and `type:incorrect-doctrine` is what puts an edit behind a
+  blocking `doctrine-verifier` verdict. A maintainer reading the old line expects triage-ready
+  issues and meets five unlabelled ones. Corrected in place rather than by growing the file — the
+  ratchet refused 263 lines twice before a phrasing fit 262 and still said both halves.
+  **Found because a peer volunteered how it had filed**: I had asked whether the missing labels
+  were a defect in our own command, and they were not.
+- **A gate whose only exit was a false statement — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1141). Writing the bullet above was refused by
+  `changelog-bullet-unplaceable`, correctly by its own logic and wrongly in substance:
+  `_BULLET_PATH` required a `/`, so **a change to any root file — `CLAUDE.md`, `AGENTS.md`,
+  `README.md` — could never produce a placeable bullet.** A doctrine correction was unreportable by
+  construction, and the only way past was to name a file the change did not touch. The pattern now
+  accepts a bare filename, still requiring a dot so backticked prose (`cluster`, `to_param`) is not
+  read as a path, and still filtered by the existing `exists()` test — so this widens what may be
+  **named**, never what counts as **placed**. Both controls have their own scenario, and **all
+  three fixtures were vacuous on the first run**: the rule returns early without
+  `.claude-plugin/marketplace.json`, which the temp trees lacked, so even the expect-silence case
+  proved nothing. The two expect-a-finding scenarios are what exposed that.
+
 ### 2026-09-22 (release v1.138.0)
 
 - **The trap is enforceable where an agent would copy it from — `scripts/lint_self_consistency.py`**
@@ -3196,6 +3222,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.45.1 (release v1.139.0) — 2026-09-22
+
+- **A `{match:...}` check reported one file and never ran the rest —
+  `plugins/rails-flow/scripts/project_gates.py`** (#1141). `expand()` correctly produces one
+  invocation per matching file; the runner **returned on the first failing one**, so later files
+  were not merely unreported, they were never executed. Measured on the reporting project:
+  **43 findings across 7 evidence files, of which the gate named 4**. Filename order decided which
+  file stopped it, so a fabricated artifact sat invisible in gate output while being the worst
+  thing in the tree — **it fails quiet, which is the more dangerous half**. Failures are collected
+  across every invocation now and reported together, headed by a count of findings and files so a
+  partial run cannot read as a whole one. Same tree after the fix: **45 findings across 6 files**,
+  with the genuine artifact correctly absent.
 
 ### 1.45.0 (release v1.137.0) — 2026-09-21
 
@@ -9635,6 +9674,51 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### 1.32.1 (release v1.139.0) — 2026-09-22
+
+- **A constant advertised a status word the vocabulary rejects —
+  `plugins/qa-flow/scripts/validate_evidence.py`, `plugins/qa-flow/scripts/route_coverage.py`**
+  (#1141). `SKIPPED_STATUS` held `"out of scope"`. A downstream session read the identifier, wrote
+  `Status: skipped`, and got a finding for it. Renamed to `OUT_OF_SCOPE_STATUS`, across both
+  scripts and the mutation anchor that quoted it. **No behaviour changes**: the accepted vocabulary
+  was always `Blocked / <result> / Out Of Scope` and the rejection message always said so — the
+  identifier was the only thing lying, which is exactly why no test caught it and why **no gate is
+  added here**. A rule that a constant's name must match its value would be ceremony; the honest
+  record is that this class is invisible to the test suite by construction. Found by a reader, not
+  by a run.
+
+- **The id check made two evidence files accuse each other, and the genuine one lost —
+  `plugins/qa-flow/scripts/evidence_app_tie.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`** (#1141). Shipped in 1.32.0 hours
+  earlier, it inferred the expected id shape from **the project's other evidence files**. With two
+  files covering one route pattern each was the other's entire authority, so they reported mirror
+  images — and the **tracked, genuinely-driven** artifact was called *"not driven against the app"*,
+  in the strongest language the tool has, by a fabricated untracked one. **It degraded the wrong
+  way**: add several genuine files and the real ones intersect and fall silent, so it was right in
+  the easy case and confidently wrong in the case that mattered. Ground truth is now **the app**:
+  a model overriding **`to_param`** has declared what its URLs carry — Rails' own URL-generation
+  contract — so an integer in that segment cannot resolve. **Asked per MODEL, never per project**,
+  because 12 of 20 models adopting the convention is the realistic case and a project-wide rule
+  would flag legitimate integer ids on the other 8 — the same false accusation from a different
+  source. A model that declares nothing yields silence. `to_param` beats matching controller
+  lookups, measured downstream: `find_by!(public_id: params[:id])` catches **32 of 43** call sites,
+  missing six that differ only by the bang and five nested `:page_id` segments a check scoped to
+  `:id` never looks at. Verified on the reporting project: the genuine file **3 findings → 0**, the
+  fabricated one still caught and now naming the model and the reason.
+
+- **The remedy the tool named did not work — `plugins/qa-flow/scripts/evidence_app_tie.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`** (#1141). `validate_evidence` ends every
+  failure with *"a row that cannot carry a validated status/URL/assertion is a **Blocked** row"* —
+  and the app ties read every row regardless of status, so marking one Blocked changed nothing.
+  Reported by someone who took the advice, marked the row and watched it fail anyway; a remedy a
+  tool names and does not honour is worse than none, because it sends people to do work that cannot
+  succeed. `Blocked` and `Out Of Scope` now assert nothing, so no path is taken from them.
+  **It cannot be gamed into silence**: a Blocked row is not evidence of a pass, so the escape turns
+  a false claim into *no* claim, which is what these ties want — and `validate_evidence`'s own rules
+  still require a Blocked row to record what it saw. A sibling row on the same path that *does*
+  claim is still read, with a mutation that silences the whole file to prove that control holds,
+  and a row with no `Status` column at all counts as claiming: absence is not an exemption.
 
 ### 1.32.0 (release v1.138.0) — 2026-09-22
 

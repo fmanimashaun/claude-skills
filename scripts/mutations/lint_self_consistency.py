@@ -982,5 +982,15 @@ GUARD = Guard(
         "            window = \"\\n\".join(lines[max(0, lineno - 3):lineno + 2])",
         "...including when the refusal is the sentence UNDER the fenced command",
     ),
+    Mutation(
+        # #1141: requiring a directory made a ROOT-file change unreportable by construction --
+        # a doctrine correction to CLAUDE.md could not produce a placeable bullet, and the only
+        # way past the gate was to name a file the change did not touch. A gate whose only exit
+        # is a false statement is worse than no gate.
+        "a bullet naming only a root file is unplaceable again",
+        r'_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+)`")',
+        r'_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]+)`")',
+        "a bullet naming only a ROOT file is placeable",
+    ),
     ),
 )

@@ -293,7 +293,7 @@ def visited_paths(evidence_dirs: list[Path]) -> dict[str, set[str]]:
             if not columns:
                 continue
             for row in rows:
-                if row["Status"].lower() in {ve.SKIPPED_STATUS}:
+                if row["Status"].lower() in {ve.OUT_OF_SCOPE_STATUS}:
                     continue  # never visited, and not claimed to be
                 for column in columns:
                     raw = row.get(column, "")
@@ -339,7 +339,7 @@ def verb_paths(evidence_dirs: list[Path]) -> dict[tuple[str, str], set[str]]:
                 continue
             verb_column, route_column = columns
             for row in rows:
-                if row["Status"].lower() in {ve.SKIPPED_STATUS}:
+                if row["Status"].lower() in {ve.OUT_OF_SCOPE_STATUS}:
                     continue  # never driven, and not claimed to be
                 verb = (row.get(verb_column) or "").strip().upper()
                 pattern = (row.get(route_column) or "").strip()

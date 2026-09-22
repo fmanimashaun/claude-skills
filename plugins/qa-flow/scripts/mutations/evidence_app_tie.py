@@ -20,29 +20,43 @@ GUARD = Guard(
             "a path matching no route is reported",
         ),
         Mutation(
-            # THE CARVE-OUT THAT KEEPS THIS USABLE. A project keyed on integers is CORRECT, and a
-            # check preferring one id format would be wrong for every such project and switched off
-            # within a week. Removing the agreement test fails them all.
-            "a shape the corpus DOES show is reported anyway",
-            "        if shapes & known:",
+            # THE CARVE-OUT THAT KEEPS THIS USABLE, and #1141 moved WHERE it is decided. A model
+            # that never adopted a URL-id convention keys on integers CORRECTLY; judging it by a
+            # project-wide rule rebuilds the peer-consensus defect from a different source.
+            "every model is judged, not just the ones that override `to_param`",
+            "        if owner is None:",
             "        if False:",
-            "an app whose OWN evidence uses integers is not reported for using integers",
+            "...so integer ids on IT are not a finding",
         ),
         Mutation(
-            # One odd id is a data point -- a fixture, a legacy row, a redirect. Only a TOTAL
-            # disagreement is a claim that the file was not driven.
-            "a single row is enough to call a whole file fabricated",
+            # The positive side: a model that DID adopt must still be reported, or the per-model
+            # carve-out above has simply switched the check off.
+            "a model that overrides `to_param` stops being judged",
+            "    minted = models_with_url_ids(root)",
+            "    minted = set()",
+            "integers where the owning model overrides `to_param` are reported",
+        ),
+        Mutation(
+            # A concern confers `to_param` on every model including it -- which is how a real app
+            # spells this: 36 of 36 models, none writing `def to_param` themselves.
+            "an `include`d concern no longer confers its `to_param`",
+            "        if any(_underscore(name) in concerns for name in INCLUDES.findall(text)):",
+            "        if False:",
+            "a model including a `to_param` concern is known to mint URL ids",
+        ),
+        Mutation(
+            # One odd id is a fixture, a legacy row or a redirect. Only a WHOLLY integer segment is
+            # provably unmintable.
+            "a single integer among minted ids condemns the whole segment",
+            '        if shapes != {"integer"}:',
+            "        if False:",
+            "one minted id among integers is not a whole-segment verdict",
+        ),
+        Mutation(
+            "a single row is enough to call a segment unmintable",
             "        if count < min_rows:",
             "        if False:",
-            "a single row is not enough to call a shape alien",
-        ),
-        Mutation(
-            # With no corroboration for a segment there is nothing to disagree WITH; judging it
-            # anyway invents a verdict out of absence, which is the defect this gate exists for.
-            "a segment the corpus never covered is judged against nothing",
-            "        if not known:",
-            "        if False:",
-            "a segment the corpus never covered is not judged",
+            "a single row is not enough to call a segment unmintable",
         ),
         Mutation(
             # NOT APPLICABLE IS NOT A PASS. Dropping the note turns a tie that could not run into
@@ -52,5 +66,24 @@ GUARD = Guard(
             '            f"no {ROUTES_JSON} under {root} — fine, carry on. Generate it: "',
             "with no routes.json BOTH ties are notes, not findings",
         ),
+    Mutation(
+        # #1141: `validate_evidence` tells you a row that cannot be validated is a Blocked row.
+        # These ties read every row regardless of status, so taking that advice changed nothing --
+        # reported by someone who marked the row and watched it fail anyway. A remedy a tool names
+        # and does not honour is worse than no remedy: it sends people to do work that does not.
+        "a Blocked row is read as if it claimed a result",
+        "        if not makes_a_claim(row):",
+        "        if False:",
+        "a `Blocked` row asserts nothing, so no path is taken from it",
+    ),
+    Mutation(
+        # THE ANTI-GAMING CONTROL. If any row's status silenced the whole FILE, one Blocked row
+        # would hide every other row's claims -- the escape hatch becomes a way to assert nothing
+        # while still shipping a green artifact.
+        "any Blocked row silences its whole file",
+        "    for row in rows:\n        if not makes_a_claim(row):\n            continue",
+        "    if any(not makes_a_claim(r) for r in rows):\n        return []\n    for row in rows:\n        if False:\n            continue",
+        "...and a claiming row beside it is still read",
+    ),
     ),
 )

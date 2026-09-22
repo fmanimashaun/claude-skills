@@ -2017,7 +2017,14 @@ def check_changelog_section_missing() -> tuple[list[Finding], int]:
 # #701. Path-shaped tokens inside backticks. `\.?/?` tolerates `./app/...`, and requiring at least
 # one `/` keeps bare names like `check_handoff.py` out -- a filename alone does not say which
 # component owns it, which is the whole question.
-_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)`")
+# A backticked repo path. The `(?:/...)*` is zero-or-more, NOT one-or-more: requiring a
+# directory meant a change to a ROOT file -- `CLAUDE.md`, `AGENTS.md`, `README.md` -- could
+# never produce a placeable bullet, so a doctrine correction was unreportable by construction
+# and the only way past the gate was to name a file the change did not touch (#1141). A bare
+# name still has to EXIST and still resolves through `_changelog_owner`, which files a root
+# path under `repository` -- so this widens what can be named, never what counts as placed.
+# Requires a dot so ordinary backticked prose (`cluster`, `to_param`) is not read as a path.
+_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+)`")
 _BULLET_ISSUE = re.compile(r"\(#(\d+)\)")
 
 
@@ -4085,6 +4092,29 @@ def selftest() -> int:
     # `gh issue list` defaults to --limit 30. This shipped twice: issue-triager's DUPLICATE
     # detection and maintainer-audit's clustering both read a page and treated it as the whole
     # tracker. The maintainer was told "30 open issues" when there were 42.
+    CBU = "changelog-bullet-unplaceable"
+    # #1141: the pattern required a directory, so a change to a ROOT file could never produce a
+    # placeable bullet -- a doctrine correction was unreportable by construction, and the only way
+    # past the gate was to name a file the change did not touch.
+    scenario("a bullet naming only a ROOT file is placeable", rule=CBU, expect_finding=False,
+             files={".claude-plugin/marketplace.json": '{"plugins": [{"name": "qa-flow"}]}',
+                    "CHANGELOG.md": "## Repository hygiene\n\n### Unreleased\n\n"
+                                    "- **A doctrine correction — `CLAUDE.md`** (#1141). Body.\n",
+                    "CLAUDE.md": "x\n"})
+    # THE CONTROL: widening what can be NAMED must not widen what counts as PLACED. A root file
+    # that does not exist is still unplaceable, or the rule accepts any bare word with a dot.
+    scenario("...but a root file that does not exist is still unplaceable",
+             rule=CBU, expect_finding=True,
+             files={".claude-plugin/marketplace.json": '{"plugins": [{"name": "qa-flow"}]}',
+                    "CHANGELOG.md": "## Repository hygiene\n\n### Unreleased\n\n"
+                                    "- **A correction — `NOTAFILE.md`** (#1141). Body.\n"})
+    # ...and ordinary backticked prose must not be read as a path, or every bullet is placeable.
+    scenario("...and backticked prose with no extension is not a path",
+             rule=CBU, expect_finding=True,
+             files={".claude-plugin/marketplace.json": '{"plugins": [{"name": "qa-flow"}]}',
+                    "CHANGELOG.md": "## Repository hygiene\n\n### Unreleased\n\n"
+                                    "- **Renamed `cluster` to `to_param`** (#1141). Body.\n"})
+
     AMI = "author-me-as-identity"
     scenario("a bare `--author @me` offered as yours", rule=AMI, expect_finding=True, files={
         "plugins/x/commands/find.md": "Find your PR:\n\n```bash\ngh pr list --author @me --limit 50\n```\n"})
