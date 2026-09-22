@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-22 (release v1.142.0)
 
 - **The fourteenth hook script found the edge of a number table, and eight guards went inert
   adding it — `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`,
@@ -3274,7 +3274,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.48.0 (release v1.142.0) — 2026-09-22
 
 - **A red CI result is not yet a test failure, and now something says so when it matters —
   `plugins/rails-flow/hooks/scripts/ci-verdict-hint.sh`, `plugins/rails-flow/scripts/ci_verdict_hint.py`,
@@ -14598,7 +14598,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.64.1 (release v1.142.0) — 2026-09-22
 
 - **A count the quality-pass worked example quotes moved with the repository —
   `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1173). The
