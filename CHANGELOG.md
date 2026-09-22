@@ -14512,6 +14512,25 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **§3a could say *not mine* and never *whose* —
+  `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1167).
+  **Maintainer decision recorded on the issue**; our own doctrine, no upstream. The reflog method
+  from #1131 is **elimination**, so a session holding a green PR it could not place messaged three
+  peers and interrupted two for nothing. A lane worktree's path carries its owning session's id, so
+  `git worktree list --porcelain` identifies the holder directly. **Shipped with its boundary rather
+  than as a rule**, because the boundary is where it misleads: **no row does not mean no owner, and
+  the dangerous case is live work** — measured across 11 worktree rows on one repository,
+  `qa/528-applicant-pipeline-evidence` appeared in **none** of them while carrying commits and an
+  open PR, because its worktree had vanished (§5a). A reader would have concluded nobody was on it.
+  Also recorded: the mapping is **one-to-many** (one session held five worktrees in that listing);
+  the **shared checkout has no owner** and must never be attributed to its current HEAD, which moved
+  between two commands; a `(detached)` row is a rebase in progress, not an unowned branch; and when
+  there is no row **there is no fallback — ask**, since the branch name routes to an issue and the PR
+  author is the shared account. Two near-misses are recorded beside the code that produces them:
+  widening the reflog grep to `worktrees/*` yields a **worktree directory name**, not a session, and
+  `--porcelain` emits **blank-line-separated records**, so the first `awk` draft printed one row and
+  read as a complete answer.
+
 - **A worktree can disappear, and prune-and-recreate looks like success either way —
   `skills/parallel-session-lane/SKILL.md` (§5a, §3), `dist/parallel-session-lane.skill`** (#1159).
   **Maintainer decision recorded on the issue**; our own doctrine, no upstream. The skill sent every

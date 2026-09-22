@@ -181,18 +181,8 @@ git ls-tree -r --name-only $(git for-each-ref --format='%(refname)' refs/remotes
 
 The queries above are shaped the way they are for a second reason. **"Is X in Y", "how many", "is
 that all" are questions about a set, and a prefix of some output is not an answer to any of them.**
-Five sessions in two days each read a truncated list and reported the prefix as the whole — every one
-a confident, reproducible, wrong claim:
-
-| what was read | over | what was claimed |
-|---|---|---|
-| `tail -80` | a 31-stage CI run | "7 green, 1 red" while **8** stages were dying |
-| return-on-first-match | 43 findings | **4** reported as the total |
-| `--date=%H:%M` | a two-day window | a commit attributed to the wrong day and session |
-| `head -12` | 46 commits | "my PR is not in the collation branch" — it was |
-| a regex on `in [0-9.]+s` | a 32-stage list | a stage silently absent because its duration read `4m43.21s` |
-
-So ask with a predicate or a count, never with a prefix:
+**Six sessions in two days** each read a truncated list and reported the prefix as the whole — every
+one a confident, reproducible, wrong claim. So ask with a predicate or a count, never with a prefix:
 
 ```bash
 git merge-base --is-ancestor "$SHA" "$BRANCH"    # not: git log | head -12
@@ -200,23 +190,16 @@ grep -c pattern file                              # not: grep pattern file | hea
 gh api "$ENDPOINT" --jq '[.[] | select(.sha | startswith($x))] | length'
 ```
 
-When you genuinely must *show* a list, **print the total beside it**: `… | head -20; echo "of
-$(… | wc -l)"`.
+When you must *show* a list, **print the total beside it**: `… | head -20; echo "of $(… | wc -l)"`.
+When you **poll**, wait on the terminal states rather than enumerating the pending ones — a watcher
+listing `PENDING|IN_PROGRESS` exits early on a `QUEUED` row it never named.
 
-**A lint on `| head` / `| tail` was considered and rejected, and this is measured rather than
-assumed.** Every such construct in the shipped corpus was checked: `sort -u | tail -1` is a
-**maximum**, `lsof … | head -1` is *the* single listener, `base64 -d | tail -20` is a deliberate
-display. **Seven instances, seven legitimate, zero true positives** — and none of the five defects
-above is in shipped shell at all. They are in how a session interrogates a repository at the moment
-it forms a belief, and no regex separates `sort | tail -1` (a maximum) from `git log | head -12` (a
-truncation). A check that is wrong on every instance it fires is one that gets switched off.
-
-**The trigger is the shape of the question, not the shape of the command.** That matters because a
-session hit this, wrote the rule down as *"for a run's verdict, print every stage and count them"* —
-and it did not fire the next day, when the list was git commits rather than CI stages. The rule was
-right and scoped to the wrong noun. **A rule scoped to where you last met a bug does not generalise
-to where you meet it next, and its author is the least likely person to notice**, because they
-remember it as being about the idea.
+**The trigger is the shape of the question, not the shape of the command**, and that distinction is
+load-bearing: one of the six had written this rule down the day before, scoped to CI stages, and it
+did not fire when the next list was git commits. **A lint on `| head` / `| tail` was considered and
+rejected on measurement** — 7 instances in the shipped corpus, 7 legitimate, 0 true positives, and
+none of the six defects is in shipped shell at all. The incidents, the corpus table and the
+generalisation failure: [`references/reading-a-list.md`](references/reading-a-list.md).
 
 **Why a query and not a file.** The sessions that wrote this were coordinating by hand and believed
 *"the highest merged is D-073; two branches hold D-075 and D-076 unmerged."* The query above
@@ -232,30 +215,19 @@ irrelevant: measured across those 19 worktrees, **18 of 19 branches were already
 the branch it excludes: the 1 in 19 is precisely the branch that can be lost, because it is the one
 with a single copy. On a machine running many sessions a day, 1 in 19 is not rare — see §5a.
 
-## 3a. "Is this mine?" — the same answer, and neither obvious one works
+## 3a. "Is this mine?" and "whose is it?" — two questions, two queries
 
-§3 answers *has this number been claimed*. The question that follows from a lane — a private
-worktree, a private database, a private port — is **which of the things on this machine are mine**,
-and a session that has to invent an answer invents a wrong one. Both available identifiers are wrong,
-and both are plausible enough to act on.
+§3 answers *has this number been claimed*. The questions that follow from a lane — a private worktree,
+a private database, a private port — are **which of the things on this machine are mine**, and then
+**whose is this one**. A session that has to invent either answer invents a wrong one.
 
-**`--author @me` is not identity.** Every session on a machine commits and opens PRs as the **same
-configured git user**, so the author field carries no session information at all:
+**Neither obvious identifier works.** `--author @me` is the **account**: every session commits as the
+same configured git user, measured at five open PRs of which one belonged to the session that ran it.
+**Session names rotate and are reused**, including mid-session — a remembered name may denote somebody
+else by the time you read it. Detail and incidents:
+[`references/session-identity.md`](references/session-identity.md).
 
-```bash
-gh pr list --state open --author @me --limit 100   # every session's PRs, not yours
-```
-
-Measured downstream: **five open PRs, one belonging to the session that ran it.** A session filtering
-by `@me` to find "its" PR adopts four it has never touched.
-
-**Session names are not identity either.** They rotate and are reused. On one day: a session reported
-it *"was `<name-A>` last session; a different session holds that name now"*, and another **renamed
-while running** — it filed five issues signed with one name and an hour later was listed under
-another, the same session throughout. A remembered name, and a sign-off on an issue, may both name
-somebody else by the time you read them.
-
-**Ask git, exactly as §3 does.** Your worktree's own reflog knows every branch it has held:
+**"Is it mine?" — ask this worktree's own reflog.**
 
 ```bash
 # Every branch THIS worktree has held, including ones that arrived by rename.
@@ -263,18 +235,56 @@ grep -oE "moving from [^ ]+ to [^ ]+|Branch: renamed [^ ]+ to [^ ]+" "$(git rev-
   | awk '{print $NF}' | sed 's#^refs/heads/##' | sort -u
 ```
 
-Two details, each of which was got wrong first:
+**`--git-dir`, not the `--git-common-dir/worktrees/*` glob** — the glob reads every worktree and
+answers *what has any session held*, which is the question you are trying not to ask. Keep the
+`Branch: renamed` alternation or branches acquired by `git branch -m` vanish silently.
 
-- **`--git-dir`, not `--git-common-dir`/`worktrees/*`.** The glob reads **every** worktree's reflog,
-  so it answers *what has any session held* — the very question you are trying not to ask. Verified
-  by running both in one worktree while a second held its own branch: the glob returned that peer's
-  branch, `--git-dir` did not.
-- **The `Branch: renamed` alternation.** A plain `moving from` grep answers *what did this check out*
-  and silently drops any branch that arrived by `git branch -m`.
+**"Whose is it?" — the reflog cannot say.** It eliminates; it never identifies, and a negative leaves
+nothing to act on but asking around. A lane worktree's **path carries its owning session's id**, so:
 
-**Where this bites: merge by NUMBER.** Never merge from an author-filtered list. A wrong pick under
-`gh pr merge --admin` is unrecoverable rather than embarrassing, and `--admin` is exactly the case
-where no CI run is left to catch it.
+```bash
+git worktree list --porcelain > /tmp/wt.txt
+python3 - <<'PY'
+rows, cur = [], {}
+for line in open('/tmp/wt.txt'):
+    line = line.rstrip('\n')
+    if not line:                       # BLANK-LINE-SEPARATED RECORDS, not lines --
+        if cur: rows.append(cur); cur = {}   # a line filter reads the first and stops
+        continue
+    k, _, v = line.partition(' ')
+    cur[k] = v
+if cur: rows.append(cur)
+for r in rows:
+    path = r.get('worktree', '')
+    branch = r.get('branch', '(detached)').replace('refs/heads/', '')
+    parts = path.split('/')
+    sid = parts[5] if '/scratchpad/' in path and len(parts) > 5 else None
+    print(f"  {branch:34} {'session ' + sid if sid else 'SHARED checkout (no single owner)'}")
+PY
+```
+
+Compare a printed id against your own scratchpad path and you have the holder, with no round trip.
+
+**It answers exactly one question: which session has this branch checked out in a live worktree right
+now** — not who is working on it, and not who authored it. Four boundaries, and it misleads past them:
+
+- **NO ROW DOES NOT MEAN NO OWNER, and the dangerous case is live work.** A branch whose worktree
+  disappeared (§5a) keeps its commits and its PR and loses its row. Measured: across 11 rows, a branch
+  with four commits and an **open PR** appeared in none of them. Merged-and-deleted branches and
+  exited sessions also leave no row, but that work is over; this was not.
+- **The mapping is one-to-many** — in that listing, 5 / 3 / 2 worktrees across three sessions.
+- **The shared checkout has no owner.** Never attribute it to whoever is on its HEAD; that HEAD moves,
+  and it moved mid-listing.
+- **A `(detached)` row is a rebase in progress**, not an unowned branch — the one state in which
+  interrupting is least welcome.
+
+**With no row there is no fallback: ask, and say which branch you mean.** The branch name routes to an
+*issue*, not a session, and the PR author is the shared account.
+
+**Where this bites: merge by NUMBER.** Never merge from an author-filtered list, and **never merge a
+branch this listing says is somebody else's** — green is a statement about the code, not about whether
+its owner is finished with it. A wrong pick under `gh pr merge --admin` is unrecoverable rather than
+embarrassing, and `--admin` is exactly the case where no CI run is left to catch it.
 
 ## 4. Confirm your worktree before any edit
 
