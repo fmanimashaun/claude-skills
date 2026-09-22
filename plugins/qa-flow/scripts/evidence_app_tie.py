@@ -157,10 +157,32 @@ def urls_in(rows: list[dict[str, str]]) -> list[str]:
     return out
 
 
+# A Rails route is `(.:format)`-bearing, and `route_coverage.normalise()` strips that from the
+# PATTERN -- so `/capacity` in the inventory is the same route as `/capacity.csv` on the wire. The
+# observed path had nothing stripped, so every CSV export a sweep legitimately fetched was reported
+# as unroutable: seven of eight findings in one downstream file.
+FORMAT_SUFFIX = re.compile(r"\.[A-Za-z0-9]{1,6}$")
+
+# A `Requested URL` cell carrying an annotation -- `/dashboard (scope EG)` -- is a defect in the
+# ARTIFACT, but it is not the same defect as a path the app cannot serve, and saying so wrongly
+# sends someone to look for a missing route that exists.
+NOT_A_URL = re.compile(r"\s")
+
+
 def unroutable(paths: list[str], patterns: list[str]) -> list[str]:
     """Paths matching no route pattern. A path no route serves cannot have returned anything."""
     compiled = [compile_pattern(p) for p in patterns]
-    return sorted({p for p in paths if not any(rx.fullmatch(p) for rx in compiled)})
+
+    def routed(path: str) -> bool:
+        if any(rx.fullmatch(path) for rx in compiled):
+            return True
+        # Try again without a format suffix, and ONLY then: `/capacity.csv` is `/capacity` rendered
+        # as CSV. Stripping unconditionally would make `/report.2024` match `/report`, so the bare
+        # form has to be a real route before the suffix is forgiven.
+        bare = FORMAT_SUFFIX.sub("", path)
+        return bare != path and any(rx.fullmatch(bare) for rx in compiled)
+
+    return sorted({p for p in paths if not routed(p)})
 
 
 def shape_of(value: str) -> str:
@@ -323,6 +345,15 @@ def check(csv_path: Path) -> tuple[list[str], list[str]]:
         return findings, notes
 
     for path in unroutable(mine, patterns):
+        if NOT_A_URL.search(path):
+            # A DIFFERENT DEFECT, NAMED AS ITSELF. This cell holds a URL plus a note; the route may
+            # well exist. Reporting it as an unroutable path sends a reader hunting for a missing
+            # route that is there.
+            findings.append(
+                f"{path!r}: the `Requested URL` cell is not a URL — it carries text alongside the "
+                f"path, so nothing can be resolved against the route table. Put the annotation in "
+                f"`Notes`; the column is machine-read.")
+            continue
         findings.append(
             f"{path}: matches no route in {ROUTES_JSON}. A path the app does not route cannot "
             f"have returned a status, so this row describes something that did not happen. If the "
@@ -365,6 +396,22 @@ def _selftest() -> int:
            unroutable(["/lives/1", "/about"], PATTERNS) == [])
     expect("a dynamic segment matches one segment only, not a deeper path",
            unroutable(["/lives/1/edit"], PATTERNS) == ["/lives/1/edit"])
+
+    # --- A FORMAT SUFFIX IS THE SAME ROUTE (#1152-adjacent) --------------------------------
+    # Rails routes are `(.:format)`-bearing and `normalise()` strips that from the PATTERN, so
+    # `/capacity` in the inventory IS `/capacity.csv` on the wire. Nothing stripped it from the
+    # observed path, so every CSV export a sweep legitimately fetched read as unroutable --
+    # seven of eight findings in one downstream file.
+    expect("a `.csv` rendering of a real route is routable",
+           unroutable(["/capacity.csv"], ["/capacity"]) == [])
+    expect("...and so is the bare path, unchanged",
+           unroutable(["/capacity"], ["/capacity"]) == [])
+    # THE CONTROL: the suffix is forgiven only when the BARE path is a real route. Stripping
+    # unconditionally would make an invented path match by losing its last segment.
+    expect("a suffix on a path that routes nowhere is still reported",
+           unroutable(["/invented.csv"], ["/capacity"]) == ["/invented.csv"])
+    expect("...and a dotted segment is not mistaken for a format",
+           unroutable(["/report.2024"], ["/report.2024"]) == [])
 
     # --- SHAPE CLASSES. Coarse on purpose: the app decides which class is right, not this file.
     expect("an integer id is classed integer", shape_of("1") == "integer")
