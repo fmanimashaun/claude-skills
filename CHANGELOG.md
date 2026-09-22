@@ -9,6 +9,19 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The `remember` plugin is off for this repository — `.claude/settings.json`**. **Maintainer
+  decision, 2026-09-22**; our own configuration, no upstream. It had been on here since `d4b35f6`
+  (24 July), and measured tonight it was the largest single block loaded into every session: its
+  SessionStart output was **22,787 bytes (~5,700 tokens)** — a 152-line log of every session's work
+  that day, and a handoff written by another session, marked by the plugin itself as *"already
+  delivered 14 times… pending replacement, not news"*. For comparison, `CLAUDE.md` is ~4,500 tokens
+  and Claude Code's own auto-memory index ~3,800. It is a second memory system beside auto-memory,
+  and its handoff is keyed on the project directory and written in the first person, so a session
+  reading it cannot tell its own work from a peer's — which misled two sessions the same day. It has
+  no setting to trim what it injects (`~/.remember/config.json` covers storage and backup only).
+  `false` rather than removing the key, because the user-level setting enables it globally and a
+  missing project key would fall through to that.
+
 - **A pull request's branch name could run code in CI, and every job in the release workflow could
   write to the repository — `.github/workflows/gates.yml`, `.github/workflows/release.yml`,
   `.github/workflows/codeql.yml`, `.github/workflows/wiki.yml`, `.github/dependabot.yml`** (#1178).

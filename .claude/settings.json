@@ -13,6 +13,6 @@
     ]
   },
   "enabledPlugins": {
-    "remember@claude-plugins-official": true
+    "remember@claude-plugins-official": false
   }
 }
