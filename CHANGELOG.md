@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-22 (release v1.143.0)
 
 - **The `remember` plugin is off for this repository — `.claude/settings.json`**. **Maintainer
   decision, 2026-09-22**; our own configuration, no upstream. It had been on here since `d4b35f6`
@@ -3316,7 +3316,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.49.0 (release v1.143.0) — 2026-09-22
 
 - **Three memory systems could inject into every session and nothing noticed —
   `plugins/rails-flow/scripts/check_memory_systems.py`, `plugins/rails-flow/checks.json`,
@@ -14668,7 +14668,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.64.2 (release v1.143.0) — 2026-09-22
 
 - **The quality-pass worked example's harness row moves again, to 35 files / reach 19 —
   `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1181).
