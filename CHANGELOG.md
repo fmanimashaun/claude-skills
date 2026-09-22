@@ -3239,6 +3239,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The architecture page was titled after whichever directory rebuilt it —
+  `plugins/rails-flow/scripts/architecture_graph.py`,
+  `plugins/rails-flow/scripts/mutations/architecture_graph.py`** (#1158). The title came from
+  `os.path.basename(root)`, and `parallel-session-lane` tells every session to work in a worktree
+  named for its branch or task — so **the sequence the toolchain itself prescribes** (take a
+  worktree, change code, push, the guard says rebuild, rebuild, commit) retitled a project's
+  committed architecture page to a scratch directory's name, for everyone. Measured downstream over
+  that page's whole history: **37 of 113 commits carried a wrong title, in 28 distinct spellings**,
+  every one a worktree directory. **The 76 that look correct are luck** — a later rebuild from the
+  primary checkout overwrote them — so 37 is a **floor**, not a total, and a correct title today is
+  evidence only that the last person to touch it was in the right directory. Nothing could see it:
+  the pre-push guard compares `content_digest`, computed over the graph **data**, which correctly
+  excludes the title; and `wt-401 architecture` is a plausible page title unless you know the
+  project's name. The name now comes from the **repository** — the `origin` remote, else the
+  primary checkout resolved through `--git-common-dir` (**not** `--show-toplevel`, which returns
+  the worktree and would rebuild the defect), else the directory with a **warning naming the
+  derived title**, so a wrong one is visible in the transcript rather than only in a committed diff.
+
 ### 1.46.0 (release v1.140.0) — 2026-09-22
 
 - **The one guard that has ever stopped a wrong number watched PRs only —

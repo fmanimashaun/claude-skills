@@ -58,5 +58,23 @@ GUARD = Guard(
             "    if False:\n        return requested",
             "an explicit --max-flows wins",
         ),
+    Mutation(
+        # #1158: the title came from the directory basename, and the lane skill puts every session
+        # in a worktree named for its task. Measured downstream: 37 of 113 commits to the generated
+        # page carried a wrong title, in 28 distinct spellings, every one a worktree directory --
+        # each produced by following the pre-push guard's own printed instruction.
+        "the title comes from this checkout's directory again",
+        "    common = git(\"rev-parse\", \"--git-common-dir\")",
+        "    common = None",
+        "a worktree resolves back to the primary checkout, not its own directory",
+    ),
+    Mutation(
+        # The remote is preferred because it is identical from every checkout and survives the
+        # directory being renamed. Losing it falls back to a path-derived name again.
+        "the origin remote is no longer consulted",
+        '    url = git("remote", "get-url", "origin")',
+        "    url = None",
+        "the origin remote's repository name wins",
+    ),
     ),
 )
