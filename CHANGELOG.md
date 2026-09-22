@@ -7,6 +7,48 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-22 (release v1.143.0)
+
+- **The `remember` plugin is off for this repository — `.claude/settings.json`**. **Maintainer
+  decision, 2026-09-22**; our own configuration, no upstream. It had been on here since `d4b35f6`
+  (24 July), and measured tonight it was the largest single block loaded into every session: its
+  SessionStart output was **22,787 bytes (~5,700 tokens)** — a 152-line log of every session's work
+  that day, and a handoff written by another session, marked by the plugin itself as *"already
+  delivered 14 times… pending replacement, not news"*. For comparison, `CLAUDE.md` is ~4,500 tokens
+  and Claude Code's own auto-memory index ~3,800. It is a second memory system beside auto-memory,
+  and its handoff is keyed on the project directory and written in the first person, so a session
+  reading it cannot tell its own work from a peer's — which misled two sessions the same day. It has
+  no setting to trim what it injects (`~/.remember/config.json` covers storage and backup only).
+  `false` rather than removing the key, because the user-level setting enables it globally and a
+  missing project key would fall through to that.
+
+- **A pull request's branch name could run code in CI, and every job in the release workflow could
+  write to the repository — `.github/workflows/gates.yml`, `.github/workflows/release.yml`,
+  `.github/workflows/codeql.yml`, `.github/workflows/wiki.yml`, `.github/dependabot.yml`** (#1178).
+  Found by asking whether the CodeQL workflow could be improved; it had **0 open alerts** and little
+  to improve, so the workflows around it were scanned with **zizmor 1.30.1** (`uvx zizmor --offline
+  .github/workflows/`): **40 findings, 11 high → 22 findings, 0 high, 0 medium** after this change.
+  `gates.yml:96` expanded `${{ github.head_ref }}` — the PR's source branch name, chosen by whoever
+  opens it, fork included, and allowed to contain `"`, `;` and `$` — straight into a `run:` script;
+  it now reads it from `env:`. `release.yml` granted `contents: write` to the whole workflow, so the
+  gate sweep inherited it; now `read` by default and `write` on the publishing job alone. All four
+  checkouts set `persist-credentials: false`, verified unneeded first: `release.yml` publishes via
+  `gh release create` with `GH_TOKEN`, and `wiki.yml` pushes with its own token in the clone URL.
+  All eight `uses:` are pinned to commit SHAs (`checkout` v7.0.1, `setup-python` v7.0.0,
+  `codeql-action` v4.38.1), with **Dependabot** added so the pins receive update PRs rather than
+  going stale — pointed at `dev` with `target-branch`, since `main` takes only promotions; security
+  updates ignore that option and would still open against `main`, which is stated in the file.
+  **Left deliberately:** eight info-level `${{ steps.v.outputs.tag }}` expansions in `release.yml`,
+  whose value comes from this repository's own `marketplace.json` on a push to `main`, because
+  `release.yml` cannot be exercised before a real promotion and edits there are kept minimal.
+  **`release.yml` and `wiki.yml` are therefore verified only at the next promotion**; `gates.yml`
+  and `codeql.yml` run on this change's own pull request.
+  **Writing this bullet exposed a lint defect, fixed here — `scripts/lint_self_consistency.py`.**
+  `changelog-bullet-unplaceable` read `.github/workflows/gates.yml` as `github/workflows/gates.yml`:
+  its `\.?/?` prefix, meant to strip `./`, also ate a dot-directory's dot, so a change touching only
+  `.github/` or `.claude/` could not be placed except by naming a file it never touched. The prefix
+  now strips `./` as a unit; a scenario and a mutation cover it.
+
 ### 2026-09-22 (release v1.142.0)
 
 - **The fourteenth hook script found the edge of a number table, and eight guards went inert
@@ -3273,6 +3315,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.49.0 (release v1.143.0) — 2026-09-22
+
+- **Three memory systems could inject into every session and nothing noticed —
+  `plugins/rails-flow/scripts/check_memory_systems.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`, `plugins/rails-flow/reference/context-budget.md`,
+  `plugins/rails-flow/scripts/mutations/check_memory_systems.py`, `.rails-flow/memory.json`** (#1181).
+  **Maintainer decision recorded on the issue, with a condition: it must not add tokens to any
+  session.** Our budget gate ratchets only what **we** print — ~520 tokens here — while the same
+  session loaded ~5,700 from the `remember` plugin and ~3,800 from Claude Code's auto-memory: three
+  memory systems, none aware of the others. Running two can be deliberate, so there is no rule to
+  impose; `/rails-flow:setup-flow` §4a now **asks** and records the answer in `.rails-flow/memory.json`,
+  and a new `memory-systems` check in `project_gates` holds the **committed** `.claude/settings.json`
+  to it — `remember` explicitly on or off, `autoMemoryEnabled` explicitly off when not chosen (it is
+  on by default), the brain present exactly when chosen. A mismatch fails; no recorded choice is not
+  applicable, never a pass; `[]` is a decision, distinct from no file. It reads only what the
+  project commits, never user or local settings, so the verdict is the same on every machine and in
+  CI — and that is also why a choice must be explicit: Claude Code applies a key set at a higher scope
+  over the same key lower down (verified against code.claude.com/docs/en/settings), so a project that
+  says nothing inherits each user's global plugin choice. Auto-memory's default, storage and
+  `autoMemoryEnabled` are verified against code.claude.com/docs/en/memory; that `enabledPlugins`
+  merges per plugin rather than replacing the object is **observed** (a session here loaded the
+  user's globally-enabled plugins while the project named only one), not documented. **The token
+  condition is measured, not promised:** `check_hook_output_budget.py` reports 1,245 bytes before and
+  after, and `session-start.sh` in this repository prints 2,094 bytes before and after — the check runs
+  on demand and in CI only. This repository records its own choice (`auto-memory`,
+  `rails-flow-brain`) and passes; a copy with `remember: false` removed fails for the right reason.
+  21 assertions, 8 mutations.
 
 ### 1.48.0 (release v1.142.0) — 2026-09-22
 
@@ -14597,6 +14667,15 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.64.2 (release v1.143.0) — 2026-09-22
+
+- **The quality-pass worked example's harness row moves again, to 35 files / reach 19 —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1181).
+  `plugins/rails-flow/scripts/check_memory_systems.py` is one more copy of the `check(label, ok,
+  detail)` selftest harness, and `check_shared_shapes.py` refused the old figure — counting, as it
+  should, never refusing the copy. The decision resting on the row is unchanged here; its stale
+  arithmetic is #1174.
 
 ### 1.64.1 (release v1.142.0) — 2026-09-22
 

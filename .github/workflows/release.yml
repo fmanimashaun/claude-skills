@@ -9,8 +9,10 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# READ BY DEFAULT; WRITE ONLY WHERE THE RELEASE IS CREATED (#1178). A workflow-level `write` is
+# inherited by every job, including the gate sweep, which runs every script in the repository.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -33,12 +35,17 @@ jobs:
     # but a dispatch from any other ref must NOT publish a release for that ref's commit.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # `gh release create` makes the tag and the release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # `gh release create` authenticates with GH_TOKEN, not git, so nothing needs the persisted
+          # credential (#1178).
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.x'
 

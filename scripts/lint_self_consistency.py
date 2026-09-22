@@ -2020,9 +2020,9 @@ def check_changelog_section_missing() -> tuple[list[Finding], int]:
     return findings, len(plugins)
 
 
-# #701. Path-shaped tokens inside backticks. `\.?/?` tolerates `./app/...`, and requiring at least
-# one `/` keeps bare names like `check_handoff.py` out -- a filename alone does not say which
-# component owns it, which is the whole question.
+# #701. Path-shaped tokens inside backticks, a leading `./` tolerated (see the #1178 note below).
+# The original form also REQUIRED a `/`, to keep bare names out; #1141 reversed that, below, and
+# this line no longer says otherwise.
 # A backticked repo path. The `(?:/...)*` is zero-or-more, NOT one-or-more: requiring a
 # directory meant a change to a ROOT file -- `CLAUDE.md`, `AGENTS.md`, `README.md` -- could
 # never produce a placeable bullet, so a doctrine correction was unreportable by construction
@@ -2030,7 +2030,10 @@ def check_changelog_section_missing() -> tuple[list[Finding], int]:
 # name still has to EXIST and still resolves through `_changelog_owner`, which files a root
 # path under `repository` -- so this widens what can be named, never what counts as placed.
 # Requires a dot so ordinary backticked prose (`cluster`, `to_param`) is not read as a path.
-_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+)`")
+# `(?:\./)?` strips a leading `./` AS A UNIT. It was `\.?/?`, which also ate the dot of a
+# dot-directory: `.github/workflows/gates.yml` was read as `github/workflows/gates.yml`, which does
+# not exist, so a change touching only `.github/` or `.claude/` could not be placed at all (#1178).
+_BULLET_PATH = re.compile(r"`(?:\./)?(\.?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+)`")
 _BULLET_ISSUE = re.compile(r"\(#(\d+)\)")
 
 
@@ -4114,6 +4117,19 @@ def selftest() -> int:
                     "CHANGELOG.md": "## Repository hygiene\n\n### Unreleased\n\n"
                                     "- **A doctrine correction — `CLAUDE.md`** (#1141). Body.\n",
                     "CLAUDE.md": "x\n"})
+    # A DOT-DIRECTORY PATH IS PLACEABLE (#1178). The prefix that strips `./` also stripped the dot of
+    # `.github`, so a workflow-only change named real files and was still refused.
+    scenario("a bullet naming only a dot-directory path is placeable", rule=CBU, expect_finding=False,
+             files={".claude-plugin/marketplace.json": '{"plugins": [{"name": "qa-flow"}]}',
+                    "CHANGELOG.md": "## Repository hygiene\n\n### Unreleased\n\n"
+                                    "- **Workflow hardening — `.github/workflows/gates.yml`** (#1178). Body.\n",
+                    ".github/workflows/gates.yml": "name: x\n"})
+    # ...and a `./`-prefixed path still resolves, since that prefix is what the old form was for.
+    scenario("a `./`-prefixed path is still placeable", rule=CBU, expect_finding=False,
+             files={".claude-plugin/marketplace.json": '{"plugins": [{"name": "qa-flow"}]}',
+                    "CHANGELOG.md": "## Repository hygiene\n\n### Unreleased\n\n"
+                                    "- **Prefixed — `./scripts/x.py`** (#1178). Body.\n",
+                    "scripts/x.py": "x\n"})
     # THE CONTROL: widening what can be NAMED must not widen what counts as PLACED. A root file
     # that does not exist is still unplaceable, or the rule accepts any bare word with a dot.
     scenario("...but a root file that does not exist is still unplaceable",

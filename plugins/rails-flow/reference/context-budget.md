@@ -64,6 +64,26 @@ fixture pins every input, and the selftest asserts both that two runs agree *and
 fixture measures bigger — determinism alone cannot show the fixture is what is being read, because
 the live tree is stable within a run too.
 
+## The load we do not emit is still the user's
+
+The ratchet above governs the bytes **our** hooks print. A user's session pays for everything that
+loads, and on the repository where this was measured (2026-09-22) ours was the smallest part of it:
+
+| loaded into every session | ~tokens | whose |
+|---|---|---|
+| the `remember` plugin's SessionStart output | ~5,700 | a third-party plugin |
+| `CLAUDE.md` | ~4,500 | the project |
+| Claude Code auto-memory (`MEMORY.md` index) | ~3,800 | the harness |
+| `AGENTS.md` | ~1,900 | the project |
+| `rails-flow` `session-start.sh` | ~520 | us |
+
+Three of those rows are **memory systems** — auto-memory, `remember`, and our `docs/brain` — and none
+knows about the others. We cannot ratchet another plugin's output (it is not ours to run, and a number
+we cannot reproduce is not one a ratchet can hold). What we can do is make the choice explicit:
+`/rails-flow:setup-flow` §4a records which memory systems a project loads, and the `memory-systems`
+check in `project_gates` holds the committed settings to it. **It adds nothing to any session** — it
+runs on demand and in CI — so the check that guards the budget does not spend it.
+
 ## What this does not cover
 
 Whether the content is *worth* its bytes is a review question, not a gate. The check answers only

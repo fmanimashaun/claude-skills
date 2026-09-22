@@ -352,6 +352,38 @@ default 7-day cadence, override `RAILS_FLOW_BRAIN_REVIEW_DAYS`, reminder-only/no
 `/rails-flow:brain-sync` (publish to / consume a cross-project shared brain repo). Memos and
 STATUS are the repo side of memory, not lost in chat history.
 
+## 4a. Ask which memory systems load, and RECORD the answer (#1181)
+
+The brain is one of up to **three** memory systems that inject into every session, and none knows
+about the others: Claude Code's **auto-memory** (on by default; its `MEMORY.md` index, first 200
+lines or 25KB), the **`remember`** plugin (a day's log and a handoff), and this brain. Each costs
+tokens at every session start and again after every compaction. Measured on one repository they were
+~3,800, ~5,700 and ~520 tokens — and the largest was a handoff another session had written.
+
+**Ask the user which ones this project loads, and write the answer down.** Running two can be
+deliberate, so there is no default to impose; what can be checked is that what loads matches what was
+chosen:
+
+```json
+{"memory": ["auto-memory", "rails-flow-brain"]}
+```
+
+in `.rails-flow/memory.json` — any of `auto-memory`, `remember`, `rails-flow-brain`. `[]` is a
+decision (load none), not the same as no file (nobody decided).
+
+**Then hold it in the COMMITTED settings, explicitly**, because Claude Code applies a key set at a
+higher scope over the same key lower down, and a project that says nothing inherits each user's
+global choice. In `.claude/settings.json`:
+
+- `remember` not chosen → `"enabledPlugins": {"remember@claude-plugins-official": false}`; chosen → `true`.
+- `auto-memory` not chosen → `"autoMemoryEnabled": false` (leaving it out leaves it **on**).
+- `rails-flow-brain` not chosen → do not scaffold `docs/brain/MEMORY.md`; the SessionStart hook prints
+  it whenever it exists.
+
+`project_gates` checks the three against the recorded choice (`memory-systems`): a mismatch **fails**,
+no recorded choice is **not applicable** — never a pass. The check runs on demand and in CI only, so it
+adds nothing to any session.
+
 ## 4b. The docs/ layout — one home per kind (#886)
 
 `docs/` is where agents litter: with no map, every session invents a place, and nothing can say a
