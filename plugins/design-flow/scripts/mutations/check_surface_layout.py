@@ -30,7 +30,7 @@ GUARD = Guard(
             # positives in one real run -- a prose comment, a --content-cols property, a
             # "hidden-content" comment, and Tailwind's own before:content-[''] utility.
             "the detector matches the WORD content rather than a rendered slot",
-            '    if not (SLOT_ERB.search(source) or SLOT_RUBY.search(source)):',
+            '    if not renders_a_slot(source, declared_slots(source, strip_comments(sibling))):',
             '    if "content" not in source:',
             "NOT a finding: Tailwind's own before:content-[''] utility",
         ),
@@ -49,6 +49,32 @@ GUARD = Guard(
         '    source = strip_comments(source)',
         '    source = source',
         'a comment describing the wrapper is not the wrapper',
+    ),
+    Mutation(
+        # #1141: the pattern matched ANY bare identifier, so a constructor keyword and a
+        # CSS-class helper read as slots and an innocent table was reported. This is #1128's
+        # "match the construct, never the word" surviving one variant along -- fixed for the word
+        # `content`, left open for `[a-z_]+`.
+        "any bare identifier counts as a slot again",
+        '    return any(re.search(r"<%=\\s*" + re.escape(name) + r"\\s*%>", source) for name in slots)',
+        '    return bool(re.search(r"<%=\\s*[a-z_]+\\s*%>", source))',
+        "an attribute reader is not a slot, so a recipe elsewhere is not a finding",
+    ),
+    Mutation(
+        # THE CONTROL SIDE: narrowing what counts as a slot must not switch the check off. A
+        # component that DECLARES one and wraps it is the thing this gate exists for.
+        "a declared slot stops being recognised, so nothing is ever reported",
+        "    return {\"content\"} | set(SLOT_DECLARATION.findall(source)) | set(SLOT_DECLARATION.findall(sibling))",
+        "    return set()",
+        "...while a DECLARED slot wrapped in a recipe is still reported",
+    ),
+    Mutation(
+        # The declaration lives in the `.rb` and the rendering in the `.html.erb`. Reading one
+        # without the other is why attribute readers looked like slots in the first place.
+        "the paired .rb is no longer read, so no slot is ever declared",
+        "        sibling = _sibling_source(path)",
+        '        sibling = ""',
+        "...while a DECLARED slot wrapped in a recipe is still reported",
     ),
     ),
 )

@@ -11733,6 +11733,27 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **An attribute reader is not a slot, and the check reported a table that has none —
+  `plugins/design-flow/scripts/check_surface_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_surface_layout.py`**. Reported downstream on a
+  `TableComponent` that declares `renders_one`/`renders_many` **nowhere**: the two matches were
+  `<%= caption %>`, a constructor keyword exposed by `attr_reader`, and `<%= caption_classes %>`,
+  a private method returning a CSS class string. The `cluster` they were paired with sits on a sort
+  **link**, forty lines away, wrapping a header label the component composes itself. **This is
+  #1128 surviving one variant along** — *match the construct, never the word* was closed for
+  `content` and left open for `[a-z_]+`, so the first fix was too narrow rather than wrong, which
+  is the reusable part. A slot is now **what the component declared**: `content`, plus every
+  `renders_one`/`renders_many` name, read from the paired `.rb` because a template cannot tell a
+  slot from an attribute reader — both are `<%= name %>`. Verified on the reporting tree:
+  **1 finding → 0 across 64 component files**, with a positive control proving a declared slot
+  wrapped in a recipe is still reported, because narrowing what counts as a slot is one edit away
+  from switching the check off. **Known and not fixed here**: `wraps_slot_in_recipe` still checks
+  that a slot and a recipe **co-occur in the file**, not that the recipe **contains** the slot —
+  its name claims containment and the code does not. That is invisible to every passing fixture,
+  since each exercises a case where the recipe genuinely wraps the slot.
+
 ### 1.42.1 (release v1.138.0) — 2026-09-22
 
 - **Comments are prose, and three gates read them as code —
