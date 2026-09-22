@@ -200,6 +200,17 @@
       ]
     },
     {
+      "id": "memory-systems",
+      "why": "Three memory systems can inject into every session and none knows about the others; a project that says nothing in its committed settings loads whatever each user enabled globally. This holds the loaded set to the one the project recorded, at no per-session cost.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_memory_systems.py"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "mandated-gems",
       "why": "A gem the doctrine marks Always, with no installer and no gate, is a preference — it landed missing twice on two clean runs.",
       "command": [
