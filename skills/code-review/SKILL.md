@@ -138,7 +138,44 @@ A check whose failure path cannot fail anything.
 
 **Detect:** **make the check fail on purpose once.** A gate never observed failing
 is not known to work. And when a check reports clean, confirm what it examined —
-"no findings" over zero inputs is not a pass.
+"no findings" over zero inputs is not a pass. Where the value comes from
+something you did **not** write, there is nothing to mutate: see
+`signal-that-cannot-discriminate`.
+
+### `signal-that-cannot-discriminate`
+A value two different causes both produce, read as if it named one.
+
+The reader is not wrong about the value — they are wrong that it identifies a
+cause. Because it *looks* like an answer, the cost is not a missed signal but
+time spent debugging the wrong half.
+
+- `conclusion: failure` cannot separate a failed suite from a runner that
+  **never started** — a run with zero steps reports the same word.
+- `0 findings` cannot separate a clean repository from a judge you just
+  silenced.
+- An empty `grep` cannot separate "nothing matches" from a broken pattern.
+- `Status: pass` in an evidence row cannot separate a coverage claim from a
+  correctness one, nor a driven route from an invented artifact.
+- A half-seeded database cannot separate "seeded, code broken" from "seeding
+  never finished".
+
+**Detect:** **before believing a value, name the other thing that produces it.**
+If you can name one, the value is not evidence yet: find the field that
+separates them, or build the case where the two causes disagree. In every
+instance above the discriminator already existed and was not being read —
+`steps executed == 0`, the seed stage's own exit, whether the artifact ties to
+the app at all.
+
+**A positive control whose input satisfies both mechanisms proves neither.** A
+slot genuinely nested inside a layout recipe fires under *containment* and under
+*co-occurrence*, so it cannot tell them apart; only a slot placed **outside**
+every recipe separates them. That near-miss shipped as a "positive control" and
+was caught by someone building the disagreeing input (#1156).
+
+**Sibling of `gate-that-cannot-fail`, not a replacement.** That one asks *make
+the check fail on purpose* — about a check you **author**. This asks *what else
+produces this value* — about a value you **consume**, where there is often
+nothing of yours to mutate.
 
 ### `frozen-figure`
 A number hand-copied into prose that something else computes.

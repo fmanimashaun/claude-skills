@@ -14490,6 +14490,27 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **A ninth review class: a value two causes both produce, read as if it named one —
+  `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1156). **Maintainer decision recorded
+  on the issue**, as `CLAUDE.md` requires for our own doctrine. `signal-that-cannot-discriminate`:
+  `conclusion: failure` cannot separate a failed suite from **a runner that never started**;
+  `0 findings` cannot separate a clean repository from **a judge you just silenced**; an empty `grep`
+  cannot separate *no matches* from **a broken pattern**; `Status: pass` cannot separate a coverage
+  claim from a correctness one. **The reader is not wrong about the value — they are wrong that it
+  identifies a cause**, and because it looks like an answer the cost is time spent debugging the
+  wrong half. Detect by **naming the other thing that produces it**; in every instance the
+  discriminator already existed and was not being read. It carries the near-miss that teaches it:
+  **a positive control whose input satisfies both mechanisms proves neither** — a slot nested inside
+  a recipe fires under containment *and* co-occurrence, so only a slot placed **outside** every
+  recipe separates them, and that near-miss shipped as a control before someone built the
+  disagreeing input. **Sibling of `gate-that-cannot-fail`, cross-referenced both ways**: that one
+  asks *make the check fail on purpose*, about a check you author; this asks *what else produces this
+  value*, about a value you consume — where four of the five reported instances have nothing of ours
+  to mutate. The proposer's own counter-argument (*a class an existing one would have caught is a
+  cost*) was tested against all eight before approval: one of five overlapped, four did not.
+
 ### 1.63.0 (release v1.138.0) — 2026-09-22
 
 - **A lane says what is private and never said how to tell what is yours —
