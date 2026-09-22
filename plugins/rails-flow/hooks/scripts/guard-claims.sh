@@ -11,8 +11,19 @@
 # the duplicate-unreleased rule, the ci-verdict rule, and guard-bash.sh. So this is a wall, not a
 # checklist item.
 #
-# SCOPED TO ONE THING: `gh pr create` / `gh pr edit` carrying a body. It cannot misfire on ordinary
-# work, which is what keeps a fail-closed guard from being switched off.
+# SCOPED TO DURABLE CLAIMS SOMEONE ELSE READS: `gh pr create` / `gh pr edit` / `gh issue comment`
+# carrying a body. It cannot misfire on ordinary work, which is what keeps a fail-closed guard from
+# being switched off.
+#
+# `issue comment` WAS THE HOLE. This guard is the only thing that has ever actually stopped a wrong
+# number here -- it fired on a PR body carrying eight unverified claims and every one was re-measured
+# before the PR opened. On the same day, four issue comments went out carrying counts, and not one
+# passed through this check, because the guard watched PRs alone. An issue comment is the same
+# artifact: durable, read by someone else, quoted onward. The numbers in it get the same wall.
+#
+# It is the CONSEQUENCE that is gated, not the cause. A grep with a typo returns empty and an empty
+# result is a valid answer, so no hook can tell a broken query from a true negative. What a hook CAN
+# see is the moment that output becomes a claim in something another person reads.
 #
 # Exit 2 blocks the command; stderr is shown to Claude with the reason.
 set -uo pipefail
@@ -20,8 +31,8 @@ input="$(cat)"
 
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
-# Not a PR body command -- nothing to say. This is the common case and it must be silent.
-printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b' || exit 0
+# Not a claim-carrying command -- nothing to say. This is the common case and it must be silent.
+printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\b' || exit 0
 printf '%s' "$cmd" | grep -qE '(--body-file|--body)\b' || exit 0
 
 # The audited escape. A fail-closed guard with no visible way past it gets disabled the first time
