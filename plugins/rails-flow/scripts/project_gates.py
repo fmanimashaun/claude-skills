@@ -462,6 +462,8 @@ def run_check(check: Check, project: Path) -> Result:
     argvs = expand(check.command, check, project)
     if not argvs:
         return Result(check, ERROR, "command expanded to nothing")
+    # Collected rather than returned on the first hit, so every matching file is actually RUN.
+    failures: list[tuple[str, str, tuple[str, ...]]] = []
     for argv in argvs:
         script = Path(argv[1]) if len(argv) > 1 else None
         if script is not None and script.suffix == ".py" and not script.is_file():
@@ -506,7 +508,23 @@ def run_check(check: Check, project: Path) -> Result:
                 # fails, the finding belongs to whoever ships the gate.
                 return Result(check, ERROR, f"the checker's own selftest failed here — "
                                             f"{summary}", findings)
-            return Result(check, FAIL, summary, findings)
+            # EVERY MATCHING FILE, NOT THE FIRST (#1141). Returning here stopped the loop, so a
+            # `{match:...}` check reported one file and never RAN the rest: measured downstream at
+            # 43 findings across 7 evidence files, of which the gate named 4. Filename order
+            # decided which one stopped it, so a fabricated artifact was invisible in gate output
+            # while being the worst thing in the tree. It fails quiet, which is the dangerous half.
+            failures.append((argv[-1], summary, findings))
+    if failures:
+        first = failures[0]
+        detail = first[1] if len(failures) == 1 else (
+            f"{sum(len(f[2]) for f in failures)} finding(s) across {len(failures)} of "
+            f"{len(argvs)} file(s) — {first[1]}")
+        merged: list[str] = []
+        for path, summary, items in failures:
+            if len(failures) > 1:
+                merged.append(f"  {path}:")
+            merged.extend(items)
+        return Result(check, FAIL, detail, tuple(merged))
     return Result(check, PASS, f"{len(argvs)} invocation(s)")
 
 

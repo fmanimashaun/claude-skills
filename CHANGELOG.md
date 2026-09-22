@@ -3197,6 +3197,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A `{match:...}` check reported one file and never ran the rest —
+  `plugins/rails-flow/scripts/project_gates.py`** (#1141). `expand()` correctly produces one
+  invocation per matching file; the runner **returned on the first failing one**, so later files
+  were not merely unreported, they were never executed. Measured on the reporting project:
+  **43 findings across 7 evidence files, of which the gate named 4**. Filename order decided which
+  file stopped it, so a fabricated artifact sat invisible in gate output while being the worst
+  thing in the tree — **it fails quiet, which is the more dangerous half**. Failures are collected
+  across every invocation now and reported together, headed by a count of findings and files so a
+  partial run cannot read as a whole one. Same tree after the fix: **45 findings across 6 files**,
+  with the genuine artifact correctly absent.
+
 ### 1.45.0 (release v1.137.0) — 2026-09-21
 
 - **The structure gate that can actually fail, and it has no opinion about names —
@@ -9635,6 +9648,27 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **The id check made two evidence files accuse each other, and the genuine one lost —
+  `plugins/qa-flow/scripts/evidence_app_tie.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`** (#1141). Shipped in 1.32.0 hours
+  earlier, it inferred the expected id shape from **the project's other evidence files**. With two
+  files covering one route pattern each was the other's entire authority, so they reported mirror
+  images — and the **tracked, genuinely-driven** artifact was called *"not driven against the app"*,
+  in the strongest language the tool has, by a fabricated untracked one. **It degraded the wrong
+  way**: add several genuine files and the real ones intersect and fall silent, so it was right in
+  the easy case and confidently wrong in the case that mattered. Ground truth is now **the app**:
+  a model overriding **`to_param`** has declared what its URLs carry — Rails' own URL-generation
+  contract — so an integer in that segment cannot resolve. **Asked per MODEL, never per project**,
+  because 12 of 20 models adopting the convention is the realistic case and a project-wide rule
+  would flag legitimate integer ids on the other 8 — the same false accusation from a different
+  source. A model that declares nothing yields silence. `to_param` beats matching controller
+  lookups, measured downstream: `find_by!(public_id: params[:id])` catches **32 of 43** call sites,
+  missing six that differ only by the bang and five nested `:page_id` segments a check scoped to
+  `:id` never looks at. Verified on the reporting project: the genuine file **3 findings → 0**, the
+  fabricated one still caught and now naming the model and the reason.
 
 ### 1.32.0 (release v1.138.0) — 2026-09-22
 
