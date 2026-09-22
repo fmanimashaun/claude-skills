@@ -3239,7 +3239,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.47.0 (release v1.141.0) — 2026-09-22
 
 - **The CI scaffold we ship left the test database seeded for the next run, and the two places we
   ship it disagreed — `plugins/rails-flow/commands/setup-flow.md`,
@@ -9777,7 +9777,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.32.2 (release v1.141.0) — 2026-09-22
 
 - **A CSV export is the same route, and an annotated cell is a different defect —
   `plugins/qa-flow/scripts/evidence_app_tie.py`,
@@ -11814,7 +11814,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.42.2 (release v1.141.0) — 2026-09-22
 
 - **An attribute reader is not a slot, and the check reported a table that has none —
   `plugins/design-flow/scripts/check_surface_layout.py`,
@@ -14536,7 +14536,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.64.0 (release v1.141.0) — 2026-09-22
 
 - **§3a could say *not mine* and never *whose* —
   `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1167).
