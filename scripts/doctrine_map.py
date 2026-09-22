@@ -343,6 +343,49 @@ CLAIMS: tuple[Claim, ...] = (
              "observed from the tree, so the rest is advice -- and it has already been got wrong.",
     ),
     Claim(
+        claim="A SessionStart hook's output is charged again after every compaction, so its bytes are "
+              "budgeted and ratcheted; a shipped agent states a bounded output or returns a path.",
+        stated_in="AGENTS.md",
+        anchor="## Spend context like it is billed, because it is",
+        kind=GUARANTEE,
+        enforced_by=("script:scripts/check_hook_output_budget.py",
+                     "script:scripts/check_agent_output_contract.py"),
+        note="The one AGENTS.md section with numbers behind it: the hook is ratcheted at its measured "
+             "size, and 27 of 29 shipped agents declare a contract. Measured once at 4451 bytes per "
+             "fire, of which 3805 were one file printed verbatim.",
+    ),
+    Claim(
+        claim="A mechanism is spelled out -- what is true today, what the proposal changes, what "
+              "breaks -- before it is given a name to refer back to.",
+        stated_in="AGENTS.md",
+        anchor="## Write the mechanism out; don't compress it into a label",
+        kind=ADVICE,
+        note="UNENFORCEABLE, and recorded so the map does not read as silence. A checker would have "
+             "to understand the mechanism to know whether the label hid it. Both phrases that "
+             "prompted this rule came back as 'not sure i understand this' -- a reader caught it, "
+             "which is the only instrument there is.",
+    ),
+    Claim(
+        claim="A design analysis closes with ONE recommended next move, already chosen, and then "
+              "carries it out.",
+        stated_in="AGENTS.md",
+        anchor="## End the analysis with the call, then make it",
+        kind=ADVICE,
+        note="UNENFORCEABLE. A ranked menu is greppable; a write-up that stops one step short while "
+             "looking complete is not, and that is the actual failure. Three separate corrections "
+             "('so what is your proposal?') are the evidence it needs stating.",
+    ),
+    Claim(
+        claim="Lead with the most consequential point, label a claim's provenance where the label "
+              "changes what the reader would do, and never manufacture disagreement.",
+        stated_in="AGENTS.md",
+        anchor="## Act as an advisor, not an assistant",
+        kind=ADVICE,
+        note="UNENFORCEABLE: knowing which point was unwelcome requires knowing the reader. Same "
+             "class as a constant whose NAME lied while its value was correct -- invisible to a test "
+             "suite by construction, found only by a reader.",
+    ),
+    Claim(
         claim="A carve-out that silences a check needs a negative test proving the check still fires "
               "outside it.",
         stated_in="skills/code-review/SKILL.md",

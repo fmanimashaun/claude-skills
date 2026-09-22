@@ -7,6 +7,22 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Four of `AGENTS.md`'s five rules were outside the doctrine map's accounting —
+  `scripts/doctrine_map.py`, `docs/architecture/doctrine-map.html`**. The map reported
+  *"40 claims, 0 tracked gaps"* while only **one** row cited `AGENTS.md`, so four rules with nothing
+  behind them were not gaps — they were **invisible**, which is the claims-vs-enforcement defect the
+  map exists to prevent, one level up. Now 44 claims and all five sections present: *spend context
+  like it is billed* as a **guarantee** (`check_hook_output_budget.py` ratchets the hook at its
+  measured size; `check_agent_output_contract.py` covers 27 of 29 shipped agents), and *write the
+  mechanism out*, *end with the call* and *act as an advisor* as **advice**, each carrying **why it
+  is unenforceable** rather than a promise to enforce it later. Knowing which point was unwelcome
+  requires knowing the reader; a write-up that stops one step short looks complete. That is the same
+  class as a constant whose *name* lied while its value was correct — invisible to a test suite by
+  construction, found only by a reader. **An `advice` row with nothing behind it is correct; an
+  unrecorded one is not.**
+
 ### 2026-09-22 (release v1.139.0)
 
 - **The feedback-loop section claimed every issue arrives through the report command, and it does
