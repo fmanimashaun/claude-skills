@@ -7,6 +7,35 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **A pull request's branch name could run code in CI, and every job in the release workflow could
+  write to the repository — `.github/workflows/gates.yml`, `.github/workflows/release.yml`,
+  `.github/workflows/codeql.yml`, `.github/workflows/wiki.yml`, `.github/dependabot.yml`** (#1178).
+  Found by asking whether the CodeQL workflow could be improved; it had **0 open alerts** and little
+  to improve, so the workflows around it were scanned with **zizmor 1.30.1** (`uvx zizmor --offline
+  .github/workflows/`): **40 findings, 11 high → 22 findings, 0 high, 0 medium** after this change.
+  `gates.yml:96` expanded `${{ github.head_ref }}` — the PR's source branch name, chosen by whoever
+  opens it, fork included, and allowed to contain `"`, `;` and `$` — straight into a `run:` script;
+  it now reads it from `env:`. `release.yml` granted `contents: write` to the whole workflow, so the
+  gate sweep inherited it; now `read` by default and `write` on the publishing job alone. All four
+  checkouts set `persist-credentials: false`, verified unneeded first: `release.yml` publishes via
+  `gh release create` with `GH_TOKEN`, and `wiki.yml` pushes with its own token in the clone URL.
+  All eight `uses:` are pinned to commit SHAs (`checkout` v7.0.1, `setup-python` v7.0.0,
+  `codeql-action` v4.38.1), with **Dependabot** added so the pins receive update PRs rather than
+  going stale — pointed at `dev` with `target-branch`, since `main` takes only promotions; security
+  updates ignore that option and would still open against `main`, which is stated in the file.
+  **Left deliberately:** eight info-level `${{ steps.v.outputs.tag }}` expansions in `release.yml`,
+  whose value comes from this repository's own `marketplace.json` on a push to `main`, because
+  `release.yml` cannot be exercised before a real promotion and edits there are kept minimal.
+  **`release.yml` and `wiki.yml` are therefore verified only at the next promotion**; `gates.yml`
+  and `codeql.yml` run on this change's own pull request.
+  **Writing this bullet exposed a lint defect, fixed here — `scripts/lint_self_consistency.py`.**
+  `changelog-bullet-unplaceable` read `.github/workflows/gates.yml` as `github/workflows/gates.yml`:
+  its `\.?/?` prefix, meant to strip `./`, also ate a dot-directory's dot, so a change touching only
+  `.github/` or `.claude/` could not be placed except by naming a file it never touched. The prefix
+  now strips `./` as a unit; a scenario and a mutation cover it.
+
 ### 2026-09-22 (release v1.142.0)
 
 - **The fourteenth hook script found the edge of a number table, and eight guards went inert
