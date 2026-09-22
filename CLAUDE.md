@@ -210,7 +210,7 @@ run it and commit only the intended `dist/` change. The CI drift guard fails a r
 ## The feedback loop
 
 `/rails-flow:report` (shipped) files structured, deduped, version-pinned issues **here** →
-`/maintainer-triage` → `/maintainer-work` → `dev → main` auto-releases. Every issue arrived this way.
+`/maintainer-triage` → `/maintainer-work` → `dev → main`. Not all: bare `gh` files unlabelled (#1141).
 
 ## New machine? Run the doctor first
 

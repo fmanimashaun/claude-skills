@@ -7,6 +7,32 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The feedback-loop section claimed every issue arrives through the report command, and it does
+  not — `CLAUDE.md`** (#1141). *"Every issue arrived this way"* is a universal claim, and one
+  counter-example settles it: the session that filed #1141 disclosed it used
+  `gh issue create --body-file` directly. The consequence is not cosmetic — issues filed that way
+  arrive **unlabelled**, and the labels are load-bearing: `comp:*` decides which CHANGELOG section
+  and which component version moves, and `type:incorrect-doctrine` is what puts an edit behind a
+  blocking `doctrine-verifier` verdict. A maintainer reading the old line expects triage-ready
+  issues and meets five unlabelled ones. Corrected in place rather than by growing the file — the
+  ratchet refused 263 lines twice before a phrasing fit 262 and still said both halves.
+  **Found because a peer volunteered how it had filed**: I had asked whether the missing labels
+  were a defect in our own command, and they were not.
+- **A gate whose only exit was a false statement — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1141). Writing the bullet above was refused by
+  `changelog-bullet-unplaceable`, correctly by its own logic and wrongly in substance:
+  `_BULLET_PATH` required a `/`, so **a change to any root file — `CLAUDE.md`, `AGENTS.md`,
+  `README.md` — could never produce a placeable bullet.** A doctrine correction was unreportable by
+  construction, and the only way past was to name a file the change did not touch. The pattern now
+  accepts a bare filename, still requiring a dot so backticked prose (`cluster`, `to_param`) is not
+  read as a path, and still filtered by the existing `exists()` test — so this widens what may be
+  **named**, never what counts as **placed**. Both controls have their own scenario, and **all
+  three fixtures were vacuous on the first run**: the rule returns early without
+  `.claude-plugin/marketplace.json`, which the temp trees lacked, so even the expect-silence case
+  proved nothing. The two expect-a-finding scenarios are what exposed that.
+
 ### 2026-09-22 (release v1.138.0)
 
 - **The trap is enforceable where an agent would copy it from — `scripts/lint_self_consistency.py`**
