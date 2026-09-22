@@ -9,6 +9,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The trap is enforceable where an agent would copy it from — `scripts/lint_self_consistency.py`**
+  (#1131). New rule **`author-me-as-identity`**: shipped content may not hand an agent
+  `--author @me` as an identity filter, because it returns every session's work. The corpus is clean
+  today, so this is a floor rather than a repair — the habit enters a toolchain through its own
+  examples. It **deliberately permits a line that NAMES `@me` unreliable**, or the rule would forbid
+  the warning and be deleted along with it; that carve-out has its own negative test, a fixture for
+  the refusal sitting *under* a fenced command (the first window stopped one line short of every
+  fenced case), and a control proving a refusal about some **other** subject further away does not
+  excuse it. 325 selftest assertions, 132 mutations.
+
 - **Three times an added import has orphaned a neighbouring guard, so the harness now says so in a
   second — `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`,
   `scripts/mutations/mutation_check_harness.py` (new),
@@ -14278,6 +14288,23 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **A lane says what is private and never said how to tell what is yours —
+  `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1131). §3
+  answers *has this number been claimed*; nothing answered *is this branch, PR or worktree mine*,
+  and **both obvious identifiers give a wrong answer**. `--author @me` is the **account**, shared by
+  every session on the machine — measured downstream at **five open PRs, one** belonging to the
+  session that ran it, and a session filtering by it adopts four it never touched. Session **names
+  rotate and are reused**: one session was renamed *while running*, filing five issues under a name
+  it no longer held. The answer is §3's own move — ask git: this worktree's reflog, including
+  branches that arrived by `git branch -m`. **The reporter's command had a defect I found by running
+  it**, and it is the defect this issue is about: globbing `--git-common-dir/worktrees/*` reads
+  **every** worktree, so it returns a peer's branch. Verified with two live worktrees — the glob
+  returned `probe/epsilon`, which belonged to the other one; `--git-dir` did not. And the stakes
+  where they bite: **merge by NUMBER**, never from an author-filtered list, because `--admin` is
+  precisely when no CI run is left to catch the wrong pick.
 
 ### 1.62.0 (release v1.137.0) — 2026-09-21
 

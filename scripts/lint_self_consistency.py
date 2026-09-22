@@ -34,6 +34,8 @@ WHAT IT CHECKS
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
                               docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
+  author-me-as-identity       `--author @me` offered as "mine": it is the ACCOUNT, shared by
+                              every session on the machine, so it returns peers' work (#1131)
   unbounded-issue-query       a `gh issue/pr list` with no --limit: it defaults to 30, so
                               the call reports a page as the total
   component-without-call-site a documented component nothing demonstrates — a reader must
@@ -319,6 +321,58 @@ def check_unbounded_issue_queries() -> tuple[list[Finding], int]:
                 "`gh issue/pr list` defaults to --limit 30, so this reads a page and reports "
                 "it as the total -- pass `--limit N` (or `--paginate`). A count from a "
                 "truncated list is the unverified-negative class (#211)",
+            ))
+    return findings, examined
+
+
+# ---------------------------------------------------------------------------
+# Rule: author-me-as-identity
+# ---------------------------------------------------------------------------
+# `gh ... --author @me` reads as "mine" and is not. Every agent session on a machine commits and
+# opens PRs as the SAME configured git user, so the author field carries no session information at
+# all -- measured downstream at five open PRs, ONE belonging to the session that ran the query. A
+# session filtering by `@me` to find "its" PR adopts four it has never touched, and under
+# `gh pr merge --admin` -- exactly when no CI run is left to catch the wrong pick -- that is
+# unrecoverable rather than embarrassing (#1131).
+#
+# So shipped content must never hand an agent `@me` as an identity filter. `parallel-session-lane`
+# §3a gives the method that does work: this worktree's own reflog, via `git rev-parse --git-dir`.
+#
+# THE CARVE-OUT, and it needs its own negative test: a line that NAMES `@me` as unreliable is the
+# doctrine, not the defect. Recognised by a nearby refusal word rather than by file path, so the
+# warning can be repeated wherever it is needed instead of living in one blessed file.
+_AUTHOR_ME = re.compile(r"--author[= ]@me\b")
+_REFUSES_IT = re.compile(
+    r"\bnot identity\b|\bis not identity\b|\bunreliable\b|\bnot yours\b|\bnever\b|"
+    r"\bdo not\b|\bdon't\b|\bwrong\b|\bnot\s+mine\b|every session", re.I)
+
+
+def check_author_me_as_identity() -> tuple[list[Finding], int]:
+    """`--author @me` offered as "mine" -- it is the ACCOUNT, shared by every session."""
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".md"):
+        lines = read(path).splitlines()
+        for lineno, line in enumerate(lines, start=1):
+            if not _AUTHOR_ME.search(line):
+                continue
+            examined += 1
+            # The line itself, or either neighbour: the refusal is often the sentence under a
+            # fenced command, which cannot carry prose on the same line.
+            # Three lines above, four below: the refusal is usually the sentence UNDER a fenced
+            # command, which is `command`, "```", blank, prose -- four lines down. Widened after a
+            # fixture proved the first window stopped one line short of every fenced case. The
+            # opposite control is in the selftest: a refusal about some OTHER subject, further away,
+            # must not excuse it, or the carve-out swallows the rule.
+            window = "\n".join(lines[max(0, lineno - 3):lineno + 4])
+            if _REFUSES_IT.search(window):
+                continue
+            findings.append(Finding(
+                "author-me-as-identity", rel(path), lineno,
+                "`--author @me` is the ACCOUNT, and every session on a machine shares it -- this "
+                "hands an agent four peers' PRs as its own. Use the worktree's own reflog "
+                "(`parallel-session-lane` \u00a73a), and merge by NUMBER; under `--admin` there is "
+                "no CI left to catch the wrong pick (#1131)",
             ))
     return findings, examined
 
@@ -3228,6 +3282,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
+    author_me, author_me_examined = check_author_me_as_identity()
     components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
@@ -3278,6 +3333,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
+        "author_me_filters_examined": author_me_examined,
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "doc_pointers_examined": pointers_examined,
@@ -3317,7 +3373,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + pointers + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
@@ -4029,6 +4085,30 @@ def selftest() -> int:
     # `gh issue list` defaults to --limit 30. This shipped twice: issue-triager's DUPLICATE
     # detection and maintainer-audit's clustering both read a page and treated it as the whole
     # tracker. The maintainer was told "30 open issues" when there were 42.
+    AMI = "author-me-as-identity"
+    scenario("a bare `--author @me` offered as yours", rule=AMI, expect_finding=True, files={
+        "plugins/x/commands/find.md": "Find your PR:\n\n```bash\ngh pr list --author @me --limit 50\n```\n"})
+    scenario("...and the `--author=@me` spelling too", rule=AMI, expect_finding=True, files={
+        "plugins/x/commands/find.md": "```bash\ngh pr list --author=@me --limit 50\n```\n"})
+    # THE CARVE-OUT'S NEGATIVE TEST. A line that NAMES `@me` as unreliable is the doctrine, not the
+    # defect -- and without this the rule would forbid warning people about it, which is how a rule
+    # ends up deleted along with the warning.
+    scenario("...but naming it as unreliable is the doctrine, not the defect",
+             rule=AMI, expect_finding=False, files={
+        "skills/y/SKILL.md": "`--author @me` is not identity: every session shares one git user.\n"})
+    scenario("...including when the refusal is the sentence UNDER the fenced command",
+             rule=AMI, expect_finding=False, files={
+        "skills/y/SKILL.md": "```bash\ngh pr list --author @me --limit 100\n```\n\n"
+                             "Measured: five open PRs, one of them yours. This is not identity.\n"})
+    # And the control that stops the carve-out swallowing everything: a refusal word about some
+    # OTHER subject, far from the command, must not excuse it.
+    scenario("...but a refusal about something else, lines away, does not excuse it",
+             rule=AMI, expect_finding=True, files={
+        "plugins/x/commands/find.md": "Never force-push.\n\nA\n\nB\n\nC\n\n"
+                                      "```bash\ngh pr list --author @me --limit 50\n```\n"})
+    scenario("a doc with no such filter is silent", rule=AMI, expect_finding=False,
+             files={"README.md": "gh pr list --limit 50\n"})
+
     Q = "unbounded-issue-query"
     scenario(
         "an unbounded duplicate search", rule=Q, expect_finding=True,
@@ -5368,6 +5448,7 @@ def main(argv: list[str]) -> int:
         "plugin_entries_checked_for_metadata": "plugin entries checked for install metadata",
         "plugin_descriptions_reconciled_against_agents": "plugin description(s) reconciled against agents/",
         "gh_list_calls_examined": "gh list call(s)",
+        "author_me_filters_examined": "`--author @me` filter(s)",
         "documented_components": "documented component(s)",
         "doc_pointers_examined": "doc pointer(s) to our own files",
         "skill_docs": "skill doc(s)",

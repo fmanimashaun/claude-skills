@@ -955,5 +955,32 @@ GUARD = Guard(
             '                own_version = "present"',
             "a plugin.json without a version key leaves marketplace.json authoritative",
         ),
+    Mutation(
+        # #1131: `--author @me` reads as "mine" and is the ACCOUNT. Every session on a machine
+        # shares one git user, so it returns peers' work -- measured downstream at five open PRs,
+        # ONE belonging to the session that ran it. Under `gh pr merge --admin`, where no CI run is
+        # left to catch the wrong pick, adopting a peer's PR is unrecoverable.
+        "an `--author @me` filter offered as yours is no longer reported",
+        '            if not _AUTHOR_ME.search(line):',
+        '            if True:',
+        "a bare `--author @me` offered as yours",
+    ),
+    Mutation(
+        # THE CARVE-OUT, and it is load-bearing: a line NAMING `@me` as unreliable is the doctrine.
+        # Without it the rule forbids warning anyone about the trap, which is how a rule gets
+        # deleted along with the warning it was protecting.
+        "a line that names `@me` as unreliable is reported as the defect",
+        "            if _REFUSES_IT.search(window):",
+        "            if False:",
+        "...but naming it as unreliable is the doctrine, not the defect",
+    ),
+    Mutation(
+        # The window must reach past a fenced block: the refusal is usually the sentence UNDER the
+        # command, four lines down. A window one line short silently forbids every fenced warning.
+        "the refusal window stops short of a fenced command's explanation",
+        "            window = \"\\n\".join(lines[max(0, lineno - 3):lineno + 4])",
+        "            window = \"\\n\".join(lines[max(0, lineno - 3):lineno + 2])",
+        "...including when the refusal is the sentence UNDER the fenced command",
+    ),
     ),
 )
