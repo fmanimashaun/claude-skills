@@ -988,8 +988,8 @@ GUARD = Guard(
         # way past the gate was to name a file the change did not touch. A gate whose only exit
         # is a false statement is worse than no gate.
         "a bullet naming only a root file is unplaceable again",
-        r'_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+)`")',
-        r'_BULLET_PATH = re.compile(r"`\.?/?([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]+)`")',
+        r'_BULLET_PATH = re.compile(r"`(?:\./)?(\.?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+)`")',
+        r'_BULLET_PATH = re.compile(r"`(?:\./)?(\.?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]+)`")',
         "a bullet naming only a ROOT file is placeable",
     ),
     Mutation(
@@ -1000,6 +1000,13 @@ GUARD = Guard(
         '"fourteen": 14, ',
         '',
         "a correct count past thirteen, in words, is silent",
+    ),
+    Mutation(
+        # #1178: `\.?/?` ate the dot of `.github`, so a workflow-only change could not be placed.
+        "the path prefix eats a dot-directory's dot again",
+        r'`(?:\./)?(\.?[A-Za-z0-9_-]+',
+        r'`\.?/?([A-Za-z0-9_-]+',
+        "a bullet naming only a dot-directory path is placeable",
     ),
     ),
 )

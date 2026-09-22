@@ -34,7 +34,11 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The wiki push below authenticates with its own token in the clone URL, never with this
+          # checkout's credential, so it is not left in .git/config (#1178).
+          persist-credentials: false
 
       - name: Verify the pages are a clean build before mirroring
         run: |

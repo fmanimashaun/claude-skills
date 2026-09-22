@@ -1,0 +1,21 @@
+# KEEPS THE PINNED ACTIONS CURRENT (#1178). Every `uses:` is pinned to a commit SHA, because a tag
+# can be moved to new code and a SHA cannot. A pin nobody bumps is how an action goes silently stale
+# instead, so pinning and this file ship together, or not at all.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    # "/" makes Dependabot read .github/workflows/ (docs.github.com, dependabot-options-reference).
+    directory: /
+    # INTO `dev`, NEVER `main`. `main` is the install surface and receives only promotions; a
+    # Dependabot PR merged there would be the direct commit CLAUDE.md forbids, invisible to every
+    # later dev-based change. CAVEAT, per the same reference: SECURITY updates ignore
+    # `target-branch` and are raised against the default branch -- retarget one to `dev` by hand.
+    target-branch: dev
+    schedule:
+      interval: weekly
+    # ONE PR per week for all actions, not one per action: the three share one review, and the two
+    # `codeql-action` pins must move together or init and analyze run different versions.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
