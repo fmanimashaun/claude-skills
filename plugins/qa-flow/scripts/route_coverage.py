@@ -659,7 +659,60 @@ def same_commit(a: str | None, b: str | None) -> bool:
     return len(short) >= 7 and long_.startswith(short)
 
 
-def stale_inventory(prov: dict | None, head: str | None | object = _LOOKUP_HEAD) -> str | None:
+# Paths that DEFINE routes. Anything else can change without moving a single route, and a commit
+# touching only those is the overwhelming majority of commits on a working branch -- which is why
+# refusing on `HEAD != recorded` alone left this gate permanently dark (#1129).
+# NOT `ROUTE_SOURCES` -- that name is already a dict mapping an evidence profile to its columns,
+# and shadowing it broke `visited_paths` on the first selftest run.
+ROUTE_SOURCE_PATHS = ("config/routes.rb", "config/routes/")
+
+
+def route_sources_changed(recorded: str, head: str) -> bool | None:
+    """Did anything that DEFINES routes change between these two commits? None = cannot tell.
+
+    THE NARROWING THIS EXISTS FOR (#1129). The inventory is stamped with the commit that produced
+    it, and any later commit invalidated it -- so on a branch with active work the gate was ERROR
+    from the first commit until someone re-enumerated, and measured 11 commits without ever once
+    producing a figure. **The gate was dark exactly where it is needed**, because a branch that
+    adds a route is the branch whose coverage matters, and a red verdict on every run stops being
+    read at all.
+
+    A commit that touches no route source cannot have moved a route, so the inventory still
+    describes the tree. Asking git which files changed is exact and needs no application boot.
+
+    CANNOT TELL IS NOT CAN (None): a shallow clone, a commit this clone does not have, or no git at
+    all, and the caller refuses as before. Guessing "probably fine" here would rebuild the defect
+    the refusal exists to prevent.
+
+    THE LIMIT, stated because it is real: routes drawn from code OUTSIDE these paths -- a constant
+    in an initializer, a gem that mounts an engine on a version bump -- change the route set
+    without touching them, and this returns False for such a commit. That is a narrower instrument
+    than "any commit at all", not a blind one, and the alternative measured at 0 verdicts in 11
+    commits.
+    """
+    changed = _git("diff", "--name-only", f"{recorded}..{head}")
+    if changed is None:
+        return None
+    return names_a_route_source(changed.splitlines())
+
+
+def names_a_route_source(paths: list[str]) -> bool:
+    """Does any of these paths DEFINE routes? Pure, so it is decidable with no git tree.
+
+    Split out for the same reason `head` is injectable on `stale_inventory`: the mutation harness
+    stages the subject into a plain tempdir that is not a repository, and a rule that could only be
+    reached through a live `git diff` would pass vacuously there.
+    """
+    for path in paths:
+        path = path.strip()
+        if any(path == src or path.startswith(src) or path.endswith("/" + src)
+               for src in ROUTE_SOURCE_PATHS):
+            return True
+    return False
+
+
+def stale_inventory(prov: dict | None, head: str | None | object = _LOOKUP_HEAD,
+                    moved: bool | None | object = _LOOKUP_HEAD) -> str | None:
     """Why this inventory does not describe the working tree, or None if it does (or cannot tell).
 
     REFUSES rather than warns, and only when it can PROVE the mismatch. This number feeds a
@@ -692,10 +745,20 @@ def stale_inventory(prov: dict | None, head: str | None | object = _LOOKUP_HEAD)
     # times and need not be the same LENGTH to be the same commit.
     if not head or same_commit(head, recorded):
         return None
+    # A DIFFERENT COMMIT IS NOT YET A DIFFERENT ROUTE SET (#1129). Refusing on the sha alone made
+    # this permanently dark on every working branch; ask git whether a route source actually moved.
+    if moved is _LOOKUP_HEAD:
+        moved = route_sources_changed(recorded, head)
+    if moved is False:
+        return None
+    cannot_tell = " (and this clone cannot diff the two commits, so it is assumed)" if moved is None else ""
     return (f"the route inventory was enumerated from {recorded[:9]} but the working tree is at "
-            f"{head[:9]}. The denominator would be one tree's route set measured against another "
-            f"tree's evidence, and the difference between them would read as coverage. "
-            f"Re-run `enumerate` in this tree.")
+            f"{head[:9]}, and a route source changed between them{cannot_tell}. The denominator "
+            f"would be one tree's route set measured against another tree's evidence, and the "
+            f"difference between them would read as coverage.\n"
+            f"  Clear it by re-enumerating in this tree:\n"
+            f"    bin/rails routes > qa/reports/routes.txt\n"
+            f"    python3 route_coverage.py enumerate --rails qa/reports/routes.txt")
 
 
 def cmd_enumerate(args: argparse.Namespace) -> int:
@@ -751,8 +814,14 @@ def cmd_report(args: argparse.Namespace) -> int:
     # the refusal would let it be pasted onward, which is how the five figures in #1047 travelled.
     stale = stale_inventory(prov)
     if stale:
-        print(f"REFUSING to report coverage: {stale}", file=sys.stderr)
-        return 2
+        # EXIT 3, NOT 2 (#1129). The refusal is right -- a percentage over another tree's route set
+        # is a number about nothing -- but the STATE is ordinary: a derived input went stale on a
+        # moving branch, which is not a defect in this check. `project_gates.py` reads 2 as ERROR
+        # and routes it to the toolchain's own tracker, so every run on every working branch filed
+        # a normal condition as our bug. 3 is the code that runner already has for "the check read
+        # the project and says it does not apply", and it carries this reason with it.
+        print(f"NOT APPLICABLE — coverage cannot be reported: {stale}", file=sys.stderr)
+        return 3
     config = load_config(Path(args.config))
     exclusions = [str(x) for x in config.get("exclude", [])]
     auth_prefixes = [str(x) for x in config.get("authenticated_prefixes", [])]

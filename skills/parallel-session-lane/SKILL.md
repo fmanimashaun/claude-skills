@@ -182,6 +182,50 @@ branch that takes a number writes it into the file the query reads.
 *inside* a file, not in a branch name. The premise "git cannot see an unpushed worktree" was true and
 irrelevant: measured across those 19 worktrees, **18 of 19 branches were already pushed.**
 
+## 3a. "Is this mine?" — the same answer, and neither obvious one works
+
+§3 answers *has this number been claimed*. The question that follows from a lane — a private
+worktree, a private database, a private port — is **which of the things on this machine are mine**,
+and a session that has to invent an answer invents a wrong one. Both available identifiers are wrong,
+and both are plausible enough to act on.
+
+**`--author @me` is not identity.** Every session on a machine commits and opens PRs as the **same
+configured git user**, so the author field carries no session information at all:
+
+```bash
+gh pr list --state open --author @me --limit 100   # every session's PRs, not yours
+```
+
+Measured downstream: **five open PRs, one belonging to the session that ran it.** A session filtering
+by `@me` to find "its" PR adopts four it has never touched.
+
+**Session names are not identity either.** They rotate and are reused. On one day: a session reported
+it *"was `<name-A>` last session; a different session holds that name now"*, and another **renamed
+while running** — it filed five issues signed with one name and an hour later was listed under
+another, the same session throughout. A remembered name, and a sign-off on an issue, may both name
+somebody else by the time you read them.
+
+**Ask git, exactly as §3 does.** Your worktree's own reflog knows every branch it has held:
+
+```bash
+# Every branch THIS worktree has held, including ones that arrived by rename.
+grep -oE "moving from [^ ]+ to [^ ]+|Branch: renamed [^ ]+ to [^ ]+" "$(git rev-parse --git-dir)/logs/HEAD" \
+  | awk '{print $NF}' | sed 's#^refs/heads/##' | sort -u
+```
+
+Two details, each of which was got wrong first:
+
+- **`--git-dir`, not `--git-common-dir`/`worktrees/*`.** The glob reads **every** worktree's reflog,
+  so it answers *what has any session held* — the very question you are trying not to ask. Verified
+  by running both in one worktree while a second held its own branch: the glob returned that peer's
+  branch, `--git-dir` did not.
+- **The `Branch: renamed` alternation.** A plain `moving from` grep answers *what did this check out*
+  and silently drops any branch that arrived by `git branch -m`.
+
+**Where this bites: merge by NUMBER.** Never merge from an author-filtered list. A wrong pick under
+`gh pr merge --admin` is unrecoverable rather than embarrassing, and `--admin` is exactly the case
+where no CI run is left to catch it.
+
 ## 4. Confirm your worktree before any edit
 
 **This is enforced now, when a lane is assigned.** `rails-flow` ships a `PreToolUse` hook that

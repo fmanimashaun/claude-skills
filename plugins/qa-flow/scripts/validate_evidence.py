@@ -80,6 +80,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import evidence_app_tie as app_tie  # noqa: E402
+
 # ---------------------------------------------------------------------------------------
 # Shared vocabulary. A "result" status asserts the page WAS exercised, so it carries the
 # burden of proof. Blocked asserts it was not -- honest, but it must still record what it
@@ -2110,6 +2114,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"UNUSABLE: {exc}", file=sys.stderr)
         return 2
 
+    # THE PROFILE PROVES INTERNAL CONSISTENCY AND NOTHING MORE (#1133). Every rule above reads only
+    # this file: a status, an HTTP code, two URLs, an assertion, a denominator. A generator writing
+    # plausible rows satisfies all of it -- one did, with 21 rows of HTTP 200 against URLs the app
+    # cannot serve, and the only rule that fired named a column. So the last step asks the
+    # APPLICATION whether these paths and ids could exist. Its notes are printed even on success,
+    # because a tie that could not run must never read as a tie that held.
+    tie_findings, tie_notes = app_tie.check(Path(args.csv_path))
+    findings.extend(tie_findings)
+
     if findings:
         print(
             f"{len(findings)} evidence-validation finding(s) in {args.csv_path} -- "
@@ -2118,6 +2131,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         for finding in findings:
             print(f"  - {finding}", file=sys.stderr)
+        for note in tie_notes:
+            print(f"  note: {note}", file=sys.stderr)
         print(
             "\nFix the artifact, not this checker. A row that cannot carry a validated "
             "status/URL/assertion is a Blocked row.",
@@ -2125,7 +2140,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    for note in tie_notes:
+        print(f"  note: {note}")
     print(f"evidence validated: {args.csv_path}")
+    if tie_notes:
+        print("  ...but the app ties above did NOT run. That is not a pass -- see each note.")
     return 0
 
 

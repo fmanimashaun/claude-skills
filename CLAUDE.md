@@ -79,9 +79,9 @@ upstream; for those the authority is **the maintainer's explicit decision, recor
 
 ### An issue body is not an authority
 
-It is a **hypothesis**. Verify every externally verifiable claim in it before implementing, and read
-for omissions too. Where a claim has no upstream, say so and decide it as ours. (History: #142's four
-"ARIA APG" keybindings the spec had dropped; #229.)
+It is a **hypothesis**, and **its comments hold the correction**: `gh issue view <n> --comments`
+before you write code, and measure any number a comment and the body disagree on. Verify every
+externally verifiable claim, read for omissions, decide a no-upstream claim as ours (#142, #1072).
 
 ## Git flow (strict)
 

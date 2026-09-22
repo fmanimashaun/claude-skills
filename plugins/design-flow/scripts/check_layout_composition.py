@@ -74,6 +74,8 @@ import re
 import sys
 from pathlib import Path
 
+from source_text import strip_comments
+
 CLASS_ATTR = re.compile(r'class="([^"]*)"')
 
 # A breakpoint variant that changes the layout AXIS or TRACK COUNT. `switcher`, `Layout::Sidebar`
@@ -123,12 +125,18 @@ def run(root: Path) -> tuple[list[str], int]:
     views = sorted(root.glob("app/views/**/*.erb"))
     findings = []
     for path in views:
-        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
+        # COMMENTS ARE PROSE (#1128) -- but only for the MARKUP scan. A view describing the markup
+        # it REPLACED used to be reported for still containing it, so classes are matched against
+        # the blanked text; blanked in place, so `:n` stays true. The `layout-swap:` declaration
+        # lives in a comment ON PURPOSE, so it is still read from the RAW line. Stripping both is
+        # how the first attempt at this fix silently disabled the opt-out.
+        raw = path.read_text(encoding="utf-8", errors="replace").split("\n")
+        lines = strip_comments("\n".join(raw)).split("\n")
         for n, line in enumerate(lines, 1):
             # The swap declaration may sit on the line or the one above it, because the element
             # is often long enough that the comment goes on its own line.
-            excused = bool(SWAP_DECLARED.search(line)
-                           or (n > 1 and SWAP_DECLARED.search(lines[n - 2])))
+            excused = bool(SWAP_DECLARED.search(raw[n - 1])
+                           or (n > 1 and SWAP_DECLARED.search(raw[n - 2])))
             for m in CLASS_ATTR.finditer(line):
                 classes = m.group(1).split()
                 if cluster_shaped(classes, declared):
@@ -230,6 +238,15 @@ def _selftest() -> int:
         (root / "app/views/admin/swap.html.erb").write_text(
             '<%# layout-swap: nav → rail → drawer, three states, no primitive expresses it %>\n'
             '<div class="flex flex-col md:flex-row">x</div>\n', encoding="utf-8")
+        # The SAME-LINE form. The code excuses a declaration on this line OR the one above, and
+        # only the line-above case had a fixture -- so a mutation reading the declaration from the
+        # comment-blanked text survived, because the line above is read raw either way (#1128).
+        (root / "app/views/admin/swap_inline.html.erb").write_text(
+            '<div class="flex flex-col md:flex-row">x</div> <%# layout-swap: same reason %>\n',
+            encoding="utf-8")
+        findings, _ = run(root)
+        expect("a swap declared on the SAME line as the element is suppressed too",
+               not any("swap_inline.html.erb" in f for f in findings))
         findings, _ = run(root)
         expect("a DECLARED structural swap is suppressed",
                not any("swap.html.erb" in f for f in findings))
@@ -242,6 +259,21 @@ def _selftest() -> int:
         expect("the SAME element without a declaration is still reported",
                any("swap.html.erb" in f for f in findings))
 
+
+        # COMMENTS ARE PROSE (#1128). A view that documents the markup it REPLACED used to be
+        # reported for still containing it.
+        (root / "app/views/admin/note.html.erb").write_text(
+            '<%# the old markup was <div class="flex flex-col md:flex-row"> before\n'
+            '    the switcher recipe replaced it %>\n'
+            '<div class="stack"><p>hi</p></div>\n', encoding="utf-8")
+        f, _ = run(root)
+        expect("a comment quoting the old breakpoint markup is not that markup",
+               not any("note.html.erb" in x for x in f))
+        (root / "app/views/admin/real.html.erb").write_text(
+            '<div class="flex flex-col md:flex-row"><p>hi</p></div>\n', encoding="utf-8")
+        # The control on the same tree, so the assertion above cannot pass vacuously.
+        expect("...while the same markup outside a comment is still reported",
+               any("real.html.erb" in x for x in run(root)[0]))
         empty = Path(tempfile.mkdtemp(prefix="layout-empty-"))
         try:
             f2, v2 = run(empty)

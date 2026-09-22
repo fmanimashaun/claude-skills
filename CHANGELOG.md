@@ -7,6 +7,46 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-22 (release v1.138.0)
+
+- **The trap is enforceable where an agent would copy it from — `scripts/lint_self_consistency.py`**
+  (#1131). New rule **`author-me-as-identity`**: shipped content may not hand an agent
+  `--author @me` as an identity filter, because it returns every session's work. The corpus is clean
+  today, so this is a floor rather than a repair — the habit enters a toolchain through its own
+  examples. It **deliberately permits a line that NAMES `@me` unreliable**, or the rule would forbid
+  the warning and be deleted along with it; that carve-out has its own negative test, a fixture for
+  the refusal sitting *under* a fenced command (the first window stopped one line short of every
+  fenced case), and a control proving a refusal about some **other** subject further away does not
+  excuse it. 325 selftest assertions, 132 mutations.
+
+- **Three times an added import has orphaned a neighbouring guard, so the harness now says so in a
+  second — `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`,
+  `scripts/mutations/mutation_check_harness.py` (new),
+  `plugins/qa-flow/scripts/mutations/route_coverage.py`** (#1129). Adding an import to a shipped
+  module kills every guard that stages it without the new dependency: the mutant dies on
+  `ModuleNotFoundError`, which is an **environmental** failure, not a caught mutation. #1113 (six
+  guards), #1114 (a seventh, missed because I matched on a shared literal) and #1133's
+  `validate_evidence` → `evidence_app_tie` were all this, and **all three surfaced only in the
+  438-second sweep**. `unstaged_sibling_imports` is now a per-guard invariant in the selftest.
+  **Module scope only** — a `def`-scope import runs when called, so it is optional at load time, and
+  counting those flagged **six correct guards** on the first run, every script that imports its own
+  selftest inside `if args.selftest:`. **And the harness now has a guard of its own**
+  (`mutation_check_harness`): the tool that makes every other checker prove it can fail could not,
+  because nothing named it as a subject. Its two mutations SURVIVED at first — the rule read
+  ambient repo state, which inside a staged tempdir is the tempdir, so it iterated zero guards and
+  passed vacuously. It takes its base as an argument now and is proved on a fixture tree.
+
+- **The rule said the body is a hypothesis and never said where the correction lives — `CLAUDE.md`**
+  (#1072, #1124). *An issue body is not an authority* told you to verify the body's claims; it did
+  not say to read the **comments**, which is where the correction to those claims actually sits —
+  written, in this repo, by whichever parallel session went and measured. On #1072 four comments
+  carried a corrected fact base and a complete design; implementing from the body alone shipped a
+  stale table into doctrine, a CHANGELOG entry, a `.skill` bundle and a `checks.json` `why` — **four
+  copies of one wrong number** — and built a different instrument than the one designed. The clause
+  now names the command (`gh issue view <n> --comments`) and says what to do when they disagree:
+  **measure it yourself rather than pick a side.** Rewritten within the existing line ceiling, with
+  the #142 detail left where it already lived in `docs/brain/history/maintainer-history.md:148`.
+
 ### 2026-09-21 (release v1.136.0)
 
 - **Two guards went INERT the moment the harness shipped, and one of them was my own invariant —
@@ -9596,6 +9636,75 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.32.0 (release v1.138.0) — 2026-09-22
+
+- **A browser judge graded a PDF as a blank page and blamed the app —
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/crawl_report.py`,
+  `plugins/qa-flow/agents/a11y-auditor.md`** (#1130). **Playwright's bundled chromium and webkit
+  render no PDF at all.** On one page holding `<iframe>`, `<embed>` and `<object>` at the same
+  source: bundled chromium gave blank / *"Couldn't load plugin."* / fallback, bundled webkit gave
+  three blanks, and **real Chrome rendered all three pixel-identically** — so the bundled run says
+  *"`<embed>` is broken and `<iframe>` is fine"*, reproducible, confident and **exactly inverted**.
+  A downstream app has a `.pdf` route in its sweep's persona map today. The collector now records
+  the response's **`Content-Type`**, which it recorded nowhere before, and a route whose recorded
+  type is not HTML is **classified, never graded**: a third bucket beside `skipped`, neither a pass
+  nor a finding, naming `channel: "chrome"` as the remedy if the document must actually be seen. It
+  is **out of the judged denominator**, so it cannot inflate a clean run either. The trap is written
+  down beside the `page.pdf()` note it neighbours, as a general rule: **anything a browser delegates
+  to a plugin is not a fact about the app.**
+- **The first version of that fix switched the whole judge off, and the selftest passed —
+  `plugins/qa-flow/scripts/crawl_report.py`** (#1130). Treating an **unrecorded** `Content-Type` as
+  "not a page" classified away every route of every crawl written before the collector emitted it:
+  a 500 error page returned **zero findings**. That is not a stricter gate, it is the gate off,
+  shipping as a fix — and the existing fixtures never asserted that a normal page still produces its
+  finding, so nothing caught it. A blank now means *nobody recorded what this was*, and the only
+  safe reading is the prior behaviour: **judge it**. The refusal fires only on a type that was
+  recorded and is not HTML. Both directions now have a fixture and a mutation, and the blank case
+  lives in **one** place — guarding it in the caller too made the predicate's half unreachable, and
+  the mutation that deleted it survived.
+
+- **The gate was dark exactly where it was needed —
+  `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`** (#1129). The route inventory is stamped
+  with the commit that produced it, and **any** later commit made it refuse — so on a working branch
+  route-coverage was ERROR from the first commit until someone re-enumerated, **measured downstream
+  at 11 commits and not one verdict**. A branch that adds a route is the branch whose coverage
+  matters. **A different commit is not yet a different route set**: the refusal now asks git whether
+  a route source (`config/routes.rb`, `config/routes/`, an engine's) actually moved between the two
+  commits, which is exact and needs no application boot. **Cannot-tell is not can** — a shallow
+  clone or an unknown commit still refuses, and says the staleness is assumed. When it does refuse
+  it now **names the command that clears it**, which nothing did. And it exits **3, not 2**: the
+  refusal is right, but the *state* is ordinary, and `project_gates.py` reads 2 as ERROR and files a
+  normal condition to the toolchain's own tracker on every run. 3 is that runner's existing code for
+  *the check read the project and says it does not apply*. The stated limit: routes drawn from code
+  outside those paths change the set without touching them — a narrower instrument than *any commit
+  at all*, not a blind one, against an alternative measuring 0 verdicts in 11 commits.
+
+- **The evidence validator proved a file was consistent with itself and nothing else —
+  `plugins/qa-flow/scripts/evidence_app_tie.py` (new),
+  `plugins/qa-flow/scripts/validate_evidence.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`** (#1133). A **fabricated** artifact was
+  found downstream: 21 rows of `HTTP 200` against URLs the app is structurally incapable of serving.
+  `validate_evidence.py` reported 21 findings and **every one of them was the column name** — rename
+  the column and the invented file passes. Every rule it has reads only the file, so **a generator
+  writing plausible rows satisfies all of them**. Two ties now ask the *application*: a
+  **`Requested URL` matching no pattern** in the app's own `qa/reports/routes.json`, and a dynamic
+  segment whose ids are **wholly of a shape this project's other evidence never shows** — the
+  contrast the reporter used by eye, `/pages/pag_uf4BMshTJEQS/exclude` beside `/pages/1/exclude`.
+  **The id shape is read from the project, never hard-coded**: an app keyed on integers is correct,
+  and a mutation reports it to prove that carve-out is load-bearing. The verdict is **whole-file** —
+  one odd id is a fixture or a redirect, every id is a file that was not driven — and a **partial**
+  mismatch is deliberately silent. **Both ties say when they could not run**, naming the command that
+  produces the missing input, because a tie that did not run must never read as a tie that held.
+- **A cycle that only one entry point could see — `plugins/qa-flow/scripts/evidence_app_tie.py`**
+  (#1133). The new module borrows `route_coverage`'s pattern compiler rather than copying it — a
+  second copy of *`:id` matches exactly one segment* would drift from the coverage numbers — but
+  `route_coverage` imports `validate_evidence`, which now imports this. Running the file directly
+  **passed**, because then it is `__main__` and the second import makes a fresh module object; every
+  other entry point died on `ImportError`. The import is lazy now, and the selftest **drives
+  `route_coverage.py` and `validate_evidence.py` as subprocesses** so the cycle cannot come back
+  through an entry point the selftest never uses.
+
 ### 2026-09-21 (release v1.134.0)
 
 - **Three commands adopted any server that answered on the port, and never asked whose it was —
@@ -11503,6 +11612,35 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.42.1 (release v1.138.0) — 2026-09-22
+
+- **Comments are prose, and three gates read them as code —
+  `plugins/design-flow/scripts/source_text.py` (new),
+  `plugins/design-flow/scripts/check_surface_layout.py`,
+  `check_component_contract.py`, `check_layout_composition.py`** (#1128). A component that only
+  *described* the anti-pattern was reported as committing it, and **the false positive landed on the
+  remediated file**: you remove the wrapper, write a comment saying why, and the comment re-trips the
+  gate the fix satisfies — so the natural response is to delete the explanation. The reporter named
+  two siblings as likely to share it; **both were checked by running them, and both did** — a view
+  warning against a raw `<button>` was reported for having one, and a view quoting the markup it
+  replaced was reported for still containing it. `strip_comments` **blanks in place, preserving every
+  newline**, because two of the three callers cite `file:line` and a fix that traded a false positive
+  for a wrong citation would be worse. A **trailing** `#` is deliberately left alone — it is legal in
+  a Ruby string and begins `#{}` interpolation — and a mutation eats real code to prove that
+  carve-out is load-bearing. The same root cause runs backwards in one place: a commented-out
+  `def initialize(**attrs)` made a component that drops its caller's attributes look compliant, a
+  false **negative**, now fixed as well. **This is the class the gate was born fixing** — its release
+  note said *"the detector matches slot RENDERING, never the word"* — caught then for `content` and
+  missed for `stack`, `cluster`, `<button>` and every breakpoint utility.
+- **Two coverage gaps the fix exposed — `plugins/design-flow/scripts/check_layout_composition.py`,
+  `plugins/design-flow/scripts/mutations/check_layout_composition.py`** (#1128). The `layout-swap:`
+  opt-out **lives in a comment on purpose**, so blanking comments for it silently disabled every
+  declaration — the first attempt at this fix did exactly that and a pre-existing fixture caught it.
+  The declaration is now read from the **raw** line and the markup from the blanked one. Mutating
+  that revealed the second gap: the code excuses a declaration *on the line or the one above*, only
+  the line-above case had a fixture, and the same-line branch could be broken without any assertion
+  noticing. Both now have one. 16 assertions, 8 mutations.
 
 ### 1.42.0 (release v1.137.0) — 2026-09-21
 
@@ -14150,6 +14288,23 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.63.0 (release v1.138.0) — 2026-09-22
+
+- **A lane says what is private and never said how to tell what is yours —
+  `skills/parallel-session-lane/SKILL.md` (§3a), `dist/parallel-session-lane.skill`** (#1131). §3
+  answers *has this number been claimed*; nothing answered *is this branch, PR or worktree mine*,
+  and **both obvious identifiers give a wrong answer**. `--author @me` is the **account**, shared by
+  every session on the machine — measured downstream at **five open PRs, one** belonging to the
+  session that ran it, and a session filtering by it adopts four it never touched. Session **names
+  rotate and are reused**: one session was renamed *while running*, filing five issues under a name
+  it no longer held. The answer is §3's own move — ask git: this worktree's reflog, including
+  branches that arrived by `git branch -m`. **The reporter's command had a defect I found by running
+  it**, and it is the defect this issue is about: globbing `--git-common-dir/worktrees/*` reads
+  **every** worktree, so it returns a peer's branch. Verified with two live worktrees — the glob
+  returned `probe/epsilon`, which belonged to the other one; `--git-dir` did not. And the stakes
+  where they bite: **merge by NUMBER**, never from an author-filtered list, because `--admin` is
+  precisely when no CI run is left to catch the wrong pick.
 
 ### 1.62.0 (release v1.137.0) — 2026-09-21
 
