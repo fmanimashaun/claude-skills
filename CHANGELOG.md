@@ -9651,6 +9651,17 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **A constant advertised a status word the vocabulary rejects —
+  `plugins/qa-flow/scripts/validate_evidence.py`, `plugins/qa-flow/scripts/route_coverage.py`**
+  (#1141). `SKIPPED_STATUS` held `"out of scope"`. A downstream session read the identifier, wrote
+  `Status: skipped`, and got a finding for it. Renamed to `OUT_OF_SCOPE_STATUS`, across both
+  scripts and the mutation anchor that quoted it. **No behaviour changes**: the accepted vocabulary
+  was always `Blocked / <result> / Out Of Scope` and the rejection message always said so — the
+  identifier was the only thing lying, which is exactly why no test caught it and why **no gate is
+  added here**. A rule that a constant's name must match its value would be ceremony; the honest
+  record is that this class is invisible to the test suite by construction. Found by a reader, not
+  by a run.
+
 - **The id check made two evidence files accuse each other, and the genuine one lost —
   `plugins/qa-flow/scripts/evidence_app_tie.py`,
   `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`** (#1141). Shipped in 1.32.0 hours

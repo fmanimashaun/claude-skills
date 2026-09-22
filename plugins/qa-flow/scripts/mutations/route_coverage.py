@@ -199,7 +199,7 @@ GUARD = Guard(
         ),
         Mutation(
             "an Out of Scope action row counts as driven",
-            '                if row["Status"].lower() in {ve.SKIPPED_STATUS}:\n'
+            '                if row["Status"].lower() in {ve.OUT_OF_SCOPE_STATUS}:\n'
             "                    continue  # never driven, and not claimed to be",
             "                if False:\n"
             "                    continue",

@@ -90,7 +90,12 @@ import evidence_app_tie as app_tie  # noqa: E402
 # saw, or "Blocked" becomes a way to record nothing and still satisfy the checker.
 # ---------------------------------------------------------------------------------------
 BLOCKED_STATUS = "blocked"
-SKIPPED_STATUS = "out of scope"
+# NAMED FOR ITS VALUE. This was `OUT_OF_SCOPE_STATUS` holding "out of scope", so the code
+# advertised a word the vocabulary rejects: a downstream session read the constant, wrote
+# `Status: skipped`, and got a finding for it. No behaviour changes here -- the accepted
+# vocabulary was always Blocked / <result> / Out Of Scope, and the error message always said
+# so. The identifier was the only thing lying, which is why no test caught it (#1141).
+OUT_OF_SCOPE_STATUS = "out of scope"
 
 
 class Unusable(Exception):
@@ -127,7 +132,7 @@ class Profile:
 
     @property
     def valid_statuses(self) -> frozenset[str]:
-        return self.result_statuses | {BLOCKED_STATUS, SKIPPED_STATUS}
+        return self.result_statuses | {BLOCKED_STATUS, OUT_OF_SCOPE_STATUS}
 
     @property
     def header(self) -> str:
@@ -2003,7 +2008,7 @@ def check_row(row: dict[str, str], line: int, profile: Profile) -> list[str]:
         findings.append(f"{where}: Status {row['Status']!r} is not one of {expected}")
         return findings
 
-    if status == SKIPPED_STATUS:
+    if status == OUT_OF_SCOPE_STATUS:
         # Not exercised and not claimed to be -- nothing to prove.
         return findings
 
