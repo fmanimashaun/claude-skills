@@ -66,5 +66,24 @@ GUARD = Guard(
             '            f"no {ROUTES_JSON} under {root} — fine, carry on. Generate it: "',
             "with no routes.json BOTH ties are notes, not findings",
         ),
+    Mutation(
+        # #1141: `validate_evidence` tells you a row that cannot be validated is a Blocked row.
+        # These ties read every row regardless of status, so taking that advice changed nothing --
+        # reported by someone who marked the row and watched it fail anyway. A remedy a tool names
+        # and does not honour is worse than no remedy: it sends people to do work that does not.
+        "a Blocked row is read as if it claimed a result",
+        "        if not makes_a_claim(row):",
+        "        if False:",
+        "a `Blocked` row asserts nothing, so no path is taken from it",
+    ),
+    Mutation(
+        # THE ANTI-GAMING CONTROL. If any row's status silenced the whole FILE, one Blocked row
+        # would hide every other row's claims -- the escape hatch becomes a way to assert nothing
+        # while still shipping a green artifact.
+        "any Blocked row silences its whole file",
+        "    for row in rows:\n        if not makes_a_claim(row):\n            continue",
+        "    if any(not makes_a_claim(r) for r in rows):\n        return []\n    for row in rows:\n        if False:\n            continue",
+        "...and a claiming row beside it is still read",
+    ),
     ),
 )

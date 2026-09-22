@@ -9670,6 +9670,19 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   `:id` never looks at. Verified on the reporting project: the genuine file **3 findings → 0**, the
   fabricated one still caught and now naming the model and the reason.
 
+- **The remedy the tool named did not work — `plugins/qa-flow/scripts/evidence_app_tie.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`** (#1141). `validate_evidence` ends every
+  failure with *"a row that cannot carry a validated status/URL/assertion is a **Blocked** row"* —
+  and the app ties read every row regardless of status, so marking one Blocked changed nothing.
+  Reported by someone who took the advice, marked the row and watched it fail anyway; a remedy a
+  tool names and does not honour is worse than none, because it sends people to do work that cannot
+  succeed. `Blocked` and `Out Of Scope` now assert nothing, so no path is taken from them.
+  **It cannot be gamed into silence**: a Blocked row is not evidence of a pass, so the escape turns
+  a false claim into *no* claim, which is what these ties want — and `validate_evidence`'s own rules
+  still require a Blocked row to record what it saw. A sibling row on the same path that *does*
+  claim is still read, with a mutation that silences the whole file to prove that control holds,
+  and a row with no `Status` column at all counts as claiming: absence is not an exemption.
+
 ### 1.32.0 (release v1.138.0) — 2026-09-22
 
 - **A browser judge graded a PDF as a blank page and blamed the app —
