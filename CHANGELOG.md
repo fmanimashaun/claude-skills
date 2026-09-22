@@ -9711,6 +9711,21 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **A CSV export is the same route, and an annotated cell is a different defect —
+  `plugins/qa-flow/scripts/evidence_app_tie.py`,
+  `plugins/qa-flow/scripts/mutations/evidence_app_tie.py`**. Measured on a downstream evidence file:
+  **8 findings, 7 of them false.** A Rails route is `(.:format)`-bearing and
+  `route_coverage.normalise()` strips that from the **pattern** — so `/capacity` in the inventory is
+  `/capacity.csv` on the wire — but nothing stripped it from the **observed path**, and every CSV
+  export a sweep legitimately fetched read as unroutable. The suffix is forgiven **only when the
+  bare path is itself a real route**, so an invented path cannot match by losing its last segment;
+  a mutation strips unconditionally to prove that control holds. The eighth,
+  `/dashboard (scope EG)`, is a real path with a note typed into the cell — now reported as **what
+  it is**, a `Requested URL` that is not a URL, because calling it a missing route sends a reader
+  hunting for one that exists. **8 → 1 on that file**, and the one that remains is accurate.
+
 ### 1.32.1 (release v1.139.0) — 2026-09-22
 
 - **A constant advertised a status word the vocabulary rejects —
