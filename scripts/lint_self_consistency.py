@@ -2020,9 +2020,9 @@ def check_changelog_section_missing() -> tuple[list[Finding], int]:
     return findings, len(plugins)
 
 
-# #701. Path-shaped tokens inside backticks. `\.?/?` tolerates `./app/...`, and requiring at least
-# one `/` keeps bare names like `check_handoff.py` out -- a filename alone does not say which
-# component owns it, which is the whole question.
+# #701. Path-shaped tokens inside backticks, a leading `./` tolerated (see the #1178 note below).
+# The original form also REQUIRED a `/`, to keep bare names out; #1141 reversed that, below, and
+# this line no longer says otherwise.
 # A backticked repo path. The `(?:/...)*` is zero-or-more, NOT one-or-more: requiring a
 # directory meant a change to a ROOT file -- `CLAUDE.md`, `AGENTS.md`, `README.md` -- could
 # never produce a placeable bullet, so a doctrine correction was unreportable by construction
