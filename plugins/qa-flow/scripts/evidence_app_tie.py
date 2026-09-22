@@ -124,9 +124,32 @@ def path_of(url: str) -> str:
     return normalise(url) if url.startswith("/") else ""
 
 
+# Statuses that assert NOTHING about the app. A row in one of these is not claiming a result, so
+# there is no claim for these ties to contradict.
+NO_CLAIM_STATUSES = ("blocked", "out of scope")
+
+
+def makes_a_claim(row: dict[str, str]) -> bool:
+    """Is this row asserting something about the app, or recording that it could not?
+
+    HONOURING THE REMEDY THE TOOL ALREADY NAMES (#1141). `validate_evidence` ends every failure with
+    "a row that cannot carry a validated status/URL/assertion is a Blocked row" -- and these ties
+    read every row regardless of status, so marking one Blocked changed nothing and the advice was
+    false. Reported downstream by someone who took the advice, marked the row, and watched it fail
+    anyway.
+
+    It cannot be gamed into silence: a Blocked row is not evidence of a pass, so the escape turns a
+    false claim into NO claim, which is the outcome these ties want. `validate_evidence`'s own rules
+    still require a Blocked row to record what it saw, so it cannot become a way to record nothing.
+    """
+    return (row.get("Status", "") or "").strip().lower() not in NO_CLAIM_STATUSES
+
+
 def urls_in(rows: list[dict[str, str]]) -> list[str]:
     out = []
     for row in rows:
+        if not makes_a_claim(row):
+            continue
         for column in URL_COLUMNS:
             p = path_of(row.get(column, "") or "")
             if p:
@@ -425,6 +448,24 @@ def _selftest() -> int:
                                   ["/about/:id"], root))
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+    # --- A BLOCKED ROW MAKES NO CLAIM (#1141) ----------------------------------------------
+    # `validate_evidence` ends every failure with "a row that cannot carry a validated
+    # status/URL/assertion is a Blocked row". These ties read every row regardless of status, so
+    # taking that advice changed nothing -- reported by someone who marked the row and watched it
+    # fail anyway. The remedy the tool names has to work, or it is not a remedy.
+    claim = {"Status": "Observed", "Requested URL": "/nope", "Final URL": "/nope"}
+    expect("a row that CLAIMS a result is still read", urls_in([claim]) == ["/nope", "/nope"])
+    for status in ("Blocked", "blocked", "Out Of Scope", "out of scope"):
+        expect(f"a `{status}` row asserts nothing, so no path is taken from it",
+               urls_in([{**claim, "Status": status}]) == [])
+    # THE CONTROL: it cannot be gamed into blanket silence -- a sibling row on the SAME path that
+    # does claim a result is still read, so marking ONE row Blocked hides only that row.
+    expect("...and a claiming row beside it is still read",
+           urls_in([{**claim, "Status": "Blocked"}, claim]) == ["/nope", "/nope"])
+    # A row with no Status column at all is a claim: absence is not an exemption.
+    expect("a row with no Status column is treated as claiming",
+           urls_in([{"Requested URL": "/nope", "Final URL": "/nope"}]) == ["/nope", "/nope"])
 
     # --- URL PARSING
     expect("an absolute URL is reduced to its path",
