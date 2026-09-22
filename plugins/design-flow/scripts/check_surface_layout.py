@@ -66,19 +66,44 @@ DECLARES = re.compile(r"(?:#|<%#)\s*composition:\s*\S")
 
 # SLOT RENDERING, not the word. `<%= content %>` / `<%= header %>` in a template, or a bare
 # `content` as an argument in a `call` -- `concat content`, `safe_join([..., content])`.
-SLOT_ERB = re.compile(r"<%=\s*(?:content|[a-z_]+)\s*%>")
+# A SLOT IS WHAT THE COMPONENT DECLARED, not any bare identifier (#1141). The first version was
+# `<%= content %>` OR `<%= <any identifier> %>`, which reported a table whose only matches were
+# `<%= caption %>` -- a constructor keyword exposed by `attr_reader` -- and `<%= caption_classes %>`,
+# a private method returning a CSS class string. Neither is content the component cannot see, and
+# that component declares no slots at all.
+#
+# This is the same failure as the `content`-as-a-word one this check was born fixing: matching the
+# WORD rather than the construct. It was closed for `content` and left open for every other single
+# identifier, one variant along.
+SLOT_DECLARATION = re.compile(r"^\s*renders_(?:one|many)\s+[:'\"]([a-z_]+)", re.M)
 SLOT_RUBY = re.compile(r"(?:concat|safe_join\(\[?|,)\s*content\b")
+
+
+def declared_slots(source: str, sibling: str = "") -> set[str]:
+    """`content`, plus every slot the component declares. `sibling` is the paired .rb or .erb.
+
+    Read from the DECLARATION rather than guessed from the template, because a template cannot tell
+    a slot from an attribute reader: both are `<%= name %>`. The component says which is which.
+    """
+    return {"content"} | set(SLOT_DECLARATION.findall(source)) | set(SLOT_DECLARATION.findall(sibling))
+
+
+def renders_a_slot(source: str, slots: set[str]) -> bool:
+    """Does this template output a DECLARED slot, or a bare `content` in a `call`?"""
+    if SLOT_RUBY.search(source):
+        return True
+    return any(re.search(r"<%=\s*" + re.escape(name) + r"\s*%>", source) for name in slots)
 
 CLASS_ATTR = re.compile(r'class(?:\s*[:=]\s*)["\']([^"\']*)["\']')
 
 
-def wraps_slot_in_recipe(source: str) -> str | None:
+def wraps_slot_in_recipe(source: str, sibling: str = "") -> str | None:
     """The recipe a slot is wrapped in, or None. Returns the recipe so the finding can name it."""
     # COMMENTS ARE PROSE (#1128). A file explaining why the wrapper was removed used to re-trip the
     # gate its own fix satisfies. `run()` still tests the RAW source for the `# composition:`
     # declaration, which lives in a comment on purpose.
     source = strip_comments(source)
-    if not (SLOT_ERB.search(source) or SLOT_RUBY.search(source)):
+    if not renders_a_slot(source, declared_slots(source, strip_comments(sibling))):
         return None                      # renders no slot; nothing arbitrary to arrange
     for classes in CLASS_ATTR.findall(source):
         for recipe in RECIPES:
@@ -87,13 +112,25 @@ def wraps_slot_in_recipe(source: str) -> str | None:
     return None
 
 
+def _sibling_source(path: Path) -> str:
+    """The other half of a ViewComponent pair: `x.rb` <-> `x.html.erb`. Empty when there is none."""
+    stem = path.name.split(".", 1)[0]
+    for candidate in (path.with_name(f"{stem}.rb"), path.with_name(f"{stem}.html.erb")):
+        if candidate != path and candidate.is_file():
+            return candidate.read_text(encoding="utf-8", errors="replace")
+    return ""
+
+
 def run(root: Path) -> tuple[list[str], int]:
     findings: list[str] = []
     files = sorted(root.glob("app/components/**/*.rb")) + \
         sorted(root.glob("app/components/**/*.erb"))
     for path in files:
         source = path.read_text(encoding="utf-8", errors="replace")
-        recipe = wraps_slot_in_recipe(source)
+        # The DECLARATION lives in the `.rb`; the rendering lives in the `.html.erb`. Reading one
+        # without the other is why a template's attribute readers looked like slots.
+        sibling = _sibling_source(path)
+        recipe = wraps_slot_in_recipe(source, sibling)
         if not recipe:
             continue
         if DECLARES.search(source):
@@ -197,6 +234,42 @@ def _selftest() -> int:
         # would pass just as well against a gate that had stopped looking at anything.
         expect("...while the component that really wraps its slot is still reported",
                any("card_component" in x for x in f))
+        # A SLOT IS WHAT THE COMPONENT DECLARED (#1141). A real table reported a finding whose
+        # only "slots" were `<%= caption %>` -- a constructor keyword exposed by `attr_reader` --
+        # and `<%= caption_classes %>`, a private method returning a CSS class string. It declares
+        # `renders_one`/`renders_many` nowhere, so there is no content it cannot see.
+        (root / "app/components/table_component.rb").write_text(
+            "class TableComponent < ViewComponent::Base\n"
+            "  def initialize(caption:)\n    @caption = caption\n  end\n"
+            "  attr_reader :caption\n"
+            "  private def caption_classes = \"sr-only\"\n"
+            "end\n", encoding="utf-8")
+        (root / "app/components/table_component.html.erb").write_text(
+            '<div class="scroll-x">\n'
+            '  <caption class="<%= caption_classes %>"><%= caption %></caption>\n'
+            '  <a class="cluster" href="#">Sort</a>\n'
+            "</div>\n", encoding="utf-8")
+        f, _ = run(root)
+        expect("an attribute reader is not a slot, so a recipe elsewhere is not a finding",
+               not any("table_component" in x for x in f))
+
+        # THE CONTROL, on the same tree: a component that DECLARES a slot and wraps it is still
+        # reported -- or narrowing what counts as a slot has simply switched the check off.
+        (root / "app/components/panel_component.rb").write_text(
+            "class PanelComponent < ViewComponent::Base\n  renders_one :header\nend\n",
+            encoding="utf-8")
+        (root / "app/components/panel_component.html.erb").write_text(
+            '<div class="stack">\n  <%= header %>\n</div>\n', encoding="utf-8")
+        f, _ = run(root)
+        expect("...while a DECLARED slot wrapped in a recipe is still reported",
+               any("panel_component" in x for x in f))
+        # ...and `content` needs no declaration: every ViewComponent has it.
+        (root / "app/components/shell_component.html.erb").write_text(
+            '<div class="cluster">\n  <%= content %>\n</div>\n', encoding="utf-8")
+        f, _ = run(root)
+        expect("...and bare `content` still counts with no declaration at all",
+               any("shell_component" in x for x in f))
+
         empty = Path(tempfile.mkdtemp(prefix="surface-empty-"))
         try:
             f2, e2 = run(empty)
