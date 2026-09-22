@@ -97,19 +97,94 @@ def renders_a_slot(source: str, slots: set[str]) -> bool:
 CLASS_ATTR = re.compile(r'class(?:\s*[:=]\s*)["\']([^"\']*)["\']')
 
 
+# HTML elements that never nest and never close, so they can carry no content and must not be
+# pushed onto the element stack.
+VOID_ELEMENTS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+                 "param", "source", "track", "wbr"}
+TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)((?:[^<>]|<%[^%]*%>)*?)(/?)>")
+
+
+def recipe_containing_a_slot(source: str, slots: set[str]) -> str | None:
+    """The recipe on an element that CONTAINS a slot render, or None (#1152).
+
+    CONTAINMENT, NOT CO-OCCURRENCE, and the difference is the whole finding. The previous version
+    asked "does this file hold a slot anywhere" and "does it hold a recipe anywhere" and reported
+    when both were true -- while its NAME claimed the recipe wrapped the slot. A reviewer supplied
+    the input that tells the two apart: a declared slot rendered OUTSIDE every recipe, with a
+    recipe on an unrelated element. Co-occurrence reports it; containment does not; and every
+    fixture written before that one satisfied BOTH mechanisms, so none could see the difference.
+
+    That is the general trap worth naming: **a test whose passing is compatible with two different
+    mechanisms proves neither.** A positive control has to be an input on which they disagree.
+    """
+    stack: list[tuple[str, str | None, int]] = []
+    for m in TAG.finditer(source):
+        closing, name, attrs, self_closing = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
+        if closing:
+            while stack:
+                tag, recipe, content_start = stack.pop()
+                if tag != name:
+                    continue          # unbalanced markup: discard until the tags line up again
+                if recipe and renders_a_slot(source[content_start:m.start()], slots):
+                    return recipe
+                break
+            continue
+        if self_closing or name in VOID_ELEMENTS:
+            continue                  # carries no content
+        found = None
+        for classes in CLASS_ATTR.findall(attrs):
+            for candidate in RECIPES:
+                if candidate in classes.split():
+                    found = candidate
+                    break
+        stack.append((name, found, m.end()))
+    return None
+
+
+def any_element_carries_a_recipe(source: str) -> bool:
+    """Is there markup here at all that a containment scan could reason about?"""
+    for m in TAG.finditer(source):
+        if m.group(1):
+            continue
+        for classes in CLASS_ATTR.findall(m.group(3)):
+            if any(r in classes.split() for r in RECIPES):
+                return True
+    return False
+
+
+def co_occurring_recipe(source: str) -> str | None:
+    """The weaker instrument, for markup built in RUBY rather than written as tags.
+
+    A `call` method composing with `tag.div(class: "cluster") { … content … }` has no HTML tags for a
+    containment scan to walk, and that is precisely the surface case this gate exists for -- so
+    dropping it in the name of precision would trade a false positive for a hole. Recipe and slot in
+    the same Ruby source is strong evidence and NOT proof of nesting, and saying which instrument
+    produced a finding is the honest half.
+    """
+    for classes in CLASS_ATTR.findall(source):
+        for recipe in RECIPES:
+            if recipe in classes.split():
+                return recipe
+    return None
+
+
 def wraps_slot_in_recipe(source: str, sibling: str = "") -> str | None:
     """The recipe a slot is wrapped in, or None. Returns the recipe so the finding can name it."""
     # COMMENTS ARE PROSE (#1128). A file explaining why the wrapper was removed used to re-trip the
     # gate its own fix satisfies. `run()` still tests the RAW source for the `# composition:`
     # declaration, which lives in a comment on purpose.
     source = strip_comments(source)
-    if not renders_a_slot(source, declared_slots(source, strip_comments(sibling))):
+    slots = declared_slots(source, strip_comments(sibling))
+    if not renders_a_slot(source, slots):
         return None                      # renders no slot; nothing arbitrary to arrange
-    for classes in CLASS_ATTR.findall(source):
-        for recipe in RECIPES:
-            if recipe in classes.split():
-                return recipe
-    return None
+    # MARKUP GETS CONTAINMENT; RUBY-BUILT MARKUP GETS CO-OCCURRENCE. When no element here carries a
+    # recipe, the recipes are in `tag.div(class: …)` calls a tag scan cannot walk -- and that is the
+    # surface case this gate exists for, so falling back keeps the coverage rather than trading a
+    # false positive for a hole. Where markup DOES carry a recipe, containment decides, and the
+    # co-occurrence answer is never consulted.
+    if any_element_carries_a_recipe(source):
+        return recipe_containing_a_slot(source, slots)
+    return co_occurring_recipe(source)
 
 
 def _sibling_source(path: Path) -> str:
@@ -186,8 +261,10 @@ def _selftest() -> int:
          '<div class="stack" style="--content-cols: 3"><span>a</span></div>\n'),
         ("a 'hidden-content' class in a comment",
          '# hidden-content is toggled elsewhere\n<div class="stack"><span>a</span></div>\n'),
+        # The utility is INSIDE the recipe element, so containment is satisfied and only "match
+        # the construct, not the word" can keep it silent -- the shape that made this rule exist.
         ("Tailwind's own before:content-[''] utility",
-         '<div class="stack before:content-[\'\']"><span>a</span></div>\n'),
+         '<div class="stack"><span class="before:content-[\'\']">a</span></div>\n'),
     ):
         expect(f"NOT a finding: {label}", wraps_slot_in_recipe(src) is None)
 
@@ -226,7 +303,12 @@ def _selftest() -> int:
             '<%# it used to be <div class="stack"> around the slot; removed because it\n'
             '    flattened every grid it was handed %>\n'
             '<!-- and never `class: "cluster"` here either -->\n'
-            '<div class="box">\n  <%= content %>\n</div>\n', encoding="utf-8")
+            # INSIDE the recipe on purpose: with the comment unstripped this element would hold a
+            # slot-shaped match and fire, so only `strip_comments` can keep it silent. Outside a
+            # recipe, containment alone would save it and the fixture would stop discriminating --
+            # which is exactly what happened when containment landed, and two mutations SURVIVED.
+            '<div class="stack">\n  <%# the removed wrapper held <%= content %> once %>\n'
+            '  <p>text</p>\n</div>\n', encoding="utf-8")
         f, _ = run(root)
         expect("a comment describing the wrapper is not the wrapper",
                not any("note_component" in x for x in f))
@@ -245,9 +327,12 @@ def _selftest() -> int:
             "  private def caption_classes = \"sr-only\"\n"
             "end\n", encoding="utf-8")
         (root / "app/components/table_component.html.erb").write_text(
+            # The readers sit INSIDE the `cluster`, so only "a slot is what the component
+            # DECLARED" can keep this silent -- containment is satisfied here.
             '<div class="scroll-x">\n'
-            '  <caption class="<%= caption_classes %>"><%= caption %></caption>\n'
-            '  <a class="cluster" href="#">Sort</a>\n'
+            '  <a class="cluster" href="#">\n'
+            '    <span class="<%= caption_classes %>"><%= caption %></span>\n'
+            '  </a>\n'
             "</div>\n", encoding="utf-8")
         f, _ = run(root)
         expect("an attribute reader is not a slot, so a recipe elsewhere is not a finding",
@@ -269,6 +354,59 @@ def _selftest() -> int:
         f, _ = run(root)
         expect("...and bare `content` still counts with no declaration at all",
                any("shell_component" in x for x in f))
+
+        # THE `no slot` GUARD IS LOAD-BEARING ON THE RUBY PATH, and only there. With markup,
+        # containment already answers "a recipe with nothing inside it"; with Ruby-built markup the
+        # fallback is pure co-occurrence, so the early return is the only thing keeping a component
+        # that merely MENTIONS a recipe silent. The markup fixture stopped discriminating the moment
+        # containment landed, and the mutation SURVIVED until this one existed.
+        (root / "app/components/ruby_only_component.rb").write_text(
+            "class RubyOnlyComponent < ViewComponent::Base\n"
+            "  def call = tag.div(class: \"stack\") { \"static\" }\n"
+            "end\n", encoding="utf-8")
+        f, _ = run(root)
+        expect("a Ruby-built recipe rendering NO slot is not a finding",
+               not any("ruby_only_component" in x for x in f))
+
+        # CONTAINMENT, NOT CO-OCCURRENCE (#1152). THE DISCRIMINATING INPUT, supplied by a
+        # reviewer: a DECLARED slot rendered OUTSIDE every recipe, with a recipe on an unrelated
+        # element. Co-occurrence reports it; containment does not. Every fixture written before
+        # this one satisfied BOTH mechanisms, so none could tell them apart -- a test whose passing
+        # is compatible with two different mechanisms proves neither.
+        (root / "app/components/apart_component.rb").write_text(
+            "class ApartComponent < ViewComponent::Base\n  renders_one :toolbar\nend\n",
+            encoding="utf-8")
+        (root / "app/components/apart_component.html.erb").write_text(
+            '<div class="box">\n  <%= toolbar %>\n</div>\n'
+            '<a class="cluster" href="#">Sort</a>\n', encoding="utf-8")
+        f, _ = run(root)
+        expect("a slot OUTSIDE every recipe is not a finding",
+               not any("apart_component" in x for x in f))
+
+        # THE CONTROL, and it must be an input where the two mechanisms AGREE is not enough --
+        # this one is contained, so it separates "still fires" from "fires for the wrong reason"
+        # only when read together with the case above.
+        (root / "app/components/inside_component.rb").write_text(
+            "class InsideComponent < ViewComponent::Base\n  renders_one :toolbar\nend\n",
+            encoding="utf-8")
+        (root / "app/components/inside_component.html.erb").write_text(
+            '<div class="stack">\n  <section>\n    <%= toolbar %>\n  </section>\n</div>\n',
+            encoding="utf-8")
+        f, _ = run(root)
+        expect("...while a slot nested inside the recipe still is",
+               any("inside_component" in x for x in f))
+
+        # A recipe INSIDE the slot's element is the inverse and must stay silent: the surface is
+        # not arranging the content, the content sits beside something that arranges itself.
+        (root / "app/components/inverse_component.rb").write_text(
+            "class InverseComponent < ViewComponent::Base\n  renders_one :toolbar\nend\n",
+            encoding="utf-8")
+        (root / "app/components/inverse_component.html.erb").write_text(
+            '<div class="box">\n  <%= toolbar %>\n  <a class="cluster">Sort</a>\n</div>\n',
+            encoding="utf-8")
+        f, _ = run(root)
+        expect("a recipe INSIDE the slot's element is not wrapping it",
+               not any("inverse_component" in x for x in f))
 
         empty = Path(tempfile.mkdtemp(prefix="surface-empty-"))
         try:

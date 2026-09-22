@@ -30,9 +30,12 @@ GUARD = Guard(
             # positives in one real run -- a prose comment, a --content-cols property, a
             # "hidden-content" comment, and Tailwind's own before:content-[''] utility.
             "the detector matches the WORD content rather than a rendered slot",
-            '    if not renders_a_slot(source, declared_slots(source, strip_comments(sibling))):',
+            '    if not renders_a_slot(source, slots):',
             '    if "content" not in source:',
-            "NOT a finding: Tailwind's own before:content-[''] utility",
+            # Re-pointed: containment now filters the Tailwind shape before the slot logic runs,
+            # so that fixture no longer discriminates. The assertion that DOES trip is the one
+            # where a declared slot must still be recognised inside its recipe.
+            "...while a DECLARED slot wrapped in a recipe is still reported",
         ),
         Mutation(
             # A component arranging its OWN fixed parts is composing, not imposing on somebody
@@ -40,7 +43,9 @@ GUARD = Guard(
             "a recipe with no slot rendered becomes a finding",
             "        return None                      # renders no slot; nothing arbitrary to arrange",
             "        pass",
-            "a recipe with no slot rendered is not this rule's business",
+            # Re-pointed to the RUBY-path fixture: with markup, containment already answers this,
+            # so only the co-occurrence fallback can be saved by the early return.
+            "a Ruby-built recipe rendering NO slot is not a finding",
         ),
     Mutation(
         # Comments are prose (#1128). Without this call the gate reports a file for DESCRIBING the
@@ -75,6 +80,30 @@ GUARD = Guard(
         "        sibling = _sibling_source(path)",
         '        sibling = ""',
         "...while a DECLARED slot wrapped in a recipe is still reported",
+    ),
+    Mutation(
+        # #1152: the check asked whether a slot and a recipe CO-OCCUR in the file, while its name
+        # claimed the recipe WRAPPED the slot. A reviewer supplied the input that tells them apart.
+        "containment collapses back to co-occurrence",
+        "    if any_element_carries_a_recipe(source):\n        return recipe_containing_a_slot(source, slots)",
+        "    if False:\n        return recipe_containing_a_slot(source, slots)",
+        "a slot OUTSIDE every recipe is not a finding",
+    ),
+    Mutation(
+        # THE CONTROL SIDE: precision must not become a hole. A slot genuinely nested inside the
+        # recipe is the thing this gate exists for.
+        "a contained slot stops being reported",
+        "                if recipe and renders_a_slot(source[content_start:m.start()], slots):",
+        "                if False:",
+        "...while a slot nested inside the recipe still is",
+    ),
+    Mutation(
+        # Markup built in RUBY -- `tag.div(class: "cluster") { … content … }` -- has no tags for a
+        # containment scan to walk, and dropping it would trade a false positive for a hole.
+        "Ruby-built markup loses its fallback, so a `call` surface is never seen",
+        "    return co_occurring_recipe(source)",
+        "    return None",
+        "the safe_join spelling is seen",
     ),
     ),
 )

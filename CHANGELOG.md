@@ -11769,6 +11769,22 @@ boot/validation path — with a bullet each so the promotion could close them se
   its name claims containment and the code does not. That is invisible to every passing fixture,
   since each exercises a case where the recipe genuinely wraps the slot.
 
+- **The check asked whether a recipe and a slot co-occur; its name said the recipe wrapped the slot
+  — `plugins/design-flow/scripts/check_surface_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_surface_layout.py`** (#1152). The gap I recorded as
+  unfixable-here was fixable once a reviewer supplied **the input that tells the two mechanisms
+  apart**: a declared slot rendered **outside** every recipe, with a recipe on an unrelated element.
+  Co-occurrence reports it; containment does not. **Every fixture written before that one satisfied
+  both mechanisms**, which is the general trap worth naming — *a test whose passing is compatible
+  with two different mechanisms proves neither*, and a positive control has to be an input on which
+  they disagree. Containment now walks the element tree, honouring nesting and void elements.
+  **Markup gets containment; Ruby-built markup keeps co-occurrence** — a `call` composing with
+  `tag.div(class: "cluster") { … content … }` has no tags to walk, and that is precisely the surface
+  case this gate exists for, so dropping it would trade a false positive for a hole. **Landing this
+  made four existing mutations stop discriminating** — containment subsumed their fixtures, two
+  SURVIVED and two were caught by the wrong assertion — so each fixture moved to an input where only
+  its own mechanism can save it. 20 → **24 assertions**, 8 → **11 mutations**.
+
 ### 1.42.1 (release v1.138.0) — 2026-09-22
 
 - **Comments are prose, and three gates read them as code —
