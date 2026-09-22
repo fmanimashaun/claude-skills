@@ -177,6 +177,47 @@ git ls-tree -r --name-only $(git for-each-ref --format='%(refname)' refs/remotes
   -- db/migrate | sed 's|.*/||' | cut -d_ -f1 | sort -u | tail -3
 ```
 
+### A set question is never answered by reading a list
+
+The queries above are shaped the way they are for a second reason. **"Is X in Y", "how many", "is
+that all" are questions about a set, and a prefix of some output is not an answer to any of them.**
+Five sessions in two days each read a truncated list and reported the prefix as the whole — every one
+a confident, reproducible, wrong claim:
+
+| what was read | over | what was claimed |
+|---|---|---|
+| `tail -80` | a 31-stage CI run | "7 green, 1 red" while **8** stages were dying |
+| return-on-first-match | 43 findings | **4** reported as the total |
+| `--date=%H:%M` | a two-day window | a commit attributed to the wrong day and session |
+| `head -12` | 46 commits | "my PR is not in the collation branch" — it was |
+| a regex on `in [0-9.]+s` | a 32-stage list | a stage silently absent because its duration read `4m43.21s` |
+
+So ask with a predicate or a count, never with a prefix:
+
+```bash
+git merge-base --is-ancestor "$SHA" "$BRANCH"    # not: git log | head -12
+grep -c pattern file                              # not: grep pattern file | head
+gh api "$ENDPOINT" --jq '[.[] | select(.sha | startswith($x))] | length'
+```
+
+When you genuinely must *show* a list, **print the total beside it**: `… | head -20; echo "of
+$(… | wc -l)"`.
+
+**A lint on `| head` / `| tail` was considered and rejected, and this is measured rather than
+assumed.** Every such construct in the shipped corpus was checked: `sort -u | tail -1` is a
+**maximum**, `lsof … | head -1` is *the* single listener, `base64 -d | tail -20` is a deliberate
+display. **Seven instances, seven legitimate, zero true positives** — and none of the five defects
+above is in shipped shell at all. They are in how a session interrogates a repository at the moment
+it forms a belief, and no regex separates `sort | tail -1` (a maximum) from `git log | head -12` (a
+truncation). A check that is wrong on every instance it fires is one that gets switched off.
+
+**The trigger is the shape of the question, not the shape of the command.** That matters because a
+session hit this, wrote the rule down as *"for a run's verdict, print every stage and count them"* —
+and it did not fire the next day, when the list was git commits rather than CI stages. The rule was
+right and scoped to the wrong noun. **A rule scoped to where you last met a bug does not generalise
+to where you meet it next, and its author is the least likely person to notice**, because they
+remember it as being about the idea.
+
 **Why a query and not a file.** The sessions that wrote this were coordinating by hand and believed
 *"the highest merged is D-073; two branches hold D-075 and D-076 unmerged."* The query above
 answered **D-079, all of them already merged** — four numbers stale, inside a day. A registry file
@@ -186,6 +227,10 @@ branch that takes a number writes it into the file the query reads.
 **`git ls-remote` is the wrong tool and that is why this looked impossible.** A decision number lives
 *inside* a file, not in a branch name. The premise "git cannot see an unpushed worktree" was true and
 irrelevant: measured across those 19 worktrees, **18 of 19 branches were already pushed.**
+
+**Read that number the other way round as well.** It is reassuring for *this* query and alarming for
+the branch it excludes: the 1 in 19 is precisely the branch that can be lost, because it is the one
+with a single copy. On a machine running many sessions a day, 1 in 19 is not rare — see §5a.
 
 ## 3a. "Is this mine?" — the same answer, and neither obvious one works
 
@@ -288,7 +333,12 @@ So:
 
 - **Commit early, even a WIP**, in any tree another session can see. A commit has an author, a
   timestamp and a message; `git log` and `git blame` answer *"whose is this"* and ` M` never will.
-  Push it, and [§3](#3-claims-live-in-git-query-them-rather-than-asking-a-peer) can see it too.
+- **Push at the commit, not at the PR — the reason is durability, not discovery.** A branch that has
+  only ever been committed lives in exactly one place: a ref in the primary checkout's `.git`, with
+  a working copy in a scratch directory that can vanish (§5a). Letting
+  [§3](#3-claims-live-in-git-query-them-rather-than-asking-a-peer) see your work is the lesser
+  benefit, and framing it that way invites the reasonable conclusion that work not worth announcing
+  yet need not be pushed yet. It does. No draft PR is required and no peer has to look.
 - **Read the branch line before the paths.** A startup status snapshot puts the branch above the
   file list, and a branch *you did not create* is proof a peer is in the tree. Both sessions above
   had that line in front of them, and both read the paths first.
@@ -352,6 +402,54 @@ evidence of nothing.
 result, and make the suite refuse rather than mis-measure** — a `before(:suite)` check that aborts
 naming the command beats a hundred individually-diagnosed failures. Check for *stale* as well as
 missing: the worst incident had the file present and out of date.
+
+## 5a. Your worktree can disappear, and the two outcomes look identical
+
+A lane lives in a scratch directory, and a scratch directory is something another process may clean
+up. Sessions have resumed to find the path simply not there. What happens next depends entirely on
+one thing — whether the branch was ever pushed — and **the recovery command succeeds either way**,
+so you must find out before you run it.
+
+**Discriminate first. Two commands, from the primary checkout:**
+
+```bash
+git worktree list                     # the lost lane shows as `prunable`
+git log --oneline -1 <your-branch>    # PRINTS -> the commits live; SILENT -> there is nothing there
+```
+
+The second is the whole question. A worktree directory is a working copy; the branch ref lives in the
+common `.git`, so it usually outlives the directory. If `git log` prints, the work is intact.
+
+**Then recover, and push before anything else:**
+
+```bash
+git worktree prune
+git worktree add "$SCRATCH/<lane>" <your-branch>
+git push -u origin <your-branch>      # FIRST, before a single edit or test run
+```
+
+**Why the order is not negotiable: `prune` followed by `add` on a branch with no commits produces a
+clean, empty worktree that looks exactly like success.** There is no error, no warning, and the
+directory is there with the right branch checked out. Run `git log` before `prune`, not after — after
+`prune` you are reading the same silence with one fewer explanation for it.
+
+**A recovered worktree is a fresh worktree, so §5 applies again — and it is harder to notice here.**
+Everything tracked is correct, the branch is right, the history is right, and that is exactly the
+state in which nobody thinks to re-copy a gitignored file.
+
+**The list is per-project and you cannot work it out from the failures**, because the two kinds fail
+in opposite directions. Measured across one recovery:
+
+| missing | how it failed |
+|---|---|
+| `app/assets/builds/` | **loudly** — `rspec` refused to run at all, 0 examples, exit 1, until `bin/rails tailwindcss:build` |
+| `config/master.key`, `.env` | **silently** — credentials do not decrypt, sign-in lands signed-out, and hundreds of examples go red |
+
+The build directory is the lucky one: it names itself and costs a minute. The credentials key is the
+dangerous one, because **its failure mode is a false regression** — red specs that read as a defect in
+the branch you just recovered, on the day you are least inclined to doubt your setup. That is §5's
+trap arriving a second time, through a door you thought you had already closed. So re-copy from the
+project's own list before the first run, rather than deriving it from what breaks.
 
 ## 6. Read the repository's agent instructions first
 
