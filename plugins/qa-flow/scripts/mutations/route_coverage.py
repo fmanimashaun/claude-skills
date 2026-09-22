@@ -10,7 +10,11 @@ GUARD = Guard(
     # INERT -- every mutation "caught" regardless. A guard's needs is everything its
     # subject imports, and that changed when the loader moved.
     needs=("scripts/qa_config.py",),
-    deps=("scripts/validate_evidence.py",),
+    # `validate_evidence` imports `evidence_app_tie` (#1133), so staging one without the other
+    # leaves this guard dead on ModuleNotFoundError. Third time an added import has orphaned a
+    # neighbouring guard (#1113, #1114); see the import-completeness invariant in the selftest.
+    deps=("scripts/validate_evidence.py",
+          "scripts/evidence_app_tie.py"),
     mutations=(
         Mutation(
             # The whole reason the third state exists: folding a crawl visit into `covered`
@@ -299,5 +303,44 @@ GUARD = Guard(
             '    commit = str(recorded) if recorded else "not a git tree"',
             'a real SHA must still be abbreviated',
         ),
+    Mutation(
+        # #1129: the narrowing. Without it every commit invalidates the inventory and the gate is
+        # permanently ERROR on any working branch -- measured downstream at 11 commits, 0 verdicts.
+        "any commit invalidates the inventory again, not just one that moved a route",
+        "    if moved is False:",
+        "    if False:",
+        "stale_inventory: a commit that touched no route source must NOT refuse",
+    ),
+    Mutation(
+        # THE CONTROL SIDE. The narrowing must not become "never refuse": a commit that really did
+        # move a route source still has to stop the report.
+        "a commit that moved a route source stops refusing",
+        "    if moved is _LOOKUP_HEAD:",
+        "    return None\n    if moved is _LOOKUP_HEAD:",
+        "stale_inventory: a commit that moved a route source must still refuse",
+    ),
+    Mutation(
+        # CANNOT TELL IS NOT CAN. Treating an undecidable diff as "fine" rebuilds the defect the
+        # refusal exists to prevent, and does it silently.
+        "an undecidable diff is treated as no change",
+        "    if changed is None:\n        return None",
+        "    if changed is None:\n        return False",
+        "route_sources_changed: an undiffable pair must be None, not a verdict",
+    ),
+    Mutation(
+        # #1129: nothing told anyone how to clear it. The message named two shas and no command.
+        "the refusal stops naming the command that clears it",
+        '            f"    python3 route_coverage.py enumerate --rails qa/reports/routes.txt")',
+        '            f"")',
+        "stale_inventory: the refusal must name the command that clears it",
+    ),
+    Mutation(
+        # A prefix match that swallows a neighbour would make every `config/routes*` file a route
+        # source, quietly widening the refusal back toward "any commit".
+        "any path merely beginning with a route source counts",
+        'ROUTE_SOURCE_PATHS = ("config/routes.rb", "config/routes/")',
+        'ROUTE_SOURCE_PATHS = ("config/routes",)',
+        "names_a_route_source: config/routes_helper.rb does not define routes",
+    ),
     ),
 )

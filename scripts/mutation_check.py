@@ -118,6 +118,69 @@ def discover_all() -> tuple[Guard, ...]:
 GUARDS: tuple[Guard, ...] = discover_all()
 
 
+def sibling_imports(source: Path) -> set[str]:
+    """Modules this file imports AT MODULE SCOPE, by bare name. Empty on a syntax error.
+
+    MODULE SCOPE ONLY, and that is the whole difference between a rule and noise. A `def`-scope
+    import runs when the function is CALLED, so it is optional at load time -- `validate_evidence`
+    imports its own selftest inside `if args.selftest:`, which a mutant never invokes. Walking the
+    whole tree flagged six such pairs on the first run, every one of them correct code. Module-level
+    `if`/`try`/`with` DO execute on import, so those are descended into; a function or class body
+    never is.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return set()
+    found: set[str] = set()
+
+    def scan(body: list) -> None:
+        for node in body:
+            if isinstance(node, ast.Import):
+                found.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                found.add(node.module.split(".")[0])
+            elif isinstance(node, (ast.If, ast.Try, ast.With)):
+                scan(node.body)
+                scan(getattr(node, "orelse", []))
+                for handler in getattr(node, "handlers", []):
+                    scan(handler.body)
+
+    scan(tree.body)
+    return found
+
+
+def unstaged_sibling_imports(guard: Guard, base: Path) -> list[str]:
+    """Sibling modules a guard's staged files import at module scope but do not stage.
+
+    Takes `base` rather than reading `REPO`, because this runs INSIDE the staged tempdir when the
+    harness guards itself -- and a version reading ambient state answered over an empty repo there
+    and every assertion about it passed vacuously. Same class as the `head` injection in
+    `stale_inventory`, and as the defect this function exists to find.
+    """
+    staged = {guard.subject, guard.selftest, *guard.deps}
+    stems = {Path(r).stem for r in staged} | {Path(n).stem for n in guard.needs}
+    need_dirs = [n for n in guard.needs if (base / n).is_dir()]
+    out: list[str] = []
+    for relative in sorted(staged):
+        source = base / relative
+        if not source.is_file() or source.suffix != ".py":
+            continue
+        for name in sorted(sibling_imports(source) - stems):
+            sibling = source.parent / f"{name}.py"
+            if not sibling.is_file():
+                continue              # stdlib or third-party; not this harness's business
+            # A `needs` DIRECTORY covers anything beneath it, at any depth -- `plugins/qa-flow`
+            # stages `plugins/qa-flow/scripts/evidence_app_tie.py`. Testing `base/d/<name>.py`
+            # instead reported a guard that was already correct, on this rule's first run.
+            if any(sibling.is_relative_to(base / d) for d in need_dirs):
+                continue
+            out.append(f"{relative} imports `{name}`, which is in neither deps nor needs")
+    return out
+
+
 def stage(guard: Guard, workdir: Path) -> Path:
     """Copy subject + selftest + deps + needs into `workdir`, UNMUTATED. Returns the entry point.
 

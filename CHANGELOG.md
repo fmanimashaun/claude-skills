@@ -9,6 +9,23 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Three times an added import has orphaned a neighbouring guard, so the harness now says so in a
+  second — `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`,
+  `scripts/mutations/mutation_check_harness.py` (new),
+  `plugins/qa-flow/scripts/mutations/route_coverage.py`** (#1129). Adding an import to a shipped
+  module kills every guard that stages it without the new dependency: the mutant dies on
+  `ModuleNotFoundError`, which is an **environmental** failure, not a caught mutation. #1113 (six
+  guards), #1114 (a seventh, missed because I matched on a shared literal) and #1133's
+  `validate_evidence` → `evidence_app_tie` were all this, and **all three surfaced only in the
+  438-second sweep**. `unstaged_sibling_imports` is now a per-guard invariant in the selftest.
+  **Module scope only** — a `def`-scope import runs when called, so it is optional at load time, and
+  counting those flagged **six correct guards** on the first run, every script that imports its own
+  selftest inside `if args.selftest:`. **And the harness now has a guard of its own**
+  (`mutation_check_harness`): the tool that makes every other checker prove it can fail could not,
+  because nothing named it as a subject. Its two mutations SURVIVED at first — the rule read
+  ambient repo state, which inside a staged tempdir is the tempdir, so it iterated zero guards and
+  passed vacuously. It takes its base as an argument now and is proved on a fixture tree.
+
 - **The rule said the body is a hypothesis and never said where the correction lives — `CLAUDE.md`**
   (#1072, #1124). *An issue body is not an authority* told you to verify the body's claims; it did
   not say to read the **comments**, which is where the correction to those claims actually sits —
@@ -9610,6 +9627,23 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 ## qa-flow (independent QA plugin)
 
 ### Unreleased
+
+- **The gate was dark exactly where it was needed —
+  `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`** (#1129). The route inventory is stamped
+  with the commit that produced it, and **any** later commit made it refuse — so on a working branch
+  route-coverage was ERROR from the first commit until someone re-enumerated, **measured downstream
+  at 11 commits and not one verdict**. A branch that adds a route is the branch whose coverage
+  matters. **A different commit is not yet a different route set**: the refusal now asks git whether
+  a route source (`config/routes.rb`, `config/routes/`, an engine's) actually moved between the two
+  commits, which is exact and needs no application boot. **Cannot-tell is not can** — a shallow
+  clone or an unknown commit still refuses, and says the staleness is assumed. When it does refuse
+  it now **names the command that clears it**, which nothing did. And it exits **3, not 2**: the
+  refusal is right, but the *state* is ordinary, and `project_gates.py` reads 2 as ERROR and files a
+  normal condition to the toolchain's own tracker on every run. 3 is that runner's existing code for
+  *the check read the project and says it does not apply*. The stated limit: routes drawn from code
+  outside those paths change the set without touching them — a narrower instrument than *any commit
+  at all*, not a blind one, against an alternative measuring 0 verdicts in 11 commits.
 
 - **The evidence validator proved a file was consistent with itself and nothing else —
   `plugins/qa-flow/scripts/evidence_app_tie.py` (new),

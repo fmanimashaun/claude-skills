@@ -21,6 +21,8 @@ Stdlib only.
 
 from __future__ import annotations
 
+import ast
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -235,6 +237,20 @@ def run() -> int:
                 "vacuously, which is the failure this checker exists to prevent"
             )
 
+        # ---- every SIBLING MODULE a staged file imports must itself be staged --------------
+        # THE THIRD OCCURRENCE IS WHY THIS IS STRUCTURAL. Adding an import to a shipped module
+        # orphans every neighbouring guard that stages it without the new dependency: the mutant
+        # dies on ModuleNotFoundError, which is an ENVIRONMENTAL failure, not a caught mutation.
+        # #1113 (six guards), #1114 (a seventh, missed because I matched on a shared literal) and
+        # #1133's `validate_evidence` -> `evidence_app_tie` were all this, and all three surfaced
+        # only in the 438-second sweep. Here it is about a second.
+        for problem in mc.unstaged_sibling_imports(real_guard,
+                                                   original_repo / real_guard.base):
+            FAILURES.append(
+                f"{real_guard.name}: {problem}. The mutant dies on ModuleNotFoundError, and an "
+                f"environmental death is not a caught mutation.")
+        _tick()
+
     # ---- 7. every RULE inside a multi-rule guard is backed by a mutation ----------------
     # The gap this closes: "mutation coverage" asserts every GUARD declares mutations, and the
     # lint_self_consistency guard already declared twelve. So a SEVENTH rule bolted onto that same
@@ -292,6 +308,45 @@ def run() -> int:
                     "fail if the rule broke. A guard-level mutation count cannot see this."
                 )
 
+    # ---- the import-completeness rule, on a FIXTURE rather than on this repo ----------------
+    # The loop above reads the real repo through `original_repo`, which inside a staged tempdir is
+    # the tempdir -- so it iterates zero guards and every assertion about it passes vacuously. That
+    # is the very defect this rule exists to catch, one level up, and it is why the rule is proved
+    # here on a tree built for the purpose.
+    fixture_base = Path(tempfile.mkdtemp(prefix="import-completeness-"))
+    try:
+        (fixture_base / "scripts").mkdir()
+        (fixture_base / "scripts/leader.py").write_text(
+            "import argparse\nimport follower\n\n\ndef go():\n    import lazy_one\n    return lazy_one\n",
+            encoding="utf-8")
+        (fixture_base / "scripts/follower.py").write_text("X = 1\n", encoding="utf-8")
+        (fixture_base / "scripts/lazy_one.py").write_text("Y = 2\n", encoding="utf-8")
+        bare = mc.Guard(name="fixture", subject="scripts/leader.py",
+                        selftest="scripts/leader.py", mutations=())
+        problems = mc.unstaged_sibling_imports(bare, fixture_base)
+        _tick()
+        if not any("follower" in p for p in problems):
+            FAILURES.append("import-completeness: a module-scope sibling import must be reported")
+        _tick()
+        # THE CARVE-OUT, on the same fixture: a `def`-scope import is optional at load time, and
+        # counting it flagged six correct guards on this rule's first run.
+        if any("lazy_one" in p for p in problems):
+            FAILURES.append("import-completeness: a function-scope import must NOT be reported")
+        _tick()
+        # ...and a stdlib import must never be reported, or the rule fires on `argparse` everywhere.
+        if any("argparse" in p for p in problems):
+            FAILURES.append("import-completeness: a stdlib import must NOT be reported")
+        _tick()
+        # THE CONTROL: declaring the dependency clears it. Without this the rule could be one that
+        # reports every guard, which would also "catch" the mutation above.
+        declared = mc.Guard(name="fixture", subject="scripts/leader.py",
+                            selftest="scripts/leader.py", deps=("scripts/follower.py",),
+                            mutations=())
+        if mc.unstaged_sibling_imports(declared, fixture_base):
+            FAILURES.append("import-completeness: a DECLARED dependency must clear the finding")
+    finally:
+        shutil.rmtree(fixture_base, ignore_errors=True)
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for failure in FAILURES:
@@ -303,3 +358,4 @@ def run() -> int:
 
 if __name__ == "__main__":
     sys.exit(run())
+
