@@ -371,6 +371,29 @@ technique can actually see, which is print-stylesheet sanity: `Ink Burning` (dar
 backgrounds surviving into print) and `Print Overflow` (content wider than the print width). Both
 are advisory and both need `Notes`.
 
+### A bundled browser can be stably, confidently wrong
+
+`page.pdf()` above is about **generating** a PDF. The neighbouring fact is about **rendering** one,
+and it produces a wrong verdict rather than a missing feature: **Playwright's bundled chromium and
+webkit render no PDF at all.** Measured on one page holding `<iframe>`, `<embed>` and `<object>` at
+the same source, over HTTP, with a text PDF and an image-only scan:
+
+| engine | `<iframe>` | `<embed>` | `<object>` |
+|---|---|---|---|
+| bundled chromium (headless) | blank | *"Couldn't load plugin."* | fallback shown |
+| bundled webkit | blank | blank | blank |
+| real Chrome (`channel: "chrome"`) | renders | renders | renders |
+
+In real Chrome all three are pixel-identical. **The difference is the browser build, not the
+markup** — so the bundled run says *"`<embed>` is broken and `<iframe>` is fine"*, which is
+reproducible, confident and exactly inverted.
+
+**The general rule: anything a browser delegates to a plugin is not a fact about the app.** PDFs
+today; the same shape applies to any embedded viewer. If a judge must actually SEE such a document,
+drive it with a real install (`channel: "chrome"`) and say so in the artifact. Otherwise classify the
+route as *not a rendered page* and do not score it — `crawl_report.py` does this from the response's
+own `Content-Type`, and a route it classifies is neither a pass nor a finding.
+
 ### The artifact
 
 One row per route × mode to `qa/reports/emulation-<slug>-pages.csv`. The header is **fixed**:
