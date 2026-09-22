@@ -5,6 +5,7 @@ GUARD = Guard(
     name="check_layout_composition",
     subject="scripts/check_layout_composition.py",
     selftest="scripts/check_layout_composition.py",
+    needs=("scripts/source_text.py",),   # comments are blanked here (#1128)
     mutations=(
         Mutation(
             "hand-rolled clusters stop being reported",
@@ -47,9 +48,26 @@ GUARD = Guard(
             # The declared exception must be an exception, not a hole: with it always true, §3
             # stops being a justification anybody has to write down.
             "every element counts as a declared structural swap",
-            "            excused = bool(SWAP_DECLARED.search(line)",
-            "            excused = True or bool(SWAP_DECLARED.search(line)",
+            "            excused = bool(SWAP_DECLARED.search(raw[n - 1])",
+            "            excused = True or bool(SWAP_DECLARED.search(raw[n - 1])",
             "the SAME element without a declaration is still reported",
         ),
+    Mutation(
+        # The near-miss this fix actually hit: blanking comments for the MARKUP scan is right, and
+        # blanking them for the DECLARATION is wrong, because `layout-swap:` lives in a comment on
+        # purpose. Reading the stripped line here silently disables every opt-out.
+        "the `layout-swap:` declaration is read from the blanked line, not the raw one",
+        "            excused = bool(SWAP_DECLARED.search(raw[n - 1])",
+        "            excused = bool(SWAP_DECLARED.search(line)",
+        "a swap declared on the SAME line as the element is suppressed too",
+    ),
+    Mutation(
+        # Comments are prose (#1128). Without this call the gate reports a file for DESCRIBING the
+        # anti-pattern -- and the file that describes it is usually the one that fixed it.
+        "comments are matched as if they were code",
+        '        lines = strip_comments("\\n".join(raw)).split("\\n")',
+        '        lines = list(raw)',
+        'a comment quoting the old breakpoint markup is not that markup',
+    ),
     ),
 )

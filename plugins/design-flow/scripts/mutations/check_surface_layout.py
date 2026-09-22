@@ -5,6 +5,7 @@ GUARD = Guard(
     name="check_surface_layout",
     subject="scripts/check_surface_layout.py",
     selftest="scripts/check_surface_layout.py",   # --selftest lives in the module
+    needs=("scripts/source_text.py",),   # comments are blanked here (#1128)
     mutations=(
         Mutation(
             # The rule. A surface wrapping arbitrary content silently overrode 77 of 112 callers'
@@ -41,5 +42,13 @@ GUARD = Guard(
             "        pass",
             "a recipe with no slot rendered is not this rule's business",
         ),
+    Mutation(
+        # Comments are prose (#1128). Without this call the gate reports a file for DESCRIBING the
+        # anti-pattern -- and the file that describes it is usually the one that fixed it.
+        "comments are matched as if they were code",
+        '    source = strip_comments(source)',
+        '    source = source',
+        'a comment describing the wrapper is not the wrapper',
+    ),
     ),
 )

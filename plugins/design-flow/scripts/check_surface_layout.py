@@ -14,6 +14,11 @@ spacing value. Measured on the app where it was found, before anything changed:
     use the header slot                                 1
     use the footer slot                                 0
 
+Those four figures are an AUDIT of one app on 2026-09-21, not something this script computes -- they
+are here with their date because a figure with no provenance goes stale silently (`frozen-figure`,
+#1124). Re-take them by grepping that app's `app/views` for the component's call sites; nothing in
+this repo can refresh them for you.
+
 **It flattens**: a grid cannot survive being wrapped in a flex column, so four grid layouts
 collapsed to one column. Visible, eventually, on the right screen.
 
@@ -51,6 +56,8 @@ import re
 import sys
 from pathlib import Path
 
+from source_text import strip_comments
+
 # The layout recipes a surface must not wrap its content in.
 RECIPES = ("stack", "cluster", "grid-auto", "switcher", "sidebar", "reel", "center", "cover")
 
@@ -67,6 +74,10 @@ CLASS_ATTR = re.compile(r'class(?:\s*[:=]\s*)["\']([^"\']*)["\']')
 
 def wraps_slot_in_recipe(source: str) -> str | None:
     """The recipe a slot is wrapped in, or None. Returns the recipe so the finding can name it."""
+    # COMMENTS ARE PROSE (#1128). A file explaining why the wrapper was removed used to re-trip the
+    # gate its own fix satisfies. `run()` still tests the RAW source for the `# composition:`
+    # declaration, which lives in a comment on purpose.
+    source = strip_comments(source)
     if not (SLOT_ERB.search(source) or SLOT_RUBY.search(source)):
         return None                      # renders no slot; nothing arbitrary to arrange
     for classes in CLASS_ATTR.findall(source):
@@ -168,6 +179,24 @@ def _selftest() -> int:
         expect("the plain surface is not reported",
                not any("panel_component" in f for f in findings))
 
+
+        # COMMENTS ARE PROSE (#1128). The file that describes REMOVING the wrapper used to be
+        # reported for having it -- the false positive lands on the remediated file, and the
+        # natural response is to delete the explanation to satisfy the detector.
+        (root / "app/components/note_component.rb").write_text(
+            "class NoteComponent < ViewComponent::Base\nend\n", encoding="utf-8")
+        (root / "app/components/note_component.html.erb").write_text(
+            '<%# it used to be <div class="stack"> around the slot; removed because it\n'
+            '    flattened every grid it was handed %>\n'
+            '<!-- and never `class: "cluster"` here either -->\n'
+            '<div class="box">\n  <%= content %>\n</div>\n', encoding="utf-8")
+        f, _ = run(root)
+        expect("a comment describing the wrapper is not the wrapper",
+               not any("note_component" in x for x in f))
+        # The CONTROL on the same run: the real one is still reported, or the fixture above
+        # would pass just as well against a gate that had stopped looking at anything.
+        expect("...while the component that really wraps its slot is still reported",
+               any("card_component" in x for x in f))
         empty = Path(tempfile.mkdtemp(prefix="surface-empty-"))
         try:
             f2, e2 = run(empty)

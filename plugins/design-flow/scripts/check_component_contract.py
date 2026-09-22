@@ -70,6 +70,8 @@ import re
 import sys
 from pathlib import Path
 
+from source_text import strip_comments
+
 RAW_BUTTON = re.compile(r"<button\b", re.I)
 COMPONENT_CLASS = re.compile(r"^\s*class (\w+Component) < ViewComponent::Base\s*$", re.M)
 
@@ -102,7 +104,11 @@ def raw_elements(root: Path) -> list[str]:
     # `app/views/**`, and 18 is exactly the audited defect count.**
     for pattern in ("app/views/**/*.erb",):
         for path in sorted(root.glob(pattern)):
-            for n, line in enumerate(path.read_text(encoding="utf-8", errors="replace").split("\n"), 1):
+            # COMMENTS ARE PROSE (#1128). A view explaining why NOT to hand-write a
+            # `<button>` used to be reported for hand-writing one. Blanked in place, so `:n`
+            # below still cites the right line.
+            source = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+            for n, line in enumerate(source.split("\n"), 1):
                 if not RAW_BUTTON.search(line):
                     continue
                 rel = path.relative_to(root)
@@ -119,7 +125,10 @@ def components_dropping_attributes(root: Path) -> list[str]:
     """Components that cannot carry a caller's attribute, or accept it and throw it away."""
     findings = []
     for path in sorted(root.glob("app/components/**/*.rb")):
-        source = path.read_text(encoding="utf-8", errors="replace")
+        # Here the same root cause runs the OTHER way: a commented-out `def initialize(**attrs)`
+        # made a component that drops its caller's attributes look compliant -- a false NEGATIVE
+        # (#1128). Blanking comments is what makes the body scan read only executable code.
+        source = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
         lines = source.split("\n")
         for m in COMPONENT_CLASS.finditer(source):
             name = m.group(1)
@@ -228,6 +237,20 @@ def _selftest() -> int:
                    or ("DropsComponent" in f and "never stores" in f) for f in findings))
 
         # A tree with no views and no components cannot be judged -- and must not read as clean.
+
+        # COMMENTS ARE PROSE (#1128), and here it runs BOTH ways.
+        views = root / "app/views/pages"
+        views.mkdir(parents=True, exist_ok=True)
+        (views / "note.html.erb").write_text(
+            '<%# never hand-write a raw <button>; use the button component %>\n'
+            '<div class="box">hi</div>\n', encoding="utf-8")
+        f = raw_elements(root)
+        expect("a comment warning against a raw `<button>` is not a raw `<button>`",
+               not any("note.html.erb" in x for x in f))
+        (views / "real.html.erb").write_text('<button class="btn">Go</button>\n', encoding="utf-8")
+        # The control: without it, the assertion above passes against a gate that reads nothing.
+        expect("...while a real one on the next line over is still reported",
+               any("real.html.erb" in x for x in raw_elements(root)))
         empty = Path(tempfile.mkdtemp(prefix="component-contract-empty-"))
         try:
             f2, v2, r2 = run(empty)
