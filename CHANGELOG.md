@@ -14512,6 +14512,40 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **A worktree can disappear, and prune-and-recreate looks like success either way —
+  `skills/parallel-session-lane/SKILL.md` (§5a, §3), `dist/parallel-session-lane.skill`** (#1159).
+  **Maintainer decision recorded on the issue**; our own doctrine, no upstream. The skill sent every
+  session into a scratch worktree and never said what to do when the directory is gone — which
+  happened to three sessions in one day. New §5a gives the **discriminator before the recovery**,
+  because `git worktree prune && git worktree add` on a branch with no commits produces a clean empty
+  worktree with no error: `git log --oneline -1 <branch>` printing means the ref survived in the
+  common `.git`, silence means there is nothing to recover, and it must be run **before** `prune`.
+  Push is re-argued from **durability rather than discovery** — the old text framed it as letting §3
+  see your work, which invites a session to keep an unannounced branch local, and a never-pushed
+  branch has exactly one copy. §3's reassuring *"18 of 19 branches were already pushed"* now also
+  reads the other way: the 1 is the one that can be lost. And a recovered worktree is a fresh
+  worktree, so §5 applies again at the moment it is least obvious — measured, `app/assets/builds/`
+  missing made `rspec` refuse to run at all (0 examples, exit 1, loud and self-naming) while a
+  missing `config/master.key` produced **hundreds of red examples reading as a false regression** in
+  the branch just recovered.
+
+- **A set question is never answered by reading a list —
+  `skills/parallel-session-lane/SKILL.md` (§3), `dist/parallel-session-lane.skill`** (#1160).
+  **Maintainer decision recorded on the issue**; our own doctrine, no upstream. Five sessions in two
+  days read a truncated list and reported the prefix as the whole — `tail -80` over a 31-stage run
+  called "7 green, 1 red" while **8** were dying; `head -12` over 46 commits concluded a PR was
+  absent from a branch that contained it; a regex on `in [0-9.]+s` dropped a stage whose duration
+  read `4m43.21s`. The rule keys on **the shape of the question, not the command**: ask with a
+  predicate or a count (`git merge-base --is-ancestor`, `grep -c`, a `--jq … | length`), and print
+  the total beside any list you must show. **A syntactic lint on `| head` / `| tail` is recorded as
+  considered and rejected, with the measurement** — re-measured today at **7 instances in the
+  shipped corpus, 7 legitimate, 0 true positives** (`sort -u | tail -1` is a maximum, `lsof … |
+  head -1` is *the* single listener), and none of the five defects is in shipped shell at all, so the
+  check would be wrong on every instance it fired. It also records **why the previous attempt
+  failed**: a session wrote the rule as *"for a run's verdict, print every stage and count them"* and
+  it did not fire the next day, when the list was git commits — a rule scoped to the noun you last
+  met it on does not generalise, and its author is the last to notice.
+
 - **`bin/ci` handed each run the previous run's rows — `skills/rails-8/references/testing.md`,
   `dist/rails-8.skill`** (#1154). The shipped block ran the suite and then `Tests: Seeds`, and
   `db:seed:replant` is truncate-**then**-seed (`activerecord-8.1.3.1`, `databases.rake:407`), so
