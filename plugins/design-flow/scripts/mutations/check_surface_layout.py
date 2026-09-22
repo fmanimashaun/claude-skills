@@ -85,8 +85,8 @@ GUARD = Guard(
         # #1152: the check asked whether a slot and a recipe CO-OCCUR in the file, while its name
         # claimed the recipe WRAPPED the slot. A reviewer supplied the input that tells them apart.
         "containment collapses back to co-occurrence",
-        "    if any_element_carries_a_recipe(source):\n        return recipe_containing_a_slot(source, slots)",
-        "    if False:\n        return recipe_containing_a_slot(source, slots)",
+        '    if any_element_carries_a_recipe(source):\n        decided = recipe_containing_a_slot(source, slots)',
+        '    if False:\n        decided = recipe_containing_a_slot(source, slots)',
         "a slot OUTSIDE every recipe is not a finding",
     ),
     Mutation(
@@ -104,6 +104,16 @@ GUARD = Guard(
         "    return co_occurring_recipe(source)",
         "    return None",
         "the safe_join spelling is seen",
+    ),
+    Mutation(
+        # THE SILENT-SKIP HOLE. A containment scan that quietly discards markup it cannot read
+        # under-reports with nothing to show for it -- an ERB template opening a tag inside a
+        # conditional is routinely unbalanced as text. "Could not decide" must not render as
+        # "decided: no".
+        "unreadable markup is answered confidently instead of falling back",
+        "    if unbalanced or any(recipe for _, recipe, _ in stack):",
+        "    if False:",
+        "markup the containment scan cannot read falls back, and is still reported",
     ),
     ),
 )

@@ -11783,7 +11783,16 @@ boot/validation path — with a bullet each so the promotion could close them se
   case this gate exists for, so dropping it would trade a false positive for a hole. **Landing this
   made four existing mutations stop discriminating** — containment subsumed their fixtures, two
   SURVIVED and two were caught by the wrong assertion — so each fixture moved to an input where only
-  its own mechanism can save it. 20 → **24 assertions**, 8 → **11 mutations**.
+  its own mechanism can save it. 20 → **25 assertions**, 8 → **12 mutations**.
+  **And the scan now says when it cannot read the markup**: an ERB template that opens a tag in one
+  branch and closes it in another is unbalanced as text, and a containment scan that quietly
+  discards those elements under-reports with nothing to show for it. *Could not decide* is distinct
+  from *decided: no*, and falls back to co-occurrence — which may over-report and cannot silently
+  lose a surface. That question came from a reviewer who had just shipped the other side of it: a
+  regex that silently skipped the one form it could not read. **Three attempts were needed to write
+  a fixture that exercises it** — a balanced `<div>` wrapped in conditionals reads fine because ERB
+  lines are not tags, and an unbalanced file where the scan *decides* before reaching the end never
+  reaches the fallback at all.
 
 ### 1.42.1 (release v1.138.0) — 2026-09-22
 

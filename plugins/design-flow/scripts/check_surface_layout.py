@@ -104,7 +104,7 @@ VOID_ELEMENTS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "li
 TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)((?:[^<>]|<%[^%]*%>)*?)(/?)>")
 
 
-def recipe_containing_a_slot(source: str, slots: set[str]) -> str | None:
+def recipe_containing_a_slot(source: str, slots: set[str]) -> str | None | bool:
     """The recipe on an element that CONTAINS a slot render, or None (#1152).
 
     CONTAINMENT, NOT CO-OCCURRENCE, and the difference is the whole finding. The previous version
@@ -118,16 +118,28 @@ def recipe_containing_a_slot(source: str, slots: set[str]) -> str | None:
     mechanisms proves neither.** A positive control has to be an input on which they disagree.
     """
     stack: list[tuple[str, str | None, int]] = []
+    # WHAT IT DOES WITH MARKUP IT CANNOT CLASSIFY, asked of this scanner by a reviewer who had just
+    # shipped the opposite answer: a regex that silently skipped the form it could not read, so what
+    # it missed left no trace. An ERB template emitting tags from inside a conditional is routinely
+    # unbalanced as TEXT, and a containment scan that quietly discards those elements under-reports
+    # with nothing to show for it. Recorded, and the caller falls back to co-occurrence -- which may
+    # over-report and cannot silently lose a surface.
+    unbalanced = False
     for m in TAG.finditer(source):
         closing, name, attrs, self_closing = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
         if closing:
+            matched = False
             while stack:
                 tag, recipe, content_start = stack.pop()
                 if tag != name:
-                    continue          # unbalanced markup: discard until the tags line up again
+                    unbalanced = True   # a discarded element is markup this scan could not read
+                    continue
                 if recipe and renders_a_slot(source[content_start:m.start()], slots):
                     return recipe
+                matched = True
                 break
+            if not matched:
+                unbalanced = True
             continue
         if self_closing or name in VOID_ELEMENTS:
             continue                  # carries no content
@@ -138,6 +150,9 @@ def recipe_containing_a_slot(source: str, slots: set[str]) -> str | None:
                     found = candidate
                     break
         stack.append((name, found, m.end()))
+    # Anything still open at the end was never closed in this file.
+    if unbalanced or any(recipe for _, recipe, _ in stack):
+        return False                     # "could not decide", distinct from "decided: no"
     return None
 
 
@@ -183,7 +198,11 @@ def wraps_slot_in_recipe(source: str, sibling: str = "") -> str | None:
     # false positive for a hole. Where markup DOES carry a recipe, containment decides, and the
     # co-occurrence answer is never consulted.
     if any_element_carries_a_recipe(source):
-        return recipe_containing_a_slot(source, slots)
+        decided = recipe_containing_a_slot(source, slots)
+        if decided is not False:
+            return decided
+        # The scan could not read this markup. Fall back rather than return a confident None: a
+        # containment scan that silently discards what it cannot parse is a hole with no trace.
     return co_occurring_recipe(source)
 
 
@@ -354,6 +373,28 @@ def _selftest() -> int:
         f, _ = run(root)
         expect("...and bare `content` still counts with no declaration at all",
                any("shell_component" in x for x in f))
+
+        # MARKUP THIS SCAN CANNOT READ must not be answered confidently. An ERB template that
+        # opens a tag inside a conditional is routinely unbalanced as TEXT, and a containment scan
+        # that quietly discards those elements under-reports with nothing to show for it -- the
+        # silent-skip class a reviewer had just shipped the other side of.
+        (root / "app/components/torn_component.rb").write_text(
+            "class TornComponent < ViewComponent::Base\n  renders_one :toolbar\nend\n",
+            encoding="utf-8")
+        (root / "app/components/torn_component.html.erb").write_text(
+            # Genuinely unbalanced AS TEXT: the opening tag is in one ERB branch and the closing
+            # tag in another, so neither the scanner nor anything else can pair them. My first
+            # attempt at this fixture wrapped a BALANCED div in conditionals -- the ERB lines are
+            # not tags, so the scan read it fine and the mutation SURVIVED.
+            # The recipe is OPENED inside a conditional and never closed as text, so the scan
+            # reaches the end undecided. Two earlier attempts at this fixture failed: wrapping a
+            # BALANCED div in conditionals reads fine (ERB lines are not tags), and an unbalanced
+            # file where the scan DECIDES before reaching the end never exercises the fallback.
+            '<% if wide? %>\n  <div class="stack">\n<% end %>\n'
+            '  <%= toolbar %>\n', encoding="utf-8")
+        f, _ = run(root)
+        expect("markup the containment scan cannot read falls back, and is still reported",
+               any("torn_component" in x for x in f))
 
         # THE `no slot` GUARD IS LOAD-BEARING ON THE RUBY PATH, and only there. With markup,
         # containment already answers "a recipe with nothing inside it"; with Ruby-built markup the
