@@ -7,6 +7,19 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The rule said the body is a hypothesis and never said where the correction lives — `CLAUDE.md`**
+  (#1072, #1124). *An issue body is not an authority* told you to verify the body's claims; it did
+  not say to read the **comments**, which is where the correction to those claims actually sits —
+  written, in this repo, by whichever parallel session went and measured. On #1072 four comments
+  carried a corrected fact base and a complete design; implementing from the body alone shipped a
+  stale table into doctrine, a CHANGELOG entry, a `.skill` bundle and a `checks.json` `why` — **four
+  copies of one wrong number** — and built a different instrument than the one designed. The clause
+  now names the command (`gh issue view <n> --comments`) and says what to do when they disagree:
+  **measure it yourself rather than pick a side.** Rewritten within the existing line ceiling, with
+  the #142 detail left where it already lived in `docs/brain/history/maintainer-history.md:148`.
+
 ### 2026-09-21 (release v1.136.0)
 
 - **Two guards went INERT the moment the harness shipped, and one of them was my own invariant —
