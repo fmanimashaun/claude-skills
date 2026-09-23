@@ -96,5 +96,18 @@ GUARD = Guard(
             '    if False:\n        return 2',
             "a source PROBLEM blocks --print",
         ),
+        Mutation(
+            # #1233: the dirty-source NOTE is dropped, so a local db:migrate reads as upstream drift again.
+            "a locally dirty source is no longer named",
+            "        for path in dirty_sources(root):\n",
+            "        for path in []:\n",
+            "a locally dirty db/schema.rb is named in a NOTE",
+        ),
+        Mutation(
+            "dirty_sources reports nothing, so the NOTE can never fire",
+            "    return sorted({ln[3:].strip() for ln in done.stdout.splitlines() if len(ln) > 3})",
+            "    return []",
+            "dirty_sources names exactly the dirty source",
+        ),
     ),
 )

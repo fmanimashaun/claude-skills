@@ -3335,6 +3335,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A wiki `--check` names a locally dirty source instead of blaming the generator —
+  `plugins/rails-flow/scripts/build_project_wiki.py`, `plugins/rails-flow/scripts/mutations/build_project_wiki.py`** (#1233).
+  `--check` builds from the working tree, so a `db/schema.rb` dumped by a local `db:migrate` made
+  `Data-Model.md` report DRIFT against a commit nobody changed — a consumer spent a round of cross-session
+  investigation on it. Measured first that the builder is deterministic (3 builds, byte-identical to the
+  committed page) and version-independent (v1.144.3 / v1.144.4 / dev identical). Now, when any source
+  differs from HEAD, `--check` prints a `NOTE:` naming it — on a pass as well as a drift, and surfaced by
+  `project_gates` since #1227. It still builds from the working tree, so `--check` and a rebuild agree.
+  Reproduced on the consumer's tree: clean → no NOTE; a locally edited `db/schema.rb` → NOTE, then DRIFT.
+
 - **A passing check's `NOTE:`/`WARNING:` lines reach the report — `plugins/rails-flow/scripts/project_gates.py`,
   `scripts/mutations/project_gates.py`** (#1227). A pass discarded everything the check printed, so
   design-flow's *"this floor records no toolchain version"* (#1214) reached only someone running the check
