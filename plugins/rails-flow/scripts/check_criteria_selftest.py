@@ -170,6 +170,28 @@ def run() -> int:
         "- **AC-2** Given an invoice with no line items, when POST /invoices runs, then the "
         "response is 422 and the modal re-renders with 'must have at least one line item'\n",
     )
+    # ---- #1189: Ruby expresses an error path by raising --------------------------------
+    HAPPY = ("## Segments\n- **AC-1** Given two segments, when the control renders, then both "
+             "appear as buttons and the first is pressed\n")
+    expect_clean(
+        "an untagged `raises SomeError` criterion counts as the error path",
+        HAPPY + "- **AC-2** Given one segment, when the component is initialised, then it raises "
+        "ArgumentError naming the minimum of two\n",
+    )
+    expect_clean(
+        "`raises an error` and `rescues` count too",
+        HAPPY + "- **AC-2** Given a pressed count of zero, when the caller initialises the component, "
+        "then it raises an error, and the controller rescues it into a flash\n",
+    )
+    # THE CONTROL ON THE SAME VERB. In a domain app a requester RAISES a request; if a bare "raise"
+    # counted, this happy-path-only unit would pass with no error path at all.
+    expect_findings(
+        "the DOMAIN verb 'raises a request' is not an error path",
+        "## Requests\n- **AC-1** Given a requester, when they raise a request, then it appears in "
+        "their list as raised 8 Sep\n",
+        contains="no error-path criterion",
+        count=1,
+    )
     expect_findings(
         "a second unit without an error path is caught even when the first has one",
         GOOD + "## Invoices\n- **AC-3** Given a draft invoice, when the user clicks Send, then "
