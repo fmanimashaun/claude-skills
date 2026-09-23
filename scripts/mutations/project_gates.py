@@ -76,7 +76,7 @@ GUARD = Guard(
         ),
         Mutation(
             "as_json() emits no findings key content",
-            '                     "findings": list(r.findings),',
+            '                     "findings": [] if r.status == PASS else list(r.findings),',
             '                     "findings": [],',
             "...carrying every line",
         ),
@@ -201,6 +201,24 @@ GUARD = Guard(
             '        total = sum(n if (n := stated_count(f[1])) is not None else len(f[2]) for f in failures)',
             '        total = sum(len(f[2]) for f in failures)',
             "#1189: a multi-file total is the checkers' own stated counts, not a count of lines",
+        ),
+        Mutation(
+            "#1227: a passing check's NOTE lines are dropped again",
+            "            notes.extend(pass_notes(done.stdout + done.stderr))\n",
+            "            pass\n",
+            "...and the NOTE reaches the report",
+        ),
+        Mutation(
+            "#1227: every line a passing check prints is surfaced, burying the findings",
+            'PASS_NOTE = re.compile(r"^\\s*(?:NOTE|WARNING):")',
+            'PASS_NOTE = re.compile(r".")',
+            "a passing check's other output is NOT surfaced",
+        ),
+        Mutation(
+            "#1227: a pass's notes are emitted as findings in --json",
+            '                     "findings": [] if r.status == PASS else list(r.findings),\n',
+            '                     "findings": list(r.findings),\n',
+            "in --json a pass's NOTE is a note, never a finding",
         ),
     ),
 )

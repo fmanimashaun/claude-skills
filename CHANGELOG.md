@@ -3324,6 +3324,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A passing check's `NOTE:`/`WARNING:` lines reach the report — `plugins/rails-flow/scripts/project_gates.py`,
+  `scripts/mutations/project_gates.py`** (#1227). A pass discarded everything the check printed, so
+  design-flow's *"this floor records no toolchain version"* (#1214) reached only someone running the check
+  by hand — never `bin/ci`. The contract is narrow: a line that begins `NOTE:` or `WARNING:` is printed under
+  the `[ok]` row, nothing else a passing check says is; in `--json` those lines are `notes`, never
+  `findings`, so a consumer summing findings cannot count a pass as a failure. Measured on a consumer: the
+  floors note now shows on `component-contract` and `layout-composition`, verdict unchanged (28 passed).
+  Found by a Retask bump measurement through intake.
+
 ### 1.49.4 (release v1.144.3) — 2026-09-23
 
 - **A zero-job *cancelled* run is no longer told its workflow file did not parse —
