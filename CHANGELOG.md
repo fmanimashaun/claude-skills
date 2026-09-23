@@ -14937,6 +14937,15 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **`parallel-session-lane` warns that `git reset --soft origin/dev` can squash away other people's merged work —
+  `skills/parallel-session-lane/SKILL.md`, `skills/parallel-session-lane/references/reading-a-list.md`,
+  `dist/parallel-session-lane.skill`** (#1237). `doctrine-verifier`: **CONFIRMED**, git 2.50.1, reproduced
+  twice — remote-tracking refs are shared by every linked worktree (git-worktree: *"all refs starting with
+  `refs/` are shared"*), and `--soft` leaves the index untouched (git-reset: *"Leave your working tree files
+  and the index unchanged"*), so after another worktree's fetch moved `origin/dev` the squash commit deletes
+  what the base gained. Safe form: squash to the base SHA recorded at branch creation, and read `git show
+  --stat`. Hit twice by Retask sessions in one day; one commit reverted about 70 files.
+
 - **`brand.md` no longer teaches a palette that fails validation — `skills/design-system/references/brand.md`,
   `dist/design-system.skill`** (#1235). Its fidara example carried the five `chart_hues` that fail the
   data-viz validator; the example drops them, and the page now says an override is **computed** by the lint
