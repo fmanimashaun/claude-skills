@@ -31,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 # Leading whitespace is tolerated on BOTH fences: a block nested inside a numbered list is
 # indented, and anchoring to column 1 made 11 blocks across 7 files invisible — including the
@@ -87,6 +88,11 @@ VERIFY_VERBS = (
 
 SWALLOWED = re.compile(VERIFY_VERBS + r"[^\n|]*\|\|\s*(echo|true|:)\b")
 UNQUOTED_TEST = re.compile(r"\[\s+-[a-z]\s+\$[A-Za-z_][A-Za-z0-9_]*\s+\]")
+# `git grep -E` is POSIX ERE, where `\b` is undefined: on macOS it matches NOTHING and exits 1, which
+# reads as "not found" (#1231). One shell segment -- no `|`, `;` or `&` -- carrying both the ERE flag
+# (`-E`, a cluster containing E, or `--extended-regexp`) and a `\b`. `-w` and `-P` are the fixes.
+GIT_GREP_ERE_BOUNDARY = re.compile(
+    r"\bgit\s+grep\b(?=[^\n|;&]*\s(?:-[A-Za-z]*E[A-Za-z]*|--extended-regexp)\b)(?=[^\n|;&]*\\b)")
 
 
 class Finding:
@@ -149,6 +155,12 @@ def lint_file(path: str) -> list[Finding]:
                     "a verification command's failure is consumed by `|| echo`/`|| true`, so the "
                     "check cannot block. Worse than no check — the message implies the gate ran.",
                     line.strip()))
+            if GIT_GREP_ERE_BOUNDARY.search(line):
+                findings.append(Finding(
+                    path, start + offset, "git-grep-ere-boundary",
+                    "`git grep -E` is POSIX ERE, where `\\b` is undefined: on macOS it matches nothing "
+                    "and exits 1, which reads as 'not found'. Use `git grep -w` or `git grep -P`.",
+                    line.strip()))
             if UNQUOTED_TEST.search(line):
                 findings.append(Finding(
                     path, start + offset, "unquoted-test",
@@ -175,6 +187,42 @@ def discover(roots: list[str]) -> list[str]:
     return sorted(set(p.replace(os.sep, "/") for p in found))
 
 
+def selftest() -> int:
+    """Each pattern rule fires on its bad line and stays quiet on its fixed twin (#1231)."""
+    import tempfile
+    cases = [
+        ("swallowed-verdict", "python3 x.py --check || echo skipped", "python3 x.py --check"),
+        ("unquoted-test", "[ -f $FILE ] && echo ok", '[ -f "$FILE" ] && echo ok'),
+        ("git-grep-ere-boundary", "git grep -nE '\\bfoo\\b' -- app", "git grep -nw 'foo' -- app"),
+        ("git-grep-ere-boundary", "git grep --extended-regexp '\\bfoo' app", "git grep -P '\\bfoo' app"),
+    ]
+    # A `\b` in a DIFFERENT segment of the line is not this rule's business.
+    quiet_extra = ["git grep -nE 'foo' app | grep -c '\\bbar'"]
+    failures, checks = [], 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, (rule, bad, good) in enumerate(cases):
+            for label, line, want in (("bad", bad, True), ("good", good, False)):
+                md = Path(tmp) / f"{i}-{label}.md"
+                md.write_text(f"```bash\n{line}\n```\n", encoding="utf-8")
+                got = any(f.kind == rule for f in lint_file(str(md)))
+                checks += 1
+                if got is not want:
+                    failures.append(f"{rule}: {label} line {line!r} -> {'fired' if got else 'quiet'}")
+        for j, line in enumerate(quiet_extra):
+            md = Path(tmp) / f"x{j}.md"
+            md.write_text(f"```bash\n{line}\n```\n", encoding="utf-8")
+            checks += 1
+            if any(f.kind == "git-grep-ere-boundary" for f in lint_file(str(md))):
+                failures.append(f"git-grep-ere-boundary fired across a pipe: {line!r}")
+    if failures:
+        print(f"lint_markdown_shell selftest FAILED -- {len(failures)} of {checks}:", file=sys.stderr)
+        for f in failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print(f"lint_markdown_shell selftest: {checks} checks passed")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="lint_markdown_shell.py",
@@ -186,7 +234,11 @@ def main(argv: list[str]) -> int:
                         help="cross-check the fence regex against a looser independent scan and "
                              "report any block it would skip (a silently-skipped block is the "
                              "failure mode this tool exists to prevent)")
+    parser.add_argument("--selftest", action="store_true",
+                        help="prove each pattern rule fires on a bad line and stays quiet on a good one")
     args = parser.parse_args(argv)
+    if args.selftest:
+        return selftest()
 
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):

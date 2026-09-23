@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The shell linter can fail, and refuses `git grep -E … \b` — `scripts/lint_markdown_shell.py`,
+  `scripts/mutations/lint_markdown_shell.py`, `scripts/maintainer_doctor.py`** (#1231). It had no `--selftest`,
+  so neither of its pattern rules had ever been seen to fire. It now has one (9 checks: each rule's bad line
+  and fixed twin, plus a `\b` in a later pipeline segment staying quiet), a mutation guard (4 caught), and a
+  doctor gate. New rule `git-grep-ere-boundary`: our shipped markdown holds 0 such commands today, so it only
+  prevents the first.
+
 ### 2026-09-23 (release v1.144.1)
 
 - **`AGENTS.md` states the reply style positively instead of listing banned habits** (#1201).
@@ -14897,6 +14906,19 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **`parallel-session-lane` states three git traps a parallel session hits —
+  `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`** (#1231). `doctrine-verifier`:
+  git 2.50.1, reproduced. (1) **The stash list is one per repository** — `refs/stash` is shared by every
+  worktree (git-worktree: *"all refs starting with refs/ are shared"*), so a bare `stash pop`/`drop` can take
+  a peer's entry; list with `--format='%gd|%gs'` and drop by ref. `-n1 'stash@{N}'` ignores the ref and
+  prints the top entry **once the list spans more than one branch** — CONFIRMED under that condition only,
+  and stated so. (2) **`git grep -E` with `\b`** matches nothing and exits 1 on macOS (POSIX leaves `\b`
+  undefined in ERE); `-w`/`-P` match — CONFIRMED; Linux/glibc behaviour [Recall]. (3) **`merge-base
+  --is-ancestor` returns 1 for a squash-merged PR** (git-merge: `--squash` records no MERGE_HEAD), so it is
+  not a "did it merge" test before `branch -D` — CONFIRMED. Found in a Retask session's lessons review.
 
 ### 1.65.1 (release v1.144.1) — 2026-09-23
 
