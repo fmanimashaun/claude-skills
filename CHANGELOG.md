@@ -3324,6 +3324,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A Markdown-quoted `raises \`ArgumentError\`` counts as an error path —
+  `plugins/rails-flow/scripts/check_criteria.py`, `plugins/rails-flow/scripts/check_criteria_selftest.py`,
+  `plugins/rails-flow/scripts/mutations/check_criteria.py`** (#1209). #1189's `RUBY_FAILURE` required the
+  class straight after the verb, so the forms criteria are actually written in — ``raises `ArgumentError` ``,
+  `raises **ArgumentError**`, ``an `ActiveRecord::RecordNotFound` `` and the passive
+  ``` `ArgumentError` is raised ``` — were reported as having no error path. Its only fixture was the bare
+  form. Markdown delimiters may now sit between verb and class, the passive counts with a capitalised
+  subject, and a class ending `Error`/`Exception` counts on its own; lowercase domain prose ("a ticket is
+  raised") still does not. Found by a Retask session through intake. Our own checker; no framework claim.
+
 ### 1.49.2 (release v1.144.1) — 2026-09-23
 
 - **The generated `CLAUDE.md` no longer carries an all-caps register or a banned-habits list —
