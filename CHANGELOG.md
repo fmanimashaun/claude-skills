@@ -3324,7 +3324,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.49.3 (release v1.144.2) — 2026-09-23
 
 - **A Markdown-quoted `raises \`ArgumentError\`` counts as an error path —
   `plugins/rails-flow/scripts/check_criteria.py`, `plugins/rails-flow/scripts/check_criteria_selftest.py`,
@@ -10009,7 +10009,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.32.3 (release v1.144.2) — 2026-09-23
 
 - **A `Route` copied from `bin/rails routes` credits its route — `plugins/qa-flow/scripts/route_coverage.py`,
   `plugins/qa-flow/scripts/route_coverage_selftest.py`, `plugins/qa-flow/scripts/mutations/route_coverage.py`**
