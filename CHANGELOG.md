@@ -3316,6 +3316,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The doctrine sweep reported a fifth of the findings its checks found —
+  `plugins/rails-flow/scripts/project_gates.py`, `scripts/mutations/project_gates.py`** (#1189). The
+  summary line was recognised only in the strict form `N finding(s):`, and our own checkers print
+  dialects of it — `15 acceptance-criteria finding(s) in <file> -- …:` (words between the number and the
+  noun) and `3 finding(s). --propose …` (a full stop, **after** the list). Neither matched, so the ladder
+  fell back to "the first line that looks like a finding", which skipped AC-1…AC-13 and landed on the
+  second-to-last line; the multi-file total then summed the **lines** carried after it, including the
+  checker's closing advice. **Measured on Retask `dev` `f738785`: the sweep said `6 finding(s) across 3 of
+  6 file(s)`; the same checkers run directly found 15 + 10 + 5 = 30**, and `docs-layout` showed one finding
+  of three with no count. The summary now recognises every dialect; a trailing count line carries the
+  bullets **above** it rather than an empty list; and a multi-file total is the sum of the counts the
+  checkers state, falling back to lines only for a checker that states none. **Verdicts are unchanged** —
+  the same tree reports 22 passed / 6 failed before and after; only the counts and the carried findings
+  move. Six fixtures with literal values (the multi-file one reads 5 where the old code said 7) and three
+  mutations, all caught (27).
+
 ### 1.49.0 (release v1.143.0) — 2026-09-22
 
 - **Three memory systems could inject into every session and nothing noticed —

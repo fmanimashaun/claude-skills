@@ -353,7 +353,22 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x1b\x07]*(?:\x07|\x1b\\)")
 _FINDING = re.compile(r"\b(error|errors|warning|warnings|fail(ed|ure)?)\b|⚠|:\d+:\d+")
 # OUR OWN CHECKS SAY SO STRUCTURALLY, and a structural anchor cannot be spoofed by data (#1028).
 # Tried first, because `N finding(s):` is the documented convention every script here emits.
-_SUMMARY = re.compile(r"^\s*\d+\s+finding\(s\):")
+#
+# THE CONVENTION HAS DIALECTS, and missing them undercounted the sweep five-fold (#1189). Our own
+# checkers print `15 acceptance-criteria finding(s) in <file> -- ...:` (words between the number and
+# the noun) and `3 finding(s). --propose ...` (a full stop, and AFTER the list). The strict form
+# matched neither, so the ladder fell through to "first line that looks like a finding" -- which
+# skipped AC-1..AC-13, landed on the second-to-last line, and carried one finding plus the closing
+# advice. Measured on a downstream tree: the sweep said "6 finding(s) across 3 of 6 file(s)"; the
+# same checkers run directly said 15 + 10 + 5 = 30.
+_SUMMARY = re.compile(r"^\s*(\d+)\s+(?:[\w-]+\s+){0,3}finding\(s\)(?=\W|$)")
+_BULLET = re.compile(r"^\s*-\s")
+
+
+def stated_count(summary: str) -> int | None:
+    """The number a checker says it found, when its summary line states one."""
+    m = _SUMMARY.search(summary)
+    return int(m.group(1)) if m else None
 # A severity word inside a ROUTE is not a severity (#1028). `GET /auth/failure` matched
 # `\bfailure\b`, so a route's NAME became the headline of a route-coverage report and the real
 # summary was dropped as preamble -- a maintainer then chased 41 responsive routes while the gate
@@ -416,6 +431,11 @@ def summarise(output: str, returncode: int) -> tuple[str, tuple[str, ...]]:
     if idx is None:
         return f"exit {returncode}", ()
     rest = [ln for ln in lines[idx + 1:] if ln.strip()]
+    # THE COUNT CAN COME LAST (#1189). `docs_layout --report` prints its list and THEN
+    # `3 finding(s).` -- so with the count line found, nothing follows it, and the findings are the
+    # bullets above. Without this the widened match would trade an undercount for an empty list.
+    if not rest and _SUMMARY.search(lines[idx]):
+        rest = [ln for ln in lines[:idx] if _BULLET.match(ln)]
     if len(rest) > MAX_FINDING_LINES:
         dropped = len(rest) - MAX_FINDING_LINES
         rest = rest[:MAX_FINDING_LINES] + [
@@ -516,8 +536,12 @@ def run_check(check: Check, project: Path) -> Result:
             failures.append((argv[-1], summary, findings))
     if failures:
         first = failures[0]
+        # THE CHECKER'S OWN COUNT, NOT A COUNT OF LINES (#1189). `len(findings)` counts the lines after
+        # the summary, which includes a checker's closing advice and misses anything the summary
+        # skipped. Where the checker states its number, that number is the finding count.
+        total = sum(n if (n := stated_count(f[1])) is not None else len(f[2]) for f in failures)
         detail = first[1] if len(failures) == 1 else (
-            f"{sum(len(f[2]) for f in failures)} finding(s) across {len(failures)} of "
+            f"{total} finding(s) across {len(failures)} of "
             f"{len(argvs)} file(s) — {first[1]}")
         merged: list[str] = []
         for path, summary, items in failures:
@@ -739,6 +763,37 @@ def selftest() -> int:
         (project / "docs" / "b.md").write_text("y\n", encoding="utf-8")
         r = run_check(mk(command=["python3", str(root / "scripts/ok.py"), "{match:docs/*.md}"]), project)
         check("a match runs once per file", r.status == PASS and "2 invocation" in r.detail, r.detail)
+        # THE COUNT A CHECKER STATES, IN ITS OWN DIALECT (#1189). `crit.py` prints the way
+        # check_criteria does -- words between the number and the noun, then bullets, then advice.
+        # 3 findings for a.md, 2 for b.md: the total is 5. The old code counted LINES and said 7.
+        (root / "scripts" / "crit.py").write_text(
+            "import sys, pathlib\n"
+            "n = 3 if pathlib.Path(sys.argv[1]).name == 'a.md' else 2\n"
+            "print(f'{n} acceptance-criteria finding(s) in {sys.argv[1]} -- cannot grade:')\n"
+            "for i in range(1, n + 1): print(f'  - AC-{i} (line {i}): missing then')\n"
+            "print(); print('Rewrite the criterion, do not soften the check.')\n"
+            "sys.exit(1)\n", encoding="utf-8")
+        r = run_check(mk(command=["python3", str(root / "scripts/crit.py"), "{match:docs/*.md}"]), project)
+        check("#1189: a multi-file total is the checkers' own stated counts, not a count of lines",
+              r.detail.startswith("5 finding(s) across 2 of 2 file(s)"), r.detail[:90])
+        # ...and the list is carried from its FIRST item. The real output's first bullets carried no
+        # severity word, so the ladder skipped them and started at the second-to-last line.
+        _s, _f = summarise("3 acceptance-criteria finding(s) in x.md -- cannot grade:\n"
+                           "  - AC-1 (line 1): missing then\n  - AC-2 (line 2): missing then\n"
+                           "  - unit 'U' has no error-path criterion\n\nRewrite the criterion.", 1)
+        check("#1189: a worded count line is the summary", _s.startswith("3 acceptance-criteria finding(s)"), _s)
+        check("#1189: ...and the carried findings start at AC-1, not at a later line",
+              bool(_f) and "AC-1" in _f[0], f"{_f[:1]}")
+        # THE COUNT CAN COME LAST, as docs_layout prints it: the findings are the bullets above it.
+        _s, _f = summarise("- docs/a.md: misplaced\n- docs/b.md: misplaced\n\n"
+                           "2 finding(s). `--propose` prints the moves.", 1)
+        check("#1189: a trailing count line is the summary", _s.startswith("2 finding(s)."), _s)
+        check("#1189: ...and the bullets ABOVE it are carried, not an empty list",
+              len(_f) == 2 and "docs/a.md" in _f[0], f"{_f}")
+        check("#1189: stated_count reads every dialect and refuses a line that states none",
+              stated_count("15 acceptance-criteria finding(s) in x") == 15 and stated_count("1 finding(s):") == 1
+              and stated_count("3 finding(s). hint") == 3 and stated_count("something opaque happened") is None,
+              "stated_count")
         # THE SUMMARY MUST NOT COUNT n/a AS PASSED. The near-miss that matters: a repo where
         # everything is inapplicable must not exit 0 looking like a repo where everything passed.
         import io, contextlib
