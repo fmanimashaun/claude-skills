@@ -3336,6 +3336,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   subject, and a class ending `Error`/`Exception` counts on its own; lowercase domain prose ("a ticket is
   raised") still does not. Found by a Retask session through intake. Our own checker; no framework claim.
 
+- **`ci_verdict.py` no longer reports a workflow that never started as a real code failure**
+  (#1208) — when a workflow file does not parse, GitHub creates a run with `conclusion: failure`
+  and **zero jobs**. `plugins/rails-flow/scripts/ci_verdict.py`'s step sum
+  `[.jobs[].steps|length]|add` is `null` over zero jobs, and `step_count()` read that null on the
+  same line as a failed `gh` call — `if not raw or raw == "null": return None` — so the run fell
+  through to FAILED, *"really ran and failed — those are about the code"*, over a run where nothing
+  ran. A consumer project sat in that state for about a day. `measure()` now reads `total_count`
+  beside the step sum and returns `(jobs, steps)`: a failed call stays `(None, None)` and still
+  verdicts FAILED, while zero jobs is a measurement and gets its own verdict, `never-started`. It is
+  deliberately **not** `did-not-run`, whose message blames runners and billing: an unparseable
+  workflow is in the diff, so it exits **1** and says to read the workflow files the change
+  touches. Selftest 18 → 27 assertions, driving `measure()` with the raw answers `gh` returns;
+  three mutations added to `scripts/mutations/ci_verdict.py` (8 in total), including one restoring
+  the original conflation exactly. All caught.
+
 ### 1.49.2 (release v1.144.1) — 2026-09-23
 
 - **The generated `CLAUDE.md` no longer carries an all-caps register or a banned-habits list —

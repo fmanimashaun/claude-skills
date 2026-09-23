@@ -48,6 +48,9 @@ EXIT CODES ARE THE POINT, so a caller cannot collapse the two back into one verd
 
     0  every run examined passed (or is still going)
     1  at least one run RAN and failed          -- a finding about the diff
+       ...or NEVER STARTED: zero jobs, because the workflow file itself did not parse. Also
+       the diff, so it exits 1 and not 3 -- sending that reader to their runners or billing
+       over a YAML error would be the confident-wrong-verdict this tool exists to prevent.
     3  nothing ran                              -- a finding about the ENVIRONMENT, not the diff
     2  bad usage / could not measure
 
@@ -67,6 +70,7 @@ import sys
 NEVER_STARTED_CONCLUSIONS = frozenset({"failure", "cancelled", "startup_failure", "stale", None})
 
 PASSED, FAILED, DID_NOT_RUN, RUNNING = "passed", "failed", "did-not-run", "running"
+NEVER_STARTED = "never-started"   # zero jobs: the workflow file itself never ran (#1208)
 
 
 def verdict(run: dict) -> str:
@@ -85,6 +89,12 @@ def verdict(run: dict) -> str:
         return RUNNING
     if conclusion == "success":
         return PASSED
+    # ZERO JOBS is a third answer (#1208). GitHub creates a run with no jobs when the workflow file
+    # itself cannot be read -- most often invalid YAML -- names it after the file path, and marks it
+    # failure. Nothing ran, so it is not a test failure; unlike a missing runner the cause IS in the
+    # change, so it must not be read as the environment either.
+    if run.get("jobs") == 0 and conclusion in NEVER_STARTED_CONCLUSIONS:
+        return NEVER_STARTED
     # `steps` is None when we could not measure it. That is NOT zero -- an unmeasured run must not
     # be reported as "no runner", which would send someone to their billing page over a real
     # failing suite. Unknown falls back to the conclusion, which is what we had before.
@@ -94,7 +104,8 @@ def verdict(run: dict) -> str:
 
 
 def classify(runs: list[dict]) -> dict[str, list[dict]]:
-    out: dict[str, list[dict]] = {PASSED: [], FAILED: [], DID_NOT_RUN: [], RUNNING: []}
+    out: dict[str, list[dict]] = {PASSED: [], FAILED: [], DID_NOT_RUN: [], NEVER_STARTED: [],
+                                  RUNNING: []}
     for run in runs:
         out[verdict(run)].append(run)
     return out
@@ -107,20 +118,25 @@ def _gh(args: list[str]) -> str:
     return proc.stdout
 
 
-def step_count(repo: str, run_id: int) -> int | None:
-    """Total executed steps across every job, or None when it could not be measured.
+def measure(repo: str, run_id: int) -> tuple[int | None, int | None]:
+    """(jobs, executed steps) for a run, or (None, None) when the jobs endpoint could not be read.
 
-    None and 0 are different answers and the difference is load-bearing -- see `verdict()`.
+    Three answers, not two, and all load-bearing -- see `verdict()`. A FAILED call is unmeasured. A
+    successful call reporting zero jobs is a MEASUREMENT: nothing ran and zero steps executed. The
+    step sum `[.jobs[].steps|length]|add` is `null` over zero jobs, and reading that null as "could
+    not measure" is what filed a workflow that never parsed as a real code failure (#1208).
     """
     raw = _gh(["api", f"repos/{repo}/actions/runs/{run_id}/jobs",
-               "--jq", "[.jobs[].steps|length]|add"])
-    raw = raw.strip()
-    if not raw or raw == "null":
-        return None
+               "--jq", "{jobs: .total_count, steps: ([.jobs[].steps|length]|add)}"])
     try:
-        return int(raw)
+        data = json.loads(raw)
     except ValueError:
-        return None
+        return None, None
+    jobs = data.get("jobs") if isinstance(data, dict) else None
+    if not isinstance(jobs, int):
+        return None, None
+    steps = data.get("steps")
+    return jobs, (steps if isinstance(steps, int) else 0 if jobs == 0 else None)
 
 
 def collect(repo: str, limit: int, branch: str | None, event: str | None) -> list[dict]:
@@ -135,15 +151,17 @@ def collect(repo: str, limit: int, branch: str | None, event: str | None) -> lis
         return []
     runs = json.loads(raw)
     for run in runs:
-        run["steps"] = step_count(repo, run["databaseId"])
+        run["jobs"], run["steps"] = measure(repo, run["databaseId"])
     return runs
 
 
 def _describe(run: dict) -> str:
     steps = run.get("steps")
+    jobs = "" if run.get("jobs") is None else f"jobs={run['jobs']}  "
     return (f"{run.get('createdAt', '?')}  {run.get('name', '?')} "
             f"[{run.get('event', '?')}@{run.get('headBranch', '?')}]  "
-            f"conclusion={run.get('conclusion')}  steps={'unmeasured' if steps is None else steps}")
+            f"conclusion={run.get('conclusion')}  {jobs}"
+            f"steps={'unmeasured' if steps is None else steps}")
 
 
 def report(runs: list[dict]) -> int:
@@ -151,13 +169,22 @@ def report(runs: list[dict]) -> int:
         print("NOT APPLICABLE: no runs matched — this check examined nothing.")
         return 2
     buckets = classify(runs)
-    for name in (DID_NOT_RUN, FAILED, PASSED, RUNNING):
+    for name in (NEVER_STARTED, DID_NOT_RUN, FAILED, PASSED, RUNNING):
         for run in buckets[name]:
-            print(f"  [{name:<11}] {_describe(run)}")
+            print(f"  [{name:<13}] {_describe(run)}")
     print(f"\n{len(runs)} run(s) examined: {len(buckets[PASSED])} passed, "
-          f"{len(buckets[FAILED])} failed, {len(buckets[DID_NOT_RUN])} did not run, "
+          f"{len(buckets[FAILED])} failed, {len(buckets[NEVER_STARTED])} never started, "
+          f"{len(buckets[DID_NOT_RUN])} did not run, "
           f"{len(buckets[RUNNING])} still going.")
 
+    if buckets[NEVER_STARTED]:
+        print(
+            f"\nTHE WORKFLOW NEVER STARTED — {len(buckets[NEVER_STARTED])} run(s) produced no jobs "
+            f"at all. GitHub does this when a workflow file cannot be read, most often invalid YAML, "
+            f"and names the run after the file path instead of its `name:`. Nothing ran and nothing "
+            f"was tested -- but unlike a missing runner this IS about the change: read the workflow "
+            f"files it touches. The run's page shows the parse error; `gh run view --log-failed` "
+            f"will be empty because no job wrote a log.")
     if buckets[DID_NOT_RUN]:
         print(
             f"\nENVIRONMENT, NOT THE DIFF — {len(buckets[DID_NOT_RUN])} run(s) completed without "
@@ -170,7 +197,7 @@ def report(runs: list[dict]) -> int:
     if buckets[FAILED]:
         print(f"\n{len(buckets[FAILED])} run(s) really ran and failed — those are about the code.")
 
-    if buckets[FAILED]:
+    if buckets[FAILED] or buckets[NEVER_STARTED]:
         return 1                      # a real failure is actionable; report it even alongside the other
     return 3 if buckets[DID_NOT_RUN] else 0
 
@@ -253,6 +280,45 @@ def _selftest() -> int:
            "ENVIRONMENT, NOT THE DIFF" in text and "UNVERIFIED" in text)
     expect("...and warns that --log-failed will be empty rather than broken",
            "no log" in text)
+
+    # ZERO JOBS (#1208): a workflow file that did not parse. Measured on a consumer project -- a run
+    # named after the file path, conclusion failure, total_count 0 -- which this tool had called a
+    # real code failure, the opposite of both the truth and its purpose.
+    PARSE_FAILURE = {"status": "completed", "conclusion": "failure", "jobs": 0, "steps": 0,
+                     "name": ".github/workflows/ci.yml"}
+    expect("a completed failure with ZERO jobs never started -- the workflow file itself did not run",
+           verdict(PARSE_FAILURE) == NEVER_STARTED)
+    expect("...and it is NOT filed as a missing runner, which would blame the environment for the diff",
+           verdict(PARSE_FAILURE) != DID_NOT_RUN)
+    expect("jobs that executed zero steps are still the environment, not a parse failure",
+           verdict({**NO_RUNNER, "jobs": 5}) == DID_NOT_RUN)
+    expect("a workflow that never started exits 1 -- the cause is in the diff",
+           code([PARSE_FAILURE]) == 1)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        report([PARSE_FAILURE])
+    text = out.getvalue()
+    expect("the never-started report points at the workflow file, not at runners or billing",
+           "WORKFLOW NEVER STARTED" in text and "ENVIRONMENT, NOT THE DIFF" not in text)
+
+    # measure() is where the defect lived: a successful zero-job answer and a failed `gh` call were
+    # one branch. Drive it with the raw answers `gh` really returns, not a hand-built record.
+    real_gh = globals()["_gh"]
+    try:
+        globals()["_gh"] = lambda args: '{"jobs":0,"steps":null}\n'
+        expect("a successful zero-job answer is a measurement: 0 jobs, 0 steps",
+               measure("o/r", 1) == (0, 0))
+        globals()["_gh"] = lambda args: ""
+        expect("a FAILED jobs call is unmeasured, (None, None) -- the split cannot collapse back",
+               measure("o/r", 1) == (None, None))
+        failed = {"status": "completed", "conclusion": "failure"}
+        failed["jobs"], failed["steps"] = measure("o/r", 1)
+        expect("...and an unmeasured run still falls back to FAILED, never to never-started",
+               verdict(failed) == FAILED)
+        globals()["_gh"] = lambda args: '{"jobs":5,"steps":0}\n'
+        expect("jobs with zero steps are measured as exactly that", measure("o/r", 1) == (5, 0))
+    finally:
+        globals()["_gh"] = real_gh
 
     if bad:
         print(f"ran {ok + len(bad)} assertion(s)\n\n{len(bad)} FAILED:", file=sys.stderr)
