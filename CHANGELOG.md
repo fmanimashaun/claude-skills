@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-23 (release v1.144.1)
 
 - **`AGENTS.md` states the reply style positively instead of listing banned habits** (#1201).
   **Maintainer decision, 2026-09-23**; our own doctrine, no upstream. A report-only
@@ -3324,7 +3324,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.49.2 (release v1.144.1) — 2026-09-23
 
 - **The generated `CLAUDE.md` no longer carries an all-caps register or a banned-habits list —
   `plugins/rails-flow/commands/setup-flow.md`** (#1201). **Maintainer decision, 2026-09-23**; our
@@ -14775,7 +14775,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.65.1 (release v1.144.1) — 2026-09-23
 
 - **`ai-llm.md`'s core chat example no longer 400s on its own default model —
   `skills/rails-8/references/ai-llm.md`** (#1200). §2 chained `chat.with_temperature(0.2)` onto the
