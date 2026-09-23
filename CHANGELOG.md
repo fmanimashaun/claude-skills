@@ -11946,6 +11946,40 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The three content gates were absolute, so a project with tracked design debt could never show a
+  green sweep — `plugins/design-flow/scripts/content_floors.py`,
+  `plugins/design-flow/scripts/check_component_contract.py`,
+  `plugins/design-flow/scripts/check_layout_composition.py`,
+  `plugins/design-flow/scripts/check_surface_layout.py`,
+  `plugins/design-flow/scripts/mutations/content_floors.py`** (#1187).
+  **[Maintainer decision recorded on the issue](https://github.com/fmanimashaun/claude-skills/issues/1187#issuecomment-5790257921)**
+  — our own design, no upstream. `structure_ratchet` has had a recorded floor since it was written;
+  these three returned `1 if findings else 0`, so they could not distinguish debt that is **filed,
+  owned and shrinking** from debt that appeared this morning. Both printed FAIL, and a verdict that
+  carries no information for any project past its first week is one people stop reading.
+
+  **Floors are PER RULE, which is the maintainer's decision and not a detail.** `component-contract`
+  reports `raw-element` and `component-drops-attributes` together; one number would let a fall in
+  one mask a rise in the other. Measured on a live downstream project: **14 drops and 7 raw
+  elements**, not a single 21 — and a swap between them is caught, with the finding naming the rule
+  that grew.
+
+  **No floor file still means zero tolerance, exactly.** A greenfield project is unchanged, and that
+  is proved rather than asserted: a fixture asserts it, and a mutation that makes a missing file
+  sanction debt is caught by that fixture. **It is the property that would silently weaken the gate
+  for every project that has not opted in**, so it is the one guarded hardest.
+
+  **The ratchet refuses both directions.** Above a rule's floor fails, naming what is new. Below
+  fails as STALE — a floor nobody lowers leaves that much room to drift back, invisibly. At the
+  floor passes and prints the count, so sanctioned debt stays on screen.
+
+  Seven mutations, all caught. **One survived first**: the case proving a stale floor is reported
+  kept the rule *present* in the tally, so it exercised the comparison and never the iteration — a
+  rule fixed to **zero** vanishes from the tally entirely, and only that case can see a floor left
+  standing over a rule nobody has any findings for.
+
 ### 1.42.2 (release v1.141.0) — 2026-09-22
 
 - **An attribute reader is not a slot, and the check reported a table that has none —

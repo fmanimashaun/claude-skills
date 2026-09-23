@@ -74,6 +74,8 @@ import re
 import sys
 from pathlib import Path
 
+import content_floors
+
 from source_text import strip_comments
 
 CLASS_ATTR = re.compile(r'class="([^"]*)"')
@@ -300,6 +302,8 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=".", help="project root (default: cwd)")
     ap.add_argument("--selftest", action="store_true", help="prove this check can fail")
+    ap.add_argument("--set-floor", action="store_true",
+                    help="record the CURRENT findings as this project's sanctioned floor (#1187)")
     args = ap.parse_args()
     if args.selftest:
         return _selftest()
@@ -313,10 +317,17 @@ def main() -> int:
     for f in findings:
         print(f"  {f}")
     print(f"\n{views} view file(s) examined; {len(findings)} finding(s).")
+    if args.set_floor:
+        return content_floors.set_floor(root, "layout-composition", findings)
     if findings:
         print("Primitives this project declares: "
               f"{', '.join(sorted(primitives(root))[:12])}…")
-    return 1 if findings else 0
+    code, lines = content_floors.verdict(root, "layout-composition", findings)
+    if lines:
+        print(f"\nagainst {content_floors.FLOORS}:")
+        for line in lines:
+            print(line)
+    return code
 
 
 if __name__ == "__main__":
