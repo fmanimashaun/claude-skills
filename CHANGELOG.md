@@ -12098,6 +12098,24 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **A brand pack's chart palette is validated, not declared — `plugins/design-flow/scripts/palette_gates.py`,
+  `plugins/design-flow/scripts/brand_pack_lint.py`, `plugins/design-flow/brands/fidara/brand.json`,
+  `plugins/design-flow/brands/reliance/brand.json`** (#1235, P1). The lint required `chart_palette_validated: true`
+  and never ran the validation, so **both shipped packs claimed a validated palette and both failed it**:
+  reliance on lightness (`#8ACAEF` L 0.809), chroma (C 0.084) and normal vision (`#CB193B`/`#DC6803` ΔE 14.9 <
+  15), and it reused three of its own status colours as series against `data-viz.md:139`; fidara on
+  colour-blind separation (`#22C55E`/`#FF6B35` ΔE **4.8**, deuteranopia) — and it overrode the palette its own
+  doctrine validated. `palette_gates.py` now computes the data-viz method's hard gates — OKLCH lightness band
+  and chroma floor, OKLab ΔE between adjacent slots unsimulated and under the Machado 2009 simulation — and
+  the lint fails a pack whose `chart_hues` does not pass. Its selftest reproduces the method's own
+  validator to the figure (reliance 8.4 / 14.9, fidara 4.8, the validated palette 9.1 / 19.6). Nothing in
+  the code reads `chart_hues` — the tokens come from the design system — so both packs **drop the
+  override and inherit the validated palette**, which is the doctrine's normal shape; a reliance-specific
+  set (brand blue in slot 1) is a design decision left to the owner, and the lint will now check it.
+  Found downstream: Retask #267 was blocked on it.
+
 ### 1.43.2 (release v1.144.4) — 2026-09-23
 
 - **A misplaced `design-flow-disable` is reported, and no longer counted as a suppression —
@@ -14918,6 +14936,11 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **`brand.md` no longer teaches a palette that fails validation — `skills/design-system/references/brand.md`,
+  `dist/design-system.skill`** (#1235). Its fidara example carried the five `chart_hues` that fail the
+  data-viz validator; the example drops them, and the page now says an override is **computed** by the lint
+  and must not reuse status colours. Our own design and measured figures; no framework claim.
 
 - **`parallel-session-lane` states three git traps a parallel session hits —
   `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`** (#1231). `doctrine-verifier`:
