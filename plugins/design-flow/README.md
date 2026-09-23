@@ -77,7 +77,8 @@ second `setup` laid over the first's managed block — two packs' roles in one b
   `bg-gradient-to-*` (removed in Tailwind v4) and `duration-fast` (never existed) both emit **no
   CSS at all**, so the markup looks right and renders wrong with nothing raised.
   Disable one **with a reason** — `<!-- design-flow-disable <rule>: why -->`; a bare disable is
-  itself a finding.
+  itself a finding. A disable covers **its own line and the next one only**, so put it on the
+  flagged line or directly above it; one that suppresses nothing is reported as `unused-disable`.
 - **`setup_doctrine_crosscheck.py`** — catches doctrine that reads a config key `/design-flow:setup`
   never generates. A toolchain check, not a project one.
 - **`brand_pack_lint.py`** — validates a brand pack's completeness.

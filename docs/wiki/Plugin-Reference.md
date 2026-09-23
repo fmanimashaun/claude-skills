@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Plugin reference
-Marketplace **1.144.3**.
+Marketplace **1.144.4**.
 
 | plugin | version | commands | what it does |
 |---|---|---|---|
@@ -10,6 +10,6 @@ Marketplace **1.144.3**.
 | `rails-flow` | 1.49.4 | 20 | Agentic development flow for Rails 8 projects |
 | `qa-flow` | 1.32.3 | 8 | Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/q |
 | `pipeline` | 1.3.3 | 8 | Lifecycle orchestrator over rails-flow and qa-flow |
-| `design-flow` | 1.43.1 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
+| `design-flow` | 1.43.2 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
 
 `rails-stack` ships **no commands** — it is doctrine only, which is why installing it changes what Claude writes without adding anything to type.

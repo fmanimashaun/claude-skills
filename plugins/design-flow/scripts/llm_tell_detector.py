@@ -248,7 +248,12 @@ def _rules() -> tuple[Rule, ...]:
             # then evaluated at the space before `var(`. Scan the VALUE instead --
             # `(?![^;}]*var\()` looks ahead to the end of the declaration -- which also lets the
             # `font:` shorthand share the branch, closing a path where a genuine literal was silent.
-            re.compile(r"font-\[[\"']?[A-Za-z]|font(?:-family)?\s*:(?![^;}]*var\()"),
+            #
+            # #1222. A value that is ONLY a CSS-wide keyword -- `font: inherit`, `unset`, `revert` --
+            # names no family, so it is not a literal; the branch above flagged it on every save.
+            re.compile(r"font-\[[\"']?[A-Za-z]|font(?:-family)?\s*:"
+                       r"(?!\s*(?:inherit|initial|unset|revert(?:-layer)?)\s*(?:[;}!\"']|$))"
+                       r"(?![^;}]*var\()"),
         ),
         Rule(
             "off-scale-radius",
@@ -306,6 +311,9 @@ class Finding:
 class Report:
     findings: list[Finding] = field(default_factory=list)
     bare_disables: list[Finding] = field(default_factory=list)
+    unused_disables: list[Finding] = field(default_factory=list)
+    # (path, line, rule) -> whether that reasoned disable suppressed a real match (#1224).
+    disables: dict[tuple[str, int, str], bool] = field(default_factory=dict)
     files: int = 0
     lines: int = 0
     suppressed: int = 0
@@ -363,6 +371,11 @@ def _scan_line(line: str, previous: str, path: str, index: int, report: Report,
     raw-hex violation while the same line in a `.css` file was correctly exempt. Fixing the copy
     would have left the next divergence to find later, so there is no copy now.
     """
+    # Register this line's own reasoned disables BEFORE the comment early-return: a disable written
+    # as its own `/* ... */` line is still a disable, and must be reported if it hides nothing.
+    for name in sorted(_disables(line, "")[0]):
+        if name in BY_NAME:
+            report.disables.setdefault((path, index, name), False)
     if COMMENT_LINE.match(line):
         return
     allowed, bare = _disables(line, previous)
@@ -373,14 +386,23 @@ def _scan_line(line: str, previous: str, path: str, index: int, report: Report,
                     "bare-disable", path, index, line,
                     f"`design-flow-disable {name}` carries no reason. A disable without one is a "
                     f"finding: write `design-flow-disable {name}: why`", "#157"))
+    # A DISABLE'S OWN TEXT IS NOT CODE (#1224). `design-flow-disable literal-font-family: why`
+    # contains `font-family: why`, so the rule matched the comment excusing it and counted a
+    # suppression that hid nothing. Rules judge the line with every disable span removed.
+    probe = DISABLE.sub(" ", line)
     for rule in RULES:
-        if rule.name in allowed:
-            report.suppressed += 1
-            continue
-        match = rule.pattern.search(line)
+        match = rule.pattern.search(probe)
         if not match:
             continue
-        if rule.exempt and rule.exempt(line, match):
+        if rule.exempt and rule.exempt(probe, match):
+            continue
+        # SUPPRESSED ONLY IF IT WOULD HAVE FIRED (#1224). This counted every rule a disable NAMED,
+        # so a disable twenty lines from its target reported "suppressed" while the finding printed.
+        if rule.name in allowed:
+            report.suppressed += 1
+            for key in ((path, index, rule.name), (path, index - 1, rule.name)):
+                if key in report.disables:
+                    report.disables[key] = True
             continue
         # The ONE-LINE form is handled by the rule's own exempt; this covers the multi-line block,
         # which is how every project that follows the self-hosting doctrine actually writes it. A
@@ -400,6 +422,24 @@ def scan_text(text: str, path: str, report: Report) -> None:
         in_font_face, here = _font_face_state(line, in_font_face)
         _scan_line(line, lines[index - 2] if index >= 2 else "", path, index, report,
                    in_font_face=here)
+    _report_unused_disables(path, lines, report)
+
+
+def _report_unused_disables(path: str, lines: list[str], report: Report) -> None:
+    """A reasoned disable that hid nothing on its own line or the next is a finding (#1224).
+
+    It reads as protection and is none: six of six pages in one consumer put the disable at the top
+    of the file, twenty lines from the declaration, and every one still fired. ESLint calls this
+    an unused disable directive, for the same reason.
+    """
+    for (where, index, name), used in sorted(report.disables.items()):
+        if where != path or used:
+            continue
+        report.unused_disables.append(Finding(
+            "unused-disable", path, index, lines[index - 1],
+            f"`design-flow-disable {name}` suppresses nothing: a disable covers ITS OWN line and the "
+            f"next one only. Move it onto the flagged line or the line directly above it, or delete "
+            f"it", "#1224"))
 
 
 # `js` must not match the `js` in ```json -- the boundary bug this repo already fixed once in
@@ -505,12 +545,19 @@ def main(argv: list[str] | None = None) -> int:
         else:
             scan_path(path, report)
 
-    for finding in report.findings + report.bare_disables:
+    for finding in report.findings + report.bare_disables + report.unused_disables:
         print(finding)
+    # AN UNUSED DISABLE IS PRINTED, NEVER COUNTED (#1224). A MISPLACED one leaves its rule firing,
+    # so the file is already red and this line only says why. A STALE one -- the code it excused
+    # was removed -- hides nothing, and failing on it would turn a project red on a toolchain bump
+    # with nothing regressed. So it costs nothing to report and would buy only false reds to fail.
     total = len(report.findings) + len(report.bare_disables)
     if not args.quiet:
         note = f", {report.suppressed} suppressed with a reason" if report.suppressed else ""
-        print(f"\n{total} finding(s) across {report.files} file(s), {report.lines} line(s){note}.")
+        unused = (f", {len(report.unused_disables)} disable(s) suppressing nothing (reported, "
+                  f"not counted)") if report.unused_disables else ""
+        print(f"\n{total} finding(s) across {report.files} file(s), {report.lines} line(s)"
+              f"{note}{unused}.")
     return 1 if total else 0
 
 
@@ -595,6 +642,44 @@ def selftest() -> int:
     case("...and so does the multi-line form, declaration not first",
          '@font-face {\n  src: url("/f.woff2") format("woff2");\n  font-family: "NotoSans";\n}',
          rule="literal-font-family", expect=False)
+    # #1222: a CSS-wide keyword names no family.
+    for kw in ("inherit", "initial", "unset", "revert", "revert-layer"):
+        case(f"`font: {kw}` names no family", f".cta {{ font: {kw}; font-weight: 600; }}",
+             rule="literal-font-family", expect=False)
+    case("`font-family: inherit` at the end of a block names no family",
+         "button { font-family: inherit }", rule="literal-font-family", expect=False)
+    case("a keyword with !important names no family", "a { font: inherit !important; }",
+         rule="literal-font-family", expect=False)
+    case("a keyword in an inline style names no family", '<b style="font: inherit">x</b>',
+         rule="literal-font-family", expect=False)
+    # The control: a keyword-LOOKING prefix followed by a literal is still a literal.
+    case("a family that merely starts like a keyword still trips",
+         "p { font-family: initial-sans, serif; }", rule="literal-font-family", expect=True)
+    # #1224: a disable covers its own line and the next. Drive `scan_text`, the entry point.
+    def scanned(text: str) -> Report:
+        rep = Report()
+        scan_text(text, "x.html", rep)
+        return rep
+    far = ('<!-- design-flow-disable literal-font-family: static page, no role token -->\n'
+           + "\n" * 5 + 'body { font: 400 16px/1.5 "Noto Sans", sans-serif; }\n')
+    near = ('/* design-flow-disable literal-font-family: static page, no role token */\n'
+            'body { font: 400 16px/1.5 "Noto Sans", sans-serif; }\n')
+    same = 'body { font: 16px "Noto Sans"; } /* design-flow-disable literal-font-family: static */\n'
+    r_far, r_near, r_same = scanned(far), scanned(near), scanned(same)
+    for label, ok in (
+        ("a disable six lines above does NOT suppress the finding", len(r_far.findings) == 1),
+        ("...and is NOT counted as suppressed", r_far.suppressed == 0),
+        ("...and IS reported as a disable suppressing nothing",
+         [f.line for f in r_far.unused_disables] == [1]),
+        ("a disable on the line above suppresses, counted once",
+         (len(r_near.findings), r_near.suppressed, len(r_near.unused_disables)) == (0, 1, 0)),
+        ("a disable on the same line suppresses, counted once",
+         (len(r_same.findings), r_same.suppressed, len(r_same.unused_disables)) == (0, 1, 0)),
+    ):
+        checks += 1
+        if not ok:
+            failures.append(label)
+
     # THE POSITIVES, so none of the above is satisfied by a rule that stopped firing.
     case("a real literal still trips", 'h1 { font-family: "Inter", sans-serif; }',
          rule="literal-font-family", expect=True)
