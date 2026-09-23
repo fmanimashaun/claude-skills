@@ -149,5 +149,12 @@ GUARD = Guard(
             '            if False:\n                problems.append("")',
             "does not resolve from its own directory is a PROBLEM",
         ),
+        Mutation(
+            # #1189: every link recomputed, so relpath drops `./` in files nothing moved.
+            "a link whose target did not move is rewritten anyway",
+            '        if abs_new == abs_old and old_dir == new_dir:\n            return mm.group(0)\n',
+            '',
+            "#1189: a file whose links point at nothing that moved is not rewritten at all",
+        ),
     ),
 )
