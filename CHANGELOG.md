@@ -14758,6 +14758,18 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **`ai-llm.md`'s core chat example no longer 400s on its own default model —
+  `skills/rails-8/references/ai-llm.md`** (#1200). §2 chained `chat.with_temperature(0.2)` onto the
+  `claude-sonnet-5` default set in §1. `doctrine-verifier`: **CONFIRMED**. The Sonnet 5 migration
+  guide (platform.claude.com/docs/en/models/sonnet-5/migration-guide): *"Sampling parameters
+  (`temperature`, `top_p`, `top_k`) set to a non-default value are not accepted and return a 400
+  error."* ruby_llm `v2.0.0` `lib/ruby_llm/protocols/anthropic/chat.rb:135-143` sets
+  `payload[:temperature]` whenever it is non-nil, with no capability check. Boundary: Sonnet 4.6
+  accepts it; Sonnet 5 rejects it. The line is removed and one sentence says why. Found by a
+  report-only `/claude-api prompt-audit` for Opus 5.5.
+
 ### 1.65.0 (release v1.144.0) — 2026-09-23
 
 - **The "don't extract" arithmetic in the quality-pass worked example is computed now, not written
