@@ -46,5 +46,29 @@ GUARD = Guard(
             '        return 0',
             "no runs at all is exit 2, not a clean bill of health",
         ),
+        Mutation(
+            # #1208. Without the zero-jobs rule a workflow that never parsed falls through to the
+            # step-count rule -- and lands wherever `steps` sends it, never on the truth.
+            "a run with zero jobs is no longer recognised as never having started",
+            '    if run.get("jobs") == 0 and conclusion in NEVER_STARTED_CONCLUSIONS:',
+            "    if False:",
+            "a completed failure with ZERO jobs never started",
+        ),
+        Mutation(
+            # THE ORIGINAL DEFECT, restored exactly: a successful zero-job answer (`[] | add` is
+            # null) collapses into the failed-call branch and reads as "could not measure".
+            "a successful zero-job answer is read as a failed call again",
+            "    return jobs, (steps if isinstance(steps, int) else 0 if jobs == 0 else None)",
+            "    return (jobs, steps) if isinstance(steps, int) else (None, None)",
+            "a successful zero-job answer is a measurement",
+        ),
+        Mutation(
+            # A never-started run is about the diff. Letting it exit 0 or 3 tells a caller the
+            # change is fine, or that the environment is at fault, over a YAML error in the change.
+            "a workflow that never started no longer exits as a finding about the diff",
+            "    if buckets[FAILED] or buckets[NEVER_STARTED]:",
+            "    if buckets[FAILED]:",
+            "a workflow that never started exits 1",
+        ),
     ),
 )
