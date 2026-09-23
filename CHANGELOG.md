@@ -14704,6 +14704,23 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The "don't extract" arithmetic in the quality-pass worked example is computed now, not written
+  down — `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`,
+  `scripts/check_shared_shapes.py`, `scripts/mutations/check_shared_shapes.py`** (#1174). **Maintainer
+  decision recorded on the issue**: keep the decision, replace the digits with a command. The section's
+  figures had drifted twice — the second time about five-fold — while the table above them stayed gated.
+  Re-measured on 2026-09-23 with the new `python3 scripts/check_shared_shapes.py --arithmetic`: the
+  harness is in **35** files (was 12), **18,929** lines (was 6,016); the largest install root,
+  `plugins/rails-flow`, holds **19** copies (was ~5), so **10R − 16 = 174** lines (was "the low
+  thirties") = **0.92%** of those files (was "well under 1%"), **286 = 1.51%** across every root with
+  more than one copy; **1,025** `check(` call sites (was 298). **The decision holds and is stronger**:
+  the saving stays near 1% because the files grow with the copies, while the cost of extracting — call
+  sites to rewrite, guarded mutations to rewire — grew about 3.4-fold. The prose keeps the formula and
+  that conclusion and points at `--arithmetic`, computed from the same file list and install-root
+  grouping the table uses. Six selftest checks with literal expected values from the synthetic corpus,
+  and three mutations — the module's own cost forgotten, a single-copy root counted, reach counting
+  roots instead of copies — all caught (13 in the guard).
+
 - **The ruby_llm page moves to 2.x — its examples pinned a model two generations old, and an unpinned
   gem line installed a major version the page did not describe — `skills/rails-8/references/ai-llm.md`,
   `dist/rails-8.skill`** (#1180). **`doctrine-verifier`: CONFIRMED**, against RubyLLM's own source at
