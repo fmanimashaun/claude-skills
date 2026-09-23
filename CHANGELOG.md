@@ -3316,7 +3316,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.49.1 (release v1.144.0) — 2026-09-23
 
 - **The doctrine sweep reported a fifth of the findings its checks found —
   `plugins/rails-flow/scripts/project_gates.py`, `scripts/mutations/project_gates.py`** (#1189). The
@@ -11988,7 +11988,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.43.0 (release v1.144.0) — 2026-09-23
 
 - **`layout-composition` could not see a class passed through a Rails helper —
   `plugins/design-flow/scripts/check_layout_composition.py`,
@@ -14758,7 +14758,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.65.0 (release v1.144.0) — 2026-09-23
 
 - **The "don't extract" arithmetic in the quality-pass worked example is computed now, not written
   down — `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`,
