@@ -3316,6 +3316,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`check_criteria` did not know that Ruby raises — `plugins/rails-flow/scripts/check_criteria.py`,
+  `plugins/rails-flow/scripts/check_criteria_selftest.py`, `plugins/rails-flow/scripts/mutations/check_criteria.py`**
+  (#1189). Its error-path words were HTTP codes and validation phrases — 24 of them, none of `raise`,
+  `rescue` or `exception` — so a criterion stating a real, tested, mutation-proved error path ("raises
+  ArgumentError on fewer than two segments") was reported as having none, which pressures the author into
+  inventing a criterion that satisfies the detector and asserts nothing. **`raise` could not simply be
+  added**: in a domain app it is ordinary vocabulary — a requester *raises* a request, and a request shows
+  "raised 8 Sep" — so a bare `raise` would pass a unit with no error path at all. The verb now counts only
+  with **what** is raised: a capitalised exception class, or the words error/exception; `rescue` and
+  `exception` count alone. Three fixtures, including **the control on the same verb** — "raise a request"
+  is still reported as having no error path — and two mutations, one of which removes that guard, both
+  caught.
+
 ### 1.49.0 (release v1.143.0) — 2026-09-22
 
 - **Three memory systems could inject into every session and nothing noticed —
