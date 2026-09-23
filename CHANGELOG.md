@@ -12068,7 +12068,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.43.2 (release v1.144.4) — 2026-09-23
 
 - **A misplaced `design-flow-disable` is reported, and no longer counted as a suppression —
   `plugins/design-flow/scripts/llm_tell_detector.py`, `plugins/design-flow/scripts/mutations/llm_tell_detector.py`,
