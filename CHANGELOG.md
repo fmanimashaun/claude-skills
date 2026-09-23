@@ -10009,6 +10009,17 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **A `Route` copied from `bin/rails routes` credits its route — `plugins/qa-flow/scripts/route_coverage.py`,
+  `plugins/qa-flow/scripts/route_coverage_selftest.py`, `plugins/qa-flow/scripts/mutations/route_coverage.py`**
+  (#1212). `verb_paths()` was the one route read in the file that did not `normalise()`, so an `actions`
+  row declaring `POST /apply(.:format)` — the spelling its own docstring says to copy — matched nothing
+  in the normalised inventory and credited nothing, silently. Measured on a consumer's merged evidence
+  file of eight such rows: **0/263 → 8/263**. The declaration is now normalised, and the report lists
+  every declared route that still names no inventory route, beside the unreadable-artifact count, so a
+  real typo still under-claims but no longer does it unseen. Found by a Retask session through intake.
+
 ### 1.32.2 (release v1.141.0) — 2026-09-22
 
 - **A CSV export is the same route, and an annotated cell is a different defect —

@@ -342,5 +342,19 @@ GUARD = Guard(
         'ROUTE_SOURCE_PATHS = ("config/routes",)',
         "names_a_route_source: config/routes_helper.rb does not define routes",
     ),
+    Mutation(
+        # #1212 restored: the declaration keeps the `bin/rails routes` spelling and credits nothing.
+        "the declared Route is no longer normalised",
+        "                pattern = normalise(pattern)\n",
+        "",
+        "actions: a Route copied from bin/rails routes, with (.:format), IS credited",
+    ),
+    Mutation(
+        # #1212: an under-claim nobody sees. The list must not quietly go empty.
+        "a declaration naming no route is no longer reported",
+        "    return sorted(k for k in verb_seen if k not in known)\n",
+        "    return []\n",
+        "actions: a declared route naming no inventory route is listed",
+    ),
     ),
 )
