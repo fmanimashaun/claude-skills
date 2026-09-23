@@ -5,6 +5,9 @@ GUARD = Guard(
     name="check_layout_composition",
     subject="scripts/check_layout_composition.py",
     selftest="scripts/check_layout_composition.py",
+    # It now imports the shared ratchet (#1187). Undeclared, the mutant dies on
+    # ModuleNotFoundError and an environmental death reads as a caught mutation.
+    deps=("scripts/content_floors.py",),
     needs=("scripts/source_text.py",),   # comments are blanked here (#1128)
     mutations=(
         Mutation(
@@ -68,6 +71,13 @@ GUARD = Guard(
         '        lines = strip_comments("\\n".join(raw)).split("\\n")',
         '        lines = list(raw)',
         'a comment quoting the old breakpoint markup is not that markup',
+    ),
+    Mutation(
+        # #1189: the HTML-attribute-only pattern, blind to every class passed through a helper.
+        "the class pattern reads class=\"...\" only, again",
+        """CLASS_ATTR = re.compile(r'class(?:\\s*[:=]\\s*)["\\']([^"\\']*)["\\']')""",
+        """CLASS_ATTR = re.compile(r'class="([^"]*)"')""",
+        "a cluster passed as a helper's class: keyword is reported",
     ),
     ),
 )

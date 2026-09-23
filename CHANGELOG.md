@@ -3316,6 +3316,48 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.49.1 (release v1.144.0) — 2026-09-23
+
+- **The doctrine sweep reported a fifth of the findings its checks found —
+  `plugins/rails-flow/scripts/project_gates.py`, `scripts/mutations/project_gates.py`** (#1189). The
+  summary line was recognised only in the strict form `N finding(s):`, and our own checkers print
+  dialects of it — `15 acceptance-criteria finding(s) in <file> -- …:` (words between the number and the
+  noun) and `3 finding(s). --propose …` (a full stop, **after** the list). Neither matched, so the ladder
+  fell back to "the first line that looks like a finding", which skipped AC-1…AC-13 and landed on the
+  second-to-last line; the multi-file total then summed the **lines** carried after it, including the
+  checker's closing advice. **Measured on Retask `dev` `f738785`: the sweep said `6 finding(s) across 3 of
+  6 file(s)`; the same checkers run directly found 15 + 10 + 5 = 30**, and `docs-layout` showed one finding
+  of three with no count. The summary now recognises every dialect; a trailing count line carries the
+  bullets **above** it rather than an empty list; and a multi-file total is the sum of the counts the
+  checkers state, falling back to lines only for a checker that states none. **Verdicts are unchanged** —
+  the same tree reports 22 passed / 6 failed before and after; only the counts and the carried findings
+  move. Six fixtures with literal values (the multi-file one reads 5 where the old code said 7) and three
+  mutations, all caught (27).
+
+- **`docs_layout.py --write` rewrote links in files nothing was moving —
+  `plugins/rails-flow/scripts/docs_layout.py`, `scripts/mutations/docs_layout.py`** (#1189). The #909
+  relink pass recomputed every markdown link in every file as `relpath(target, file's directory)`,
+  including links where neither the file nor its target moved — and `relpath` normalises, so
+  `[F-29](./F-29-x.md)` came back as `[F-29](F-29-x.md)`: a rewrite with no move behind it. Measured
+  downstream, asked to move three files it also rewrote 32 unrelated feature docs, the tool's own link
+  style applied to files nobody named, and the session moved the files by hand instead. A link now
+  keeps its exact text when neither side moved. A fixture — an unmoved file in an unmoved directory
+  whose `./` link targets an unmoved sibling — is not rewritten; the existing control, an unmoved
+  `MEMORY.md` linking a **moved** file, still is; and a mutation removing the guard is caught (24).
+
+- **`check_criteria` did not know that Ruby raises — `plugins/rails-flow/scripts/check_criteria.py`,
+  `plugins/rails-flow/scripts/check_criteria_selftest.py`, `plugins/rails-flow/scripts/mutations/check_criteria.py`**
+  (#1189). Its error-path words were HTTP codes and validation phrases — 24 of them, none of `raise`,
+  `rescue` or `exception` — so a criterion stating a real, tested, mutation-proved error path ("raises
+  ArgumentError on fewer than two segments") was reported as having none, which pressures the author into
+  inventing a criterion that satisfies the detector and asserts nothing. **`raise` could not simply be
+  added**: in a domain app it is ordinary vocabulary — a requester *raises* a request, and a request shows
+  "raised 8 Sep" — so a bare `raise` would pass a unit with no error path at all. The verb now counts only
+  with **what** is raised: a capitalised exception class, or the words error/exception; `rescue` and
+  `exception` count alone. Three fixtures, including **the control on the same verb** — "raise a request"
+  is still reported as having no error path — and two mutations, one of which removes that guard, both
+  caught.
+
 ### 1.49.0 (release v1.143.0) — 2026-09-22
 
 - **Three memory systems could inject into every session and nothing noticed —
@@ -11946,6 +11988,54 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.43.0 (release v1.144.0) — 2026-09-23
+
+- **`layout-composition` could not see a class passed through a Rails helper —
+  `plugins/design-flow/scripts/check_layout_composition.py`,
+  `plugins/design-flow/scripts/mutations/check_layout_composition.py`** (#1189). Its pattern was
+  `class="…"`, the HTML attribute only, so `link_to …, class: "flex items-center gap-1.5"` — colon, not
+  `=` — never matched, and `hand-rolled-cluster` was blind to every cluster written through a helper,
+  which is where idiomatic Rails puts them. `check_surface_layout.py` already had the right pattern (both
+  renderings, both quotes); this adopts it verbatim, so the two checkers read the same markup. Measured on
+  Retask `dev` (`f738785`): **10 → 14** `hand-rolled-cluster` findings over 129 views, the four new ones
+  in `help/_page.html.erb` and `admin/actions/new.html.erb`. **Upgrading raises a project's count without
+  the project changing** — the sites were there, only hidden — so a project with a `layout-composition`
+  floor from #1187 will fail above it and must re-cut it with `--set-floor`, saying why. Four fixtures (the
+  helper form, single quotes in both renderings, a non-cluster helper class, and the HTML form still read)
+  and a mutation restoring the old pattern, caught (9 in the guard).
+
+- **The three content gates were absolute, so a project with tracked design debt could never show a
+  green sweep — `plugins/design-flow/scripts/content_floors.py`,
+  `plugins/design-flow/scripts/check_component_contract.py`,
+  `plugins/design-flow/scripts/check_layout_composition.py`,
+  `plugins/design-flow/scripts/check_surface_layout.py`,
+  `plugins/design-flow/scripts/mutations/content_floors.py`** (#1187).
+  **[Maintainer decision recorded on the issue](https://github.com/fmanimashaun/claude-skills/issues/1187#issuecomment-5790257921)**
+  — our own design, no upstream. `structure_ratchet` has had a recorded floor since it was written;
+  these three returned `1 if findings else 0`, so they could not distinguish debt that is **filed,
+  owned and shrinking** from debt that appeared this morning. Both printed FAIL, and a verdict that
+  carries no information for any project past its first week is one people stop reading.
+
+  **Floors are PER RULE, which is the maintainer's decision and not a detail.** `component-contract`
+  reports `raw-element` and `component-drops-attributes` together; one number would let a fall in
+  one mask a rise in the other. Measured on a live downstream project: **14 drops and 7 raw
+  elements**, not a single 21 — and a swap between them is caught, with the finding naming the rule
+  that grew.
+
+  **No floor file still means zero tolerance, exactly.** A greenfield project is unchanged, and that
+  is proved rather than asserted: a fixture asserts it, and a mutation that makes a missing file
+  sanction debt is caught by that fixture. **It is the property that would silently weaken the gate
+  for every project that has not opted in**, so it is the one guarded hardest.
+
+  **The ratchet refuses both directions.** Above a rule's floor fails, naming what is new. Below
+  fails as STALE — a floor nobody lowers leaves that much room to drift back, invisibly. At the
+  floor passes and prints the count, so sanctioned debt stays on screen.
+
+  Seven mutations, all caught. **One survived first**: the case proving a stale floor is reported
+  kept the rule *present* in the tally, so it exercised the comparison and never the iteration — a
+  rule fixed to **zero** vanishes from the tally entirely, and only that case can see a floor left
+  standing over a rule nobody has any findings for.
+
 ### 1.42.2 (release v1.141.0) — 2026-09-22
 
 - **An attribute reader is not a slot, and the check reported a table that has none —
@@ -14667,6 +14757,63 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.65.0 (release v1.144.0) — 2026-09-23
+
+- **The "don't extract" arithmetic in the quality-pass worked example is computed now, not written
+  down — `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`,
+  `scripts/check_shared_shapes.py`, `scripts/mutations/check_shared_shapes.py`** (#1174). **Maintainer
+  decision recorded on the issue**: keep the decision, replace the digits with a command. The section's
+  figures had drifted twice — the second time about five-fold — while the table above them stayed gated.
+  Re-measured on 2026-09-23 with the new `python3 scripts/check_shared_shapes.py --arithmetic`: the
+  harness is in **35** files (was 12), **18,929** lines (was 6,016); the largest install root,
+  `plugins/rails-flow`, holds **19** copies (was ~5), so **10R − 16 = 174** lines (was "the low
+  thirties") = **0.92%** of those files (was "well under 1%"), **286 = 1.51%** across every root with
+  more than one copy; **1,025** `check(` call sites (was 298). **The decision holds and is stronger**:
+  the saving stays near 1% because the files grow with the copies, while the cost of extracting — call
+  sites to rewrite, guarded mutations to rewire — grew about 3.4-fold. The prose keeps the formula and
+  that conclusion and points at `--arithmetic`, computed from the same file list and install-root
+  grouping the table uses. Six selftest checks with literal expected values from the synthetic corpus,
+  and three mutations — the module's own cost forgotten, a single-copy root counted, reach counting
+  roots instead of copies — all caught (13 in the guard).
+
+- **The ruby_llm page moves to 2.x — its examples pinned a model two generations old, and an unpinned
+  gem line installed a major version the page did not describe — `skills/rails-8/references/ai-llm.md`,
+  `dist/rails-8.skill`** (#1180). **`doctrine-verifier`: CONFIRMED**, against RubyLLM's own source at
+  `crmne/ruby_llm` tag `v2.0.0` (CHANGELOG *Changed in 2.0*, rubyllm.com/upgrading, `models.json`,
+  `lib/ruby_llm/{tool,models,embedding}.rb`, `active_record/{chat,message}_methods.rb`, the install
+  generator templates) and at `1.16.0`, the last 1.x. **The first fix pinned `~> 1.16`** to match the
+  page's stated "Version series: 1.x"; the maintainer asked why the page was on 1.x when 2.x is current,
+  and it was moved instead — after verifying **every API it teaches** against 2.0.0, because 2.0 is a
+  breaking release and a pin change alone would have shipped broken code. Changed: `gem "ruby_llm",
+  "~> 2.0"`; model `claude-sonnet-4-5` → **`claude-sonnet-5`** (in 2.0.0's registry, absent from 1.x's —
+  RubyLLM raises `ModelNotFoundError` on any unregistered ID); `models.refresh!` → `refresh`;
+  `assume_exists:` → `assume_model_exists:`; tools `param … desc:` → `parameter … description:` and
+  `with_tool` → `with_tools`; structured output `RubyLLM::Schema` → `Schematist::Schema` with the
+  `ruby_llm-schema` gem retired, and **`response.content` is now the raw JSON string — the Hash is
+  `response.parsed`**; the generator now creates only `Chat` and `Message`, with ruby_llm owning
+  `ruby_llm_models`, `_tool_calls`, `_usages` and `_batches`; and **token usage is no longer columns on
+  messages** — the 2.0 messages migration has none — but rows in `ruby_llm_usages`, read as
+  `message.tokens` / `message.cost`. Two of those were **not** in the verifier's table and were found by
+  grepping the page for every API the 2.0 changelog renames: the token-usage prose and the `ToolCall`
+  model the generator no longer creates. The one item the verifier left INCONCLUSIVE, `embed(...).vectors`,
+  was resolved against `embedding.rb:24` at `v2.0.0` — still an `attr_reader`, unchanged. Verified
+  unchanged and left as written: `RubyLLM.configure` keys, `chat_models`, `acts_as_chat`,
+  `create!(model_id:)`, `ask`, streaming, `with_instructions` (single call; 2.0 replaces rather than
+  appends, which a single call does not observe), `with_schema`, `Tool#description`.
+
+- **A green check can be silence about the property it is trusted for —
+  `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1185). **Maintainer decision recorded on
+  the issue**; our own doctrine, no upstream. `gate-that-cannot-fail` asks *make it fail on purpose*,
+  and `signal-that-cannot-discriminate` asks *what else produces this value* about a value you
+  consume. Neither covered a check you **wrote**, which demonstrably can fail, whose input never
+  contained the property: it passes the first test and is not obviously a consumed value. Two measured
+  instances in one evening — an assertion true of a branch its fixture never entered (its mutation
+  stayed green), and a digest guard over an architecture page whose title the digest excludes (34 of
+  40 commits shipped a wrong title while it reported fresh). One bullet in
+  `signal-that-cannot-discriminate`, a narrower detect step (*name the property, then ask whether the
+  check's input contains it*), the two different repairs, and a pointer from `gate-that-cannot-fail`.
+  Not a new class — the same shape, with the ambiguous value being *the check passed*.
 
 ### 1.64.2 (release v1.143.0) — 2026-09-22
 

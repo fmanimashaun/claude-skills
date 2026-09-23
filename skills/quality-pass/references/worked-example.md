@@ -209,22 +209,24 @@ a new coupling between independently installable products, not a refactor — wh
 object: `check()` mutates closure state and the reporter reads it. Call it ~16 lines with its
 docstring. Per file it removes the 7-line harness and the 7-line reporter and adds four — two to
 put the sibling directory on `sys.path` and import it, one to construct, one to `return
-t.report()`. So one install root holding **R** copies nets **10R − 16** lines. At the ceiling the
-`reach` column records today, that is the low thirties; across all four roots together, about
-**44 lines** — out of the **6,016** in the twelve files, well under **1%**.
+t.report()`. So one install root holding **R** copies nets **10R − 16** lines, and a root holding a
+single copy nets nothing, because it has nothing to share with.
 
-Against that: **298** call sites become `t.check(...)`, and **ten** of the twelve subjects carry a
-`mutation_check.py` guard that would gain a `deps=` entry, covering **81** declared mutations.
-Every one of those is a way a mutant dies at import rather than at a labelled fixture.
-`run_baseline` (#422) now makes that failure loud instead of silent — it runs the unmutated
-selftest first and reports INERT — so the risk is smaller than #398 assumed when it was filed.
-Smaller, not gone, and it is being spent on well under 1%.
+**Run the sum rather than reading it here:** `python3 scripts/check_shared_shapes.py --arithmetic`
+computes it from the table's own file list and install-root grouping — R, the saving at the largest
+root and across every root, each as a share of the lines in those files, and the `check(` call sites an
+extraction would rewrite. **This paragraph used to carry those figures, and they drifted twice** — the
+second time about five-fold (by #1174, "the low thirties" had become 174) — while the table above them stayed
+gated and correct. Digits in prose that nothing re-reads are the `frozen-figure` class; they are gone,
+and the sentence points at the command.
 
-Those three are point-in-time, like the 29% at the top of this file, and they are re-derivable
-rather than remembered. The twelve files are the harness row's own hits — `check_shared_shapes.py`
-prints them whenever the row drifts. The call sites are `grep -c '^[[:space:]]*check('` across
-them; the mutations are the `Mutation(` entries under those subjects' `GUARDS` in
-`scripts/mutation_check.py`.
+**What the sum has shown every time it has been run: the saving stays near 1% of the files it would
+touch, because those files grow along with the copies — while the cost grows with every call site and
+every guarded mutation.** Each call site becomes `t.check(...)`, and each subject carrying a
+`mutation_check.py` guard gains a `deps=` entry — every one a way a mutant dies at import rather than
+at a labelled fixture. `run_baseline` (#422) makes that failure loud instead of silent — it runs the
+unmutated selftest first and reports INERT — so the risk is smaller than #398 assumed when it was
+filed. Smaller, not gone, and still spent on about 1%.
 
 **Vendoring is the worse of the two options, not the better one.** Copying one source module into
 each plugin at package time needs a build step and a drift gate to guarantee four copies of a

@@ -70,6 +70,8 @@ import re
 import sys
 from pathlib import Path
 
+import content_floors
+
 from source_text import strip_comments
 
 RAW_BUTTON = re.compile(r"<button\b", re.I)
@@ -276,6 +278,8 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=".", help="project root (default: cwd)")
     ap.add_argument("--selftest", action="store_true", help="prove this check can fail")
+    ap.add_argument("--set-floor", action="store_true",
+                    help="record the CURRENT findings as this project's sanctioned floor (#1187)")
     args = ap.parse_args()
     if args.selftest:
         return _selftest()
@@ -294,10 +298,17 @@ def main() -> int:
         print(f"  {f}")
     print(f"\n{views} view file(s) and {rubies} component file(s) examined; "
           f"{len(findings)} finding(s).")
+    if args.set_floor:
+        return content_floors.set_floor(root, "component-contract", findings)
     if findings:
         print("The escape hatch is the ELEMENT, never the styling: a framework helper that builds "
               "its own <button> is exempt, and nothing else is.")
-    return 1 if findings else 0
+    code, lines = content_floors.verdict(root, "component-contract", findings)
+    if lines:
+        print(f"\nagainst {content_floors.FLOORS}:")
+        for line in lines:
+            print(line)
+    return code
 
 
 if __name__ == "__main__":

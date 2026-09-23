@@ -140,7 +140,9 @@ A check whose failure path cannot fail anything.
 is not known to work. And when a check reports clean, confirm what it examined —
 "no findings" over zero inputs is not a pass. Where the value comes from
 something you did **not** write, there is nothing to mutate: see
-`signal-that-cannot-discriminate`.
+`signal-that-cannot-discriminate`. So does a check that **does** fail on purpose
+but whose input never contained the property it is trusted for — passing this
+test proves the failure path works, not that the check looks at the right thing.
 
 ### `signal-that-cannot-discriminate`
 A value two different causes both produce, read as if it named one.
@@ -158,6 +160,11 @@ time spent debugging the wrong half.
   correctness one, nor a driven route from an invented artifact.
 - A half-seeded database cannot separate "seeded, code broken" from "seeding
   never finished".
+- **A green check** cannot separate *the property holds* from *the check never
+  examined the property*. An assertion that is true of a branch its fixture never
+  entered; a digest guard over a page whose title the digest excludes, reporting
+  "fresh" while the title changed on every rebuild. Both checks could fail — just
+  not about this.
 
 **Detect:** **before believing a value, name the other thing that produces it.**
 If you can name one, the value is not evidence yet: find the field that
@@ -165,6 +172,16 @@ separates them, or build the case where the two causes disagree. In every
 instance above the discriminator already existed and was not being read —
 `steps executed == 0`, the seed stage's own exit, whether the artifact ties to
 the app at all.
+
+**For a check you wrote, the detect step is narrower: name the property, then ask
+whether the check's input contains it.** The fixture never reached the branch, so
+its input did not contain the behaviour; the digest never included the title, so
+its input did not contain the field. Answerable by inspection, and immediate once
+asked. **The repairs differ, and the obvious one is wrong half the time.** For the
+test, add a second control asserting the fixture *reaches* the branch — otherwise
+the first goes quiet the same way later. For the gate, assert the field directly;
+widening the digest to include it would turn every unrelated edit to that field
+into a spurious drift failure.
 
 **A positive control whose input satisfies both mechanisms proves neither.** A
 slot genuinely nested inside a layout recipe fires under *containment* and under
