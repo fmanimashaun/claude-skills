@@ -72,5 +72,12 @@ GUARD = Guard(
         '        lines = list(raw)',
         'a comment quoting the old breakpoint markup is not that markup',
     ),
+    Mutation(
+        # #1189: the HTML-attribute-only pattern, blind to every class passed through a helper.
+        "the class pattern reads class=\"...\" only, again",
+        """CLASS_ATTR = re.compile(r'class(?:\\s*[:=]\\s*)["\\']([^"\\']*)["\\']')""",
+        """CLASS_ATTR = re.compile(r'class="([^"]*)"')""",
+        "a cluster passed as a helper's class: keyword is reported",
+    ),
     ),
 )

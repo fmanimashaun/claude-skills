@@ -3329,6 +3329,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   whose `./` link targets an unmoved sibling — is not rewritten; the existing control, an unmoved
   `MEMORY.md` linking a **moved** file, still is; and a mutation removing the guard is caught (24).
 
+- **`check_criteria` did not know that Ruby raises — `plugins/rails-flow/scripts/check_criteria.py`,
+  `plugins/rails-flow/scripts/check_criteria_selftest.py`, `plugins/rails-flow/scripts/mutations/check_criteria.py`**
+  (#1189). Its error-path words were HTTP codes and validation phrases — 24 of them, none of `raise`,
+  `rescue` or `exception` — so a criterion stating a real, tested, mutation-proved error path ("raises
+  ArgumentError on fewer than two segments") was reported as having none, which pressures the author into
+  inventing a criterion that satisfies the detector and asserts nothing. **`raise` could not simply be
+  added**: in a domain app it is ordinary vocabulary — a requester *raises* a request, and a request shows
+  "raised 8 Sep" — so a bare `raise` would pass a unit with no error path at all. The verb now counts only
+  with **what** is raised: a capitalised exception class, or the words error/exception; `rescue` and
+  `exception` count alone. Three fixtures, including **the control on the same verb** — "raise a request"
+  is still reported as having no error path — and two mutations, one of which removes that guard, both
+  caught.
+
 ### 1.49.0 (release v1.143.0) — 2026-09-22
 
 - **Three memory systems could inject into every session and nothing noticed —
@@ -11960,6 +11973,20 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## design-flow (UI/design plugin)
 
 ### Unreleased
+
+- **`layout-composition` could not see a class passed through a Rails helper —
+  `plugins/design-flow/scripts/check_layout_composition.py`,
+  `plugins/design-flow/scripts/mutations/check_layout_composition.py`** (#1189). Its pattern was
+  `class="…"`, the HTML attribute only, so `link_to …, class: "flex items-center gap-1.5"` — colon, not
+  `=` — never matched, and `hand-rolled-cluster` was blind to every cluster written through a helper,
+  which is where idiomatic Rails puts them. `check_surface_layout.py` already had the right pattern (both
+  renderings, both quotes); this adopts it verbatim, so the two checkers read the same markup. Measured on
+  Retask `dev` (`f738785`): **10 → 14** `hand-rolled-cluster` findings over 129 views, the four new ones
+  in `help/_page.html.erb` and `admin/actions/new.html.erb`. **Upgrading raises a project's count without
+  the project changing** — the sites were there, only hidden — so a project with a `layout-composition`
+  floor from #1187 will fail above it and must re-cut it with `--set-floor`, saying why. Four fixtures (the
+  helper form, single quotes in both renderings, a non-cluster helper class, and the HTML form still read)
+  and a mutation restoring the old pattern, caught (9 in the guard).
 
 - **The three content gates were absolute, so a project with tracked design debt could never show a
   green sweep — `plugins/design-flow/scripts/content_floors.py`,

@@ -85,6 +85,22 @@ ERROR_HINTS = (
     "401", "404", "409", "500", "blank", "too long", "too short", "conflict",
 )
 
+# RUBY'S OWN FAILURE VOCABULARY (#1189). Raising is the commonest way a Ruby unit expresses an error
+# path, and none of the words above covered it: a criterion stating "raises ArgumentError on fewer
+# than two segments" -- a real, tested, mutation-proved error path -- was reported as having none,
+# which pressures the author into inventing a criterion that satisfies the detector and asserts
+# nothing.
+#
+# "raise" CANNOT BE A PLAIN HINT, because in a domain app it is ordinary vocabulary: a requester
+# RAISES a request, and a request shows "raised 8 Sep". A bare `raise` would make those count as
+# error paths, and a unit with no real one would pass. So the verb counts only with WHAT is raised --
+# an exception class (capitalised, case-sensitive) or the words error/exception. `rescue` and
+# `exception` have no domain sense and count alone.
+RUBY_FAILURE = re.compile(
+    r"\b(?i:raise[sd]?)\s+(?:(?i:an?)\s+)?(?:[A-Z][\w:]*|(?i:error|exception)\b)"
+    r"|\b(?i:rescue[sd]?)\b|\b(?i:exception)\b"
+)
+
 
 class Unusable(Exception):
     """The input cannot be checked -- never report clean for it."""
@@ -170,7 +186,7 @@ def _is_error_path(text: str) -> bool:
     low = text.lower()
     if ERROR_TAG in low:
         return True
-    return any(h in low for h in ERROR_HINTS)
+    return any(h in low for h in ERROR_HINTS) or bool(RUBY_FAILURE.search(text))
 
 
 def check(criteria: list[Criterion], spec_root: Path | None = None) -> list[str]:

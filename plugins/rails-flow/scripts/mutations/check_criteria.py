@@ -39,5 +39,19 @@ GUARD = Guard(
             "    if False:",
             "no criteria at all: expected UNUSABLE",
         ),
+        # #1189: Ruby expresses an error path by raising.
+        Mutation(
+            "Ruby's failure vocabulary is ignored, so a raised exception is not an error path",
+            '    return any(h in low for h in ERROR_HINTS) or bool(RUBY_FAILURE.search(text))',
+            '    return any(h in low for h in ERROR_HINTS)',
+            "an untagged `raises SomeError` criterion counts as the error path",
+        ),
+        Mutation(
+            # THE DOMAIN-VERB GUARD: a bare raise makes 'a requester raises a request' an error path.
+            "the verb counts without what is raised, so a domain 'raise' passes",
+            '    r"\\b(?i:raise[sd]?)\\s+(?:(?i:an?)\\s+)?(?:[A-Z][\\w:]*|(?i:error|exception)\\b)"',
+            '    r"\\b(?i:raise[sd]?)\\b"',
+            "the DOMAIN verb 'raises a request' is not an error path",
+        ),
     ),
 )

@@ -78,7 +78,12 @@ import content_floors
 
 from source_text import strip_comments
 
-CLASS_ATTR = re.compile(r'class="([^"]*)"')
+# BOTH RENDERINGS, BOTH QUOTES (#1189). This was `class="([^"]*)"` -- the HTML attribute only -- so a
+# class passed through a Rails helper's keyword, `link_to ..., class: "flex items-center gap-1.5"`,
+# never matched, and every cluster written through a helper was invisible: measured on one app, 6 of
+# 17, exactly the idiomatic sites a conversion existed to fix. `check_surface_layout.py` already had
+# the right pattern; this is that pattern, so the two checkers read the same markup.
+CLASS_ATTR = re.compile(r'class(?:\s*[:=]\s*)["\']([^"\']*)["\']')
 
 # A breakpoint variant that changes the layout AXIS or TRACK COUNT. `switcher`, `Layout::Sidebar`
 # and `grid-auto` express all three with zero media queries. Sizing variants (`md:w-auto`) are
@@ -276,6 +281,27 @@ def _selftest() -> int:
         # The control on the same tree, so the assertion above cannot pass vacuously.
         expect("...while the same markup outside a comment is still reported",
                any("real.html.erb" in x for x in run(root)[0]))
+        # -- #1189: a class passed through a Rails helper's keyword ------------------------------
+        # MUST FAIL: the helper form, which the old pattern could not see at all.
+        (root / "app/views/admin/helper.html.erb").write_text(
+            '<%= link_to "Back", root_path, class: "flex items-center gap-1.5" %>\n', encoding="utf-8")
+        # MUST FAIL: single quotes, in both renderings.
+        (root / "app/views/admin/quotes.html.erb").write_text(
+            "<%= tag.div class: 'flex items-start gap-3' do %>x<% end %>\n"
+            "<div class='flex items-center gap-2'>y</div>\n", encoding="utf-8")
+        # MUST PASS: the helper form carrying something that is not a cluster.
+        (root / "app/views/admin/prose.html.erb").write_text(
+            '<%= content_tag :div, "x", class: "prose max-w-none" %>\n', encoding="utf-8")
+        f, _ = run(root)
+        expect("a cluster passed as a helper's class: keyword is reported",
+               any("helper.html.erb" in x for x in f))
+        expect("single-quoted clusters are reported in BOTH renderings",
+               sum("quotes.html.erb" in x for x in f) == 2)
+        expect("the helper form carrying a non-cluster class is not reported",
+               not any("prose.html.erb" in x for x in f))
+        # The control: the HTML form this gate always read must still be read after widening it.
+        expect("...and the HTML attribute form is still reported",
+               any("index.html.erb" in x for x in f))
         empty = Path(tempfile.mkdtemp(prefix="layout-empty-"))
         try:
             f2, v2 = run(empty)
