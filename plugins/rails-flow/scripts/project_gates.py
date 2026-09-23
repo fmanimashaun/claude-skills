@@ -443,6 +443,24 @@ def summarise(output: str, returncode: int) -> tuple[str, tuple[str, ...]]:
     return lines[idx].strip()[:160], tuple(rest)
 
 
+# ADVICE FROM A PASSING CHECK (#1227). A pass used to discard everything the check printed, so a
+# check that passed AND had something to say -- design-flow's "this floor records no toolchain
+# version" -- said it only to someone who ran the check by hand, never in CI. The contract is narrow
+# on purpose: a line that BEGINS `NOTE:` or `WARNING:` is surfaced under the `[ok]` row; nothing else
+# a passing check prints is, because inlining every pass would bury the findings.
+PASS_NOTE = re.compile(r"^\s*(?:NOTE|WARNING):")
+
+
+def pass_notes(output: str) -> list[str]:
+    """The `NOTE:` / `WARNING:` lines of a passing check's output, ANSI stripped, capped."""
+    kept = [ln.strip() for ln in (_ANSI.sub("", raw).rstrip() for raw in output.splitlines())
+            if PASS_NOTE.match(ln)]
+    if len(kept) > MAX_FINDING_LINES:
+        kept = kept[:MAX_FINDING_LINES] + [
+            f"… {len(kept) - MAX_FINDING_LINES} more note(s) — run the check directly for the rest"]
+    return kept
+
+
 def tree_state(project: Path) -> dict[str, str] | None:
     """`{path: status}` from `git status --porcelain -uall`, or None outside a git repo (then unasserted).
 
@@ -484,6 +502,7 @@ def run_check(check: Check, project: Path) -> Result:
         return Result(check, ERROR, "command expanded to nothing")
     # Collected rather than returned on the first hit, so every matching file is actually RUN.
     failures: list[tuple[str, str, tuple[str, ...]]] = []
+    notes: list[str] = []
     for argv in argvs:
         script = Path(argv[1]) if len(argv) > 1 else None
         if script is not None and script.suffix == ".py" and not script.is_file():
@@ -534,6 +553,8 @@ def run_check(check: Check, project: Path) -> Result:
             # decided which one stopped it, so a fabricated artifact was invisible in gate output
             # while being the worst thing in the tree. It fails quiet, which is the dangerous half.
             failures.append((argv[-1], summary, findings))
+        else:
+            notes.extend(pass_notes(done.stdout + done.stderr))
     if failures:
         first = failures[0]
         # THE CHECKER'S OWN COUNT, NOT A COUNT OF LINES (#1189). `len(findings)` counts the lines after
@@ -549,7 +570,7 @@ def run_check(check: Check, project: Path) -> Result:
                 merged.append(f"  {path}:")
             merged.extend(items)
         return Result(check, FAIL, detail, tuple(merged))
-    return Result(check, PASS, f"{len(argvs)} invocation(s)")
+    return Result(check, PASS, f"{len(argvs)} invocation(s)", tuple(notes))
 
 
 def routing_detail(r: Result) -> str:
@@ -634,7 +655,10 @@ def as_json(results: list[Result], problems: list[str]) -> str:
         destination, why = route_of(r)
         rows.append({"plugin": r.check.plugin, "id": r.check.id, "why": r.check.why,
                      "status": r.status, "detail": r.detail,
-                     "findings": list(r.findings),
+                     # A pass carries only NOTE/WARNING lines (#1227). They are advice, never
+                     # findings, so a consumer summing `findings` cannot count a pass as a failure.
+                     "findings": [] if r.status == PASS else list(r.findings),
+                     "notes": list(r.findings) if r.status == PASS else [],
                      "destination": destination or None, "routed_because": why or None})
     return json.dumps({
         "results": rows,
@@ -711,6 +735,23 @@ def selftest() -> int:
         r = run_check(mk(command=["python3", str(root / "scripts/bad.py")]), project)
         check("a failing check reports FAIL", r.status == FAIL, f"got {r.status}")
         check("a failure carries the finding's first line", "a finding" in r.detail, r.detail)
+        # #1227: a PASS surfaces its NOTE/WARNING lines, and only those.
+        (root / "scripts" / "note.py").write_text(
+            "print('scanned 3 files'); print('  NOTE: this floor records no toolchain version')\n",
+            encoding="utf-8")
+        r = run_check(mk(command=["python3", str(root / "scripts/note.py")]), project)
+        check("a passing check that prints a NOTE still passes", r.status == PASS, f"got {r.status}")
+        check("...and the NOTE reaches the report", r.findings == ("NOTE: this floor records no "
+              "toolchain version",), f"got {r.findings!r}")
+        (root / "scripts" / "chatty.py").write_text("print('scanned 3 files, all fine')\n",
+                                                   encoding="utf-8")
+        r = run_check(mk(command=["python3", str(root / "scripts/chatty.py")]), project)
+        check("a passing check's other output is NOT surfaced", r.findings == (), f"got {r.findings!r}")
+        r = run_check(mk(command=["python3", str(root / "scripts/note.py")]), project)
+        row = json.loads(as_json([r], []))["results"][0]
+        check("in --json a pass's NOTE is a note, never a finding",
+              (row["findings"], row["notes"]) == ([], ["NOTE: this floor records no toolchain version"]),
+              f"got {row!r}")
         # NOT APPLICABLE, and the two ways it arises.
         r = run_check(mk(applies_when=["qa"]), project)
         check("a missing directory is n/a, not pass", r.status == NA, f"got {r.status}")
