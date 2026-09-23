@@ -3316,6 +3316,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`docs_layout.py --write` rewrote links in files nothing was moving —
+  `plugins/rails-flow/scripts/docs_layout.py`, `scripts/mutations/docs_layout.py`** (#1189). The #909
+  relink pass recomputed every markdown link in every file as `relpath(target, file's directory)`,
+  including links where neither the file nor its target moved — and `relpath` normalises, so
+  `[F-29](./F-29-x.md)` came back as `[F-29](F-29-x.md)`: a rewrite with no move behind it. Measured
+  downstream, asked to move three files it also rewrote 32 unrelated feature docs, the tool's own link
+  style applied to files nobody named, and the session moved the files by hand instead. A link now
+  keeps its exact text when neither side moved. A fixture — an unmoved file in an unmoved directory
+  whose `./` link targets an unmoved sibling — is not rewritten; the existing control, an unmoved
+  `MEMORY.md` linking a **moved** file, still is; and a mutation removing the guard is caught (24).
+
 ### 1.49.0 (release v1.143.0) — 2026-09-22
 
 - **Three memory systems could inject into every session and nothing noticed —
