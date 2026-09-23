@@ -14668,6 +14668,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **A green check can be silence about the property it is trusted for —
+  `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1185). **Maintainer decision recorded on
+  the issue**; our own doctrine, no upstream. `gate-that-cannot-fail` asks *make it fail on purpose*,
+  and `signal-that-cannot-discriminate` asks *what else produces this value* about a value you
+  consume. Neither covered a check you **wrote**, which demonstrably can fail, whose input never
+  contained the property: it passes the first test and is not obviously a consumed value. Two measured
+  instances in one evening — an assertion true of a branch its fixture never entered (its mutation
+  stayed green), and a digest guard over an architecture page whose title the digest excludes (34 of
+  40 commits shipped a wrong title while it reported fresh). One bullet in
+  `signal-that-cannot-discriminate`, a narrower detect step (*name the property, then ask whether the
+  check's input contains it*), the two different repairs, and a pointer from `gate-that-cannot-fail`.
+  Not a new class — the same shape, with the ambiguous value being *the check passed*.
+
 ### 1.64.2 (release v1.143.0) — 2026-09-22
 
 - **The quality-pass worked example's harness row moves again, to 35 files / reach 19 —
