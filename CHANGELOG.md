@@ -12057,6 +12057,30 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **A recorded floor did not say which toolchain counted it, and the count means nothing without
+  that — `plugins/design-flow/scripts/content_floors.py`,
+  `plugins/design-flow/scripts/mutations/content_floors.py`** (#1214). Measured across four tags,
+  `layout-composition`'s `CLASS_ATTR` was `class="([^"]*)"` at v1.140.0 and v1.141.0 and became
+  `class(?:\s*[:=]\s*)["']([^"']*)["']` by v1.144.1 — so the older detector **cannot see the Rails
+  helper's `class: "..."` form at all**, and the same tree yields roughly half the findings. A floor
+  cut with one version and enforced by another is a claim about a different population.
+
+  `set_floor` now records the design-flow version **per gate**, read from `plugin.json` at runtime —
+  never a constant here, which would be a second copy that drifts from the one that ships.
+
+  **A mismatch WARNS and never fails, and that is the decision rather than a shortcut.** Refusing
+  would turn every toolchain bump red, including the great majority where no detector moved, and a
+  gate that goes red on an unrelated upgrade is one people learn to re-cut past without reading. The
+  warning names both versions and the re-cut command, on every run. A floor with no version at all —
+  every floor written before this — says so as UNKNOWN rather than implying agreement.
+
+  Six mutations added, thirteen in total, all caught. **Two of them are the pair that matters**: one
+  stops the warning firing, caught by the mismatch fixture; the other makes it fire *always*, caught
+  by the same-version control — because "warns on a mismatch" is otherwise satisfied by warning
+  every run, which is a warning nobody reads.
+
 ### 1.43.0 (release v1.144.0) — 2026-09-23
 
 - **`layout-composition` could not see a class passed through a Rails helper —
