@@ -158,6 +158,51 @@ def reach(hits: list[Path], root: Path) -> int:
     return max(counts.values()) if counts else 0
 
 
+# ---- the #398 arithmetic, computed rather than written down (#1174) -------------------------------
+# The worked example's "don't extract" decision rests on a cost/benefit sum over the selftest harness.
+# Its figures were prose digits, and they drifted twice -- the second time by about five-fold, while
+# the table above them stayed gated and correct. So the sum is computed here from the SAME file list
+# and the SAME install-root grouping the table uses, and the prose points at `--arithmetic`.
+#
+# The model is the worked example's own: a shared harness is an object of about MODULE_COST lines;
+# per copy it removes the 7-line harness and the 7-line reporter and adds four, so each copy saves
+# SAVED_PER_COPY. A root holding ONE copy has nothing to share with and saves nothing.
+HARNESS_LABEL = "the `check(label, ok, detail)` selftest harness"
+SAVED_PER_COPY, MODULE_COST = 10, 16
+CALL_SITE = re.compile(r"^[ \t]*check\(", re.M)
+
+
+def arithmetic(root: Path) -> dict:
+    """The #398 sum for the harness shape, over `root`. Pure: reads files, returns numbers."""
+    shape = next(s for s in SHAPES if s.label == HARNESS_LABEL)
+    hits = measure(shape, sources(root))
+    per_root = Counter(unit(p, root) for p in hits)
+    largest = max(per_root.values()) if per_root else 0
+    texts = [p.read_text(encoding="utf-8") for p in hits]
+    lines = sum(len(t.splitlines()) for t in texts)
+    saved_largest = SAVED_PER_COPY * largest - MODULE_COST if largest > 1 else 0
+    saved_all = sum(SAVED_PER_COPY * n - MODULE_COST for n in per_root.values() if n > 1)
+    return {
+        "files": len(hits), "lines": lines, "per_root": dict(per_root.most_common()), "reach": largest,
+        "saved_largest": saved_largest, "saved_all": saved_all,
+        "share_largest": (100.0 * saved_largest / lines) if lines else 0.0,
+        "share_all": (100.0 * saved_all / lines) if lines else 0.0,
+        "call_sites": sum(len(CALL_SITE.findall(t)) for t in texts),
+    }
+
+
+def print_arithmetic(root: Path) -> int:
+    a = arithmetic(root)
+    print(f"{HARNESS_LABEL}, measured over {a['files']} file(s), {a['lines']:,} lines:")
+    print(f"  copies per install root: {a['per_root']}   reach R = {a['reach']}")
+    print(f"  saved at the largest root ({SAVED_PER_COPY}R - {MODULE_COST}): {a['saved_largest']} lines "
+          f"= {a['share_largest']:.2f}% of those files")
+    print(f"  saved across every root that holds more than one copy: {a['saved_all']} lines "
+          f"= {a['share_all']:.2f}%")
+    print(f"  `check(` call sites an extraction would rewrite: {a['call_sites']:,}")
+    return 0
+
+
 def plugin_roots(manifest_text: str) -> set[str]:
     """Every `plugins/<name>` a marketplace entry names as its `source`, or raise."""
     try:
@@ -549,6 +594,25 @@ def selftest() -> int:
 
     check("SHAPES is not empty", len(SHAPES) >= 4, f"{len(SHAPES)}")
 
+    # ---- the #398 arithmetic (#1174). LITERAL expected values, measured once by eye on the corpus:
+    # 4 harness files, 52 lines; per root demo 2, other 1, scripts/ 1. A fixture that recomputed the
+    # sum the way the code does would agree with any bug in it.
+    with tempfile.TemporaryDirectory() as td:
+        a = arithmetic(_corpus(Path(td)))
+    check("arithmetic: counts the same harness files the table does", a["files"] == 4, f"{a['files']}")
+    check("arithmetic: reach is the largest single install root", a["reach"] == 2, f"{a['reach']}")
+    check("arithmetic: the largest root saves 10R - 16", a["saved_largest"] == 4, f"{a['saved_largest']}")
+    # A root with ONE copy has nothing to share with; counting it would add 10*1-16 = -6 per such root
+    # and quietly turn a real saving negative. Two single-copy roots here, so the sum is 4, not -8.
+    check("arithmetic: a root holding one copy saves nothing and is left out",
+          a["saved_all"] == 4, f"{a['saved_all']}")
+    check("arithmetic: the share is of the lines in the harness files", round(a["share_largest"], 2) == 7.69,
+          f"{a['share_largest']:.2f}")
+    with tempfile.TemporaryDirectory() as td:
+        empty = arithmetic(Path(td))
+    check("arithmetic: an empty tree is zeros, not a crash or a negative saving",
+          empty["files"] == 0 and empty["saved_largest"] == 0 and empty["share_largest"] == 0.0, f"{empty}")
+
     if failures:
         print(f"SELFTEST FAILED -- {len(failures)} of {n} checks:", file=sys.stderr)
         for f in failures:
@@ -562,8 +626,14 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Reconcile the quality-pass worked example's counts against the repo.")
     ap.add_argument("--selftest", action="store_true", help="prove the rules fire and stay silent")
+    ap.add_argument("--arithmetic", action="store_true",
+                    help="print the #398 cost/benefit sum for the selftest harness, from the repo")
     args = ap.parse_args(argv)
-    return selftest() if args.selftest else run()
+    if args.selftest:
+        return selftest()
+    if args.arithmetic:
+        return print_arithmetic(REPO)
+    return run()
 
 
 if __name__ == "__main__":

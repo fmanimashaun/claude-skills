@@ -90,5 +90,24 @@ GUARD = Guard(
             "        return set()",
             "an unparseable manifest returned instead of raising",
         ),
+        # #1174: the #398 arithmetic. Each rule the "don't extract" decision rests on, broken once.
+        Mutation(
+            "the module's own cost is forgotten, so every extraction looks bigger",
+            "    saved_largest = SAVED_PER_COPY * largest - MODULE_COST if largest > 1 else 0\n",
+            "    saved_largest = SAVED_PER_COPY * largest if largest > 1 else 0\n",
+            "arithmetic: the largest root saves 10R - 16",
+        ),
+        Mutation(
+            "a root with one copy is counted, turning real savings negative",
+            "    saved_all = sum(SAVED_PER_COPY * n - MODULE_COST for n in per_root.values() if n > 1)\n",
+            "    saved_all = sum(SAVED_PER_COPY * n - MODULE_COST for n in per_root.values() if n >= 1)\n",
+            "arithmetic: a root holding one copy saves nothing and is left out",
+        ),
+        Mutation(
+            "reach counts install roots instead of the copies in the largest one",
+            "    largest = max(per_root.values()) if per_root else 0\n",
+            "    largest = len(per_root)\n",
+            "arithmetic: reach is the largest single install root",
+        ),
     ),
 )
