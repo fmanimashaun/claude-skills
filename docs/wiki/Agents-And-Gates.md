@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 119 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 120 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.43.0 | 5 | 12 | 5 | 18 |
-| `pipeline` | 1.3.2 | 2 | 8 | 2 | 1 |
+| `pipeline` | 1.3.3 | 2 | 8 | 2 | 2 |
 | `qa-flow` | 1.32.2 | 11 | 8 | 11 | 15 |
-| `rails-flow` | 1.49.1 | 11 | 20 | 11 | 23 |
+| `rails-flow` | 1.49.2 | 11 | 20 | 11 | 23 |
 
 ## Agents
 
@@ -98,6 +98,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
 | design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
+| pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |
 | qa-flow blast radius | `qa-flow` | `python3 plugins/qa-flow/scripts/blast_radius.py --selftest` | selftest |
 | qa-flow boot classifier | `qa-flow` | `python3 plugins/qa-flow/scripts/classify_boot_failure.py --selftest` | selftest |

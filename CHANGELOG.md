@@ -7,6 +7,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-23 (release v1.144.1)
+
+- **`AGENTS.md` states the reply style positively instead of listing banned habits** (#1201).
+  **Maintainer decision, 2026-09-23**; our own doctrine, no upstream. A report-only
+  `/claude-api prompt-audit` run for Opus 5.5 flagged the "**Never**: praise openers, …" line as a
+  style-tic prohibition with no stated reason. It now reads as the behaviour wanted: open with the
+  answer, end on the call, state confident claims without hedging.
+
 ### 2026-09-22 (release v1.143.0)
 
 - **The `remember` plugin is off for this repository — `.claude/settings.json`**. **Maintainer
@@ -3316,6 +3324,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.49.2 (release v1.144.1) — 2026-09-23
+
+- **The generated `CLAUDE.md` no longer carries an all-caps register or a banned-habits list —
+  `plugins/rails-flow/commands/setup-flow.md`** (#1201). **Maintainer decision, 2026-09-23**; our
+  own template, no upstream. The rules placeholder read `<numbered ALWAYS-rules …>`, and the advisor
+  block ended in a "**Never**: praise openers, …" list; a report-only `/claude-api prompt-audit`
+  for Opus 5.5 flagged both. The placeholder now asks for each rule with its reason, and the advisor
+  line states the reply style positively.
+
 ### 1.49.1 (release v1.144.0) — 2026-09-23
 
 - **The doctrine sweep reported a fifth of the findings its checks found —
@@ -5822,6 +5839,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 ## pipeline (lifecycle orchestrator)
+
+### 1.3.3 (release v1.144.1) — 2026-09-23
+
+- **`/pipeline:install-hooks` installs the nudge where git actually runs it** (#1204) —
+  `plugins/pipeline/hooks/scripts/install-git-hooks.sh` wrote `$(git rev-parse --git-dir)/hooks`,
+  which git reads only in a plain clone. Under `core.hooksPath` git never reads `.git/hooks`, and in a
+  linked worktree `--git-dir` is `.git/worktrees/<name>`, whose `hooks/` git never reads either. In
+  both cases the installer printed "installed" and the QA-verify nudge never fired. It now resolves
+  `git rev-parse --git-path hooks`, refuses to edit a hook that is **tracked** (a committed
+  `core.hooksPath` hook is the team's, not a local nudge's), and adds an in-tree hook to
+  `info/exclude` so it cannot be committed by accident. `scripts/install_git_hooks_selftest.py`
+  proves each case with a real merge rather than by finding the file: against the old script it
+  fails the `core.hooksPath`, linked-worktree and tracked-hook checks and passes the three cases the
+  old code already handled. Three mutations in `scripts/mutations/install_git_hooks.py`, all caught.
 
 ### 1.3.2 — 2026-09-02 (release v1.108.0)
 
@@ -14757,6 +14788,18 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.65.1 (release v1.144.1) — 2026-09-23
+
+- **`ai-llm.md`'s core chat example no longer 400s on its own default model —
+  `skills/rails-8/references/ai-llm.md`** (#1200). §2 chained `chat.with_temperature(0.2)` onto the
+  `claude-sonnet-5` default set in §1. `doctrine-verifier`: **CONFIRMED**. The Sonnet 5 migration
+  guide (platform.claude.com/docs/en/models/sonnet-5/migration-guide): *"Sampling parameters
+  (`temperature`, `top_p`, `top_k`) set to a non-default value are not accepted and return a 400
+  error."* ruby_llm `v2.0.0` `lib/ruby_llm/protocols/anthropic/chat.rb:135-143` sets
+  `payload[:temperature]` whenever it is non-nil, with no capability check. Boundary: Sonnet 4.6
+  accepts it; Sonnet 5 rejects it. The line is removed and one sentence says why. Found by a
+  report-only `/claude-api prompt-audit` for Opus 5.5.
 
 ### 1.65.0 (release v1.144.0) — 2026-09-23
 

@@ -64,9 +64,12 @@ response.content        # String
 # Multi-turn is automatic — the chat object holds history:
 chat.ask("Now compress it to 5 items")
 
-chat.with_temperature(0.2)                 # chainable
 chat.ask("Describe this", with: "report.pdf")   # attachments: images/PDFs/audio
 ```
+
+Leave sampling alone on the default model: Claude Sonnet 5 returns **400** for a non-default
+`temperature`, `top_p` or `top_k`, and ruby_llm 2.0 sends `with_temperature` through unchecked —
+so a `with_temperature` chained onto the default model above fails every request.
 
 One API, any provider — switching models is a string change, which is the
 whole point: never hand-roll provider HTTP clients.
