@@ -183,6 +183,27 @@ def run() -> int:
         HAPPY + "- **AC-2** Given a pressed count of zero, when the caller initialises the component, "
         "then it raises an error, and the controller rescues it into a flash\n",
     )
+    # #1209: criteria are markdown, so the class arrives quoted or in the passive.
+    for label, clause in (
+        ("a backtick-quoted class after `raises` counts", "then it raises `ArgumentError`"),
+        ("an article before a quoted class counts", "then it raises an `ActiveRecord::RecordNotFound`"),
+        ("a bold class after `raises` counts", "then it raises **ArgumentError**"),
+        ("the passive `X is raised` counts", "then `ActiveRecord::RecordNotFound` is raised"),
+        ("a class ending in Error counts without the verb",
+         "then the builder refuses it with `Segments::TooFewError`"),
+    ):
+        expect_clean(
+            label,
+            HAPPY + "- **AC-2** Given fewer than two segments, when it is built, " + clause + "\n",
+        )
+    # The passive and the suffix must not turn domain prose into an error path either.
+    expect_findings(
+        "a lowercase 'a request is raised' is not an error path",
+        "## Requests\n- **AC-1** Given a requester, when they raise a request, then a ticket is raised "
+        "and shown to the facilities team\n",
+        contains="no error-path criterion",
+        count=1,
+    )
     # THE CONTROL ON THE SAME VERB. In a domain app a requester RAISES a request; if a bare "raise"
     # counted, this happy-path-only unit would pass with no error path at all.
     expect_findings(

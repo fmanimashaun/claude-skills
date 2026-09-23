@@ -49,9 +49,34 @@ GUARD = Guard(
         Mutation(
             # THE DOMAIN-VERB GUARD: a bare raise makes 'a requester raises a request' an error path.
             "the verb counts without what is raised, so a domain 'raise' passes",
-            '    r"\\b(?i:raise[sd]?)\\s+(?:(?i:an?)\\s+)?(?:[A-Z][\\w:]*|(?i:error|exception)\\b)"',
+            '    r"\\b(?i:raise[sd]?)\\s+(?:(?i:an?)\\s+)?[`*_]*(?:[A-Z][\\w:]*|(?i:error|exception)\\b)"',
             '    r"\\b(?i:raise[sd]?)\\b"',
             "the DOMAIN verb 'raises a request' is not an error path",
+        ),
+        # #1209: markdown delimiters between the verb and the class.
+        Mutation(
+            "a quoted class after the verb is not recognised",
+            '    r"\\b(?i:raise[sd]?)\\s+(?:(?i:an?)\\s+)?[`*_]*(?:[A-Z][\\w:]*|(?i:error|exception)\\b)"',
+            '    r"\\b(?i:raise[sd]?)\\s+(?:(?i:an?)\\s+)?(?:[A-Z][\\w:]*|(?i:error|exception)\\b)"',
+            "an article before a quoted class counts",
+        ),
+        Mutation(
+            "the passive voice is not recognised",
+            '    r"|\\b[A-Z][\\w:]*[`*_]*\\s+(?:is|are|gets?|be|being)\\s+raised\\b"\n',
+            '',
+            "the passive `X is raised` counts",
+        ),
+        Mutation(
+            "a class ending in Error is not recognised on its own",
+            '    r"|\\b[A-Z][\\w:]*(?:Error|Exception)\\b"\n',
+            '',
+            "a class ending in Error counts without the verb",
+        ),
+        Mutation(
+            "the passive counts a lowercase subject, so domain prose passes",
+            '    r"|\\b[A-Z][\\w:]*[`*_]*\\s+(?:is|are|gets?|be|being)\\s+raised\\b"\n',
+            '    r"|\\b\\w+\\s+(?:is|are|gets?|be|being)\\s+raised\\b"\n',
+            "a lowercase \'a request is raised\' is not an error path",
         ),
     ),
 )

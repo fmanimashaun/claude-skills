@@ -3326,6 +3326,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A Markdown-quoted `raises \`ArgumentError\`` counts as an error path —
+  `plugins/rails-flow/scripts/check_criteria.py`, `plugins/rails-flow/scripts/check_criteria_selftest.py`,
+  `plugins/rails-flow/scripts/mutations/check_criteria.py`** (#1209). #1189's `RUBY_FAILURE` required the
+  class straight after the verb, so the forms criteria are actually written in — ``raises `ArgumentError` ``,
+  `raises **ArgumentError**`, ``an `ActiveRecord::RecordNotFound` `` and the passive
+  ``` `ArgumentError` is raised ``` — were reported as having no error path. Its only fixture was the bare
+  form. Markdown delimiters may now sit between verb and class, the passive counts with a capitalised
+  subject, and a class ending `Error`/`Exception` counts on its own; lowercase domain prose ("a ticket is
+  raised") still does not. Found by a Retask session through intake. Our own checker; no framework claim.
+
 - **`ci_verdict.py` no longer reports a workflow that never started as a real code failure**
   (#1208) — when a workflow file does not parse, GitHub creates a run with `conclusion: failure`
   and **zero jobs**. `plugins/rails-flow/scripts/ci_verdict.py`'s step sum
