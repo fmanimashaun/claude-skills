@@ -68,6 +68,11 @@ import sys
 # picked up. `success` is excluded on purpose: a genuinely successful run with no steps is not a
 # thing, and if it ever were, calling it "did not run" would be the flattering error.
 NEVER_STARTED_CONCLUSIONS = frozenset({"failure", "cancelled", "startup_failure", "stale", None})
+# The conclusions an UNREADABLE workflow file produces (#1218). Narrower on purpose: a zero-job run
+# that was cancelled or went stale never started either, but nothing says its workflow file is broken,
+# so telling that reader to go and read it would be a confident wrong verdict. Measured: every real
+# parse-failure run in a consumer's last 20 (17 of 17) concluded `failure`.
+UNREADABLE_WORKFLOW_CONCLUSIONS = frozenset({"failure", "startup_failure"})
 
 PASSED, FAILED, DID_NOT_RUN, RUNNING = "passed", "failed", "did-not-run", "running"
 NEVER_STARTED = "never-started"   # zero jobs: the workflow file itself never ran (#1208)
@@ -93,7 +98,7 @@ def verdict(run: dict) -> str:
     # itself cannot be read -- most often invalid YAML -- names it after the file path, and marks it
     # failure. Nothing ran, so it is not a test failure; unlike a missing runner the cause IS in the
     # change, so it must not be read as the environment either.
-    if run.get("jobs") == 0 and conclusion in NEVER_STARTED_CONCLUSIONS:
+    if run.get("jobs") == 0 and conclusion in UNREADABLE_WORKFLOW_CONCLUSIONS:
         return NEVER_STARTED
     # `steps` is None when we could not measure it. That is NOT zero -- an unmeasured run must not
     # be reported as "no runner", which would send someone to their billing page over a real
@@ -290,6 +295,13 @@ def _selftest() -> int:
            verdict(PARSE_FAILURE) == NEVER_STARTED)
     expect("...and it is NOT filed as a missing runner, which would blame the environment for the diff",
            verdict(PARSE_FAILURE) != DID_NOT_RUN)
+    # #1218: a zero-job run that was CANCELLED never started, but nothing says its workflow file is
+    # broken -- so it is not `never-started`, whose message sends the reader to that file.
+    CANCELLED_EARLY = {"status": "completed", "conclusion": "cancelled", "jobs": 0, "steps": 0}
+    expect("a zero-job CANCELLED run is not blamed on the workflow file",
+           verdict(CANCELLED_EARLY) == DID_NOT_RUN)
+    expect("...while a zero-job startup_failure still is",
+           verdict({**CANCELLED_EARLY, "conclusion": "startup_failure"}) == NEVER_STARTED)
     expect("jobs that executed zero steps are still the environment, not a parse failure",
            verdict({**NO_RUNNER, "jobs": 5}) == DID_NOT_RUN)
     expect("a workflow that never started exits 1 -- the cause is in the diff",
