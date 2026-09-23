@@ -248,7 +248,12 @@ def _rules() -> tuple[Rule, ...]:
             # then evaluated at the space before `var(`. Scan the VALUE instead --
             # `(?![^;}]*var\()` looks ahead to the end of the declaration -- which also lets the
             # `font:` shorthand share the branch, closing a path where a genuine literal was silent.
-            re.compile(r"font-\[[\"']?[A-Za-z]|font(?:-family)?\s*:(?![^;}]*var\()"),
+            #
+            # #1222. A value that is ONLY a CSS-wide keyword -- `font: inherit`, `unset`, `revert` --
+            # names no family, so it is not a literal; the branch above flagged it on every save.
+            re.compile(r"font-\[[\"']?[A-Za-z]|font(?:-family)?\s*:"
+                       r"(?!\s*(?:inherit|initial|unset|revert(?:-layer)?)\s*(?:[;}!\"']|$))"
+                       r"(?![^;}]*var\()"),
         ),
         Rule(
             "off-scale-radius",
@@ -595,6 +600,19 @@ def selftest() -> int:
     case("...and so does the multi-line form, declaration not first",
          '@font-face {\n  src: url("/f.woff2") format("woff2");\n  font-family: "NotoSans";\n}',
          rule="literal-font-family", expect=False)
+    # #1222: a CSS-wide keyword names no family.
+    for kw in ("inherit", "initial", "unset", "revert", "revert-layer"):
+        case(f"`font: {kw}` names no family", f".cta {{ font: {kw}; font-weight: 600; }}",
+             rule="literal-font-family", expect=False)
+    case("`font-family: inherit` at the end of a block names no family",
+         "button { font-family: inherit }", rule="literal-font-family", expect=False)
+    case("a keyword with !important names no family", "a { font: inherit !important; }",
+         rule="literal-font-family", expect=False)
+    case("a keyword in an inline style names no family", '<b style="font: inherit">x</b>',
+         rule="literal-font-family", expect=False)
+    # The control: a keyword-LOOKING prefix followed by a literal is still a literal.
+    case("a family that merely starts like a keyword still trips",
+         "p { font-family: initial-sans, serif; }", rule="literal-font-family", expect=True)
     # THE POSITIVES, so none of the above is satisfied by a rule that stopped firing.
     case("a real literal still trips", 'h1 { font-family: "Inter", sans-serif; }',
          rule="literal-font-family", expect=True)

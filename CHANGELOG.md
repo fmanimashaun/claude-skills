@@ -12068,6 +12068,17 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`font: inherit` is no longer a literal font family — `plugins/design-flow/scripts/llm_tell_detector.py`,
+  `plugins/design-flow/scripts/mutations/llm_tell_detector.py`** (#1222). `literal-font-family`'s
+  declaration branch fired on any `font:`/`font-family:` value without `var(`, so a value that is only a
+  CSS-wide keyword — `inherit`, `initial`, `unset`, `revert`, `revert-layer` — was flagged though it names
+  no family. The PostToolUse hook raised it on a consumer's `public/offline.html` during an unrelated edit.
+  The keyword must end the value (`;`, `}`, `!important`, a closing quote, or end of input), so
+  `initial-sans` still trips. Measured on that file: 2 findings → 1, the survivor a genuine literal. The
+  two #782 mutations were re-anchored to the split pattern. Found by a Retask session through intake.
+
 ### 1.43.1 (release v1.144.3) — 2026-09-23
 
 - **A recorded floor did not say which toolchain counted it, and the count means nothing without
