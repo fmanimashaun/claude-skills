@@ -3324,6 +3324,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A zero-job *cancelled* run is no longer told its workflow file did not parse —
+  `plugins/rails-flow/scripts/ci_verdict.py`, `plugins/rails-flow/scripts/mutations/ci_verdict.py`** (#1218).
+  #1208's `never-started` fired for any zero-job run in `NEVER_STARTED_CONCLUSIONS`, which includes
+  `cancelled` and `stale`, and its message sends the reader to the workflow files in the change. It
+  now fires only for `failure` and `startup_failure`; a zero-job cancelled or stale run is
+  `did-not-run`. Measured on a consumer's last 20 `dev` pushes: all 17 real parse failures concluded
+  `failure`, so the narrowing loses nothing observed. The cancelled path itself was shown with a
+  synthetic payload through `--from`; no zero-job cancelled run has been seen on real data.
+
 ### 1.49.3 (release v1.144.2) — 2026-09-23
 
 - **A Markdown-quoted `raises \`ArgumentError\`` counts as an error path —
