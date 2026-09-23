@@ -184,5 +184,23 @@ GUARD = Guard(
             '    found = None',
             "a subparser group is detected",
         ),
+        Mutation(
+            '#1189: the strict summary form again, blind to the worded and trailing dialects',
+            '_SUMMARY = re.compile(r"^\\s*(\\d+)\\s+(?:[\\w-]+\\s+){0,3}finding\\(s\\)(?=\\W|$)")',
+            '_SUMMARY = re.compile(r"^\\s*(\\d+)\\s+finding\\(s\\):")',
+            '#1189: a worded count line is the summary',
+        ),
+        Mutation(
+            '#1189: a trailing count line carries an empty list',
+            '    if not rest and _SUMMARY.search(lines[idx]):',
+            '    if False:',
+            '#1189: ...and the bullets ABOVE it are carried, not an empty list',
+        ),
+        Mutation(
+            "#1189: the multi-file total counts lines again, not the checkers' stated counts",
+            '        total = sum(n if (n := stated_count(f[1])) is not None else len(f[2]) for f in failures)',
+            '        total = sum(len(f[2]) for f in failures)',
+            "#1189: a multi-file total is the checkers' own stated counts, not a count of lines",
+        ),
     ),
 )
