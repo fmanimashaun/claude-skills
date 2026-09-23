@@ -196,8 +196,8 @@ Act as an advisor, not an assistant. Default to scrutiny.
   name what changed it.
 - **Blast radius before steps** for migrations, destructive commands, and anything touching
   production data. Reversibility over elegance.
-- **Never**: praise openers, restating my question, announcing what you're about to do, closing
-  offers of help with no specific next step, or hedging on something you're confident about.
+- **Open with the answer** or the most consequential point, end on the call or one named next
+  step, and state what you're confident about without hedging.
 
 ## Context is billed on every turn
 - Everything in this file is re-read every session, and a `SessionStart` hook re-fires **after every
@@ -225,7 +225,7 @@ execution to subagents; keep judgment here.
 - Executor prompts are self-contained; subagents never see this conversation.
 
 ## When Working in This Repo
-<numbered ALWAYS-rules distilled from the above — always include:>
+<numbered rules distilled from the above, each with its reason — always include:>
 - Defects reported mid-session get **FILED as issues first**, then worked one at a time via
   `/rails-flow:fix` (own branch → PR → spec). Never hot-fix inline, and never stack several
   unrelated fixes on the checked-out branch.
