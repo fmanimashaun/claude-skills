@@ -6,7 +6,9 @@ API across OpenAI, Anthropic, Gemini, DeepSeek, Bedrock, Ollama, OpenRouter,
 and any OpenAI-compatible endpoint, plus first-class Rails persistence.
 (langchainrb exists as a Python-LangChain-style abstraction layer; this skill
 does not use it — prefer ruby_llm's plain-Ruby approach.) Version series:
-1.x; verify current APIs at rubyllm.com if the date is well past mid-2026.
+**2.x, pinned below.** This page is verified against ruby_llm 2.0.0 (released 2026-09-18), a major
+version that renamed tool, schema, usage and registry APIs from 1.x — code written for 1.x will not
+run unchanged. Verify current APIs at rubyllm.com before moving the pin.
 
 ## Contents
 1. Install and configure
@@ -25,7 +27,7 @@ does not use it — prefer ruby_llm's plain-Ruby approach.) Version series:
 
 ```ruby
 # Gemfile
-gem "ruby_llm"
+gem "ruby_llm", "~> 2.0"    # the series this page documents; 2.0 broke 1.x APIs
 ```
 
 ```ruby
@@ -36,7 +38,7 @@ RubyLLM.configure do |config|
   # config.gemini_api_key / deepseek_api_key / openrouter_api_key ...
   # config.ollama_api_base = "http://localhost:11434/v1"   # local models
 
-  config.default_model = "claude-sonnet-4-5"   # pick from RubyLLM.models
+  config.default_model = "claude-sonnet-5"     # must be in RubyLLM.models — unknown IDs raise
   config.request_timeout = 120
 end
 ```
@@ -44,7 +46,11 @@ end
 Keys live in credentials (`project-setup.md`), never ENV literals in code.
 `RubyLLM.models` is a built-in registry (context windows, capabilities,
 pricing) — browse `RubyLLM.models.chat_models`, refresh with
-`RubyLLM.models.refresh!`.
+`RubyLLM.models.refresh` (no bang in 2.x). **A model ID must be in that registry**: an unknown one
+raises `ModelNotFoundError` unless you pass `assume_model_exists: true`, so copy IDs from the
+registry for the version you run, not from a provider's model list — they are not the same list.
+`claude-sonnet-5` is in 2.0.0's registry and **not** in 1.x's; an app still on 1.x must use
+`claude-sonnet-4-6`.
 
 ## 2. Core chat API
 
@@ -70,7 +76,9 @@ whole point: never hand-roll provider HTTP clients.
 ```bash
 bin/rails generate ruby_llm:install
 bin/rails db:migrate
-# → Chat, Message, ToolCall models + migrations
+# → Chat and Message models + migrations. ruby_llm owns the rest itself:
+#   ruby_llm_models, ruby_llm_tool_calls, ruby_llm_usages, ruby_llm_batches.
+#   A chat references a ruby_llm_models row (the model_id: writer still works).
 ```
 
 ```ruby
@@ -89,13 +97,14 @@ end
 ```
 
 ```ruby
-chat = user.chats.create!(model_id: "claude-sonnet-4-5")
+chat = user.chats.create!(model_id: "claude-sonnet-5")
 chat.ask("Summarize open work orders")   # user + assistant messages persisted
 chat.messages.order(:created_at)          # full transcript, with token usage
 ```
 
-You get durable conversations, per-message `input_tokens`/`output_tokens`
-for cost reporting, and models that behave like any other Active Record —
+You get durable conversations, per-message usage for cost reporting — stored in
+`ruby_llm_usages` (input, output, cache and thinking tokens, with costs) and read as
+`message.tokens` / `message.cost`, and models that behave like any other Active Record —
 scopes, authorization, broadcasts.
 
 ## 4. Streaming responses with Hotwire
@@ -149,7 +158,7 @@ Let the model call your code — a plain class per capability:
 # app/tools/work_order_lookup.rb
 class WorkOrderLookup < RubyLLM::Tool
   description "Looks up a work order by reference number"
-  param :reference, desc: "Work order reference, e.g. WO-2026-104"
+  parameter :reference, description: "Work order reference, e.g. WO-2026-104"
 
   def execute(reference:)
     wo = WorkOrder.find_by(reference:)
@@ -160,7 +169,7 @@ end
 ```
 
 ```ruby
-chat.with_tool(WorkOrderLookup)        # or with_tools(A, B, C)
+chat.with_tools(WorkOrderLookup)       # one or several: with_tools(A, B, C)
 chat.ask("What's the status of WO-2026-104?")
 # → model requests the tool → execute runs → result returned → model answers
 ```
@@ -175,8 +184,8 @@ model chooses when to call it.
 For extraction/classification where you need a Hash, not prose:
 
 ```ruby
-# Gemfile: gem "ruby_llm-schema"
-class InvoiceExtraction < RubyLLM::Schema
+# Schematist ships with ruby_llm 2.x — no separate gem (ruby_llm-schema is retired)
+class InvoiceExtraction < Schematist::Schema
   string :vendor
   number :total
   array :line_items do
@@ -189,7 +198,8 @@ end
 
 response = RubyLLM.chat.with_schema(InvoiceExtraction)
                        .ask("Extract the invoice data: #{raw_text}")
-response.content   # => Hash matching the schema — validate/cast before persisting
+response.parsed    # => Hash matching the schema — validate/cast before persisting
+response.content   # => the raw JSON string (2.x: content is always text)
 ```
 
 Prefer schemas over "reply in JSON" prompting — the provider enforces the
@@ -240,7 +250,7 @@ Apply `testing.md` §9 with extra care:
 
 Production rules: all calls in background jobs with retries
 (`retry_on Faraday::TimeoutError, wait: :polynomially_longer`); record token
-usage (persisted on messages) and alert on cost anomalies; keep prompts in
+usage (persisted in `ruby_llm_usages`; `message.tokens`, `message.cost`) and alert on cost anomalies; keep prompts in
 code/partials under version control, not the database; strip/limit user
 input length; log with `Rails.event.notify("ai.reply", chat_id:, model:,
 input_tokens:, output_tokens:)` for auditability (`observability.md`).

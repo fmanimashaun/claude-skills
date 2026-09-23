@@ -14670,6 +14670,31 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The ruby_llm page moves to 2.x — its examples pinned a model two generations old, and an unpinned
+  gem line installed a major version the page did not describe — `skills/rails-8/references/ai-llm.md`,
+  `dist/rails-8.skill`** (#1180). **`doctrine-verifier`: CONFIRMED**, against RubyLLM's own source at
+  `crmne/ruby_llm` tag `v2.0.0` (CHANGELOG *Changed in 2.0*, rubyllm.com/upgrading, `models.json`,
+  `lib/ruby_llm/{tool,models,embedding}.rb`, `active_record/{chat,message}_methods.rb`, the install
+  generator templates) and at `1.16.0`, the last 1.x. **The first fix pinned `~> 1.16`** to match the
+  page's stated "Version series: 1.x"; the maintainer asked why the page was on 1.x when 2.x is current,
+  and it was moved instead — after verifying **every API it teaches** against 2.0.0, because 2.0 is a
+  breaking release and a pin change alone would have shipped broken code. Changed: `gem "ruby_llm",
+  "~> 2.0"`; model `claude-sonnet-4-5` → **`claude-sonnet-5`** (in 2.0.0's registry, absent from 1.x's —
+  RubyLLM raises `ModelNotFoundError` on any unregistered ID); `models.refresh!` → `refresh`;
+  `assume_exists:` → `assume_model_exists:`; tools `param … desc:` → `parameter … description:` and
+  `with_tool` → `with_tools`; structured output `RubyLLM::Schema` → `Schematist::Schema` with the
+  `ruby_llm-schema` gem retired, and **`response.content` is now the raw JSON string — the Hash is
+  `response.parsed`**; the generator now creates only `Chat` and `Message`, with ruby_llm owning
+  `ruby_llm_models`, `_tool_calls`, `_usages` and `_batches`; and **token usage is no longer columns on
+  messages** — the 2.0 messages migration has none — but rows in `ruby_llm_usages`, read as
+  `message.tokens` / `message.cost`. Two of those were **not** in the verifier's table and were found by
+  grepping the page for every API the 2.0 changelog renames: the token-usage prose and the `ToolCall`
+  model the generator no longer creates. The one item the verifier left INCONCLUSIVE, `embed(...).vectors`,
+  was resolved against `embedding.rb:24` at `v2.0.0` — still an `attr_reader`, unchanged. Verified
+  unchanged and left as written: `RubyLLM.configure` keys, `chat_models`, `acts_as_chat`,
+  `create!(model_id:)`, `ask`, streaming, `with_instructions` (single call; 2.0 replaces rather than
+  appends, which a single call does not observe), `with_schema`, `Tool#description`.
+
 - **A green check can be silence about the property it is trusted for —
   `skills/code-review/SKILL.md`, `dist/code-review.skill`** (#1185). **Maintainer decision recorded on
   the issue**; our own doctrine, no upstream. `gate-that-cannot-fail` asks *make it fail on purpose*,
