@@ -23,16 +23,16 @@ GUARD = Guard(
         # the @font-face exemption, and that the block CLOSES.
         Mutation(
             "the pattern goes back to matching any font-family declaration",
-            r'font(?:-family)?\s*:(?![^;}]*var\()',
-            r"font-family\s*:",
-            "the shorthand hides a literal too",
+            'r"(?![^;}]*var\\()"),',
+            'r""),',
+            "a sans role token is NOT a literal",
         ),
         Mutation(
             # Dropping `(?:-family)?` leaves `font:` unchecked -- a silent path for a genuine
             # literal, which is what it was before this fix.
             "the shorthand branch is dropped, so `font:` hides a literal again",
-            r'font(?:-family)?\s*:(?![^;}]*var\()',
-            r'font-family\s*:(?![^;}]*var\()',
+            r'font(?:-family)?\s*:"',
+            r'font-family\s*:"',
             "the shorthand hides a literal too",
         ),
         Mutation(
@@ -128,6 +128,20 @@ GUARD = Guard(
             "        if rule.name in allowed:\n            report.suppressed += 1\n            continue",
             "        if False:\n            report.suppressed += 1\n            continue",
             "a disable with a reason suppresses",
+        ),
+        Mutation(
+            # #1222 restored: a CSS-wide keyword is read as a literal family again.
+            "a CSS-wide keyword is flagged as a literal family again",
+            '                       r"(?!\\s*(?:inherit|initial|unset|revert(?:-layer)?)\\s*(?:[;}!\\"\']|$))"\n',
+            "",
+            "`font: inherit` names no family",
+        ),
+        Mutation(
+            # The keyword must END the value, or `initial-sans` -- a real family -- is excused.
+            "a keyword prefix excuses a real family",
+            '(?:inherit|initial|unset|revert(?:-layer)?)\\s*(?:[;}!\\"\']|$))"',
+            '(?:inherit|initial|unset|revert(?:-layer)?))"',
+            "a family that merely starts like a keyword still trips",
         ),
     ),
 )
