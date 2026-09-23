@@ -7,6 +7,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **`AGENTS.md` states the reply style positively instead of listing banned habits** (#1201).
+  **Maintainer decision, 2026-09-23**; our own doctrine, no upstream. A report-only
+  `/claude-api prompt-audit` run for Opus 5.5 flagged the "**Never**: praise openers, …" line as a
+  style-tic prohibition with no stated reason. It now reads as the behaviour wanted: open with the
+  answer, end on the call, state confident claims without hedging.
+
 ### 2026-09-22 (release v1.143.0)
 
 - **The `remember` plugin is off for this repository — `.claude/settings.json`**. **Maintainer
@@ -3315,6 +3323,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **The generated `CLAUDE.md` no longer carries an all-caps register or a banned-habits list —
+  `plugins/rails-flow/commands/setup-flow.md`** (#1201). **Maintainer decision, 2026-09-23**; our
+  own template, no upstream. The rules placeholder read `<numbered ALWAYS-rules …>`, and the advisor
+  block ended in a "**Never**: praise openers, …" list; a report-only `/claude-api prompt-audit`
+  for Opus 5.5 flagged both. The placeholder now asks for each rule with its reason, and the advisor
+  line states the reply style positively.
 
 ### 1.49.1 (release v1.144.0) — 2026-09-23
 
