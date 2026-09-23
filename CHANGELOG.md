@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-23 (release v1.144.5)
 
 - **The shell linter can fail, and refuses `git grep -E … \b` — `scripts/lint_markdown_shell.py`,
   `scripts/mutations/lint_markdown_shell.py`, `scripts/maintainer_doctor.py`** (#1231). It had no `--selftest`,
@@ -3333,7 +3333,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.49.5 (release v1.144.5) — 2026-09-23
 
 - **A wiki `--check` names a locally dirty source instead of blaming the generator —
   `plugins/rails-flow/scripts/build_project_wiki.py`, `plugins/rails-flow/scripts/mutations/build_project_wiki.py`** (#1233).
@@ -12098,7 +12098,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.43.3 (release v1.144.5) — 2026-09-23
 
 - **A brand pack's chart palette is validated, not declared — `plugins/design-flow/scripts/palette_gates.py`,
   `plugins/design-flow/scripts/brand_pack_lint.py`, `plugins/design-flow/brands/fidara/brand.json`,
@@ -14935,7 +14935,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.65.2 (release v1.144.5) — 2026-09-23
 
 - **`parallel-session-lane` warns that `git reset --soft origin/dev` can squash away other people's merged work —
   `skills/parallel-session-lane/SKILL.md`, `skills/parallel-session-lane/references/reading-a-list.md`,
