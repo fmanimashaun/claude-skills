@@ -125,8 +125,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a disable stops suppressing, so the escape hatch is decorative",
-            "        if rule.name in allowed:\n            report.suppressed += 1\n            continue",
-            "        if False:\n            report.suppressed += 1\n            continue",
+            "        if rule.name in allowed:\n            report.suppressed += 1\n",
+            "        if False:\n            report.suppressed += 1\n",
             "a disable with a reason suppresses",
         ),
         Mutation(
@@ -142,6 +142,27 @@ GUARD = Guard(
             '(?:inherit|initial|unset|revert(?:-layer)?)\\s*(?:[;}!\\"\']|$))"',
             '(?:inherit|initial|unset|revert(?:-layer)?))"',
             "a family that merely starts like a keyword still trips",
+        ),
+        Mutation(
+            # #1224: the disable's own text is judged as code again, so it "suppresses" itself.
+            "a disable comment is judged as code and suppresses itself",
+            '    probe = DISABLE.sub(" ", line)\n',
+            '    probe = line\n',
+            "...and is NOT counted as suppressed",
+        ),
+        Mutation(
+            # #1224: an unused disable is no longer reported.
+            "a disable that suppresses nothing is no longer reported",
+            "        if where != path or used:\n",
+            "        if True:\n",
+            "...and IS reported as a disable suppressing nothing",
+        ),
+        Mutation(
+            # #1224: a disable is marked used without its rule ever firing.
+            "a disable is marked used whether or not its rule fired",
+            "            report.disables.setdefault((path, index, name), False)\n",
+            "            report.disables.setdefault((path, index, name), True)\n",
+            "...and IS reported as a disable suppressing nothing",
         ),
     ),
 )
