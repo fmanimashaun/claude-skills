@@ -507,6 +507,28 @@ def run() -> int:
     check("actions: a pattern naming no route credits nothing -- a wrong pattern under-claims",
           tcov["DELETE /users/:id"].covered, False)
 
+    # THE WHOLE INVENTORY IS NORMALISED, SO THE DECLARATION MUST BE (#1212). `bin/rails routes`
+    # prints `(.:format)`; that is the spelling an agent copies, and it credited nothing.
+    fmt_ev = _tmp()
+    (fmt_ev / "fmt-actions.csv").write_text(
+        ve.ACTIONS.header + "\n"
+        "DELETE,/users/:id(.:format),admin,exercised,302,https://x.test/users/42,https://x.test/users,"
+        "flash 'Deleted',shot.png,\n",
+        encoding="utf-8",
+    )
+    fcov = {c.route.key: c
+            for c in rc.attribute(rc.from_rails(RAILS), {}, rc.verb_paths([fmt_ev]))}
+    check("actions: a Route copied from bin/rails routes, with (.:format), IS credited",
+          fcov["DELETE /users/:id"].covered, True)
+    check("actions: ...and still only for its own verb",
+          fcov["GET /users/:id"].covered, False)
+    # A DECLARATION NAMING NOTHING IS REPORTED, not only uncredited. The control is the real row.
+    check("actions: a declared route naming no inventory route is listed",
+          rc.uncredited_declarations(rc.from_rails(RAILS), rc.verb_paths([typo_ev])),
+          [("DELETE", "/users")])
+    check("actions: ...and a declaration that matched is not",
+          rc.uncredited_declarations(rc.from_rails(RAILS), rc.verb_paths([fmt_ev])), [])
+
     # A SKIPPED row is not evidence. Same file, same route, one word different.
     skip_ev = _tmp()
     (skip_ev / "skip-actions.csv").write_text(

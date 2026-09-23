@@ -345,8 +345,25 @@ def verb_paths(evidence_dirs: list[Path]) -> dict[tuple[str, str], set[str]]:
                 pattern = (row.get(route_column) or "").strip()
                 if not verb or not pattern.startswith("/"):
                     continue
+                # ONE SPELLING, the inventory's (#1212). `bin/rails routes` prints `/apply(.:format)`
+                # and the inventory holds `normalise()`d patterns, so the spelling this docstring
+                # tells an agent to copy credited nothing. `normalise` only drops the format suffix, a
+                # query and a trailing slash -- it cannot make one verb's route match another's.
+                pattern = normalise(pattern)
                 seen.setdefault((verb, pattern), set()).add(f"{profile.name}:{path.name}")
     return seen
+
+
+def uncredited_declarations(routes: list["Route"],
+                            verb_seen: dict[tuple[str, str], set[str]]) -> list[tuple[str, str]]:
+    """Declared (VERB, route) pairs naming no route in the inventory (#1212).
+
+    Exact matching makes a wrong pattern under-claim, which is the safe direction -- but an
+    under-claim nobody sees is a day of coverage silently credited to nothing. Checked against the
+    WHOLE inventory, not the kept set: a row naming a route the config excludes is not a typo.
+    """
+    known = {(r.verb.upper(), r.pattern) for r in routes}
+    return sorted(k for k in verb_seen if k not in known)
 
 
 def unusable_artifacts(evidence_dirs: list[Path]) -> list[tuple[str, str]]:
@@ -832,7 +849,9 @@ def cmd_report(args: argparse.Namespace) -> int:
     evidence = [Path(d) for d in args.evidence]
     unreadable = unusable_artifacts(evidence)
     seen = visited_paths(evidence)
-    coverage = attribute(kept, seen, verb_paths(evidence))
+    declared = verb_paths(evidence)
+    coverage = attribute(kept, seen, declared)
+    uncredited = uncredited_declarations(routes, declared)
     gaps = sorted((c for c in coverage if not c.covered), key=lambda c: priority(c, auth_prefixes))
     covered = [c for c in coverage if c.covered]
 
@@ -883,6 +902,12 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"  {len(unreadable)} evidence artifact(s) could not be read against any contract")
     for where, why in unreadable:
         print(f"    ! {where}: {why}")
+    # #1212. Beside the unreadable count for the same reason: a declared route that names nothing
+    # contributed nothing, and without this line that looks exactly like an untested route.
+    print(f"  {len(uncredited)} declared action row route(s) name no route in the inventory "
+          f"and credit nothing")
+    for verb, pattern in uncredited:
+        print(f"    ? {verb} {pattern}")
 
     # Printed unconditionally, including 0/0: "nothing was measured small" and "there is no
     # small-viewport evidence at all" must not look like the same clean line, and neither may look

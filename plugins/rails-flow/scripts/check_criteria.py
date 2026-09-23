@@ -96,8 +96,15 @@ ERROR_HINTS = (
 # error paths, and a unit with no real one would pass. So the verb counts only with WHAT is raised --
 # an exception class (capitalised, case-sensitive) or the words error/exception. `rescue` and
 # `exception` have no domain sense and count alone.
+#
+# CRITERIA ARE MARKDOWN (#1209), so the class usually arrives quoted -- "raises `ArgumentError`",
+# "raises **ArgumentError**" -- or in the passive, "`ArgumentError` is raised". Delimiters may sit
+# between the verb and the class, the passive counts with a capitalised subject, and a class named
+# `...Error` / `...Exception` counts wherever it appears: that suffix is Ruby vocabulary, not domain.
 RUBY_FAILURE = re.compile(
-    r"\b(?i:raise[sd]?)\s+(?:(?i:an?)\s+)?(?:[A-Z][\w:]*|(?i:error|exception)\b)"
+    r"\b(?i:raise[sd]?)\s+(?:(?i:an?)\s+)?[`*_]*(?:[A-Z][\w:]*|(?i:error|exception)\b)"
+    r"|\b[A-Z][\w:]*[`*_]*\s+(?:is|are|gets?|be|being)\s+raised\b"
+    r"|\b[A-Z][\w:]*(?:Error|Exception)\b"
     r"|\b(?i:rescue[sd]?)\b|\b(?i:exception)\b"
 )
 
