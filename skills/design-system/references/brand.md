@@ -121,7 +121,6 @@ No `fonts`, no `knobs`, no `chart_hues` — all inherited. That is the shape of 
   "name": "Fidara",
   "fonts": { "sans": "Bricolage Grotesque", "display": "Newsreader", "mono": "Overpass Mono" },
   "knobs": { "section_rhythm": "generous", "radius": "md-controls-lg-cards", "heading_ramp": "mid-range" },
-  "chart_hues": ["#0077CC", "#00A3FF", "#00D4FF", "#FF6B35", "#22C55E"],
   "chart_palette_validated": true,
   "default_variant": "fmworkflows",
   "variants": {
@@ -133,6 +132,13 @@ No `fonts`, no `knobs`, no `chart_hues` — all inherited. That is the shape of 
 
 **Required:** `slug`, `name`, `chart_palette_validated: true`, and `variants` with at least one
 entry. **Optional overrides:** `fonts`, `knobs`, `chart_hues`, `default_variant`, `wordmark`.
+
+**A `chart_hues` override is validated, not trusted.** `brand_pack_lint.py` computes the data-viz
+hard gates on it -- lightness band, chroma floor, colour-blind and normal-vision separation between
+adjacent slots ([`data-viz.md` § Validation](data-viz.md#validation)) -- and fails a pack that does
+not pass. Both shipped packs once overrode the validated palette with hues that failed it while
+claiming `chart_palette_validated: true`. Omit the override unless the brand needs its own hues,
+and never reuse the pack's status colours as series (`data-viz.md`: status colours are reserved).
 
 **`wordmark` is a PACK property, never a variant's** (#771). A variant re-*labels* — `name`,
 `endorsement`, `mark`, and nothing else — so a second published lockup such as a landscape logo has

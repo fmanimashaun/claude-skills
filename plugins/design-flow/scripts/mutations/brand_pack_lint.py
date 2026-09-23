@@ -12,6 +12,7 @@ GUARD = Guard(
     name="brand_pack_lint",
     subject="scripts/brand_pack_lint.py",
     selftest="scripts/brand_pack_lint.py",
+    deps=("scripts/palette_gates.py",),   # #1235: imported when a pack overrides chart_hues
     # The shipped pack is a dependency, not incidental data: the last fixture parses the real
     # theme.css, so the hand-written fixtures cannot drift from the shape actually shipped.
     needs=("brands/fidara/theme.css",),
@@ -81,6 +82,13 @@ GUARD = Guard(
             "    blocks = selector_blocks(src, selector)\n    return blocks[-1] if blocks else \"\"",
             "    blocks = selector_blocks(src, selector)\n    return blocks[0] if blocks else \"\"",
             "a later bare block wins",
+        ),
+        Mutation(
+            # #1235: the gates are computed but never consulted -- the flag is a claim again.
+            "the chart palette is no longer validated",
+            "            elif len(hues) >= 3:\n",
+            "            elif False:\n",
+            "fidara's old hues FAIL on colour-blind separation, dE 4.8",
         ),
     ),
 )
