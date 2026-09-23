@@ -11948,6 +11948,20 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **`layout-composition` could not see a class passed through a Rails helper —
+  `plugins/design-flow/scripts/check_layout_composition.py`,
+  `plugins/design-flow/scripts/mutations/check_layout_composition.py`** (#1189). Its pattern was
+  `class="…"`, the HTML attribute only, so `link_to …, class: "flex items-center gap-1.5"` — colon, not
+  `=` — never matched, and `hand-rolled-cluster` was blind to every cluster written through a helper,
+  which is where idiomatic Rails puts them. `check_surface_layout.py` already had the right pattern (both
+  renderings, both quotes); this adopts it verbatim, so the two checkers read the same markup. Measured on
+  Retask `dev` (`f738785`): **10 → 14** `hand-rolled-cluster` findings over 129 views, the four new ones
+  in `help/_page.html.erb` and `admin/actions/new.html.erb`. **Upgrading raises a project's count without
+  the project changing** — the sites were there, only hidden — so a project with a `layout-composition`
+  floor from #1187 will fail above it and must re-cut it with `--set-floor`, saying why. Four fixtures (the
+  helper form, single quotes in both renderings, a non-cluster helper class, and the HTML form still read)
+  and a mutation restoring the old pattern, caught (9 in the guard).
+
 - **The three content gates were absolute, so a project with tracked design debt could never show a
   green sweep — `plugins/design-flow/scripts/content_floors.py`,
   `plugins/design-flow/scripts/check_component_contract.py`,
