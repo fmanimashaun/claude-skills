@@ -3324,6 +3324,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.49.4 (release v1.144.3) — 2026-09-23
+
+- **A zero-job *cancelled* run is no longer told its workflow file did not parse —
+  `plugins/rails-flow/scripts/ci_verdict.py`, `plugins/rails-flow/scripts/mutations/ci_verdict.py`** (#1218).
+  #1208's `never-started` fired for any zero-job run in `NEVER_STARTED_CONCLUSIONS`, which includes
+  `cancelled` and `stale`, and its message sends the reader to the workflow files in the change. It
+  now fires only for `failure` and `startup_failure`; a zero-job cancelled or stale run is
+  `did-not-run`. Measured on a consumer's last 20 `dev` pushes: all 17 real parse failures concluded
+  `failure`, so the narrowing loses nothing observed. The cancelled path itself was shown with a
+  synthetic payload through `--from`; no zero-job cancelled run has been seen on real data.
+
 ### 1.49.3 (release v1.144.2) — 2026-09-23
 
 - **A Markdown-quoted `raises \`ArgumentError\`` counts as an error path —
@@ -12056,6 +12067,30 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.43.1 (release v1.144.3) — 2026-09-23
+
+- **A recorded floor did not say which toolchain counted it, and the count means nothing without
+  that — `plugins/design-flow/scripts/content_floors.py`,
+  `plugins/design-flow/scripts/mutations/content_floors.py`** (#1214). Measured across four tags,
+  `layout-composition`'s `CLASS_ATTR` was `class="([^"]*)"` at v1.140.0 and v1.141.0 and became
+  `class(?:\s*[:=]\s*)["']([^"']*)["']` by v1.144.1 — so the older detector **cannot see the Rails
+  helper's `class: "..."` form at all**, and the same tree yields roughly half the findings. A floor
+  cut with one version and enforced by another is a claim about a different population.
+
+  `set_floor` now records the design-flow version **per gate**, read from `plugin.json` at runtime —
+  never a constant here, which would be a second copy that drifts from the one that ships.
+
+  **A mismatch WARNS and never fails, and that is the decision rather than a shortcut.** Refusing
+  would turn every toolchain bump red, including the great majority where no detector moved, and a
+  gate that goes red on an unrelated upgrade is one people learn to re-cut past without reading. The
+  warning names both versions and the re-cut command, on every run. A floor with no version at all —
+  every floor written before this — says so as UNKNOWN rather than implying agreement.
+
+  Six mutations added, thirteen in total, all caught. **Two of them are the pair that matters**: one
+  stops the warning firing, caught by the mismatch fixture; the other makes it fire *always*, caught
+  by the same-version control — because "warns on a mismatch" is otherwise satisfied by warning
+  every run, which is a warning nobody reads.
 
 ### 1.43.0 (release v1.144.0) — 2026-09-23
 

@@ -50,7 +50,7 @@ GUARD = Guard(
             # #1208. Without the zero-jobs rule a workflow that never parsed falls through to the
             # step-count rule -- and lands wherever `steps` sends it, never on the truth.
             "a run with zero jobs is no longer recognised as never having started",
-            '    if run.get("jobs") == 0 and conclusion in NEVER_STARTED_CONCLUSIONS:',
+            '    if run.get("jobs") == 0 and conclusion in UNREADABLE_WORKFLOW_CONCLUSIONS:',
             "    if False:",
             "a completed failure with ZERO jobs never started",
         ),
@@ -69,6 +69,21 @@ GUARD = Guard(
             "    if buckets[FAILED] or buckets[NEVER_STARTED]:",
             "    if buckets[FAILED]:",
             "a workflow that never started exits 1",
+        ),
+        Mutation(
+            # #1218 restored: every never-started conclusion counts, so a cancelled run is blamed on
+            # a workflow file nothing says is broken.
+            "a zero-job cancelled run is blamed on the workflow file again",
+            '    if run.get("jobs") == 0 and conclusion in UNREADABLE_WORKFLOW_CONCLUSIONS:',
+            '    if run.get("jobs") == 0 and conclusion in NEVER_STARTED_CONCLUSIONS:',
+            "a zero-job CANCELLED run is not blamed on the workflow file",
+        ),
+        Mutation(
+            # The narrowing must not drop startup_failure, the other real unreadable-file conclusion.
+            "startup_failure is no longer read as an unreadable workflow",
+            'UNREADABLE_WORKFLOW_CONCLUSIONS = frozenset({"failure", "startup_failure"})',
+            'UNREADABLE_WORKFLOW_CONCLUSIONS = frozenset({"failure"})',
+            "...while a zero-job startup_failure still is",
         ),
     ),
 )

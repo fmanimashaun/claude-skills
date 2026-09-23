@@ -40,6 +40,26 @@ from pathlib import Path
 
 FLOORS = Path(".design-flow") / "content-floors.json"
 
+# THE TOOLCHAIN THAT COUNTED (#1214). A floor is a claim about a count, and a count means nothing
+# without the detector that produced it. Measured across four tags: `layout-composition`'s
+# `CLASS_ATTR` was `class="([^"]*)"` at v1.140.0 and v1.141.0 and became
+# `class(?:\s*[:=]\s*)["\']([^"\']*)["\']` by v1.144.1 -- so the same tree yields roughly HALF the
+# findings on the older pin, because the Rails helper's `class: "..."` form is invisible to it.
+# A floor cut with one version and enforced by another is a claim about a different population.
+#
+# READ FROM plugin.json AT RUNTIME, never a constant here: a hardcoded version is a second copy that
+# drifts from the one that ships, and would report the version this file was written against rather
+# than the version doing the counting.
+PLUGIN_JSON = Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
+
+
+def toolchain_version() -> str:
+    """The design-flow version actually running, or `unknown` if it cannot be read."""
+    try:
+        return str(json.loads(PLUGIN_JSON.read_text(encoding="utf-8")).get("version") or "unknown")
+    except (OSError, json.JSONDecodeError):
+        return "unknown"
+
 # The rule token every finding leads with -- `path:12: raw-element — …`. `check_surface_layout`
 # writes prose instead, and gets `*`; inventing a split for it would be a floor for a rule that
 # does not exist.
@@ -78,6 +98,19 @@ def load(root: Path, gate: str) -> dict[str, int] | None:
     return {str(k): int(v) for k, v in entry.items()}
 
 
+def floor_version(root: Path, gate: str) -> str | None:
+    """The toolchain version recorded WITH this gate's floor. None when the file predates #1214."""
+    path = root / FLOORS
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    versions = data.get("measured_with")
+    return str(versions.get(gate)) if isinstance(versions, dict) and gate in versions else None
+
+
 def _head(root: Path) -> str:
     try:
         out = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -104,8 +137,16 @@ def set_floor(root: Path, gate: str, findings: list[str]) -> int:
         floors[gate] = dict(sorted(counts.items()))
     else:
         floors.pop(gate, None)           # nothing left to sanction: remove the row, restore strict
+    versions = data.get("measured_with")
+    if not isinstance(versions, dict):
+        versions = {}
+    if counts:
+        versions[gate] = toolchain_version()
+    else:
+        versions.pop(gate, None)         # the row is gone; its version goes with it
     data["measured_by"] = f"{gate} --set-floor"
     data["measured_at"] = _head(root)
+    data["measured_with"] = dict(sorted(versions.items()))
     data["floors"] = dict(sorted(floors.items()))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -124,6 +165,24 @@ def verdict(root: Path, gate: str, findings: list[str]) -> tuple[int, list[str]]
 
     counts = tally(findings)
     lines, failed = [], False
+
+    # A MISMATCH WARNS; IT NEVER FAILS (#1214, and this is a deliberate choice). Refusing would turn
+    # EVERY toolchain bump red, including the great majority where no detector moved -- and a gate
+    # that goes red on an unrelated upgrade is one people learn to re-cut past without reading. The
+    # warning names both versions and the command, every run, so it cannot be missed by being shown
+    # once. The maintainer can overrule this; it is our own design.
+    cut_with = floor_version(root, gate)
+    now_with = toolchain_version()
+    if cut_with is None:
+        lines.append(f"  NOTE: this floor records no toolchain version — it predates #1214, so "
+                     f"which detector counted it is UNKNOWN. Re-cut with `--set-floor` on "
+                     f"design-flow {now_with} to make the number mean something.")
+    elif cut_with != now_with:
+        lines.append(f"  WARNING: the floor was cut with design-flow {cut_with} and is being "
+                     f"enforced by {now_with}. A detector that changed between them counts a "
+                     f"DIFFERENT population, so these numbers may not be comparable — "
+                     f"`--set-floor` to re-cut, and say in the commit whether the count moved "
+                     f"because the code did or because the detector did.")
     # Every rule either side knows about -- a rule that has gone to zero must still be seen, or a
     # stale floor for it is invisible.
     for rule in sorted(set(counts) | set(floors)):
@@ -213,6 +272,62 @@ def _selftest() -> int:
     expect("an unsanctioned rule fails even when the others are at their floor", code == 1)
     expect("...and says the rule is not sanctioned",
            any("breakpoint-driven-layout" in l and "NO recorded floor" in l for l in lines))
+
+    # ---- #1214: the toolchain that counted ------------------------------------------------
+    # THE VERSION IS READ AT RUNTIME FROM plugin.json, not hardcoded. Point the module at a fake
+    # one and the reported version must follow it — a constant in this file would not.
+    import json as _json
+    global PLUGIN_JSON
+    real_plugin_json = PLUGIN_JSON
+    vroot = Path(tempfile.mkdtemp(prefix="content-floors-ver-"))
+
+    def as_version(v: str) -> None:
+        f = vroot / f"plugin-{v}.json"
+        f.write_text(_json.dumps({"name": "design-flow", "version": v}), encoding="utf-8")
+        globals()["PLUGIN_JSON"] = f
+
+    as_version("1.40.0")
+    expect("the version is read from plugin.json at runtime", toolchain_version() == "1.40.0",
+           toolchain_version())
+    as_version("1.44.1")
+    expect("...and follows the file, so it is not a constant", toolchain_version() == "1.44.1",
+           toolchain_version())
+    globals()["PLUGIN_JSON"] = vroot / "absent.json"
+    expect("an unreadable plugin.json is `unknown`, not a crash", toolchain_version() == "unknown")
+
+    vr = Path(tempfile.mkdtemp(prefix="content-floors-mm-"))
+    as_version("1.40.0")
+    with contextlib.redirect_stdout(io.StringIO()):
+        set_floor(vr, "g", [RAW])                       # cut at A
+    expect("set_floor records the version it counted with", floor_version(vr, "g") == "1.40.0",
+           str(floor_version(vr, "g")))
+
+    # THE FIXTURE 1a ASKED FOR: cut at A, enforce at B.
+    as_version("1.44.1")
+    code, lines = verdict(vr, "g", [RAW])
+    expect("a version mismatch WARNS", any("WARNING" in l for l in lines), str(lines))
+    expect("...naming BOTH versions", any("1.40.0" in l and "1.44.1" in l for l in lines), str(lines))
+    expect("...and the re-cut command", any("--set-floor" in l for l in lines), str(lines))
+    # AND IT MUST NOT FAIL. Refusing would turn every toolchain bump red; this is the property that
+    # makes the warning survivable, and asserting the text without asserting the code would miss it.
+    expect("a mismatch does NOT fail the gate", code == 0, f"exit {code}")
+
+    # THE SAME-VERSION CONTROL. Without it, "warns on mismatch" is satisfied by warning always.
+    as_version("1.40.0")
+    code, lines = verdict(vr, "g", [RAW])
+    expect("the SAME version prints no warning", not any("WARNING" in l for l in lines), str(lines))
+    expect("...and still passes", code == 0)
+
+    # A pre-#1214 floor: version unrecorded, so say so rather than imply agreement.
+    import json as _j
+    fp = vr / FLOORS
+    d = _j.loads(fp.read_text()); d.pop("measured_with", None)
+    fp.write_text(_j.dumps(d))
+    code, lines = verdict(vr, "g", [RAW])
+    expect("a floor with no version says UNKNOWN", any("UNKNOWN" in l for l in lines), str(lines))
+    expect("...and does not fail either", code == 0)
+
+    globals()["PLUGIN_JSON"] = real_plugin_json
 
     with contextlib.redirect_stdout(io.StringIO()):
         set_floor(root, "g", [])

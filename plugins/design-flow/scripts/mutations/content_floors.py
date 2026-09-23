@@ -11,6 +11,46 @@ GUARD = Guard(
     subject="scripts/content_floors.py",
     selftest="scripts/content_floors.py",
     mutations=(
+        # #1214. The version a floor was cut with.
+        Mutation(
+            "a version mismatch stops warning, so a floor counted by a different detector looks agreed",
+            "    elif cut_with != now_with:",
+            "    elif False:",
+            "a version mismatch WARNS",
+        ),
+        # THE CONTROL'S MUTATION. Without it, "warns on mismatch" is satisfied by warning always --
+        # and a warning on every run is one nobody reads.
+        Mutation(
+            "every run warns, whether or not the versions differ",
+            "    elif cut_with != now_with:",
+            "    elif True:",
+            "the SAME version prints no warning",
+        ),
+        # The mismatch must stay a WARNING. Failing would turn every toolchain bump red.
+        Mutation(
+            "a version mismatch fails the gate instead of warning",
+            "    cut_with = floor_version(root, gate)",
+            "    cut_with = floor_version(root, gate)\n    failed = failed or floor_version(root, gate) != toolchain_version()",
+            "a mismatch does NOT fail the gate",
+        ),
+        Mutation(
+            "the version is no longer recorded, so every later floor reads as pre-#1214",
+            "        versions[gate] = toolchain_version()",
+            "        versions.pop(gate, None)",
+            "set_floor records the version it counted with",
+        ),
+        Mutation(
+            "the version is hardcoded instead of read from plugin.json",
+            '        return str(json.loads(PLUGIN_JSON.read_text(encoding="utf-8")).get("version") or "unknown")',
+            '        return "1.43.0"',
+            "the version is read from plugin.json at runtime",
+        ),
+        Mutation(
+            "a floor with no recorded version is silently treated as agreeing",
+            "    if cut_with is None:",
+            "    if False:",
+            "a floor with no version says UNKNOWN",
+        ),
         # THE DANGEROUS ONE. No floor file must keep meaning "no debt is sanctioned".
         Mutation(
             "a missing floor file becomes a pass, so every greenfield project loses the gate",
