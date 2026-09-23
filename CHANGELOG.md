@@ -12070,6 +12070,20 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **A misplaced `design-flow-disable` is reported, and no longer counted as a suppression —
+  `plugins/design-flow/scripts/llm_tell_detector.py`, `plugins/design-flow/scripts/mutations/llm_tell_detector.py`,
+  `plugins/design-flow/README.md`, `plugins/design-flow/commands/audit.md`** (#1224). A disable covers its
+  own line and the next, and no doc said so: all six of a consumer's static error pages put it at the top,
+  about twenty lines from the declaration, and every one still fired. The summary hid it — `suppressed`
+  counted every rule a disable *named*, and `literal-font-family` matched the disable's own
+  `…literal-font-family: why` text, so each disable "suppressed" itself. Measured on that consumer's
+  `public` + `app`: **13 suppressed → 1**, the one real one. Rules now judge a line with its disable spans
+  removed; `suppressed` counts only a rule that would have fired; and a disable that hid nothing prints as
+  `unused-disable` (6 there — exactly the six pages). **`unused-disable` is reported, never counted toward
+  the exit status**: a misplaced disable leaves its rule firing, so the file is already red and this only
+  says why; a stale one hides nothing, and failing on it would turn a project red on a bump with nothing
+  regressed. So on a bump it is a NOTE, not a verdict change. Docs now state the scope.
+
 - **`font: inherit` is no longer a literal font family — `plugins/design-flow/scripts/llm_tell_detector.py`,
   `plugins/design-flow/scripts/mutations/llm_tell_detector.py`** (#1222). `literal-font-family`'s
   declaration branch fired on any `font:`/`font-family:` value without `var(`, so a value that is only a

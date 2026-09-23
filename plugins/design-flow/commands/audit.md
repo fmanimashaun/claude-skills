@@ -77,6 +77,9 @@ Disagree with a rule on a specific line? Disable it **with a reason**:
 <!-- design-flow-disable stock-palette-literal: third-party embed dictates the palette -->
 ```
 
+It covers **its own line and the next one only**: put it on the flagged line or directly above it,
+not at the top of the file. A disable that suppresses nothing is reported as `unused-disable`.
+
 A bare disable with no reason is itself a finding, deliberately: the first justified exception is
 what teaches everyone else to switch the checker off wholesale.
 
