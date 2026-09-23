@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-23 (release v1.144.5)
+
+- **The shell linter can fail, and refuses `git grep -E … \b` — `scripts/lint_markdown_shell.py`,
+  `scripts/mutations/lint_markdown_shell.py`, `scripts/maintainer_doctor.py`** (#1231). It had no `--selftest`,
+  so neither of its pattern rules had ever been seen to fire. It now has one (9 checks: each rule's bad line
+  and fixed twin, plus a `\b` in a later pipeline segment staying quiet), a mutation guard (4 caught), and a
+  doctor gate. New rule `git-grep-ere-boundary`: our shipped markdown holds 0 such commands today, so it only
+  prevents the first.
+
 ### 2026-09-23 (release v1.144.1)
 
 - **`AGENTS.md` states the reply style positively instead of listing banned habits** (#1201).
@@ -3323,6 +3332,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.49.5 (release v1.144.5) — 2026-09-23
+
+- **A wiki `--check` names a locally dirty source instead of blaming the generator —
+  `plugins/rails-flow/scripts/build_project_wiki.py`, `plugins/rails-flow/scripts/mutations/build_project_wiki.py`** (#1233).
+  `--check` builds from the working tree, so a `db/schema.rb` dumped by a local `db:migrate` made
+  `Data-Model.md` report DRIFT against a commit nobody changed — a consumer spent a round of cross-session
+  investigation on it. Measured first that the builder is deterministic (3 builds, byte-identical to the
+  committed page) and version-independent (v1.144.3 / v1.144.4 / dev identical). Now, when any source
+  differs from HEAD, `--check` prints a `NOTE:` naming it — on a pass as well as a drift, and surfaced by
+  `project_gates` since #1227. It still builds from the working tree, so `--check` and a rebuild agree.
+  Reproduced on the consumer's tree: clean → no NOTE; a locally edited `db/schema.rb` → NOTE, then DRIFT.
+
+- **A passing check's `NOTE:`/`WARNING:` lines reach the report — `plugins/rails-flow/scripts/project_gates.py`,
+  `scripts/mutations/project_gates.py`** (#1227). A pass discarded everything the check printed, so
+  design-flow's *"this floor records no toolchain version"* (#1214) reached only someone running the check
+  by hand — never `bin/ci`. The contract is narrow: a line that begins `NOTE:` or `WARNING:` is printed under
+  the `[ok]` row, nothing else a passing check says is; in `--json` those lines are `notes`, never
+  `findings`, so a consumer summing findings cannot count a pass as a failure. Measured on a consumer: the
+  floors note now shows on `component-contract` and `layout-composition`, verdict unchanged (28 passed).
+  Found by a Retask bump measurement through intake.
 
 ### 1.49.4 (release v1.144.3) — 2026-09-23
 
@@ -12068,6 +12098,24 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.43.3 (release v1.144.5) — 2026-09-23
+
+- **A brand pack's chart palette is validated, not declared — `plugins/design-flow/scripts/palette_gates.py`,
+  `plugins/design-flow/scripts/brand_pack_lint.py`, `plugins/design-flow/brands/fidara/brand.json`,
+  `plugins/design-flow/brands/reliance/brand.json`** (#1235, P1). The lint required `chart_palette_validated: true`
+  and never ran the validation, so **both shipped packs claimed a validated palette and both failed it**:
+  reliance on lightness (`#8ACAEF` L 0.809), chroma (C 0.084) and normal vision (`#CB193B`/`#DC6803` ΔE 14.9 <
+  15), and it reused three of its own status colours as series against `data-viz.md:139`; fidara on
+  colour-blind separation (`#22C55E`/`#FF6B35` ΔE **4.8**, deuteranopia) — and it overrode the palette its own
+  doctrine validated. `palette_gates.py` now computes the data-viz method's hard gates — OKLCH lightness band
+  and chroma floor, OKLab ΔE between adjacent slots unsimulated and under the Machado 2009 simulation — and
+  the lint fails a pack whose `chart_hues` does not pass. Its selftest reproduces the method's own
+  validator to the figure (reliance 8.4 / 14.9, fidara 4.8, the validated palette 9.1 / 19.6). Nothing in
+  the code reads `chart_hues` — the tokens come from the design system — so both packs **drop the
+  override and inherit the validated palette**, which is the doctrine's normal shape; a reliance-specific
+  set (brand blue in slot 1) is a design decision left to the owner, and the lint will now check it.
+  Found downstream: Retask #267 was blocked on it.
+
 ### 1.43.2 (release v1.144.4) — 2026-09-23
 
 - **A misplaced `design-flow-disable` is reported, and no longer counted as a suppression —
@@ -14886,6 +14934,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.65.2 (release v1.144.5) — 2026-09-23
+
+- **`parallel-session-lane` warns that `git reset --soft origin/dev` can squash away other people's merged work —
+  `skills/parallel-session-lane/SKILL.md`, `skills/parallel-session-lane/references/reading-a-list.md`,
+  `dist/parallel-session-lane.skill`** (#1237). `doctrine-verifier`: **CONFIRMED**, git 2.50.1, reproduced
+  twice — remote-tracking refs are shared by every linked worktree (git-worktree: *"all refs starting with
+  `refs/` are shared"*), and `--soft` leaves the index untouched (git-reset: *"Leave your working tree files
+  and the index unchanged"*), so after another worktree's fetch moved `origin/dev` the squash commit deletes
+  what the base gained. Safe form: squash to the base SHA recorded at branch creation, and read `git show
+  --stat`. Hit twice by Retask sessions in one day; one commit reverted about 70 files.
+
+- **`brand.md` no longer teaches a palette that fails validation — `skills/design-system/references/brand.md`,
+  `dist/design-system.skill`** (#1235). Its fidara example carried the five `chart_hues` that fail the
+  data-viz validator; the example drops them, and the page now says an override is **computed** by the lint
+  and must not reuse status colours. Our own design and measured figures; no framework claim.
+
+- **`parallel-session-lane` states three git traps a parallel session hits —
+  `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`** (#1231). `doctrine-verifier`:
+  git 2.50.1, reproduced. (1) **The stash list is one per repository** — `refs/stash` is shared by every
+  worktree (git-worktree: *"all refs starting with refs/ are shared"*), so a bare `stash pop`/`drop` can take
+  a peer's entry; list with `--format='%gd|%gs'` and drop by ref. `-n1 'stash@{N}'` ignores the ref and
+  prints the top entry **once the list spans more than one branch** — CONFIRMED under that condition only,
+  and stated so. (2) **`git grep -E` with `\b`** matches nothing and exits 1 on macOS (POSIX leaves `\b`
+  undefined in ERE); `-w`/`-P` match — CONFIRMED; Linux/glibc behaviour [Recall]. (3) **`merge-base
+  --is-ancestor` returns 1 for a squash-merged PR** (git-merge: `--squash` records no MERGE_HEAD), so it is
+  not a "did it merge" test before `branch -D` — CONFIRMED. Found in a Retask session's lessons review.
 
 ### 1.65.1 (release v1.144.1) — 2026-09-23
 

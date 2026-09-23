@@ -91,6 +91,7 @@ MUST_NOT_IGNORE = (
 
 GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("markdown shell lint", ("python3", "scripts/lint_markdown_shell.py")),
+    ("markdown shell selftest", ("python3", "scripts/lint_markdown_shell.py", "--selftest")),
     ("markdown shell coverage", ("python3", "scripts/lint_markdown_shell.py", "--audit-coverage")),
     ("markdown code lint", ("python3", "scripts/lint_markdown_code.py")),
     ("markdown code coverage", ("python3", "scripts/lint_markdown_code.py", "--audit-coverage")),
@@ -162,6 +163,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # nothing". A shared parser with no direct fixtures is one silent failure for all of them.
     ("design-flow brand pack lint",
      ("python3", "plugins/design-flow/scripts/brand_pack_lint.py", "--selftest")),
+    ("design-flow palette gates selftest",
+     ("python3", "plugins/design-flow/scripts/palette_gates.py", "--selftest")),
     # ...and the lint RUN against the real packs, not only its own fixtures (#775). Only the
     # selftest was gated, so `brand_pack_lint`'s dangling-`var()` check -- which is what owns
     # "a role points at a primitive this pack does not define" -- never fired in CI on a shipped

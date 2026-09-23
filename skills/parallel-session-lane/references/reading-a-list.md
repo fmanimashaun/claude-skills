@@ -49,3 +49,48 @@ and **it did not fire the next day**, when the list was git commits rather than 
 The rule was right and scoped to the wrong noun. A rule scoped to where you last met a bug does not
 generalise to where you meet it next, and **its author is the least likely person to notice**, because
 they remember it as being about the idea rather than about the instance.
+
+## Two git answers that are not measurements
+
+**`--is-ancestor` answers "is this commit in that branch", not "did this PR merge".** After a squash
+merge -- which is how many repositories land a feature branch, `gh pr merge --squash` included -- the
+branch's own commits are never ancestors of the base, so the test returns 1 for a PR that merged.
+Before deleting a branch, ask the PR (`gh pr view <n> --json state,mergeCommit`) or compare content
+(`git diff --quiet origin/<base> <branch> -- <the paths it changed>`), never ancestry alone.
+
+**A zero from a pattern that could not match is not a zero.** `git grep -E` uses POSIX extended
+regex, where `\b` is undefined: on macOS `git grep -nE '\bfoo\b'` matches nothing and exits 1 --
+indistinguishable from "not found" -- on a file that contains `foo`. Use `git grep -w foo` or
+`git grep -P '\bfoo\b'`. Pair any negative with a control that must match on the same input.
+
+## The stash list is shared
+
+**The stash list is one per repository, not one per worktree.** `refs/stash` lives in the common git
+directory, so every worktree -- and every session -- sees and can drop the same entries, and a bare
+`git stash pop` or `git stash drop` takes whichever entry is on top, which may be a peer's. Name the
+entry: list with `git stash list --format='%gd|%gs'`, find yours by its message, and drop it by that
+ref. Do not select one with `git stash list -n1 'stash@{N}'`: once the stash list holds entries made
+on more than one branch -- the parallel-worktree case -- it ignores the ref and prints the top entry.
+To undo one file, `git restore -- <path>` needs no stash at all.
+
+## Squashing onto a base another worktree moved
+
+**`origin/dev` is shared by every worktree too**, because remote-tracking refs are `refs/`, and git
+shares all of those between linked worktrees. So a `git fetch` in **any** worktree moves it for all
+of them. `git reset --soft origin/dev && git commit`, the usual squash, then records your branch's
+older tree against that newer base, because `--soft` leaves the index untouched. **The commit
+deletes whatever the base gained since you branched**: other people's merged work, silently. Seen
+twice in one day; one pushed commit reverted about 70 files and was caught only from
+`git show --stat`.
+
+Record the base when you cut the branch, and squash to **that SHA**, never to a moving name:
+
+```bash
+base=$(git rev-parse origin/dev)                # at branch creation
+git reset --soft "$base" && git commit          # squash onto the base you branched from
+git show --stat HEAD                            # every path listed must be one you meant to change
+```
+
+Forgot to record it? Take `git merge-base HEAD origin/dev` **before** any fetch. Then rebase or
+merge the squashed commit onto the current base the ordinary way.
+

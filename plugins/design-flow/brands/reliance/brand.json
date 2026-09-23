@@ -11,13 +11,6 @@
     "radius": "md-controls-lg-cards",
     "heading_ramp": "mid-range"
   },
-  "chart_hues": [
-    "#137CC1",
-    "#8ACAEF",
-    "#288D68",
-    "#DC6803",
-    "#CB193B"
-  ],
   "chart_palette_validated": true,
   "wordmark": "reliance-logo-landscape.svg",
   "default_variant": "reliance",

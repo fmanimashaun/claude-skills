@@ -189,6 +189,9 @@ When you must *show* a list, **print the total beside it**: `… | head -20; ech
 When you **poll**, wait on the terminal states rather than enumerating the pending ones — a watcher
 listing `PENDING|IN_PROGRESS` exits early on a `QUEUED` row it never named.
 
+**Two git answers that look like measurements and are not** — `--is-ancestor` after a squash merge,
+and `git grep -E '\b…'` on macOS — are in [`references/reading-a-list.md`](references/reading-a-list.md#two-git-answers-that-are-not-measurements).
+
 **The trigger is the shape of the question, not the shape of the command**, and that distinction is
 load-bearing: one of the six had written this rule down the day before, scoped to CI stages, and it
 did not fire when the next list was git commits. **A lint on `| head` / `| tail` was considered and
@@ -492,3 +495,6 @@ branches around it keep moving.
 Worktrees, branches, and stashes that look abandoned usually belong to a live session. An
 "idle" heuristic once deleted three worktrees that were in active use. If something looks
 stale, say so; do not remove it.
+
+**Stashes and `origin/*` are shared by every worktree**: a bare `git stash pop` can take a peer's entry, and
+`reset --soft origin/dev` can squash away their merged work ([both, and the safe forms](references/reading-a-list.md#the-stash-list-is-shared)).

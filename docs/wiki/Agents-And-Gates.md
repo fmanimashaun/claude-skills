@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 120 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 122 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
-| `design-flow` | 1.43.2 | 5 | 12 | 5 | 18 |
+| `design-flow` | 1.43.3 | 5 | 12 | 5 | 19 |
 | `pipeline` | 1.3.3 | 2 | 8 | 2 | 2 |
 | `qa-flow` | 1.32.3 | 11 | 8 | 11 | 15 |
-| `rails-flow` | 1.49.4 | 11 | 20 | 11 | 23 |
+| `rails-flow` | 1.49.5 | 11 | 20 | 11 | 23 |
 
 ## Agents
 
@@ -89,6 +89,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow doctrine path selftest | `design-flow` | `python3 plugins/design-flow/scripts/doctrine_path.py --selftest` | selftest |
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
+| design-flow palette gates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_gates.py --selftest` | selftest |
 | design-flow prompt library selftest | `design-flow` | `python3 plugins/design-flow/scripts/prompt_library.py --selftest` | selftest |
 | design-flow rendered conformance | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --selftest` | selftest |
 | design-flow scale contiguity | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py` | live check |
@@ -177,6 +178,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | markdown code selftest | `repo` | `python3 scripts/lint_markdown_code.py --selftest` | selftest |
 | markdown shell coverage | `repo` | `python3 scripts/lint_markdown_shell.py --audit-coverage` | live check |
 | markdown shell lint | `repo` | `python3 scripts/lint_markdown_shell.py` | live check |
+| markdown shell selftest | `repo` | `python3 scripts/lint_markdown_shell.py --selftest` | selftest |
 | mutation check | `repo` | `python3 scripts/mutation_check.py --selftest` | selftest |
 | mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 900s budget |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |

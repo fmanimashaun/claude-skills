@@ -7,7 +7,9 @@ app. So completeness is CHECKED, not trusted. A pack is not finished until this 
 
 What it verifies:
   1. brand.json  — required keys, knob values from the documented enums, chart hues
-                   present and `chart_palette_validated: true`
+                   present and `chart_palette_validated: true`, and an overriding `chart_hues` PASSES
+                   the data-viz hard gates, computed here (palette_gates.py, #1235) -- the flag alone
+                   was a claim nothing checked, and both shipped packs failed it
   2. theme.css   — every role in the contract is defined in :root
   3.              — surface roles carry their `-foreground` companion
   4.              — surface roles are re-pointed under .dark
@@ -318,6 +320,13 @@ def lint_manifest(path: str, report: Report) -> dict:
                                            and re.fullmatch(r"#[0-9A-Fa-f]{6}", h))]
             if bad:
                 report.error(f"brand.json: chart_hues entries must be #RRGGBB — bad: {bad}")
+            elif len(hues) >= 3:
+                # THE VERDICT IS COMPUTED, NOT DECLARED (#1235). `chart_palette_validated: true` sat
+                # on two packs whose hues fail the gates, because nothing ran them.
+                from palette_gates import failures as palette_failures
+                for failure in palette_failures(hues, "light"):
+                    report.error(f"brand.json: chart_hues fail the data-viz validator — {failure}. "
+                                 "Drop the override to inherit the system's validated palette, or fix the hues")
             report.fact(f"overrides {len(hues)} chart hue(s)")
         else:
             report.error("brand.json: `chart_hues` must be a list of #RRGGBB strings")
@@ -640,6 +649,37 @@ def selftest() -> int:
     check("...even alongside a declared wordmark",
           any("stale.svg" in w for w in r.warnings) and not any("logo.svg" in w for w in r.warnings),
           f"{r.warnings}")
+
+    # #1235: the chart palette's verdict is COMPUTED. The failing sets are the two packs' old
+    # overrides, and every number below was measured by the data-viz method's own validator, not by
+    # this port -- so the port is checked against an authority, not against itself.
+    import tempfile as _tf
+
+    def hues_report(hues: list[str]) -> Report:
+        with _tf.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "brand.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"slug": "x", "name": "X", "chart_palette_validated": True, "chart_hues": hues,
+                           "variants": {"x": {"name": "X", "endorsement": None, "mark": "m.svg"}}}, fh)
+            r = Report("x")
+            lint_manifest(path, r)
+            return r
+
+    old_reliance = ["#137CC1", "#8ACAEF", "#288D68", "#DC6803", "#CB193B"]
+    old_fidara = ["#0077CC", "#00A3FF", "#00D4FF", "#FF6B35", "#22C55E"]
+    validated = ["#0077CC", "#FF6B35", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
+    r = hues_report(old_reliance)
+    check("reliance's old hues FAIL on lightness, chroma and normal vision",
+          any("#8ACAEF L 0.809" in e for e in r.errors) and any("#8ACAEF C 0.084" in e for e in r.errors)
+          and any("dE 14.9 is below 15" in e for e in r.errors), f"{r.errors}")
+    r = hues_report(old_fidara)
+    check("fidara's old hues FAIL on colour-blind separation, dE 4.8",
+          any("colour-blind separation #FF6B35<->#22C55E dE 4.8" in e for e in r.errors), f"{r.errors}")
+    # THE CONTROL: the doctrine's validated palette must pass, or every case above passes on a
+    # lint that fails everything.
+    r = hues_report(validated)
+    check("the doctrine's validated palette passes", not any("data-viz validator" in e for e in r.errors),
+          f"{r.errors}")
 
     for f in failures:
         print(f"FAIL {f}")
