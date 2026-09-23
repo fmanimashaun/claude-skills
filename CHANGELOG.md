@@ -3324,7 +3324,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.49.4 (release v1.144.3) — 2026-09-23
 
 - **A zero-job *cancelled* run is no longer told its workflow file did not parse —
   `plugins/rails-flow/scripts/ci_verdict.py`, `plugins/rails-flow/scripts/mutations/ci_verdict.py`** (#1218).
@@ -12068,7 +12068,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.43.1 (release v1.144.3) — 2026-09-23
 
 - **A recorded floor did not say which toolchain counted it, and the count means nothing without
   that — `plugins/design-flow/scripts/content_floors.py`,
