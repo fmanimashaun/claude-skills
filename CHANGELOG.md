@@ -5840,6 +5840,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### 1.3.3 (release v1.144.1) — 2026-09-23
+
+- **`/pipeline:install-hooks` installs the nudge where git actually runs it** (#1204) —
+  `plugins/pipeline/hooks/scripts/install-git-hooks.sh` wrote `$(git rev-parse --git-dir)/hooks`,
+  which git reads only in a plain clone. Under `core.hooksPath` git never reads `.git/hooks`, and in a
+  linked worktree `--git-dir` is `.git/worktrees/<name>`, whose `hooks/` git never reads either. In
+  both cases the installer printed "installed" and the QA-verify nudge never fired. It now resolves
+  `git rev-parse --git-path hooks`, refuses to edit a hook that is **tracked** (a committed
+  `core.hooksPath` hook is the team's, not a local nudge's), and adds an in-tree hook to
+  `info/exclude` so it cannot be committed by accident. `scripts/install_git_hooks_selftest.py`
+  proves each case with a real merge rather than by finding the file: against the old script it
+  fails the `core.hooksPath`, linked-worktree and tracked-hook checks and passes the three cases the
+  old code already handled. Three mutations in `scripts/mutations/install_git_hooks.py`, all caught.
+
 ### 1.3.2 — 2026-09-02 (release v1.108.0)
 
 - **`plugins/pipeline/README.md` gains a Commands section** (#835) — it listed none of its eight commands.
