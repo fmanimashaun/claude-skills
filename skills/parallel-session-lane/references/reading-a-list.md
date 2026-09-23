@@ -72,3 +72,25 @@ entry: list with `git stash list --format='%gd|%gs'`, find yours by its message,
 ref. Do not select one with `git stash list -n1 'stash@{N}'`: once the stash list holds entries made
 on more than one branch -- the parallel-worktree case -- it ignores the ref and prints the top entry.
 To undo one file, `git restore -- <path>` needs no stash at all.
+
+## Squashing onto a base another worktree moved
+
+**`origin/dev` is shared by every worktree too**, because remote-tracking refs are `refs/`, and git
+shares all of those between linked worktrees. So a `git fetch` in **any** worktree moves it for all
+of them. `git reset --soft origin/dev && git commit`, the usual squash, then records your branch's
+older tree against that newer base, because `--soft` leaves the index untouched. **The commit
+deletes whatever the base gained since you branched**: other people's merged work, silently. Seen
+twice in one day; one pushed commit reverted about 70 files and was caught only from
+`git show --stat`.
+
+Record the base when you cut the branch, and squash to **that SHA**, never to a moving name:
+
+```bash
+base=$(git rev-parse origin/dev)                # at branch creation
+git reset --soft "$base" && git commit          # squash onto the base you branched from
+git show --stat HEAD                            # every path listed must be one you meant to change
+```
+
+Forgot to record it? Take `git merge-base HEAD origin/dev` **before** any fetch. Then rebase or
+merge the squashed commit onto the current base the ordinary way.
+

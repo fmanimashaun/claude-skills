@@ -496,5 +496,5 @@ Worktrees, branches, and stashes that look abandoned usually belong to a live se
 "idle" heuristic once deleted three worktrees that were in active use. If something looks
 stale, say so; do not remove it.
 
-**The stash list is one per repository**, so a bare `git stash pop`/`drop` can take a peer's entry —
-drop yours by ref ([how to find it](references/reading-a-list.md#the-stash-list-is-shared)).
+**Stashes and `origin/*` are shared by every worktree**: a bare `git stash pop` can take a peer's entry, and
+`reset --soft origin/dev` can squash away their merged work ([both, and the safe forms](references/reading-a-list.md#the-stash-list-is-shared)).
