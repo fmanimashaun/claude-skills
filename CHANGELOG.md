@@ -3351,7 +3351,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.52.0 (release v1.149.0) — 2026-09-24
 
 - **New gate `unauthenticated-writes`: every public write route needs a covering `rate_limit` —
   `plugins/rails-flow/scripts/check_unauthenticated_writes.py`, `plugins/rails-flow/checks.json`,
@@ -10188,7 +10188,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.33.1 (release v1.149.0) — 2026-09-24
 
 - **The launch check no longer judges the declared health endpoint as a page — `plugins/qa-flow/scripts/launch_readiness.py`,
   `plugins/qa-flow/scripts/mutations/launch_readiness.py`** (#1297). Reported from Retask's launch check on v1.148.0.
@@ -15133,7 +15133,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.68.1 (release v1.149.0) — 2026-09-24
 
 - **rails-8 says the rate-limit half of the unauthenticated-endpoint rule is gated —
   `skills/rails-8/references/auth-security.md`, `dist/rails-8.skill`** (#1300). Our own doctrine: it names the rails-flow
