@@ -3351,6 +3351,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.51.0 (release v1.148.0) — 2026-09-24
+
+- **`setup-flow` gives every reachable app the launch baseline and records `config.x.indexable` —
+  `plugins/rails-flow/commands/setup-flow.md`** (#1289). **Maintainer decisions, 2026-09-24**, on the issue:
+  - **The agent drafts** the privacy policy, terms and cookie consent from the app's own data inventory (schema,
+    forms, uploads, third parties, cookies, retention, storage region). It writes them against the law of the country
+    of operation and the users' location, names that law, and marks each draft for legal review.
+  - **The documents are versioned records, edited in the app, not hard-coded.** Publishing creates an immutable
+    version; acceptance is recorded against a version; every save, publish and acceptance is an audit-log event.
+  - **Cookie categories and consent behaviour stay in code;** only their wording is content.
+
+- **A line-count change is no longer architecture-graph drift — `plugins/rails-flow/scripts/architecture_graph.py`,
+  `plugins/rails-flow/scripts/mutations/architecture_graph.py`** (#1292). Reported from Retask's toolchain audit.
+  - **The defect.** Every node's `loc` was inside `content_digest`, so a component growing from 78 to 82 lines turned
+    `dev` red under `enforce_on: dev`, while the gate printed "No structural change". Nothing reads `loc`: no renderer,
+    wiki page or check.
+  - **Maintainer decision, 2026-09-24:** `loc` stays in `graph.json` as information and is left out of the digest.
+  - **Tests.** The selftest drives `main`: a model that only grew passes `--check`, and an added model still fails
+    it. It passes vendored alone. The new mutation, which hashes `loc` again, is caught.
+  - **Upgrading:** a project's committed graph re-digests once.
+
 ### 1.50.2 (release v1.147.1) — 2026-09-24
 
 - **The `erb-lint` gate runs the herb linter pinned to `Gemfile.lock`, and says which version ran —
@@ -10140,6 +10161,23 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.33.0 (release v1.148.0) — 2026-09-24
+
+- **A launch profile for every reachable app, judged from the crawl — `plugins/qa-flow/scripts/launch_readiness.py`,
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/crawl_report.py`, `plugins/qa-flow/commands/crawl.md`,
+  `plugins/qa-flow/scripts/mutations/launch_readiness.py`** (#1289). **Maintainer decisions, 2026-09-24**, recorded on
+  the issue; prompted by a "20 tasks before launch" checklist, audited against our corpus. The axis is reachability,
+  not audience: an "internal" app is still on the internet.
+  - **The collector** records each page's `head` (description, `og:image`, favicon) and a `site` block: `robots.txt`
+    status and body, and `sitemap.xml` status, fetched signed out.
+  - **The baseline, on every app:** a title and a favicon on every page, and a reachable `robots.txt`.
+  - **By `config.x.indexable`:**
+    - `false`: `robots.txt` must carry `Disallow: /` for `User-agent: *`;
+    - `true`: every page adds a description and an `og:image`, and the sitemap must be reachable.
+  - **Exit codes:** undeclared exits 3 with the baseline listed; a crawl that predates the probes exits 2.
+  - **Guard:** catches 8 mutations, including the marketing set demanded of a non-indexable app, and an open
+    `robots.txt` passing.
+
 ### 1.32.3 (release v1.144.2) — 2026-09-23
 
 - **A `Route` copied from `bin/rails routes` credits its route — `plugins/qa-flow/scripts/route_coverage.py`,
@@ -15055,6 +15093,34 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.68.0 (release v1.148.0) — 2026-09-24
+
+- **Every unauthenticated endpoint needs a rate limit and a bot check — `skills/rails-8/references/auth-security.md`,
+  `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1289). Our own
+  doctrine, outcome-first, reusing the `rate_limit` doctrine already there; no gem is named.
+  - It covers sign-in, password reset, sign-up and contact forms, because an app behind sign-in is still reachable.
+  - A honeypot submission gets the same success response and is not saved. Each proving spec is paired with a
+    control that succeeds.
+  - The worked example's `check()` harness count is refreshed: `launch_readiness.py` is the 37th copy.
+
+- **rails-8's Version facts name Rails 8.1.4 as current stable, and say why to upgrade — `skills/rails-8/SKILL.md`,
+  `dist/rails-8.skill`.** Framework claims, each **CONFIRMED by doctrine-verifier on 2026-09-24**:
+  - 8.1.4 (2026-09-24) is a bug-fix release with no CVE (rubyonrails.org release post), and no 8.0.x or 7.2.x release
+    came with it (rubygems API).
+  - It still requires Ruby >= 3.2.0 (`rails.gemspec` at `v8.1.4`).
+  - It contains 8.1.3.1's CVE-2026-66066 fix: `v8.1.4` is 309 ahead of `v8.1.3.1` and 0 behind, and the 8.1.3.1 entry
+    is in `activestorage/CHANGELOG.md` at `v8.1.4`.
+  - Missing `ruby-vips` / `mini_magick` now warns instead of aborting boot.
+
+  **All 178 entries across the 12 framework CHANGELOGs were read against the doctrine. None contradicts a claim.** Two
+  change upgrade advice and are now stated:
+  - `update_all` / `delete_all` ignored `group` / `having` and hit every row;
+  - schema.rb's alphabetical column sort is reverted, so upgrading re-orders `db/schema.rb` once and every page
+    generated from it drifts once.
+
+  Ruby 4.0.7 (2026-09-15, routine bug fixes; read directly from ruby-lang.org, not verifier-checked) replaces 4.0.6 as current stable. "No Rails 8.2" is
+  re-checked: no tag, no gem. The security floor stays `>= 8.1.3.1`.
 
 ### 1.67.1 (release v1.147.1) — 2026-09-24
 

@@ -584,6 +584,23 @@ so an IP-keyed limiter lets an attacker spread guesses across addresses against 
 second-factor limiter by the **user**, and note that the existing caveat about a `:null_store` cache
 making `rate_limit` a no-op would then be silently disabling a `SHALL`.
 
+### Unauthenticated endpoints: a rate limit and a bot check (#1289)
+
+An app behind sign-in is still on the public internet, so every endpoint reachable **without** an
+account is exposed: sign-in, password reset, sign-up, and any contact or waitlist form. Two results:
+
+- **Each is rate-limited** with `rate_limit`, keyed by IP where there is no account yet, and by the
+  account where there is one (above). The `:null_store` caveat applies to all of them.
+- **A form a person fills in rejects obvious bots without telling them.** Add a honeypot field that is
+  visually hidden from people, hidden from assistive technology, and never focusable, so a real person
+  leaves it empty. A submission that fills it gets the same success response and is not saved, so a
+  bot learns nothing. Reach for a challenge service only when measured abuse gets past both: it costs
+  every real user a step.
+
+Prove each with a request spec: over the limit, the request is refused; with the honeypot filled,
+nothing is saved. Pair each with a control that succeeds: under the limit, and with the honeypot
+left empty.
+
 ## 3. Authorization the Rails way
 
 Start with the simplest thing that reads clearly:

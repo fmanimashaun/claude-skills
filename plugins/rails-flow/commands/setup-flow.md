@@ -726,6 +726,87 @@ On a multi-locale answer, propose `skills/rails-8/references/i18n.md` §1–§2 
 `I18n.locale` *"can leak into subsequent requests served by the same thread/process"*, and Puma is
 threaded, so a locale set and never reset is served to whoever gets that thread next.
 
+### Every reachable app gets the launch baseline; ask whether it should be INDEXED (#1289)
+
+**The axis is reachability, not audience.** An app called "internal" is still on the public internet,
+so every app we build gets the **baseline**:
+
+- a `<title>` and a favicon on every page;
+- a reachable `/robots.txt` that says what the project decided about search engines;
+- a privacy policy and terms, drafted as below;
+- a rate limit plus a bot check on **every unauthenticated endpoint**: sign-in, password reset,
+  sign-up, contact (`skills/rails-8/references/auth-security.md` → *Unauthenticated endpoints*);
+- cookie consent **only if** the app sets a cookie that is not strictly necessary.
+
+**Ask, and record the answer.** *"Should search engines index this app?"* A marketing site or a
+public sign-up: yes. A work platform behind sign-in: no. Undeclared and "no" are different answers,
+and only a declaration can be checked:
+
+```ruby
+# config/initializers/launch.rb
+Rails.application.configure do
+  config.x.indexable = false   # robots.txt must disallow indexing
+  # config.x.indexable = true  # every page also needs a meta description and og:image, plus a sitemap
+end
+```
+
+qa-flow's crawl then runs `launch_readiness.py`. It checks the baseline on every app. Not indexable,
+`robots.txt` must carry `Disallow: /` for `User-agent: *`, or a search engine may list the sign-in
+page. Indexable, it adds the **marketing set**: a meta description and an `og:image` on every page,
+and a reachable `/sitemap.xml`.
+
+**Privacy policy, terms and cookie consent: drafted from this app, for its jurisdiction.** Never
+boilerplate. A generic policy describes an app that does not exist, and it is wrong in exactly the
+places a regulator reads.
+
+1. **Build the data inventory from the code, not from memory.** List:
+   - every personal-data field in `db/schema.rb`;
+   - what each form collects;
+   - what users upload (Active Storage);
+   - every third party that receives data: mail, payments, analytics, error tracking, hosting. Read
+     the `Gemfile`, the credentials keys and `config/`;
+   - every cookie the app sets;
+   - how long each kind of data is kept;
+   - which region stores it.
+2. **Name the jurisdiction.** Ask for the country (or countries) of operation, and where the users
+   are, if the project has not recorded them. Write each document against the data-protection law
+   that applies there, and name that law in it. Where users span jurisdictions, meet each one; do not
+   pick the laxest.
+3. **Draft the three documents.**
+   - The **privacy policy** covers: what is collected and why, the basis for processing it, how long
+     each kind is kept, who it is shared with, any cross-border transfer, the user's rights and how to
+     exercise them, and a contact.
+   - The **terms** cover: the service, accounts, acceptable use, liability, and the governing law of
+     the country of operation.
+   - The **cookie consent** follows best practice: strictly necessary cookies (the session) need a
+     notice, not consent; any other cookie waits for consent; and refusing is as easy as accepting.
+     An app that sets only necessary cookies needs no banner.
+4. **Mark each draft for legal review.** Record the jurisdiction, the law and the draft date in the
+   project's CLAUDE.md. An agent can misstate the law, and the reviewer needs the inventory beside
+   the draft.
+
+**They live as versioned records, edited in the app, not hard-coded** (maintainer decision on #1289).
+Legal text changes more often than code, and a reviewer should not need a deploy to fix a sentence.
+The outcomes:
+
+- **An admin edits a draft and publishes it. Publishing creates a new, immutable version** with an
+  effective date. A published version is never edited, because "what did this user agree to?" must
+  have one answer.
+- **Each user's acceptance is recorded against the version they accepted**, with when. A material
+  change can require re-acceptance at the next sign-in.
+- **Every draft save, publish and acceptance is an audit-log event**: who, which document, which
+  version, when.
+- **The agent's draft is version 1.** Review happens in the admin screen, and publishing is the
+  sign-off.
+- **Cookie consent is half content, half code.** The categories, and the rule that a non-essential
+  cookie waits for consent, are code, because they describe what the app actually sets. Only their
+  wording is content. Otherwise a notice could describe a cookie the app does not set, or miss one it
+  does. Each visitor's choice is recorded against the version they saw.
+- **Keep them true.** A new third party, a new personal-data field or a new cookie changes the
+  inventory, so that PR says which document needs a new version.
+
+Link all three from the footer (`design-system` `page-anatomies.md`).
+
 ### Coverage that cannot catch a regression — propose the ratchet (#800)
 
 `testing.md` used to ship `minimum_coverage 90` **commented out** with *"enable once realistic"*.
