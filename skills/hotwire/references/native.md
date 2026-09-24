@@ -82,6 +82,7 @@ version so you can change app behavior without an App Store release.
 Dependencies in the module `build.gradle.kts`:
 
 ```kotlin
+// replace <latest> with the current release on Maven Central; the build fails until you do
 dependencies {
   implementation("dev.hotwire:core:<latest>")
   implementation("dev.hotwire:navigation-fragments:<latest>")

@@ -258,7 +258,11 @@ plaintext.
 
 ```bash
 bin/rails db:encryption:init
-# → paste output into bin/rails credentials:edit
+```
+
+It prints three keys. Paste them into `bin/rails credentials:edit`, which then holds:
+
+```yaml
 active_record_encryption:
   primary_key: ...
   deterministic_key: ...
