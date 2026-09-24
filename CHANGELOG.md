@@ -14993,6 +14993,11 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **§5 lists a JS harness's `node_modules/` among the gitignored files a fresh worktree lacks —
+  `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`**. Reported by a parallel
+  Retask session: a new worktree's e2e suite under `qa/` needs `npm ci` before it runs. Our own doctrine;
+  no framework claim.
+
 - **Our test doctrine stops teaching restating, mock-heavy tests — `skills/rails-8/references/testing.md`,
   `skills/code-review/SKILL.md`, `dist/rails-8.skill`, `dist/code-review.skill`** (#1253). **Maintainer decision,
   2026-09-24**, recorded on the issue; our own doctrine, no framework claim added. §6's `#total` example stubbed the
