@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **New gate `vendored alone`: a script a project vendors runs its `--selftest` by itself —
+  `scripts/check_vendored_alone.py`, `scripts/mutations/check_vendored_alone.py`, `scripts/maintainer_doctor.py`**
+  (#1261). Every selftest here ran beside its siblings, so the state a project is told to create, one file in
+  `.claude/scripts/`, was never tested. The scripts to check are derived, not listed by hand: every
+  `.claude/scripts/<name>.py` a shipped doc names, plus every plugin script whose source promises to work
+  "vendored ALONE". It is red on the v1.145.0 scripts (both found) and green on the fix. Its guard catches 5
+  mutations, including running the script beside its siblings, the mutation that recreates the bug.
+
 ### 2026-09-23 (release v1.144.5)
 
 - **The shell linter can fail, and refuses `git grep -E … \b` — `scripts/lint_markdown_shell.py`,
@@ -3332,6 +3342,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **`architecture_graph.py` and `build_project_wiki.py` pass their own `--selftest` when vendored alone —
+  `plugins/rails-flow/scripts/architecture_graph.py`, `plugins/rails-flow/scripts/build_project_wiki.py`** (#1261).
+  Reported by a Retask session on the v1.145.0 pin bump. Each script's #1230 case asserted unconditionally that a
+  stale output under a policy passes on a feature branch, which holds only with `generated_docs.py` beside it. So
+  a project that vendored one file and ran its selftest in CI went red: architecture_graph failed 1 of 28 checks,
+  the wiki builder 1 of 34. When the sibling is absent the case now asserts the enforcing result, which is what
+  the runtime path already did. Runtime behaviour is unchanged.
 
 ### 1.50.0 (release v1.145.0) — 2026-09-24
 
