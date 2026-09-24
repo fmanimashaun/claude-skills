@@ -338,6 +338,9 @@ Three details that make this better than `has_secure_token`, and worth copying:
 - **Only retry a self-minted value.** A caller-supplied duplicate must surface the real
   `ActiveRecord::RecordNotUnique` rather than being silently rewritten.
 
+**The public id is for the URL, not for people.** The identifier a person reads is the record's
+display number (`TSK-0001`), which links to the record (`models.md` §12).
+
 ### The alternative: UUID primary keys — and the version boundaries matter
 
 37signals' fizzy uses UUID PKs throughout. Viable, but four facts first:
