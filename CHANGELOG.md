@@ -12164,6 +12164,12 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`palette_gates.py`'s selftest pins the figures behind the 6-series rule — `plugins/design-flow/scripts/palette_gates.py`**
+  (#1267). The default dark series: 5 series, worst adjacent 8.4; 8 series, 6.1 at slots 5↔6; every hard gate passes.
+  These are the numbers `validate_palette.js` printed, so a hue change that moves the threshold turns the selftest red.
+
 ### 1.43.4 (release v1.146.0) — 2026-09-24
 
 - **The reliance pack leads its charts with its brand blue, in both modes — `plugins/design-flow/brands/reliance/theme.css`,
@@ -15010,6 +15016,18 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **A chart of 6 or more series carries direct labels or texture; a legend alone is not enough —
+  `skills/design-system/references/data-viz.md`, `dist/design-system.skill`** (#1267). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own doctrine, no framework claim.
+  - Measured with dataviz `validate_palette.js`: the default dark series' slots 5↔6 are CVD ΔE 6.1, in the 6–8
+    band that is legal only with direct labels, gaps or texture. The doctrine asked for a legend alone at 5+ series,
+    and line 155 contradicted line 136 on which series counts get direct labels.
+  - The first choice, re-ordering, was measured impossible. Slots 6 and 8 each clear 8 only beside slots 1 and 7,
+    which clash with each other (1.9); an exhaustive search over 5,040 orders found no worst case above 6.1.
+  - Five series stay at 8.4 or above, which puts the threshold at 6.
 
 ### 1.66.0 (release v1.146.0) — 2026-09-24
 

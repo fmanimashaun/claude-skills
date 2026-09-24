@@ -142,6 +142,17 @@ def selftest() -> int:
            round(r["cvd"][0], 1) == 9.1 and round(r["normal"][0], 1) == 19.6)
     expect("validated palette passes every gate", failures(validated) == [])
 
+    # THE 6-SERIES THRESHOLD in data-viz.md (#1267) rests on two printed figures for the default
+    # DARK series: its first five slots clear the 8 band, and the sixth brings the 5<->6 pair to 6.1.
+    dark = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#33a852", "#9085e9", "#e66767"]
+    r = measure(dark[:5])
+    expect("dark, 5 series: worst colour-blind pair #c98500/#199e70 dE 8.4 (no relief needed)",
+           round(r["cvd"][0], 1) == 8.4 and {r["cvd"][1], r["cvd"][2]} == {"#c98500", "#199e70"})
+    r = measure(dark)
+    expect("dark, 8 series: worst colour-blind pair #33a852/#d55181 dE 6.1 (the 6+ series rule)",
+           round(r["cvd"][0], 1) == 6.1 and {r["cvd"][1], r["cvd"][2]} == {"#33a852", "#d55181"})
+    expect("dark, 8 series passes every hard gate", failures(dark, "dark") == [])
+
     for label in fails:
         print(f"FAIL {label}")
     print(f"palette_gates selftest: {checks} checks, {len(fails)} failure(s)")

@@ -119,7 +119,7 @@ Host KPI rows in `grid-auto` (`--min: 12rem`). The value wears **text tokens**, 
 <%# each bar = a fixed categorical slot; 4px rounded top on the baseline; 2px gap between bars %>
 <rect class="fill-chart-1" rx="4" x="…" y="…" width="…" height="…" />
 <rect class="fill-chart-2" rx="4" … />
-<%# ≥2 series → a legend is ALWAYS present; ≤4 series also get direct labels %>
+<%# ≥2 series → a legend is ALWAYS present; ≤4 series also get direct labels; ≥6 → direct labels or texture %>
 ```
 Wire real charts with **Chartkick + Groundwork/Chart.js** or inline SVG; whichever, the color/mark
 rules here are library-agnostic. Feed the lib the `--color-chart-*` values (read them off the
@@ -134,7 +134,9 @@ computed style, or mirror them in the lib's dataset colors).
   two charts, small multiples, or index to a common base.
 - **Sequential = one hue light→dark. Diverging = two hues + a neutral (slate) midpoint.** No rainbow.
 - **Identity is never color-alone:** ≥2 series → a legend is always present; ≤4 → also direct-label.
-  Provide a **table view**; make **texture** available for CVD/print/forced-colors.
+  **6 or more series → direct labels or texture, in both modes; a legend alone is not enough**
+  (Validation below says why). Provide a **table view**; make **texture** available for
+  CVD/print/forced-colors.
 - **Text wears text tokens** (`foreground`/`muted-foreground`), never a series color.
 - **Status colors are reserved** (good/warning/serious/critical) — never "series 4"; always icon + label.
 - **Dark mode is selected, not flipped** — the dark steps above were validated against the navy
@@ -151,8 +153,13 @@ The shipped categorical palette was validated with the data-viz method's `valida
   ΔE **19.6**. Four slots (orange, aqua, yellow, magenta) sit below 3:1 on the light surface → the
   **relief rule** applies: visible direct labels or a table view (already mandated above).
 - **Dark** (surface `fm-navy #0C1B33`): lightness, chroma, normal-vision (ΔE **19.3**) and contrast
-  (all ≥ 3:1) PASS; the green↔magenta adjacency is CVD ΔE **6.1** (6–8 floor band) → legal **with
-  secondary encoding**, which fidara already requires (legend + direct labels for ≥2 series).
+  (all ≥ 3:1) PASS; the green↔magenta adjacency (slots 5↔6) is CVD ΔE **6.1** (6–8 floor band) →
+  legal **only with secondary encoding**, and a legend is not secondary encoding. The two slots meet
+  only in a chart of 6+ series, which is why that is where direct labels or texture become
+  mandatory. **Re-ordering cannot remove it** (#1267): in dark, slots 6 and 8 each sit below 8
+  against every slot except 1 and 7, and 1↔7 is 1.9, so any order of all eight leaves a pair near
+  6.1. An exhaustive search over the 5,040 orders of slots 2–8 found none better. The first five
+  slots are all ≥ 8.4 adjacent, so 5-series charts need only the legend.
 
 Basis: WCAG 1.4.11 non-text contrast (≥3:1); the Tailwind v4 `@theme`→utility mechanism
 (`--color-chart-*` → `bg-chart-*`), verified in this repo. Method source: Anthropic's `dataviz`
