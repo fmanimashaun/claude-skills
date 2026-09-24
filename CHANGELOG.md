@@ -14993,6 +14993,13 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **rails-8 and hotwire say their code blocks show a pattern, not a template — `skills/rails-8/SKILL.md`,
+  `skills/hotwire/SKILL.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own doctrine, no framework claim. rails-8 gains operating principle 6
+  and hotwire a ground rule: the references state the convention and the result, and the agent writes the
+  configuration for its app. Framework syntax with one right spelling is the stated exception. No reference
+  block changes here; the sweep ships per file.
+
 - **§5 lists a JS harness's `node_modules/` among the gitignored files a fresh worktree lacks —
   `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`**. Reported by a parallel
   Retask session: a new worktree's e2e suite under `qa/` needs `npm ci` before it runs. Our own doctrine;
