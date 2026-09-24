@@ -3351,7 +3351,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.51.0 (release v1.148.0) — 2026-09-24
 
 - **`setup-flow` gives every reachable app the launch baseline and records `config.x.indexable` —
   `plugins/rails-flow/commands/setup-flow.md`** (#1289). **Maintainer decisions, 2026-09-24**, on the issue:
@@ -10161,7 +10161,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.33.0 (release v1.148.0) — 2026-09-24
 
 - **A launch profile for every reachable app, judged from the crawl — `plugins/qa-flow/scripts/launch_readiness.py`,
   `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/crawl_report.py`, `plugins/qa-flow/commands/crawl.md`,
@@ -15094,7 +15094,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.68.0 (release v1.148.0) — 2026-09-24
 
 - **Every unauthenticated endpoint needs a rate limit and a bot check — `skills/rails-8/references/auth-security.md`,
   `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1289). Our own
