@@ -3351,7 +3351,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.50.2 (release v1.147.1) — 2026-09-24
 
 - **The `erb-lint` gate runs the herb linter pinned to `Gemfile.lock`, and says which version ran —
   `plugins/rails-flow/scripts/herb_lint.py`, `plugins/rails-flow/checks.json`,
@@ -15056,7 +15056,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.67.1 (release v1.147.1) — 2026-09-24
 
 - **The quality-pass worked example's shared-shape counts are refreshed — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1285). `herb_lint.py` is a 36th copy of the `check(label, ok, detail)` selftest harness,
