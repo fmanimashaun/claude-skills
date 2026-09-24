@@ -7,7 +7,7 @@ GUARD = Guard(
     selftest="scripts/palette_candidates.py",
     # It imports its sibling for the ROLE CONTRACT -- that import is the reuse that makes
     # "the composer covers the whole contract" checkable at all.
-    deps=("scripts/brand_pack_lint.py",),
+    deps=("scripts/brand_pack_lint.py", "scripts/palette_gates.py"),   # #1271: the default chart series
     mutations=(
         Mutation(
             "the contrast bar stops comparing, so an unreadable palette ships",

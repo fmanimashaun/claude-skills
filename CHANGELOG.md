@@ -12166,6 +12166,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **Every brand pack declares the full `--chart-1..8` in both modes, and the lint enforces it —
+  `plugins/design-flow/brands/reliance/theme.css`, `plugins/design-flow/brands/fidara/theme.css`,
+  `plugins/design-flow/brands/_template/theme.css`, `plugins/design-flow/scripts/brand_pack_lint.py`,
+  `plugins/design-flow/scripts/mutations/brand_pack_lint.py`, `plugins/design-flow/scripts/palette_candidates.py`,
+  `plugins/design-flow/scripts/palette_gates.py`, `plugins/design-flow/scripts/mutations/palette_candidates.py`** (#1271). **Maintainer decision, 2026-09-24**, recorded on
+  the issue; our own design. Reported by a peer session.
+  - Reliance declared only `--chart-1`, fidara and `_template` none, and `setup` writes no chart tokens, so a
+    consuming app hand-copied `data-viz.md`'s block.
+  - The new `lint_chart` requires all eight slots in `:root` and `.dark`, requires the resolved `:root` values to
+    equal `brand.json` `chart_hues` when that is set, and runs both sets through the data-viz hard gates.
+  - `palette_candidates.py` now emits the same series into every pack it generates. The series is defined once,
+    as `palette_gates.SYSTEM_SERIES`.
+  - The selftest drives `lint_pack` itself on a copy of the shipped reliance pack, so the chart check cannot go
+    uncalled. The guard catches 5 new mutations; the guard's total is 14.
+
 - **`palette_gates.py`'s selftest pins the figures behind the 6-series rule — `plugins/design-flow/scripts/palette_gates.py`**
   (#1267). The default dark series: 5 series, worst adjacent 8.4; 8 series, 6.1 at slots 5↔6; every hard gate passes.
   These are the numbers `validate_palette.js` printed, so a hue change that moves the threshold turns the selftest red.
@@ -15028,6 +15043,19 @@ boot/validation path — with a bullet each so the promotion could close them se
   - It is a link to the show page wherever it is displayed.
   - URLs keep the opaque public id, and raw primary keys and UUIDs never reach the screen.
   - The alternative considered, a 7-character short hash, collides with 17% probability at 10,000 records.
+
+- **Pagination defaults to 10 per page, with a 10/25/50/100 select hidden at 10 or fewer records —
+  `skills/design-system/references/components.md`, `skills/rails-8/references/ecosystem-gems.md`,
+  `dist/design-system.skill`, `dist/rails-8.skill`** (#1272).
+  - **Maintainer decision, 2026-09-24**, recorded on the issue: default 10; options 10/25/50/100 as URL state;
+    changing it resets to page 1 and keeps sort and filters; the select is hidden when the total is ≤ 10, and the
+    total stays visible.
+  - **Pagy 43.6.3 facts, CONFIRMED by doctrine-verifier** (ddnexus/pagy docs and CHANGELOG, verdicts on the issue):
+    - `Pagy::OPTIONS[:limit] = 10` sets the default; `Pagy.options` is deprecated.
+    - `client_limit:` is required for `?limit=` to be honoured, and without it the value is ignored rather than
+      raising. This **corrects** our `max_limit:` note: `max_limit:` is now a deprecated alias.
+    - `limit_tag_js` renders a number input, not a list.
+    - A page past the end is rescued to an empty page unless `raise_range_error: true`.
 
 - **A labelled "More" item inside a bottom bar counts as the one control that reaches every destination —
   `skills/design-system/references/responsive.md`, `skills/design-system/references/coverage.md`,

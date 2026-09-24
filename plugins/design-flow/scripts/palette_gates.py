@@ -31,6 +31,11 @@ BAND = {"light": (0.43, 0.77), "dark": (0.48, 0.67)}
 CHROMA_FLOOR = 0.10
 CVD_FLOOR = 6.0
 NORMAL_FLOOR = 15.0
+# design-system's validated categorical series (data-viz.md), the default every pack starts from (#1271).
+SYSTEM_SERIES = {
+    "light": ["#0077CC", "#FF6B35", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
+    "dark": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#33a852", "#9085e9", "#e66767"],
+}
 
 MACHADO_2009 = {
     "protan": ((0.152286, 1.052583, -0.204868), (0.114503, 0.786281, 0.099216), (-0.003882, -0.048116, 1.051998)),

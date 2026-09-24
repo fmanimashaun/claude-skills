@@ -55,6 +55,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import brand_pack_lint as bpl  # noqa: E402  — sibling module; the role contract lives there
+from palette_gates import SYSTEM_SERIES  # noqa: E402  — the default chart series (#1271)
 
 AA_NORMAL = 4.5
 
@@ -610,12 +611,16 @@ def theme_css(anchors: Anchors, name: str, note: str = "") -> str:
         + "\n}\n"
         + "\n/* Semantic roles — THE PUBLIC API. Components consume only these. */\n:root {\n"
         + block(roles["light"], light_roles)
-        + "\n}\n"
+        + "\n  /* Categorical chart slots: design-system's validated series (data-viz.md, #1271). */\n"
+        + "".join(f"  --chart-{i}: {h};\n" for i, h in enumerate(SYSTEM_SERIES["light"], 1))
+        + "}\n"
         + "\n/* Dark re-points the surface roles. --primary-foreground is re-pointed WITH\n"
           "   --primary; re-pointing one without the other is how a button label goes unreadable. */\n"
           ".dark {\n"
         + block(roles["dark"], dark_roles)
-        + "\n}\n"
+        + "\n  /* The validated dark series (data-viz.md, #1271). */\n"
+        + "".join(f"  --chart-{i}: {h};\n" for i, h in enumerate(SYSTEM_SERIES["dark"], 1))
+        + "}\n"
     )
 
 
