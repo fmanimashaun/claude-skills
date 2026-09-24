@@ -10175,6 +10175,18 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The launch check no longer judges the declared health endpoint as a page — `plugins/qa-flow/scripts/launch_readiness.py`,
+  `plugins/qa-flow/scripts/mutations/launch_readiness.py`** (#1297). Reported from Retask's launch check on v1.148.0.
+  - **The defect.** Rails serves `/up` as a bare HTML status page (`railties/lib/rails/health_controller.rb` at v8.1.4,
+    `render html: html_status(color: "green")`), so #1289's judge flagged it for a missing title, favicon, description
+    and `og:image`. `qa/qa.config.yml` already declares it as `app: health:` (`setup-qa.md:63`).
+  - **Maintainer decision, 2026-09-24:** the judge reads that key through `qa_config.load_section`, the one reader, and
+    skips the route.
+  - **Tests.** The same bare page passes on `/up` when declared, fails on `/up` when not declared, and fails on another
+    route. The new mutation is caught; the guard's total is 9.
+
 ### 1.33.0 (release v1.148.0) — 2026-09-24
 
 - **A launch profile for every reachable app, judged from the crawl — `plugins/qa-flow/scripts/launch_readiness.py`,

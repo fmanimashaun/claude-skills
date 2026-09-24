@@ -10,8 +10,15 @@ GUARD = Guard(
     name="launch_readiness",
     subject="scripts/launch_readiness.py",
     selftest="scripts/launch_readiness.py",
-    deps=("scripts/crawl_report.py",),   # the one crawl reader
+    deps=("scripts/crawl_report.py", "scripts/qa_config.py"),   # the one crawl reader; the one config reader
     mutations=(
+        # #1297: the declared health endpoint judged as a page again.
+        Mutation(
+            "the declared health path is judged as a page",
+            '    html = [p for p in pages if not p.get("skipped") and p.get("status") == 200 and p.get("route") != health',
+            '    html = [p for p in pages if not p.get("skipped") and p.get("status") == 200',
+            "a declared health path is not judged as a page",
+        ),
         Mutation(
             "an undeclared project is reported clean when its baseline is",
             "    if indexable is None:\n        return 3,",
