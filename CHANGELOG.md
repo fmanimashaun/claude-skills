@@ -12279,7 +12279,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.44.1 (release v1.149.1) — 2026-09-25
 
 - **The component-contract gate recognises a stored splat of any name — `plugins/design-flow/scripts/check_component_contract.py`,
   `plugins/design-flow/scripts/mutations/check_component_contract.py`.** Reported by Retask's coordinator.
