@@ -14993,6 +14993,23 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **rails-8 says what makes the PWA stubs installable, and what a service worker may cache —
+  `skills/rails-8/references/pwa.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1258). **Framework
+  claims, each CONFIRMED by doctrine-verifier on 2026-09-24**, verdicts recorded on the issue:
+  - Chrome's installability criteria: HTTPS, `name`/`short_name`, `start_url`, a `display` mode, and 192px and
+    512px icons. developer.chrome.com/docs/lighthouse/pwa/installable-manifest
+  - No service worker is required to install since Chrome 108 (mobile) and 112 (desktop).
+    developer.chrome.com/blog/update-install-criteria
+  - `beforeinstallprompt` fires only in Chromium and Samsung Internet (MDN compatibility data). Safari installs via
+    Add to Home Screen on iOS and Add to Dock on macOS Sonoma 14+ (support.apple.com/en-us/104996). Firefox desktop
+    cannot install web apps.
+  - `screenshots` is optional, with a `narrow` or `wide` `form_factor` (MDN).
+  - Left out as INCONCLUSIVE: a Samsung Internet `share_target` failure, `display_override` as sufficient on its own,
+    and an "up to 8 screenshots" limit.
+
+  **Maintainer decision, 2026-09-24**, recorded on the issue: a service worker never caches signed-in pages. Retask's
+  service worker was the model for that rule.
+
 - **rails-8 and hotwire say their code blocks show a pattern, not a template — `skills/rails-8/SKILL.md`,
   `skills/hotwire/SKILL.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). **Maintainer decision,
   2026-09-24**, recorded on the issue; our own doctrine, no framework claim. rails-8 gains operating principle 6
