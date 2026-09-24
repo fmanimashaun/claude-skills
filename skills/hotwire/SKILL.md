@@ -70,6 +70,11 @@ attribute.
   JS enabled is a design smell in Hotwire.
 - **State lives in the DOM.** Stimulus values/classes/targets read and write
   the document; no client-side stores.
+- **Outcomes, not templates.** The references state the convention and what
+  the person must see; the markup and controllers are yours to write for the
+  app. A code block shows a pattern, not a file to paste, except framework
+  syntax with one right spelling (action descriptors, stream action names,
+  data-attribute names), which you write exactly.
 
 ## Reference files — read before working in an area
 

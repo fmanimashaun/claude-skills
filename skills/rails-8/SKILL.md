@@ -55,6 +55,12 @@ majestic monolith.
 5. **Compression of complexity.** One command should do the setup work:
    `bin/setup`, `bin/dev`, `bin/ci`, `bin/rails db:prepare`, `kamal deploy`.
    Keep those commands working.
+6. **Outcomes, not templates.** The references state the convention and the
+   result the code must reach; the configuration is yours to write for the app
+   in front of you. A code block shows the pattern: rename its models, reshape
+   its data, and keep only the property it demonstrates. The exception is
+   framework syntax that has one right spelling (a generator command, a
+   config key, a helper's signature): write that exactly as shown.
 
 ## Version facts (verified 2026-08-29)
 
@@ -129,7 +135,7 @@ majestic monolith.
 | Testing | **RSpec** + FactoryBot + Capybara (pure RSpec, no matcher add-ons) | Scaffold with `--skip-test`; doctrine in `references/testing.md` |
 | Lint / security | rubocop-rails-omakase, Brakeman, bundler-audit | Wired into CI |
 | CI | `config/ci.rb` + `bin/ci` (local CI, new in 8.1) and a GitHub Actions workflow | `--skip-ci` omits only the GitHub workflow files; `config/ci.rb` + `bin/ci` are always generated. `--skip-test` strips their test steps — add one back (`testing.md` §11) |
-| Extras | PWA stubs (`app/views/pwa/`), `script/` for one-offs, `/up` health endpoint, Docker entrypoint running `db:prepare` | |
+| Extras | PWA stubs (`app/views/pwa/`; what makes them installable in `references/pwa.md`), `script/` for one-offs, `/up` health endpoint, Docker entrypoint running `db:prepare` | |
 
 ## The golden-path feature workflow
 
@@ -268,6 +274,7 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/ai-llm.md` | LLM features via ruby_llm — chat, `acts_as_chat` persistence, streaming with Hotwire, tools, structured output, embeddings + pgvector, testing AI |
 | `references/extending-rails.md` | Application templates (`rails new -m`), custom generators, overriding built-in generator templates, engines/plugins, Rack middleware |
 | `references/deployment-kamal.md` | Kamal 2 (`config/deploy.yml`, secrets, accessories, rollback), Dockerfile, Thruster, SQLite-in-production, production checklist |
+| `references/pwa.md` | **Installable apps** — the installability criteria, how each browser offers installation (only Chromium and Samsung Internet fire `beforeinstallprompt`), and the rule that a service worker never caches signed-in pages |
 
 Companion skill: **`hotwire`** goes deeper than `views-hotwire.md` on Turbo,
 Stimulus, and adds **Hotwire Native** (iOS/Android apps, bridge components,
