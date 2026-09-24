@@ -118,6 +118,15 @@ if [ -f .claude/skills/.manifest.tsv ]; then
   [ "$stale" -gt 0 ] && echo "- $stale curated doc(s) drifted from their project skills — run /rails-flow:curate"
   [ "$unhashed" -gt 0 ] && echo "- $unhashed curated doc(s) could NOT be hashed (no working sha256sum or shasum) — drift is UNKNOWN for them, not clean"
   [ "$unparsed" -gt 0 ] && echo "- $unparsed manifest row(s) could not be PARSED (not \`<source>\t<sha256>\` or \`<skill>\t<source>\t<sha256>\`, or the source is not a file) — drift is UNKNOWN for them; run /rails-flow:curate"
+  # WHICH TREE WAS MEASURED (#1243). The counts above are true of THIS checkout, and a primary
+  # checkout that sessions never pull sat 321 commits behind its upstream: it reported 1 drifted
+  # doc while the upstream had 7. Say so only when behind, so the usual line costs nothing.
+  if up=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
+    behind=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo 0)
+    if [ "${behind:-0}" -gt 0 ]; then
+      echo "- curated-doc drift was measured at $(git rev-parse --short HEAD), $behind commit(s) behind $up — the current sources may differ"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------------------
