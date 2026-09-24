@@ -3335,6 +3335,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`brain-local-sync` runs in a linked worktree — `plugins/rails-flow/scripts/brain_local_sync.py`,
+  `plugins/rails-flow/scripts/mutations/brain_local_sync.py`** (#1242). The auto-memory store path was built from
+  the directory the check ran in, but Claude Code keys a project's store by the checkout a session started in —
+  the primary one — so every worktree named a store that does not exist and the check reported n/a. A project
+  that works in worktrees never ran it. It now falls back, only when the directory has no store of its own and
+  is a linked worktree, to the primary checkout's store, resolved through `git rev-parse --git-common-dir`.
+  Measured from a consumer worktree: `n/a: no auto-memory store` → 12 brain memos, 19 local memories. Found by
+  a Retask session's toolchain audit.
+
 - **The generated-docs drift checks can be branch-aware, opt-in — `plugins/rails-flow/scripts/generated_docs.py`,
   `plugins/rails-flow/scripts/architecture_graph.py`, `plugins/rails-flow/scripts/build_project_wiki.py`,
   `plugins/rails-flow/checks.json`, `plugins/rails-flow/commands/setup-flow.md`** (#1230). **Maintainer decision,
