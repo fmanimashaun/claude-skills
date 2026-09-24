@@ -15034,6 +15034,30 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.67.0 (release v1.147.0) — 2026-09-24
 
+- **rails-8 says when native (Rust) code earns its place, measured, and how to bridge it —
+  `skills/rails-8/references/performance-caching.md`, `dist/rails-8.skill`,
+  `docs/evidence/benchmarks/2026-09-24-native-code/REPORT.md`** (#1282). **Maintainer decision, 2026-09-24**, recorded
+  on the issue. It was prompted by a "Rails + AI-written Rust" post.
+  - **Measured on an M2 Pro** (Ruby 4.0.6 with YJIT; Rust spawned and returning JSON, timed end to end):
+    - a CPU-bound Ruby loop runs 25× faster;
+    - parse-and-reduce runs 17× faster, but only 2.5× when the rows come back to Ruby;
+    - typed JSON parsing runs 2.2× faster;
+    - generic JSON parsing gains nothing;
+    - Ruby is faster for JSON generation and for image resizing, where libvips beats the Rust `image` crate 2×;
+    - a spawn costs 3–17 ms.
+
+    The benchmark is committed and re-runnable.
+  - **Framework facts, CONFIRMED by doctrine-verifier:**
+    - `CurrentAttributes` are reset around jobs;
+    - `IO.popen` does not raise on a failed child, and `Open3.capture3` has no timeout;
+    - Solid Queue has no per-job timeout;
+    - Bundler 2.4 has `--ext=rust`;
+    - magnus is at 0.9.0, and a panic becomes Ruby's `fatal`;
+    - rutie is dormant since 2023-12-17.
+  - **The verifier refuted "libvips is the default"; the source says otherwise.** It read only `engine.rb`'s fallback.
+    `load_defaults "7.0"` sets `variant_processor = :vips` (`railties/lib/rails/application/configuration.rb:255`,
+    v8.1.0).
+
 - **rails-8 says how an app lets agents pull reporting data: a per-user, read-only MCP server —
   `skills/rails-8/references/mcp-server.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1277).
   - **Framework claims, each CONFIRMED by doctrine-verifier on 2026-09-24** against MCP spec revision 2026-07-28;

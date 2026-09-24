@@ -8,6 +8,7 @@
 5. Runtime performance: YJIT, jemalloc, Puma, Thruster
 6. Measuring: profiling and load testing
 7. Performance workflow
+8. When native code (Rust) earns its place, and how to bridge it
 
 Telemetry (structured events, Active Support Instrumentation, `Rails.error`,
 logging) lives in `references/observability.md`.
@@ -251,3 +252,48 @@ The generated Dockerfile already does the right things — keep them:
    low-level caching. Each layer only where measurements justify it.
 4. Verify with `bin/rails dev:cache` on and realistic data volumes
    (`db/seeds.rb` should create enough rows to expose N+1s).
+
+## 8. When native code (Rust) earns its place, and how to bridge it
+
+A second language is a second toolchain, a build stage in the Dockerfile, a second test suite and
+code the team must be able to review. It earns that only against a **measured** bottleneck (§6)
+that Ruby and the native libraries Rails already uses cannot meet (#1282). Code that compiles
+cleanly is not code that works: native code needs the same failing-input specs as Ruby
+(`testing.md` §3).
+
+**What moving work to Rust measured** (M2 Pro, Ruby 4.0.6 with YJIT, Rust run as a subprocess that
+returns JSON, timed end to end; the benchmark is re-runnable from
+`docs/evidence/benchmarks/2026-09-24-native-code/` in the skills repository):
+
+| Workload | Gain |
+|---|---|
+| A CPU-bound loop written in Ruby (string distance, scoring) | **25×** |
+| Parse a large file **and reduce it in the native code** (1M-row CSV summed) | **17×** |
+| …the same parse, handing every row back to Ruby | 2.5×: the transfer eats the gain |
+| JSON parse into typed structs | 2.2× |
+| JSON parse into generic values | none. Ruby's `json` is already C |
+| JSON generation | **Ruby faster**. To hand objects to Rust, Ruby must serialise them, which is the work itself |
+| Image resize | **Ruby faster, 2×**. Variants already run in libvips, which is C (`:vips` is the processor under `load_defaults` 7.0+) |
+
+So the candidates are CPU-bound loops you wrote in Ruby, and large parse-and-reduce jobs. Images,
+video and JSON generation are already native. Profile before assuming.
+
+**The bridge's results:**
+
+- **Reduce inside the native code, and call it rarely.** A spawn costs about 3 ms from a small Ruby
+  process and 17 ms from a 1.2 GB one, so batch the work and never call it per row or per request.
+- **Run it from a job, never inside a request.** Pass the record or the Active Storage blob and read
+  the file inside the job. A path is on one host, and a Kamal app may run the job on another.
+  `Current` attributes are reset around every job, so pass what the job needs as arguments.
+- **A failed child is a failed job.** `IO.popen` does not raise when the child exits non-zero, so
+  check the exit status and capture stderr, and treat unparseable output as a failure, never as
+  empty data.
+- **Set your own timeout.** Solid Queue has no per-job timeout; its README says a stuck job "can
+  remain claimed" while the worker process is alive. A hung child holds a worker until something
+  kills it, and `Open3.capture3` has no timeout either.
+- **A native extension instead of a subprocess** removes the spawn cost and moves the failure into
+  your process. Use **magnus** (0.9.0, actively released), not rutie (dormant since December 2023).
+  A panic in a magnus-bound method becomes Ruby's `fatal`, which terminates the worker after
+  cleanup. Scaffold one with `bundle gem --ext=rust` (Bundler 2.4+). Check that the extension
+  builds for your Ruby version before you depend on it: one Rust-backed CSV gem did not build on
+  Ruby 4.0 when this was measured.
