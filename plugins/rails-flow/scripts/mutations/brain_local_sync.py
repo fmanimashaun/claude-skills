@@ -99,5 +99,18 @@ GUARD = Guard(
             "            if False:\n                UNREADABLE.append(p)",
             "reported unreadable",
         ),
+        Mutation(
+            # #1242 restored: a worktree looks only for its own store and reports n/a.
+            "a worktree no longer falls back to the primary checkout's store",
+            "    return store_dir(primary, home) if primary is not None else own\n",
+            "    return own\n",
+            "a linked worktree with no store of its own uses the primary checkout's",
+        ),
+        Mutation(
+            "the worktree's own store is ignored in favour of the primary's",
+            "    if own.is_dir():\n        return own\n",
+            "    if False:\n        return own\n",
+            "a worktree that HAS its own store keeps it",
+        ),
     ),
 )

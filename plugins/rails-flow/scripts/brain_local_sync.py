@@ -54,6 +54,43 @@ def store_dir(project_root: Path, home: Path) -> Path:
     return home / ".claude" / "projects" / slug / "memory"
 
 
+def primary_checkout(root: Path) -> Path | None:
+    """The primary checkout a LINKED WORKTREE belongs to, or None (not a linked worktree, or no git).
+
+    `git rev-parse --git-common-dir` names the shared `.git`; its parent is the primary checkout. In
+    the primary checkout itself the common dir is `<root>/.git`, so its parent IS `root` -- no
+    fallback is needed there, and None says so.
+    """
+    import subprocess
+    try:
+        done = subprocess.run(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    common = Path(done.stdout.strip())
+    if common.name != ".git":
+        return None                      # a bare repository or an unusual layout: do not guess
+    primary = common.parent.resolve()
+    return None if primary == Path(root).resolve() else primary
+
+
+def resolve_store(root: Path, home: Path) -> Path:
+    """The auto-memory store for `root` (#1242).
+
+    Claude Code keys a project's store by the checkout a session STARTED in, which for a project that
+    works in worktrees is the primary checkout -- so a worktree's own path names a store that does
+    not exist, and this check reported n/a in every worktree. A store that exists for `root` itself
+    still wins; only when it does not, and `root` is a linked worktree, is the primary's used.
+    """
+    own = store_dir(root, home)
+    if own.is_dir():
+        return own
+    primary = primary_checkout(root)
+    return store_dir(primary, home) if primary is not None else own
+
+
 def _unquote(v: str) -> str:
     v = v.strip()
     if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
@@ -299,7 +336,7 @@ def main(argv: list[str]) -> int:
     if a.selftest:
         return selftest()
     root = Path(a.root)
-    store = Path(a.store) if a.store else store_dir(root, Path(os.environ.get("HOME", str(Path.home()))))
+    store = Path(a.store) if a.store else resolve_store(root, Path(os.environ.get("HOME", str(Path.home()))))
     if not (root / BRAIN).is_dir():
         print(f"n/a: no {BRAIN.as_posix()} under {root.resolve()} — /rails-flow:setup-flow scaffolds it")
         return 3
@@ -356,6 +393,29 @@ def selftest() -> int:
 
     check("the store path follows the harness's slug rule",
           store_dir(Path("/Users/x/proj"), Path("/h")) == Path("/h/.claude/projects/-Users-x-proj/memory"))
+    # #1242: a linked worktree falls back to the PRIMARY checkout's store; its own still wins.
+    import subprocess as _sp, tempfile as _tf
+    with _tf.TemporaryDirectory() as _t:
+        base = Path(_t).resolve()
+        prim, wt, home = base / "proj", base / "wt-1", base / "home"
+        g = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+        _sp.run(["git", "init", "-q", str(prim)], check=True)
+        (prim / "f").write_text("x\n")
+        _sp.run(g + ["-C", str(prim), "add", "f"], check=True)
+        _sp.run(g + ["-C", str(prim), "commit", "-qm", "x"], check=True)
+        _sp.run(["git", "-C", str(prim), "worktree", "add", "-q", "--detach", str(wt)], check=True)
+        primary_store = store_dir(prim, home)
+        primary_store.mkdir(parents=True)
+        check("a linked worktree with no store of its own uses the primary checkout's",
+              resolve_store(wt, home) == primary_store, str(resolve_store(wt, home)))
+        check("...and the primary checkout resolves to its own store", resolve_store(prim, home) == primary_store)
+        own = store_dir(wt, home)
+        own.mkdir(parents=True)
+        check("a worktree that HAS its own store keeps it", resolve_store(wt, home) == own)
+        outside = base / "plain"
+        outside.mkdir()
+        check("a directory outside git keeps the path-derived store (no guess)",
+              resolve_store(outside, home) == store_dir(outside, home))
     meta, body = parse_frontmatter('---\nname: zsh\ndescription: "quoted: line"\nmetadata:\n  type: feedback\n  x: 1\n---\n\nbody\n')
     check("frontmatter parses a quoted description and one nested level",
           meta == {"name": "zsh", "description": "quoted: line", "metadata": {"type": "feedback", "x": "1"}} and body.strip() == "body", repr(meta))
