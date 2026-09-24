@@ -14981,6 +14981,19 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **Our test doctrine stops teaching restating, mock-heavy tests — `skills/rails-8/references/testing.md`,
+  `skills/code-review/SKILL.md`, `dist/rails-8.skill`, `dist/code-review.skill`** (#1253). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own doctrine, no framework claim added. §6's `#total` example stubbed the
+  association it tested with doubles and asserted the sum — a spec that restates the code and cannot fail; it now
+  builds real records and includes another order's item that must not count. §3's "many model specs, few system
+  specs" becomes: request specs as the backbone, model specs only for real branching logic, a system spec for every
+  user-facing flow's main path, and "a spec earns its place by being able to fail". §9 now says what not to mock:
+  only system boundaries, never your own objects or the code under test. `code-review`'s `gate-that-cannot-fail`
+  covers a test no change to the code under test could turn red. Mutation testing in `/rails-flow:feature` stays
+  advisory. Prompted by a shared post; its "E2E only" and "never test after code" rules were rejected with reasons.
+
 ### 1.65.2 (release v1.144.5) — 2026-09-23
 
 - **`parallel-session-lane` warns that `git reset --soft origin/dev` can squash away other people's merged work —

@@ -143,8 +143,17 @@ spec/
 ├── rails_helper.rb  spec_helper.rb
 ```
 
-Distribution mirrors the pyramid: many model specs, a solid layer of request
-specs, **few** system specs (slowest, flakiest — reserve for money paths).
+**Where the specs go.** Request specs are the backbone: they exercise routing, params,
+authorization, the model and the database together, so they fail when the behaviour breaks and
+survive a refactor that keeps it. Write a model spec only for logic with real branches — a scope,
+a calculation, a state transition — and drive it with real records. Give **every user-facing flow a
+system spec for its main path**: a request spec cannot see a Stimulus controller run, and a green
+request suite can sit over a broken form. System specs are the slowest and flakiest layer, so keep
+each to the path that matters and push edge cases down to request specs.
+
+**A spec earns its place by being able to fail.** One that restates the implementation, or mocks
+the code it tests, passes whatever the code does and breaks on every refactor. Before trusting a new
+spec, break the code it covers once and watch it go red.
 Note: *controller specs* (`type: :controller`) are legacy — write request
 specs instead.
 
@@ -273,9 +282,11 @@ RSpec.describe Order, type: :model do
   end
 
   describe "#total" do
-    it "sums line items" do
-      order = build_stubbed(:order)
-      allow(order).to receive(:line_items).and_return([double(amount: 5), double(amount: 7)])
+    it "sums its own line items and no one else's" do
+      order = create(:order)
+      create(:line_item, order: order, amount: 5)
+      create(:line_item, order: order, amount: 7)
+      create(:line_item, amount: 100)             # another order's item must not count
 
       expect(order.total).to eq(12)
     end
@@ -384,7 +395,13 @@ Alternative driver worth knowing: `cuprite` (CDP, no chromedriver binary).
 
 ## 9. Mocking: rspec-mocks, WebMock, VCR
 
-rspec-mocks — use **verifying doubles** so stubs break when interfaces drift:
+**Mock only system boundaries**: outside HTTP, the clock, third-party services, anything you do
+not own and cannot run in the test. Never mock your own models, services or the object under test —
+a stub of your own code makes the spec assert the stub, so it restates the implementation and cannot
+catch a bug in it. When a real collaborator is slow or awkward, that is a design signal; build real
+records with FactoryBot instead.
+
+rspec-mocks — for those boundaries, use **verifying doubles** so stubs break when interfaces drift:
 
 ```ruby
 gateway = instance_double(PaymentGateway, charge: true)
