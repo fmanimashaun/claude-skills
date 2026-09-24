@@ -14987,7 +14987,7 @@ boot/validation path — with a bullet each so the promotion could close them se
   `skills/code-review/SKILL.md`, `dist/rails-8.skill`, `dist/code-review.skill`** (#1253). **Maintainer decision,
   2026-09-24**, recorded on the issue; our own doctrine, no framework claim added. §6's `#total` example stubbed the
   association it tested with doubles and asserted the sum — a spec that restates the code and cannot fail; it now
-  builds real records and includes another order's item that must not count. §3's "many model specs, few system
+  builds real records and includes another order's item that must not count, and the section opens with the outcome the example must reach (it fails when the logic is wrong), with the example's names marked as stand-ins for the app's own. §3's "many model specs, few system
   specs" becomes: request specs as the backbone, model specs only for real branching logic, a system spec for every
   user-facing flow's main path, and "a spec earns its place by being able to fail". §9 now says what not to mock:
   only system boundaries, never your own objects or the code under test. `code-review`'s `gate-that-cannot-fail`

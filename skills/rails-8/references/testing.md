@@ -270,6 +270,11 @@ not your app; assert what the declaration *does*.
 
 ## 6. Model specs
 
+**The outcome:** each example fails when the logic is wrong. Give it the data that separates a
+right answer from a wrong one: a scope needs a record it must exclude, and a sum needs a record
+that must not be counted. The block below shows that property. `Order`, the factories and the
+amounts stand in for your app's own, so build the equivalent from them.
+
 ```ruby
 RSpec.describe Order, type: :model do
   describe ".overdue" do
