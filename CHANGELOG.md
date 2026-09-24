@@ -15034,6 +15034,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **rails-8 says how an app lets agents pull reporting data: a per-user, read-only MCP server —
+  `skills/rails-8/references/mcp-server.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1277).
+  - **Framework claims, each CONFIRMED by doctrine-verifier on 2026-09-24** against MCP spec revision 2026-07-28;
+    verdicts on the issue:
+    - the `mcp` gem v1.6.0 serves tools and resources over Streamable HTTP, mountable in Rails;
+    - HTTP+SSE is deprecated;
+    - the server is an OAuth 2.1 resource server: RFC 9728 metadata, an audience check, no token passthrough, and
+      authorization on every request;
+    - `readOnlyHint` is untrusted by clients;
+    - claude.ai custom connectors reach remote MCP servers with OAuth.
+  - **Maintainer decision, 2026-09-24**, recorded on the issue: MCP rather than a CLI, plus five rules. The agent acts
+    as a real user; the server enforces read-only; one tool per report with typed arguments; every call is audited;
+    sensitive data is excluded by default.
+  - No code recipe; the mount follows the SDK's own Rails example.
+
 - **The remaining 16 reference code blocks state what they achieve, and four paste defects are fixed —
   `skills/rails-8/references/advanced-active-record.md`, `skills/rails-8/references/api-documentation.md`,
   `skills/rails-8/references/auth-security.md`, `skills/rails-8/references/deployment-kamal.md`,
