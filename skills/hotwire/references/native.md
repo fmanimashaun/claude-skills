@@ -104,6 +104,9 @@ android:name="android.permission.INTERNET"/>`. The entire layout
   app:defaultNavHost="false" />
 ```
 
+The outcome: the activity hosts one navigator, named to match the iOS side, starting at the root
+URL inside the layout's navigator host:
+
 ```kotlin
 class MainActivity : HotwireActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {

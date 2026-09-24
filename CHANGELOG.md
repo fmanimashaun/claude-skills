@@ -15034,6 +15034,25 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The remaining 16 reference code blocks state what they achieve, and four paste defects are fixed —
+  `skills/rails-8/references/advanced-active-record.md`, `skills/rails-8/references/api-documentation.md`,
+  `skills/rails-8/references/auth-security.md`, `skills/rails-8/references/deployment-kamal.md`,
+  `skills/rails-8/references/ecosystem-gems.md`, `skills/rails-8/references/i18n.md`,
+  `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/mail-storage-richtext.md`,
+  `skills/rails-8/references/models.md`, `skills/rails-8/references/performance-caching.md`,
+  `skills/rails-8/references/sso.md`, `skills/rails-8/references/testing.md`, `skills/hotwire/references/native.md`,
+  `dist/rails-8.skill`, `dist/hotwire.skill`** (#1265). This finishes #1256's sweep. Our own doctrine; the one
+  framework fact reused (mission_control-jobs 1.3.1 ships with basic auth "enabled and closed") was CONFIRMED for #1264.
+  - Every block gains its outcome sentence, and placeholder values are marked as placeholders.
+  - `jobs-and-realtime.md` routed the Mission Control dashboard through `authenticate :user`, which is Devise's route
+    helper; the Rails 8 authentication generator has none. It now uses the gem's closed-by-default auth and
+    `base_controller_class`.
+  - The `RepliesMailbox` example called an `author_from` it never defined.
+  - `i18n.md`'s `available_locales` literal is now tied to `config.x.locales`.
+  - `sso.md` no longer presents a subdomain lookup as the way to identify the tenant.
+  - The classifier's "14-character password" flag on `testing.md` was a miscount again: the password is 15
+    characters.
+
 - **Every user-facing record shows a readable display number, `TSK-0001`, that links to it —
   `skills/rails-8/references/models.md`, `skills/rails-8/references/multi-tenancy.md`,
   `skills/design-system/references/components.md`, `dist/rails-8.skill`, `dist/design-system.skill`** (#1274).

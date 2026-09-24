@@ -88,7 +88,9 @@ form) or extract a small `sign_in_as(user)` helper doing the same.
 
 ## 2. Extending auth
 
-**Registration** (not generated — add it):
+**Registration** (not generated — add it). The outcome: sign-up creates the user and starts a
+session through the generated `start_new_session_for`, so a new account is signed in exactly the
+way a returning one is:
 
 ```ruby
 # routes: resource :registration, only: %i[new create]

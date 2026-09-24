@@ -340,6 +340,7 @@ Auth helper for the Rails 8 built-in authentication generator —
 
 ```ruby
 module AuthenticationHelpers
+  # Signs in through the real session endpoint, so a request spec authenticates exactly as a user does.
   def sign_in(user, password: "s3cure-password")
     post session_path, params: { email_address: user.email_address, password: }
   end

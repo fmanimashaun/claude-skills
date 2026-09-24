@@ -79,6 +79,9 @@ and shards.
 
 ### Writer + replica
 
+The outcome: a second connection to the replica, which the app reads from and never migrates.
+`replica: true` is the line with a fixed meaning; the names, database and host are yours.
+
 ```yaml
 # config/database.yml
 production:
@@ -91,6 +94,9 @@ production:
     host: replica.internal
     replica: true          # read-only; skips migrations & schema dump
 ```
+
+Then map the writing and reading roles to those two entries, so every model that inherits from
+`ApplicationRecord` can use either:
 
 ```ruby
 class ApplicationRecord < ActiveRecord::Base

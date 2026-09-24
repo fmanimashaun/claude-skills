@@ -166,7 +166,9 @@ text; content is sanitized on render.
 
 Inbound email routed to mailbox classes: `bin/rails action_mailbox:install`,
 configure an ingress (SES/Mailgun/Postmark/SendGrid/relay) in
-`config/environments/production.rb` + credentials, then:
+`config/environments/production.rb` + credentials. The outcome: mail sent to a
+`reply-<signed id>@` address reaches `RepliesMailbox`, which finds the thread from the signed id and
+records the reply as its sender:
 
 ```ruby
 # app/mailboxes/application_mailbox.rb
@@ -179,6 +181,13 @@ class RepliesMailbox < ApplicationMailbox
     thread = MessageThread.find_signed!(mail.to.first[/reply-(.+)@/, 1])
     thread.comments.create!(body: mail.decoded, author: author_from(mail.from))
   end
+
+  private
+    def author_from(addresses)
+      # `email_address` is the authentication generator's column. An unknown sender finds nil:
+      # decide what happens to their mail before `create!` runs, rather than letting it raise.
+      User.find_by(email_address: addresses.first)
+    end
 end
 ```
 
