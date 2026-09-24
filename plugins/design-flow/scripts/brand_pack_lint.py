@@ -393,7 +393,7 @@ def lint_theme(path: str, report: Report) -> None:
         report.error(f"var() references not defined anywhere in this pack: "
                      f"{' '.join(unresolved)}")
 
-    extra = sorted(defined - set(ROLES))
+    extra = sorted(defined - set(ROLES) - set(CHART_SLOTS))
     if extra:
         report.warn(f"role-layer token(s) outside the contract (harmless, but components "
                     f"cannot consume them): {' '.join(extra)}")
@@ -464,6 +464,61 @@ def lint_assets(pack_dir: str, report: Report, manifest: dict) -> None:
         report.warn(f"asset(s) not referenced by any variant or wordmark: {unused}")
 
 
+CHART_SLOTS = [f"--chart-{i}" for i in range(1, 9)]
+
+
+def resolve_value(value: str, decls: dict[str, str], depth: int = 0) -> str:
+    """A declaration's value with `var(--x)` followed through this pack's own declarations."""
+    m = re.fullmatch(r"var\(\s*(--[a-z0-9-]+)\s*\)", value.strip())
+    if m and depth < 8 and m.group(1) in decls:
+        return resolve_value(decls[m.group(1)], decls, depth + 1)
+    return value.strip()
+
+
+def declarations(body: str) -> dict[str, str]:
+    return {m.group(1): m.group(2).strip() for m in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;]+);", body)}
+
+
+def lint_chart(path: str, report: Report, manifest: dict) -> None:
+    """Every pack declares the full categorical chart palette, in both modes (#1271).
+
+    A pack is the palette, and `check_token_drift.py` takes this `theme.css` as its baseline. When a
+    pack declared only `--chart-1`, or nothing, a consuming app got slots 2-8 by copying
+    `data-viz.md`'s token block by hand. So: all eight in `:root` and `.dark`; `:root` equal to
+    `brand.json`'s `chart_hues` when it has one, so the two cannot drift; and both resolved sets
+    through the data-viz hard gates, computed rather than declared (#1235).
+    """
+    if not os.path.exists(path):
+        return
+    src = strip_css_comments(open(path, encoding="utf-8").read())
+    primitives: dict[str, str] = {}
+    for body in theme_bodies(src):
+        primitives.update(declarations(body))
+    from palette_gates import failures as palette_failures
+    resolved: dict[str, list[str]] = {}
+    for selector, mode in ((":root", "light"), (".dark", "dark")):
+        decls = declarations(selector_block(src, selector))
+        missing = [slot for slot in CHART_SLOTS if slot not in decls]
+        if missing:
+            report.error(f"theme.css `{selector}` does not declare {' '.join(missing)} -- a pack "
+                         "declares all eight chart slots in both modes, or an app hand-copies them")
+            continue
+        scope = {**primitives, **decls}
+        hues = [resolve_value(decls.get(slot, ""), scope) for slot in CHART_SLOTS]
+        bad = [h for h in hues if not re.fullmatch(r"#[0-9A-Fa-f]{6}", h)]
+        if bad:
+            report.error(f"theme.css `{selector}` chart slots do not resolve to #RRGGBB: {bad}")
+            continue
+        resolved[mode] = hues
+        for failure in palette_failures(hues, mode):
+            report.error(f"theme.css `{selector}` chart slots fail the data-viz validator -- {failure}")
+    declared = manifest.get("chart_hues") if isinstance(manifest, dict) else None
+    if isinstance(declared, list) and "light" in resolved:
+        if [h.lower() for h in declared] != [h.lower() for h in resolved["light"]]:
+            report.error("theme.css `:root` chart slots differ from brand.json chart_hues: "
+                         f"{resolved['light']} vs {declared}")
+
+
 def lint_pack(pack_dir: str) -> Report:
     report = Report(pack_dir)
     if not os.path.isdir(pack_dir):
@@ -471,6 +526,7 @@ def lint_pack(pack_dir: str) -> Report:
         return report
     manifest = lint_manifest(os.path.join(pack_dir, "brand.json"), report)
     lint_theme(os.path.join(pack_dir, "theme.css"), report)
+    lint_chart(os.path.join(pack_dir, "theme.css"), report, manifest)
     lint_assets(pack_dir, report, manifest)
     return report
 
@@ -680,6 +736,56 @@ def selftest() -> int:
     r = hues_report(validated)
     check("the doctrine's validated palette passes", not any("data-viz validator" in e for e in r.errors),
           f"{r.errors}")
+
+    # #1271: every pack declares all eight chart slots in both modes, equal to chart_hues, and passing.
+    dark_series = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#33a852", "#9085e9", "#e66767"]
+
+    def chart_report(root_vals: list[str], dark_vals: list[str], hues: list[str] | None = None) -> Report:
+        def block(sel: str, vals: list[str]) -> str:
+            return sel + " {\n" + "".join(f"  --chart-{i}: {v};\n" for i, v in enumerate(vals, 1)) + "}\n"
+        css = "@theme {\n  --color-x-500: #137CC1;\n}\n" + block(":root", root_vals) + block(".dark", dark_vals)
+        with _tf.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "theme.css")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(css)
+            r = Report("x")
+            lint_chart(path, r, {"chart_hues": hues} if hues is not None else {})
+            return r
+
+    # THE CONTROL: the validated series in both modes, slot 1 through a primitive, is clean.
+    r = chart_report(["var(--color-x-500)"] + validated[1:], ["var(--color-x-500)"] + dark_series[1:],
+                     ["#137CC1"] + validated[1:])
+    check("a full, validated chart set resolving through a primitive passes", r.errors == [], f"{r.errors}")
+    r = chart_report(validated[:1], dark_series)
+    check("a pack declaring only --chart-1 in :root is an ERROR naming the missing slots",
+          any("`:root` does not declare --chart-2" in e for e in r.errors), f"{r.errors}")
+    r = chart_report(validated, dark_series[:7])
+    check("a .dark missing --chart-8 is an ERROR",
+          any("`.dark` does not declare --chart-8" in e for e in r.errors), f"{r.errors}")
+    r = chart_report(validated, dark_series, ["#0077CC"] + validated[1:7] + ["#000000"])
+    check(":root differing from brand.json chart_hues is an ERROR",
+          any("differ from brand.json chart_hues" in e for e in r.errors), f"{r.errors}")
+    r = chart_report(validated, old_fidara + validated[5:])
+    check("a dark chart set that fails the data-viz gates is an ERROR",
+          any("`.dark` chart slots fail the data-viz validator" in e for e in r.errors), f"{r.errors}")
+    # THE ENTRY POINT, not the helper: `lint_pack` on a copy of the shipped reliance pack with one
+    # slot removed must fail, or a pack lint that never calls the chart check passes every case above.
+    import shutil as _sh
+    here = os.path.dirname(os.path.abspath(__file__))
+    with _tf.TemporaryDirectory() as tmp:
+        pack = os.path.join(tmp, "reliance")
+        _sh.copytree(os.path.join(here, "..", "brands", "reliance"), pack)
+        theme = os.path.join(pack, "theme.css")
+        css = open(theme, encoding="utf-8").read()
+        check("control: the shipped reliance pack declares --chart-5", "--chart-5:" in css)
+        with open(theme, "w", encoding="utf-8") as fh:
+            fh.write(re.sub(r"^\s*--chart-5:[^\n]*\n", "", css, count=1, flags=re.M))
+        r = lint_pack(pack)
+        check("lint_pack on a pack missing --chart-5 in :root FAILS",
+              any("`:root` does not declare --chart-5" in e for e in r.errors), f"{r.errors}")
+    r = chart_report(["var(--color-missing)"] + validated[1:], dark_series)
+    check("a chart slot that does not resolve to a hex is an ERROR",
+          any("do not resolve to #RRGGBB" in e for e in r.errors), f"{r.errors}")
 
     for f in failures:
         print(f"FAIL {f}")

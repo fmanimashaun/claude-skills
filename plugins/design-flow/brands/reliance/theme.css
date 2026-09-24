@@ -60,6 +60,14 @@
      light passes (colour-blind dE 9.1, normal 19.6); dark passes on ink-800 (#08293E: L 0.567,
      C 0.137, 3.35:1). brand.json's chart_hues records the full list, so the lint checks it. */
   --chart-1: var(--color-rh-brand-500);
+  /* slots 2-8: design-system's validated series (data-viz.md), equal to brand.json chart_hues (#1271) */
+  --chart-2: #FF6B35;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-6: #008300;
+  --chart-7: #4a3aa7;
+  --chart-8: #e34948;
   --background: var(--color-rh-neutral-50);    --foreground: var(--color-rh-neutral-900);
   --card: var(--color-rh-neutral-25);          --card-foreground: var(--color-rh-neutral-900);
   --popover: var(--color-rh-neutral-25);       --popover-foreground: var(--color-rh-neutral-900);
@@ -86,6 +94,14 @@
    value, per the contract. */
 .dark {
   --chart-1: var(--color-rh-brand-500);        /* the same brand blue in dark: 3.35:1 on ink-800 (#1249) */
+  /* slots 2-8: design-system's validated dark series (data-viz.md, #1271) */
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #33a852;
+  --chart-7: #9085e9;
+  --chart-8: #e66767;
   --background: var(--color-rh-ink-900);       --foreground: var(--color-rh-neutral-25);
   --card: var(--color-rh-ink-800);             --card-foreground: var(--color-rh-neutral-25);
   --popover: var(--color-rh-ink-800);          --popover-foreground: var(--color-rh-neutral-25);
