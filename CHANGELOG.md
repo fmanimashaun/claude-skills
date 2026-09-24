@@ -3351,6 +3351,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The `erb-lint` gate runs the herb linter pinned to `Gemfile.lock`, and says which version ran —
+  `plugins/rails-flow/scripts/herb_lint.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1285). Reported by a Retask session; reproduced.
+  - **The defect.** The herb gem (0.10.3, `lib/herb/cli.rb:533-535`, read in the installed gem) runs
+    `npx @herb-tools/linter` with no version when there is no local binary. When 0.11.0 was published
+    (2026-09-24T14:32:54Z), Retask's `erb-lint` flipped from ok to FAIL with nothing it controls changed: on the same
+    tree, 0.10.3 exits 0 and 0.11.0 exits 1.
+  - **The fix.** `herb_lint.py` uses `node_modules/.bin/herb-lint` when `package.json` pins one. Otherwise it runs
+    `npx -y @herb-tools/linter@<herb version in Gemfile.lock>`, since the gem and the npm linter release in lockstep
+    (0.9.0 to 0.11.0, measured against rubygems and npm). It prints `NOTE: herb linter <version>` and exits 2 when no
+    version can be pinned.
+  - **Proven** on Retask at 5652953: the wrapper ran 0.10.3 and exited 0. The guard catches all 6 mutations,
+    including the unversioned `npx` call.
+
 ### 1.50.1 (release v1.146.0) — 2026-09-24
 
 - **`architecture_graph.py` and `build_project_wiki.py` pass their own `--selftest` when vendored alone —
