@@ -1,0 +1,50 @@
+"""Mutation guard: herb_lint. Declared here, run by scripts/mutation_check.py (#1285).
+
+The mutation that matters recreates the defect: dropping the version from the npx call, so the
+verdict again depends on whatever npm published last.
+"""
+from mutation_types import Guard, Mutation  # noqa: F401
+
+GUARD = Guard(
+    name="herb_lint",
+    subject="scripts/herb_lint.py",
+    selftest="scripts/herb_lint.py",
+    mutations=(
+        Mutation(
+            "npx runs the unversioned package again, so npm's latest decides the verdict",
+            '    return (["npx", "-y", f"@herb-tools/linter@{version}", *paths],',
+            '    return (["npx", "-y", "@herb-tools/linter", *paths],',
+            "npx is pinned to the locked version",
+        ),
+        Mutation(
+            "a dependency constraint under another gem is read as the lock",
+            'LOCKED = re.compile(r"^ {4}herb \\((\\d+\\.\\d+\\.\\d+)(?:[-.][^)]*)?\\)$", re.M)',
+            'LOCKED = re.compile(r"^ +herb \\((?:>= )?(\\d+\\.\\d+)(?:\\.\\d+)?[^)]*\\)$", re.M)',
+            "a six-space constraint is not a locked version",
+        ),
+        Mutation(
+            "the project's own pinned binary is ignored",
+            "    if local.is_file() and os.access(local, os.X_OK):",
+            "    if False:",
+            "a local node_modules binary is preferred",
+        ),
+        Mutation(
+            "no locked herb is reported as clean",
+            "        return 2\n",
+            "        return 0\n",
+            "main exits 2 when no version can be pinned, never 0",
+        ),
+        Mutation(
+            "the note naming the linter is not printed",
+            '    print(f"NOTE: {note}")\n',
+            "",
+            "main prints the NOTE naming the linter",
+        ),
+        Mutation(
+            "the linter's failure is swallowed",
+            "    return subprocess.run(argv_, cwd=root).returncode",
+            "    subprocess.run(argv_, cwd=root)\n    return 0",
+            "main passes the linter's exit status through",
+        ),
+    ),
+)
