@@ -12144,6 +12144,16 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The reliance pack leads its charts with its brand blue, in both modes — `plugins/design-flow/brands/reliance/theme.css`,
+  `plugins/design-flow/brands/reliance/brand.json`** (#1249). **Owner decision, 2026-09-24**, recorded on the issue.
+  `--chart-1` is `--color-rh-brand-500` (`#137CC1`) in `:root` and `.dark`; slots 2–8 stay the design system's
+  validated hues. Measured with `palette_gates.py`: light passes (colour-blind ΔE 9.1, normal 19.6); dark passes on
+  ink-800 `#08293E` (L 0.567, C 0.137, 3.35:1). `chart_hues` records the full list, so `brand_pack_lint` computes
+  and passes it. A consumer had been hand-setting `--chart-1` itself, which the doctrine forbids; it now has a
+  sanctioned value to take. The rejected alternative, a dark-only `#3987e5`, would lead dark charts off-brand.
+
 ### 1.43.3 (release v1.144.5) — 2026-09-23
 
 - **A brand pack's chart palette is validated, not declared — `plugins/design-flow/scripts/palette_gates.py`,
