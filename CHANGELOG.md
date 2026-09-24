@@ -3335,6 +3335,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A migration numbered below the base's schema version is a gate, not just a coordinator note —
+  `plugins/rails-flow/scripts/check_migration_order.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_migration_order.py`** (#1248). `session_coordinator.py` already
+  checked that every migration a branch adds is numbered above `origin/dev`'s schema version — Rails records a
+  lower one as applied and never runs it — but only `/rails-flow:coordinate` ran it, so no project gate or CI
+  did. Downstream, a branch merged `dev`, `db:schema:load` stamped `schema.rb` past its migration, and a column
+  silently vanished while the project's own lint said the order agreed. The new `migration-order` check is a
+  thin CLI over the same `migration_findings()`, so there is one implementation; its fixture is that exact case
+  on real git, after `dev` is merged into the branch. n/a without `db/schema.rb`; an unreadable base is exit 2.
+
 - **The SessionStart curated-doc drift line says which tree it measured when that tree is behind —
   `plugins/rails-flow/hooks/scripts/session-start.sh`, `plugins/rails-flow/scripts/check_drift_signal.py`,
   `scripts/mutations/hook_session_start.py`** (#1243). The drift count is true of the session's checkout, and a
