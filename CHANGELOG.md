@@ -3335,6 +3335,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`/rails-flow:toolchain-audit` asks the user to update and restart instead of telling the session to —
+  `plugins/rails-flow/commands/toolchain-audit.md`** (#1244). Step 1 told the running session to restart Claude
+  Code, which it cannot do. It now asks the user, and when they would rather not, proceeds on the installed
+  versions and names them at the top of the report. Found by a Retask session's toolchain audit.
+
 - **The generated-docs drift checks can be branch-aware, opt-in — `plugins/rails-flow/scripts/generated_docs.py`,
   `plugins/rails-flow/scripts/architecture_graph.py`, `plugins/rails-flow/scripts/build_project_wiki.py`,
   `plugins/rails-flow/checks.json`, `plugins/rails-flow/commands/setup-flow.md`** (#1230). **Maintainer decision,
