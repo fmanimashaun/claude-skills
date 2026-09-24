@@ -62,10 +62,25 @@ majestic monolith.
    framework syntax that has one right spelling (a generator command, a
    config key, a helper's signature): write that exactly as shown.
 
-## Version facts (verified 2026-08-29)
+## Version facts (verified 2026-09-24)
 
-- Current stable: **Rails 8.1.3.1** (2026-07-29) — a **security** release, not
-  a routine one. It fixes **CVE-2026-66066** (GHSA-xr9x-r78c-5hrm, *critical*,
+- Current stable: **Rails 8.1.4** (2026-09-24), a **bug-fix** release with no
+  CVE ([release post](https://rubyonrails.org/2026/9/24/Rails-Version-8-1-4-has-been-released)).
+  It contains 8.1.3.1's security fix (`v8.1.4` is 309 commits ahead of `v8.1.3.1`
+  and 0 behind). Upgrade for **two entries that change what an app does**, both
+  read from the 8.1.4 CHANGELOGs:
+  - **Before 8.1.4, `update_all` / `delete_all` ignored `group` and `having`**,
+    so they updated or deleted every row in the table instead of only the rows
+    that satisfied the `HAVING` clause (Active Record).
+  - **schema.rb's alphabetical column sort is reverted.** The sort "creates
+    improper production tables when using `db:prepare`". So the first
+    `db:schema:dump` on 8.1.4 re-orders `db/schema.rb`, and every page generated
+    from it drifts once. Commit that re-order on its own, never inside a feature.
+
+  Also: a missing `ruby-vips` or `mini_magick` under `image_processing` 2.x now
+  warns instead of aborting boot (Active Storage). No 8.0.x or 7.2.x release came
+  with 8.1.4.
+- **The security floor is still 8.1.3.1** (2026-07-29). It fixes **CVE-2026-66066** (GHSA-xr9x-r78c-5hrm, *critical*,
   CVSS v4 9.5): possible arbitrary file read and remote code execution in
   Active Storage variant processing, via libvips loaders Rails did not block.
   **Every 8.1 below 8.1.3.1 is affected**, so pin `>= 8.1.3.1` and never leave
@@ -79,18 +94,18 @@ majestic monolith.
   security-only until 2026-11-07; 7.2 security support ends 2026-08-09.
   ([support dates](https://rubyonrails.org/2025/10/29/new-rails-releases-and-end-of-support-announcement)
   — the maintenance policy page states only the relative rule, never these dates.)
-- **Rails 8.1 requires Ruby >= 3.2.0** (`required_ruby_version` in the 8.1.3.1
-  gemspecs). That is a compatibility minimum, not a support statement — **this
+- **Rails 8.1 requires Ruby >= 3.2.0** (`required_ruby_version` in the 8.1.4
+  gemspec). That is a compatibility minimum, not a support statement — **this
   skill's floor is Ruby 3.4**, because 3.4 and 4.0 are the only branches still
   in normal maintenance: **Ruby 3.2 is end-of-life since 2026-04-01** and
   **3.3 has been security-fixes-only since the same date**
   ([branches](https://www.ruby-lang.org/en/downloads/branches/)). Prefer the
-  current stable **4.0.x** (4.0.6 on 2026-08-01; check, don't assume). 3.4.x is
+  current stable **4.0.x** (4.0.7 on 2026-09-15, a routine bug-fix release; check, don't assume). 3.4.x is
   the supported alternative. Keep YJIT for production; ZJIT is still
   experimental. Dropped into an app already on 3.2/3.3, follow the project —
   Rails permits it — but say the interpreter is unsupported, and note that the
   parser hazard in `references/controllers-routing.md` §7 applies there.
-- **There is no Rails 8.2 or 9.0** as of 2026-08-29 — no gem, no tag, no
+- **There is no Rails 8.2 or 9.0** as of 2026-09-24 — no gem, no tag, no
   announcement. Third-party posts claiming an 8.2 release have circulated and
   are wrong; check rubygems.org or the Rails blog before believing a number.
   **The most convincing false signal is an OFFICIAL page, not a blog post.**
@@ -107,7 +122,7 @@ majestic monolith.
   authoritative, neither a judgement call:
 
   ```bash
-  curl -s https://rubygems.org/api/v1/gems/rails.json | jq -r .version   # 8.1.3.1
+  curl -s https://rubygems.org/api/v1/gems/rails.json | jq -r .version   # 8.1.4
   git ls-remote --tags https://github.com/rails/rails 'refs/tags/v8.2*'  # empty
   ```
 

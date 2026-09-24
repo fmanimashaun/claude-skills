@@ -15094,6 +15094,24 @@ boot/validation path — with a bullet each so the promotion could close them se
     control that succeeds.
   - The worked example's `check()` harness count is refreshed: `launch_readiness.py` is the 37th copy.
 
+- **rails-8's Version facts name Rails 8.1.4 as current stable, and say why to upgrade — `skills/rails-8/SKILL.md`,
+  `dist/rails-8.skill`.** Framework claims, each **CONFIRMED by doctrine-verifier on 2026-09-24**:
+  - 8.1.4 (2026-09-24) is a bug-fix release with no CVE (rubyonrails.org release post), and no 8.0.x or 7.2.x release
+    came with it (rubygems API).
+  - It still requires Ruby >= 3.2.0 (`rails.gemspec` at `v8.1.4`).
+  - It contains 8.1.3.1's CVE-2026-66066 fix: `v8.1.4` is 309 ahead of `v8.1.3.1` and 0 behind, and the 8.1.3.1 entry
+    is in `activestorage/CHANGELOG.md` at `v8.1.4`.
+  - Missing `ruby-vips` / `mini_magick` now warns instead of aborting boot.
+
+  **All 178 entries across the 12 framework CHANGELOGs were read against the doctrine. None contradicts a claim.** Two
+  change upgrade advice and are now stated:
+  - `update_all` / `delete_all` ignored `group` / `having` and hit every row;
+  - schema.rb's alphabetical column sort is reverted, so upgrading re-orders `db/schema.rb` once and every page
+    generated from it drifts once.
+
+  Ruby 4.0.7 (2026-09-15, routine bug fixes; read directly from ruby-lang.org, not verifier-checked) replaces 4.0.6 as current stable. "No Rails 8.2" is
+  re-checked: no tag, no gem. The security floor stays `>= 8.1.3.1`.
+
 ### 1.67.1 (release v1.147.1) — 2026-09-24
 
 - **The quality-pass worked example's shared-shape counts are refreshed — `skills/quality-pass/references/worked-example.md`,
