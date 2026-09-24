@@ -55,6 +55,12 @@ majestic monolith.
 5. **Compression of complexity.** One command should do the setup work:
    `bin/setup`, `bin/dev`, `bin/ci`, `bin/rails db:prepare`, `kamal deploy`.
    Keep those commands working.
+6. **Outcomes, not templates.** The references state the convention and the
+   result the code must reach; the configuration is yours to write for the app
+   in front of you. A code block shows the pattern: rename its models, reshape
+   its data, and keep only the property it demonstrates. The exception is
+   framework syntax that has one right spelling (a generator command, a
+   config key, a helper's signature): write that exactly as shown.
 
 ## Version facts (verified 2026-08-29)
 
