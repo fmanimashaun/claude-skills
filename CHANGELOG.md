@@ -12279,6 +12279,16 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **The component-contract gate recognises a stored splat of any name — `plugins/design-flow/scripts/check_component_contract.py`,
+  `plugins/design-flow/scripts/mutations/check_component_contract.py`.** Reported by Retask's coordinator.
+  - **The defect.** The storage check hard-coded the name `attrs`, so a component taking `**input_html` and storing
+    `@input_html` was reported as never storing its splat.
+  - **The fix.** The name is read from the initializer's signature.
+  - **Tests.** A stored `**input_html` passes, and the same splat left unstored is still reported. The new mutation
+    (`attrs` hard-coded again) is caught; the guard's total is 6.
+
 ### 1.44.0 (release v1.147.0) — 2026-09-24
 
 - **Every brand pack declares the full `--chart-1..8` in both modes, and the lint enforces it —
