@@ -12164,7 +12164,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.44.0 (release v1.147.0) — 2026-09-24
 
 - **Every brand pack declares the full `--chart-1..8` in both modes, and the lint enforces it —
   `plugins/design-flow/brands/reliance/theme.css`, `plugins/design-flow/brands/fidara/theme.css`,
@@ -15032,7 +15032,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.67.0 (release v1.147.0) — 2026-09-24
 
 - **rails-8 says how an app lets agents pull reporting data: a per-user, read-only MCP server —
   `skills/rails-8/references/mcp-server.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1277).
