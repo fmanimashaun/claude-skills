@@ -9,6 +9,13 @@ GUARD = Guard(
     selftest="scripts/architecture_graph.py",
     deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
+        # The quoted-path class narrowed again, so hyphens, `:segments` and dots cut the path short.
+        Mutation(
+            "a quoted route path is cut at the first hyphen again",
+            '            first = re.match(r"^[\'\\"]([^\'\\"]+)[\'\\"]", rest) or re.match(r"^:([a-z0-9_]+)", rest)',
+            '            first = re.match(r"^[:\'\\"]([a-z0-9_/]+)[\'\\"]?", rest)',
+            "a hyphenated literal path is kept whole",
+        ),
         # #1292: loc back in the digest, so a line-count edit is drift again.
         Mutation(
             "loc is hashed again, so a component growing by four lines turns dev red",

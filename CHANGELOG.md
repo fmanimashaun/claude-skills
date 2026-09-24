@@ -3353,6 +3353,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.52.0 (release v1.149.0) — 2026-09-24
 
+- **The architecture graph keeps quoted route paths whole — `plugins/rails-flow/scripts/architecture_graph.py`,
+  `plugins/rails-flow/scripts/mutations/architecture_graph.py`.** Reported by Retask's coordinator while writing an
+  `unauthenticated-writes` exemption.
+  - **The defect.** A string-literal route path was captured with `[a-z0-9_/]+`, so it stopped at the first `-`, `:` or
+    `.`. `post "webhooks/zoho-sign"` became `POST /webhooks/zoho`, and `"user-management/:id"` became `user`.
+  - **Measured on Retask:** 67 route lines were cut short, and distinct routes collapsed into one node. The graph goes
+    from 214 route nodes to 226.
+  - **The fix.** A quoted path is taken whole; a symbol path is parsed as before.
+  - **Tests.** A fixture covers a hyphen, a `:segment`, a `.txt` path and two hyphenated routes that must stay two, with a
+    symbol path as the control. The new mutation (the narrow class restored) is caught; the guard's total is 14.
+  - **`unauthenticated-writes` on the corrected Retask graph** gives the same 6 findings under correct ids
+    (`POST /webhooks/zoho-sign`, `POST /auth/:provider`), so the collapsed nodes hid nothing there.
+  - **Upgrading:** route ids change, so a project's graph re-digests once, and an exemption must use the corrected id.
+
 - **New gate `unauthenticated-writes`: every public write route needs a covering `rate_limit` —
   `plugins/rails-flow/scripts/check_unauthenticated_writes.py`, `plugins/rails-flow/checks.json`,
   `plugins/rails-flow/scripts/mutations/check_unauthenticated_writes.py`, `plugins/rails-flow/commands/setup-flow.md`**
