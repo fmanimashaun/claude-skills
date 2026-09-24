@@ -358,6 +358,11 @@ def main(argv: list[str]) -> int:
             print(f"n/a: no {WIKI.as_posix()} yet — build it first (run without --check)")
             return 3
         drift = [n for n, text in pages.items() if not (wiki / n).is_file() or (wiki / n).read_text(encoding="utf-8") != text]
+        advisory = drift_is_advisory(root) if drift else None
+        if advisory:
+            import generated_docs
+            print(generated_docs.advisory_note(f"{WIKI.as_posix()}/ ({len(drift)} page(s))", advisory))
+            return 0
         for n in drift:
             print(f"DRIFT: {WIKI.as_posix()}/{n} is not a clean build of its sources — rebuild and commit it with the change that moved them")
         print("clean: every generated page matches its sources" if not drift else f"{len(drift)} page(s) drifted")
@@ -372,6 +377,25 @@ def main(argv: list[str]) -> int:
             (wiki / n).write_text(HOME_SEED.format(name=root.resolve().name), encoding="utf-8"); written.append(f"{n} (seeded once; yours from here)")
     print(f"wrote {len(written)} page(s): {', '.join(written) if written else 'nothing changed'} — commit {WIKI.as_posix()}/ with the change")
     return 0
+
+
+def drift_is_advisory(root) -> str | None:
+    """Why a stale copy only warns on this branch, or None when it must fail (#1230).
+
+    Reads the opt-in branch policy in `generated_docs.py` when it sits beside this script. A copy
+    vendored ALONE, a project with no `.rails-flow/generated-docs.json`, an unknown branch, or an
+    unreadable policy all return None: the check fails exactly as it always has.
+    """
+    try:
+        import generated_docs
+    except ImportError:
+        return None
+    try:
+        ok, why = generated_docs.enforcing(root)
+    except generated_docs.PolicyError as exc:
+        print(f"generated docs policy unreadable, so this check enforces: {exc}", file=sys.stderr)
+        return None
+    return None if ok else why
 
 
 def dirty_sources(root: Path) -> list[str]:
@@ -533,6 +557,19 @@ def selftest() -> int:
         g = json.loads((root / GRAPH).read_text(encoding="utf-8")); g["nodes"].append({"id": "POST /invoices", "type": "route", "layer": "web", "file": "config/routes.rb"})
         (root / GRAPH).write_text(json.dumps(g), encoding="utf-8")
         check("a source that moved makes --check report DRIFT (exit 1)", main(["--check", "--root", str(root)]) == 1)
+        # #1230: with an opt-in policy the same drift is a NOTE on a feature branch, and still fails on dev.
+        import contextlib as _cl2, io as _io2, os as _os
+        (root / ".rails-flow").mkdir(exist_ok=True)
+        (root / ".rails-flow" / "generated-docs.json").write_text('{"enforce_on": ["dev"]}', encoding="utf-8")
+        for branch, want in (("fix/1", 0), ("dev", 1)):
+            _os.environ["GENERATED_DOCS_BRANCH"] = branch
+            buf = _io2.StringIO()
+            with _cl2.redirect_stdout(buf):
+                rc = main(["--check", "--root", str(root)])
+            check(f"with a policy, wiki drift on {branch} exits {want}", rc == want
+                  and (("NOTE:" in buf.getvalue()) == (want == 0)), f"rc={rc}")
+        _os.environ.pop("GENERATED_DOCS_BRANCH", None)
+        (root / ".rails-flow" / "generated-docs.json").unlink()
         (root / "db" / "schema.rb").write_text(SCHEMA + '\n  create_table "weird" do |t|\n', encoding="utf-8")   # an unterminated table the parser cannot see
         try:
             m2 = build_model(root); probs = assert_totals(m2, render_all(m2))

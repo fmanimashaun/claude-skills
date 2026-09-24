@@ -3333,6 +3333,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The generated-docs drift checks can be branch-aware, opt-in — `plugins/rails-flow/scripts/generated_docs.py`,
+  `plugins/rails-flow/scripts/architecture_graph.py`, `plugins/rails-flow/scripts/build_project_wiki.py`,
+  `plugins/rails-flow/checks.json`, `plugins/rails-flow/commands/setup-flow.md`** (#1230). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own design. Committed generated docs conflicted on every parallel
+  PR — on one consumer almost every conflict across ~15 PRs was those ten files, and each merge re-conflicted
+  every other open PR. A project that declares `.rails-flow/generated-docs.json` (`enforce_on`: branch
+  patterns) now gets: a stale graph or wiki FAILS on a matching branch and is a `NOTE:` that passes elsewhere;
+  a new `generated-paths-untouched` check FAILS a non-enforcing branch whose diff touches the generated
+  paths; an unknown branch enforces. **No file means today's behaviour** — every branch enforces and the new
+  check is n/a — so no existing project changes verdict without choosing to. A copy of
+  `architecture_graph.py` vendored alone keeps today's behaviour too. Replaces the consumer's local adapter.
+
 ### 1.49.5 (release v1.144.5) — 2026-09-23
 
 - **A wiki `--check` names a locally dirty source instead of blaming the generator —

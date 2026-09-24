@@ -8,6 +8,7 @@ GUARD = Guard(
     name="build_project_wiki",
     subject="scripts/build_project_wiki.py",
     selftest="scripts/build_project_wiki.py",   # --selftest lives in the module itself
+    deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
         Mutation(
             "drift is never reported, so a page that no longer matches its sources passes --check",
@@ -108,6 +109,12 @@ GUARD = Guard(
             "    return sorted({ln[3:].strip() for ln in done.stdout.splitlines() if len(ln) > 3})",
             "    return []",
             "dirty_sources names exactly the dirty source",
+        ),
+        Mutation(
+            "wiki drift fails a feature branch that the policy makes advisory",
+            "        advisory = drift_is_advisory(root) if drift else None\n",
+            "        advisory = None\n",
+            "with a policy, wiki drift on fix/1 exits 0",
         ),
     ),
 )
