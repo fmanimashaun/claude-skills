@@ -15149,6 +15149,16 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.68.1 (release v1.149.0) — 2026-09-24
 
+- **The MCP reference corrects three facts it left unsaid — `skills/rails-8/references/mcp-server.md`,
+  `dist/rails-8.skill`** (#1302). Evidence from Retask's #880 design. Each fact is **CONFIRMED by doctrine-verifier on
+  2026-09-24**:
+  - **Annotation defaults.** Unset, a tool is `readOnlyHint: false`, `destructiveHint: true` and `openWorldHint: true`
+    (`schema/2026-07-28/schema.ts:1918-1953`). A reporting tool now sets `openWorldHint: false` as well as `readOnlyHint: true`.
+  - **The `mcp` gem v1.6.0's OAuth is client-only.** Its code is all under `lib/mcp/client/oauth/`, and the server code has
+    no bearer validation, RFC 9728 route or 401 challenge. The reference now says the app writes those.
+  - **Doorkeeper's RFC 8707 and RFC 8414 support is 6.0.0 pre-release only.** The stable release is 5.9.9; see its
+    CHANGELOG at `6.0.0.beta1` and `6.0.0.beta2`.
+
 - **rails-8 says the rate-limit half of the unauthenticated-endpoint rule is gated —
   `skills/rails-8/references/auth-security.md`, `dist/rails-8.skill`** (#1300). Our own doctrine: it names the rails-flow
   gate, the exemption file, and the `:null_store` warning. The honeypot half stays proven by specs.
