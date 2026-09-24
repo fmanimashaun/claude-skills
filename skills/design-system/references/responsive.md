@@ -111,9 +111,12 @@ added to the header to carry them — which then sat beside a rail that already 
 
 So: **at compact, the primary navigation must be reachable IN FULL from one control.** A drawer
 satisfies that by construction. A bar satisfies it only if the bar holds every top-level
-destination. **A destination that exists only in a compensating menu is the defect** — the test is
-not "is there a bottom nav" but "can a person reach every rail destination without knowing a second
-surface exists". That rule is ours; `coverage.md`'s Bottom navigation row carries it.
+destination, either as tabs or behind **a visibly labelled "More" item inside the bar** that opens
+a sheet with the rest: the bar is still the one control, and "More" is in plain sight in it (#1268).
+**A destination that exists only in a compensating menu is the defect**, meaning one reachable only
+from a surface outside the bar, such as a header or avatar menu. The test is not "is there a bottom
+nav" but "can a person reach every rail destination without knowing a second surface exists". That
+rule is ours; `coverage.md`'s Bottom navigation row carries it.
 
 ### Above 1536px, the measure is capped and the shell is not
 
