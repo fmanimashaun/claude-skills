@@ -41,12 +41,16 @@ look procedural.
 
 ## 1. Update, restart, and confirm what you actually got
 
+**Both of these are the user's to do, not yours** (#1244): a running session cannot restart itself,
+and plugin changes do not take effect until it does. Ask the user to run
+
 ```
 /plugin marketplace update claude-skills
 ```
 
-Then **restart Claude Code** — plugin changes do not take effect in a running session. After the
-restart:
+and then **restart Claude Code**. If they would rather not now, proceed on what is installed, and say
+at the top of the report which versions that was, so no finding is read as being about a newer release.
+After a restart, or when proceeding as installed:
 
 ```
 /rails-flow:toolchain-check

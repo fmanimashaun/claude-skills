@@ -3335,6 +3335,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`/rails-flow:toolchain-audit` asks the user to update and restart instead of telling the session to —
+  `plugins/rails-flow/commands/toolchain-audit.md`** (#1244). Step 1 told the running session to restart Claude
+  Code, which it cannot do. It now asks the user, and when they would rather not, proceeds on the installed
+  versions and names them at the top of the report. Found by a Retask session's toolchain audit.
+
 - **`brain-local-sync` runs in a linked worktree — `plugins/rails-flow/scripts/brain_local_sync.py`,
   `plugins/rails-flow/scripts/mutations/brain_local_sync.py`** (#1242). The auto-memory store path was built from
   the directory the check ran in, but Claude Code keys a project's store by the checkout a session started in —
