@@ -15019,6 +15019,14 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **A labelled "More" item inside a bottom bar counts as the one control that reaches every destination —
+  `skills/design-system/references/responsive.md`, `skills/design-system/references/coverage.md`,
+  `dist/design-system.skill`** (#1268). **Maintainer decision, 2026-09-24**, recorded on the issue; our own rule.
+  The rule at compact width said a bar qualifies only if it holds every top-level destination, and left open an app
+  with 13 of them. A visibly labelled "More" item in the bar, opening a sheet with the rest, qualifies. A
+  destination reachable only from outside the bar (a header or avatar menu) is still the defect. The Apple and
+  Material citations in the issue are not needed for our rule and are not added.
+
 - **A chart of 6 or more series carries direct labels or texture; a legend alone is not enough —
   `skills/design-system/references/data-viz.md`, `dist/design-system.skill`** (#1267). **Maintainer decision,
   2026-09-24**, recorded on the issue; our own doctrine, no framework claim.
