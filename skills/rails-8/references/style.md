@@ -33,15 +33,19 @@ citation.
 > *"In general, we prefer to use expanded conditionals over guard clauses… This is because guard
 > clauses can be hard to read, especially when they are nested."*
 
+Their "bad":
+
 ```ruby
-# Their "bad"
 def todos_for_new_group
   ids = params.require(:todolist)[:todo_ids]
   return [] unless ids
   @bucket.recordings.todos.find(ids.split(","))
 end
+```
 
-# Their "good"
+Their "good":
+
+```ruby
 def todos_for_new_group
   if ids = params.require(:todolist)[:todo_ids]
     @bucket.recordings.todos.find(ids.split(","))

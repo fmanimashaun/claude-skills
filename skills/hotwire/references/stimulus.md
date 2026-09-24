@@ -317,14 +317,22 @@ export default class extends Controller {
 
   async #save() {
     this.element.classList.add(...this.savingClasses)
-    await fetch(this.element.action, {
-      method: "POST",
-      body: new FormData(this.element),
-      headers: { "Accept": "text/vnd.turbo-stream.html" }
-    })
-    this.element.classList.remove(...this.savingClasses)
-    if (this.hasStatusTarget) this.statusTarget.textContent = "Saved"
-    this.dispatch("saved")
+    let saved = false
+    try {
+      const response = await fetch(this.element.action, {
+        method: "POST",
+        body: new FormData(this.element),
+        headers: { "Accept": "text/vnd.turbo-stream.html" }
+      })
+      saved = response.ok
+    } catch {
+      saved = false                      // offline, or the request never came back
+    } finally {
+      this.element.classList.remove(...this.savingClasses)
+    }
+    // Never say "Saved" for a save that failed (turbo.md §8b)
+    if (this.hasStatusTarget) this.statusTarget.textContent = saved ? "Saved" : "Not saved — retrying on your next change"
+    if (saved) this.dispatch("saved")
   }
 
   #cancel() { if (this.timer) clearTimeout(this.timer) }
@@ -333,7 +341,7 @@ export default class extends Controller {
 
 Every convention in one place: values with defaults, guarded optional target,
 classes from HTML, cleanup in `disconnect`, event dispatched for parents,
-Turbo-friendly fetch.
+Turbo-friendly fetch, and a status that never reports a failed save as saved.
 
 ## 10. Patterns and anti-patterns
 

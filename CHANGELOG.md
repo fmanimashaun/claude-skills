@@ -15013,6 +15013,31 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.66.0 (release v1.146.0) — 2026-09-24
 
+- **Code blocks that were wrong to paste are fixed — `skills/rails-8/references/views-hotwire.md`,
+  `skills/rails-8/references/ecosystem-gems.md`, `skills/rails-8/references/advanced-active-record.md`,
+  `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/multi-tenancy.md`,
+  `skills/rails-8/references/style.md`, `skills/rails-8/references/testing.md`, `skills/hotwire/references/stimulus.md`,
+  `skills/hotwire/references/native.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). The #1256 sweep
+  classified all 307 blocks. It flagged 12 as wrong to paste; 11 were real, and a password "below the floor" was a
+  miscount (`s3cure-password` is 15 characters).
+  - **Our own doctrine**, no framework claim:
+    - §3's example form was `form_with`, which this stack forbids, so it is now simple_form, using the syntax our
+      doctrine already uses.
+    - A YAML credentials block sat inside `bash`.
+    - Two blocks carried the "wrong" version beside the right one.
+    - `bin/ci`'s prose miscounted the lines added.
+    - The autosave controller said "Saved" without checking the response.
+    - An excerpt left out its retry without saying so.
+    - A `<latest>` placeholder is now marked.
+  - **Framework claims, CONFIRMED by doctrine-verifier on 2026-09-24:**
+    - mission_control-jobs 1.3.1 ships with basic auth "enabled and closed", and `base_controller_class` admits an
+      app's admins (github.com/rails/mission_control-jobs README). The old comment "behind an admin constraint"
+      matched nothing in the code.
+    - A channel imports `consumer` from `"channels/consumer"`, which `bin/rails generate channel` writes and pins under
+      importmap (Rails main `channel_generator.rb`, `consumer.js.tt`).
+  - `<% turbo_refreshes_with %>` was flagged but is correct: the helper writes through `provide :head` and returns
+    nil (turbo-rails `drive_helper.rb`).
+
 - **rails-8 says what makes the PWA stubs installable, and what a service worker may cache —
   `skills/rails-8/references/pwa.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1258). **Framework
   claims, each CONFIRMED by doctrine-verifier on 2026-09-24**, verdicts recorded on the issue:

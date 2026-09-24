@@ -537,8 +537,8 @@ plugins:            # `require:` on RuboCop < 1.72
   add one, `bin/ci` runs setup, RuboCop and three security audits and **zero specs**, and a green
   run means "lint and audits passed", not "the suite passed".
 
-  This is the whole file for a `--skip-test` app. Everything but the three `Tests:` lines is what
-  Rails generated. Two of them — `Tests: RSpec` and `Tests: Seeds` — are the ones Rails omitted on
+  This is the whole file for a `--skip-test` app. Everything but the three `Tests:` lines and
+  `Factories: lint` is what Rails generated. Two of the `Tests:` lines — `Tests: RSpec` and `Tests: Seeds` — are the ones Rails omitted on
   the flag, and they are what makes `bin/ci` a gate. The third, `Tests: DB reset`, Rails never
   generates at any flag: it exists because the suite must not read the rows the previous run left.
 
