@@ -967,6 +967,9 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   with its header, and a `<div>` grid loses the table semantics entirely. Sortable headers carry
   `aria-sort` on the sorted column **only**. Row actions need names: an icon-only edit button is
   `aria-label`-ed with the row's subject, not "Edit".
+- **A record's id column shows its display number** (`TSK-0001`, `rails-8` `models.md` §12) as a
+  link to the record's show page, never a raw primary key or UUID. Put it in its own column in
+  `font-mono tabular-nums`, so the numbers line up.
 - Keep the proven `shared/_crud_table`, `_crud_header`, `_crud_row_actions` partials, refactored to role
   tokens + components. `<table class="w-full text-step--1 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.

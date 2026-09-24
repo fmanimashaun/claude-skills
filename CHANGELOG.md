@@ -15019,6 +15019,16 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **Every user-facing record shows a readable display number, `TSK-0001`, that links to it —
+  `skills/rails-8/references/models.md`, `skills/rails-8/references/multi-tenancy.md`,
+  `skills/design-system/references/components.md`, `dist/rails-8.skill`, `dist/design-system.skill`** (#1274).
+  **Maintainer decision, 2026-09-24**, recorded on the issue; our own design, and no framework mechanism is named.
+  - Each model declares a 3-letter prefix. The number is sequential, zero-padded to at least 4 digits, unique within
+    its tenant (or the app) and never reused.
+  - It is a link to the show page wherever it is displayed.
+  - URLs keep the opaque public id, and raw primary keys and UUIDs never reach the screen.
+  - The alternative considered, a 7-character short hash, collides with 17% probability at 10,000 records.
+
 - **A labelled "More" item inside a bottom bar counts as the one control that reaches every destination —
   `skills/design-system/references/responsive.md`, `skills/design-system/references/coverage.md`,
   `dist/design-system.skill`** (#1268). **Maintainer decision, 2026-09-24**, recorded on the issue; our own rule.
