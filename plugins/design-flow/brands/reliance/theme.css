@@ -55,6 +55,11 @@
    logotypes); only the role moves. Same reasoning moves --success to success-800
    (#288D68 is 3.91:1) and --warning to warning-900 (#DC6803 is 3.31:1). */
 :root {
+  /* CHART SLOT 1 IS THE BRAND BLUE (#1249, owner decision 2026-09-24). Slots 2-8 are the
+     design system's validated categorical hues (data-viz.md). Measured with palette_gates.py:
+     light passes (colour-blind dE 9.1, normal 19.6); dark passes on ink-800 (#08293E: L 0.567,
+     C 0.137, 3.35:1). brand.json's chart_hues records the full list, so the lint checks it. */
+  --chart-1: var(--color-rh-brand-500);
   --background: var(--color-rh-neutral-50);    --foreground: var(--color-rh-neutral-900);
   --card: var(--color-rh-neutral-25);          --card-foreground: var(--color-rh-neutral-900);
   --popover: var(--color-rh-neutral-25);       --popover-foreground: var(--color-rh-neutral-900);
@@ -80,6 +85,7 @@
 /* Dark mode. Surfaces re-point onto the ink ramp; feedback roles and --ring keep one
    value, per the contract. */
 .dark {
+  --chart-1: var(--color-rh-brand-500);        /* the same brand blue in dark: 3.35:1 on ink-800 (#1249) */
   --background: var(--color-rh-ink-900);       --foreground: var(--color-rh-neutral-25);
   --card: var(--color-rh-ink-800);             --card-foreground: var(--color-rh-neutral-25);
   --popover: var(--color-rh-ink-800);          --popover-foreground: var(--color-rh-neutral-25);
