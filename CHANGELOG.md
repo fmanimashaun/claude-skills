@@ -12166,6 +12166,21 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **Every brand pack declares the full `--chart-1..8` in both modes, and the lint enforces it —
+  `plugins/design-flow/brands/reliance/theme.css`, `plugins/design-flow/brands/fidara/theme.css`,
+  `plugins/design-flow/brands/_template/theme.css`, `plugins/design-flow/scripts/brand_pack_lint.py`,
+  `plugins/design-flow/scripts/mutations/brand_pack_lint.py`, `plugins/design-flow/scripts/palette_candidates.py`,
+  `plugins/design-flow/scripts/palette_gates.py`, `plugins/design-flow/scripts/mutations/palette_candidates.py`** (#1271). **Maintainer decision, 2026-09-24**, recorded on
+  the issue; our own design. Reported by a peer session.
+  - Reliance declared only `--chart-1`, fidara and `_template` none, and `setup` writes no chart tokens, so a
+    consuming app hand-copied `data-viz.md`'s block.
+  - The new `lint_chart` requires all eight slots in `:root` and `.dark`, requires the resolved `:root` values to
+    equal `brand.json` `chart_hues` when that is set, and runs both sets through the data-viz hard gates.
+  - `palette_candidates.py` now emits the same series into every pack it generates. The series is defined once,
+    as `palette_gates.SYSTEM_SERIES`.
+  - The selftest drives `lint_pack` itself on a copy of the shipped reliance pack, so the chart check cannot go
+    uncalled. The guard catches 5 new mutations; the guard's total is 14.
+
 - **`palette_gates.py`'s selftest pins the figures behind the 6-series rule — `plugins/design-flow/scripts/palette_gates.py`**
   (#1267). The default dark series: 5 series, worst adjacent 8.4; 8 series, 6.1 at slots 5↔6; every hard gate passes.
   These are the numbers `validate_palette.js` printed, so a hue change that moves the threshold turns the selftest red.
