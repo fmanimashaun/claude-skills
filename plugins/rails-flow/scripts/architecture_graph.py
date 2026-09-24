@@ -1032,9 +1032,16 @@ class GraphBuilder:
         return {"nodes": nodes, "edges": edges, "flows": self.flows, "notes": sorted(self.notes)}
 
 
+# Node fields that describe a node's SIZE, not the architecture. They stay in graph.json as
+# information and are left out of the digest (#1292): a component growing from 78 to 82 lines is not
+# drift, and hashing it turned dev red while the summary said "No structural change". Nothing reads them.
+NON_STRUCTURAL_NODE_FIELDS = frozenset({"loc"})
+
+
 def content_digest(core: dict) -> str:
+    nodes = [{k: v for k, v in n.items() if k not in NON_STRUCTURAL_NODE_FIELDS} for n in core["nodes"]]
     payload = json.dumps(
-        {"nodes": core["nodes"], "edges": core["edges"], "flows": core["flows"],
+        {"nodes": nodes, "edges": core["edges"], "flows": core["flows"],
          "notes": core["notes"]},
         sort_keys=True, separators=(",", ":"), ensure_ascii=True,
     )
@@ -2208,6 +2215,36 @@ def selftest() -> int:
         page = ""
         check("render_html survives the same graph", False, repr(exc))
     check("the page embeds the diagram", "__SVG__" not in page and 'class="arch"' in page)
+
+    # #1292: a line-count change is not drift; a structural one still is. Driven through main().
+    import contextlib as _cl3, io as _io3, os as _os3, tempfile as _tf3
+    base_core = {"nodes": [{"id": "A", "type": "model", "layer": "domain", "file": "a", "loc": 78, "tags": []}],
+                 "edges": [], "flows": [], "notes": []}
+    grown = {**base_core, "nodes": [{**base_core["nodes"][0], "loc": 82}]}
+    check("the digest ignores loc", content_digest(base_core) == content_digest(grown))
+    check("...but not a structural field", content_digest(base_core) != content_digest(
+        {**base_core, "nodes": [{**base_core["nodes"][0], "type": "job"}]}))
+    with _tf3.TemporaryDirectory() as td3:
+        _os3.makedirs(_os3.path.join(td3, "app", "models"))
+        _os3.makedirs(_os3.path.join(td3, "config"))
+        with open(_os3.path.join(td3, "config", "routes.rb"), "w", encoding="utf-8") as fh:
+            fh.write("Rails.application.routes.draw do\nend\n")
+        model = _os3.path.join(td3, "app", "models", "widget.rb")
+        with open(model, "w", encoding="utf-8") as fh:
+            fh.write("class Widget < ApplicationRecord\nend\n")
+        with _cl3.redirect_stdout(_io3.StringIO()), _cl3.redirect_stderr(_io3.StringIO()):
+            main(["--root", td3])
+        check("the #1292 fixture generated a graph", _os3.path.isfile(_os3.path.join(td3, "docs", "architecture", "graph.json")))
+        with open(model, "w", encoding="utf-8") as fh:
+            fh.write("class Widget < ApplicationRecord\n  # a comment\n\n  def name = \"w\"\nend\n")
+        with _cl3.redirect_stdout(_io3.StringIO()), _cl3.redirect_stderr(_io3.StringIO()):
+            rc = main(["--check", "--root", td3])
+        check("a model that only grew in lines is not drift (--check exits 0)", rc == 0, f"rc={rc}")
+        with open(_os3.path.join(td3, "app", "models", "gadget.rb"), "w", encoding="utf-8") as fh:
+            fh.write("class Gadget < ApplicationRecord\nend\n")
+        with _cl3.redirect_stdout(_io3.StringIO()), _cl3.redirect_stderr(_io3.StringIO()):
+            rc = main(["--check", "--root", td3])
+        check("an added model still is drift (--check exits 1)", rc == 1, f"rc={rc}")
 
     if failures:
         print(f"architecture_graph selftest: {len(failures)} of {checks} checks FAILED", file=sys.stderr)
