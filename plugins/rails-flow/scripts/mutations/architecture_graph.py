@@ -9,6 +9,13 @@ GUARD = Guard(
     selftest="scripts/architecture_graph.py",
     deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
+        # #1292: loc back in the digest, so a line-count edit is drift again.
+        Mutation(
+            "loc is hashed again, so a component growing by four lines turns dev red",
+            '    nodes = [{k: v for k, v in n.items() if k not in NON_STRUCTURAL_NODE_FIELDS} for n in core["nodes"]]',
+            '    nodes = core["nodes"]',
+            "a model that only grew in lines is not drift (--check exits 0)",
+        ),
         # #850. The page drew nothing; these keep it drawing the right thing.
         Mutation(
             "the diagram ignores layers, so every node lands in one column",

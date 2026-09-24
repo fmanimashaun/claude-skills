@@ -3351,6 +3351,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A line-count change is no longer architecture-graph drift — `plugins/rails-flow/scripts/architecture_graph.py`,
+  `plugins/rails-flow/scripts/mutations/architecture_graph.py`** (#1292). Reported from Retask's toolchain audit.
+  - **The defect.** Every node's `loc` was inside `content_digest`, so a component growing from 78 to 82 lines turned
+    `dev` red under `enforce_on: dev`, while the gate printed "No structural change". Nothing reads `loc`: no renderer,
+    wiki page or check.
+  - **Maintainer decision, 2026-09-24:** `loc` stays in `graph.json` as information and is left out of the digest.
+  - **Tests.** The selftest drives `main`: a model that only grew passes `--check`, and an added model still fails
+    it. It passes vendored alone. The new mutation, which hashes `loc` again, is caught.
+  - **Upgrading:** a project's committed graph re-digests once.
+
 ### 1.50.2 (release v1.147.1) — 2026-09-24
 
 - **The `erb-lint` gate runs the herb linter pinned to `Gemfile.lock`, and says which version ran —
