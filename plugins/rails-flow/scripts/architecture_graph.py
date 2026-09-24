@@ -510,7 +510,10 @@ def parse_routes(root: str, notes: list[str]) -> list[dict]:
             verb, rest = verb_match.groups()
             rest = rest.strip()
             target = re.search(r"(?:to:\s*|=>\s*)['\"]([a-z0-9_/]+)#([a-z0-9_]+)['\"]", rest)
-            first = re.match(r"^[:'\"]([a-z0-9_/]+)['\"]?", rest)
+            # A QUOTED path is taken whole: hyphens, `:segments` and a `.format` are part of it. The old
+            # class `[a-z0-9_/]` cut `"webhooks/zoho-sign"` to `webhooks/zoho` and `"user-management/:id"`
+            # to `user`, collapsing distinct routes into one node. A SYMBOL is a bare word, as before.
+            first = re.match(r"^['\"]([^'\"]+)['\"]", rest) or re.match(r"^:([a-z0-9_]+)", rest)
             parent = enclosing_resource()
             inside_member = any(f["kind"] in ("member", "collection") for f in stack)
             if target:
@@ -2215,6 +2218,28 @@ def selftest() -> int:
         page = ""
         check("render_html survives the same graph", False, repr(exc))
     check("the page embeds the diagram", "__SVG__" not in page and 'class="arch"' in page)
+
+    # QUOTED ROUTE PATHS ARE TAKEN WHOLE. The old path class had no `-`, `:` or `.`, so on one real app
+    # 67 route lines were cut short and distinct routes merged into one node.
+    import tempfile as _tf4, os as _os4
+    with _tf4.TemporaryDirectory() as td4:
+        _os4.makedirs(_os4.path.join(td4, "config"))
+        with open(_os4.path.join(td4, "config", "routes.rb"), "w", encoding="utf-8") as fh:
+            fh.write('Rails.application.routes.draw do\n'
+                     '  post "webhooks/zoho-sign", to: "webhooks/zoho_sign#create"\n'
+                     '  get "login/link/:token", to: "sessions#magic_enter"\n'
+                     '  get "robots.txt", to: "search_engines/robots#show"\n'
+                     '  get "user-management", to: "users#index"\n'
+                     '  get "user-management/:id", to: "users#show"\n'
+                     '  get :pricing, to: "pages#pricing"\n'
+                     'end\n')
+        ids = {f"{r['verb']} {r['path']}" for r in parse_routes(td4, [])}
+        check("a hyphenated literal path is kept whole", "POST /webhooks/zoho-sign" in ids, str(sorted(ids)))
+        check("a dynamic segment is kept", "GET /login/link/:token" in ids, str(sorted(ids)))
+        check("a dotted path is kept", "GET /robots.txt" in ids, str(sorted(ids)))
+        check("two hyphenated routes stay two nodes", {"GET /user-management", "GET /user-management/:id"} <= ids,
+              str(sorted(ids)))
+        check("CONTROL: a symbol path still parses", "GET /pricing" in ids, str(sorted(ids)))
 
     # #1292: a line-count change is not drift; a structural one still is. Driven through main().
     import contextlib as _cl3, io as _io3, os as _os3, tempfile as _tf3
