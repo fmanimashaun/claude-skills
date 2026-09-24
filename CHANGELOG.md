@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-24 (release v1.146.0)
 
 - **New gate `vendored alone`: a script a project vendors runs its `--selftest` by itself —
   `scripts/check_vendored_alone.py`, `scripts/mutations/check_vendored_alone.py`, `scripts/maintainer_doctor.py`**
@@ -3343,7 +3343,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.50.1 (release v1.146.0) — 2026-09-24
 
 - **`architecture_graph.py` and `build_project_wiki.py` pass their own `--selftest` when vendored alone —
   `plugins/rails-flow/scripts/architecture_graph.py`, `plugins/rails-flow/scripts/build_project_wiki.py`** (#1261).
@@ -12164,7 +12164,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.43.4 (release v1.146.0) — 2026-09-24
 
 - **The reliance pack leads its charts with its brand blue, in both modes — `plugins/design-flow/brands/reliance/theme.css`,
   `plugins/design-flow/brands/reliance/brand.json`** (#1249). **Owner decision, 2026-09-24**, recorded on the issue.
@@ -15011,7 +15011,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.66.0 (release v1.146.0) — 2026-09-24
 
 - **rails-8 says what makes the PWA stubs installable, and what a service worker may cache —
   `skills/rails-8/references/pwa.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1258). **Framework
