@@ -45,7 +45,9 @@ bin/rails g rswag:install
 ```
 
 `spec/swagger_helper.rb` — one place for document metadata, servers, shared
-schemas, and security schemes:
+schemas, and security schemes. The outcome is one OpenAPI document per API version, with its
+security and shared schemas declared once. The `openapi_*` keys are rswag's; the title, host and
+schemas below are placeholders for yours:
 
 ```ruby
 RSpec.configure do |config|

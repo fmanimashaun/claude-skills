@@ -967,6 +967,9 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   with its header, and a `<div>` grid loses the table semantics entirely. Sortable headers carry
   `aria-sort` on the sorted column **only**. Row actions need names: an icon-only edit button is
   `aria-label`-ed with the row's subject, not "Edit".
+- **A record's id column shows its display number** (`TSK-0001`, `rails-8` `models.md` §12) as a
+  link to the record's show page, never a raw primary key or UUID. Put it in its own column in
+  `font-mono tabular-nums`, so the numbers line up.
 - Keep the proven `shared/_crud_table`, `_crud_header`, `_crud_row_actions` partials, refactored to role
   tokens + components. `<table class="w-full text-step--1 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.
@@ -1590,6 +1593,15 @@ can carry.
   "paginate by default" below does not catch it — they believe they already have. A list may be
   capped; if the query can drop rows, the page **states the total and offers the rest**. Same class
   as a rescue that swallows the exception.
+- **Per page: 10 by default, and a select offering 10, 25, 50 and 100** (#1272). The choice is URL
+  state (`limit=`), so it is shareable and survives the back button. Changing it resets to page 1 and
+  keeps the sort and filters: a GET form that carries the other query params and omits `page`. The
+  server caps what it honours at 100 (`rails-8` `ecosystem-gems.md` → Pagy), so a hand-edited URL
+  cannot ask for more, and a select the server ignores changes nothing on screen.
+- **Hide the per-page select when the total is 10 or fewer**, because every option then shows the
+  same single page. Keep "Showing 1–N of N" visible: the total is what tells the reader the list is
+  complete. Above 10 the select always shows, including when a larger choice fits everything on one
+  page, so a person who picked 25 can pick 10 again.
 - Keep the Pagy-based `shared/_pagination`: per-page `<select>`, "Showing X–Y of Z", windowed links + prev/next
   Lucide chevrons, active = `bg-primary/10 text-primary`. Optional `turbo_frame` target. Responsive `flex-col
   md:flex-row`.

@@ -196,16 +196,28 @@ end
 ```
 
 ```ruby
+# config/initializers/pagy.rb
+Pagy::OPTIONS[:limit] = 10   # this stack's default page size (#1272); Pagy's own is 20
+```
+
+```ruby
 # app/controllers/products_controller.rb
 def index
-  @pagy, @products = pagy(:offset, Product.order(:name), limit: 25)
+  # client_limit: honour the per-page select's ?limit=, silently capped at 100
+  @pagy, @products = pagy(:offset, Product.order(:name), client_limit: 100)
 end
 ```
 
 The **paginator symbol is the first argument** — `:offset`, `:countish`, `:countless`, `:keyset`,
 `:keynav_js`, `:calendar`, plus the search backends. It defaults to `:offset`, but pass it
 explicitly: which technique you paginate with is the decision worth seeing in the diff. `:limit`
-defaults to 20.
+defaults to 20 in Pagy and to **10 in this stack**, set once in the initializer above.
+
+**The per-page choice needs `client_limit:`.** Without it Pagy **ignores** `?limit=` (it does not
+raise), so a per-page select that appears to work changes nothing. With it, a higher request is
+silently capped. `client_limit:` is the Pagy 43.6.3 name; `max_limit:` still works but is deprecated.
+A page past the end is rescued to an empty page by default; `raise_range_error: true` opts in to
+`Pagy::RangeError`. There is no `overflow:` option in 43.
 
 Nav and info are **methods on the `@pagy` object**, not helpers:
 
@@ -215,9 +227,11 @@ Nav and info are **methods on the `@pagy` object**, not helpers:
 ```
 
 Also `@pagy.series_nav_js`, `@pagy.input_nav_js` and `@pagy.info_tag`. (`@pagy.limit_tag_js` needs
-a `max_limit:` option on the `pagy` call — without one it raises `Pagy::OptionError`, not a blank
-tag.) A CSS framework is an **argument**, not a different method — `@pagy.series_nav(:bootstrap)`. No
-initializer is required; add `config/initializers/pagy.rb` only to set `Pagy::OPTIONS` globals. The
+`client_limit:` on the `pagy` call — without one it raises `Pagy::OptionError`, not a blank tag — and
+it renders a **number input**, not a list. This stack's per-page control is a fixed 10/25/50/100
+`<select>`, so it is plain HTML; `design-system` `components.md` → Pagination.) A CSS framework is an
+**argument**, not a different method — `@pagy.series_nav(:bootstrap)`. The initializer sets
+`Pagy::OPTIONS` globals (`Pagy.options` is the deprecated spelling). The
 default `:pagy` style wants the gem's `pagy.css`; `:bootstrap` and `:bulma` need no stylesheet.
 
 Maintaining a pre-43 app? Pagy publishes a search-and-replace table:
@@ -459,7 +473,8 @@ $ bundle exec archspec explain app/controllers/tenant/invoices_controller.rb
     tenant_controllers: matched file pattern app/controllers/tenant/**/*.rb
 ```
 
-So declare components **explicitly** and omit `architecture` entirely. `Archspec.rb`:
+So declare components **explicitly** and omit `architecture` entirely. The paths below are this
+skill's layout; declare components for your own. `Archspec.rb`:
 
 ```ruby
 # Archspec.rb — at the project root, beside the Gemfile

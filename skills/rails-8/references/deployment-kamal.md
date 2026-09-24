@@ -43,7 +43,9 @@ up to `drain_timeout`.
 
 ## 2. `config/deploy.yml` — annotated
 
-What Rails generates, with the parts you actually edit:
+What Rails generates, with the parts you actually edit. The generator writes this file; you change
+the values (`servers`, `proxy.host`, `registry`, `env`, `volumes`), never the shape. Every name and
+address below is a placeholder:
 
 ```yaml
 # Name of your application. Used to uniquely configure containers.

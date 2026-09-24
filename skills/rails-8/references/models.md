@@ -12,6 +12,7 @@
 9. N+1s and eager loading
 10. Transactions, locking, bulk writes
 11. Encryption, multiple databases
+12. Display numbers — the id a person reads (`TSK-0001`)
 
 ---
 
@@ -64,6 +65,10 @@ Commands: `db:migrate`, `db:rollback STEP=2`,
 `db:migrate:redo`, `db:migrate:status`, `db:migrate VERSION=...`.
 
 ## 2. Model anatomy
+
+The order a reader expects: associations, attachments, enums and normalization, validations and
+scopes as declarations at the top, then domain behaviour as methods. The model below shows the
+shape; its names are placeholders:
 
 ```ruby
 class Product < ApplicationRecord
@@ -312,3 +317,31 @@ Automatic read/write role switching for GET requests is available via
 `connects_to shards: {...}` + `connected_to(shard: :one)`. Reach for these
 only at real scale; the default single-primary + Solid databases covers most
 apps.
+
+## 12. Display numbers — the id a person reads (`TSK-0001`)
+
+A person needs a way to name a record: to say it aloud, paste it into a chat, find it again. A raw
+primary key or a UUID on screen does that job badly. So every **user-facing** model carries a
+readable **display number** (#1274, maintainer decision):
+
+- **The model declares its prefix**: three letters, unique across the app, such as `TSK`, `REQ` or
+  `INV`.
+- **The number is sequential and zero-padded to at least four digits.** The first is `TSK-0001`. The
+  padding is a minimum width, not a cap, so record 10,000 is `TSK-10000`.
+- **It is unique within its scope and never reused.** The scope is the tenant in a multi-tenant app,
+  the way GitHub numbers issues per repository, so no customer sees another's volume. In a
+  single-tenant app it is the whole app. A unique index on the scope and the number is the
+  guarantee. Two concurrent creates must never receive the same number, and a collision must not
+  abort the transaction around it. Prove both with a spec that creates concurrently. A deleted
+  record's number is not handed out again, so gaps are expected.
+- **Everywhere it is displayed, it is a link to the record's show page**, in tables, headings,
+  notifications, emails and audit logs. A number that cannot be clicked sends the reader to search.
+- **The URL keeps the opaque public id** (`multi-tenancy.md` §5). The display number shows how many
+  records exist, which is harmless on screen but is exactly what an address must not reveal or let
+  someone guess.
+- **A raw primary key or UUID never reaches the screen.** Search accepts the display number, with or
+  without its prefix.
+
+Why a sequence and not a short hash: the first seven characters of a hex id collide with a
+probability of 17% at 10,000 records and near certainty at 100,000. A sequence is shorter, reads
+aloud, and is unique by construction.

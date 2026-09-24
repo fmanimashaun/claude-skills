@@ -275,6 +275,7 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/extending-rails.md` | Application templates (`rails new -m`), custom generators, overriding built-in generator templates, engines/plugins, Rack middleware |
 | `references/deployment-kamal.md` | Kamal 2 (`config/deploy.yml`, secrets, accessories, rollback), Dockerfile, Thruster, SQLite-in-production, production checklist |
 | `references/pwa.md` | **Installable apps** — the installability criteria, how each browser offers installation (only Chromium and Samsung Internet fire `beforeinstallprompt`), and the rule that a service worker never caches signed-in pages |
+| `references/mcp-server.md` | **Letting agents pull reporting data**: an MCP server over HTTP (not a CLI), the spec's OAuth resource-server rules, and ours: the agent acts as a real user, the server enforces read-only, one tool per report, every call audited, sensitive data excluded by default |
 
 Companion skill: **`hotwire`** goes deeper than `views-hotwire.md` on Turbo,
 Stimulus, and adds **Hotwire Native** (iOS/Android apps, bridge components,

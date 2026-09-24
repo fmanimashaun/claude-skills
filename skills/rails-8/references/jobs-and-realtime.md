@@ -59,7 +59,9 @@ database). No Redis. Supervise with:
 bin/jobs                       # starts supervisor per config/queue.yml
 ```
 
-`config/queue.yml`:
+`config/queue.yml`, which the generator writes. The outcome: dispatchers enqueue due jobs and
+workers run them, with capacity scaled by `JOB_CONCURRENCY` and `threads` rather than by editing
+the file. The numbers are the generated defaults, not a recommendation:
 
 ```yaml
 default: &default
@@ -92,12 +94,15 @@ per-job `queue_with_priority`. For a dashboard, add the
 `mission_control-jobs`:
 
 ```ruby
-# routes.rb — always behind auth
-authenticate :user, ->(u) { u.admin? } do
-  mount MissionControl::Jobs::Engine, at: "/jobs"
-end
-# or HTTP basic: MissionControl::Jobs.http_basic_auth_user / _password initializers
+# config/routes.rb
+mount MissionControl::Jobs::Engine, at: "/jobs"
 ```
+
+The outcome is a dashboard only admins reach. mission_control-jobs (1.3.1) ships with HTTP basic
+auth **enabled and closed**, so it is unreachable until you set credentials. To admit your admins
+instead, point `config.mission_control.jobs.base_controller_class` at your authenticated admin
+controller (`ecosystem-gems.md` → mission_control-jobs). (`authenticate :user do … end` is Devise's
+route helper, and the Rails 8 authentication generator has no such method.)
 
 Features are adapter-dependent (full set on Solid Queue): inspect queues and
 per-status jobs, filter by queue/class, retry or discard failed jobs, pause and
@@ -263,6 +268,8 @@ end
 # broadcast from anywhere (a job, ideally):
 NotificationsChannel.broadcast_to(user, title: "Done", body: "...")
 ```
+
+The client subscribes by channel name, and each `broadcast_to` payload arrives in `received`:
 
 ```js
 // app/javascript/channels/notifications_channel.js

@@ -15,7 +15,7 @@ GUARD = Guard(
     deps=("scripts/palette_gates.py",),   # #1235: imported when a pack overrides chart_hues
     # The shipped pack is a dependency, not incidental data: the last fixture parses the real
     # theme.css, so the hand-written fixtures cannot drift from the shape actually shipped.
-    needs=("brands/fidara/theme.css",),
+    needs=("brands/fidara/theme.css", "brands/reliance"),   # #1271: the entry-point fixture lints a copy of reliance
     mutations=(
         Mutation(
             # THE REPORTED BUG. `:root, .light { ... }` is ordinary CSS and is what this design
@@ -89,6 +89,37 @@ GUARD = Guard(
             "            elif len(hues) >= 3:\n",
             "            elif False:\n",
             "fidara's old hues FAIL on colour-blind separation, dE 4.8",
+        ),
+        # #1271: the full chart set per pack.
+        Mutation(
+            "the chart check is never called, so a pack may declare one slot or none",
+            "    lint_chart(os.path.join(pack_dir, \"theme.css\"), report, manifest)\n",
+            "",
+            "lint_pack on a pack missing --chart-5 in :root FAILS",
+        ),
+        Mutation(
+            "a missing slot stops being an error",
+            "        missing = [slot for slot in CHART_SLOTS if slot not in decls]\n",
+            "        missing = []\n",
+            "a .dark missing --chart-8 is an ERROR",
+        ),
+        Mutation(
+            "the chart_hues comparison is dropped, so theme.css and brand.json can drift",
+            "        if [h.lower() for h in declared] != [h.lower() for h in resolved[\"light\"]]:\n",
+            "        if False:\n",
+            ":root differing from brand.json chart_hues is an ERROR",
+        ),
+        Mutation(
+            "the dark set is judged by the light band, or not at all",
+            "        for failure in palette_failures(hues, mode):\n",
+            "        for failure in (palette_failures(hues, mode) if mode == \"light\" else []):\n",
+            "a dark chart set that fails the data-viz gates is an ERROR",
+        ),
+        Mutation(
+            "var() is not followed, so a slot pointing at a primitive reads as unresolved",
+            "        return resolve_value(decls[m.group(1)], decls, depth + 1)\n",
+            "        return value.strip()\n",
+            "a full, validated chart set resolving through a primitive passes",
         ),
     ),
 )

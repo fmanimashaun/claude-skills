@@ -7,6 +7,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-24 (release v1.147.0)
+
+- **`check_token_contrast`'s mutation guard stages `palette_gates.py` — `scripts/mutations/check_token_contrast.py`**
+  (#1271). #1271 made `palette_candidates.py` and `brand_pack_lint.lint_chart` import `palette_gates`. This guard stages
+  both without it, so its unmutated selftest failed in the tempdir ("No module named 'palette_gates'"). That made the
+  guard inert, and every `dev` push run failed its full sweep from the #1271 merge on. The local full doctor had
+  reported this gate `skip` (a 900 s timeout), which was then misquoted as a pass.
+
 ### 2026-09-24 (release v1.146.0)
 
 - **New gate `vendored alone`: a script a project vendors runs its `--selftest` by itself —
@@ -12164,6 +12172,27 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.44.0 (release v1.147.0) — 2026-09-24
+
+- **Every brand pack declares the full `--chart-1..8` in both modes, and the lint enforces it —
+  `plugins/design-flow/brands/reliance/theme.css`, `plugins/design-flow/brands/fidara/theme.css`,
+  `plugins/design-flow/brands/_template/theme.css`, `plugins/design-flow/scripts/brand_pack_lint.py`,
+  `plugins/design-flow/scripts/mutations/brand_pack_lint.py`, `plugins/design-flow/scripts/palette_candidates.py`,
+  `plugins/design-flow/scripts/palette_gates.py`, `plugins/design-flow/scripts/mutations/palette_candidates.py`** (#1271). **Maintainer decision, 2026-09-24**, recorded on
+  the issue; our own design. Reported by a peer session.
+  - Reliance declared only `--chart-1`, fidara and `_template` none, and `setup` writes no chart tokens, so a
+    consuming app hand-copied `data-viz.md`'s block.
+  - The new `lint_chart` requires all eight slots in `:root` and `.dark`, requires the resolved `:root` values to
+    equal `brand.json` `chart_hues` when that is set, and runs both sets through the data-viz hard gates.
+  - `palette_candidates.py` now emits the same series into every pack it generates. The series is defined once,
+    as `palette_gates.SYSTEM_SERIES`.
+  - The selftest drives `lint_pack` itself on a copy of the shipped reliance pack, so the chart check cannot go
+    uncalled. The guard catches 5 new mutations; the guard's total is 14.
+
+- **`palette_gates.py`'s selftest pins the figures behind the 6-series rule — `plugins/design-flow/scripts/palette_gates.py`**
+  (#1267). The default dark series: 5 series, worst adjacent 8.4; 8 series, 6.1 at slots 5↔6; every hard gate passes.
+  These are the numbers `validate_palette.js` printed, so a hue change that moves the threshold turns the selftest red.
+
 ### 1.43.4 (release v1.146.0) — 2026-09-24
 
 - **The reliance pack leads its charts with its brand blue, in both modes — `plugins/design-flow/brands/reliance/theme.css`,
@@ -15010,6 +15039,107 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.67.0 (release v1.147.0) — 2026-09-24
+
+- **rails-8 says when native (Rust) code earns its place, measured, and how to bridge it —
+  `skills/rails-8/references/performance-caching.md`, `dist/rails-8.skill`,
+  `docs/evidence/benchmarks/2026-09-24-native-code/REPORT.md`** (#1282). **Maintainer decision, 2026-09-24**, recorded
+  on the issue. It was prompted by a "Rails + AI-written Rust" post.
+  - **Measured on an M2 Pro** (Ruby 4.0.6 with YJIT; Rust spawned and returning JSON, timed end to end):
+    - a CPU-bound Ruby loop runs 25× faster;
+    - parse-and-reduce runs 17× faster, but only 2.5× when the rows come back to Ruby;
+    - typed JSON parsing runs 2.2× faster;
+    - generic JSON parsing gains nothing;
+    - Ruby is faster for JSON generation and for image resizing, where libvips beats the Rust `image` crate 2×;
+    - a spawn costs 3–17 ms.
+
+    The benchmark is committed and re-runnable.
+  - **Framework facts, CONFIRMED by doctrine-verifier:**
+    - `CurrentAttributes` are reset around jobs;
+    - `IO.popen` does not raise on a failed child, and `Open3.capture3` has no timeout;
+    - Solid Queue has no per-job timeout;
+    - Bundler 2.4 has `--ext=rust`;
+    - magnus is at 0.9.0, and a panic becomes Ruby's `fatal`;
+    - rutie is dormant since 2023-12-17.
+  - **The verifier refuted "libvips is the default"; the source says otherwise.** It read only `engine.rb`'s fallback.
+    `load_defaults "7.0"` sets `variant_processor = :vips` (`railties/lib/rails/application/configuration.rb:255`,
+    v8.1.0).
+
+- **rails-8 says how an app lets agents pull reporting data: a per-user, read-only MCP server —
+  `skills/rails-8/references/mcp-server.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1277).
+  - **Framework claims, each CONFIRMED by doctrine-verifier on 2026-09-24** against MCP spec revision 2026-07-28;
+    verdicts on the issue:
+    - the `mcp` gem v1.6.0 serves tools and resources over Streamable HTTP, mountable in Rails;
+    - HTTP+SSE is deprecated;
+    - the server is an OAuth 2.1 resource server: RFC 9728 metadata, an audience check, no token passthrough, and
+      authorization on every request;
+    - `readOnlyHint` is untrusted by clients;
+    - claude.ai custom connectors reach remote MCP servers with OAuth.
+  - **Maintainer decision, 2026-09-24**, recorded on the issue: MCP rather than a CLI, plus five rules. The agent acts
+    as a real user; the server enforces read-only; one tool per report with typed arguments; every call is audited;
+    sensitive data is excluded by default.
+  - No code recipe; the mount follows the SDK's own Rails example.
+
+- **The remaining 16 reference code blocks state what they achieve, and four paste defects are fixed —
+  `skills/rails-8/references/advanced-active-record.md`, `skills/rails-8/references/api-documentation.md`,
+  `skills/rails-8/references/auth-security.md`, `skills/rails-8/references/deployment-kamal.md`,
+  `skills/rails-8/references/ecosystem-gems.md`, `skills/rails-8/references/i18n.md`,
+  `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/mail-storage-richtext.md`,
+  `skills/rails-8/references/models.md`, `skills/rails-8/references/performance-caching.md`,
+  `skills/rails-8/references/sso.md`, `skills/rails-8/references/testing.md`, `skills/hotwire/references/native.md`,
+  `dist/rails-8.skill`, `dist/hotwire.skill`** (#1265). This finishes #1256's sweep. Our own doctrine; the one
+  framework fact reused (mission_control-jobs 1.3.1 ships with basic auth "enabled and closed") was CONFIRMED for #1264.
+  - Every block gains its outcome sentence, and placeholder values are marked as placeholders.
+  - `jobs-and-realtime.md` routed the Mission Control dashboard through `authenticate :user`, which is Devise's route
+    helper; the Rails 8 authentication generator has none. It now uses the gem's closed-by-default auth and
+    `base_controller_class`.
+  - The `RepliesMailbox` example called an `author_from` it never defined.
+  - `i18n.md`'s `available_locales` literal is now tied to `config.x.locales`.
+  - `sso.md` no longer presents a subdomain lookup as the way to identify the tenant.
+  - The classifier's "14-character password" flag on `testing.md` was a miscount again: the password is 15
+    characters.
+
+- **Every user-facing record shows a readable display number, `TSK-0001`, that links to it —
+  `skills/rails-8/references/models.md`, `skills/rails-8/references/multi-tenancy.md`,
+  `skills/design-system/references/components.md`, `dist/rails-8.skill`, `dist/design-system.skill`** (#1274).
+  **Maintainer decision, 2026-09-24**, recorded on the issue; our own design, and no framework mechanism is named.
+  - Each model declares a 3-letter prefix. The number is sequential, zero-padded to at least 4 digits, unique within
+    its tenant (or the app) and never reused.
+  - It is a link to the show page wherever it is displayed.
+  - URLs keep the opaque public id, and raw primary keys and UUIDs never reach the screen.
+  - The alternative considered, a 7-character short hash, collides with 17% probability at 10,000 records.
+
+- **Pagination defaults to 10 per page, with a 10/25/50/100 select hidden at 10 or fewer records —
+  `skills/design-system/references/components.md`, `skills/rails-8/references/ecosystem-gems.md`,
+  `dist/design-system.skill`, `dist/rails-8.skill`** (#1272).
+  - **Maintainer decision, 2026-09-24**, recorded on the issue: default 10; options 10/25/50/100 as URL state;
+    changing it resets to page 1 and keeps sort and filters; the select is hidden when the total is ≤ 10, and the
+    total stays visible.
+  - **Pagy 43.6.3 facts, CONFIRMED by doctrine-verifier** (ddnexus/pagy docs and CHANGELOG, verdicts on the issue):
+    - `Pagy::OPTIONS[:limit] = 10` sets the default; `Pagy.options` is deprecated.
+    - `client_limit:` is required for `?limit=` to be honoured, and without it the value is ignored rather than
+      raising. This **corrects** our `max_limit:` note: `max_limit:` is now a deprecated alias.
+    - `limit_tag_js` renders a number input, not a list.
+    - A page past the end is rescued to an empty page unless `raise_range_error: true`.
+
+- **A labelled "More" item inside a bottom bar counts as the one control that reaches every destination —
+  `skills/design-system/references/responsive.md`, `skills/design-system/references/coverage.md`,
+  `dist/design-system.skill`** (#1268). **Maintainer decision, 2026-09-24**, recorded on the issue; our own rule.
+  The rule at compact width said a bar qualifies only if it holds every top-level destination, and left open an app
+  with 13 of them. A visibly labelled "More" item in the bar, opening a sheet with the rest, qualifies. A
+  destination reachable only from outside the bar (a header or avatar menu) is still the defect. The Apple and
+  Material citations in the issue are not needed for our rule and are not added.
+
+- **A chart of 6 or more series carries direct labels or texture; a legend alone is not enough —
+  `skills/design-system/references/data-viz.md`, `dist/design-system.skill`** (#1267). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own doctrine, no framework claim.
+  - Measured with dataviz `validate_palette.js`: the default dark series' slots 5↔6 are CVD ΔE 6.1, in the 6–8
+    band that is legal only with direct labels, gaps or texture. The doctrine asked for a legend alone at 5+ series,
+    and line 155 contradicted line 136 on which series counts get direct labels.
+  - The first choice, re-ordering, was measured impossible. Slots 6 and 8 each clear 8 only beside slots 1 and 7,
+    which clash with each other (1.9); an exhaustive search over 5,040 orders found no worst case above 6.1.
+  - Five series stay at 8.4 or above, which puts the threshold at 6.
 
 ### 1.66.0 (release v1.146.0) — 2026-09-24
 
