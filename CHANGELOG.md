@@ -3351,6 +3351,47 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.52.0 (release v1.149.0) — 2026-09-24
+
+- **The architecture graph keeps quoted route paths whole — `plugins/rails-flow/scripts/architecture_graph.py`,
+  `plugins/rails-flow/scripts/mutations/architecture_graph.py`.** Reported by Retask's coordinator while writing an
+  `unauthenticated-writes` exemption.
+  - **The defect.** A string-literal route path was captured with `[a-z0-9_/]+`, so it stopped at the first `-`, `:` or
+    `.`. `post "webhooks/zoho-sign"` became `POST /webhooks/zoho`, and `"user-management/:id"` became `user`.
+  - **Measured on Retask:** 67 route lines were cut short, and distinct routes collapsed into one node. The graph goes
+    from 214 route nodes to 226.
+  - **The fix.** A quoted path is taken whole; a symbol path is parsed as before.
+  - **Tests.** A fixture covers a hyphen, a `:segment`, a `.txt` path and two hyphenated routes that must stay two, with a
+    symbol path as the control. The new mutation (the narrow class restored) is caught; the guard's total is 14.
+  - **`unauthenticated-writes` on the corrected Retask graph** gives the same 6 findings under correct ids
+    (`POST /webhooks/zoho-sign`, `POST /auth/:provider`), so the collapsed nodes hid nothing there.
+  - **Upgrading:** route ids change, so a project's graph re-digests once, and an exemption must use the corrected id.
+
+- **New gate `unauthenticated-writes`: every public write route needs a covering `rate_limit` —
+  `plugins/rails-flow/scripts/check_unauthenticated_writes.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_unauthenticated_writes.py`, `plugins/rails-flow/commands/setup-flow.md`**
+  (#1300). Reported from Retask's v1.148.0 audit. **Maintainer decision, 2026-09-24**, recorded on the issue.
+  - **The defect.** #1289's launch baseline required a rate limit on every unauthenticated endpoint, and nothing ran it.
+  - **The gate.** It reads routes (verb, controller, action) from the committed architecture graph, and computes
+    publicness per action from `allow_unauthenticated_access`, not from the graph's controller-wide tag. Statements are
+    read whole across wrapped `%i[ ]` lists. It fails a public write with no covering `rate_limit`, allows declared
+    exemptions with a reason, and warns when the test cache is `:null_store`. Honeypots are not gated.
+  - **Measured on Retask:** 6 findings across 10 public write routes, including `sessions#verify` (a one-time-code check),
+    `magic_link`, `resend_code` and the password update. Per-action publicness dropped two misreads the graph tag gave.
+  - **Tests.** The guard catches 7 mutations.
+
+- **The `erb-lint` gate lints ViewComponent templates too — `plugins/rails-flow/scripts/herb_lint.py`,
+  `plugins/rails-flow/checks.json`, `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1296). Reported by Retask's
+  coordinator. **Maintainer decision, 2026-09-24**, recorded on the issue.
+  - **The defect.** The gate linted `app/views` only, so the 29 templates under `app/components` were never seen.
+  - **Measured on Retask at `f6754038`:** 140 files and exit 0 before; **169 files and exit 1** after, catching a parser
+    error in `ui/admin/table_block_component.html.erb`.
+  - **The fix.** The default scope is every template directory that exists. `applies_when` stays `app/views`, because it
+    requires every listed path.
+  - **Tests.** A fixture drives `main` with a fake linter that records its paths. The new mutation (views only) is caught.
+    The block runs only while the fake binary is in use, so an older mutation can no longer fall through to a real `npx`
+    and hide its own fixture.
+
 ### 1.51.0 (release v1.148.0) — 2026-09-24
 
 - **`setup-flow` gives every reachable app the launch baseline and records `config.x.indexable` —
@@ -10161,6 +10202,18 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.33.1 (release v1.149.0) — 2026-09-24
+
+- **The launch check no longer judges the declared health endpoint as a page — `plugins/qa-flow/scripts/launch_readiness.py`,
+  `plugins/qa-flow/scripts/mutations/launch_readiness.py`** (#1297). Reported from Retask's launch check on v1.148.0.
+  - **The defect.** Rails serves `/up` as a bare HTML status page (`railties/lib/rails/health_controller.rb` at v8.1.4,
+    `render html: html_status(color: "green")`), so #1289's judge flagged it for a missing title, favicon, description
+    and `og:image`. `qa/qa.config.yml` already declares it as `app: health:` (`setup-qa.md:63`).
+  - **Maintainer decision, 2026-09-24:** the judge reads that key through `qa_config.load_section`, the one reader, and
+    skips the route.
+  - **Tests.** The same bare page passes on `/up` when declared, fails on `/up` when not declared, and fails on another
+    route. The new mutation is caught; the guard's total is 9.
+
 ### 1.33.0 (release v1.148.0) — 2026-09-24
 
 - **A launch profile for every reachable app, judged from the crawl — `plugins/qa-flow/scripts/launch_readiness.py`,
@@ -15093,6 +15146,29 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.68.1 (release v1.149.0) — 2026-09-24
+
+- **The MCP reference corrects three facts it left unsaid — `skills/rails-8/references/mcp-server.md`,
+  `dist/rails-8.skill`** (#1302). Evidence from Retask's #880 design. Each fact is **CONFIRMED by doctrine-verifier on
+  2026-09-24**:
+  - **Annotation defaults.** Unset, a tool is `readOnlyHint: false`, `destructiveHint: true` and `openWorldHint: true`
+    (`schema/2026-07-28/schema.ts:1918-1953`). A reporting tool now sets `openWorldHint: false` as well as `readOnlyHint: true`.
+  - **The `mcp` gem v1.6.0's OAuth is client-only.** Its code is all under `lib/mcp/client/oauth/`, and the server code has
+    no bearer validation, RFC 9728 route or 401 challenge. The reference now says the app writes those.
+  - **Doorkeeper's RFC 8707 and RFC 8414 support is 6.0.0 pre-release only.** The stable release is 5.9.9; see its
+    CHANGELOG at `6.0.0.beta1` and `6.0.0.beta2`.
+
+- **rails-8 says the rate-limit half of the unauthenticated-endpoint rule is gated —
+  `skills/rails-8/references/auth-security.md`, `dist/rails-8.skill`** (#1300). Our own doctrine: it names the rails-flow
+  gate, the exemption file, and the `:null_store` warning. The honeypot half stays proven by specs.
+  The quality-pass worked example's `class Unusable(RuntimeError)` row is refreshed: 8 copies, reach 6, now across two
+  plugins plus non-shipped tooling (`skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`).
+
+- **rails-8 says to lint `app/components` as well as `app/views`, pinned to the locked herb version —
+  `skills/rails-8/references/ecosystem-gems.md`, `dist/rails-8.skill`** (#1296, #1285). Our doctrine's own transcript showed
+  both defects: `app/views` only, and an unversioned `npx`. The herb behaviour is read from the gem's `lib/herb/cli.rb` and
+  CONFIRMED by doctrine-verifier; the shared version numbers were measured against rubygems and npm.
 
 ### 1.68.0 (release v1.148.0) — 2026-09-24
 

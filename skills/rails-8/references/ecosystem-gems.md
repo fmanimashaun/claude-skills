@@ -551,7 +551,20 @@ Running: npx @herb-tools/linter app/views
 ```
 
 So one Gemfile line gets you both — **provided Node is on PATH**, because `lint` shells out to
-`npx`. Run `analyze` where you need a hermetic, gem-only check, and `lint` where you want the rules.
+`npx`.
+
+**Lint every template directory, at the pinned version.** The transcript above shows both ways this
+goes wrong:
+- **It lints `app/views` only.** That misses every ViewComponent template under `app/components`,
+  where this stack puts the UI. Downstream, 29 component templates went unlinted and one carried a
+  parser error for weeks (#1296).
+- **It runs `npx @herb-tools/linter` with no version.** So whatever npm published last decides the
+  verdict, and a release turned a pinned project's CI red overnight (#1285).
+
+The outcome is both directories, linted at the version `Gemfile.lock` pins:
+`npx -y @herb-tools/linter@<herb version in Gemfile.lock> app/views app/components`, or the linter
+installed through `package.json`. The herb gem and the npm linter share version numbers. rails-flow's
+`erb-lint` gate already does both. Run `analyze` where you need a hermetic, gem-only check, and `lint` where you want the rules.
 `analyze` alone does **not** flag `raw()`: against a template with four attribute hazards it reported
 one, and `erb-no-unsafe-raw` was not it. That gap is the whole reason both are named here.
 

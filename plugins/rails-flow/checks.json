@@ -169,11 +169,10 @@
     },
     {
       "id": "erb-lint",
-      "why": "raw() in a template bypasses escaping; analyze alone does not flag it. Runs the linter pinned to the locked herb gem, never npm's latest (#1285).",
+      "why": "raw() in a template bypasses escaping; analyze alone does not flag it. Runs the linter pinned to the locked herb gem, never npm's latest (#1285), over app/views AND app/components (#1296).",
       "command": [
         "python3",
-        "{plugin}/scripts/herb_lint.py",
-        "app/views"
+        "{plugin}/scripts/herb_lint.py"
       ],
       "applies_when": [
         "app/views"
@@ -338,6 +337,20 @@
       "requires": [
         "python3",
         "git"
+      ]
+    },
+    {
+      "id": "unauthenticated-writes",
+      "why": "Every public write route (POST/PATCH/PUT/DELETE an unauthenticated visitor can reach) needs a rate_limit covering its action. The launch baseline required it and nothing ran it, so a one-time-code check and a magic-link sender took unlimited requests while every gate read clean (#1300). Exemptions are declared, with a reason, in .rails-flow/unauthenticated-endpoints.json.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_unauthenticated_writes.py"
+      ],
+      "applies_when": [
+        "app/controllers/concerns/authentication.rb"
+      ],
+      "requires": [
+        "python3"
       ]
     },
     {

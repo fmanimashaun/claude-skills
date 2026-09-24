@@ -36,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from crawl_report import Unusable, load  # noqa: E402  -- one crawl reader, not two
+from qa_config import load_section  # noqa: E402  -- one qa.config.yml reader, not two
 
 DECL = re.compile(r"\bconfig\.x\.indexable\s*=\s*(true|false)\b")
 BASELINE = (
@@ -78,9 +79,20 @@ def disallows_all(robots: str) -> bool:
     return "/" in groups.get("*", [])
 
 
-def judge(data: dict, pages: list[dict], indexable: bool | None) -> list[tuple[str, str, str]]:
+def health_path(root: Path) -> str | None:
+    """The declared health endpoint (`app: health:` in qa/qa.config.yml), or None (#1297).
+
+    Rails serves `/up` as a bare HTML status page with no <head>, so judged as a page it "lacks" a
+    title and a favicon. It is not a page: `smoke` and `crawl` already read this same key.
+    """
+    value = load_section(root / "qa" / "qa.config.yml", "app").get("health")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def judge(data: dict, pages: list[dict], indexable: bool | None,
+          health: str | None = None) -> list[tuple[str, str, str]]:
     """`(rule, where, detail)` findings. Raises Unusable when the crawl carries no launch facts."""
-    html = [p for p in pages if not p.get("skipped") and p.get("status") == 200
+    html = [p for p in pages if not p.get("skipped") and p.get("status") == 200 and p.get("route") != health
             and "html" in (p.get("contentType") or "text/html")]
     if not html:
         raise Unusable("no 200 HTML page was crawled, so nothing about a launch can be judged")
@@ -118,7 +130,7 @@ def run(crawl: Path, root: Path) -> tuple[int, list[str]]:
     try:
         pages = load(crawl)
         data = json.loads(crawl.read_text(encoding="utf-8"))
-        findings = judge(data, pages, indexable)
+        findings = judge(data, pages, indexable, health_path(root))
     except Unusable as exc:
         return 2, [f"UNUSABLE: {exc}"]
     lines = [f"  [{rule}] {where} -- {detail}" for rule, where, detail in findings]
@@ -252,6 +264,21 @@ def selftest() -> int:
         c = crawl_file(t, [page(title="")])
         code, out = run(c, undeclared)
         check("undeclared: the baseline findings are still listed", any("launch-title-missing" in l for l in out), f"{out}")
+
+        # --- #1297: the declared health endpoint is not a page. Same bare page, two routes.
+        bodiless = {"description": "", "ogImage": "", "favicon": False}
+        c = crawl_file(t, [page(), page("/up", title="", head=bodiless)])
+        declared_up = project(t / "declared-up", "false")
+        (declared_up / "qa").mkdir()
+        (declared_up / "qa" / "qa.config.yml").write_text(
+            "app:\n  start: bin/dev\n  health:       /up        # 200-when-ready\n", encoding="utf-8")
+        code, out = run(c, declared_up)
+        check("a declared health path is not judged as a page", code == 0, f"{code} {out}")
+        check("CONTROL: the same bare page on an undeclared project is a finding",
+              any("launch-title-missing] /up" in l for l in run(c, internal)[1]), str(run(c, internal)))
+        c = crawl_file(t, [page(), page("/status", title="", head=bodiless)])
+        check("...and a bare page on another route still fails when /up is declared",
+              any("launch-title-missing] /status" in l for l in run(c, declared_up)[1]), str(run(c, declared_up)))
 
         # --- THE ENTRY POINT: main returns run's code.
         c = crawl_file(t, [page()], site={"robots": 200, "robotsBody": open_, "sitemap": 200})

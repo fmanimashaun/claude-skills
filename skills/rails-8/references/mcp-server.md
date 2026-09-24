@@ -37,13 +37,29 @@ The MCP server is an **OAuth 2.1 resource server** ([authorization][spec-auth]):
 So the agent is **never** a shared API key that sees everything. It holds a token for one person, and
 that person's permissions are the ceiling.
 
+**The gem does not do this part for you.** The `mcp` gem's OAuth support is **client-side only**:
+everything is under `lib/mcp/client/oauth/` at v1.6.0. It covers the case where your code is the
+client of someone else's protected server. When the app is the server, the app writes, for example as
+Rack middleware in front of the mount:
+- the validation of the incoming bearer token, including its audience;
+- the Protected Resource Metadata route;
+- the `401` with its `WWW-Authenticate` challenge.
+
+**If the app is also the authorization server**, note that Doorkeeper's support for RFC 8707 resource
+indicators (tokens bound to one audience) and RFC 8414 server metadata exists only in its 6.0.0
+pre-releases (`6.0.0.beta1` onwards; the latest stable is 5.9.9). On 5.9.x the audience binding is
+yours to write, or the tokens come from an external identity provider.
+
 ## 3. Our rules (maintainer decision, #1277)
 
 1. **The agent acts as a real signed-in user.** Every tool call resolves the token to a user and runs
    through the same authorization and tenant scoping as a web request (`multi-tenancy.md`). A tool
    that would show a person something the web app would not show them is the defect.
-2. **Read-only first, enforced by the server.** Reporting tools read; they never write. Mark them
-   `readOnlyHint: true`, but do not rely on that. The spec says clients **MUST** treat tool
+2. **Read-only first, enforced by the server.** Reporting tools read; they never write. **Set the
+   annotations explicitly, because the defaults describe the opposite tool.** Unset, a tool is
+   `readOnlyHint: false`, `destructiveHint: true` and `openWorldHint: true` (the 2026-07-28 schema's
+   `ToolAnnotations`). A reporting tool therefore declares `readOnlyHint: true` and
+   `openWorldHint: false`. Do not rely on either. The spec says clients **MUST** treat tool
    annotations as untrusted ([tools][spec-tools]), so the hint describes the tool and guarantees
    nothing. The guarantee is that no tool's code path writes. Write tools are a separate, later
    decision.

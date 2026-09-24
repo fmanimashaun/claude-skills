@@ -10,6 +10,13 @@ GUARD = Guard(
     subject="scripts/herb_lint.py",
     selftest="scripts/herb_lint.py",
     mutations=(
+        # #1296: back to views-only, so component templates are never linted.
+        Mutation(
+            "the default scope drops app/components again",
+            'TEMPLATE_DIRS = ("app/views", "app/components")',
+            'TEMPLATE_DIRS = ("app/views",)',
+            "with app/components present, component templates are linted too",
+        ),
         Mutation(
             "npx runs the unversioned package again, so npm's latest decides the verdict",
             '    return (["npx", "-y", f"@herb-tools/linter@{version}", *paths],',

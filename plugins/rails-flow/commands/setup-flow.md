@@ -735,7 +735,8 @@ so every app we build gets the **baseline**:
 - a reachable `/robots.txt` that says what the project decided about search engines;
 - a privacy policy and terms, drafted as below;
 - a rate limit plus a bot check on **every unauthenticated endpoint**: sign-in, password reset,
-  sign-up, contact (`skills/rails-8/references/auth-security.md` → *Unauthenticated endpoints*);
+  sign-up, contact (`skills/rails-8/references/auth-security.md` → *Unauthenticated endpoints*).
+  The `unauthenticated-writes` gate enforces the rate-limit half (#1300);
 - cookie consent **only if** the app sets a cookie that is not strictly necessary.
 
 **Ask, and record the answer.** *"Should search engines index this app?"* A marketing site or a

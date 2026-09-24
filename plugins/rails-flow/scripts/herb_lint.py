@@ -15,7 +15,11 @@ checked against rubygems and npm). So the locked gem version is the linter versi
   2. otherwise `npx -y @herb-tools/linter@<herb version in Gemfile.lock>`.
 A global `herb-lint` on PATH is deliberately NOT used: it is unpinned too.
 
-Run:  herb_lint.py [--root DIR] [PATHS...]      (default path: app/views)
+Run:  herb_lint.py [--root DIR] [PATHS...]      (default: every template dir that exists, #1296)
+
+WHAT IT LINTS BY DEFAULT (#1296). `app/views` AND `app/components`: design-system puts every UI
+component under app/components, and a gate that linted only app/views never saw one. Downstream,
+29 component templates went unlinted and one carried a parser error for weeks.
       herb_lint.py --selftest
 Exit: the linter's own exit status; 2 when herb is not in Gemfile.lock (never reported as clean).
 Every run prints `NOTE: herb linter <version> (<source>)`, so a verdict names the linter that gave it.
@@ -31,6 +35,7 @@ from pathlib import Path
 
 # A spec line in Gemfile.lock sits at four spaces; a dependency constraint sits at six, so anchoring
 # the indent keeps `      herb (>= 0.10)` under another gem from reading as the locked version.
+TEMPLATE_DIRS = ("app/views", "app/components")
 LOCKED = re.compile(r"^ {4}herb \((\d+\.\d+\.\d+)(?:[-.][^)]*)?\)$", re.M)
 
 
@@ -40,6 +45,12 @@ def locked_version(root: Path) -> str | None:
         return None
     found = LOCKED.findall(lock.read_text(encoding="utf-8"))
     return found[0] if found else None
+
+
+def default_paths(root: Path) -> list[str]:
+    """Every template directory this project has, so a component template is never skipped."""
+    found = [d for d in TEMPLATE_DIRS if (root / d).is_dir()]
+    return found or ["app/views"]
 
 
 def command(root: Path, paths: list[str]) -> tuple[list[str] | None, str]:
@@ -64,7 +75,7 @@ def main(argv: list[str]) -> int:
     if a.selftest:
         return selftest()
     root = Path(a.root).resolve()
-    argv_, note = command(root, a.paths or ["app/views"])
+    argv_, note = command(root, a.paths or default_paths(root))
     if argv_ is None:
         print(f"FAIL: {note}", file=sys.stderr)
         return 2
@@ -122,6 +133,24 @@ def selftest() -> int:
         proc = subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)
         check("main passes the linter's exit status through", proc.returncode == 7, f"rc={proc.returncode}")
         check("main prints the NOTE naming the linter", proc.stdout.startswith("NOTE: herb linter"), proc.stdout)
+        # #1296 THE SCOPE, through main: a fake linter records the paths it was handed. Only while the fake
+        # is the binary in use -- otherwise main would reach a REAL npx, which hangs the selftest and hides
+        # the fixture above that should have caught the break.
+        record = root / "args.txt"
+        local.write_text(f'#!/bin/sh\necho "$@" > {record}\nexit 0\n', encoding="utf-8")
+        (root / "app" / "views").mkdir(parents=True)
+        if (command(root, [])[0] or [""])[0] == str(local):
+            subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)
+            check("CONTROL: with only app/views, only app/views is linted",
+                  record.read_text().split() == ["app/views"], record.read_text())
+            (root / "app" / "components").mkdir()
+            subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)
+            check("with app/components present, component templates are linted too",
+                  record.read_text().split() == ["app/views", "app/components"], record.read_text())
+            subprocess.run([sys.executable, __file__, "--root", str(root), "app/views"], capture_output=True, text=True)
+            check("explicit paths still override the default", record.read_text().split() == ["app/views"],
+                  record.read_text())
+
         (root / "Gemfile.lock").unlink()
         local.unlink()
         proc = subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)

@@ -601,6 +601,13 @@ Prove each with a request spec: over the limit, the request is refused; with the
 nothing is saved. Pair each with a control that succeeds: under the limit, and with the honeypot
 left empty.
 
+**The rate-limit half is gated** (rails-flow `unauthenticated-writes`, #1300). Every public
+POST/PATCH/PUT/DELETE route must have a `rate_limit` covering its action. Publicness is read per
+action from `allow_unauthenticated_access`. A route that should not be limited, such as a
+signature-verified webhook, is exempted in `.rails-flow/unauthenticated-endpoints.json` with a reason.
+The gate also warns when the test environment's cache is `:null_store`, because the limits then cannot
+be proven. The honeypot half has no static signal, so it stays proven by specs.
+
 ## 3. Authorization the Rails way
 
 Start with the simplest thing that reads clearly:
