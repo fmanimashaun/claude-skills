@@ -7,6 +7,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-24 (release v1.147.0)
+
+- **`check_token_contrast`'s mutation guard stages `palette_gates.py` — `scripts/mutations/check_token_contrast.py`**
+  (#1271). #1271 made `palette_candidates.py` and `brand_pack_lint.lint_chart` import `palette_gates`. This guard stages
+  both without it, so its unmutated selftest failed in the tempdir ("No module named 'palette_gates'"). That made the
+  guard inert, and every `dev` push run failed its full sweep from the #1271 merge on. The local full doctor had
+  reported this gate `skip` (a 900 s timeout), which was then misquoted as a pass.
+
 ### 2026-09-24 (release v1.146.0)
 
 - **New gate `vendored alone`: a script a project vendors runs its `--selftest` by itself —

@@ -17,7 +17,9 @@ GUARD = Guard(
            "plugins/design-flow/brands/fidara/theme.css",
            "plugins/design-flow/brands/_template/theme.css",
            "plugins/design-flow/scripts/palette_candidates.py",
-           "plugins/design-flow/scripts/brand_pack_lint.py"),
+           "plugins/design-flow/scripts/brand_pack_lint.py",
+           # #1271: palette_candidates and brand_pack_lint.lint_chart import it.
+           "plugins/design-flow/scripts/palette_gates.py"),
     mutations=(
         # #775. The two-tier split. WCAG has two thresholds; using one for both is taste
         # wearing a count, and using the WRONG one fails a shipped pack for a rule no clause
