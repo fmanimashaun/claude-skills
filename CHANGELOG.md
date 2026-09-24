@@ -3335,6 +3335,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The SessionStart curated-doc drift line says which tree it measured when that tree is behind —
+  `plugins/rails-flow/hooks/scripts/session-start.sh`, `plugins/rails-flow/scripts/check_drift_signal.py`,
+  `scripts/mutations/hook_session_start.py`** (#1243). The drift count is true of the session's checkout, and a
+  primary checkout that parallel sessions never pull sat 321 commits behind its upstream: it reported 1 drifted
+  doc while the upstream had 7. When the checkout is behind `@{upstream}` the hook now adds one line —
+  `measured at <sha>, N commit(s) behind origin/dev` — and says nothing when level, so the usual session start
+  costs no extra bytes. Found by a Retask session's toolchain audit.
+
 - **`/rails-flow:toolchain-audit` asks the user to update and restart instead of telling the session to —
   `plugins/rails-flow/commands/toolchain-audit.md`** (#1244). Step 1 told the running session to restart Claude
   Code, which it cannot do. It now asks the user, and when they would rather not, proceeds on the installed

@@ -29,7 +29,7 @@ UNHASHED = "could NOT be hashed"
 UNPARSED = "could not be PARSED"
 
 
-def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None) -> str:
+def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None, behind: int | None = None) -> str:
     """Run the real hook in a fresh git repo and return its stdout.
 
     hashers: "real" (inherit PATH), "broken" (both present but exit 127), "absent" (neither on
@@ -45,6 +45,21 @@ def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None) -
         for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
                     ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
             subprocess.run(cmd, cwd=root, check=True, capture_output=True)
+        if behind is not None:
+            # #1243: a real upstream, with `behind` commits this checkout has not pulled.
+            up, other = Path(td) / "up.git", Path(td) / "other"
+            g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+            for cmd in (["git", "clone", "-q", "--bare", str(root), str(up)],
+                        ["git", "-C", str(root), "remote", "add", "origin", str(up)],
+                        ["git", "-C", str(root), "fetch", "-q", "origin"],
+                        ["git", "-C", str(root), "branch", "-q", "-u", "origin/HEAD"],
+                        ["git", "clone", "-q", str(up), str(other)]):
+                subprocess.run(cmd, check=True, capture_output=True)
+            for i in range(behind):
+                subprocess.run(g + ["-C", str(other), "commit", "-q", "--allow-empty", "-m", f"up {i}"],
+                               check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(other), "push", "-q", "origin", "HEAD"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(root), "fetch", "-q", "origin"], check=True, capture_output=True)
 
         env = dict(os.environ)
         env.pop("RAILS_FLOW_LANE", None)
@@ -96,6 +111,13 @@ def selftest() -> int:
     real = subprocess.run(["shasum", "-a", "256", "-"], input=b"ORIGINAL\n",
                           capture_output=True).stdout.decode()[:12]
     out = run_hook(hashers="real", manifest_hash=real)
+    # #1243: a checkout behind its upstream says which tree it measured; an up-to-date one stays quiet.
+    out_behind = run_hook(hashers="real", manifest_hash="deadbeefdead", behind=3)
+    check("a checkout 3 behind its upstream names the measured ref and the gap",
+          "3 commit(s) behind origin/" in out_behind and "measured at" in out_behind, f"stdout={out_behind!r}")
+    level = run_hook(hashers="real", manifest_hash="deadbeefdead", behind=0)
+    check("...and a checkout LEVEL with a real upstream does not print that line",
+          "measured at" not in level and DRIFTED in level, f"stdout={level!r}")
     check("a matching hash reports nothing", DRIFTED not in out and UNHASHED not in out,
           f"stdout={out!r}")
 
