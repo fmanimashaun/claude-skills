@@ -988,6 +988,14 @@ seconds-long job. Two setup details worth stating to the user:
   independently; a pinned checkout is one dependency you bump deliberately.
 - `generated_at`/`commit` are excluded from the digest, so this never fails merely because
   someone re-ran the generator.
+- **With several PRs open at once, the committed graph and wiki conflict on every one of them**:
+  each branch regenerates them, and every merge re-conflicts the rest (#1230). Offer the opt-in
+  policy: `.rails-flow/generated-docs.json` with `{"enforce_on": ["dev", "main", "chore/docs-refresh-*"]}`.
+  With it, a stale graph or wiki fails only on those branches and is a `NOTE:` elsewhere;
+  `generated-paths-untouched` then fails any other branch whose diff touches `docs/architecture/` or
+  `docs/wiki/`, and the docs are regenerated once after a merge batch on a `chore/docs-refresh-*`
+  branch. Vendor `generated_docs.py` beside `architecture_graph.py`, or the vendored copy keeps the
+  enforce-everywhere behaviour. No file means today's behaviour, so ask rather than assume.
 
 ## 8a. The promotion merges, never squashes — make it a ruleset (#895)
 

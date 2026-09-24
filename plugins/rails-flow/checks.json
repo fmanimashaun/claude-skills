@@ -328,6 +328,37 @@
       ]
     },
     {
+      "id": "generated-paths-untouched",
+      "why": "With .rails-flow/generated-docs.json declared, a branch outside `enforce_on` must not modify the generated docs (docs/architecture/, docs/wiki/) at all: committed generated files conflicted on every parallel PR, and every merge re-conflicted every other open one (#1230). The drift checks only warn on such a branch; this is what stops it regenerating them anyway. n/a without the policy file.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/generated_docs.py",
+        "guard"
+      ],
+      "applies_when": [
+        ".rails-flow/generated-docs.json"
+      ],
+      "requires": [
+        "python3",
+        "git"
+      ]
+    },
+    {
+      "id": "migration-order",
+      "why": "A migration numbered at or below the base branch's schema version is recorded as applied and never runs, so its columns never arrive and the suite fails somewhere unrelated. The rule lived only in /rails-flow:coordinate, so nothing ordinary checked it; downstream a branch merged dev, db:schema:load stamped schema.rb past its migration, and the column silently vanished (#1248).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_migration_order.py"
+      ],
+      "applies_when": [
+        "db/schema.rb"
+      ],
+      "requires": [
+        "python3",
+        "git"
+      ]
+    },
+    {
       "id": "branch-ruleset",
       "why": "A dev → main promotion must be a merge commit: a squash keeps the content and drops the ancestry, and the NEXT promotion cannot merge. `gh pr merge --merge` is doctrine a human can forget at the Merge button; a GitHub ruleset on the release branch (PRs merge only, no deletion, no force-push) is the mechanism. n/a without gh, unauthenticated, or off GitHub.",
       "command": [

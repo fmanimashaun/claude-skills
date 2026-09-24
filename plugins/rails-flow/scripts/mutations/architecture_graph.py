@@ -7,6 +7,7 @@ GUARD = Guard(
     name="architecture_graph",
     subject="scripts/architecture_graph.py",
     selftest="scripts/architecture_graph.py",
+    deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
         # #850. The page drew nothing; these keep it drawing the right thing.
         Mutation(
@@ -76,5 +77,19 @@ GUARD = Guard(
         "    url = None",
         "the origin remote's repository name wins",
     ),
+        Mutation(
+            # #1230: the policy is consulted but its verdict ignored -- drift fails on every branch again.
+            "a stale graph fails a feature branch that the policy makes advisory",
+            "        advisory = drift_is_advisory(root)\n        if advisory:\n",
+            "        advisory = drift_is_advisory(root)\n        if False:\n",
+            "with a policy: a stale graph is a NOTE and passes on a feature branch",
+        ),
+        Mutation(
+            # #1230: the fires-everywhere direction -- drift passes on EVERY branch, dev included.
+            "a stale graph passes even on an enforcing branch",
+            "    return None if ok else why\n",
+            "    return why\n",
+            "...and still FAILS on an enforcing branch",
+        ),
     ),
 )

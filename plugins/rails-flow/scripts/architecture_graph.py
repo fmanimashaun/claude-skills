@@ -2107,6 +2107,49 @@ def selftest() -> int:
         check("the digest is computed from the four core keys only -- the cap sits outside it",
               content_digest(core) == g7["content_digest"])
 
+    # ---- #1230: an opt-in branch policy makes drift a NOTE on a feature branch ----------------
+    import contextlib as _cl, io as _io
+    with tempfile.TemporaryDirectory() as td:
+        os.makedirs(os.path.join(td, "app", "models"))
+        os.makedirs(os.path.join(td, "config"))
+        with open(os.path.join(td, "config", "routes.rb"), "w", encoding="utf-8") as fh:
+            fh.write("Rails.application.routes.draw do\nend\n")
+        with open(os.path.join(td, "app", "models", "widget.rb"), "w", encoding="utf-8") as fh:
+            fh.write("class Widget < ApplicationRecord\nend\n")
+        with _cl.redirect_stdout(_io.StringIO()), _cl.redirect_stderr(_io.StringIO()):
+            main(["--root", td])
+        # THE FIXTURE MUST REACH THE DRIFT PATH, not the "graph is missing" one -- both exit 1.
+        check("the #1230 fixture generated a graph to drift from",
+              os.path.isfile(os.path.join(td, "docs", "architecture", "graph.json")))
+        with open(os.path.join(td, "app", "models", "gadget.rb"), "w", encoding="utf-8") as fh:
+            fh.write("class Gadget < ApplicationRecord\nend\n")
+
+        def drift_check(branch: str) -> tuple[int, str, str]:
+            before = os.environ.get("GENERATED_DOCS_BRANCH")
+            os.environ["GENERATED_DOCS_BRANCH"] = branch
+            out, err = _io.StringIO(), _io.StringIO()
+            try:
+                with _cl.redirect_stdout(out), _cl.redirect_stderr(err):
+                    rc = main(["--check", "--root", td])
+            finally:
+                if before is None:
+                    os.environ.pop("GENERATED_DOCS_BRANCH", None)
+                else:
+                    os.environ["GENERATED_DOCS_BRANCH"] = before
+            return rc, out.getvalue(), err.getvalue()
+
+        rc, _, err = drift_check("fix/1")
+        check("no policy file: a stale graph FAILS on a feature branch (today's behaviour)",
+              rc == 1 and "the code changed" in err, f"rc={rc} err={err[:80]!r}")
+        os.makedirs(os.path.join(td, ".rails-flow"), exist_ok=True)
+        with open(os.path.join(td, ".rails-flow", "generated-docs.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"enforce_on": ["dev", "chore/docs-refresh-*"]}')
+        rc, out, _ = drift_check("fix/1")
+        check("with a policy: a stale graph is a NOTE and passes on a feature branch",
+              rc == 0 and out.startswith("NOTE:"), f"rc={rc} out={out[:80]!r}")
+        check("...and still FAILS on an enforcing branch", drift_check("dev")[0] == 1)
+        check("...and on a refresh branch", drift_check("chore/docs-refresh-1")[0] == 1)
+
     # ---- THE DIAGRAM (#850) ---------------------------------------------------------------------
     # A synthetic graph, no Rails app: five nodes across all four layers, a forward edge, a backward
     # edge, an edge to a node the graph does not contain, and an id carrying `<` -- the escaping case.
@@ -2164,6 +2207,25 @@ def selftest() -> int:
         return 1
     print(f"architecture_graph selftest: {checks} checks passed")
     return 0
+
+
+def drift_is_advisory(root) -> str | None:
+    """Why a stale copy only warns on this branch, or None when it must fail (#1230).
+
+    Reads the opt-in branch policy in `generated_docs.py` when it sits beside this script. A copy
+    vendored ALONE, a project with no `.rails-flow/generated-docs.json`, an unknown branch, or an
+    unreadable policy all return None: the check fails exactly as it always has.
+    """
+    try:
+        import generated_docs
+    except ImportError:
+        return None
+    try:
+        ok, why = generated_docs.enforcing(root)
+    except generated_docs.PolicyError as exc:
+        print(f"generated docs policy unreadable, so this check enforces: {exc}", file=sys.stderr)
+        return None
+    return None if ok else why
 
 
 def main(argv: list[str]) -> int:
@@ -2252,6 +2314,11 @@ def main(argv: list[str]) -> int:
             say(f"architecture graph fresh: {fresh['stats']['nodes']} nodes, "
                 f"{fresh['stats']['edges']} edges, {fresh['stats']['flows']} flows "
                 f"({fresh['content_digest'][:21]})")
+            return 0
+        advisory = drift_is_advisory(root)
+        if advisory:
+            import generated_docs
+            print(generated_docs.advisory_note("docs/architecture/graph.json", advisory))
             return 0
         delta = compute_delta(committed, fresh)
         print("architecture graph DRIFT: the code changed but "

@@ -30,5 +30,20 @@ GUARD = Guard(
             'cur="$($_rf_hash "$src" 2>/dev/null | cut -c1-12)"',
             "64-char digest MATCHES reports nothing",
         ),
+        Mutation(
+            # #1243: the measured ref is never named, so a stale checkout's count reads as the project's.
+            "a checkout behind its upstream no longer says which tree was measured",
+            "    if [ \"${behind:-0}\" -gt 0 ]; then\n",
+            "    if false; then\n",
+            "a checkout 3 behind its upstream names the measured ref and the gap",
+        ),
+        Mutation(
+            # ...and the fires-always direction: the line on every session start costs budget and
+            # teaches readers to skip it.
+            "the measured-ref line prints even when the checkout is level",
+            "    if [ \"${behind:-0}\" -gt 0 ]; then\n",
+            "    if true; then\n",
+            "...and a checkout LEVEL with a real upstream does not print that line",
+        ),
     ),
 )

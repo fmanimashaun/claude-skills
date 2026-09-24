@@ -3333,6 +3333,52 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.50.0 (release v1.145.0) — 2026-09-24
+
+- **A migration numbered below the base's schema version is a gate, not just a coordinator note —
+  `plugins/rails-flow/scripts/check_migration_order.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_migration_order.py`** (#1248). `session_coordinator.py` already
+  checked that every migration a branch adds is numbered above `origin/dev`'s schema version — Rails records a
+  lower one as applied and never runs it — but only `/rails-flow:coordinate` ran it, so no project gate or CI
+  did. Downstream, a branch merged `dev`, `db:schema:load` stamped `schema.rb` past its migration, and a column
+  silently vanished while the project's own lint said the order agreed. The new `migration-order` check is a
+  thin CLI over the same `migration_findings()`, so there is one implementation; its fixture is that exact case
+  on real git, after `dev` is merged into the branch. n/a without `db/schema.rb`; an unreadable base is exit 2.
+
+- **The SessionStart curated-doc drift line says which tree it measured when that tree is behind —
+  `plugins/rails-flow/hooks/scripts/session-start.sh`, `plugins/rails-flow/scripts/check_drift_signal.py`,
+  `scripts/mutations/hook_session_start.py`** (#1243). The drift count is true of the session's checkout, and a
+  primary checkout that parallel sessions never pull sat 321 commits behind its upstream: it reported 1 drifted
+  doc while the upstream had 7. When the checkout is behind `@{upstream}` the hook now adds one line —
+  `measured at <sha>, N commit(s) behind origin/dev` — and says nothing when level, so the usual session start
+  costs no extra bytes. Found by a Retask session's toolchain audit.
+
+- **`/rails-flow:toolchain-audit` asks the user to update and restart instead of telling the session to —
+  `plugins/rails-flow/commands/toolchain-audit.md`** (#1244). Step 1 told the running session to restart Claude
+  Code, which it cannot do. It now asks the user, and when they would rather not, proceeds on the installed
+  versions and names them at the top of the report. Found by a Retask session's toolchain audit.
+
+- **`brain-local-sync` runs in a linked worktree — `plugins/rails-flow/scripts/brain_local_sync.py`,
+  `plugins/rails-flow/scripts/mutations/brain_local_sync.py`** (#1242). The auto-memory store path was built from
+  the directory the check ran in, but Claude Code keys a project's store by the checkout a session started in —
+  the primary one — so every worktree named a store that does not exist and the check reported n/a. A project
+  that works in worktrees never ran it. It now falls back, only when the directory has no store of its own and
+  is a linked worktree, to the primary checkout's store, resolved through `git rev-parse --git-common-dir`.
+  Measured from a consumer worktree: `n/a: no auto-memory store` → 12 brain memos, 19 local memories. Found by
+  a Retask session's toolchain audit.
+
+- **The generated-docs drift checks can be branch-aware, opt-in — `plugins/rails-flow/scripts/generated_docs.py`,
+  `plugins/rails-flow/scripts/architecture_graph.py`, `plugins/rails-flow/scripts/build_project_wiki.py`,
+  `plugins/rails-flow/checks.json`, `plugins/rails-flow/commands/setup-flow.md`** (#1230). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own design. Committed generated docs conflicted on every parallel
+  PR — on one consumer almost every conflict across ~15 PRs was those ten files, and each merge re-conflicted
+  every other open PR. A project that declares `.rails-flow/generated-docs.json` (`enforce_on`: branch
+  patterns) now gets: a stale graph or wiki FAILS on a matching branch and is a `NOTE:` that passes elsewhere;
+  a new `generated-paths-untouched` check FAILS a non-enforcing branch whose diff touches the generated
+  paths; an unknown branch enforces. **No file means today's behaviour** — every branch enforces and the new
+  check is n/a — so no existing project changes verdict without choosing to. A copy of
+  `architecture_graph.py` vendored alone keeps today's behaviour too. Replaces the consumer's local adapter.
+
 ### 1.49.5 (release v1.144.5) — 2026-09-23
 
 - **A wiki `--check` names a locally dirty source instead of blaming the generator —
