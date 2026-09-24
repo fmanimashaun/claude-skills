@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-24 (release v1.146.0)
+
+- **New gate `vendored alone`: a script a project vendors runs its `--selftest` by itself —
+  `scripts/check_vendored_alone.py`, `scripts/mutations/check_vendored_alone.py`, `scripts/maintainer_doctor.py`**
+  (#1261). Every selftest here ran beside its siblings, so the state a project is told to create, one file in
+  `.claude/scripts/`, was never tested. The scripts to check are derived, not listed by hand: every
+  `.claude/scripts/<name>.py` a shipped doc names, plus every plugin script whose source promises to work
+  "vendored ALONE". It is red on the v1.145.0 scripts (both found) and green on the fix. Its guard catches 5
+  mutations, including running the script beside its siblings, the mutation that recreates the bug.
+
 ### 2026-09-23 (release v1.144.5)
 
 - **The shell linter can fail, and refuses `git grep -E … \b` — `scripts/lint_markdown_shell.py`,
@@ -3332,6 +3342,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### 1.50.1 (release v1.146.0) — 2026-09-24
+
+- **`architecture_graph.py` and `build_project_wiki.py` pass their own `--selftest` when vendored alone —
+  `plugins/rails-flow/scripts/architecture_graph.py`, `plugins/rails-flow/scripts/build_project_wiki.py`** (#1261).
+  Reported by a Retask session on the v1.145.0 pin bump. Each script's #1230 case asserted unconditionally that a
+  stale output under a policy passes on a feature branch, which holds only with `generated_docs.py` beside it. So
+  a project that vendored one file and ran its selftest in CI went red: architecture_graph failed 1 of 28 checks,
+  the wiki builder 1 of 34. When the sibling is absent the case now asserts the enforcing result, which is what
+  the runtime path already did. Runtime behaviour is unchanged.
 
 ### 1.50.0 (release v1.145.0) — 2026-09-24
 
@@ -12144,6 +12164,16 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### 1.43.4 (release v1.146.0) — 2026-09-24
+
+- **The reliance pack leads its charts with its brand blue, in both modes — `plugins/design-flow/brands/reliance/theme.css`,
+  `plugins/design-flow/brands/reliance/brand.json`** (#1249). **Owner decision, 2026-09-24**, recorded on the issue.
+  `--chart-1` is `--color-rh-brand-500` (`#137CC1`) in `:root` and `.dark`; slots 2–8 stay the design system's
+  validated hues. Measured with `palette_gates.py`: light passes (colour-blind ΔE 9.1, normal 19.6); dark passes on
+  ink-800 `#08293E` (L 0.567, C 0.137, 3.35:1). `chart_hues` records the full list, so `brand_pack_lint` computes
+  and passes it. A consumer had been hand-setting `--chart-1` itself, which the doctrine forbids; it now has a
+  sanctioned value to take. The rejected alternative, a dark-only `#3987e5`, would lead dark charts off-brand.
+
 ### 1.43.3 (release v1.144.5) — 2026-09-23
 
 - **A brand pack's chart palette is validated, not declared — `plugins/design-flow/scripts/palette_gates.py`,
@@ -14980,6 +15010,73 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.66.0 (release v1.146.0) — 2026-09-24
+
+- **Code blocks that were wrong to paste are fixed — `skills/rails-8/references/views-hotwire.md`,
+  `skills/rails-8/references/ecosystem-gems.md`, `skills/rails-8/references/advanced-active-record.md`,
+  `skills/rails-8/references/jobs-and-realtime.md`, `skills/rails-8/references/multi-tenancy.md`,
+  `skills/rails-8/references/style.md`, `skills/rails-8/references/testing.md`, `skills/hotwire/references/stimulus.md`,
+  `skills/hotwire/references/native.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). The #1256 sweep
+  classified all 307 blocks. It flagged 12 as wrong to paste; 11 were real, and a password "below the floor" was a
+  miscount (`s3cure-password` is 15 characters).
+  - **Our own doctrine**, no framework claim:
+    - §3's example form was `form_with`, which this stack forbids, so it is now simple_form, using the syntax our
+      doctrine already uses.
+    - A YAML credentials block sat inside `bash`.
+    - Two blocks carried the "wrong" version beside the right one.
+    - `bin/ci`'s prose miscounted the lines added.
+    - The autosave controller said "Saved" without checking the response.
+    - An excerpt left out its retry without saying so.
+    - A `<latest>` placeholder is now marked.
+  - **Framework claims, CONFIRMED by doctrine-verifier on 2026-09-24:**
+    - mission_control-jobs 1.3.1 ships with basic auth "enabled and closed", and `base_controller_class` admits an
+      app's admins (github.com/rails/mission_control-jobs README). The old comment "behind an admin constraint"
+      matched nothing in the code.
+    - A channel imports `consumer` from `"channels/consumer"`, which `bin/rails generate channel` writes and pins under
+      importmap (Rails main `channel_generator.rb`, `consumer.js.tt`).
+  - `<% turbo_refreshes_with %>` was flagged but is correct: the helper writes through `provide :head` and returns
+    nil (turbo-rails `drive_helper.rb`).
+
+- **rails-8 says what makes the PWA stubs installable, and what a service worker may cache —
+  `skills/rails-8/references/pwa.md`, `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1258). **Framework
+  claims, each CONFIRMED by doctrine-verifier on 2026-09-24**, verdicts recorded on the issue:
+  - Chrome's installability criteria: HTTPS, `name`/`short_name`, `start_url`, a `display` mode, and 192px and
+    512px icons. developer.chrome.com/docs/lighthouse/pwa/installable-manifest
+  - No service worker is required to install since Chrome 108 (mobile) and 112 (desktop).
+    developer.chrome.com/blog/update-install-criteria
+  - `beforeinstallprompt` fires only in Chromium and Samsung Internet (MDN compatibility data). Safari installs via
+    Add to Home Screen on iOS and Add to Dock on macOS Sonoma 14+ (support.apple.com/en-us/104996). Firefox desktop
+    cannot install web apps.
+  - `screenshots` is optional, with a `narrow` or `wide` `form_factor` (MDN).
+  - Left out as INCONCLUSIVE: a Samsung Internet `share_target` failure, `display_override` as sufficient on its own,
+    and an "up to 8 screenshots" limit.
+
+  **Maintainer decision, 2026-09-24**, recorded on the issue: a service worker never caches signed-in pages. Retask's
+  service worker was the model for that rule.
+
+- **rails-8 and hotwire say their code blocks show a pattern, not a template — `skills/rails-8/SKILL.md`,
+  `skills/hotwire/SKILL.md`, `dist/rails-8.skill`, `dist/hotwire.skill`** (#1256). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own doctrine, no framework claim. rails-8 gains operating principle 6
+  and hotwire a ground rule: the references state the convention and the result, and the agent writes the
+  configuration for its app. Framework syntax with one right spelling is the stated exception. No reference
+  block changes here; the sweep ships per file.
+
+- **§5 lists a JS harness's `node_modules/` among the gitignored files a fresh worktree lacks —
+  `skills/parallel-session-lane/SKILL.md`, `dist/parallel-session-lane.skill`**. Reported by a parallel
+  Retask session: a new worktree's e2e suite under `qa/` needs `npm ci` before it runs. Our own doctrine;
+  no framework claim.
+
+- **Our test doctrine stops teaching restating, mock-heavy tests — `skills/rails-8/references/testing.md`,
+  `skills/code-review/SKILL.md`, `dist/rails-8.skill`, `dist/code-review.skill`** (#1253). **Maintainer decision,
+  2026-09-24**, recorded on the issue; our own doctrine, no framework claim added. §6's `#total` example stubbed the
+  association it tested with doubles and asserted the sum — a spec that restates the code and cannot fail; it now
+  builds real records and includes another order's item that must not count, and the section opens with the outcome the example must reach (it fails when the logic is wrong), with the example's names marked as stand-ins for the app's own. §3's "many model specs, few system
+  specs" becomes: request specs as the backbone, model specs only for real branching logic, a system spec for every
+  user-facing flow's main path, and "a spec earns its place by being able to fail". §9 now says what not to mock:
+  only system boundaries, never your own objects or the code under test. `code-review`'s `gate-that-cannot-fail`
+  covers a test no change to the code under test could turn red. Mutation testing in `/rails-flow:feature` stays
+  advisory. Prompted by a shared post; its "E2E only" and "never test after code" rules were rejected with reasons.
 
 ### 1.65.2 (release v1.144.5) — 2026-09-23
 

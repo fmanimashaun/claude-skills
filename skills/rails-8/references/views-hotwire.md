@@ -60,47 +60,35 @@ respecting the app zone.
 ## 3. Forms — the Turbo contract
 
 > **Build every form with simple_form, not `form_with`.** This stack mandates it (a deliberate
-> divergence from the Rails default — see `ecosystem-gems.md` §2), so the builder below is shown
-> only because the **Turbo mechanics** in this section are builder-agnostic: the status codes, the
-> `_top` targeting and the redirect behaviour are identical either way. In real code the opening
-> line is `simple_form_for @product do |f|`, fields come from `f.input` / `f.input_field`, and the
-> error block is rendered by the configured wrapper rather than hand-written.
+> divergence from the Rails default — see `ecosystem-gems.md` §2). The **Turbo mechanics** in this
+> section are the same whichever builder you use: the status codes, the `_top` targeting and the
+> redirect behaviour.
 
 ```erb
-<%= form_with model: @product do |form| %>
-  <% if form.object.errors.any? %>
-    <div class="errors">
-      <ul><% form.object.errors.each do |e| %><li><%= e.full_message %></li><% end %></ul>
-    </div>
-  <% end %>
-
-  <%= form.label :name %>
-  <%= form.text_field :name %>
-
-  <%= form.label :status %>
-  <%= form.select :status, Product.statuses.keys.map { |s| [s.humanize, s] } %>
-
-  <%= form.collection_select :supplier_id, Supplier.order(:name), :id, :name, include_blank: true %>
-  <%= form.collection_checkboxes :tag_ids, Tag.all, :id, :name %>
-
-  <%= form.number_field :price, step: 0.01 %>
-  <%= form.date_field :available_on %>
-  <%= form.checkbox :featured %>          <%# Rails 8.0+: checkbox/textarea/rich_textarea are the canonical names; check_box/text_area/rich_text_area are the legacy aliases %>
-  <%= form.file_field :photo %>            <%# multipart handled automatically %>
-  <%= form.rich_textarea :description %>   <%# Action Text %>
-
-  <%= form.submit %>
+<%= simple_form_for @product do |f| %>
+  <%= f.input :name %>
+  <%= f.input :status, collection: Product.statuses.keys %>
+  <%= f.association :supplier %>
+  <%= f.input :price %>
+  <%= f.input :available_on %>
+  <%= f.input :featured %>
+  <%= f.button :submit %>
 <% end %>
 ```
 
-- `model: @product` infers URL + method (POST/PATCH), prefills values, and
+`f.input` infers the control from the column type, and the configured wrapper renders the label,
+hint and errors, so no error block is written by hand (`ecosystem-gems.md` §2). If you meet raw
+`form_with` in an existing app, note that Rails 8.0 made `checkbox` / `textarea` / `rich_textarea`
+the canonical names; `check_box` / `text_area` / `rich_text_area` are legacy aliases.
+
+- A record infers the URL and method (POST/PATCH), prefills values, and
   scopes params under `product:` — exactly what `params.expect(product: [...])`
-  reads. `model: [:admin, @product]` for namespaced routes;
-  `url:`/`scope:` for model-less forms (search forms:
-  `form_with url: search_path, method: :get`).
+  reads. Pass `[:admin, @product]` for namespaced routes. A model-less form
+  (search) is still a simple_form form:
+  `simple_form_for :q, url: search_path, method: :get`.
 - Nested attributes: model declares
   `accepts_nested_attributes_for :variants, allow_destroy: true,
-  reject_if: :all_blank`; view uses `form.fields_for :variants`; params use
+  reject_if: :all_blank`; view uses `f.fields_for :variants`; params use
   the double-bracket `variants_attributes: [[:id, :name, :_destroy]]` shape
   in `expect`.
 - Fields repopulate automatically on validation-failure re-render — which is

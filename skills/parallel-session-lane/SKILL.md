@@ -391,8 +391,7 @@ green and meaningless, or red and an hour spent chasing a file that had already 
 
 ## 5. A fresh worktree is missing every gitignored file, and the suite blames something else
 
-A worktree is a clean checkout: **nothing gitignored comes with it.** Neither failure below names its
-cause, and both were diagnosed as application defects first.
+A worktree is a clean checkout: **nothing gitignored comes with it.** Neither failure below names its cause; both were first diagnosed as application defects.
 
 - **Built assets.** `app/assets/builds/` is gitignored, so system specs render an unstyled page and
   fail **as geometry** — a button "not visible", a modal without its gutter. Caught four sessions six
@@ -454,6 +453,7 @@ in opposite directions. Measured across one recovery:
 |---|---|
 | `app/assets/builds/` | **loudly** — `rspec` refused to run at all, 0 examples, exit 1, until `bin/rails tailwindcss:build` |
 | `config/master.key`, `.env` | **silently** — credentials do not decrypt, sign-in lands signed-out, and hundreds of examples go red |
+| a JS harness's `node_modules/` (an e2e suite under `qa/`, say) | **loudly** — the harness cannot load its dependencies until `npm ci` in its own directory |
 
 The build directory is the lucky one: it names itself and costs a minute. The credentials key is the
 dangerous one, because **its failure mode is a false regression** — red specs that read as a defect in

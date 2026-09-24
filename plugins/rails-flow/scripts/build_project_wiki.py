@@ -561,7 +561,12 @@ def selftest() -> int:
         import contextlib as _cl2, io as _io2, os as _os
         (root / ".rails-flow").mkdir(exist_ok=True)
         (root / ".rails-flow" / "generated-docs.json").write_text('{"enforce_on": ["dev"]}', encoding="utf-8")
-        for branch, want in (("fix/1", 0), ("dev", 1)):
+        try:                                  # a copy vendored ALONE has no policy reader (#1261)
+            import generated_docs  # noqa: F401
+            beside = True
+        except ImportError:
+            beside = False
+        for branch, want in (("fix/1", 0 if beside else 1), ("dev", 1)):
             _os.environ["GENERATED_DOCS_BRANCH"] = branch
             buf = _io2.StringIO()
             with _cl2.redirect_stdout(buf):

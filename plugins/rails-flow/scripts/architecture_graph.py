@@ -2145,8 +2145,17 @@ def selftest() -> int:
         with open(os.path.join(td, ".rails-flow", "generated-docs.json"), "w", encoding="utf-8") as fh:
             fh.write('{"enforce_on": ["dev", "chore/docs-refresh-*"]}')
         rc, out, _ = drift_check("fix/1")
-        check("with a policy: a stale graph is a NOTE and passes on a feature branch",
-              rc == 0 and out.startswith("NOTE:"), f"rc={rc} out={out[:80]!r}")
+        try:                                  # a copy vendored ALONE has no policy reader (#1261)
+            import generated_docs  # noqa: F401
+            beside = True
+        except ImportError:
+            beside = False
+        if beside:
+            check("with a policy: a stale graph is a NOTE and passes on a feature branch",
+                  rc == 0 and out.startswith("NOTE:"), f"rc={rc} out={out[:80]!r}")
+        else:
+            check("vendored alone, a policy is unread: a stale graph still FAILS on a feature branch",
+                  rc == 1 and not out.startswith("NOTE:"), f"rc={rc} out={out[:80]!r}")
         check("...and still FAILS on an enforcing branch", drift_check("dev")[0] == 1)
         check("...and on a refresh branch", drift_check("chore/docs-refresh-1")[0] == 1)
 

@@ -265,7 +265,9 @@ NotificationsChannel.broadcast_to(user, title: "Done", body: "...")
 ```
 
 ```js
-// app/javascript/channels/... (pin @rails/actioncable)
+// app/javascript/channels/notifications_channel.js
+import consumer from "channels/consumer"   // written by `bin/rails generate channel`, which also pins @rails/actioncable
+
 consumer.subscriptions.create("NotificationsChannel", {
   received(data) { /* update DOM — or better, do this in a Stimulus controller */ }
 })

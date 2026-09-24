@@ -307,9 +307,11 @@ leak volume and ordering, and invite enumeration.** Two sound answers:
 fidara-ledger mints a prefixed random `public_id` before validation on create, and treats the
 **unique index as the guarantee** rather than trusting entropy:
 
+An excerpt: the save path that retries is not shown, and its rules are the three bullets below.
+
 ```ruby
 PUBLIC_ID_PREFIX = "ORG-".freeze
-MAX_PUBLIC_ID_MINT_ATTEMPTS = 5
+MAX_PUBLIC_ID_MINT_ATTEMPTS = 5   # read by the save path's retry (not shown)
 
 before_validation :mint_public_id, on: :create
 
@@ -319,7 +321,7 @@ private
   def mint_public_id
     return if public_id.present?
     self.public_id = generate_public_id
-    @public_id_minted = true
+    @public_id_minted = true   # the retry rewrites only a self-minted id
   end
 
   def generate_public_id

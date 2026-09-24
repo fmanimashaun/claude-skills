@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 122 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 124 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
-| `design-flow` | 1.43.3 | 5 | 12 | 5 | 19 |
+| `design-flow` | 1.43.4 | 5 | 12 | 5 | 19 |
 | `pipeline` | 1.3.3 | 2 | 8 | 2 | 2 |
 | `qa-flow` | 1.32.3 | 11 | 8 | 11 | 15 |
-| `rails-flow` | 1.50.0 | 11 | 20 | 11 | 23 |
+| `rails-flow` | 1.50.1 | 11 | 20 | 11 | 23 |
 
 ## Agents
 
@@ -200,6 +200,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | structural grid selftest | `repo` | `python3 scripts/check_structural_grid.py --selftest` | selftest |
 | token contrast | `repo` | `python3 scripts/check_token_contrast.py` | live check |
 | token contrast selftest | `repo` | `python3 scripts/check_token_contrast.py --selftest` | selftest |
+| vendored alone | `repo` | `python3 scripts/check_vendored_alone.py` | live check |
+| vendored alone selftest | `repo` | `python3 scripts/check_vendored_alone.py --selftest` | selftest |
 | wiki reference drift | `repo` | `python3 scripts/build_wiki.py --check` | live check |
 | wiki reference selftest | `repo` | `python3 scripts/build_wiki.py --selftest` | selftest |
 

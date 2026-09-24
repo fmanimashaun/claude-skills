@@ -461,6 +461,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # time -- the discriminator is an un-promoted release block, not the absence of Unreleased.
     ("arm window", ("python3", "scripts/check_arm_window.py")),
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
+    ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
+    ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a

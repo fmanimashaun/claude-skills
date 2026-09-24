@@ -264,8 +264,13 @@ worthwhile add-on is the first-party ops dashboard:
 ```ruby
 # Gemfile: gem "mission_control-jobs"
 # config/routes.rb:
-mount MissionControl::Jobs::Engine, at: "/jobs"   # behind an admin constraint
+mount MissionControl::Jobs::Engine, at: "/jobs"
 ```
+
+The outcome is a dashboard only admins can reach. mission_control-jobs (1.3.1) ships with HTTP basic
+auth **enabled and closed**, so until credentials are set nobody can open it. To admit your admins
+instead, set `config.mission_control.jobs.base_controller_class = "AdminController"` to your app's
+authenticated admin controller ([README](https://github.com/rails/mission_control-jobs#authentication)).
 
 Queues, in-flight and failed jobs with backtraces, retry/discard buttons —
 mount it behind admin auth like any ops surface.
@@ -547,11 +552,15 @@ exercised.
 What to *do* about it: never build an attribute by interpolating into markup — hand the values to
 Rails and let it escape them.
 
-```erb
-<%# wrong: the value lands in attribute position unescaped %>
-<%= raw "<span class='#{cls}'>#{name}</span>" %>
+Wrong: the value lands in attribute position unescaped.
 
-<%# right: `tag` builds the element, `tag.attributes` builds a conditional attribute set %>
+```erb
+<%= raw "<span class='#{cls}'>#{name}</span>" %>
+```
+
+Right: `tag` builds the element, and `tag.attributes` builds a conditional attribute set.
+
+```erb
 <%= tag.span name, class: cls %>
 <div <%= tag.attributes(data: { controller: ("dismiss" if dismissible) }) %>>
 ```

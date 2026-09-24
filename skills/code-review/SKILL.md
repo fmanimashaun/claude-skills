@@ -135,6 +135,11 @@ A check whose failure path cannot fail anything.
 - A check reporting "clean" over input it never read — a regex that silently
   skipped most of its targets is indistinguishable from a passing check.
 - A check so strict everything fails it equally, so the signal is constant.
+- **A test that cannot fail.** A spec asserting its own restatement of the code (`expect(x.total)` after
+  stubbing the very association `total` sums), or one that mocks the object under test, passes whatever
+  the code does. Ask of each new test: which change to the code under test would turn it red? If none
+  can, or only a change to a mock would, it is not a test. Where the project runs mutation testing, a
+  surviving mutant in the changed unit is the measured form of this finding.
 
 **Detect:** **make the check fail on purpose once.** A gate never observed failing
 is not known to work. And when a check reports clean, confirm what it examined —
