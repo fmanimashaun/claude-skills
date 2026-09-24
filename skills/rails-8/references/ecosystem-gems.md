@@ -473,7 +473,8 @@ $ bundle exec archspec explain app/controllers/tenant/invoices_controller.rb
     tenant_controllers: matched file pattern app/controllers/tenant/**/*.rb
 ```
 
-So declare components **explicitly** and omit `architecture` entirely. `Archspec.rb`:
+So declare components **explicitly** and omit `architecture` entirely. The paths below are this
+skill's layout; declare components for your own. `Archspec.rb`:
 
 ```ruby
 # Archspec.rb — at the project root, beside the Gemfile

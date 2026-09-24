@@ -22,7 +22,8 @@ Bigger-than-RAM caches, no Redis, survives restarts.
 - Production: `config.cache_store = :solid_cache_store` (already set), backed
   by the `cache:` database in `database.yml` (`db/cache_schema.rb`,
   `storage/cache.sqlite3` on SQLite).
-- Options in `config/cache.yml`:
+- Options in `config/cache.yml`. The outcome: the cache caps its own age and/or size, and it lives
+  in the database entry you name. The values are examples; set them from your data:
 
 ```yaml
 default: &default

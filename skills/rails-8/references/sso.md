@@ -62,6 +62,11 @@ rotation, weakened issuer validation).
 
 ## Middleware — per-tenant dynamic setup
 
+The outcome: on each SSO request, load **this tenant's** SSO configuration, merge its issuer and
+client into the strategy, and fail when SSO is not enabled. Sign-in happens before a session exists,
+so the tenant comes from the request. The subdomain lookup below is one way; use your app's own
+identification scheme (`multi-tenancy.md` §1):
+
 ```ruby
 # config/initializers/omniauth.rb
 OmniAuth.config.allowed_request_methods = [:post]

@@ -66,6 +66,10 @@ Commands: `db:migrate`, `db:rollback STEP=2`,
 
 ## 2. Model anatomy
 
+The order a reader expects: associations, attachments, enums and normalization, validations and
+scopes as declarations at the top, then domain behaviour as methods. The model below shows the
+shape; its names are placeholders:
+
 ```ruby
 class Product < ApplicationRecord
   belongs_to :supplier
