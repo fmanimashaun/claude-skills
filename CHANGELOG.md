@@ -3351,6 +3351,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The `erb-lint` gate lints ViewComponent templates too — `plugins/rails-flow/scripts/herb_lint.py`,
+  `plugins/rails-flow/checks.json`, `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1296). Reported by Retask's
+  coordinator. **Maintainer decision, 2026-09-24**, recorded on the issue.
+  - **The defect.** The gate linted `app/views` only, so the 29 templates under `app/components` were never seen.
+  - **Measured on Retask at `f6754038`:** 140 files and exit 0 before; **169 files and exit 1** after, catching a parser
+    error in `ui/admin/table_block_component.html.erb`.
+  - **The fix.** The default scope is every template directory that exists. `applies_when` stays `app/views`, because it
+    requires every listed path.
+  - **Tests.** A fixture drives `main` with a fake linter that records its paths. The new mutation (views only) is caught.
+    The block runs only while the fake binary is in use, so an older mutation can no longer fall through to a real `npx`
+    and hide its own fixture.
+
 ### 1.51.0 (release v1.148.0) — 2026-09-24
 
 - **`setup-flow` gives every reachable app the launch baseline and records `config.x.indexable` —
@@ -15093,6 +15107,13 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **rails-8 says to lint `app/components` as well as `app/views`, pinned to the locked herb version —
+  `skills/rails-8/references/ecosystem-gems.md`, `dist/rails-8.skill`** (#1296, #1285). Our doctrine's own transcript showed
+  both defects: `app/views` only, and an unversioned `npx`. The herb behaviour is read from the gem's `lib/herb/cli.rb` and
+  CONFIRMED by doctrine-verifier; the shared version numbers were measured against rubygems and npm.
 
 ### 1.68.0 (release v1.148.0) — 2026-09-24
 

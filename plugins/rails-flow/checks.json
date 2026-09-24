@@ -169,11 +169,10 @@
     },
     {
       "id": "erb-lint",
-      "why": "raw() in a template bypasses escaping; analyze alone does not flag it. Runs the linter pinned to the locked herb gem, never npm's latest (#1285).",
+      "why": "raw() in a template bypasses escaping; analyze alone does not flag it. Runs the linter pinned to the locked herb gem, never npm's latest (#1285), over app/views AND app/components (#1296).",
       "command": [
         "python3",
-        "{plugin}/scripts/herb_lint.py",
-        "app/views"
+        "{plugin}/scripts/herb_lint.py"
       ],
       "applies_when": [
         "app/views"
