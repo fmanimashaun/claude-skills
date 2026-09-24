@@ -3333,7 +3333,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.50.0 (release v1.145.0) — 2026-09-24
 
 - **A migration numbered below the base's schema version is a gate, not just a coordinator note —
   `plugins/rails-flow/scripts/check_migration_order.py`, `plugins/rails-flow/checks.json`,
