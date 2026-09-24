@@ -15034,6 +15034,19 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **Pagination defaults to 10 per page, with a 10/25/50/100 select hidden at 10 or fewer records —
+  `skills/design-system/references/components.md`, `skills/rails-8/references/ecosystem-gems.md`,
+  `dist/design-system.skill`, `dist/rails-8.skill`** (#1272).
+  - **Maintainer decision, 2026-09-24**, recorded on the issue: default 10; options 10/25/50/100 as URL state;
+    changing it resets to page 1 and keeps sort and filters; the select is hidden when the total is ≤ 10, and the
+    total stays visible.
+  - **Pagy 43.6.3 facts, CONFIRMED by doctrine-verifier** (ddnexus/pagy docs and CHANGELOG, verdicts on the issue):
+    - `Pagy::OPTIONS[:limit] = 10` sets the default; `Pagy.options` is deprecated.
+    - `client_limit:` is required for `?limit=` to be honoured, and without it the value is ignored rather than
+      raising. This **corrects** our `max_limit:` note: `max_limit:` is now a deprecated alias.
+    - `limit_tag_js` renders a number input, not a list.
+    - A page past the end is rescued to an empty page unless `raise_range_error: true`.
+
 - **A labelled "More" item inside a bottom bar counts as the one control that reaches every destination —
   `skills/design-system/references/responsive.md`, `skills/design-system/references/coverage.md`,
   `dist/design-system.skill`** (#1268). **Maintainer decision, 2026-09-24**, recorded on the issue; our own rule.
