@@ -539,6 +539,13 @@ for (const route of routes) {
       // The first heading, because a framework error template puts its message there while the
       // <title> may still say the app's name.
       h1: await page.evaluate(() => document.querySelector('h1')?.textContent?.trim() || ''),
+      // #1289: the head tags a public page is launched with. FACTS only -- launch_readiness.py
+      // decides whether they matter, because only a project declared public-facing needs them.
+      head: await page.evaluate(() => ({
+        description: document.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() || '',
+        ogImage: document.querySelector('meta[property="og:image"]')?.getAttribute('content')?.trim() || '',
+        favicon: Boolean(document.querySelector('link[rel~="icon"]')),
+      })),
       console: console_,
       pageErrors,
       failedRequests: failed,
@@ -961,11 +968,26 @@ if (LINKS) {
   await probe.close();
 }
 
+// #1289: what a search engine or a link preview asks for first. A FRESH context, not the crawl's,
+// because a crawler arrives signed out. A probe that threw is recorded as null, never as a guess.
+const site = {};
+{
+  const siteProbe = await browser.newContext();
+  for (const [key, path] of [['robots', '/robots.txt'], ['sitemap', '/sitemap.xml']]) {
+    try {
+      site[key] = (await siteProbe.request.get(`${base}${path}`, { timeout: 15000 })).status();
+    } catch {
+      site[key] = null;
+    }
+  }
+  await siteProbe.close();
+}
+
 await crawlContext.close();
 await browser.close();
 
 writeFileSync(`${outDir}/crawl.json`,
-  JSON.stringify({ schema: 'qa-flow/route-crawl/1', pages }, null, 2));
+  JSON.stringify({ schema: 'qa-flow/route-crawl/1', pages, site }, null, 2));
 writeFileSync(`${outDir}/interactions.json`,
   // The policy is echoed back so the judge can verify it against the config rather than trust the
   // run. A skip nobody declared is a control silently never exercised.

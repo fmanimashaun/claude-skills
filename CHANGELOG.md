@@ -3351,6 +3351,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`setup-flow` asks whether the app is public-facing and records `config.x.public_launch` —
+  `plugins/rails-flow/commands/setup-flow.md`** (#1289). This is the declaration qa-flow's launch profile reads.
+  Privacy policy, terms and cookie consent are flagged for legal review and never generated.
+
 ### 1.50.2 (release v1.147.1) — 2026-09-24
 
 - **The `erb-lint` gate runs the herb linter pinned to `Gemfile.lock`, and says which version ran —
@@ -10140,6 +10146,19 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **A situational "public launch" profile, judged from the crawl — `plugins/qa-flow/scripts/launch_readiness.py`,
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/crawl_report.py`, `plugins/qa-flow/commands/crawl.md`,
+  `plugins/qa-flow/scripts/mutations/launch_readiness.py`** (#1289). **Maintainer decision, 2026-09-24**, recorded on the
+  issue; prompted by a "20 tasks before launch" checklist, audited against our corpus.
+  - The collector records each page's `head` (meta description, `og:image`, favicon) and a `site` block: the
+    `/robots.txt` and `/sitemap.xml` status, fetched from a signed-out context.
+  - The new judge requires all of them, but only when the project declared `config.x.public_launch = true`. Declared
+    `false` is not applicable (exit 0). Undeclared exits 3, never clean. A crawl that predates the probes is unusable
+    (exit 2).
+  - Its guard catches 6 mutations, including undeclared-as-internal and an old crawl read as clean.
+
 ### 1.32.3 (release v1.144.2) — 2026-09-23
 
 - **A `Route` copied from `bin/rails routes` credits its route — `plugins/qa-flow/scripts/route_coverage.py`,
@@ -15055,6 +15074,13 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **Public, unauthenticated forms need a rate limit and a bot check — `skills/rails-8/references/auth-security.md`,
+  `dist/rails-8.skill`** (#1289). Our own doctrine, outcome-first, reusing the `rate_limit` doctrine already there;
+  no gem is named. A honeypot submission gets the same success response and is not saved; the proving spec pairs
+  it with a control that is saved.
 
 ### 1.67.1 (release v1.147.1) — 2026-09-24
 

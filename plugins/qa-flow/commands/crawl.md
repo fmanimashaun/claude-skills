@@ -49,7 +49,13 @@ a hand-typed list is how a route nobody remembered stays untested forever.
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/crawl_report.py" qa/manual-tests/crawl.json
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/interaction_report.py" qa/manual-tests/interactions.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/launch_readiness.py" qa/manual-tests/crawl.json   # #1289
 ```
+
+`launch_readiness.py` judges the **public launch profile**: a `<title>`, a meta description, an
+`og:image` and a favicon on every 200 page, plus a reachable `/robots.txt` and `/sitemap.xml`. It
+applies only when the project declared `config.x.public_launch = true` (`/rails-flow:setup-flow` asks).
+Declared `false`, it reports not applicable and exits 0. Undeclared, it exits 3, never clean.
 
 Both exit 1 on findings, so they gate. Both also report what they could **not** judge — an
 unreachable route, an unexercised control, an overlay whose dismissal probe never completed — and

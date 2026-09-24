@@ -584,6 +584,21 @@ so an IP-keyed limiter lets an attacker spread guesses across addresses against 
 second-factor limiter by the **user**, and note that the existing caveat about a `:null_store` cache
 making `rate_limit` a no-op would then be silently disabling a `SHALL`.
 
+### Public forms: a rate limit and a bot check (#1289)
+
+A form anyone can submit without signing in (contact, waitlist, public sign-up) is where spam
+arrives. Two results, both required:
+
+- **It is rate-limited**, with the same `rate_limit` as sign-in, keyed by IP because there is no
+  account yet. The `:null_store` caveat above applies here too.
+- **It rejects obvious bots without telling them.** A honeypot field, visually hidden from people
+  and from assistive technology and never focusable, that a real person leaves empty. A submission
+  that fills it gets the same success response and is not saved, so a bot learns nothing. Reach for a
+  challenge service only when measured abuse gets past both. It costs every real user a step.
+
+Prove it: a request spec submits the form with the honeypot filled and asserts nothing was saved,
+paired with the same submission left empty, which is saved.
+
 ## 3. Authorization the Rails way
 
 Start with the simplest thing that reads clearly:

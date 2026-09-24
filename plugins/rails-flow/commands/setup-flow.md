@@ -726,6 +726,31 @@ On a multi-locale answer, propose `skills/rails-8/references/i18n.md` §1–§2 
 `I18n.locale` *"can leak into subsequent requests served by the same thread/process"*, and Puma is
 threaded, so a locale set and never reset is served to whoever gets that thread next.
 
+### Ask whether this app is public-facing, and RECORD the answer (#1289)
+
+**Ask.** *"Will this app be public on the internet, for people who are not signed in: a marketing site,
+a public sign-up, pages a search engine should index?"* An internal platform needs none of what a
+public launch does, and demanding a social preview on an admin screen is the false positive that
+gets a check ignored. Record the answer either way, for the same reason as the locale above:
+undeclared and "internal" are different answers, and only a declaration can be checked.
+
+```ruby
+# config/initializers/launch.rb
+Rails.application.configure do
+  config.x.public_launch = false            # internal: the launch profile does not apply
+  # config.x.public_launch = true           # public-facing: qa-flow checks the launch profile
+end
+```
+
+On a public answer, qa-flow's crawl then runs `launch_readiness.py`. It requires, on every crawled
+page, a `<title>`, a meta description, an `og:image` and a favicon, and it requires `/robots.txt` and
+`/sitemap.xml` to be reachable. Public, unauthenticated forms need spam protection
+(`skills/rails-8/references/auth-security.md` → *Public forms*).
+
+**Privacy policy, terms and cookie consent are not generated.** Their content is legal and depends on
+where the users are, so tell the user they need legal review before launch, and leave room for them
+in the footer (`design-system` `page-anatomies.md`).
+
 ### Coverage that cannot catch a regression — propose the ratchet (#800)
 
 `testing.md` used to ship `minimum_coverage 90` **commented out** with *"enable once realistic"*.
