@@ -3353,6 +3353,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **New gate `unauthenticated-writes`: every public write route needs a covering `rate_limit` —
+  `plugins/rails-flow/scripts/check_unauthenticated_writes.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_unauthenticated_writes.py`, `plugins/rails-flow/commands/setup-flow.md`**
+  (#1300). Reported from Retask's v1.148.0 audit. **Maintainer decision, 2026-09-24**, recorded on the issue.
+  - **The defect.** #1289's launch baseline required a rate limit on every unauthenticated endpoint, and nothing ran it.
+  - **The gate.** It reads routes (verb, controller, action) from the committed architecture graph, and computes
+    publicness per action from `allow_unauthenticated_access`, not from the graph's controller-wide tag. Statements are
+    read whole across wrapped `%i[ ]` lists. It fails a public write with no covering `rate_limit`, allows declared
+    exemptions with a reason, and warns when the test cache is `:null_store`. Honeypots are not gated.
+  - **Measured on Retask:** 6 findings across 10 public write routes, including `sessions#verify` (a one-time-code check),
+    `magic_link`, `resend_code` and the password update. Per-action publicness dropped two misreads the graph tag gave.
+  - **Tests.** The guard catches 7 mutations.
+
 - **The `erb-lint` gate lints ViewComponent templates too — `plugins/rails-flow/scripts/herb_lint.py`,
   `plugins/rails-flow/checks.json`, `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1296). Reported by Retask's
   coordinator. **Maintainer decision, 2026-09-24**, recorded on the issue.
@@ -15121,6 +15134,12 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **rails-8 says the rate-limit half of the unauthenticated-endpoint rule is gated —
+  `skills/rails-8/references/auth-security.md`, `dist/rails-8.skill`** (#1300). Our own doctrine: it names the rails-flow
+  gate, the exemption file, and the `:null_store` warning. The honeypot half stays proven by specs.
+  The quality-pass worked example's `class Unusable(RuntimeError)` row is refreshed: 8 copies, reach 6, now across two
+  plugins plus non-shipped tooling (`skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`).
 
 - **rails-8 says to lint `app/components` as well as `app/views`, pinned to the locked herb version —
   `skills/rails-8/references/ecosystem-gems.md`, `dist/rails-8.skill`** (#1296, #1285). Our doctrine's own transcript showed

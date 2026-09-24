@@ -340,6 +340,20 @@
       ]
     },
     {
+      "id": "unauthenticated-writes",
+      "why": "Every public write route (POST/PATCH/PUT/DELETE an unauthenticated visitor can reach) needs a rate_limit covering its action. The launch baseline required it and nothing ran it, so a one-time-code check and a magic-link sender took unlimited requests while every gate read clean (#1300). Exemptions are declared, with a reason, in .rails-flow/unauthenticated-endpoints.json.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_unauthenticated_writes.py"
+      ],
+      "applies_when": [
+        "app/controllers/concerns/authentication.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "migration-order",
       "why": "A migration numbered at or below the base branch's schema version is recorded as applied and never runs, so its columns never arrive and the suite fails somewhere unrelated. The rule lived only in /rails-flow:coordinate, so nothing ordinary checked it; downstream a branch merged dev, db:schema:load stamped schema.rb past its migration, and the column silently vanished (#1248).",
       "command": [
