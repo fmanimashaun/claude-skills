@@ -15056,6 +15056,13 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **The quality-pass worked example's shared-shape counts are refreshed — `skills/quality-pass/references/worked-example.md`,
+  `dist/quality-pass.skill`** (#1285). `herb_lint.py` is a 36th copy of the `check(label, ok, detail)` selftest harness,
+  and the rails-flow reach goes from 19 to 20. `check_shared_shapes.py` refuses only a number that disagrees with the
+  repository, so the decision not to extract stands on the new numbers.
+
 ### 1.67.0 (release v1.147.0) — 2026-09-24
 
 - **rails-8 says when native (Rust) code earns its place, measured, and how to bridge it —
