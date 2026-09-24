@@ -1,7 +1,8 @@
 """Mutation guard: launch_readiness. Declared here, run by scripts/mutation_check.py (#1289).
 
-The mutations that matter make the profile VACUOUS: treating "nobody decided" as "internal", or an
-old crawl with no probe data as a clean launch.
+The mutations that matter make the profile VACUOUS or point it at the wrong apps: an undeclared
+project read as clean, an old crawl read as clean, the marketing set demanded of an app that must not
+be found, or a non-indexable app left open to search engines.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -12,10 +13,10 @@ GUARD = Guard(
     deps=("scripts/crawl_report.py",),   # the one crawl reader
     mutations=(
         Mutation(
-            "an undeclared project is treated as internal, so nobody is ever asked",
-            "        return 3, [\"UNDECLARED:",
-            "        return 0, [\"UNDECLARED:",
-            "undeclared: exit 3, never 0",
+            "an undeclared project is reported clean when its baseline is",
+            "    if indexable is None:\n        return 3,",
+            "    if indexable is None and False:\n        return 3,",
+            "undeclared: exit 3, never 0, even on a clean baseline",
         ),
         Mutation(
             "a crawl without the head/site probes reads as a clean launch",
@@ -24,28 +25,40 @@ GUARD = Guard(
             "a crawl that predates the probes is UNUSABLE (exit 2), not clean",
         ),
         Mutation(
-            "og:image is no longer required",
-            '    ("launch-og-image-missing", lambda h, p: bool(h.get("ogImage")),',
-            '    ("launch-og-image-missing", lambda h, p: True,',
-            "a page with no og:image is a finding naming the route",
+            "the marketing set is demanded of every app, including one that must not be found",
+            "    rules = BASELINE + (MARKETING if indexable else ())",
+            "    rules = BASELINE + MARKETING",
+            "CONTROL: a non-indexable app needs no description or og:image, and is clean",
         ),
         Mutation(
-            "the site files are no longer probed",
-            "        if status != 200:",
-            "        if False:",
-            "robots 404 and an unfetchable sitemap are both findings",
+            "the marketing set is never demanded, even of an indexable app",
+            "    rules = BASELINE + (MARKETING if indexable else ())",
+            "    rules = BASELINE",
+            "indexable, a page with no og:image: a finding naming the route",
+        ),
+        Mutation(
+            "a non-indexable app with an open robots.txt passes",
+            "    elif indexable is False and not disallows_all(site.get(\"robotsBody\") or \"\"):",
+            "    elif False:",
+            "non-indexable, robots allows indexing: a finding",
+        ),
+        Mutation(
+            "a Disallow under any user agent counts as closing the site",
+            '    return "/" in groups.get("*", [])',
+            '    return any("/" in v for v in groups.values())',
+            "robots: `Disallow: /` under another agent does not",
+        ),
+        Mutation(
+            "a missing robots.txt is no longer a finding",
+            "    if robots != 200:",
+            "    if False:",
+            "robots.txt 404 is a finding even for a non-indexable app",
         ),
         Mutation(
             "error pages are judged for head tags, so every 500 is a false launch finding",
             '    html = [p for p in pages if not p.get("skipped") and p.get("status") == 200',
             '    html = [p for p in pages if not p.get("skipped")',
             "a 500 or skipped page is not judged for head tags",
-        ),
-        Mutation(
-            "a declared-internal project is judged anyway",
-            "    if public is False:",
-            "    if public is None and False:",
-            "declared internal: not applicable, exit 0",
         ),
     ),
 )

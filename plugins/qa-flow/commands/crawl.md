@@ -52,10 +52,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/interaction_report.py" qa/manual-tests/in
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/launch_readiness.py" qa/manual-tests/crawl.json   # #1289
 ```
 
-`launch_readiness.py` judges the **public launch profile**: a `<title>`, a meta description, an
-`og:image` and a favicon on every 200 page, plus a reachable `/robots.txt` and `/sitemap.xml`. It
-applies only when the project declared `config.x.public_launch = true` (`/rails-flow:setup-flow` asks).
-Declared `false`, it reports not applicable and exits 0. Undeclared, it exits 3, never clean.
+`launch_readiness.py` judges the **launch profile** (#1289). On **every** app it checks the baseline:
+a `<title>` and a favicon on every 200 page, and a reachable `/robots.txt`. Then it follows the
+project's `config.x.indexable`, which `/rails-flow:setup-flow` records:
+- `false`: `robots.txt` must disallow indexing;
+- `true`: every page also needs a meta description and an `og:image`, and `/sitemap.xml` must be reachable.
+
+Undeclared, it lists the baseline findings and exits 3, never clean. A crawl that predates its probes
+exits 2.
 
 Both exit 1 on findings, so they gate. Both also report what they could **not** judge — an
 unreachable route, an unexercised control, an overlay whose dismissal probe never completed — and

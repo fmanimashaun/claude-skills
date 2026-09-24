@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
-"""Judge a crawl against the "public launch" profile, for a project that declared itself public-facing (#1289).
+"""Judge a crawl against the launch profile: a baseline for every app, plus a marketing set for an indexable one (#1289).
 
-WHY IT IS SITUATIONAL. A public website needs a title, a description and a social preview on every
-page, a favicon, and a reachable robots.txt and sitemap. An internal platform needs none of them,
-and demanding them everywhere is the false positive that gets a check switched off. So the project
-DECLARES which it is, in `config.x.public_launch`, and `/rails-flow:setup-flow` asks and records it.
-That gives the four honest states a situational rule needs (see `check_i18n_setup.py`, #799):
+THE AXIS IS REACHABILITY, NOT AUDIENCE. An "internal" app is still on the public internet. So every
+app gets the BASELINE: a <title> and a favicon on every page, and a reachable robots.txt that says
+what the project decided about search engines. Only the marketing set is situational: a meta
+description, a social preview (og:image) and a sitemap matter only for pages meant to be found. The
+project DECLARES which it is, as `config.x.indexable`, and `/rails-flow:setup-flow` asks and records it.
 
-  exit 0  clean, or not applicable because the project declared `config.x.public_launch = false`
-  exit 1  public-facing, and at least one page or site file is missing what a launch needs
-  exit 2  unusable: the crawl cannot be read, or it predates the head/site probes, so it says nothing
-  exit 3  undeclared: nobody has decided, which is different from "internal" and never reported clean
+  indexable = false  robots.txt must disallow indexing: `Disallow: /` for `User-agent: *`.
+                     A reachable app with no such line is one a search engine can list, sign-in included.
+  indexable = true   robots.txt must NOT disallow everything, and every page needs a description and
+                     an og:image, and /sitemap.xml must be reachable.
 
-FACTS COME FROM THE COLLECTOR. `crawl_collector.js` records each page's `head` (description,
-og:image, favicon) and a `site` block (robots.txt, sitemap.xml status from a signed-out context).
-This file only decides. It reads the crawl through `crawl_report.load`, so there is one reader.
+Exit: 0 clean · 1 findings · 2 unusable (the crawl cannot be read, or predates the head/site probes,
+      so it says nothing) · 3 undeclared (nobody decided; the baseline is still reported, never clean)
 
-Privacy policy, terms and cookie consent are NOT judged here. Their content is legal and
-jurisdiction-specific; the profile flags them for legal review and never generates them.
+FACTS COME FROM THE COLLECTOR. `crawl_collector.js` records each page's `head` and a `site` block
+(robots.txt status and body, sitemap.xml status, fetched signed out). This file only decides, and it
+reads the crawl through `crawl_report.load`, so there is one reader.
+
+Not judged here: the privacy policy, terms and cookie consent, which `/rails-flow:setup-flow` drafts
+from the app's data inventory and country of operation; and spam protection, which is a request-spec
+concern (`rails-8` `auth-security.md` → Unauthenticated endpoints).
 
 Run:  launch_readiness.py qa/manual-tests/crawl.json [--root DIR]
       launch_readiness.py --selftest
@@ -33,16 +37,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from crawl_report import Unusable, load  # noqa: E402  -- one crawl reader, not two
 
-DECL = re.compile(r"\bconfig\.x\.public_launch\s*=\s*(true|false)\b")
-PAGE_RULES = (
+DECL = re.compile(r"\bconfig\.x\.indexable\s*=\s*(true|false)\b")
+BASELINE = (
     ("launch-title-missing", lambda h, p: bool((p.get("title") or "").strip()), "the page has no <title>"),
-    ("launch-description-missing", lambda h, p: bool(h.get("description")), 'no <meta name="description">'),
-    ("launch-og-image-missing", lambda h, p: bool(h.get("ogImage")), 'no <meta property="og:image"> (social preview)'),
     ("launch-favicon-missing", lambda h, p: bool(h.get("favicon")), 'no <link rel="icon">'),
 )
-SITE_FILES = (("robots", "/robots.txt"), ("sitemap", "/sitemap.xml"))
-NOTE = ("NOTE: privacy policy, terms and cookie consent are not checked here -- their content is legal "
-        "and jurisdiction-specific. Have them reviewed before launch.")
+MARKETING = (
+    ("launch-description-missing", lambda h, p: bool(h.get("description")), 'no <meta name="description">'),
+    ("launch-og-image-missing", lambda h, p: bool(h.get("ogImage")), 'no <meta property="og:image"> (social preview)'),
+)
+NOTE = ("NOTE: not judged here -- the privacy policy, terms and cookie consent (setup-flow drafts them from "
+        "this app's data inventory and country of operation, for legal review) and spam protection on "
+        "unauthenticated endpoints (request specs).")
 
 
 def declared(root: Path) -> bool | None:
@@ -55,7 +61,24 @@ def declared(root: Path) -> bool | None:
     return None
 
 
-def judge(data: dict, pages: list[dict]) -> list[tuple[str, str, str]]:
+def disallows_all(robots: str) -> bool:
+    """Whether the `User-agent: *` group carries `Disallow: /` -- the whole site, not a path."""
+    agent, groups = None, {}
+    for raw in robots.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if ":" not in line:
+            continue
+        field, value = (x.strip() for x in line.split(":", 1))
+        field = field.lower()
+        if field == "user-agent":
+            agent = value
+            groups.setdefault(agent, [])
+        elif field == "disallow" and agent is not None:
+            groups[agent].append(value)
+    return "/" in groups.get("*", [])
+
+
+def judge(data: dict, pages: list[dict], indexable: bool | None) -> list[tuple[str, str, str]]:
     """`(rule, where, detail)` findings. Raises Unusable when the crawl carries no launch facts."""
     html = [p for p in pages if not p.get("skipped") and p.get("status") == 200
             and "html" in (p.get("contentType") or "text/html")]
@@ -64,38 +87,50 @@ def judge(data: dict, pages: list[dict]) -> list[tuple[str, str, str]]:
     if any("head" not in p for p in html) or not isinstance(data.get("site"), dict):
         raise Unusable("this crawl has no head/site facts -- it predates #1289. Re-run the crawl with "
                        "the current crawl_collector.js; an old crawl is not a clean launch")
+    site = data.get("site") or {}
+    rules = BASELINE + (MARKETING if indexable else ())
     findings = []
     for p in html:
-        for rule, ok, detail in PAGE_RULES:
+        for rule, ok, detail in rules:
             if not ok(p.get("head") or {}, p):
                 findings.append((rule, p["route"], detail))
-    for key, path in SITE_FILES:
-        status = (data.get("site") or {}).get(key)
-        if status != 200:
-            findings.append((f"launch-{key}-unreachable", path,
-                             f"returned {status}" if status is not None else "could not be fetched"))
+    robots = site.get("robots")
+    if robots != 200:
+        findings.append(("launch-robots-unreachable", "/robots.txt",
+                         f"returned {robots}" if robots is not None else "could not be fetched"))
+    elif indexable is False and not disallows_all(site.get("robotsBody") or ""):
+        findings.append(("launch-robots-allows-indexing", "/robots.txt",
+                         "the app is declared not indexable, but `User-agent: *` has no `Disallow: /`, "
+                         "so a search engine may list it"))
+    elif indexable is True and disallows_all(site.get("robotsBody") or ""):
+        findings.append(("launch-robots-blocks-indexing", "/robots.txt",
+                         "the app is declared indexable, but `User-agent: *` disallows `/`"))
+    if indexable:
+        sitemap = site.get("sitemap")
+        if sitemap != 200:
+            findings.append(("launch-sitemap-unreachable", "/sitemap.xml",
+                             f"returned {sitemap}" if sitemap is not None else "could not be fetched"))
     return findings
 
 
 def run(crawl: Path, root: Path) -> tuple[int, list[str]]:
-    public = declared(root)
-    if public is None:
-        return 3, ["UNDECLARED: this project never said whether it is public-facing. Run "
-                   "/rails-flow:setup-flow, which records `config.x.public_launch = true|false`."]
-    if public is False:
-        return 0, ["not applicable: the project declared `config.x.public_launch = false` (internal)"]
+    indexable = declared(root)
     try:
         pages = load(crawl)
         data = json.loads(crawl.read_text(encoding="utf-8"))
-        findings = judge(data, pages)
+        findings = judge(data, pages, indexable)
     except Unusable as exc:
         return 2, [f"UNUSABLE: {exc}"]
     lines = [f"  [{rule}] {where} -- {detail}" for rule, where, detail in findings]
+    if indexable is None:
+        return 3, ["UNDECLARED: this project never said whether search engines should index it. Run "
+                   "/rails-flow:setup-flow, which records `config.x.indexable = true|false`. Baseline findings "
+                   "(robots.txt content is not judged until it is declared):", *lines, NOTE]
     lines.append(NOTE)
     if findings:
         return 1, [f"{len(findings)} launch finding(s):", *lines]
-    return 0, ["every crawled page has a title, description, og:image and favicon; robots.txt and "
-               "sitemap.xml are reachable", NOTE]
+    scope = "baseline and marketing set" if indexable else "baseline, and robots.txt disallows indexing"
+    return 0, [f"launch profile clean ({scope})", NOTE]
 
 
 def main(argv: list[str]) -> int:
@@ -114,6 +149,8 @@ def main(argv: list[str]) -> int:
 
 
 def selftest() -> int:
+    import contextlib
+    import io
     import tempfile
 
     fails: list[str] = []
@@ -122,18 +159,20 @@ def selftest() -> int:
         if not ok:
             fails.append(f"{label} {detail}".rstrip())
 
-    good_head = {"description": "Plans", "ogImage": "/og.png", "favicon": True}
+    full = {"description": "Plans", "ogImage": "/og.png", "favicon": True}
+    closed = "User-agent: *\nDisallow: /\n"
+    open_ = "User-agent: *\nDisallow: /admin\n"
 
     def page(route="/", **over):
         p = {"route": route, "status": 200, "contentType": "text/html", "title": "Home",
-             "h1": "Home", "head": dict(good_head), "skipped": None}
+             "h1": "Home", "head": dict(full), "skipped": None}
         p.update(over)
         return p
 
     def crawl_file(tmp: Path, pages: list[dict], site=None) -> Path:
         doc = {"schema": "qa-flow/route-crawl/1", "pages": pages}
         if site is not False:
-            doc["site"] = site if site is not None else {"robots": 200, "sitemap": 200}
+            doc["site"] = site if site is not None else {"robots": 200, "robotsBody": closed, "sitemap": 200}
         f = tmp / "crawl.json"
         f.write_text(json.dumps(doc), encoding="utf-8")
         return f
@@ -142,58 +181,82 @@ def selftest() -> int:
         (tmp / "config" / "initializers").mkdir(parents=True, exist_ok=True)
         if value is not None:
             (tmp / "config" / "initializers" / "launch.rb").write_text(
-                f"Rails.application.configure do\n  config.x.public_launch = {value}\nend\n", encoding="utf-8")
+                f"Rails.application.configure do\n  config.x.indexable = {value}\nend\n", encoding="utf-8")
         return tmp
+
+    check("robots: `Disallow: /` under `*` disallows all", disallows_all(closed))
+    check("robots: a path-only Disallow does not", not disallows_all(open_))
+    check("robots: `Disallow: /` under another agent does not",
+          not disallows_all("User-agent: Googlebot\nDisallow: /\n\nUser-agent: *\nDisallow:\n"))
+    check("robots: comments and case are ignored", disallows_all("user-agent: * # all\nDISALLOW: / # none\n"))
 
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        root = project(t / "app", "true")
-        c = crawl_file(t, [page(), page("/pricing")])
-        code, out = run(c, root)
-        check("CONTROL: a complete public crawl is clean", code == 0, f"{code} {out}")
+        internal = project(t / "internal", "false")
+        public = project(t / "public", "true")
+        undeclared = project(t / "undeclared", None)
 
-        c = crawl_file(t, [page(), page("/pricing", head={**good_head, "ogImage": ""})])
-        code, out = run(c, root)
-        check("a page with no og:image is a finding naming the route",
+        # --- NOT INDEXABLE: the baseline only, and robots must close the site.
+        bare = {"description": "", "ogImage": "", "favicon": True}
+        c = crawl_file(t, [page(head=bare), page("/tasks", head=bare)])
+        code, out = run(c, internal)
+        check("CONTROL: a non-indexable app needs no description or og:image, and is clean", code == 0, f"{code} {out}")
+        c = crawl_file(t, [page()], site={"robots": 200, "robotsBody": open_, "sitemap": 404})
+        code, out = run(c, internal)
+        check("non-indexable, robots allows indexing: a finding",
+              code == 1 and any("launch-robots-allows-indexing" in l for l in out), f"{out}")
+        check("...and no sitemap is demanded of it", not any("sitemap" in l for l in out), f"{out}")
+        c = crawl_file(t, [page(head={**full, "favicon": False}), page("/x", title="")])
+        code, out = run(c, internal)
+        check("the baseline (title, favicon) applies to a non-indexable app too",
+              any("launch-favicon-missing] /" in l for l in out) and any("launch-title-missing] /x" in l for l in out), f"{out}")
+
+        # --- INDEXABLE: the marketing set joins the baseline.
+        c = crawl_file(t, [page(), page("/pricing")], site={"robots": 200, "robotsBody": open_, "sitemap": 200})
+        code, out = run(c, public)
+        check("CONTROL: a complete indexable crawl is clean", code == 0, f"{code} {out}")
+        c = crawl_file(t, [page(), page("/pricing", head={**full, "ogImage": ""})],
+                       site={"robots": 200, "robotsBody": open_, "sitemap": 200})
+        code, out = run(c, public)
+        check("indexable, a page with no og:image: a finding naming the route",
               code == 1 and any("launch-og-image-missing] /pricing" in l for l in out), f"{out}")
-        c = crawl_file(t, [page(head={**good_head, "description": ""}), page("/x", title="")])
-        code, out = run(c, root)
-        check("a missing description and a missing title are both reported",
-              any("launch-description-missing] /" in l for l in out) and any("launch-title-missing] /x" in l for l in out),
-              f"{out}")
-        c = crawl_file(t, [page(head={**good_head, "favicon": False})])
-        check("no favicon is a finding", any("launch-favicon-missing" in l for l in run(c, root)[1]))
-        c = crawl_file(t, [page()], site={"robots": 404, "sitemap": None})
-        code, out = run(c, root)
-        check("robots 404 and an unfetchable sitemap are both findings",
-              code == 1 and any("launch-robots-unreachable] /robots.txt -- returned 404" in l for l in out)
-              and any("launch-sitemap-unreachable] /sitemap.xml -- could not be fetched" in l for l in out),
-              f"{out}")
-        # A skipped or non-200 page is not judged: an error page has no head to demand.
-        c = crawl_file(t, [page(), page("/boom", status=500, head={}), page("/gone", skipped="timeout")])
-        check("a 500 or skipped page is not judged for head tags", run(c, root)[0] == 0, str(run(c, root)))
+        c = crawl_file(t, [page(head={**full, "description": ""})], site={"robots": 200, "robotsBody": open_, "sitemap": 200})
+        check("indexable, no description: a finding", any("launch-description-missing" in l for l in run(c, public)[1]))
+        c = crawl_file(t, [page()], site={"robots": 200, "robotsBody": closed, "sitemap": None})
+        code, out = run(c, public)
+        check("indexable, robots closes the site and the sitemap is unfetchable: both findings",
+              any("launch-robots-blocks-indexing" in l for l in out)
+              and any("launch-sitemap-unreachable] /sitemap.xml -- could not be fetched" in l for l in out), f"{out}")
 
-        # UNUSABLE, never clean: an old crawl without the probes.
+        # --- robots missing, for either declaration.
+        c = crawl_file(t, [page()], site={"robots": 404, "sitemap": 200})
+        check("robots.txt 404 is a finding even for a non-indexable app",
+              any("launch-robots-unreachable] /robots.txt -- returned 404" in l for l in run(c, internal)[1]))
+
+        # --- Not judged: error and skipped pages.
+        c = crawl_file(t, [page(), page("/boom", status=500, head={}), page("/gone", skipped="timeout")])
+        check("a 500 or skipped page is not judged for head tags", run(c, internal)[0] == 0, str(run(c, internal)))
+
+        # --- UNUSABLE, never clean.
         old = page()
         del old["head"]
         c = crawl_file(t, [old], site=False)
-        code, out = run(c, root)
-        check("a crawl that predates the probes is UNUSABLE (exit 2), not clean", code == 2, f"{code} {out}")
+        check("a crawl that predates the probes is UNUSABLE (exit 2), not clean", run(c, internal)[0] == 2)
         c = crawl_file(t, [page(status=500)])
-        check("a crawl with no 200 HTML page is UNUSABLE", run(c, root)[0] == 2)
+        check("a crawl with no 200 HTML page is UNUSABLE", run(c, internal)[0] == 2)
 
-        # THE FOUR STATES, on the same failing crawl, so only the declaration differs.
-        bad = crawl_file(t, [page(head={**good_head, "ogImage": ""})])
-        check("declared public: the failing crawl exits 1", run(bad, root)[0] == 1)
-        internal = project(t / "internal", "false")
-        code, out = run(bad, internal)
-        check("declared internal: not applicable, exit 0", code == 0 and "not applicable" in out[0], f"{out}")
-        undeclared = project(t / "undeclared", None)
-        code, out = run(bad, undeclared)
-        check("undeclared: exit 3, never 0", code == 3 and "UNDECLARED" in out[0], f"{code} {out}")
+        # --- UNDECLARED: exit 3 even when the baseline is clean, and the baseline is still reported.
+        c = crawl_file(t, [page()])
+        code, out = run(c, undeclared)
+        check("undeclared: exit 3, never 0, even on a clean baseline", code == 3 and "UNDECLARED" in out[0], f"{code} {out}")
+        c = crawl_file(t, [page(title="")])
+        code, out = run(c, undeclared)
+        check("undeclared: the baseline findings are still listed", any("launch-title-missing" in l for l in out), f"{out}")
 
-        # THE ENTRY POINT: main returns run's code.
-        rc = main([str(bad), "--root", str(root)])
+        # --- THE ENTRY POINT: main returns run's code.
+        c = crawl_file(t, [page()], site={"robots": 200, "robotsBody": open_, "sitemap": 200})
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = main([str(c), "--root", str(internal)])
         check("main returns the judgement's exit code", rc == 1, f"rc={rc}")
 
     for f in fails:

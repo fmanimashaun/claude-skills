@@ -55,7 +55,7 @@ SCHEMA_EXAMPLE = {
         "head": {"description": "Your open work", "ogImage": "/og.png", "favicon": True},   # #1289
         "skipped": None,
     }],
-    "site": {"robots": 200, "sitemap": 200},   # #1289, read by launch_readiness.py
+    "site": {"robots": 200, "robotsBody": "User-agent: *\nDisallow: /\n", "sitemap": 200},   # #1289, read by launch_readiness.py
 }
 COLLECTOR = "crawl_collector.js"
 

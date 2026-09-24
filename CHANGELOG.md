@@ -3353,9 +3353,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
-- **`setup-flow` asks whether the app is public-facing and records `config.x.public_launch` —
-  `plugins/rails-flow/commands/setup-flow.md`** (#1289). This is the declaration qa-flow's launch profile reads.
-  Privacy policy, terms and cookie consent are flagged for legal review and never generated.
+- **`setup-flow` gives every reachable app the launch baseline and records `config.x.indexable` —
+  `plugins/rails-flow/commands/setup-flow.md`** (#1289). **Maintainer decisions, 2026-09-24**, on the issue:
+  - **The agent drafts** the privacy policy, terms and cookie consent from the app's own data inventory (schema,
+    forms, uploads, third parties, cookies, retention, storage region). It writes them against the law of the country
+    of operation and the users' location, names that law, and marks each draft for legal review.
+  - **The documents are versioned records, edited in the app, not hard-coded.** Publishing creates an immutable
+    version; acceptance is recorded against a version; every save, publish and acceptance is an audit-log event.
+  - **Cookie categories and consent behaviour stay in code;** only their wording is content.
 
 ### 1.50.2 (release v1.147.1) — 2026-09-24
 
@@ -10148,16 +10153,20 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
-- **A situational "public launch" profile, judged from the crawl — `plugins/qa-flow/scripts/launch_readiness.py`,
+- **A launch profile for every reachable app, judged from the crawl — `plugins/qa-flow/scripts/launch_readiness.py`,
   `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/crawl_report.py`, `plugins/qa-flow/commands/crawl.md`,
-  `plugins/qa-flow/scripts/mutations/launch_readiness.py`** (#1289). **Maintainer decision, 2026-09-24**, recorded on the
-  issue; prompted by a "20 tasks before launch" checklist, audited against our corpus.
-  - The collector records each page's `head` (meta description, `og:image`, favicon) and a `site` block: the
-    `/robots.txt` and `/sitemap.xml` status, fetched from a signed-out context.
-  - The new judge requires all of them, but only when the project declared `config.x.public_launch = true`. Declared
-    `false` is not applicable (exit 0). Undeclared exits 3, never clean. A crawl that predates the probes is unusable
-    (exit 2).
-  - Its guard catches 6 mutations, including undeclared-as-internal and an old crawl read as clean.
+  `plugins/qa-flow/scripts/mutations/launch_readiness.py`** (#1289). **Maintainer decisions, 2026-09-24**, recorded on
+  the issue; prompted by a "20 tasks before launch" checklist, audited against our corpus. The axis is reachability,
+  not audience: an "internal" app is still on the internet.
+  - **The collector** records each page's `head` (description, `og:image`, favicon) and a `site` block: `robots.txt`
+    status and body, and `sitemap.xml` status, fetched signed out.
+  - **The baseline, on every app:** a title and a favicon on every page, and a reachable `robots.txt`.
+  - **By `config.x.indexable`:**
+    - `false`: `robots.txt` must carry `Disallow: /` for `User-agent: *`;
+    - `true`: every page adds a description and an `og:image`, and the sitemap must be reachable.
+  - **Exit codes:** undeclared exits 3 with the baseline listed; a crawl that predates the probes exits 2.
+  - **Guard:** catches 8 mutations, including the marketing set demanded of a non-indexable app, and an open
+    `robots.txt` passing.
 
 ### 1.32.3 (release v1.144.2) — 2026-09-23
 
@@ -15077,10 +15086,13 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
-- **Public, unauthenticated forms need a rate limit and a bot check — `skills/rails-8/references/auth-security.md`,
-  `dist/rails-8.skill`** (#1289). Our own doctrine, outcome-first, reusing the `rate_limit` doctrine already there;
-  no gem is named. A honeypot submission gets the same success response and is not saved; the proving spec pairs
-  it with a control that is saved.
+- **Every unauthenticated endpoint needs a rate limit and a bot check — `skills/rails-8/references/auth-security.md`,
+  `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1289). Our own
+  doctrine, outcome-first, reusing the `rate_limit` doctrine already there; no gem is named.
+  - It covers sign-in, password reset, sign-up and contact forms, because an app behind sign-in is still reachable.
+  - A honeypot submission gets the same success response and is not saved. Each proving spec is paired with a
+    control that succeeds.
+  - The worked example's `check()` harness count is refreshed: `launch_readiness.py` is the 37th copy.
 
 ### 1.67.1 (release v1.147.1) — 2026-09-24
 

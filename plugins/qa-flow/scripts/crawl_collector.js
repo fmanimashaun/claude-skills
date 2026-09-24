@@ -975,7 +975,11 @@ const site = {};
   const siteProbe = await browser.newContext();
   for (const [key, path] of [['robots', '/robots.txt'], ['sitemap', '/sitemap.xml']]) {
     try {
-      site[key] = (await siteProbe.request.get(`${base}${path}`, { timeout: 15000 })).status();
+      const response = await siteProbe.request.get(`${base}${path}`, { timeout: 15000 });
+      site[key] = response.status();
+      // The robots BODY too: whether it allows indexing is the question for an app that must not be
+      // found, and a 200 answers only whether the file exists.
+      if (key === 'robots') site.robotsBody = (await response.text()).slice(0, 4000);
     } catch {
       site[key] = null;
     }
