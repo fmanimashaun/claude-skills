@@ -3358,6 +3358,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.53.1 (release v1.150.1) — 2026-09-25
 
+- **The `:null_store` rate_limit WARNING no longer fires on a limiter that has its own store —
+  `plugins/rails-flow/scripts/check_unauthenticated_writes.py`,
+  `plugins/rails-flow/scripts/mutations/check_unauthenticated_writes.py`** (#1324). Reported by Retask's v1.150.0 pin.
+  - **The defect.** The warning fired whenever `test.rb` set `config.cache_store = :null_store` and the app used
+    `rate_limit`. It ignored both ways a limiter gets a real store: a `rate_limit … store:` argument (Retask's
+    limiters, every one proven by a request spec), and `config.action_controller.cache_store = :memory_store`, the fix
+    our own `skills/rails-8/references/auth-security.md` prescribes. A project following our doctrine was warned.
+  - **The fix.** It warns only when some `rate_limit` has no `store:` and no non-null
+    `config.action_controller.cache_store` is set. The message now names that setting as the fix.
+  - **Tests.** Every limit passing `store:` gives no warning; one limit without it is warned (control). A
+    `:memory_store` limiter store gives no warning; a `:null_store` one is warned (control). The guard catches 10
+    mutations; 3 are new.
 - **The `erb-lint` NOTE names the `node_modules` linter's version, and a WARNING flags one the lock does not pin —
   `plugins/rails-flow/scripts/herb_lint.py`, `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1320). Found
   answering a Retask report of an erb-lint FAIL whose location changed between runs. It turned out to be 2 real
