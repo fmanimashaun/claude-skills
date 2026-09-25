@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-25 (release v1.150.0)
 
 - **This repository declares its issue-label groups: `comp:*`, `type:*`, `prio:*` — `.rails-flow/issue-labels.json`**
   (#1311). Every issue filed since 2026-09-20 that lacked one of the three was relabelled by hand the same day.
@@ -3356,7 +3356,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.53.0 (release v1.150.0) — 2026-09-25
 
 - **New gate `privacy-inventory`: every `db/schema.rb` column is classified in `config/privacy_inventory.yml` —
   `plugins/rails-flow/scripts/check_privacy_inventory.py`, `plugins/rails-flow/checks.json`,
@@ -15193,7 +15193,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.68.2 (release v1.150.0) — 2026-09-25
 
 - **The quality-pass worked example's `class Unusable(RuntimeError)` count is refreshed to 9 —
   `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1310). The privacy-inventory gate is
