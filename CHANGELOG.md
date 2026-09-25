@@ -3358,6 +3358,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The `erb-lint` NOTE names the `node_modules` linter's version, and a WARNING flags one the lock does not pin —
+  `plugins/rails-flow/scripts/herb_lint.py`, `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1320). Found
+  answering a Retask report of an erb-lint FAIL whose location changed between runs. It turned out to be 2 real
+  errors under the correct 0.10.3, but proving that took reading `package-lock.json`, `package.json`, `Gemfile.lock`
+  and `node_modules` in two worktrees, because the NOTE line didn't name the version.
+  - **The defect.** When `node_modules/.bin/herb-lint` exists, it runs, and the NOTE read `herb linter from
+    node_modules/.bin (pinned by package.json)` with no version. Nothing compared it with the herb gem in
+    `Gemfile.lock`. #1285's incident is that 0.11.0 exits 1 where 0.10.3 exits 0 on the same tree, so a package-lock
+    drifted from the gem changes the verdict, and the output couldn't say so.
+  - **The fix.** The version is read from `node_modules/@herb-tools/linter/package.json` and named in the NOTE (or
+    `(version unreadable)`). When it differs from the locked gem, a `WARNING:` line names both. The verdict is still
+    the linter's exit status.
+  - **Tests.** Selftest fixtures for an unreadable version, a matching version (control, no warning) and an off-pin
+    version (warned, both named), plus the WARNING through `main`. The guard catches 12 mutations; 3 are new.
 - **The `erb-lint` FAIL row leads with counts, and errors are listed first — `plugins/rails-flow/scripts/herb_lint.py`,
   `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1318). Reported by a Retask session; reproduced with the pinned
   linter.

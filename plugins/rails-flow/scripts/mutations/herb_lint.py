@@ -23,6 +23,25 @@ GUARD = Guard(
             "    return lines[1:]\n\n\ndef main",
             "the summary line leads, with counts per severity",
         ),
+        # #1320: the node_modules linter goes unnamed again, or its drift from the lock goes unsaid.
+        Mutation(
+            "the local note stops naming the linter's version",
+            "        return [str(local), *paths], (f\"herb linter {installed_version(root) or '(version unreadable)'} \"",
+            "        return [str(local), *paths], (f\"herb linter \"",
+            "the note names the node_modules linter version",
+        ),
+        Mutation(
+            "an off-pin linter is treated as matching",
+            "    if installed is None or locked is None or installed == locked:",
+            "    if True:",
+            "an off-pin linter is warned about, naming both versions",
+        ),
+        Mutation(
+            "the off-pin warning is computed and never printed",
+            "    if warning:\n        print(warning)\n",
+            "",
+            "main prints the off-pin WARNING",
+        ),
         # #1296: back to views-only, so component templates are never linted.
         Mutation(
             "the default scope drops app/components again",
