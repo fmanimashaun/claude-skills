@@ -354,6 +354,20 @@
       ]
     },
     {
+      "id": "privacy-inventory",
+      "why": "Every db/schema.rb column is classified in config/privacy_inventory.yml (table -> column -> {category, basis, retention}; `category: none` for not personal). The privacy policy is drafted from this file, so an unclassified personal column is one the policy silently omits (#1310).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_privacy_inventory.py"
+      ],
+      "applies_when": [
+        "db/schema.rb"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "migration-order",
       "why": "A migration numbered at or below the base branch's schema version is recorded as applied and never runs, so its columns never arrive and the suite fails somewhere unrelated. The rule lived only in /rails-flow:coordinate, so nothing ordinary checked it; downstream a branch merged dev, db:schema:load stamped schema.rb past its migration, and the column silently vanished (#1248).",
       "command": [

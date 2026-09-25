@@ -1,0 +1,7 @@
+{
+  "groups": [
+    {"one_of": ["comp:*"]},
+    {"one_of": ["type:*"]},
+    {"one_of": ["prio:*"]}
+  ]
+}

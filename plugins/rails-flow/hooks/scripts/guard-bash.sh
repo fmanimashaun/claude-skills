@@ -49,6 +49,20 @@ if hit '^git[[:space:]]+reset[[:space:]]+--hard\b'; then
   deny "git reset --hard requires explicit user approval (uncommitted work loss)."
 fi
 
+# An issue filed from the shell skips the templates that apply labels, so it is labelled HERE or
+# never (#1311). The raw command goes to the helper, because a label value is usually quoted and the
+# normalised `seg` strips quotes. FAIL CLOSED: a helper that cannot run blocks the command.
+if hit '^gh[[:space:]]+issue[[:space:]]+create\b'; then
+  _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
+  _rc=$?
+  if [ "$_rc" -eq 1 ]; then
+    deny "$_why"
+  elif [ "$_rc" -ne 0 ]; then
+    deny "the issue-label check could not run (exit $_rc), so this gh issue create is refused rather than let through unlabelled."
+  fi
+fi
+
 if hit '^kamal[[:space:]]+deploy\b' && [ "${RAILS_FLOW_ALLOW_DEPLOY:-0}" != "1" ]; then
   deny "production deploys require explicit user approval. Ask the user; on approval rerun with RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy ..."
 fi
