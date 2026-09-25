@@ -760,7 +760,11 @@ and a reachable `/sitemap.xml`.
 boilerplate. A generic policy describes an app that does not exist, and it is wrong in exactly the
 places a regulator reads.
 
-1. **Build the data inventory from the code, not from memory.** List:
+1. **Build the data inventory from the code, not from memory**, and write it as
+   `config/privacy_inventory.yml`: table → column → `{ category, basis, retention }`, with
+   `category: none` for a column that holds no personal data. The `privacy-inventory` gate then fails
+   any `db/schema.rb` column left unclassified, so a new personal field cannot slip past the policy
+   (#1310). The inventory covers:
    - every personal-data field in `db/schema.rb`;
    - what each form collects;
    - what users upload (Active Storage);

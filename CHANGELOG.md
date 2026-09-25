@@ -3351,6 +3351,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **New gate `privacy-inventory`: every `db/schema.rb` column is classified in `config/privacy_inventory.yml` —
+  `plugins/rails-flow/scripts/check_privacy_inventory.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_privacy_inventory.py`, `plugins/rails-flow/commands/setup-flow.md`** (#1310).
+  **Maintainer decision, 2026-09-25**, recorded on the issue.
+  - **The standard shape** is the one Retask designed: table → column → `{category, basis, retention}`, block or inline,
+    with `category: none` for "not personal".
+  - **The rules.** Every column is listed (the implicit `id` is exempt). A personal category needs `basis` and
+    `retention`. Stale tables and columns are findings, and a missing file names the unclassified count; it is never
+    clean.
+  - **One reader each:** the schema and YAML are read through `build_project_wiki.py`'s parsers.
+  - **`setup-flow`'s** legal-documents step now writes the inventory the privacy policy is drafted from.
+  - **Measured on Retask:** no inventory yet, so 629 columns across 47 tables are unclassified. It goes red on the
+    bump until its inventory, already in design in #880, lands.
+  - **Tests.** The guard catches 6 mutations.
+
 ### 1.52.0 (release v1.149.0) — 2026-09-24
 
 - **The architecture graph keeps quoted route paths whole — `plugins/rails-flow/scripts/architecture_graph.py`,
@@ -15156,6 +15173,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **The quality-pass worked example's `class Unusable(RuntimeError)` count is refreshed to 9 —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1310). The privacy-inventory gate is
+  the new copy; reach stays 6.
 
 ### 1.68.1 (release v1.149.0) — 2026-09-24
 
