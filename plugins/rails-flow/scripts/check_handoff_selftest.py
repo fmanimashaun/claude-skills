@@ -594,6 +594,12 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     ok_agents = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
     expect_tiers_clean("a table that agrees with its agents", tiers_doc(ok_rows), ok_agents)
     expect_tiers_clean("...and the table alone, with no agents to reconcile", tiers_doc(ok_rows))
+    # #1326: effort is inherited like model; a pin in a shipped agent is refused.
+    pinned = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
+    reviewer = pinned / "code-reviewer.md"
+    reviewer.write_text(reviewer.read_text().replace("model: inherit\n", "model: inherit\neffort: medium\n"))
+    expect_tiers_findings("an agent pinning effort is refused", tiers_doc(ok_rows), pinned,
+                          contains="pins `effort: medium`")
 
     _tick()
     try:

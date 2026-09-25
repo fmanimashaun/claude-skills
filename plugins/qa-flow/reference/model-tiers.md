@@ -16,7 +16,7 @@ citations. The three facts that decide it, verified against
    agent *"runs … on the inherited model instead"*. And an alias is a per-provider lookup that
    *"update[s] over time"* — `sonnet` is Sonnet 5 on the Anthropic API, **Sonnet 4.5** on Amazon
    Bedrock and Google Cloud's Agent Platform, **Sonnet 4.5** on Microsoft Foundry (where `opus` is
-   **Opus 4.6** while it is Opus 5 everywhere else). A shipped plugin cannot know what its own
+   **Opus 4.6** while it is Opus 5.5 everywhere else, re-read 2026-09-25, #1326). A shipped plugin cannot know what its own
    frontmatter selects.
 
 ## Why qa-flow keeps more cheap pins than rails-flow
