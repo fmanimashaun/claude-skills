@@ -14,6 +14,8 @@ checked against rubygems and npm). So the locked gem version is the linter versi
   1. `node_modules/.bin/herb-lint` -- the project pinned it in package.json;
   2. otherwise `npx -y @herb-tools/linter@<herb version in Gemfile.lock>`.
 A global `herb-lint` on PATH is deliberately NOT used: it is unpinned too.
+The local binary's version is read from its package.json and named in the NOTE; when it is not the
+Gemfile.lock version, a WARNING says so (#1320). The verdict is still the linter's exit status.
 
 Run:  herb_lint.py [--root DIR] [PATHS...]      (default: every template dir that exists, #1296)
 
@@ -27,6 +29,7 @@ Every run prints `NOTE: herb linter <version> (<source>)`, so a verdict names th
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -47,6 +50,32 @@ def locked_version(root: Path) -> str | None:
     return found[0] if found else None
 
 
+def installed_version(root: Path) -> str | None:
+    """The version of the linter `node_modules/.bin/herb-lint` runs, from its package.json (#1320)."""
+    try:
+        return json.loads((root / "node_modules" / "@herb-tools" / "linter" / "package.json")
+                          .read_text(encoding="utf-8")).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def version_mismatch(root: Path) -> str | None:
+    """A WARNING when the node_modules linter is not the herb gem's version (#1320).
+
+    The gem and the npm linter are released in lockstep, so a package-lock resolving 0.11.0 beside a
+    Gemfile.lock pinning 0.10.3 is #1285's incident again: the same tree, a different verdict. The
+    verdict stays the linter's exit status; this line says which linter gave it and that it is off-pin.
+    """
+    local = root / "node_modules" / ".bin" / "herb-lint"
+    if not (local.is_file() and os.access(local, os.X_OK)):
+        return None
+    installed, locked = installed_version(root), locked_version(root)
+    if installed is None or locked is None or installed == locked:
+        return None
+    return (f"WARNING: node_modules has @herb-tools/linter {installed} but Gemfile.lock locks herb {locked}; "
+            "they release in lockstep, so this verdict is not the locked linter's -- align package.json")
+
+
 def default_paths(root: Path) -> list[str]:
     """Every template directory this project has, so a component template is never skipped."""
     found = [d for d in TEMPLATE_DIRS if (root / d).is_dir()]
@@ -57,13 +86,45 @@ def command(root: Path, paths: list[str]) -> tuple[list[str] | None, str]:
     """`(argv, note)`, or `(None, reason)` when no pinned linter can be named."""
     local = root / "node_modules" / ".bin" / "herb-lint"
     if local.is_file() and os.access(local, os.X_OK):
-        return [str(local), *paths], "herb linter from node_modules/.bin (pinned by package.json)"
+        return [str(local), *paths], (f"herb linter {installed_version(root) or '(version unreadable)'} "
+                                      "from node_modules/.bin (pinned by package.json)")
     version = locked_version(root)
     if version is None:
         return None, ("herb is not in Gemfile.lock, so there is no version to pin the linter to -- "
                       "add the herb gem, or install @herb-tools/linter in package.json")
     return (["npx", "-y", f"@herb-tools/linter@{version}", *paths],
             f"herb linter {version} (matches the herb gem locked in Gemfile.lock)")
+
+
+SEVERITY_ORDER = ("error", "warning", "info", "hint")
+
+
+def render(stdout: str) -> list[str] | None:
+    """herb's `--format json` as our summary line, then every offence, MOST SEVERE FIRST (#1318).
+
+    herb prints offences in file order, so the first `file:line:col` in its text was often a HINT,
+    and `project_gates` named that as the FAIL row while the errors sat further down. Our own
+    `N herb finding(s):` line is what the aggregate anchors on, so the row now carries the counts,
+    and the errors come first. None when the output is not herb's JSON: the caller prints it raw.
+    """
+    try:
+        data = json.loads(stdout)
+        offenses = data["offenses"]
+        summary = data.get("summary") or {}
+    except (ValueError, KeyError, TypeError):
+        return None
+    rank = {s: i for i, s in enumerate(SEVERITY_ORDER)}
+    ordered = sorted(offenses, key=lambda o: (rank.get(o.get("severity"), len(rank)),
+                                              o.get("filename", ""), o.get("location", {}).get("start", {}).get("line", 0)))
+    counts = {s: sum(1 for o in offenses if o.get("severity") == s) for s in SEVERITY_ORDER}
+    lines = [f"{len(offenses)} herb finding(s): {counts['error']} error, {counts['warning']} warning, "
+             f"{counts['info']} info, {counts['hint']} hint -- most severe first"
+             + (f" ({summary.get('filesChecked')} files checked)" if summary.get("filesChecked") is not None else "")]
+    for o in ordered:
+        start = o.get("location", {}).get("start", {})
+        lines.append(f"  {o.get('filename', '?')}:{start.get('line', '?')}:{start.get('column', '?')} "
+                     f"[{o.get('severity', '?')}] {o.get('code', '?')} -- {o.get('message', '')}")
+    return lines
 
 
 def main(argv: list[str]) -> int:
@@ -80,8 +141,19 @@ def main(argv: list[str]) -> int:
         print(f"FAIL: {note}", file=sys.stderr)
         return 2
     print(f"NOTE: {note}")
+    warning = version_mismatch(root)
+    if warning:
+        print(warning)
     sys.stdout.flush()
-    return subprocess.run(argv_, cwd=root).returncode
+    proc = subprocess.run([*argv_, "--format", "json"], cwd=root, capture_output=True, text=True)
+    lines = render(proc.stdout)
+    if lines is None:
+        # Not herb's JSON (an older linter, a crash): the raw output, and the linter's own verdict.
+        sys.stdout.write(proc.stdout)
+    else:
+        print("\n".join(lines))
+    sys.stderr.write(proc.stderr)
+    return proc.returncode
 
 
 def selftest() -> int:
@@ -127,29 +199,70 @@ def selftest() -> int:
         argv_, note = command(root, ["app/views"])
         check("a local node_modules binary is preferred", argv_ == [str(local), "app/views"], str(argv_))
         check("...and the note says it came from package.json", "package.json" in note, note)
+        # #1320 THE VERSION: the local branch names its linter, and an off-pin one is called out.
+        check("an unreadable local version is said, not guessed", "(version unreadable)" in note, note)
+        check("CONTROL: no package.json, no mismatch warning", version_mismatch(root) is None)
+        pkg = root / "node_modules" / "@herb-tools" / "linter"
+        pkg.mkdir(parents=True)
+        (pkg / "package.json").write_text('{"name": "@herb-tools/linter", "version": "0.11.0"}', encoding="utf-8")
+        check("the note names the node_modules linter version", "herb linter 0.11.0 " in command(root, [])[1],
+              command(root, [])[1])
+        check("CONTROL: matching versions give no warning", version_mismatch(root) is None, str(version_mismatch(root)))
+        (pkg / "package.json").write_text('{"name": "@herb-tools/linter", "version": "0.12.0"}', encoding="utf-8")
+        warn = version_mismatch(root) or ""
+        check("an off-pin linter is warned about, naming both versions",
+              warn.startswith("WARNING:") and "0.12.0" in warn and "0.11.0" in warn, warn)
 
         # THE ENTRY POINT: main exits with the linter's status and prints the note first.
         local.write_text("#!/bin/sh\nexit 7\n", encoding="utf-8")
         proc = subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)
         check("main passes the linter's exit status through", proc.returncode == 7, f"rc={proc.returncode}")
-        check("main prints the NOTE naming the linter", proc.stdout.startswith("NOTE: herb linter"), proc.stdout)
+        check("main prints the NOTE naming the linter", proc.stdout.startswith("NOTE: herb linter 0.12.0"), proc.stdout)
+        check("main prints the off-pin WARNING", "\nWARNING: node_modules has @herb-tools/linter 0.12.0" in proc.stdout,
+              proc.stdout)
+        (pkg / "package.json").write_text('{"name": "@herb-tools/linter", "version": "0.11.0"}', encoding="utf-8")
         # #1296 THE SCOPE, through main: a fake linter records the paths it was handed. Only while the fake
         # is the binary in use -- otherwise main would reach a REAL npx, which hangs the selftest and hides
         # the fixture above that should have caught the break.
         record = root / "args.txt"
+
+        def _paths(rec: Path) -> list[str]:
+            """The paths the linter was handed, without the `--format json` the wrapper adds."""
+            return [a for a in rec.read_text().split() if a not in ("--format", "json")]
         local.write_text(f'#!/bin/sh\necho "$@" > {record}\nexit 0\n', encoding="utf-8")
         (root / "app" / "views").mkdir(parents=True)
         if (command(root, [])[0] or [""])[0] == str(local):
             subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)
             check("CONTROL: with only app/views, only app/views is linted",
-                  record.read_text().split() == ["app/views"], record.read_text())
+                  _paths(record) == ["app/views"], record.read_text())
             (root / "app" / "components").mkdir()
             subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)
             check("with app/components present, component templates are linted too",
-                  record.read_text().split() == ["app/views", "app/components"], record.read_text())
+                  _paths(record) == ["app/views", "app/components"], record.read_text())
             subprocess.run([sys.executable, __file__, "--root", str(root), "app/views"], capture_output=True, text=True)
-            check("explicit paths still override the default", record.read_text().split() == ["app/views"],
+            check("explicit paths still override the default", _paths(record) == ["app/views"],
                   record.read_text())
+
+        # #1318 THE ORDER: herb prints a HINT before an ERROR (file order); the row must lead with counts
+        # and the error must come first. The fake linter emits real 0.10.3 JSON and fails at error.
+        sample = {"offenses": [
+            {"filename": "app/views/a.html.erb", "message": "Empty if block", "severity": "hint",
+             "code": "erb-no-empty-control-flow", "location": {"start": {"line": 8, "column": 0}}},
+            {"filename": "app/views/b.html.erb", "message": "Bad comment", "severity": "error",
+             "code": "erb-comment-syntax", "location": {"start": {"line": 46, "column": 2}}}],
+            "summary": {"filesChecked": 2, "totalErrors": 1, "totalHints": 1}}
+        payload = root / "herb.json"
+        payload.write_text(json.dumps(sample), encoding="utf-8")
+        local.write_text(f"#!/bin/sh\ncat {payload}\nexit 1\n", encoding="utf-8")
+        if (command(root, [])[0] or [""])[0] == str(local):
+            proc = subprocess.run([sys.executable, __file__, "--root", str(root)], capture_output=True, text=True)
+            out = [l for l in proc.stdout.splitlines() if not l.startswith("NOTE:")]
+            check("the summary line leads, with counts per severity",
+                  bool(out) and out[0].startswith("2 herb finding(s): 1 error, 0 warning, 0 info, 1 hint"), repr(out[:1]))
+            check("the ERROR is listed before the hint that herb printed first",
+                  len(out) >= 3 and "[error]" in out[1] and "[hint]" in out[2], repr(out[1:3]))
+            check("...and the linter's failure still fails", proc.returncode == 1, f"rc={proc.returncode}")
+        check("render: output that is not herb's JSON is left to the caller", render("not json") is None)
 
         (root / "Gemfile.lock").unlink()
         local.unlink()

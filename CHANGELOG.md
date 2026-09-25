@@ -3356,6 +3356,46 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.53.1 (release v1.150.1) — 2026-09-25
+
+- **The `:null_store` rate_limit WARNING no longer fires on a limiter that has its own store —
+  `plugins/rails-flow/scripts/check_unauthenticated_writes.py`,
+  `plugins/rails-flow/scripts/mutations/check_unauthenticated_writes.py`** (#1324). Reported by Retask's v1.150.0 pin.
+  - **The defect.** The warning fired whenever `test.rb` set `config.cache_store = :null_store` and the app used
+    `rate_limit`. It ignored both ways a limiter gets a real store: a `rate_limit … store:` argument (Retask's
+    limiters, every one proven by a request spec), and `config.action_controller.cache_store = :memory_store`, the fix
+    our own `skills/rails-8/references/auth-security.md` prescribes. A project following our doctrine was warned.
+  - **The fix.** It warns only when some `rate_limit` has no `store:` and no non-null
+    `config.action_controller.cache_store` is set. The message now names that setting as the fix.
+  - **Tests.** Every limit passing `store:` gives no warning; one limit without it is warned (control). A
+    `:memory_store` limiter store gives no warning; a `:null_store` one is warned (control). The guard catches 10
+    mutations; 3 are new.
+- **The `erb-lint` NOTE names the `node_modules` linter's version, and a WARNING flags one the lock does not pin —
+  `plugins/rails-flow/scripts/herb_lint.py`, `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1320). Found
+  answering a Retask report of an erb-lint FAIL whose location changed between runs. It turned out to be 2 real
+  errors under the correct 0.10.3, but proving that took reading `package-lock.json`, `package.json`, `Gemfile.lock`
+  and `node_modules` in two worktrees, because the NOTE line didn't name the version.
+  - **The defect.** When `node_modules/.bin/herb-lint` exists, it runs, and the NOTE read `herb linter from
+    node_modules/.bin (pinned by package.json)` with no version. Nothing compared it with the herb gem in
+    `Gemfile.lock`. #1285's incident is that 0.11.0 exits 1 where 0.10.3 exits 0 on the same tree, so a package-lock
+    drifted from the gem changes the verdict, and the output couldn't say so.
+  - **The fix.** The version is read from `node_modules/@herb-tools/linter/package.json` and named in the NOTE (or
+    `(version unreadable)`). When it differs from the locked gem, a `WARNING:` line names both. The verdict is still
+    the linter's exit status.
+  - **Tests.** Selftest fixtures for an unreadable version, a matching version (control, no warning) and an off-pin
+    version (warned, both named), plus the WARNING through `main`. The guard catches 12 mutations; 3 are new.
+- **The `erb-lint` FAIL row leads with counts, and errors are listed first — `plugins/rails-flow/scripts/herb_lint.py`,
+  `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1318). Reported by a Retask session; reproduced with the pinned
+  linter.
+  - **The defect.** `project_gates.summarise()` took the first `:line:col` line herb printed, and herb prints in file
+    order. A run failing on 2 errors showed its row on a hint, and three sessions chased hinted files.
+  - **The fix.** `herb_lint.py` now runs the linter with `--format json` (present in 0.10.3). It prints
+    `N herb finding(s): E error, W warning, I info, H hint -- most severe first`, which `project_gates` anchors on, then
+    every offence sorted error → hint. The exit code is unchanged, and output that isn't JSON passes through raw.
+  - **Tests.** A fixture with a hint before an error; `summarise()` is shown to take the new line as the row. The guard
+    catches 9 mutations; the older exit-code mutation was re-pointed at the new return.
+  - **Measured on Retask at `ddec4d43`:** 18 findings (0 error, 3 warning, 15 hint) across 175 files; it passes.
+
 ### 1.53.0 (release v1.150.0) — 2026-09-25
 
 - **The schema and YAML readers stop misreading three shapes — `plugins/rails-flow/scripts/build_project_wiki.py`,

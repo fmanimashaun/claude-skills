@@ -17,8 +17,10 @@ EXEMPTIONS are declared, never inferred: `.rails-flow/unauthenticated-endpoints.
     {"exempt": [{"route": "POST /webhooks/zoho", "reason": "HMAC-verified webhook"}]}
 An entry without a reason, or for a route that does not exist, is itself a finding.
 
-A WARNING, not a failure: `config/environments/test.rb` setting `cache_store = :null_store` while the
-app uses `rate_limit` -- the limits then do nothing in tests, so no spec can prove them.
+A WARNING, not a failure: `config/environments/test.rb` setting `cache_store = :null_store` while a
+`rate_limit` counts through it -- the limits then do nothing in tests, so no spec can prove them. A
+limiter has a real store, and is not warned about, when its call passes `store:` or when test.rb sets a
+non-null `config.action_controller.cache_store`, the fix auth-security.md prescribes (#1324).
 
 Honeypots are NOT gated: there is no static signal. They stay required by doctrine and request specs.
 
@@ -130,7 +132,7 @@ def check(root: Path) -> tuple[int, list[str]]:
     exempt, problems = load_exempt(root)
     findings: list[str] = list(problems)
     public_writes = 0
-    uses_rate_limit = False
+    storeless_limit = False
     seen_routes = set()
     cache: dict[str, str] = {}
     for n in sorted(routes, key=lambda n: n["id"]):
@@ -142,7 +144,7 @@ def check(root: Path) -> tuple[int, list[str]]:
             continue
         src = cache.setdefault(rel, (root / rel).read_text(encoding="utf-8"))
         limits = statements(src, "rate_limit")
-        uses_rate_limit = uses_rate_limit or bool(limits)
+        storeless_limit = storeless_limit or any(not re.search(r"\bstore:", s) for s in limits)
         if not covers(statements(src, "allow_unauthenticated_access"), action):
             continue
         public_writes += 1
@@ -155,10 +157,13 @@ def check(root: Path) -> tuple[int, list[str]]:
         findings.append(f"  [stale-exemption] {route} is exempted in {EXEMPT_FILE} but is not a route")
     notes = []
     test_env = root / "config" / "environments" / "test.rb"
-    if uses_rate_limit and test_env.is_file() and re.search(
-            r"^\s*config\.cache_store\s*=\s*:null_store", test_env.read_text(encoding="utf-8"), re.M):
-        notes.append("WARNING: config/environments/test.rb sets `cache_store = :null_store`, so `rate_limit` "
-                     "does nothing in tests and no spec can prove a limit. Use :memory_store there.")
+    env = test_env.read_text(encoding="utf-8") if test_env.is_file() else ""
+    limiter_store = re.search(r"^\s*config\.action_controller\.cache_store\s*=\s*(\S+)", env, re.M)
+    if (storeless_limit and re.search(r"^\s*config\.cache_store\s*=\s*:null_store", env, re.M)
+            and not (limiter_store and limiter_store.group(1) != ":null_store")):
+        notes.append("WARNING: config/environments/test.rb sets `cache_store = :null_store` and a `rate_limit` "
+                     "without `store:` counts through it, so the limit does nothing in tests and no spec can "
+                     "prove it. Set `config.action_controller.cache_store = :memory_store` there.")
     if findings:
         return 1, [f"{len(findings)} finding(s) across {public_writes} public write route(s):", *findings, *notes]
     return 0, [f"every one of {public_writes} public write route(s) is rate-limited or exempted with a reason",
@@ -267,6 +272,21 @@ def selftest() -> int:
                and any(l.startswith("WARNING:") and "null_store" in l for l in out), f"{out}")
         root = app(t / "h", {"sessions": fixed}, routes)
         check_("CONTROL: no WARNING without null_store", not any(l.startswith("WARNING") for l in check(root)[1]))
+        # #1324: a limiter with its own store is not counting through the null cache_store.
+        def warned(r: Path) -> bool:
+            return any(l.startswith("WARNING") for l in check(r)[1])
+        stored = fixed.replace("rate_limit ", "rate_limit store: RateLimits::STORE, ")
+        root = app(t / "k", {"sessions": stored}, routes, null_store=True)
+        check_("null_store with every rate_limit passing store: is not warned", not warned(root), f"{check(root)[1]}")
+        root = app(t / "k2", {"sessions": stored.replace("rate_limit store: RateLimits::STORE, ", "rate_limit ", 1)},
+                   routes, null_store=True)
+        check_("CONTROL: one rate_limit without store: is still warned", warned(root), f"{check(root)[1]}")
+        root = app(t / "l", {"sessions": fixed}, routes, null_store=True)
+        env = root / "config" / "environments" / "test.rb"
+        env.write_text(env.read_text().replace("end\n", "  config.action_controller.cache_store = :memory_store\nend\n"))
+        check_("a non-null config.action_controller.cache_store is not warned", not warned(root), env.read_text())
+        env.write_text(env.read_text().replace(":memory_store", ":null_store"))
+        check_("CONTROL: a null config.action_controller.cache_store is still warned", warned(root), env.read_text())
 
         root = app(t / "i", {"sessions": fixed}, routes, auth=False)
         check_("no authentication concern: not applicable (exit 3)", check(root)[0] == 3)
