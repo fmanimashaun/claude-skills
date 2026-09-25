@@ -153,13 +153,25 @@ def components_dropping_attributes(root: Path) -> list[str]:
                     f"{rel}: component-drops-attributes — `{name}` takes a fixed keyword list and "
                     f"would drop a caller's `data:`, `form:` or `aria:`. A component that cannot "
                     f"carry an attribute is one a developer writes by hand instead.")
-            elif "**" in sig and not re.search(
-                    r"@\w+\s*=[^=\n]*\battrs\b|\battrs\b[^=\n]*=\s*", blob):
+            elif "**" in sig and not _stores_splat(sig, blob):
                 findings.append(
                     f"{rel}: component-drops-attributes — `{name}` accepts a splat and never stores "
                     f"it. Ruby binds the hash and discards it, so the attribute vanishes with NO "
                     f"error — quieter than the fixed keyword list it replaced.")
     return findings
+
+
+def _stores_splat(sig: str, blob: str) -> bool:
+    """Whether the initializer's double-splat is stored, whatever it is called.
+
+    The first version matched only a splat named `attrs`, so `**input_html` stored as `@input_html`
+    read as "never stores it". The name comes from the signature; `**` with no name cannot be stored.
+    """
+    m = re.search(r"\*\*(\w+)", sig)
+    if not m:
+        return False
+    name = re.escape(m.group(1))
+    return bool(re.search(rf"@\w+\s*=[^=\n]*\b{name}\b|\b{name}\b[^=\n]*=\s*", blob))
 
 
 def run(root: Path) -> tuple[list[str], int, int]:
@@ -237,6 +249,21 @@ def _selftest() -> int:
         expect("accept-and-drop is reported, and named as the silent form",
                any("DropsComponent" in f and "NO\n error" in f.replace("\n", "\n ")
                    or ("DropsComponent" in f and "never stores" in f) for f in findings))
+
+        # A SPLAT OF ANY NAME: `**input_html` stored as `@input_html` is stored. Same pair as above.
+        (root / "app/components/ui/named_splat_component.rb").write_text(
+            "module Ui\n  class NamedSplatComponent < ViewComponent::Base\n"
+            "    def initialize(label:, **input_html)\n      @label, @input_html = label, input_html\n"
+            "    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/named_drop_component.rb").write_text(
+            "module Ui\n  class NamedDropComponent < ViewComponent::Base\n"
+            "    def initialize(label:, **input_html)\n      @label = label\n"
+            "    end\n  end\nend\n", encoding="utf-8")
+        findings, _, _ = run(root)
+        expect("a stored splat not named attrs is not reported",
+               not any("NamedSplatComponent" in f for f in findings))
+        expect("CONTROL: the same splat left unstored is reported",
+               any("NamedDropComponent" in f and "never stores" in f for f in findings))
 
         # A tree with no views and no components cannot be judged -- and must not read as clean.
 

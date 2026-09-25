@@ -10,6 +10,13 @@ GUARD = Guard(
     deps=("scripts/content_floors.py",),
     needs=("scripts/source_text.py",),   # comments are blanked here (#1128)
     mutations=(
+        # The splat's name is hard-coded again, so `**input_html` stored as `@input_html` reads as dropped.
+        Mutation(
+            "the splat must be named attrs again",
+            '    name = re.escape(m.group(1))',
+            '    name = "attrs"',
+            "a stored splat not named attrs is not reported",
+        ),
         Mutation(
             # The must-FAIL half. A gate that stops reporting hand-written elements is the prose
             # mandate again, now wearing a check that looks present.
