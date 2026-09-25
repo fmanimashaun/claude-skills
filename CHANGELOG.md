@@ -3380,6 +3380,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A pin above the session is substituted, not dropped, when the org blocks it —
+  `plugins/rails-flow/reference/model-tiers.md`, `plugins/rails-flow/scripts/check_handoff.py`** (#1329). doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
+  Fact 4 said a blocked pin is skipped and the agent runs on the inherited model, which was true before
+  v2.1.222. The policy against `opus`/`fable` pins in shipped agents is unchanged: the pin now spends the user's
+  money either way. The finding text in `check_handoff.py` says so. Found by the #1328 upstream check, and a
+  registry row now re-reads it.
+
 - **Two `model-tiers.md` quotes updated to the docs' current wording — `plugins/rails-flow/reference/model-tiers.md`**
   (#1328). Found by the new upstream check. The skills page now reads *"isn't saved to settings. The session
   model resumes when you send your next prompt"*. The `env` key's description moved from `settings` to
@@ -6202,6 +6209,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 ## pipeline (lifecycle orchestrator)
+
+### Unreleased
+
+- **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/pipeline/reference/model-tiers.md`** (#1329).
+  Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
 
 ### 1.3.3 (release v1.144.1) — 2026-09-23
 
@@ -10345,6 +10357,11 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/qa-flow/reference/model-tiers.md`** (#1329).
+  Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
+
 ### 1.33.1 (release v1.149.0) — 2026-09-24
 
 - **The launch check no longer judges the declared health endpoint as a page — `plugins/qa-flow/scripts/launch_readiness.py`,
@@ -12421,6 +12438,11 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/design-flow/reference/model-tiers.md`** (#1329).
+  Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
 
 ### 1.44.1 (release v1.149.1) — 2026-09-25
 
