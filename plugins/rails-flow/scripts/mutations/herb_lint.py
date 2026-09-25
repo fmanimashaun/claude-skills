@@ -10,6 +10,19 @@ GUARD = Guard(
     subject="scripts/herb_lint.py",
     selftest="scripts/herb_lint.py",
     mutations=(
+        # #1318: herb's file order again, so the row can name a hint while the errors sit below it.
+        Mutation(
+            "offences are left in herb's file order",
+            '    ordered = sorted(offenses, key=lambda o: (rank.get(o.get("severity"), len(rank)),',
+            '    ordered = sorted(offenses, key=lambda o: (0,',
+            "the ERROR is listed before the hint that herb printed first",
+        ),
+        Mutation(
+            "the summary line is dropped, so project_gates falls back to the first location it finds",
+            "    return lines\n\n\ndef main",
+            "    return lines[1:]\n\n\ndef main",
+            "the summary line leads, with counts per severity",
+        ),
         # #1296: back to views-only, so component templates are never linted.
         Mutation(
             "the default scope drops app/components again",
@@ -49,8 +62,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the linter's failure is swallowed",
-            "    return subprocess.run(argv_, cwd=root).returncode",
-            "    subprocess.run(argv_, cwd=root)\n    return 0",
+            "    sys.stderr.write(proc.stderr)\n    return proc.returncode",
+            "    sys.stderr.write(proc.stderr)\n    return 0",
             "main passes the linter's exit status through",
         ),
     ),
